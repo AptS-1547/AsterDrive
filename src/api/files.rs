@@ -251,7 +251,7 @@ pub async fn download_file(
             )
         })?;
 
-    let response = Response::builder()
+    Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, file.mime_type)
         .header(
@@ -259,9 +259,14 @@ pub async fn download_file(
             format!("attachment; filename=\"{}\"", file.original_filename),
         )
         .body(axum::body::Body::from(data))
-        .unwrap();
-
-    Ok(response)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to build response: {}", e),
+                }),
+            )
+        })
 }
 
 /// Delete a file
