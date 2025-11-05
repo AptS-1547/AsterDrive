@@ -1,0 +1,54 @@
+[package]
+name = "asterdrive"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["multipart"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros"] }
+sea-orm-migration = "0.12"
+
+# Authentication
+jsonwebtoken = "9"
+bcrypt = "0.15"
+
+# Storage
+aws-sdk-s3 = "1"
+aws-config = "1"
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+
+# Async
+async-trait = "0.1"
+futures = "0.3"
+
+# File handling
+tokio-util = { version = "0.7", features = ["io"] }
+bytes = "1"
+
+# OpenAPI
+utoipa = { version = "4", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "6", features = ["axum"] }
+
+# Config
+config = "0.14"
+
+[dev-dependencies]
+http-body-util = "0.1"
