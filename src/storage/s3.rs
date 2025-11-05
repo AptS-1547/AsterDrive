@@ -165,6 +165,10 @@ impl StorageBackend for S3Storage {
                 StorageError::Backend(e.to_string())
             })?;
         
-        Ok(response.content_length().unwrap_or(0) as u64)
+        response.content_length()
+            .map(|len| len as u64)
+            .ok_or_else(|| StorageError::Backend(
+                format!("Failed to get content length for object: {}", path)
+            ))
     }
 }
