@@ -6,6 +6,7 @@ mod models;
 mod storage;
 
 use anyhow::Result;
+use migration::{Migrator, MigratorTrait};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -33,6 +34,11 @@ async fn main() -> Result<()> {
     // Connect to database
     let db = db::establish_connection(&config.database.url).await?;
     info!("Database connected");
+
+    // Run migrations
+    info!("Running database migrations...");
+    Migrator::up(&db, None).await?;
+    info!("Database migrations completed");
 
     // Initialize storage backend
     let storage = storage::create_storage_backend(&config.storage).await?;

@@ -5,6 +5,12 @@ edition = "2021"
 
 [dependencies]
 sea-orm-migration = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
+tokio = { version = "1", features = ["full"] }
+dotenvy = "0.15"
+
+[[bin]]
+name = "migrate"
+path = "src/main.rs"
 
 [lib]
 name = "migration"
