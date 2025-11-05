@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod dto;
 pub mod files;
+pub mod health;
 
 use axum::{
     middleware,
@@ -34,6 +35,7 @@ pub struct AppState {
         files::list_files,
         files::download_file,
         files::delete_file,
+        health::health_check,
     ),
     components(
         schemas(
@@ -49,7 +51,8 @@ pub struct AppState {
     ),
     tags(
         (name = "auth", description = "Authentication endpoints"),
-        (name = "files", description = "File management endpoints")
+        (name = "files", description = "File management endpoints"),
+        (name = "health", description = "Health check endpoints")
     ),
     modifiers(&SecurityAddon)
 )]
@@ -87,6 +90,7 @@ pub fn create_router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     Router::new()
+        .route("/health", get(health::health_check))
         .nest("/api", public_routes.merge(protected_routes))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .with_state(state)

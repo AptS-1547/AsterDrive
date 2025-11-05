@@ -1,0 +1,12 @@
+target/
+data/
+.env
+.git/
+.gitignore
+*.log
+README.md
+API_EXAMPLES.md
+CONTRIBUTING.md
+LICENSE
+docker-compose.yml
+quickstart.sh
