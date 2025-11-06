@@ -1,9 +1,4 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use actix_web::{web, HttpResponse};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 
 use crate::{
@@ -15,58 +10,44 @@ use crate::{
 use super::AppState;
 
 /// Register a new user
-#[utoipa::path(
-    post,
-    path = "/api/auth/register",
-    request_body = RegisterRequest,
-    responses(
-        (status = 201, description = "User registered successfully", body = AuthResponse),
-        (status = 400, description = "Bad request", body = ErrorResponse),
-        (status = 409, description = "User already exists", body = ErrorResponse)
-    ),
-    tag = "auth"
-)]
 pub async fn register(
-    State(state): State<AppState>,
-    Json(payload): Json<RegisterRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
+    state: web::Data<AppState>,
+    payload: web::Json<RegisterRequest>,
+) -> HttpResponse {
     // Check if user exists
-    let existing_user = User::find()
+    let existing_user = match User::find()
         .filter(user::Column::Username.eq(&payload.username))
         .one(&state.db)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: e.to_string(),
-                }),
-            )
-        })?;
+    {
+        Ok(user) => user,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    };
 
     if existing_user.is_some() {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: "Username already exists".to_string(),
-            }),
-        ));
+        return HttpResponse::Conflict().json(ErrorResponse {
+            error: "Username already exists".to_string(),
+        });
     }
 
     // Hash password
-    let password_hash = hash_password(&payload.password).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
+    let password_hash = match hash_password(&payload.password) {
+        Ok(hash) => hash,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
                 error: e.to_string(),
-            }),
-        )
-    })?;
+            });
+        }
+    };
 
     // Create user
     let user = user::ActiveModel {
         username: Set(payload.username.clone()),
-        email: Set(payload.email),
+        email: Set(payload.email.clone()),
         password_hash: Set(password_hash),
         is_active: Set(true),
         created_at: Set(chrono::Utc::now().into()),
@@ -74,112 +55,26 @@ pub async fn register(
         ..Default::default()
     };
 
-    let user = user.insert(&state.db).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
+    let user = match user.insert(&state.db).await {
+        Ok(user) => user,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
                 error: e.to_string(),
-            }),
-        )
-    })?;
+            });
+        }
+    };
 
     // Generate token
-    let token = state
-        .jwt_manager
-        .create_token(user.id, user.username.clone())
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: e.to_string(),
-                }),
-            )
-        })?;
-
-    Ok((
-        StatusCode::CREATED,
-        Json(AuthResponse {
-            token,
-            user: UserResponse {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                is_active: user.is_active,
-            },
-        }),
-    ))
-}
-
-/// Login user
-#[utoipa::path(
-    post,
-    path = "/api/auth/login",
-    request_body = LoginRequest,
-    responses(
-        (status = 200, description = "Login successful", body = AuthResponse),
-        (status = 401, description = "Invalid credentials", body = ErrorResponse)
-    ),
-    tag = "auth"
-)]
-pub async fn login(
-    State(state): State<AppState>,
-    Json(payload): Json<LoginRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    // Find user
-    let user = User::find()
-        .filter(user::Column::Username.eq(&payload.username))
-        .one(&state.db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: e.to_string(),
-                }),
-            )
-        })?
-        .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(ErrorResponse {
-                    error: "Invalid credentials".to_string(),
-                }),
-            )
-        })?;
-
-    // Verify password
-    let valid = verify_password(&payload.password, &user.password_hash).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
+    let token = match state.jwt_manager.create_token(user.id, user.username.clone()) {
+        Ok(token) => token,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
                 error: e.to_string(),
-            }),
-        )
-    })?;
+            });
+        }
+    };
 
-    if !valid {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "Invalid credentials".to_string(),
-            }),
-        ));
-    }
-
-    // Generate token
-    let token = state
-        .jwt_manager
-        .create_token(user.id, user.username.clone())
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: e.to_string(),
-                }),
-            )
-        })?;
-
-    Ok(Json(AuthResponse {
+    HttpResponse::Created().json(AuthResponse {
         token,
         user: UserResponse {
             id: user.id,
@@ -187,5 +82,66 @@ pub async fn login(
             email: user.email,
             is_active: user.is_active,
         },
-    }))
+    })
+}
+
+/// Login user
+pub async fn login(
+    state: web::Data<AppState>,
+    payload: web::Json<LoginRequest>,
+) -> HttpResponse {
+    // Find user
+    let user = match User::find()
+        .filter(user::Column::Username.eq(&payload.username))
+        .one(&state.db)
+        .await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            return HttpResponse::Unauthorized().json(ErrorResponse {
+                error: "Invalid credentials".to_string(),
+            });
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    };
+
+    // Verify password
+    let valid = match verify_password(&payload.password, &user.password_hash) {
+        Ok(valid) => valid,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    };
+
+    if !valid {
+        return HttpResponse::Unauthorized().json(ErrorResponse {
+            error: "Invalid credentials".to_string(),
+        });
+    }
+
+    // Generate token
+    let token = match state.jwt_manager.create_token(user.id, user.username.clone()) {
+        Ok(token) => token,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(ErrorResponse {
+                error: e.to_string(),
+            });
+        }
+    };
+
+    HttpResponse::Ok().json(AuthResponse {
+        token,
+        user: UserResponse {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            is_active: user.is_active,
+        },
+    })
 }

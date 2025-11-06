@@ -5,13 +5,15 @@ mod db;
 mod models;
 mod storage;
 
+use actix_cors::Cors;
+use actix_web::{middleware as actix_middleware, web, App, HttpServer};
 use anyhow::Result;
 use migration::{Migrator, MigratorTrait};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    api::{create_router, AppState},
+    api::{configure_routes, AppState},
     auth::JwtManager,
     config::Config,
 };
@@ -22,7 +24,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "asterdrive=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| "asterdrive=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -58,16 +60,26 @@ async fn main() -> Result<()> {
         storage_backend: config.storage.backend.clone(),
     };
 
-    // Create router
-    let app = create_router(state);
-
-    // Start server
+    // Server address
     let addr = format!("{}:{}", config.server.host, config.server.port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!("Server listening on {}", addr);
-    info!("API documentation available at http://{}/swagger-ui", addr);
+    info!("Starting server on {}", addr);
 
-    axum::serve(listener, app).await?;
+    // Start HTTP server
+    HttpServer::new(move || {
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .allow_any_header();
+
+        App::new()
+            .app_data(web::Data::new(state.clone()))
+            .wrap(actix_middleware::Logger::default())
+            .wrap(cors)
+            .configure(configure_routes)
+    })
+    .bind(&addr)?
+    .run()
+    .await?;
 
     Ok(())
 }

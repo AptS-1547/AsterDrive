@@ -1,26 +1,25 @@
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterRequest {
     pub username: String,
     pub email: String,
     pub password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AuthResponse {
     pub token: String,
     pub user: UserResponse,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UserResponse {
     pub id: i32,
     pub username: String,
@@ -28,7 +27,7 @@ pub struct UserResponse {
     pub is_active: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileUploadResponse {
     pub id: i32,
     pub filename: String,
@@ -36,13 +35,13 @@ pub struct FileUploadResponse {
     pub mime_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileListResponse {
     pub files: Vec<FileInfo>,
     pub total: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileInfo {
     pub id: i32,
     pub filename: String,
@@ -53,7 +52,7 @@ pub struct FileInfo {
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: String,
 }

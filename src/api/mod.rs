@@ -3,18 +3,12 @@ pub mod dto;
 pub mod files;
 pub mod health;
 
-use axum::{
-    middleware,
-    routing::{get, post, delete},
-    Router,
-};
+use actix_web::web;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
-    auth::{auth_middleware, JwtManager},
+    auth::{auth_middleware::AuthMiddleware, JwtManager},
     storage::StorageBackend,
 };
 
@@ -26,72 +20,29 @@ pub struct AppState {
     pub storage_backend: String,
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        auth::register,
-        auth::login,
-        files::upload_file,
-        files::list_files,
-        files::download_file,
-        files::delete_file,
-        health::health_check,
-    ),
-    components(
-        schemas(
-            dto::RegisterRequest,
-            dto::LoginRequest,
-            dto::AuthResponse,
-            dto::UserResponse,
-            dto::FileUploadResponse,
-            dto::FileListResponse,
-            dto::FileInfo,
-            dto::ErrorResponse,
+pub fn configure_routes(cfg: &mut web::ServiceConfig) {
+    cfg
+        // Health check
+        .service(
+            web::resource("/health")
+                .route(web::get().to(health::health_check))
         )
-    ),
-    tags(
-        (name = "auth", description = "Authentication endpoints"),
-        (name = "files", description = "File management endpoints"),
-        (name = "health", description = "Health check endpoints")
-    ),
-    modifiers(&SecurityAddon)
-)]
-pub struct ApiDoc;
-
-struct SecurityAddon;
-
-impl utoipa::Modify for SecurityAddon {
-    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-        if let Some(components) = openapi.components.as_mut() {
-            components.add_security_scheme(
-                "bearer_auth",
-                utoipa::openapi::security::SecurityScheme::Http(
-                    utoipa::openapi::security::Http::new(
-                        utoipa::openapi::security::HttpAuthScheme::Bearer,
-                    ),
-                ),
-            )
-        }
-    }
-}
-
-pub fn create_router(state: AppState) -> Router {
-    // Public routes
-    let public_routes = Router::new()
-        .route("/auth/register", post(auth::register))
-        .route("/auth/login", post(auth::login));
-
-    // Protected routes - need to pass state for middleware
-    let protected_routes = Router::new()
-        .route("/files/upload", post(files::upload_file))
-        .route("/files", get(files::list_files))
-        .route("/files/:id", get(files::download_file))
-        .route("/files/:id", delete(files::delete_file))
-        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
-
-    Router::new()
-        .route("/health", get(health::health_check))
-        .nest("/api", public_routes.merge(protected_routes))
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .with_state(state)
+        // Public routes
+        .service(
+            web::scope("/api")
+                .service(
+                    web::scope("/auth")
+                        .route("/register", web::post().to(auth::register))
+                        .route("/login", web::post().to(auth::login))
+                )
+                // Protected routes
+                .service(
+                    web::scope("/files")
+                        .wrap(AuthMiddleware)
+                        .route("/upload", web::post().to(files::upload_file))
+                        .route("", web::get().to(files::list_files))
+                        .route("/{id}", web::get().to(files::download_file))
+                        .route("/{id}", web::delete().to(files::delete_file))
+                )
+        );
 }
