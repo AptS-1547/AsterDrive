@@ -1,0 +1,85 @@
+//! API 错误码定义
+//!
+//! 按千位分域，序列化为数字传输给前端：
+//! - 0: 成功
+//! - 1000-1099: 通用错误
+//! - 2000-2099: 认证错误
+//! - 3000-3099: 文件错误
+//! - 4000-4099: 存储策略错误
+//! - 5000-5099: 文件夹错误
+
+use serde_repr::{Deserialize_repr, Serialize_repr};
+
+use crate::errors::AsterError;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[repr(i32)]
+pub enum ErrorCode {
+    // 成功
+    Success = 0,
+
+    // 通用错误 1000-1099
+    BadRequest = 1000,
+    NotFound = 1001,
+    InternalServerError = 1002,
+    DatabaseError = 1003,
+    ConfigError = 1004,
+    EndpointNotFound = 1005,
+
+    // 认证错误 2000-2099
+    AuthFailed = 2000,
+    TokenExpired = 2001,
+    TokenInvalid = 2002,
+    Forbidden = 2003,
+
+    // 文件错误 3000-3099
+    FileNotFound = 3000,
+    FileTooLarge = 3001,
+    FileTypeNotAllowed = 3002,
+    FileUploadFailed = 3003,
+
+    // 存储策略错误 4000-4099
+    StoragePolicyNotFound = 4000,
+    StorageDriverError = 4001,
+    StorageQuotaExceeded = 4002,
+    UnsupportedDriver = 4003,
+
+    // 文件夹错误 5000-5099
+    FolderNotFound = 5000,
+}
+
+impl From<&AsterError> for ErrorCode {
+    fn from(err: &AsterError) -> Self {
+        match err {
+            // 基础设施
+            AsterError::DatabaseConnection(_) | AsterError::DatabaseOperation(_) => {
+                ErrorCode::DatabaseError
+            }
+            AsterError::ConfigError(_) => ErrorCode::ConfigError,
+            AsterError::InternalError(_) => ErrorCode::InternalServerError,
+            AsterError::ValidationError(_) => ErrorCode::BadRequest,
+            AsterError::RecordNotFound(_) => ErrorCode::NotFound,
+
+            // 认证
+            AsterError::AuthInvalidCredentials(_) => ErrorCode::AuthFailed,
+            AsterError::AuthTokenExpired(_) => ErrorCode::TokenExpired,
+            AsterError::AuthTokenInvalid(_) => ErrorCode::TokenInvalid,
+            AsterError::AuthForbidden(_) => ErrorCode::Forbidden,
+
+            // 文件
+            AsterError::FileNotFound(_) => ErrorCode::FileNotFound,
+            AsterError::FileTooLarge(_) => ErrorCode::FileTooLarge,
+            AsterError::FileTypeNotAllowed(_) => ErrorCode::FileTypeNotAllowed,
+            AsterError::FileUploadFailed(_) => ErrorCode::FileUploadFailed,
+
+            // 存储策略
+            AsterError::StoragePolicyNotFound(_) => ErrorCode::StoragePolicyNotFound,
+            AsterError::StorageDriverError(_) => ErrorCode::StorageDriverError,
+            AsterError::StorageQuotaExceeded(_) => ErrorCode::StorageQuotaExceeded,
+            AsterError::UnsupportedDriver(_) => ErrorCode::UnsupportedDriver,
+
+            // 文件夹
+            AsterError::FolderNotFound(_) => ErrorCode::FolderNotFound,
+        }
+    }
+}

@@ -1,0 +1,10 @@
+# --- Commit ---
+# [commit]
+# custom_prompt = ""
+# show_diff_preview = true
+
+[commit.convention]
+style = "conventional"
+types = ["feat", "fix", "docs", "style", "refactor", "perf", "test", "chore", "ci"]
+template = "{type}({scope}): {subject}"
+extra_prompt = "请使用中文书写 commit 信息，一句话总起后分点描述功能。"

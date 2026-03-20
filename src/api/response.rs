@@ -1,9 +1,15 @@
 use actix_web::HttpResponse;
 use serde::Serialize;
 
+use super::error_code::ErrorCode;
+
+/// 统一 API 响应格式
+///
+/// 成功: `{ "code": 0, "msg": "", "data": {...} }`
+/// 失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
 #[derive(Serialize)]
 pub struct ApiResponse<T: Serialize> {
-    pub code: i32,
+    pub code: ErrorCode,
     pub msg: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<T>,
@@ -12,7 +18,7 @@ pub struct ApiResponse<T: Serialize> {
 impl<T: Serialize> ApiResponse<T> {
     pub fn ok(data: T) -> Self {
         Self {
-            code: 0,
+            code: ErrorCode::Success,
             msg: String::new(),
             data: Some(data),
         }
@@ -20,22 +26,20 @@ impl<T: Serialize> ApiResponse<T> {
 
     pub fn ok_empty() -> ApiResponse<()> {
         ApiResponse {
-            code: 0,
+            code: ErrorCode::Success,
             msg: String::new(),
             data: None,
         }
     }
 
-    pub fn error(code: &str, msg: &str) -> ApiResponse<()> {
+    pub fn error(code: ErrorCode, msg: &str) -> ApiResponse<()> {
         ApiResponse {
-            code: -1,
-            msg: format!("{}: {}", code, msg),
+            code,
+            msg: msg.to_string(),
             data: None,
         }
     }
-}
 
-impl<T: Serialize> ApiResponse<T> {
     pub fn into_response(self) -> HttpResponse {
         HttpResponse::Ok().json(self)
     }

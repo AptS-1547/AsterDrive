@@ -3,8 +3,13 @@
 .DS_store
 
 # 运行时生成
-config.toml
+/config.toml
 *.db
 *.db-shm
 *.db-wal
 data/
+crash.log
+
+# 前端
+frontend-panel/node_modules/
+frontend-panel/dist/

@@ -47,12 +47,12 @@ where
             }
         }
     }
-    Err(last_err.unwrap_or_else(|| AsterError::database_error("retry exhausted")))
+    Err(last_err.unwrap_or_else(|| AsterError::database_operation("retry exhausted")))
 }
 
 fn is_retryable(err: &AsterError) -> bool {
     // Database errors are potentially retryable (deadlock, timeout, connection lost)
-    matches!(err, AsterError::DatabaseError(_))
+    matches!(err, AsterError::DatabaseOperation(_) | AsterError::DatabaseConnection(_))
 }
 
 fn calculate_delay(config: &RetryConfig, attempt: u32) -> Duration {

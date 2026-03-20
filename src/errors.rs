@@ -1,8 +1,9 @@
 use actix_web::http::StatusCode;
 
+/// 内部错误类型，字符串错误码（E001-E0xx），用于 Rust 内部、日志、调试
 macro_rules! define_errors {
     ($(
-        $variant:ident($code:literal, $type_name:literal, $status:expr)
+        $variant:ident($code:literal, $type_name:literal)
     ),* $(,)?) => {
         #[derive(Debug, Clone)]
         pub enum AsterError {
@@ -10,121 +11,104 @@ macro_rules! define_errors {
         }
 
         impl AsterError {
+            /// 内部错误码（字符串，如 "E001"），用于日志和调试
             pub fn code(&self) -> &'static str {
                 match self {
                     $(AsterError::$variant(_) => $code,)*
                 }
             }
 
-            pub fn type_name(&self) -> &'static str {
+            /// 错误类型名称
+            pub fn error_type(&self) -> &'static str {
                 match self {
                     $(AsterError::$variant(_) => $type_name,)*
                 }
             }
 
+            /// 错误详情
             pub fn message(&self) -> &str {
                 match self {
                     $(AsterError::$variant(msg) => msg.as_str(),)*
-                }
-            }
-
-            pub fn http_status(&self) -> StatusCode {
-                match self {
-                    $(AsterError::$variant(_) => $status,)*
                 }
             }
         }
 
         impl std::fmt::Display for AsterError {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "[{}] {}", self.code(), self.message())
+                write!(f, "{}: {}", self.error_type(), self.message())
             }
         }
 
         impl std::error::Error for AsterError {}
+
+        // snake_case 构造函数
+        paste::paste! {
+            impl AsterError {
+                $(
+                    pub fn [<$variant:snake>](msg: impl Into<String>) -> Self {
+                        Self::$variant(msg.into())
+                    }
+                )*
+            }
+        }
     };
 }
 
 define_errors! {
-    // 认证 A0xx
-    AuthInvalidCredentials("A001", "Invalid Credentials",        StatusCode::UNAUTHORIZED),
-    AuthTokenExpired(      "A002", "Token Expired",              StatusCode::UNAUTHORIZED),
-    AuthForbidden(         "A003", "Forbidden",                  StatusCode::FORBIDDEN),
-    AuthTokenInvalid(      "A004", "Token Invalid",              StatusCode::UNAUTHORIZED),
+    // ========== E001-E009: 基础设施错误 ==========
+    DatabaseConnection(  "E001", "Database Connection Error"),
+    DatabaseOperation(   "E002", "Database Operation Error"),
+    ConfigError(         "E003", "Configuration Error"),
+    InternalError(       "E004", "Internal Server Error"),
+    ValidationError(     "E005", "Validation Error"),
+    RecordNotFound(      "E006", "Record Not Found"),
 
-    // 文件 F0xx
-    FileNotFound(          "F001", "File Not Found",             StatusCode::NOT_FOUND),
-    FileTooLarge(          "F002", "File Too Large",             StatusCode::PAYLOAD_TOO_LARGE),
-    FileTypeNotAllowed(    "F003", "File Type Not Allowed",      StatusCode::UNSUPPORTED_MEDIA_TYPE),
-    FileUploadFailed(      "F004", "Upload Failed",              StatusCode::INTERNAL_SERVER_ERROR),
+    // ========== E010-E019: 认证错误 ==========
+    AuthInvalidCredentials("E010", "Invalid Credentials"),
+    AuthTokenExpired(      "E011", "Token Expired"),
+    AuthTokenInvalid(      "E012", "Token Invalid"),
+    AuthForbidden(         "E013", "Forbidden"),
 
-    // 存储 S0xx
-    StoragePolicyNotFound( "S001", "Storage Policy Not Found",   StatusCode::NOT_FOUND),
-    StorageDriverError(    "S002", "Storage Driver Error",       StatusCode::INTERNAL_SERVER_ERROR),
-    StorageQuotaExceeded(  "S003", "Quota Exceeded",             StatusCode::INSUFFICIENT_STORAGE),
-    UnsupportedDriver(     "S004", "Unsupported Driver",         StatusCode::BAD_REQUEST),
+    // ========== E020-E029: 文件错误 ==========
+    FileNotFound(         "E020", "File Not Found"),
+    FileTooLarge(         "E021", "File Too Large"),
+    FileTypeNotAllowed(   "E022", "File Type Not Allowed"),
+    FileUploadFailed(     "E023", "Upload Failed"),
 
-    // 数据库 D0xx
-    DatabaseError(         "D001", "Database Error",             StatusCode::INTERNAL_SERVER_ERROR),
-    RecordNotFound(        "D002", "Record Not Found",           StatusCode::NOT_FOUND),
+    // ========== E030-E039: 存储策略错误 ==========
+    StoragePolicyNotFound("E030", "Storage Policy Not Found"),
+    StorageDriverError(   "E031", "Storage Driver Error"),
+    StorageQuotaExceeded( "E032", "Quota Exceeded"),
+    UnsupportedDriver(    "E033", "Unsupported Driver"),
 
-    // 通用 G0xx
-    ValidationError(       "G001", "Validation Error",           StatusCode::BAD_REQUEST),
-    InternalError(         "G002", "Internal Error",             StatusCode::INTERNAL_SERVER_ERROR),
-    ConfigError(           "G003", "Configuration Error",        StatusCode::INTERNAL_SERVER_ERROR),
+    // ========== E040-E049: 文件夹错误 ==========
+    FolderNotFound(       "E040", "Folder Not Found"),
 }
 
 impl AsterError {
-    pub fn auth_invalid_credentials(msg: impl Into<String>) -> Self {
-        Self::AuthInvalidCredentials(msg.into())
-    }
-    pub fn auth_token_expired(msg: impl Into<String>) -> Self {
-        Self::AuthTokenExpired(msg.into())
-    }
-    pub fn auth_forbidden(msg: impl Into<String>) -> Self {
-        Self::AuthForbidden(msg.into())
-    }
-    pub fn auth_token_invalid(msg: impl Into<String>) -> Self {
-        Self::AuthTokenInvalid(msg.into())
-    }
-    pub fn file_not_found(msg: impl Into<String>) -> Self {
-        Self::FileNotFound(msg.into())
-    }
-    pub fn file_too_large(msg: impl Into<String>) -> Self {
-        Self::FileTooLarge(msg.into())
-    }
-    pub fn file_type_not_allowed(msg: impl Into<String>) -> Self {
-        Self::FileTypeNotAllowed(msg.into())
-    }
-    pub fn file_upload_failed(msg: impl Into<String>) -> Self {
-        Self::FileUploadFailed(msg.into())
-    }
-    pub fn storage_policy_not_found(msg: impl Into<String>) -> Self {
-        Self::StoragePolicyNotFound(msg.into())
-    }
-    pub fn storage_driver_error(msg: impl Into<String>) -> Self {
-        Self::StorageDriverError(msg.into())
-    }
-    pub fn storage_quota_exceeded(msg: impl Into<String>) -> Self {
-        Self::StorageQuotaExceeded(msg.into())
-    }
-    pub fn unsupported_driver(msg: impl Into<String>) -> Self {
-        Self::UnsupportedDriver(msg.into())
-    }
-    pub fn database_error(msg: impl Into<String>) -> Self {
-        Self::DatabaseError(msg.into())
-    }
-    pub fn record_not_found(msg: impl Into<String>) -> Self {
-        Self::RecordNotFound(msg.into())
-    }
-    pub fn validation_error(msg: impl Into<String>) -> Self {
-        Self::ValidationError(msg.into())
-    }
-    pub fn internal_error(msg: impl Into<String>) -> Self {
-        Self::InternalError(msg.into())
-    }
-    pub fn config_error(msg: impl Into<String>) -> Self {
-        Self::ConfigError(msg.into())
+    /// HTTP 状态码映射
+    pub fn http_status(&self) -> StatusCode {
+        match self {
+            Self::ValidationError(_)
+            | Self::FileTooLarge(_)
+            | Self::FileTypeNotAllowed(_)
+            | Self::UnsupportedDriver(_) => StatusCode::BAD_REQUEST,
+
+            Self::AuthInvalidCredentials(_)
+            | Self::AuthTokenExpired(_)
+            | Self::AuthTokenInvalid(_) => StatusCode::UNAUTHORIZED,
+
+            Self::AuthForbidden(_) => StatusCode::FORBIDDEN,
+
+            Self::RecordNotFound(_)
+            | Self::FileNotFound(_)
+            | Self::StoragePolicyNotFound(_)
+            | Self::FolderNotFound(_) => StatusCode::NOT_FOUND,
+
+            Self::StorageQuotaExceeded(_) => StatusCode::INSUFFICIENT_STORAGE,
+
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
     }
 }
 
@@ -132,7 +116,7 @@ impl From<sea_orm::DbErr> for AsterError {
     fn from(e: sea_orm::DbErr) -> Self {
         match e {
             sea_orm::DbErr::RecordNotFound(msg) => Self::RecordNotFound(msg),
-            other => Self::DatabaseError(other.to_string()),
+            other => Self::DatabaseOperation(other.to_string()),
         }
     }
 }
@@ -144,8 +128,9 @@ impl actix_web::ResponseError for AsterError {
 
     fn error_response(&self) -> actix_web::HttpResponse {
         use crate::api::response::ApiResponse;
+        let error_code: crate::api::error_code::ErrorCode = self.into();
         actix_web::HttpResponse::build(self.http_status())
-            .json(ApiResponse::<()>::error(self.code(), self.message()))
+            .json(ApiResponse::<()>::error(error_code, self.message()))
     }
 }
 

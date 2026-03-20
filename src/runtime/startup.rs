@@ -16,7 +16,7 @@ pub async fn prepare() -> Result<AppState> {
     // 2. 运行迁移
     Migrator::up(&database, None)
         .await
-        .map_err(|e| crate::errors::AsterError::database_error(e.to_string()))?;
+        .map_err(|e| crate::errors::AsterError::database_operation(e.to_string()))?;
 
     // 3. 确保默认存储策略存在
     ensure_default_policy(&database).await?;

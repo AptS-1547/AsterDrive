@@ -11,15 +11,29 @@ pub fn routes() -> actix_web::Scope {
 }
 
 async fn health() -> HttpResponse {
-    HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({ "status": "ok" })))
+    HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+        "build_time": compile_time(),
+    })))
 }
 
 async fn ready(state: web::Data<AppState>) -> HttpResponse {
     match state.db.ping().await {
-        Ok(_) => {
-            HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({ "status": "ready" })))
-        }
+        Ok(_) => HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
+            "status": "ready",
+            "version": env!("CARGO_PKG_VERSION"),
+            "build_time": compile_time(),
+        }))),
         Err(e) => HttpResponse::ServiceUnavailable()
-            .json(ApiResponse::<()>::error("D001", &e.to_string())),
+            .json(ApiResponse::<()>::error(
+                crate::api::error_code::ErrorCode::DatabaseError,
+                &e.to_string(),
+            )),
     }
+}
+
+fn compile_time() -> &'static str {
+    // build.rs 里设置的环境变量
+    option_env!("ASTER_BUILD_TIME").unwrap_or("unknown")
 }

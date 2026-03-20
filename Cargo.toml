@@ -59,13 +59,16 @@ migration = { version = "0.1.0", path = "migration" }
 mime_guess = "2"
 moka = { version = "0.12.14", features = ["future"] }
 num_cpus = "1.17.0"
+paste = "1.0.15"
 prometheus = { version = "0.14", optional = true, default-features = false }
 rand = { version = "0.10.0", default-features = false, features = ["std", "std_rng", "thread_rng"] }
 redis = { version = "1.0.5", features = ["connection-manager", "tokio-comp", "tokio-rustls-comp"] }
+rust-embed = "8"
 rustls = "0.23.37"
 sea-orm = { version = "~2.0.0-rc.37", features = ["sqlx-mysql", "sqlx-postgres", "sqlx-sqlite", "macros", "runtime-tokio-rustls"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+serde_repr = "0.1.20"
 sha2 = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "io-util"] }
 toml = "1.0"
@@ -74,3 +77,6 @@ tracing-appender = "0.2.4"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "env-filter", "fmt", "json"] }
 utoipa = { version = "5.4.0", features = ["chrono", "actix_extras"] }
 uuid = { version = "1", features = ["v4"] }
+
+[build-dependencies]
+chrono = "0.4"
