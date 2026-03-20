@@ -38,7 +38,7 @@ fn create_default_config() -> Result<()> {
     let content = format!(
         "# AsterDrive 配置文件\n\
          # 由首次启动自动生成，请根据需要修改\n\
-         # 文档: https://github.com/AptS-1547/AsterDrive\n\n\
+         # 文档: https://asterdrive.docs.esap.cc/config/\n\n\
          {toml_str}"
     );
 
