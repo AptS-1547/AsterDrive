@@ -1,0 +1,33 @@
+[package]
+name = "aster_drive"
+version = "0.0.0"
+description = "A self-hosted cloud storage solution."
+authors = ["AptS-1547 <apts-1547@esaps.net>"]
+repository = "https://github.com/AptS-1547/AsterDrive"
+edition = "2024"
+rust-version = "1.88"
+
+# 优化配置
+[profile.dev]
+opt-level = 1
+lto = false
+codegen-units = 16
+panic = "unwind"
+strip = false
+incremental = true
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release-debug]
+inherits = "release"
+codegen-units = 1
+debug = true
+strip = false
+lto = false
+
+[dependencies]
