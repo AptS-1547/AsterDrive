@@ -3,6 +3,7 @@ use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, policy_service};
+use crate::types::DriverType;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 
@@ -27,7 +28,7 @@ async fn list_policies(
 #[derive(Deserialize)]
 struct CreatePolicyReq {
     name: String,
-    driver_type: String,
+    driver_type: DriverType,
     endpoint: Option<String>,
     bucket: Option<String>,
     access_key: Option<String>,
@@ -46,7 +47,7 @@ async fn create_policy(
     let policy = policy_service::create(
         &state.db,
         &body.name,
-        &body.driver_type,
+        body.driver_type,
         body.endpoint.as_deref().unwrap_or_default(),
         body.bucket.as_deref().unwrap_or_default(),
         body.access_key.as_deref().unwrap_or_default(),
@@ -81,7 +82,7 @@ async fn delete_policy(
 
 fn require_admin(claims: &Claims) -> Result<()> {
     use crate::errors::AsterError;
-    if claims.role != "admin" {
+    if !claims.role.is_admin() {
         return Err(AsterError::auth_forbidden("admin role required"));
     }
     Ok(())

@@ -4,6 +4,7 @@ use sea_orm::{DatabaseConnection, EntityTrait, Set};
 use crate::db::repository::policy_repo;
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, Result};
+use crate::types::DriverType;
 
 pub async fn list_all(db: &DatabaseConnection) -> Result<Vec<storage_policy::Model>> {
     policy_repo::find_all(db).await
@@ -16,7 +17,7 @@ pub async fn get(db: &DatabaseConnection, id: i64) -> Result<storage_policy::Mod
 pub async fn create(
     db: &DatabaseConnection,
     name: &str,
-    driver_type: &str,
+    driver_type: DriverType,
     endpoint: &str,
     bucket: &str,
     access_key: &str,
@@ -28,7 +29,7 @@ pub async fn create(
     let now = Utc::now();
     let model = storage_policy::ActiveModel {
         name: Set(name.to_string()),
-        driver_type: Set(driver_type.to_string()),
+        driver_type: Set(driver_type),
         endpoint: Set(endpoint.to_string()),
         bucket: Set(bucket.to_string()),
         access_key: Set(access_key.to_string()),
@@ -46,7 +47,6 @@ pub async fn create(
 }
 
 pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
-    // 确认存在
     policy_repo::find_by_id(db, id).await?;
     storage_policy::Entity::delete_by_id(id)
         .exec(db)

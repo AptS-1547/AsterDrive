@@ -52,7 +52,10 @@ where
 
 fn is_retryable(err: &AsterError) -> bool {
     // Database errors are potentially retryable (deadlock, timeout, connection lost)
-    matches!(err, AsterError::DatabaseOperation(_) | AsterError::DatabaseConnection(_))
+    matches!(
+        err,
+        AsterError::DatabaseOperation(_) | AsterError::DatabaseConnection(_)
+    )
 }
 
 fn calculate_delay(config: &RetryConfig, attempt: u32) -> Duration {

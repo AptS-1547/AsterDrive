@@ -1,13 +1,15 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::types::DriverType;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "storage_policies")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub name: String,
-    pub driver_type: String, // "local" | "s3"
+    pub driver_type: DriverType,
     pub endpoint: String,
     pub bucket: String,
     #[serde(skip_serializing)]

@@ -1,6 +1,9 @@
 use crate::entities::user::{self, Entity as User};
 use crate::errors::{AsterError, Result};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    Set,
+};
 
 pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<user::Model> {
     User::find_by_id(id)

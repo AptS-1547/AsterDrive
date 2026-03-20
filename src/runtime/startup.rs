@@ -65,7 +65,7 @@ async fn ensure_default_policy(db: &sea_orm::DatabaseConnection) -> Result<()> {
     let now = Utc::now();
     let model = crate::entities::storage_policy::ActiveModel {
         name: Set("Local Default".to_string()),
-        driver_type: Set("local".to_string()),
+        driver_type: Set(crate::types::DriverType::Local),
         endpoint: Set(String::new()),
         bucket: Set(String::new()),
         access_key: Set(String::new()),

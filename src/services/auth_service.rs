@@ -7,14 +7,15 @@ use crate::config::AuthConfig;
 use crate::db::repository::user_repo;
 use crate::entities::user;
 use crate::errors::{AsterError, Result};
+use crate::types::{TokenType, UserRole, UserStatus};
 use crate::utils::hash;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String, // user_id 字符串
+    pub sub: String,
     pub user_id: i64,
-    pub role: String,
-    pub token_type: String, // "access" | "refresh"
+    pub role: UserRole,
+    pub token_type: TokenType,
     pub exp: usize,
 }
 
@@ -26,7 +27,6 @@ pub async fn register(
     password: &str,
     _jwt_secret: &str,
 ) -> Result<user::Model> {
-    // 检查重复
     if user_repo::find_by_username(db, username).await?.is_some() {
         return Err(AsterError::validation_error("username already exists"));
     }
@@ -39,7 +39,11 @@ pub async fn register(
 
     // 第一个注册的用户自动成为 admin
     let is_first_user = user_repo::count_all(db).await? == 0;
-    let role = if is_first_user { "admin" } else { "user" };
+    let role = if is_first_user {
+        UserRole::Admin
+    } else {
+        UserRole::User
+    };
 
     if is_first_user {
         tracing::info!("first user registered — granting admin role to '{username}'");
@@ -49,8 +53,8 @@ pub async fn register(
         username: Set(username.to_string()),
         email: Set(email.to_string()),
         password_hash: Set(password_hash),
-        role: Set(role.to_string()),
-        status: Set("active".to_string()),
+        role: Set(role),
+        status: Set(UserStatus::Active),
         storage_used: Set(0),
         created_at: Set(now),
         updated_at: Set(now),
@@ -70,7 +74,7 @@ pub async fn login(
         .await?
         .ok_or_else(|| AsterError::auth_invalid_credentials("user not found"))?;
 
-    if user.status != "active" {
+    if !user.status.is_active() {
         return Err(AsterError::auth_forbidden("account is disabled"));
     }
 
@@ -80,15 +84,15 @@ pub async fn login(
 
     let access = create_token(
         user.id,
-        &user.role,
-        "access",
+        user.role,
+        TokenType::Access,
         auth_config.access_token_ttl_secs,
         &auth_config.jwt_secret,
     )?;
     let refresh = create_token(
         user.id,
-        &user.role,
-        "refresh",
+        user.role,
+        TokenType::Refresh,
         auth_config.refresh_token_ttl_secs,
         &auth_config.jwt_secret,
     )?;
@@ -99,23 +103,22 @@ pub async fn login(
 /// 用 refresh token 换 access token
 pub fn refresh_token(refresh: &str, auth_config: &AuthConfig) -> Result<String> {
     let claims = verify_token(refresh, &auth_config.jwt_secret)?;
-    if claims.token_type != "refresh" {
+    if claims.token_type != TokenType::Refresh {
         return Err(AsterError::auth_token_invalid("not a refresh token"));
     }
     create_token(
         claims.user_id,
-        &claims.role,
-        "access",
+        claims.role,
+        TokenType::Access,
         auth_config.access_token_ttl_secs,
         &auth_config.jwt_secret,
     )
 }
 
-/// 创建 JWT token
 fn create_token(
     user_id: i64,
-    role: &str,
-    token_type: &str,
+    role: UserRole,
+    token_type: TokenType,
     ttl_secs: u64,
     secret: &str,
 ) -> Result<String> {
@@ -123,8 +126,8 @@ fn create_token(
     let claims = Claims {
         sub: user_id.to_string(),
         user_id,
-        role: role.to_string(),
-        token_type: token_type.to_string(),
+        role,
+        token_type,
         exp,
     };
     encode(
@@ -135,7 +138,6 @@ fn create_token(
     .map_err(|e| AsterError::internal_error(e.to_string()))
 }
 
-/// 验证 JWT token
 pub fn verify_token(token: &str, secret: &str) -> Result<Claims> {
     let data = decode::<Claims>(
         token,

@@ -25,7 +25,7 @@ async fn setup() -> AppState {
         &db,
         aster_drive::entities::storage_policy::ActiveModel {
             name: Set("Test Local".to_string()),
-            driver_type: Set("local".to_string()),
+            driver_type: Set(aster_drive::types::DriverType::Local),
             endpoint: Set(String::new()),
             bucket: Set(String::new()),
             access_key: Set(String::new()),

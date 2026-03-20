@@ -1,6 +1,7 @@
 use actix_web::{
-    Error, HttpMessage, web,
+    Error, HttpMessage,
     dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready},
+    web,
 };
 use futures::future::{LocalBoxFuture, Ready, ok};
 use std::rc::Rc;
@@ -61,15 +62,13 @@ where
 
             match token {
                 None => Err(actix_web::error::ErrorUnauthorized("missing token")),
-                Some(t) => {
-                    match auth_service::verify_token(&t, &state.config.auth.jwt_secret) {
-                        Ok(claims) => {
-                            req.extensions_mut().insert(claims);
-                            svc.call(req).await
-                        }
-                        Err(_) => Err(actix_web::error::ErrorUnauthorized("invalid token")),
+                Some(t) => match auth_service::verify_token(&t, &state.config.auth.jwt_secret) {
+                    Ok(claims) => {
+                        req.extensions_mut().insert(claims);
+                        svc.call(req).await
                     }
-                }
+                    Err(_) => Err(actix_web::error::ErrorUnauthorized("invalid token")),
+                },
             }
         })
     }

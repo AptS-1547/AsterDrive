@@ -1,6 +1,8 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::types::{UserRole, UserStatus};
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "users")]
 pub struct Model {
@@ -12,8 +14,8 @@ pub struct Model {
     pub email: String,
     #[serde(skip_serializing)]
     pub password_hash: String,
-    pub role: String,   // "admin" | "user"
-    pub status: String, // "active" | "disabled"
+    pub role: UserRole,
+    pub status: UserStatus,
     pub storage_used: i64,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,

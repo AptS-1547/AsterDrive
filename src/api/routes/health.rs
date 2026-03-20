@@ -25,11 +25,10 @@ async fn ready(state: web::Data<AppState>) -> HttpResponse {
             "version": env!("CARGO_PKG_VERSION"),
             "build_time": compile_time(),
         }))),
-        Err(e) => HttpResponse::ServiceUnavailable()
-            .json(ApiResponse::<()>::error(
-                crate::api::error_code::ErrorCode::DatabaseError,
-                &e.to_string(),
-            )),
+        Err(e) => HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error(
+            crate::api::error_code::ErrorCode::DatabaseError,
+            &e.to_string(),
+        )),
     }
 }
 

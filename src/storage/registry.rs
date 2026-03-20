@@ -33,12 +33,12 @@ impl DriverRegistry {
     }
 
     fn create_driver(&self, policy: &storage_policy::Model) -> Result<Arc<dyn StorageDriver>> {
-        match policy.driver_type.as_str() {
-            "local" => Ok(Arc::new(LocalDriver::new(policy)?)),
-            other => Err(AsterError::unsupported_driver(format!(
-                "driver type '{}' is not supported yet",
-                other
-            ))),
+        use crate::types::DriverType;
+        match policy.driver_type {
+            DriverType::Local => Ok(Arc::new(LocalDriver::new(policy)?)),
+            DriverType::S3 => Err(AsterError::unsupported_driver(
+                "S3 driver is not implemented yet",
+            )),
         }
     }
 }
