@@ -24,6 +24,7 @@ struct FileQuery {
 async fn upload(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    query: web::Query<FileQuery>,
     mut payload: actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
     let file = file_service::upload(
@@ -31,7 +32,7 @@ async fn upload(
         &state.driver_registry,
         claims.user_id,
         &mut payload,
-        None,
+        query.folder_id,
     )
     .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))

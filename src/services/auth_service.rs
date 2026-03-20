@@ -37,11 +37,19 @@ pub async fn register(
     let password_hash = hash::hash_password(password)?;
     let now = Utc::now();
 
+    // 第一个注册的用户自动成为 admin
+    let is_first_user = user_repo::count_all(db).await? == 0;
+    let role = if is_first_user { "admin" } else { "user" };
+
+    if is_first_user {
+        tracing::info!("first user registered — granting admin role to '{username}'");
+    }
+
     let model = user::ActiveModel {
         username: Set(username.to_string()),
         email: Set(email.to_string()),
         password_hash: Set(password_hash),
-        role: Set("user".to_string()),
+        role: Set(role.to_string()),
         status: Set("active".to_string()),
         storage_used: Set(0),
         created_at: Set(now),

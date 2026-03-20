@@ -1,6 +1,6 @@
 use crate::entities::user::{self, Entity as User};
 use crate::errors::{AsterError, Result};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, Set};
 
 pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<user::Model> {
     User::find_by_id(id)
@@ -27,6 +27,10 @@ pub async fn find_by_email(db: &DatabaseConnection, email: &str) -> Result<Optio
         .one(db)
         .await
         .map_err(AsterError::from)
+}
+
+pub async fn count_all(db: &DatabaseConnection) -> Result<u64> {
+    User::find().count(db).await.map_err(AsterError::from)
 }
 
 pub async fn create(db: &DatabaseConnection, model: user::ActiveModel) -> Result<user::Model> {
