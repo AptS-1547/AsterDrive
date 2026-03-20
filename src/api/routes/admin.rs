@@ -6,6 +6,7 @@ use crate::services::{auth_service::Claims, policy_service};
 use crate::types::DriverType;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
+use utoipa::ToSchema;
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
     web::scope("/admin")
@@ -16,7 +17,19 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/policies/{id}", web::delete().to(delete_policy))
 }
 
-async fn list_policies(
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/policies",
+    tag = "admin",
+    operation_id = "list_policies",
+    responses(
+        (status = 200, description = "List all storage policies", body = inline(ApiResponse<Vec<crate::entities::storage_policy::Model>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_policies(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
@@ -25,20 +38,33 @@ async fn list_policies(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policies)))
 }
 
-#[derive(Deserialize)]
-struct CreatePolicyReq {
-    name: String,
-    driver_type: DriverType,
-    endpoint: Option<String>,
-    bucket: Option<String>,
-    access_key: Option<String>,
-    secret_key: Option<String>,
-    base_path: Option<String>,
-    max_file_size: Option<i64>,
-    is_default: Option<bool>,
+#[derive(Deserialize, ToSchema)]
+pub struct CreatePolicyReq {
+    pub name: String,
+    pub driver_type: DriverType,
+    pub endpoint: Option<String>,
+    pub bucket: Option<String>,
+    pub access_key: Option<String>,
+    pub secret_key: Option<String>,
+    pub base_path: Option<String>,
+    pub max_file_size: Option<i64>,
+    pub is_default: Option<bool>,
 }
 
-async fn create_policy(
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/policies",
+    tag = "admin",
+    operation_id = "create_policy",
+    request_body = CreatePolicyReq,
+    responses(
+        (status = 201, description = "Policy created", body = inline(ApiResponse<crate::entities::storage_policy::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn create_policy(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     body: web::Json<CreatePolicyReq>,
@@ -60,7 +86,21 @@ async fn create_policy(
     Ok(HttpResponse::Created().json(ApiResponse::ok(policy)))
 }
 
-async fn get_policy(
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/policies/{id}",
+    tag = "admin",
+    operation_id = "get_policy",
+    params(("id" = i64, Path, description = "Policy ID")),
+    responses(
+        (status = 200, description = "Policy details", body = inline(ApiResponse<crate::entities::storage_policy::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_policy(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
@@ -70,7 +110,21 @@ async fn get_policy(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 
-async fn delete_policy(
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/policies/{id}",
+    tag = "admin",
+    operation_id = "delete_policy",
+    params(("id" = i64, Path, description = "Policy ID")),
+    responses(
+        (status = 200, description = "Policy deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_policy(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,

@@ -5,6 +5,7 @@ use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, folder_service};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
+use utoipa::ToSchema;
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
     web::scope("/folders")
@@ -16,13 +17,25 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/{id}", web::patch().to(patch_folder))
 }
 
-#[derive(Deserialize)]
-struct CreateFolderReq {
-    name: String,
-    parent_id: Option<i64>,
+#[derive(Deserialize, ToSchema)]
+pub struct CreateFolderReq {
+    pub name: String,
+    pub parent_id: Option<i64>,
 }
 
-async fn create_folder(
+#[utoipa::path(
+    post,
+    path = "/api/v1/folders",
+    tag = "folders",
+    operation_id = "create_folder",
+    request_body = CreateFolderReq,
+    responses(
+        (status = 201, description = "Folder created", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn create_folder(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     body: web::Json<CreateFolderReq>,
@@ -32,7 +45,18 @@ async fn create_folder(
     Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
 }
 
-async fn list_root(
+#[utoipa::path(
+    get,
+    path = "/api/v1/folders",
+    tag = "folders",
+    operation_id = "list_root",
+    responses(
+        (status = 200, description = "Root folder contents", body = inline(ApiResponse<crate::api::response::FolderContentsResponse>)),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_root(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
@@ -40,7 +64,20 @@ async fn list_root(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
-async fn list_folder(
+#[utoipa::path(
+    get,
+    path = "/api/v1/folders/{id}",
+    tag = "folders",
+    operation_id = "list_folder",
+    params(("id" = i64, Path, description = "Folder ID")),
+    responses(
+        (status = 200, description = "Folder contents", body = inline(ApiResponse<crate::api::response::FolderContentsResponse>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_folder(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
@@ -49,7 +86,20 @@ async fn list_folder(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
-async fn delete_folder(
+#[utoipa::path(
+    delete,
+    path = "/api/v1/folders/{id}",
+    tag = "folders",
+    operation_id = "delete_folder",
+    params(("id" = i64, Path, description = "Folder ID")),
+    responses(
+        (status = 200, description = "Folder deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_folder(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
@@ -58,14 +108,28 @@ async fn delete_folder(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[derive(Deserialize)]
-struct PatchFolderReq {
-    name: Option<String>,
-    parent_id: Option<i64>,
-    policy_id: Option<i64>,
+#[derive(Deserialize, ToSchema)]
+pub struct PatchFolderReq {
+    pub name: Option<String>,
+    pub parent_id: Option<i64>,
+    pub policy_id: Option<i64>,
 }
 
-async fn patch_folder(
+#[utoipa::path(
+    patch,
+    path = "/api/v1/folders/{id}",
+    tag = "folders",
+    operation_id = "patch_folder",
+    params(("id" = i64, Path, description = "Folder ID")),
+    request_body = PatchFolderReq,
+    responses(
+        (status = 200, description = "Folder updated", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn patch_folder(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,

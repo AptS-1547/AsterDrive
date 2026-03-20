@@ -9,10 +9,13 @@
 //! - 5000-5099: 文件夹错误
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use utoipa::ToSchema;
 
 use crate::errors::AsterError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+/// API 错误码，序列化为数字
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr, ToSchema)]
+#[schema(example = 0)]
 #[repr(i32)]
 pub enum ErrorCode {
     // 成功

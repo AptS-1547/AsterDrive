@@ -1,9 +1,10 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::types::{UserRole, UserStatus};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, ToSchema)]
 #[sea_orm(table_name = "users")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -17,7 +18,9 @@ pub struct Model {
     pub role: UserRole,
     pub status: UserStatus,
     pub storage_used: i64,
+    #[schema(value_type = String)]
     pub created_at: DateTimeUtc,
+    #[schema(value_type = String)]
     pub updated_at: DateTimeUtc,
 }
 

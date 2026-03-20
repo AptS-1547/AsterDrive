@@ -75,7 +75,9 @@ toml = "1.0"
 tracing = { version = "0.1.44", default-features = false}
 tracing-appender = "0.2.4"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "env-filter", "fmt", "json"] }
-utoipa = { version = "5.4.0", features = ["chrono", "actix_extras"] }
+utoipa = { version = "5.4.0", features = ["chrono", "actix_extras", "repr"] }
+utoipa-actix-web = "0.1.2"
+utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }
 uuid = { version = "1", features = ["v4"] }
 
 [build-dependencies]

@@ -10,7 +10,16 @@ pub fn routes() -> actix_web::Scope {
         .route("/ready", web::head().to(ready))
 }
 
-async fn health() -> HttpResponse {
+#[utoipa::path(
+    get,
+    path = "/health",
+    tag = "health",
+    operation_id = "health",
+    responses(
+        (status = 200, description = "Service is healthy", body = inline(ApiResponse<crate::api::response::HealthResponse>)),
+    ),
+)]
+pub async fn health() -> HttpResponse {
     HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
@@ -18,7 +27,17 @@ async fn health() -> HttpResponse {
     })))
 }
 
-async fn ready(state: web::Data<AppState>) -> HttpResponse {
+#[utoipa::path(
+    get,
+    path = "/health/ready",
+    tag = "health",
+    operation_id = "ready",
+    responses(
+        (status = 200, description = "Service is ready", body = inline(ApiResponse<crate::api::response::HealthResponse>)),
+        (status = 503, description = "Service unavailable"),
+    ),
+)]
+pub async fn ready(state: web::Data<AppState>) -> HttpResponse {
     match state.db.ping().await {
         Ok(_) => HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
             "status": "ready",
@@ -33,6 +52,5 @@ async fn ready(state: web::Data<AppState>) -> HttpResponse {
 }
 
 fn compile_time() -> &'static str {
-    // build.rs 里设置的环境变量
     option_env!("ASTER_BUILD_TIME").unwrap_or("unknown")
 }

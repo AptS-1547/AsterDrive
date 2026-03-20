@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::DriverType;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, utoipa::ToSchema)]
 #[sea_orm(table_name = "storage_policies")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -21,7 +21,9 @@ pub struct Model {
     pub allowed_types: String, // JSON array
     pub options: String,       // JSON object
     pub is_default: bool,
+    #[schema(value_type = String)]
     pub created_at: DateTimeUtc,
+    #[schema(value_type = String)]
     pub updated_at: DateTimeUtc,
 }
 

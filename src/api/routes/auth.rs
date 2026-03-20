@@ -1,10 +1,11 @@
-use crate::api::response::ApiResponse;
+use crate::api::response::{ApiResponse, RefreshResponse, TokenResponse};
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::auth_service;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{HttpResponse, web};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use utoipa::ToSchema;
 
 pub fn routes() -> actix_web::Scope {
     let login_limiter = GovernorConfigBuilder::default()
@@ -33,20 +34,36 @@ pub fn routes() -> actix_web::Scope {
         .route("/refresh", web::post().to(refresh))
 }
 
-#[derive(Deserialize)]
-struct RegisterReq {
-    username: String,
-    email: String,
-    password: String,
+#[derive(Deserialize, ToSchema)]
+pub struct RegisterReq {
+    pub username: String,
+    pub email: String,
+    pub password: String,
 }
 
-#[derive(Serialize)]
-struct TokenResp {
-    access_token: String,
-    refresh_token: String,
+#[derive(Deserialize, ToSchema)]
+pub struct LoginReq {
+    pub username: String,
+    pub password: String,
 }
 
-async fn register(
+#[derive(Deserialize, ToSchema)]
+pub struct RefreshReq {
+    pub refresh_token: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/register",
+    tag = "auth",
+    operation_id = "register",
+    request_body = RegisterReq,
+    responses(
+        (status = 201, description = "Registration successful", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 400, description = "Validation error"),
+    ),
+)]
+pub async fn register(
     state: web::Data<AppState>,
     body: web::Json<RegisterReq>,
 ) -> Result<HttpResponse> {
@@ -61,26 +78,48 @@ async fn register(
     Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
 }
 
-async fn login(
-    state: web::Data<AppState>,
-    body: web::Json<serde_json::Value>,
-) -> Result<HttpResponse> {
-    let username = body["username"].as_str().unwrap_or_default();
-    let password = body["password"].as_str().unwrap_or_default();
-    let tokens = auth_service::login(&state.db, username, password, &state.config.auth).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(TokenResp {
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    tag = "auth",
+    operation_id = "login",
+    request_body = LoginReq,
+    responses(
+        (status = 200, description = "Login successful", body = inline(ApiResponse<TokenResponse>)),
+        (status = 401, description = "Invalid credentials"),
+    ),
+)]
+pub async fn login(state: web::Data<AppState>, body: web::Json<LoginReq>) -> Result<HttpResponse> {
+    let tokens = auth_service::login(
+        &state.db,
+        &body.username,
+        &body.password,
+        &state.config.auth,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(TokenResponse {
         access_token: tokens.0,
         refresh_token: tokens.1,
     })))
 }
 
-async fn refresh(
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    tag = "auth",
+    operation_id = "refresh",
+    request_body = RefreshReq,
+    responses(
+        (status = 200, description = "Token refreshed", body = inline(ApiResponse<RefreshResponse>)),
+        (status = 401, description = "Invalid refresh token"),
+    ),
+)]
+pub async fn refresh(
     state: web::Data<AppState>,
-    body: web::Json<serde_json::Value>,
+    body: web::Json<RefreshReq>,
 ) -> Result<HttpResponse> {
-    let token = body["refresh_token"].as_str().unwrap_or_default();
-    let access = auth_service::refresh_token(token, &state.config.auth)?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(
-        serde_json::json!({ "access_token": access }),
-    )))
+    let access = auth_service::refresh_token(&body.refresh_token, &state.config.auth)?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(RefreshResponse {
+        access_token: access,
+    })))
 }

@@ -5,6 +5,7 @@ use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, file_service};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
+use utoipa::{IntoParams, ToSchema};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
     web::scope("/files")
@@ -16,12 +17,25 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/{id}", web::patch().to(patch_file))
 }
 
-#[derive(Deserialize)]
-struct FileQuery {
-    folder_id: Option<i64>,
+#[derive(Deserialize, IntoParams, ToSchema)]
+pub struct FileQuery {
+    pub folder_id: Option<i64>,
 }
 
-async fn upload(
+#[utoipa::path(
+    post,
+    path = "/api/v1/files/upload",
+    tag = "files",
+    operation_id = "upload_file",
+    params(FileQuery),
+    request_body(content = String, content_type = "multipart/form-data", description = "File to upload"),
+    responses(
+        (status = 201, description = "File uploaded", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn upload(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     query: web::Query<FileQuery>,
@@ -38,7 +52,20 @@ async fn upload(
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 
-async fn get_file(
+#[utoipa::path(
+    get,
+    path = "/api/v1/files/{id}",
+    tag = "files",
+    operation_id = "get_file",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "File info", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_file(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
@@ -47,7 +74,20 @@ async fn get_file(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
 }
 
-async fn download(
+#[utoipa::path(
+    get,
+    path = "/api/v1/files/{id}/download",
+    tag = "files",
+    operation_id = "download_file",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "File content"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn download(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
@@ -57,7 +97,20 @@ async fn download(
     Ok(response)
 }
 
-async fn delete_file(
+#[utoipa::path(
+    delete,
+    path = "/api/v1/files/{id}",
+    tag = "files",
+    operation_id = "delete_file",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "File deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_file(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
@@ -66,13 +119,27 @@ async fn delete_file(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[derive(Deserialize)]
-struct PatchFileReq {
-    name: Option<String>,
-    folder_id: Option<i64>,
+#[derive(Deserialize, ToSchema)]
+pub struct PatchFileReq {
+    pub name: Option<String>,
+    pub folder_id: Option<i64>,
 }
 
-async fn patch_file(
+#[utoipa::path(
+    patch,
+    path = "/api/v1/files/{id}",
+    tag = "files",
+    operation_id = "patch_file",
+    params(("id" = i64, Path, description = "File ID")),
+    request_body = PatchFileReq,
+    responses(
+        (status = 200, description = "File updated", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn patch_file(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
