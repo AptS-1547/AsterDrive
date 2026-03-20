@@ -1,8 +1,27 @@
-import { useEffect, useState, useCallback } from "react";
+import { HardDrive, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { AdminLayout } from "@/components/layout/AdminLayout";
-import { adminUserService } from "@/services/adminService";
-import { handleApiError } from "@/hooks/useApiError";
-import type { UserInfo, UserRole, UserStatus } from "@/types/api";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
 	Table,
 	TableBody,
@@ -11,18 +30,19 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { handleApiError } from "@/hooks/useApiError";
+import type { UserStoragePolicy } from "@/services/adminService";
 import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
-import { toast } from "sonner";
+	adminPolicyService,
+	adminUserPolicyService,
+	adminUserService,
+} from "@/services/adminService";
+import type {
+	StoragePolicy,
+	UserInfo,
+	UserRole,
+	UserStatus,
+} from "@/types/api";
 
 function formatBytes(bytes: number): string {
 	if (bytes === 0) return "0 B";
@@ -93,9 +113,225 @@ function QuotaCell({
 	);
 }
 
+function UserPolicyDialog({
+	userId,
+	open,
+	onOpenChange,
+}: {
+	userId: number;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+}) {
+	const [assignments, setAssignments] = useState<UserStoragePolicy[]>([]);
+	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [addPolicyId, setAddPolicyId] = useState<number | null>(null);
+	const [addQuota, setAddQuota] = useState("");
+	const [addDefault, setAddDefault] = useState(false);
+
+	const load = useCallback(async () => {
+		try {
+			setLoading(true);
+			const [a, p] = await Promise.all([
+				adminUserPolicyService.list(userId),
+				adminPolicyService.list(),
+			]);
+			setAssignments(a);
+			setPolicies(p);
+		} catch (e) {
+			handleApiError(e);
+		} finally {
+			setLoading(false);
+		}
+	}, [userId]);
+
+	useEffect(() => {
+		if (open) load();
+	}, [open, load]);
+
+	const policyName = (policyId: number) =>
+		policies.find((p) => p.id === policyId)?.name ?? `#${policyId}`;
+
+	const handleAssign = async () => {
+		if (!addPolicyId) return;
+		try {
+			const mb = Number.parseInt(addQuota, 10);
+			const quotaBytes = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
+			const created = await adminUserPolicyService.assign(userId, {
+				policy_id: addPolicyId,
+				is_default: addDefault,
+				quota_bytes: quotaBytes,
+			});
+			setAssignments((prev) =>
+				addDefault
+					? [...prev.map((a) => ({ ...a, is_default: false })), created]
+					: [...prev, created],
+			);
+			setAddPolicyId(null);
+			setAddQuota("");
+			setAddDefault(false);
+			toast.success("Policy assigned");
+		} catch (e) {
+			handleApiError(e);
+		}
+	};
+
+	const handleToggleDefault = async (a: UserStoragePolicy) => {
+		try {
+			const updated = await adminUserPolicyService.update(userId, a.id, {
+				is_default: !a.is_default,
+			});
+			setAssignments((prev) =>
+				prev.map((item) =>
+					item.id === updated.id
+						? updated
+						: !a.is_default
+							? { ...item, is_default: false }
+							: item,
+				),
+			);
+		} catch (e) {
+			handleApiError(e);
+		}
+	};
+
+	const handleRemove = async (id: number) => {
+		try {
+			await adminUserPolicyService.remove(userId, id);
+			setAssignments((prev) => prev.filter((a) => a.id !== id));
+			toast.success("Assignment removed");
+		} catch (e) {
+			handleApiError(e);
+		}
+	};
+
+	// Policies not yet assigned
+	const availablePolicies = policies.filter(
+		(p) => !assignments.some((a) => a.policy_id === p.id),
+	);
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-lg">
+				<DialogHeader>
+					<DialogTitle>Storage Policy Assignments</DialogTitle>
+				</DialogHeader>
+
+				{loading ? (
+					<p className="text-sm text-muted-foreground">Loading...</p>
+				) : (
+					<div className="space-y-4">
+						{/* Existing assignments */}
+						{assignments.length === 0 ? (
+							<p className="text-sm text-muted-foreground">
+								No policies assigned. Using system default.
+							</p>
+						) : (
+							<div className="space-y-2">
+								{assignments.map((a) => (
+									<div
+										key={a.id}
+										className="flex items-center justify-between p-3 border rounded-lg"
+									>
+										<div>
+											<div className="text-sm font-medium">
+												{policyName(a.policy_id)}
+											</div>
+											<div className="text-xs text-muted-foreground">
+												Quota:{" "}
+												{a.quota_bytes > 0
+													? formatBytes(a.quota_bytes)
+													: "Unlimited"}
+											</div>
+										</div>
+										<div className="flex items-center gap-2">
+											{a.is_default && (
+												<Badge className="bg-blue-100 text-blue-700 border-blue-300">
+													Default
+												</Badge>
+											)}
+											<Button
+												variant="ghost"
+												size="sm"
+												onClick={() => handleToggleDefault(a)}
+											>
+												{a.is_default ? "Unset default" : "Set default"}
+											</Button>
+											<Button
+												variant="ghost"
+												size="icon"
+												className="h-8 w-8 text-destructive"
+												onClick={() => handleRemove(a.id)}
+											>
+												<Trash2 className="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									</div>
+								))}
+							</div>
+						)}
+
+						{/* Add new assignment */}
+						{availablePolicies.length > 0 && (
+							<div className="border-t pt-4 space-y-3">
+								<Label className="text-sm font-medium">
+									<Plus className="h-3.5 w-3.5 inline mr-1" />
+									Assign Policy
+								</Label>
+								<Select
+									value={addPolicyId != null ? String(addPolicyId) : ""}
+									onValueChange={(v) => setAddPolicyId(v ? Number(v) : null)}
+								>
+									<SelectTrigger>
+										<SelectValue placeholder="Select policy..." />
+									</SelectTrigger>
+									<SelectContent>
+										{availablePolicies.map((p) => (
+											<SelectItem key={p.id} value={String(p.id)}>
+												{p.name} ({p.driver_type})
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+								<div className="flex items-center gap-3">
+									<div className="flex-1">
+										<Input
+											placeholder="Quota (MB, 0=unlimited)"
+											value={addQuota}
+											onChange={(e) => setAddQuota(e.target.value)}
+										/>
+									</div>
+									<div className="flex items-center gap-2">
+										<Switch
+											checked={addDefault}
+											onCheckedChange={setAddDefault}
+										/>
+										<span className="text-xs">Default</span>
+									</div>
+								</div>
+								<Button
+									size="sm"
+									className="w-full"
+									disabled={!addPolicyId}
+									onClick={handleAssign}
+								>
+									Assign
+								</Button>
+							</div>
+						)}
+					</div>
+				)}
+			</DialogContent>
+		</Dialog>
+	);
+}
+
 export default function AdminUsersPage() {
 	const [users, setUsers] = useState<UserInfo[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [policyDialogUserId, setPolicyDialogUserId] = useState<number | null>(
+		null,
+	);
 
 	const load = useCallback(async () => {
 		try {
@@ -157,6 +393,7 @@ export default function AdminUsersPage() {
 								<TableHead className="w-32">Role</TableHead>
 								<TableHead className="w-32">Status</TableHead>
 								<TableHead className="w-40">Storage</TableHead>
+								<TableHead className="w-24">Policies</TableHead>
 								<TableHead>Created</TableHead>
 							</TableRow>
 						</TableHeader>
@@ -164,7 +401,7 @@ export default function AdminUsersPage() {
 							{loading ? (
 								<TableRow>
 									<TableCell
-										colSpan={7}
+										colSpan={8}
 										className="text-center text-muted-foreground"
 									>
 										Loading...
@@ -173,7 +410,7 @@ export default function AdminUsersPage() {
 							) : users.length === 0 ? (
 								<TableRow>
 									<TableCell
-										colSpan={7}
+										colSpan={8}
 										className="text-center text-muted-foreground"
 									>
 										No users
@@ -240,6 +477,17 @@ export default function AdminUsersPage() {
 										<TableCell>
 											<QuotaCell user={user} onUpdate={updateQuota} />
 										</TableCell>
+										<TableCell>
+											<Button
+												variant="ghost"
+												size="sm"
+												className="h-8"
+												onClick={() => setPolicyDialogUserId(user.id)}
+											>
+												<HardDrive className="h-3.5 w-3.5 mr-1" />
+												Manage
+											</Button>
+										</TableCell>
 										<TableCell className="text-muted-foreground text-xs">
 											{new Date(user.created_at).toLocaleDateString()}
 										</TableCell>
@@ -250,6 +498,15 @@ export default function AdminUsersPage() {
 					</Table>
 				</ScrollArea>
 			</div>
+			{policyDialogUserId !== null && (
+				<UserPolicyDialog
+					userId={policyDialogUserId}
+					open={true}
+					onOpenChange={(open) => {
+						if (!open) setPolicyDialogUserId(null);
+					}}
+				/>
+			)}
 		</AdminLayout>
 	);
 }

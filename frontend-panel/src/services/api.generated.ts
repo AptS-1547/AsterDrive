@@ -100,6 +100,38 @@ export interface paths {
         patch: operations["update_user"];
         trace?: never;
     };
+    "/api/v1/admin/users/{user_id}/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_user_policies"];
+        put?: never;
+        post: operations["assign_user_policy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/policies/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["remove_user_policy"];
+        options?: never;
+        head?: never;
+        patch: operations["update_user_policy"];
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -296,6 +328,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AssignUserPolicyReq: {
+            is_default?: boolean;
+            /** Format: int64 */
+            policy_id: number;
+            /** Format: int64 */
+            quota_bytes?: number;
+        };
         CreateFolderReq: {
             name: string;
             /** Format: int64 */
@@ -391,6 +430,11 @@ export interface components {
             name?: string | null;
             secret_key?: string | null;
         };
+        PatchUserPolicyReq: {
+            is_default?: boolean | null;
+            /** Format: int64 */
+            quota_bytes?: number | null;
+        };
         PatchUserReq: {
             role?: null | components["schemas"]["UserRole"];
             status?: null | components["schemas"]["UserStatus"];
@@ -461,6 +505,18 @@ export interface components {
          * @enum {string}
          */
         UserStatus: "active" | "disabled";
+        UserStoragePolicy: {
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            is_default: boolean;
+            /** Format: int64 */
+            policy_id: number;
+            /** Format: int64 */
+            quota_bytes: number;
+            /** Format: int64 */
+            user_id: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -1118,6 +1174,230 @@ export interface operations {
                 content?: never;
             };
             /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_user_policies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User ID */
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User policy assignments */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_default: boolean;
+                            /** Format: int64 */
+                            policy_id: number;
+                            /** Format: int64 */
+                            quota_bytes: number;
+                            /** Format: int64 */
+                            user_id: number;
+                        }[];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assign_user_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User ID */
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignUserPolicyReq"];
+            };
+        };
+        responses: {
+            /** @description Policy assigned */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_default: boolean;
+                            /** Format: int64 */
+                            policy_id: number;
+                            /** Format: int64 */
+                            quota_bytes: number;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    remove_user_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User ID */
+                user_id: number;
+                /** @description User storage policy assignment ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assignment removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Assignment not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_user_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User ID */
+                user_id: number;
+                /** @description User storage policy assignment ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchUserPolicyReq"];
+            };
+        };
+        responses: {
+            /** @description Assignment updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_default: boolean;
+                            /** Format: int64 */
+                            policy_id: number;
+                            /** Format: int64 */
+                            quota_bytes: number;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Assignment not found */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -1,7 +1,9 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, ToSchema)]
+#[schema(as = UserStoragePolicy)]
 #[sea_orm(table_name = "user_storage_policies")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -10,6 +12,7 @@ pub struct Model {
     pub policy_id: i64,
     pub is_default: bool,
     pub quota_bytes: i64, // 0 = unlimited
+    #[schema(value_type = String)]
     pub created_at: DateTimeUtc,
 }
 

@@ -21,6 +21,23 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/users", web::get().to(list_users))
         .route("/users/{id}", web::get().to(get_user))
         .route("/users/{id}", web::patch().to(update_user))
+        // user storage policies
+        .route(
+            "/users/{user_id}/policies",
+            web::get().to(list_user_policies),
+        )
+        .route(
+            "/users/{user_id}/policies",
+            web::post().to(assign_user_policy),
+        )
+        .route(
+            "/users/{user_id}/policies/{id}",
+            web::patch().to(update_user_policy),
+        )
+        .route(
+            "/users/{user_id}/policies/{id}",
+            web::delete().to(remove_user_policy),
+        )
         // config
         .route("/config", web::get().to(list_config))
         .route("/config/{key}", web::get().to(get_config))
@@ -304,6 +321,148 @@ pub async fn update_user(
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
+}
+
+// ── User Storage Policies ───────────────────────────────────────────
+
+#[derive(Deserialize, ToSchema)]
+pub struct UserPolicyPath {
+    pub user_id: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UserPolicyItemPath {
+    pub user_id: i64,
+    pub id: i64,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/users/{user_id}/policies",
+    tag = "admin",
+    operation_id = "list_user_policies",
+    params(("user_id" = i64, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "User policy assignments", body = inline(ApiResponse<Vec<crate::entities::user_storage_policy::Model>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_user_policies(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<UserPolicyPath>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let policies = policy_service::list_user_policies(&state.db, path.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(policies)))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AssignUserPolicyReq {
+    pub policy_id: i64,
+    #[serde(default)]
+    pub is_default: bool,
+    #[serde(default)]
+    pub quota_bytes: i64,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/users/{user_id}/policies",
+    tag = "admin",
+    operation_id = "assign_user_policy",
+    params(("user_id" = i64, Path, description = "User ID")),
+    request_body = AssignUserPolicyReq,
+    responses(
+        (status = 201, description = "Policy assigned", body = inline(ApiResponse<crate::entities::user_storage_policy::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn assign_user_policy(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<UserPolicyPath>,
+    body: web::Json<AssignUserPolicyReq>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let usp = policy_service::assign_user_policy(
+        &state.db,
+        path.user_id,
+        body.policy_id,
+        body.is_default,
+        body.quota_bytes,
+    )
+    .await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(usp)))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct PatchUserPolicyReq {
+    pub is_default: Option<bool>,
+    pub quota_bytes: Option<i64>,
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v1/admin/users/{user_id}/policies/{id}",
+    tag = "admin",
+    operation_id = "update_user_policy",
+    params(
+        ("user_id" = i64, Path, description = "User ID"),
+        ("id" = i64, Path, description = "User storage policy assignment ID"),
+    ),
+    request_body = PatchUserPolicyReq,
+    responses(
+        (status = 200, description = "Assignment updated", body = inline(ApiResponse<crate::entities::user_storage_policy::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Assignment not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn update_user_policy(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<UserPolicyItemPath>,
+    body: web::Json<PatchUserPolicyReq>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let usp =
+        policy_service::update_user_policy(&state.db, path.id, body.is_default, body.quota_bytes)
+            .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(usp)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/users/{user_id}/policies/{id}",
+    tag = "admin",
+    operation_id = "remove_user_policy",
+    params(
+        ("user_id" = i64, Path, description = "User ID"),
+        ("id" = i64, Path, description = "User storage policy assignment ID"),
+    ),
+    responses(
+        (status = 200, description = "Assignment removed"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Assignment not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn remove_user_policy(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<UserPolicyItemPath>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    policy_service::remove_user_policy(&state.db, path.id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
 // ── System Config ────────────────────────────────────────────────────
