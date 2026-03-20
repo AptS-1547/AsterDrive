@@ -5,11 +5,11 @@ import { useEffect } from 'react'
 import { useAuthStore } from '@/stores/authStore'
 
 function App() {
-  const restore = useAuthStore((s) => s.restore)
+  const checkAuth = useAuthStore((s) => s.checkAuth)
 
   useEffect(() => {
-    restore()
-  }, [restore])
+    checkAuth()
+  }, [checkAuth])
 
   return (
     <>

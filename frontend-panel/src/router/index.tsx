@@ -15,6 +15,8 @@ function Loading() {
 
 function ProtectedRoute() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const isChecking = useAuthStore((s) => s.isChecking)
+  if (isChecking) return <Loading />
   if (!isAuthenticated) return <Navigate to="/login" replace />
   return (
     <Suspense fallback={<Loading />}>
@@ -25,6 +27,8 @@ function ProtectedRoute() {
 
 function LoginGuard() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const isChecking = useAuthStore((s) => s.isChecking)
+  if (isChecking) return <Loading />
   if (isAuthenticated) return <Navigate to="/" replace />
   return (
     <Suspense fallback={<Loading />}>

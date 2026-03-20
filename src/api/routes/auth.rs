@@ -1,11 +1,17 @@
-use crate::api::response::{ApiResponse, RefreshResponse, TokenResponse};
+use crate::api::response::ApiResponse;
+use crate::db::repository::user_repo;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::auth_service;
 use actix_governor::{Governor, GovernorConfigBuilder};
+use actix_web::cookie::time::Duration as CookieDuration;
+use actix_web::cookie::{Cookie, SameSite};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
+
+const ACCESS_COOKIE: &str = "aster_access";
+const REFRESH_COOKIE: &str = "aster_refresh";
 
 pub fn routes() -> actix_web::Scope {
     let login_limiter = GovernorConfigBuilder::default()
@@ -32,6 +38,8 @@ pub fn routes() -> actix_web::Scope {
                 .route(web::post().to(login)),
         )
         .route("/refresh", web::post().to(refresh))
+        .route("/logout", web::post().to(logout))
+        .route("/me", web::get().to(me))
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -47,9 +55,23 @@ pub struct LoginReq {
     pub password: String,
 }
 
-#[derive(Deserialize, ToSchema)]
-pub struct RefreshReq {
-    pub refresh_token: String,
+/// 构建 HttpOnly cookie
+fn build_cookie(name: &str, value: &str, max_age_secs: i64) -> Cookie<'static> {
+    Cookie::build(name.to_string(), value.to_string())
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .max_age(CookieDuration::seconds(max_age_secs))
+        .finish()
+}
+
+/// 构建清除 cookie
+fn clear_cookie(name: &str) -> Cookie<'static> {
+    Cookie::build(name.to_string(), "")
+        .path("/")
+        .http_only(true)
+        .max_age(CookieDuration::ZERO)
+        .finish()
 }
 
 #[utoipa::path(
@@ -85,22 +107,31 @@ pub async fn register(
     operation_id = "login",
     request_body = LoginReq,
     responses(
-        (status = 200, description = "Login successful", body = inline(ApiResponse<TokenResponse>)),
+        (status = 200, description = "Login successful, tokens set in HttpOnly cookies"),
         (status = 401, description = "Invalid credentials"),
     ),
 )]
 pub async fn login(state: web::Data<AppState>, body: web::Json<LoginReq>) -> Result<HttpResponse> {
-    let tokens = auth_service::login(
+    let (access, refresh_tok) = auth_service::login(
         &state.db,
         &body.username,
         &body.password,
         &state.config.auth,
     )
     .await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(TokenResponse {
-        access_token: tokens.0,
-        refresh_token: tokens.1,
-    })))
+
+    Ok(HttpResponse::Ok()
+        .cookie(build_cookie(
+            ACCESS_COOKIE,
+            &access,
+            state.config.auth.access_token_ttl_secs as i64,
+        ))
+        .cookie(build_cookie(
+            REFRESH_COOKIE,
+            &refresh_tok,
+            state.config.auth.refresh_token_ttl_secs as i64,
+        ))
+        .json(ApiResponse::<()>::ok_empty()))
 }
 
 #[utoipa::path(
@@ -108,18 +139,73 @@ pub async fn login(state: web::Data<AppState>, body: web::Json<LoginReq>) -> Res
     path = "/api/v1/auth/refresh",
     tag = "auth",
     operation_id = "refresh",
-    request_body = RefreshReq,
     responses(
-        (status = 200, description = "Token refreshed", body = inline(ApiResponse<RefreshResponse>)),
+        (status = 200, description = "Token refreshed, new access token set in HttpOnly cookie"),
         (status = 401, description = "Invalid refresh token"),
     ),
 )]
 pub async fn refresh(
     state: web::Data<AppState>,
-    body: web::Json<RefreshReq>,
+    req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    let access = auth_service::refresh_token(&body.refresh_token, &state.config.auth)?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(RefreshResponse {
-        access_token: access,
-    })))
+    let refresh_tok = req
+        .cookie(REFRESH_COOKIE)
+        .map(|c| c.value().to_string())
+        .ok_or_else(|| crate::errors::AsterError::auth_token_invalid("missing refresh cookie"))?;
+
+    let access = auth_service::refresh_token(&refresh_tok, &state.config.auth)?;
+
+    Ok(HttpResponse::Ok()
+        .cookie(build_cookie(
+            ACCESS_COOKIE,
+            &access,
+            state.config.auth.access_token_ttl_secs as i64,
+        ))
+        .json(ApiResponse::<()>::ok_empty()))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/logout",
+    tag = "auth",
+    operation_id = "logout",
+    responses(
+        (status = 200, description = "Logged out, cookies cleared"),
+    ),
+)]
+pub async fn logout() -> HttpResponse {
+    HttpResponse::Ok()
+        .cookie(clear_cookie(ACCESS_COOKIE))
+        .cookie(clear_cookie(REFRESH_COOKIE))
+        .json(ApiResponse::<()>::ok_empty())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/me",
+    tag = "auth",
+    operation_id = "me",
+    responses(
+        (status = 200, description = "Current user info", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 401, description = "Not authenticated"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn me(state: web::Data<AppState>, req: actix_web::HttpRequest) -> Result<HttpResponse> {
+    // 从 cookie 或 header 取 token
+    let token = req
+        .cookie(ACCESS_COOKIE)
+        .map(|c| c.value().to_string())
+        .or_else(|| {
+            req.headers()
+                .get("Authorization")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("Bearer "))
+                .map(|s| s.to_string())
+        })
+        .ok_or_else(|| crate::errors::AsterError::auth_token_invalid("not authenticated"))?;
+
+    let claims = auth_service::verify_token(&token, &state.config.auth.jwt_secret)?;
+    let user = user_repo::find_by_id(&state.db, claims.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }

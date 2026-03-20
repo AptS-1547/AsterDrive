@@ -36,10 +36,7 @@ export function UploadArea({ children }: UploadAreaProps) {
     instance.use(XHRUpload, {
       endpoint: `${config.apiBaseUrl}/files/upload`,
       fieldName: 'file',
-      headers: () => {
-        const token = localStorage.getItem('access_token')
-        return token ? { Authorization: `Bearer ${token}` } : ({} as Record<string, string>)
-      },
+      withCredentials: true,
     })
     instance.on('complete', (result) => {
       const count = result.successful?.length ?? 0
@@ -47,6 +44,8 @@ export function UploadArea({ children }: UploadAreaProps) {
         toast.success(`Uploaded ${count} file(s)`)
         refresh()
       }
+      // 清除已完成的文件，允许再次上传同名文件
+      instance.cancelAll()
     })
     instance.on('error', (error) => {
       toast.error(`Upload failed: ${error.message}`)

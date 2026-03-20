@@ -42,11 +42,6 @@ export interface UserInfo {
   updated_at: string
 }
 
-export interface TokenResponse {
-  access_token: string
-  refresh_token: string
-}
-
 export interface FileInfo {
   id: number
   name: string

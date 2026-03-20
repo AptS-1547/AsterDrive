@@ -8,58 +8,42 @@ const client: AxiosInstance = axios.create({
   baseURL: config.apiBaseUrl,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 })
 
-// Request interceptor — inject Bearer token
-client.interceptors.request.use((req) => {
-  const token = localStorage.getItem('access_token')
-  if (token && req.headers) {
-    req.headers.Authorization = `Bearer ${token}`
-  }
-  return req
-})
+// 不需要自动 refresh 的路径
+const SKIP_REFRESH_PATHS = ['/auth/me', '/auth/refresh', '/auth/login', '/auth/register', '/auth/logout']
 
-// Response interceptor — handle 401 with token refresh
 let isRefreshing = false
-let refreshQueue: Array<(token: string) => void> = []
+let refreshQueue: Array<() => void> = []
 
 client.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config
-    if (error.response?.status === 401 && !original._retry) {
-      original._retry = true
-      const refreshToken = localStorage.getItem('refresh_token')
+    const url = original?.url || ''
 
-      if (!refreshToken) {
-        localStorage.clear()
-        window.location.href = '/login'
-        return Promise.reject(error)
-      }
+    // 跳过 auth 端点的自动 refresh（避免死循环）
+    const shouldSkip = SKIP_REFRESH_PATHS.some((p) => url.endsWith(p))
+    if (error.response?.status === 401 && !original._retry && !shouldSkip) {
+      original._retry = true
 
       if (isRefreshing) {
         return new Promise((resolve) => {
-          refreshQueue.push((token: string) => {
-            original.headers.Authorization = `Bearer ${token}`
-            resolve(client(original))
-          })
+          refreshQueue.push(() => resolve(client(original)))
         })
       }
 
       isRefreshing = true
       try {
-        const res = await axios.post(`${config.apiBaseUrl}/auth/refresh`, {
-          refresh_token: refreshToken,
+        await axios.post(`${config.apiBaseUrl}/auth/refresh`, null, {
+          withCredentials: true,
         })
-        const newToken = res.data.data.access_token
-        localStorage.setItem('access_token', newToken)
-        refreshQueue.forEach((cb) => cb(newToken))
+        refreshQueue.forEach((cb) => cb())
         refreshQueue = []
-        original.headers.Authorization = `Bearer ${newToken}`
         return client(original)
       } catch {
-        localStorage.clear()
-        window.location.href = '/login'
+        refreshQueue = []
         return Promise.reject(error)
       } finally {
         isRefreshing = false
@@ -77,7 +61,6 @@ export class ApiError extends Error {
   }
 }
 
-// Unwrap ApiResponse, throw ApiError on non-zero code
 async function unwrap<T>(promise: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   const { data: resp } = await promise
   if (resp.code !== ErrorCode.Success) {
@@ -91,6 +74,5 @@ export const api = {
   post: <T>(url: string, data?: unknown) => unwrap<T>(client.post(url, data)),
   patch: <T>(url: string, data?: unknown) => unwrap<T>(client.patch(url, data)),
   delete: <T>(url: string) => unwrap<T>(client.delete(url)),
-  // Raw client for multipart etc.
   client,
 }

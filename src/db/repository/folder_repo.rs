@@ -27,6 +27,22 @@ pub async fn find_children(
     q.all(db).await.map_err(AsterError::from)
 }
 
+pub async fn find_by_name_in_parent(
+    db: &DatabaseConnection,
+    user_id: i64,
+    parent_id: Option<i64>,
+    name: &str,
+) -> Result<Option<folder::Model>> {
+    let mut q = Folder::find()
+        .filter(folder::Column::UserId.eq(user_id))
+        .filter(folder::Column::Name.eq(name));
+    q = match parent_id {
+        Some(pid) => q.filter(folder::Column::ParentId.eq(pid)),
+        None => q.filter(folder::Column::ParentId.is_null()),
+    };
+    q.one(db).await.map_err(AsterError::from)
+}
+
 pub async fn create(db: &DatabaseConnection, model: folder::ActiveModel) -> Result<folder::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }

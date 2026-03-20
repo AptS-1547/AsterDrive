@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::types::DriverType;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, utoipa::ToSchema)]
+#[schema(as = StoragePolicy)]
 #[sea_orm(table_name = "storage_policies")]
 pub struct Model {
     #[sea_orm(primary_key)]

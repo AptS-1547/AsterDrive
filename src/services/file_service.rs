@@ -93,6 +93,17 @@ pub async fn upload(
         .first_or_octet_stream()
         .to_string();
 
+    // 检查同名文件
+    if file_repo::find_by_name_in_folder(db, user_id, folder_id, &filename)
+        .await?
+        .is_some()
+    {
+        return Err(AsterError::validation_error(format!(
+            "file '{}' already exists in this folder",
+            filename
+        )));
+    }
+
     // 创建文件记录
     let file_model = file::ActiveModel {
         name: Set(filename),

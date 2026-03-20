@@ -9,7 +9,10 @@ use std::rc::Rc;
 use crate::runtime::AppState;
 use crate::services::auth_service;
 
-/// 从 Authorization: Bearer <token> 头提取并验证 JWT
+const ACCESS_COOKIE: &str = "aster_access";
+
+/// JWT 认证中间件
+/// 优先从 cookie 取 token，fallback 到 Authorization: Bearer header
 pub struct JwtAuth;
 
 impl<S, B> Transform<S, ServiceRequest> for JwtAuth
@@ -53,12 +56,18 @@ where
                 .app_data::<web::Data<AppState>>()
                 .expect("AppState not found");
 
+            // 1. Cookie 优先
+            // 2. Authorization: Bearer fallback
             let token = req
-                .headers()
-                .get("Authorization")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
-                .map(|s| s.to_string());
+                .cookie(ACCESS_COOKIE)
+                .map(|c| c.value().to_string())
+                .or_else(|| {
+                    req.headers()
+                        .get("Authorization")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.strip_prefix("Bearer "))
+                        .map(|s| s.to_string())
+                });
 
             match token {
                 None => Err(actix_web::error::ErrorUnauthorized("missing token")),

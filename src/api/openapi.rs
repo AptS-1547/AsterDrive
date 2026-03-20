@@ -4,7 +4,7 @@ use utoipa::OpenApi;
 #[openapi(
     info(
         title = "AsterDrive API",
-        version = "0.1.0",
+        version = env!("CARGO_PKG_VERSION"),
         description = "Self-hosted cloud storage API",
         license(name = "MIT"),
     ),
@@ -12,6 +12,8 @@ use utoipa::OpenApi;
         crate::api::routes::auth::login,
         crate::api::routes::auth::register,
         crate::api::routes::auth::refresh,
+        crate::api::routes::auth::logout,
+        crate::api::routes::auth::me,
         crate::api::routes::health::health,
         crate::api::routes::health::ready,
         crate::api::routes::files::upload,
@@ -45,7 +47,6 @@ use utoipa::OpenApi;
             crate::types::DriverType,
             crate::api::routes::auth::RegisterReq,
             crate::api::routes::auth::LoginReq,
-            crate::api::routes::auth::RefreshReq,
             crate::api::routes::files::FileQuery,
             crate::api::routes::files::PatchFileReq,
             crate::api::routes::folders::CreateFolderReq,

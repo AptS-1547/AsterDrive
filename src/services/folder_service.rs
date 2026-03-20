@@ -18,6 +18,17 @@ pub async fn create(
     name: &str,
     parent_id: Option<i64>,
 ) -> Result<folder::Model> {
+    // 检查同名文件夹
+    if folder_repo::find_by_name_in_parent(db, user_id, parent_id, name)
+        .await?
+        .is_some()
+    {
+        return Err(AsterError::validation_error(format!(
+            "folder '{}' already exists in this location",
+            name
+        )));
+    }
+
     let now = Utc::now();
     let model = folder::ActiveModel {
         name: Set(name.to_string()),

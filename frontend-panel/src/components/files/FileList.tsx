@@ -36,10 +36,8 @@ export function FileList() {
   const loading = useFileStore((s) => s.loading)
 
   const handleDownload = (fileId: number, fileName: string) => {
-    const token = localStorage.getItem('access_token')
     const url = fileService.downloadUrl(fileId)
-    // Use fetch to download with auth header
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(url, { credentials: 'include' })
       .then((res) => res.blob())
       .then((blob) => {
         const objectUrl = URL.createObjectURL(blob)

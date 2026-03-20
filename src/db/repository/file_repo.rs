@@ -50,6 +50,22 @@ pub async fn create_blob(
     model.insert(db).await.map_err(AsterError::from)
 }
 
+pub async fn find_by_name_in_folder(
+    db: &DatabaseConnection,
+    user_id: i64,
+    folder_id: Option<i64>,
+    name: &str,
+) -> Result<Option<file::Model>> {
+    let mut q = File::find()
+        .filter(file::Column::UserId.eq(user_id))
+        .filter(file::Column::Name.eq(name));
+    q = match folder_id {
+        Some(fid) => q.filter(file::Column::FolderId.eq(fid)),
+        None => q.filter(file::Column::FolderId.is_null()),
+    };
+    q.one(db).await.map_err(AsterError::from)
+}
+
 pub async fn create(db: &DatabaseConnection, model: file::ActiveModel) -> Result<file::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }

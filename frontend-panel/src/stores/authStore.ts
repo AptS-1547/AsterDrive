@@ -2,41 +2,39 @@ import { create } from 'zustand'
 import { authService } from '@/services/authService'
 
 interface AuthState {
-  accessToken: string | null
-  refreshToken: string | null
   isAuthenticated: boolean
+  isChecking: boolean
   login: (username: string, password: string) => Promise<void>
-  logout: () => void
-  restore: () => void
+  logout: () => Promise<void>
+  checkAuth: () => Promise<void>
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  accessToken: null,
-  refreshToken: null,
   isAuthenticated: false,
+  isChecking: true,
 
   login: async (username, password) => {
-    const tokens = await authService.login(username, password)
-    localStorage.setItem('access_token', tokens.access_token)
-    localStorage.setItem('refresh_token', tokens.refresh_token)
-    set({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      isAuthenticated: true,
-    })
+    await authService.login(username, password)
+    // login 成功后 cookie 已设置，标记为已认证
+    set({ isAuthenticated: true })
   },
 
-  logout: () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    set({ accessToken: null, refreshToken: null, isAuthenticated: false })
+  logout: async () => {
+    try {
+      await authService.logout()
+    } catch {
+      // logout 失败不阻塞
+    }
+    set({ isAuthenticated: false })
   },
 
-  restore: () => {
-    const accessToken = localStorage.getItem('access_token')
-    const refreshToken = localStorage.getItem('refresh_token')
-    if (accessToken && refreshToken) {
-      set({ accessToken, refreshToken, isAuthenticated: true })
+  checkAuth: async () => {
+    set({ isChecking: true })
+    try {
+      await authService.me()
+      set({ isAuthenticated: true, isChecking: false })
+    } catch {
+      set({ isAuthenticated: false, isChecking: false })
     }
   },
 }))

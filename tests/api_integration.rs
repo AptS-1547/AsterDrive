@@ -61,7 +61,15 @@ async fn setup() -> AppState {
     }
 }
 
-/// 注册 + 登录的宏，避免泛型问题
+/// 从 Set-Cookie header 提取指定 cookie 的值
+fn extract_cookie(resp: &actix_web::dev::ServiceResponse, name: &str) -> Option<String> {
+    resp.response()
+        .cookies()
+        .find(|c| c.name() == name)
+        .map(|c| c.value().to_string())
+}
+
+/// 注册 + 登录的宏，返回 (access_cookie, refresh_cookie)
 macro_rules! register_and_login {
     ($app:expr) => {{
         // 注册
@@ -88,9 +96,8 @@ macro_rules! register_and_login {
             .to_request();
         let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 200, "login should return 200");
-        let body: Value = test::read_body_json(resp).await;
-        let access = body["data"]["access_token"].as_str().unwrap().to_string();
-        let refresh = body["data"]["refresh_token"].as_str().unwrap().to_string();
+        let access = extract_cookie(&resp, "aster_access").expect("access cookie missing");
+        let refresh = extract_cookie(&resp, "aster_refresh").expect("refresh cookie missing");
         (access, refresh)
     }};
 }
@@ -185,9 +192,9 @@ async fn test_register_and_login() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    assert!(body["data"]["access_token"].is_string());
-    assert!(body["data"]["refresh_token"].is_string());
+    // tokens 在 cookie 里
+    assert!(extract_cookie(&resp, "aster_access").is_some());
+    assert!(extract_cookie(&resp, "aster_refresh").is_some());
 
     // 错误密码
     let req = test::TestRequest::post()
@@ -217,12 +224,11 @@ async fn test_token_refresh() {
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
         .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({ "refresh_token": refresh }))
+        .insert_header(("Cookie", format!("aster_refresh={refresh}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    assert!(body["data"]["access_token"].is_string());
+    assert!(extract_cookie(&resp, "aster_access").is_some());
 }
 
 #[actix_web::test]
@@ -240,7 +246,7 @@ async fn test_folders_crud() {
     // 列出根目录（应为空）
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -251,7 +257,7 @@ async fn test_folders_crud() {
     // 创建文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({ "name": "Documents" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -263,7 +269,7 @@ async fn test_folders_crud() {
     // 列出根目录（应有 1 个文件夹）
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -272,7 +278,7 @@ async fn test_folders_crud() {
     // 重命名文件夹
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({ "name": "My Docs" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -283,7 +289,7 @@ async fn test_folders_crud() {
     // 删除文件夹
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -315,7 +321,7 @@ async fn test_file_upload_download_delete() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -333,7 +339,7 @@ async fn test_file_upload_download_delete() {
     // 获取文件信息
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -343,7 +349,7 @@ async fn test_file_upload_download_delete() {
     // 下载文件
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/download"))
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -358,7 +364,7 @@ async fn test_file_upload_download_delete() {
     // 列出根目录应该有这个文件
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -367,7 +373,7 @@ async fn test_file_upload_download_delete() {
     // 删除文件
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -375,7 +381,7 @@ async fn test_file_upload_download_delete() {
     // 再查应该 404
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
