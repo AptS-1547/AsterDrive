@@ -5,7 +5,7 @@ description = "A self-hosted cloud storage solution."
 authors = ["AptS-1547 <apts-1547@esaps.net>"]
 repository = "https://github.com/AptS-1547/AsterDrive"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.85"
 
 # 优化配置
 [profile.dev]
@@ -30,4 +30,24 @@ debug = true
 strip = false
 lto = false
 
+[workspace]
+members = [".", "migration"]
+
 [dependencies]
+actix-web = { version = "4.13.0", features = ["compress-brotli", "compress-gzip"] }
+argon2 = "0.5.3"
+chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+moka = { version = "0.12.14", features = ["future"] }
+num_cpus = "1.17.0"
+prometheus = { version = "0.14", optional = true, default-features = false }
+rand = { version = "0.10.0", default-features = false, features = ["std", "std_rng", "thread_rng"] }
+redis = { version = "1.0.5", features = ["connection-manager", "tokio-comp", "tokio-rustls-comp"] }
+rustls = "0.23.37"
+sea-orm = { version = "1.1.19", features = ["sqlx-mysql", "sqlx-postgres", "sqlx-sqlite", "macros", "runtime-tokio-rustls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tracing = { version = "0.1.44", default-features = false}
+tracing-appender = "0.2.4"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter"] }
+utoipa = { version = "5.4.0", features = ["chrono", "actix_extras"] }
