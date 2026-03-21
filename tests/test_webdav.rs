@@ -226,7 +226,12 @@ async fn test_webdav_lock_unlock() {
         .set_payload(lock_body)
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200, "LOCK should return 200, got {}", resp.status());
+    assert_eq!(
+        resp.status(),
+        200,
+        "LOCK should return 200, got {}",
+        resp.status()
+    );
 
     // 提取 Lock-Token header
     let lock_token = resp
@@ -234,7 +239,10 @@ async fn test_webdav_lock_unlock() {
         .get("Lock-Token")
         .map(|v| v.to_str().unwrap_or("").to_string())
         .unwrap_or_default();
-    assert!(!lock_token.is_empty(), "Lock-Token header should be present");
+    assert!(
+        !lock_token.is_empty(),
+        "Lock-Token header should be present"
+    );
 
     // 删除应该失败（被锁了，没提交 token）
     let req = test::TestRequest::delete()

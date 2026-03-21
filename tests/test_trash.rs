@@ -88,7 +88,10 @@ async fn test_trash_purge_all() {
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
         .insert_header(("Cookie", format!("aster_access={token}")))
-        .insert_header(("Content-Type", format!("multipart/form-data; boundary={boundary}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
         .set_payload(payload)
         .to_request();
     let resp = test::call_service(&app, req).await;

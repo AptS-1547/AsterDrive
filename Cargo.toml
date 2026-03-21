@@ -91,5 +91,9 @@ utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }
 uuid = { version = "1", features = ["v4"] }
 xmltree = "0.12"
 
+[dev-dependencies]
+testcontainers = "0.23"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
 [build-dependencies]
 chrono = "0.4"

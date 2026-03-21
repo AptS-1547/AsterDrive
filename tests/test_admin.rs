@@ -106,7 +106,7 @@ async fn test_admin_config() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert!(body["data"].as_array().unwrap().len() >= 1);
+    assert!(!body["data"].as_array().unwrap().is_empty());
 
     // 删除配置
     let req = test::TestRequest::delete()
