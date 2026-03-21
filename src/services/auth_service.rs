@@ -3,7 +3,7 @@ use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode}
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
 
-use crate::db::repository::{config_repo, user_repo};
+use crate::db::repository::{config_repo, policy_repo, user_repo};
 use crate::entities::user;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
@@ -74,7 +74,27 @@ pub async fn register(
         updated_at: Set(now),
         ..Default::default()
     };
-    user_repo::create(db, model).await
+    let user = user_repo::create(db, model).await?;
+
+    // 自动分配系统默认存储策略
+    if let Ok(Some(default_policy)) = policy_repo::find_default(db).await {
+        let usp = crate::entities::user_storage_policy::ActiveModel {
+            user_id: Set(user.id),
+            policy_id: Set(default_policy.id),
+            is_default: Set(true),
+            quota_bytes: Set(default_quota),
+            created_at: Set(now),
+            ..Default::default()
+        };
+        if let Err(e) = policy_repo::create_user_policy(db, usp).await {
+            tracing::warn!(
+                "failed to assign default policy to new user '{}': {e}",
+                username
+            );
+        }
+    }
+
+    Ok(user)
 }
 
 /// 登录，返回 (access_token, refresh_token)

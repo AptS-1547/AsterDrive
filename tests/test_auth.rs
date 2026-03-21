@@ -103,6 +103,42 @@ async fn test_auth_me() {
     assert!(body["data"]["password_hash"].is_null());
 }
 
+/// 注册时自动分配系统默认存储策略
+#[actix_web::test]
+async fn test_register_auto_assigns_policy() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 获取用户 ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+
+    // 用户应已有 1 个策略分配（自动分配的）
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let policies = body["data"].as_array().unwrap();
+    assert_eq!(
+        policies.len(),
+        1,
+        "new user should have 1 auto-assigned policy"
+    );
+    assert_eq!(
+        policies[0]["is_default"], true,
+        "auto-assigned policy should be default"
+    );
+}
+
 #[actix_web::test]
 async fn test_unauthorized_access() {
     let state = common::setup().await;

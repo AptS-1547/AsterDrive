@@ -332,6 +332,14 @@ pub async fn remove_user_policy(state: &AppState, id: i64) -> Result<()> {
     let user_id = existing.user_id;
     let was_default = existing.is_default;
 
+    // 不允许删除用户唯一的策略分配
+    let all_policies = policy_repo::find_user_policies(&state.db, user_id).await?;
+    if all_policies.len() <= 1 {
+        return Err(AsterError::validation_error(
+            "cannot remove the only storage policy assigned to this user",
+        ));
+    }
+
     policy_repo::delete_user_policy(&state.db, id).await?;
 
     // 删的是默认策略 → 自动把剩余第一个设为默认

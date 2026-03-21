@@ -117,7 +117,7 @@ async fn test_user_policy_assignment() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
-    // 列出用户策略
+    // 列出用户策略（注册时自动分配 1 个 + 手动分配 1 个 = 2 个）
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
         .insert_header(("Cookie", format!("aster_access={token}")))
@@ -126,11 +126,11 @@ async fn test_user_policy_assignment() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     let policies = body["data"].as_array().unwrap();
-    assert_eq!(policies.len(), 1);
-    assert_eq!(policies[0]["policy_id"], policy_id);
+    assert_eq!(policies.len(), 2, "should have 2 policies (auto + manual)");
 
-    // 删除用户策略
-    let usp_id = policies[0]["id"].as_i64().unwrap();
+    // 删除手动分配的策略（保留自动分配的）
+    let manual = policies.iter().find(|p| p["quota_bytes"] == 1073741824).unwrap();
+    let usp_id = manual["id"].as_i64().unwrap();
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/users/{user_id}/policies/{usp_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
@@ -317,7 +317,7 @@ async fn test_user_policy_default_auto_promote() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    // 剩余的策略应自动成为 default
+    // 剩余的策略中应有一个 is_default=true
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
         .insert_header(("Cookie", format!("aster_access={token}")))
@@ -325,10 +325,10 @@ async fn test_user_policy_default_auto_promote() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
     let policies = body["data"].as_array().unwrap();
-    assert_eq!(policies.len(), 1);
-    assert_eq!(
-        policies[0]["is_default"], true,
-        "remaining policy should be auto-promoted to default"
+    let has_default = policies.iter().any(|p| p["is_default"] == true);
+    assert!(
+        has_default,
+        "should have at least one default policy after deleting the previous default"
     );
 }
 
@@ -383,6 +383,47 @@ async fn test_cannot_unset_only_user_default_policy() {
         resp.status(),
         400,
         "should reject unsetting only user default, got {}",
+        resp.status()
+    );
+}
+
+// ── 不能删除用户唯一的策略分配 ──────────────────────────────
+
+#[actix_web::test]
+async fn test_cannot_delete_last_user_policy() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"][0]["id"].as_i64().unwrap();
+
+    // 注册时已自动分配 1 个策略，直接获取它
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let policies = body["data"].as_array().unwrap();
+    assert_eq!(policies.len(), 1, "user should have 1 auto-assigned policy");
+    let usp_id = policies[0]["id"].as_i64().unwrap();
+
+    // 尝试删除唯一策略 → 应被拒绝
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies/{usp_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "should reject deleting only user policy, got {}",
         resp.status()
     );
 }
