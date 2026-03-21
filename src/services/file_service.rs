@@ -239,8 +239,10 @@ pub async fn upload(
         return Err(AsterError::validation_error("empty file"));
     }
 
-    let result =
-        store_from_temp(state, user_id, folder_id, &filename, &temp_path, size, None, false).await;
+    let result = store_from_temp(
+        state, user_id, folder_id, &filename, &temp_path, size, None, false,
+    )
+    .await;
 
     // 清理临时文件（put_file 可能已经 rename 走了，忽略错误）
     let _ = tokio::fs::remove_file(&temp_path).await;

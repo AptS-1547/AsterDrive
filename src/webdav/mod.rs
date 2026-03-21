@@ -147,12 +147,12 @@ where
 /// 在 OPTIONS 响应的 DAV 头中追加 version-control 合规标记
 fn append_deltav_header(response: DavResponse) -> DavResponse {
     let DavResponse(mut resp) = response;
-    if let Some(dav_value) = resp.headers().get("DAV").cloned() {
-        if let Ok(s) = dav_value.to_str() {
-            let new_value = format!("{s}, version-control");
-            if let Ok(hv) = http::HeaderValue::from_str(&new_value) {
-                resp.headers_mut().insert("DAV", hv);
-            }
+    if let Some(dav_value) = resp.headers().get("DAV").cloned()
+        && let Ok(s) = dav_value.to_str()
+    {
+        let new_value = format!("{s}, version-control");
+        if let Ok(hv) = http::HeaderValue::from_str(&new_value) {
+            resp.headers_mut().insert("DAV", hv);
         }
     }
     DavResponse(resp)

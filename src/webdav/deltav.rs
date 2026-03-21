@@ -35,9 +35,7 @@ pub async fn handle_report(
 
     // 从 URI 中去掉 prefix 得到文件路径
     let path_str = uri.path();
-    let relative = path_str
-        .strip_prefix(prefix)
-        .unwrap_or(path_str);
+    let relative = path_str.strip_prefix(prefix).unwrap_or(path_str);
 
     // 构造一个 DavPath 用于路径解析
     let dav_path = match dav_server::davpath::DavPath::new(relative) {
@@ -45,12 +43,11 @@ pub async fn handle_report(
         Err(_) => return error_response(400, "Invalid path"),
     };
 
-    let node = match path_resolver::resolve_path(db, auth.user_id, &dav_path, auth.root_folder_id)
-        .await
-    {
-        Ok(n) => n,
-        Err(_) => return error_response(404, "Not Found"),
-    };
+    let node =
+        match path_resolver::resolve_path(db, auth.user_id, &dav_path, auth.root_folder_id).await {
+            Ok(n) => n,
+            Err(_) => return error_response(404, "Not Found"),
+        };
 
     let file = match node {
         ResolvedNode::File(f) => f,
@@ -81,14 +78,11 @@ pub async fn handle_report(
     // 当前版本（活跃版本）
     if let Some(blob) = &current_blob {
         let href = format!("{}{}", prefix, relative);
-        let response = build_version_response(
-            &href,
-            "current",
-            blob.size,
-            &file.updated_at,
-            &creator,
-        );
-        multistatus.children.push(xmltree::XMLNode::Element(response));
+        let response =
+            build_version_response(&href, "current", blob.size, &file.updated_at, &creator);
+        multistatus
+            .children
+            .push(xmltree::XMLNode::Element(response));
     }
 
     // 历史版本
@@ -99,10 +93,7 @@ pub async fn handle_report(
         .unwrap_or_default();
 
     for ver in &versions {
-        let size = blobs
-            .get(&ver.blob_id)
-            .map(|b| b.size)
-            .unwrap_or(ver.size);
+        let size = blobs.get(&ver.blob_id).map(|b| b.size).unwrap_or(ver.size);
 
         let href = format!("{}{}?v={}", prefix, relative, ver.version);
         let response = build_version_response(
@@ -112,11 +103,13 @@ pub async fn handle_report(
             &ver.created_at,
             &creator,
         );
-        multistatus.children.push(xmltree::XMLNode::Element(response));
+        multistatus
+            .children
+            .push(xmltree::XMLNode::Element(response));
     }
 
     let mut xml_buf = Vec::new();
-    xml_buf.extend_from_slice(b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+    // xmltree::Element::write() 自动输出 <?xml?> 声明，不需要手动添加
     if multistatus.write(&mut xml_buf).is_err() {
         return error_response(500, "Failed to serialize XML");
     }
@@ -168,9 +161,7 @@ fn build_version_response(
     href_el
         .children
         .push(xmltree::XMLNode::Text(href.to_string()));
-    response
-        .children
-        .push(xmltree::XMLNode::Element(href_el));
+    response.children.push(xmltree::XMLNode::Element(href_el));
 
     // <D:propstat>
     let mut propstat = Element::new("D:propstat");
@@ -193,8 +184,7 @@ fn build_version_response(
 
     // <D:getcontentlength>
     let mut clen = Element::new("D:getcontentlength");
-    clen.children
-        .push(xmltree::XMLNode::Text(size.to_string()));
+    clen.children.push(xmltree::XMLNode::Text(size.to_string()));
     prop.children.push(xmltree::XMLNode::Element(clen));
 
     // <D:getlastmodified>
@@ -212,9 +202,7 @@ fn build_version_response(
         .push(xmltree::XMLNode::Text("HTTP/1.1 200 OK".to_string()));
     propstat.children.push(xmltree::XMLNode::Element(status));
 
-    response
-        .children
-        .push(xmltree::XMLNode::Element(propstat));
+    response.children.push(xmltree::XMLNode::Element(propstat));
 
     response
 }

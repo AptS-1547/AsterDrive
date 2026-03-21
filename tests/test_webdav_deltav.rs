@@ -83,7 +83,10 @@ async fn test_deltav_report_no_versions() {
     );
 
     // 没有历史版本，不应有 V1、V2 这样的标记
-    assert!(!xml.contains(">V1<"), "should have no history versions: {xml}");
+    assert!(
+        !xml.contains(">V1<"),
+        "should have no history versions: {xml}"
+    );
 }
 
 // ── REPORT version-tree：文件有历史版本 ──────────────────────
@@ -113,7 +116,10 @@ async fn test_deltav_report_with_versions() {
     );
 
     // 应包含版本属性
-    assert!(xml.contains("current"), "should have current version: {xml}");
+    assert!(
+        xml.contains("current"),
+        "should have current version: {xml}"
+    );
     assert!(
         xml.contains("D:version-name"),
         "should have version-name prop: {xml}"
