@@ -129,7 +129,10 @@ async fn test_user_policy_assignment() {
     assert_eq!(policies.len(), 2, "should have 2 policies (auto + manual)");
 
     // 删除手动分配的策略（保留自动分配的）
-    let manual = policies.iter().find(|p| p["quota_bytes"] == 1073741824).unwrap();
+    let manual = policies
+        .iter()
+        .find(|p| p["quota_bytes"] == 1073741824)
+        .unwrap();
     let usp_id = manual["id"].as_i64().unwrap();
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/users/{user_id}/policies/{usp_id}"))

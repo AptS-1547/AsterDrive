@@ -132,6 +132,83 @@ async fn test_init_upload_local_never_presigned() {
     assert!(body["data"]["presigned_url"].is_null());
 }
 
+/// 并发上传同一分片不会导致 received_count 多算（TOCTOU 修复验证）
+#[actix_web::test]
+async fn test_concurrent_chunk_upload_idempotent() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 初始化大文件上传（强制 chunked）
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload/init")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "filename": "concurrent.bin",
+            "total_size": 10_485_760
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let mode = body["data"]["mode"].as_str().unwrap();
+
+    if mode == "chunked" {
+        let upload_id = body["data"]["upload_id"].as_str().unwrap().to_string();
+
+        // 上传 chunk 0（小于默认 payload 限制）
+        let chunk_data = vec![b'X'; 1024];
+        let req = test::TestRequest::put()
+            .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
+            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Content-Type", "application/octet-stream"))
+            .set_payload(chunk_data.clone())
+            .to_request();
+        let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body: Value = test::read_body_json(resp).await;
+        let count_after_first = body["data"]["received_count"].as_i64().unwrap();
+
+        // 重复上传同一 chunk 0（模拟并发/重试）
+        let req = test::TestRequest::put()
+            .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
+            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Content-Type", "application/octet-stream"))
+            .set_payload(chunk_data.clone())
+            .to_request();
+        let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body: Value = test::read_body_json(resp).await;
+        let count_after_second = body["data"]["received_count"].as_i64().unwrap();
+
+        // 第三次重复
+        let req = test::TestRequest::put()
+            .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
+            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Content-Type", "application/octet-stream"))
+            .set_payload(chunk_data)
+            .to_request();
+        let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body: Value = test::read_body_json(resp).await;
+        let count_after_third = body["data"]["received_count"].as_i64().unwrap();
+
+        // received_count 应该都是 1（幂等，不多算）
+        assert_eq!(
+            count_after_first, 1,
+            "first upload should set count to 1"
+        );
+        assert_eq!(
+            count_after_second, count_after_first,
+            "duplicate chunk should not increment count: got {count_after_second}"
+        );
+        assert_eq!(
+            count_after_third, count_after_first,
+            "third duplicate should not increment count: got {count_after_third}"
+        );
+    }
+}
+
 /// S3 presigned upload 端到端测试（需要 testcontainers + rustfs）
 #[tokio::test]
 async fn test_presigned_upload_s3_e2e() {
