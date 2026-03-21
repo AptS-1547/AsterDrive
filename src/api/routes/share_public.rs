@@ -12,6 +12,7 @@ pub fn routes() -> actix_web::Scope {
         .route("/{token}/verify", web::post().to(verify_password))
         .route("/{token}/download", web::get().to(download_shared))
         .route("/{token}/content", web::get().to(list_shared_content))
+        .route("/{token}/thumbnail", web::get().to(shared_thumbnail))
 }
 
 #[utoipa::path(
@@ -116,6 +117,53 @@ pub async fn list_shared_content(
 
     let contents = share_service::list_shared_folder(&state, &path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/s/{token}/thumbnail",
+    tag = "shares",
+    operation_id = "shared_thumbnail",
+    params(("token" = String, Path, description = "Share token")),
+    responses(
+        (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 403, description = "Password required"),
+        (status = 404, description = "Not found or not an image"),
+    ),
+)]
+pub async fn shared_thumbnail(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    check_share_password_cookie(&state, &path, &req).await?;
+
+    use crate::db::repository::{file_repo, share_repo};
+    use crate::errors::AsterError;
+    use crate::services::thumbnail_service;
+
+    let share = share_repo::find_by_token(&state.db, &path)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={}", &*path)))?;
+
+    let file_id = share
+        .file_id
+        .ok_or_else(|| AsterError::validation_error("share is not a file"))?;
+
+    let f = file_repo::find_by_id(&state.db, file_id).await?;
+    if !thumbnail_service::is_supported_mime(&f.mime_type) {
+        return Err(AsterError::thumbnail_generation_failed(
+            "unsupported image type",
+        ));
+    }
+
+    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
+    let data = thumbnail_service::get_or_generate(&state, &blob).await?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("image/webp")
+        .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
+        .body(data))
 }
 
 /// 如果分享有密码，检查是否已通过 cookie 验证

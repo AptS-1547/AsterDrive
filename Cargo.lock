@@ -625,6 +625,7 @@ dependencies = [
  "serde_repr",
  "sha2",
  "tokio",
+ "tokio-util",
  "toml",
  "tracing",
  "tracing-appender",

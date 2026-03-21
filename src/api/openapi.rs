@@ -72,6 +72,7 @@ use utoipa::OpenApi;
         crate::api::routes::share_public::verify_password,
         crate::api::routes::share_public::download_shared,
         crate::api::routes::share_public::list_shared_content,
+        crate::api::routes::share_public::shared_thumbnail,
     ),
     components(
         schemas(

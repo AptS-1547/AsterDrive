@@ -252,7 +252,7 @@ pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<file::M
     Ok(f)
 }
 
-/// 下载文件
+/// 下载文件（流式，不全量缓冲）
 pub async fn download(state: &AppState, id: i64, user_id: i64) -> Result<HttpResponse> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
@@ -266,35 +266,37 @@ pub async fn download(state: &AppState, id: i64, user_id: i64) -> Result<HttpRes
     }
 
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
-    let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-    let data = driver.get(&blob.storage_path).await?;
-
-    Ok(HttpResponse::Ok()
-        .content_type(f.mime_type)
-        .insert_header((
-            "Content-Disposition",
-            format!("attachment; filename=\"{}\"", f.name),
-        ))
-        .body(data))
+    build_stream_response(state, &f, &blob).await
 }
 
-/// 下载文件（无用户校验，用于分享链接）
+/// 下载文件（无用户校验，用于分享链接，流式）
 pub async fn download_raw(state: &AppState, id: i64) -> Result<HttpResponse> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
-    let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
+    build_stream_response(state, &f, &blob).await
+}
+
+/// 构建流式下载响应
+async fn build_stream_response(
+    state: &AppState,
+    f: &file::Model,
+    blob: &file_blob::Model,
+) -> Result<HttpResponse> {
+    let policy = policy_repo::find_by_id(&state.db, blob.policy_id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
-    let data = driver.get(&blob.storage_path).await?;
+    let stream = driver.get_stream(&blob.storage_path).await?;
+
+    let reader_stream = tokio_util::io::ReaderStream::new(stream);
 
     Ok(HttpResponse::Ok()
-        .content_type(f.mime_type)
+        .content_type(f.mime_type.clone())
+        .insert_header(("Content-Length", blob.size.to_string()))
         .insert_header((
             "Content-Disposition",
             format!("attachment; filename=\"{}\"", f.name),
         ))
-        .body(data))
+        .streaming(reader_stream))
 }
 
 /// 删除文件（软删除 → 回收站）
