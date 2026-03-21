@@ -151,20 +151,24 @@ pub async fn set_entity_locked(
 
     match entity_type {
         EntityType::File => {
-            if let Ok(f) = file_repo::find_by_id(db, entity_id).await {
-                let mut active: crate::entities::file::ActiveModel = f.into();
-                active.is_locked = Set(locked);
-                active.updated_at = Set(now);
-                let _ = active.update(db).await;
-            }
+            let f = file_repo::find_by_id(db, entity_id).await?;
+            let mut active: crate::entities::file::ActiveModel = f.into();
+            active.is_locked = Set(locked);
+            active.updated_at = Set(now);
+            active.update(db).await.map_err(|e| {
+                tracing::error!("failed to sync is_locked for file #{entity_id}: {e}");
+                AsterError::from(e)
+            })?;
         }
         EntityType::Folder => {
-            if let Ok(f) = folder_repo::find_by_id(db, entity_id).await {
-                let mut active: crate::entities::folder::ActiveModel = f.into();
-                active.is_locked = Set(locked);
-                active.updated_at = Set(now);
-                let _ = active.update(db).await;
-            }
+            let f = folder_repo::find_by_id(db, entity_id).await?;
+            let mut active: crate::entities::folder::ActiveModel = f.into();
+            active.is_locked = Set(locked);
+            active.updated_at = Set(now);
+            active.update(db).await.map_err(|e| {
+                tracing::error!("failed to sync is_locked for folder #{entity_id}: {e}");
+                AsterError::from(e)
+            })?;
         }
     }
     Ok(())

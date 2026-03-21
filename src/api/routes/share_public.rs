@@ -60,8 +60,9 @@ pub async fn verify_password(
 ) -> Result<HttpResponse> {
     share_service::verify_password(&state, &path, &body.password).await?;
 
-    // 设置一个短期 cookie 标记密码已验证
-    let cookie = actix_web::cookie::Cookie::build(format!("aster_share_{}", &*path), "1")
+    // 设置签名 cookie 标记密码已验证
+    let signature = sign_share_cookie(&path, &state.config.auth.jwt_secret);
+    let cookie = actix_web::cookie::Cookie::build(format!("aster_share_{}", &*path), signature)
         .path("/")
         .http_only(true)
         .max_age(actix_web::cookie::time::Duration::hours(1))
@@ -90,7 +91,6 @@ pub async fn download_shared(
     path: web::Path<String>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    // 检查密码验证 cookie（如果分享有密码）
     check_share_password_cookie(&state, &path, &req).await?;
 
     share_service::download_shared_file(&state, &path).await
@@ -166,7 +166,31 @@ pub async fn shared_thumbnail(
         .body(data))
 }
 
-/// 如果分享有密码，检查是否已通过 cookie 验证
+/// SHA256 签名：防止伪造分享密码验证 cookie
+fn sign_share_cookie(token: &str, secret: &str) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(format!("share_verified:{secret}:{token}").as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// 验证分享密码 cookie 签名（常量时间比较）
+fn verify_share_cookie(token: &str, cookie_value: &str, secret: &str) -> bool {
+    let expected = sign_share_cookie(token, secret);
+    // 长度不同直接 false，避免泄漏长度信息
+    if expected.len() != cookie_value.len() {
+        return false;
+    }
+    // 常量时间比较
+    expected
+        .bytes()
+        .zip(cookie_value.bytes())
+        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+        == 0
+}
+
+/// 如果分享有密码，检查 cookie 签名是否有效
 async fn check_share_password_cookie(
     state: &AppState,
     token: &str,
@@ -181,9 +205,13 @@ async fn check_share_password_cookie(
 
     if share.password.is_some() {
         let cookie_name = format!("aster_share_{token}");
-        if req.cookie(&cookie_name).is_none() {
+        let cookie = req
+            .cookie(&cookie_name)
+            .ok_or_else(|| AsterError::share_password_required("password verification required"))?;
+
+        if !verify_share_cookie(token, cookie.value(), &state.config.auth.jwt_secret) {
             return Err(AsterError::share_password_required(
-                "password verification required",
+                "invalid verification cookie",
             ));
         }
     }

@@ -286,6 +286,19 @@ pub async fn update_user_policy(
 ) -> Result<user_storage_policy::Model> {
     let existing = policy_repo::find_user_policy_by_id(&state.db, id).await?;
 
+    // 不允许取消唯一的用户默认策略
+    if let Some(false) = is_default
+        && existing.is_default
+    {
+        let user_policies = policy_repo::find_user_policies(&state.db, existing.user_id).await?;
+        let default_count = user_policies.iter().filter(|p| p.is_default).count();
+        if default_count <= 1 {
+            return Err(AsterError::validation_error(
+                "cannot unset the only default user policy",
+            ));
+        }
+    }
+
     // 如果设为默认，先清除该用户的其他默认
     if let Some(true) = is_default {
         policy_repo::clear_user_default(&state.db, existing.user_id).await?;

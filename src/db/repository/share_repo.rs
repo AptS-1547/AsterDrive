@@ -61,16 +61,18 @@ pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
 
 pub async fn increment_view_count(db: &DatabaseConnection, id: i64) -> Result<()> {
     let share = find_by_id(db, id).await?;
+    let new_count = share.view_count + 1;
     let mut active: share::ActiveModel = share.into();
-    active.view_count = Set(active.view_count.unwrap() + 1);
+    active.view_count = Set(new_count);
     active.update(db).await.map_err(AsterError::from)?;
     Ok(())
 }
 
 pub async fn increment_download_count(db: &DatabaseConnection, id: i64) -> Result<()> {
     let share = find_by_id(db, id).await?;
+    let new_count = share.download_count + 1;
     let mut active: share::ActiveModel = share.into();
-    active.download_count = Set(active.download_count.unwrap() + 1);
+    active.download_count = Set(new_count);
     active.update(db).await.map_err(AsterError::from)?;
     Ok(())
 }

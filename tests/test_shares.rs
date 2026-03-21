@@ -204,3 +204,66 @@ async fn test_share_folder() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 }
+
+/// 伪造 cookie 不能绕过密码验证
+#[actix_web::test]
+async fn test_share_forged_cookie_rejected() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    // 创建带密码分享
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_id": file_id,
+            "password": "secret"
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    // 用伪造 cookie 尝试下载 → 应被拒绝
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/download"))
+        .insert_header(("Cookie", format!("aster_share_{share_token}=forged_value")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "forged cookie should be rejected, got {}",
+        resp.status()
+    );
+
+    // 用正确流程验证密码
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/verify"))
+        .set_json(serde_json::json!({"password": "secret"}))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // 提取签名 cookie
+    let signed_cookie = common::extract_cookie(&resp, &format!("aster_share_{share_token}"))
+        .expect("should get signed cookie");
+
+    // 用签名 cookie 下载 → 应成功
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/download"))
+        .insert_header((
+            "Cookie",
+            format!("aster_share_{share_token}={signed_cookie}"),
+        ))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "signed cookie should allow download, got {}",
+        resp.status()
+    );
+}

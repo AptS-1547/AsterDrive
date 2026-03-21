@@ -331,3 +331,58 @@ async fn test_user_policy_default_auto_promote() {
         "remaining policy should be auto-promoted to default"
     );
 }
+
+// ── 不能取消用户唯一默认策略 ────────────────────────────────
+
+#[actix_web::test]
+async fn test_cannot_unset_only_user_default_policy() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 获取策略 ID 和用户 ID
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"][0]["id"].as_i64().unwrap();
+
+    // 分配唯一策略（default）
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "policy_id": policy_id,
+            "is_default": true,
+            "quota_bytes": 0
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let usp_id = body["data"]["id"].as_i64().unwrap();
+
+    // 尝试取消 default → 应被拒绝
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies/{usp_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({"is_default": false}))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "should reject unsetting only user default, got {}",
+        resp.status()
+    );
+}
