@@ -539,7 +539,7 @@ pub async fn update_content(
     let current_blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
     if let Some(etag) = if_match {
         let expected = etag.trim_matches('"');
-        if expected != current_blob.hash {
+        if !expected.eq_ignore_ascii_case(&current_blob.hash) {
             return Err(AsterError::precondition_failed(
                 "file has been modified (ETag mismatch)",
             ));

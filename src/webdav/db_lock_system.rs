@@ -82,7 +82,8 @@ impl DavLockSystem for DbLockSystem {
             }
 
             let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
-            let timeout_at = timeout_dur.map(|d| now + chrono::Duration::from_std(d).unwrap());
+            let timeout_at =
+                timeout_dur.and_then(|d| chrono::Duration::from_std(d).ok().map(|cd| now + cd));
 
             let model = resource_lock::ActiveModel {
                 token: sea_orm::Set(token.clone()),
@@ -161,7 +162,8 @@ impl DavLockSystem for DbLockSystem {
 
         Box::pin(async move {
             let now = Utc::now();
-            let new_timeout_at = timeout_dur.map(|d| now + chrono::Duration::from_std(d).unwrap());
+            let new_timeout_at =
+                timeout_dur.and_then(|d| chrono::Duration::from_std(d).ok().map(|cd| now + cd));
 
             let lock = lock_repo::refresh(&self.db, &token_owned, new_timeout_at)
                 .await

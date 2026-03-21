@@ -96,6 +96,19 @@ pub async fn find_deleted_by_user(
         .map_err(AsterError::from)
 }
 
+/// 查询某文件夹下的已删除子文件夹（递归恢复/清理用，避免 N+1）
+pub async fn find_deleted_children(
+    db: &DatabaseConnection,
+    parent_id: i64,
+) -> Result<Vec<folder::Model>> {
+    Folder::find()
+        .filter(folder::Column::ParentId.eq(parent_id))
+        .filter(folder::Column::DeletedAt.is_not_null())
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 /// 查询过期的已删除文件夹（自动清理用）
 pub async fn find_expired_deleted(
     db: &DatabaseConnection,

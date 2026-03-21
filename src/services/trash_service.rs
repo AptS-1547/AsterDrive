@@ -84,21 +84,17 @@ async fn recursive_restore(
     user_id: i64,
     folder_id: i64,
 ) -> Result<()> {
-    // 恢复该文件夹下的已删除文件
-    let deleted_files = file_repo::find_deleted_by_user(db, user_id).await?;
+    // 恢复该文件夹下的已删除文件（精确查询，不查全量）
+    let deleted_files = file_repo::find_deleted_in_folder(db, folder_id).await?;
     for f in deleted_files {
-        if f.folder_id == Some(folder_id) {
-            file_repo::restore(db, f.id).await?;
-        }
+        file_repo::restore(db, f.id).await?;
     }
 
     // 恢复已删除的子文件夹
-    let deleted_folders = folder_repo::find_deleted_by_user(db, user_id).await?;
+    let deleted_folders = folder_repo::find_deleted_children(db, folder_id).await?;
     for child in deleted_folders {
-        if child.parent_id == Some(folder_id) {
-            folder_repo::restore(db, child.id).await?;
-            Box::pin(recursive_restore(db, user_id, child.id)).await?;
-        }
+        folder_repo::restore(db, child.id).await?;
+        Box::pin(recursive_restore(db, user_id, child.id)).await?;
     }
 
     Ok(())

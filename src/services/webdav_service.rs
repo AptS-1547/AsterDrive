@@ -52,12 +52,10 @@ pub fn recursive_purge_folder<'a>(
             file_service::purge(state, f.id, user_id).await?;
         }
 
-        // 也要处理已软删除但还未清理的文件
-        let deleted_files = file_repo::find_deleted_by_user(db, user_id).await?;
+        // 也要处理已软删除但还未清理的文件（精确查询该文件夹）
+        let deleted_files = file_repo::find_deleted_in_folder(db, folder_id).await?;
         for f in deleted_files {
-            if f.folder_id == Some(folder_id) {
-                file_service::purge(state, f.id, user_id).await?;
-            }
+            file_service::purge(state, f.id, user_id).await?;
         }
 
         // 递归子文件夹
