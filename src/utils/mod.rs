@@ -33,6 +33,43 @@ pub async fn cleanup_temp_dir(path: &str) {
     }
 }
 
+/// 文件名最大长度
+const MAX_FILENAME_LEN: usize = 255;
+
+/// 文件/文件夹名禁止字符
+const FORBIDDEN_CHARS: &[char] = &['/', '\\', '\0', ':', '*', '?', '"', '<', '>', '|'];
+
+/// 校验文件/文件夹名合法性
+pub fn validate_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        return Err(AsterError::validation_error("name cannot be empty"));
+    }
+    if name.len() > MAX_FILENAME_LEN {
+        return Err(AsterError::validation_error(format!(
+            "name too long (max {MAX_FILENAME_LEN} chars)"
+        )));
+    }
+    if name == "." || name == ".." {
+        return Err(AsterError::validation_error("invalid name"));
+    }
+    if let Some(c) = name.chars().find(|c| FORBIDDEN_CHARS.contains(c)) {
+        return Err(AsterError::validation_error(format!(
+            "name contains forbidden character '{c}'"
+        )));
+    }
+    if name.chars().any(|c| c.is_ascii_control()) {
+        return Err(AsterError::validation_error(
+            "name contains control characters",
+        ));
+    }
+    if name != name.trim() || name.ends_with('.') {
+        return Err(AsterError::validation_error(
+            "name cannot start/end with spaces or end with a dot",
+        ));
+    }
+    Ok(())
+}
+
 /// macOS / Office 生成的隐藏文件名，不在目录列表中显示
 pub fn is_hidden_name(name: &str) -> bool {
     name.starts_with("._")
@@ -91,6 +128,48 @@ mod tests {
         assert!(is_hidden_name(".Spotlight-V100"));
         assert!(is_hidden_name(".Trashes"));
         assert!(!is_hidden_name("normal.txt"));
+    }
+
+    #[test]
+    fn test_validate_name() {
+        // 有效名称
+        assert!(validate_name("hello.txt").is_ok());
+        assert!(validate_name(".gitignore").is_ok());
+        assert!(validate_name("file (1).txt").is_ok());
+
+        // 空名
+        assert!(validate_name("").is_err());
+
+        // 禁止字符
+        assert!(validate_name("a/b").is_err());
+        assert!(validate_name("a\\b").is_err());
+        assert!(validate_name("a:b").is_err());
+        assert!(validate_name("a*b").is_err());
+        assert!(validate_name("a?b").is_err());
+        assert!(validate_name("a\"b").is_err());
+        assert!(validate_name("a<b").is_err());
+        assert!(validate_name("a>b").is_err());
+        assert!(validate_name("a|b").is_err());
+
+        // 特殊名称
+        assert!(validate_name(".").is_err());
+        assert!(validate_name("..").is_err());
+
+        // 控制字符
+        assert!(validate_name("a\x01b").is_err());
+        assert!(validate_name("a\nb").is_err());
+        assert!(validate_name("a\tb").is_err());
+
+        // 首尾空格 / 末尾点号
+        assert!(validate_name(" leading").is_err());
+        assert!(validate_name("trailing ").is_err());
+        assert!(validate_name("ends.").is_err());
+
+        // 超长
+        let long_name = "a".repeat(256);
+        assert!(validate_name(&long_name).is_err());
+        let ok_name = "a".repeat(255);
+        assert!(validate_name(&ok_name).is_ok());
     }
 
     #[test]

@@ -98,14 +98,19 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     };
     for f in &all_folders {
         // 清理属性
-        let _ = crate::db::repository::property_repo::delete_all_for_entity(
+        if let Err(e) = crate::db::repository::property_repo::delete_all_for_entity(
             db,
             crate::types::EntityType::Folder,
             f.id,
         )
-        .await;
+        .await
+        {
+            tracing::warn!("failed to delete properties for folder #{}: {e}", f.id);
+        }
         // 硬删除
-        let _ = crate::db::repository::folder_repo::delete(db, f.id).await;
+        if let Err(e) = crate::db::repository::folder_repo::delete(db, f.id).await {
+            tracing::warn!("failed to delete folder #{}: {e}", f.id);
+        }
     }
 
     // 3. 删除所有分享链接

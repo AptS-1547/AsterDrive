@@ -116,24 +116,26 @@ pub async fn purge_folder(state: &AppState, id: i64, user_id: i64) -> Result<()>
     webdav_service::recursive_purge_folder(state, user_id, id).await
 }
 
-/// 清空用户回收站
+/// 清空用户回收站（返回实际成功删除数量）
 pub async fn purge_all(state: &AppState, user_id: i64) -> Result<u32> {
     let files = file_repo::find_deleted_by_user(&state.db, user_id).await?;
     let folders = folder_repo::find_deleted_by_user(&state.db, user_id).await?;
-    let count = files.len() + folders.len();
+    let mut count: u32 = 0;
 
     for f in files {
-        if let Err(e) = file_service::purge(state, f.id, user_id).await {
-            tracing::warn!("purge file {} failed: {e}", f.id);
+        match file_service::purge(state, f.id, user_id).await {
+            Ok(()) => count += 1,
+            Err(e) => tracing::warn!("purge file {} failed: {e}", f.id),
         }
     }
     for f in folders {
-        if let Err(e) = webdav_service::recursive_purge_folder(state, user_id, f.id).await {
-            tracing::warn!("purge folder {} failed: {e}", f.id);
+        match webdav_service::recursive_purge_folder(state, user_id, f.id).await {
+            Ok(()) => count += 1,
+            Err(e) => tracing::warn!("purge folder {} failed: {e}", f.id),
         }
     }
 
-    Ok(count as u32)
+    Ok(count)
 }
 
 /// 自动清理过期回收站条目（后台任务调用）

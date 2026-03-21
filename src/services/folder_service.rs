@@ -19,6 +19,8 @@ pub async fn create(
     name: &str,
     parent_id: Option<i64>,
 ) -> Result<folder::Model> {
+    crate::utils::validate_name(name)?;
+
     // 检查同名文件夹
     if folder_repo::find_by_name_in_parent(&state.db, user_id, parent_id, name)
         .await?
@@ -107,6 +109,11 @@ pub async fn update(
             let cur = folder_repo::find_by_id(db, cur_id).await?;
             cursor = cur.parent_id;
         }
+    }
+
+    // 文件名验证
+    if let Some(ref n) = name {
+        crate::utils::validate_name(n)?;
     }
 
     // 同名冲突检查

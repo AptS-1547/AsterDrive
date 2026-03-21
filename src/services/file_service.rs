@@ -37,6 +37,8 @@ pub async fn store_from_temp(
 ) -> Result<file::Model> {
     let db = &state.db;
 
+    crate::utils::validate_name(filename)?;
+
     // 流式 sha256
     let file_hash = {
         use sha2::{Digest, Sha256};
@@ -386,6 +388,11 @@ pub async fn update(
     if let Some(fid) = folder_id {
         let target = crate::db::repository::folder_repo::find_by_id(db, fid).await?;
         crate::utils::verify_owner(target.user_id, user_id, "folder")?;
+    }
+
+    // 文件名验证
+    if let Some(ref n) = name {
+        crate::utils::validate_name(n)?;
     }
 
     // 同名冲突检查
