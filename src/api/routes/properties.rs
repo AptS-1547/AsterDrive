@@ -3,6 +3,7 @@ use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, property_service};
+use crate::types::EntityType;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
@@ -20,13 +21,13 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
 
 #[derive(Deserialize, IntoParams)]
 pub struct EntityPath {
-    pub entity_type: String,
+    pub entity_type: EntityType,
     pub entity_id: i64,
 }
 
 #[derive(Deserialize, IntoParams)]
 pub struct PropPath {
-    pub entity_type: String,
+    pub entity_type: EntityType,
     pub entity_id: i64,
     pub namespace: String,
     pub name: String,
@@ -45,7 +46,7 @@ pub struct SetPropReq {
     tag = "properties",
     operation_id = "list_properties",
     params(
-        ("entity_type" = String, Path, description = "Entity type: 'file' or 'folder'"),
+        ("entity_type" = EntityType, Path, description = "Entity type: 'file' or 'folder'"),
         ("entity_id" = i64, Path, description = "Entity ID"),
     ),
     responses(
@@ -61,7 +62,7 @@ pub async fn list_props(
     path: web::Path<EntityPath>,
 ) -> Result<HttpResponse> {
     let props =
-        property_service::list(&state, &path.entity_type, path.entity_id, claims.user_id).await?;
+        property_service::list(&state, path.entity_type, path.entity_id, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(props)))
 }
 
@@ -71,7 +72,7 @@ pub async fn list_props(
     tag = "properties",
     operation_id = "set_property",
     params(
-        ("entity_type" = String, Path, description = "Entity type: 'file' or 'folder'"),
+        ("entity_type" = EntityType, Path, description = "Entity type: 'file' or 'folder'"),
         ("entity_id" = i64, Path, description = "Entity ID"),
     ),
     request_body = SetPropReq,
@@ -91,7 +92,7 @@ pub async fn set_prop(
 ) -> Result<HttpResponse> {
     let prop = property_service::set(
         &state,
-        &path.entity_type,
+        path.entity_type,
         path.entity_id,
         claims.user_id,
         &body.namespace,
@@ -108,7 +109,7 @@ pub async fn set_prop(
     tag = "properties",
     operation_id = "delete_property",
     params(
-        ("entity_type" = String, Path, description = "Entity type: 'file' or 'folder'"),
+        ("entity_type" = EntityType, Path, description = "Entity type: 'file' or 'folder'"),
         ("entity_id" = i64, Path, description = "Entity ID"),
         ("namespace" = String, Path, description = "Property namespace"),
         ("name" = String, Path, description = "Property name"),
@@ -128,7 +129,7 @@ pub async fn delete_prop(
 ) -> Result<HttpResponse> {
     property_service::delete(
         &state,
-        &path.entity_type,
+        path.entity_type,
         path.entity_id,
         claims.user_id,
         &path.namespace,

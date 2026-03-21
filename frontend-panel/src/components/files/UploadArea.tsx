@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { config } from "@/config/app";
 import { useChunkedUpload } from "@/hooks/useChunkedUpload";
+import { usePresignedUpload } from "@/hooks/usePresignedUpload";
 import { cn } from "@/lib/utils";
 import { uploadService } from "@/services/uploadService";
 import { useFileStore } from "@/stores/fileStore";
@@ -38,6 +39,17 @@ export function UploadArea({ children }: UploadAreaProps) {
 		reset,
 	} = useChunkedUpload(() => {
 		toast.success("Upload complete (chunked)");
+		refresh();
+	});
+
+	// Presigned upload for S3 direct
+	const {
+		state: presignedState,
+		startUpload: presignedStartUpload,
+		cancelUpload: presignedCancel,
+		reset: presignedReset,
+	} = usePresignedUpload(() => {
+		toast.success("Upload complete (S3 direct)");
 		refresh();
 	});
 
@@ -125,7 +137,13 @@ export function UploadArea({ children }: UploadAreaProps) {
 					total_size: file.size,
 					folder_id: currentFolderIdRef.current,
 				});
-				if (resp.mode === "chunked") {
+				if (resp.mode === "presigned") {
+					presignedStartUpload(
+						file,
+						resp.upload_id as string,
+						resp.presigned_url as string,
+					);
+				} else if (resp.mode === "chunked") {
 					startUpload(file, currentFolderIdRef.current, resp);
 				} else {
 					addFileViaUppy(file);
@@ -172,6 +190,8 @@ export function UploadArea({ children }: UploadAreaProps) {
 		chunkedState.status !== "idle" && chunkedState.status !== "completed";
 	const showResumePrompt =
 		chunkedState.canResume && chunkedState.status === "idle";
+	const showPresignedProgress =
+		presignedState.status !== "idle" && presignedState.status !== "completed";
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: drop zone
@@ -257,6 +277,48 @@ export function UploadArea({ children }: UploadAreaProps) {
 								Dismiss
 							</Button>
 						</div>
+					)}
+				</div>
+			)}
+
+			{/* Presigned S3 direct upload progress */}
+			{showPresignedProgress && (
+				<div className="absolute bottom-4 right-4 z-40 w-80 bg-card border rounded-lg shadow-lg p-4 space-y-2">
+					<div className="flex items-center justify-between">
+						<div className="text-sm font-medium truncate flex-1 mr-2">
+							{presignedState.filename}
+						</div>
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-6 w-6 shrink-0"
+							onClick={presignedCancel}
+						>
+							<X className="h-3.5 w-3.5" />
+						</Button>
+					</div>
+					<Progress value={presignedState.progress} className="h-2" />
+					<div className="flex justify-between text-xs text-muted-foreground">
+						<span>
+							{presignedState.status === "processing"
+								? "Processing..."
+								: presignedState.status === "failed"
+									? (presignedState.error ?? "Failed")
+									: "Uploading to S3..."}
+						</span>
+						<span className="text-muted-foreground/60">
+							{presignedState.progress}% S3 direct
+						</span>
+					</div>
+					{presignedState.status === "failed" && (
+						<Button
+							size="sm"
+							variant="outline"
+							className="w-full"
+							onClick={presignedReset}
+						>
+							Dismiss
+						</Button>
 					)}
 				</div>
 			)}

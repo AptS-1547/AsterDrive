@@ -74,6 +74,7 @@ pub async fn update(
     max_file_size: Option<i64>,
     chunk_size: Option<i64>,
     is_default: Option<bool>,
+    options: Option<String>,
 ) -> Result<storage_policy::Model> {
     let existing = policy_repo::find_by_id(&state.db, id).await?;
     let mut active: storage_policy::ActiveModel = existing.into();
@@ -103,6 +104,9 @@ pub async fn update(
     }
     if let Some(v) = is_default {
         active.is_default = Set(v);
+    }
+    if let Some(v) = options {
+        active.options = Set(v);
     }
     active.updated_at = Set(Utc::now());
     let result = active.update(&state.db).await.map_err(AsterError::from)?;

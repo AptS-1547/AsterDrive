@@ -9,6 +9,7 @@ use xmltree::Element;
 
 use crate::db::repository::lock_repo;
 use crate::entities::resource_lock;
+use crate::types::EntityType;
 use crate::webdav::path_resolver::{self, ResolvedNode};
 
 /// 数据库支持的 WebDAV 锁系统
@@ -60,7 +61,7 @@ impl DavLockSystem for DbLockSystem {
                     .map_err(|_| empty_dav_lock(&path_owned))?;
 
             // 检查是否已锁
-            if let Some(existing) = lock_repo::find_by_entity(&self.db, &entity_type, entity_id)
+            if let Some(existing) = lock_repo::find_by_entity(&self.db, entity_type, entity_id)
                 .await
                 .unwrap_or(None)
             {
@@ -69,11 +70,11 @@ impl DavLockSystem for DbLockSystem {
                     return Err(model_to_dav_lock(&existing));
                 }
                 // 过期锁：清理
-                let _ = lock_repo::delete_by_entity(&self.db, &entity_type, entity_id).await;
+                let _ = lock_repo::delete_by_entity(&self.db, entity_type, entity_id).await;
                 // 重置 is_locked
                 let _ = crate::services::lock_service::set_entity_locked(
                     &self.db,
-                    &entity_type,
+                    entity_type,
                     entity_id,
                     false,
                 )
@@ -85,7 +86,7 @@ impl DavLockSystem for DbLockSystem {
 
             let model = resource_lock::ActiveModel {
                 token: sea_orm::Set(token.clone()),
-                entity_type: sea_orm::Set(entity_type.clone()),
+                entity_type: sea_orm::Set(entity_type),
                 entity_id: sea_orm::Set(entity_id),
                 path: sea_orm::Set(path_str),
                 owner_id: sea_orm::Set(None), // WebDAV 没有 user_id（用 principal 代替）
@@ -104,7 +105,7 @@ impl DavLockSystem for DbLockSystem {
             // 同步 is_locked
             let _ = crate::services::lock_service::set_entity_locked(
                 &self.db,
-                &entity_type,
+                entity_type,
                 entity_id,
                 true,
             )
@@ -139,7 +140,7 @@ impl DavLockSystem for DbLockSystem {
             // 同步 is_locked
             let _ = crate::services::lock_service::set_entity_locked(
                 &self.db,
-                &lock.entity_type,
+                lock.entity_type,
                 lock.entity_id,
                 false,
             )
@@ -280,7 +281,7 @@ impl DavLockSystem for DbLockSystem {
             for lock in &locks {
                 let _ = crate::services::lock_service::set_entity_locked(
                     &self.db,
-                    &lock.entity_type,
+                    lock.entity_type,
                     lock.entity_id,
                     false,
                 )
@@ -333,11 +334,11 @@ async fn resolve_path_to_entity(
     user_id: i64,
     root_folder_id: Option<i64>,
     path: &str,
-) -> Result<(String, i64), ()> {
+) -> Result<(EntityType, i64), ()> {
     let dav_path = DavPath::new(path).map_err(|_| ())?;
     match path_resolver::resolve_path(db, user_id, &dav_path, root_folder_id).await {
-        Ok(ResolvedNode::File(f)) => Ok(("file".to_string(), f.id)),
-        Ok(ResolvedNode::Folder(f)) => Ok(("folder".to_string(), f.id)),
+        Ok(ResolvedNode::File(f)) => Ok((EntityType::File, f.id)),
+        Ok(ResolvedNode::Folder(f)) => Ok((EntityType::Folder, f.id)),
         _ => Err(()),
     }
 }

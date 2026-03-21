@@ -42,8 +42,7 @@ export const fileService = {
 			parent_id: parentId ?? null,
 		}),
 
-	listVersions: (id: number) =>
-		api.get<FileVersion[]>(`/files/${id}/versions`),
+	listVersions: (id: number) => api.get<FileVersion[]>(`/files/${id}/versions`),
 
 	restoreVersion: (fileId: number, versionId: number) =>
 		api.post<FileInfo>(`/files/${fileId}/versions/${versionId}/restore`),

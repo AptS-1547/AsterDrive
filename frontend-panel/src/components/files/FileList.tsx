@@ -228,7 +228,11 @@ export function FileList() {
 										className="h-8 w-8"
 										onClick={(e) => {
 											e.stopPropagation();
-											handleToggleLock("folder", folder.id, folder.is_locked ?? false);
+											handleToggleLock(
+												"folder",
+												folder.id,
+												folder.is_locked ?? false,
+											);
 										}}
 									>
 										{folder.is_locked ? (

@@ -83,9 +83,7 @@ export function VersionHistoryDialog({
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
 			<DialogTrigger
-				render={
-					<Button variant="ghost" size="icon" className="h-8 w-8" />
-				}
+				render={<Button variant="ghost" size="icon" className="h-8 w-8" />}
 			>
 				<History className="h-4 w-4" />
 			</DialogTrigger>

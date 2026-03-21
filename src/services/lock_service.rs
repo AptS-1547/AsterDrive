@@ -5,11 +5,12 @@ use crate::db::repository::{file_repo, folder_repo, lock_repo};
 use crate::entities::resource_lock;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
+use crate::types::EntityType;
 
 /// 锁定资源（REST/WebDAV/Web Editor 统一入口）
 pub async fn lock(
     state: &AppState,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
     owner_id: Option<i64>,
     owner_info: Option<String>,
@@ -38,7 +39,7 @@ pub async fn lock(
 
     let model = resource_lock::ActiveModel {
         token: Set(token),
-        entity_type: Set(entity_type.to_string()),
+        entity_type: Set(entity_type),
         entity_id: Set(entity_id),
         path: Set(path),
         owner_id: Set(owner_id),
@@ -61,7 +62,7 @@ pub async fn lock(
 /// 解锁资源（用户主动解锁）
 pub async fn unlock(
     state: &AppState,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
 ) -> Result<()> {
@@ -87,7 +88,7 @@ pub async fn unlock_by_token(state: &AppState, token: &str) -> Result<()> {
         .ok_or_else(|| AsterError::record_not_found("lock not found"))?;
 
     lock_repo::delete_by_token(db, token).await?;
-    set_entity_locked(db, &lock.entity_type, lock.entity_id, false).await?;
+    set_entity_locked(db, lock.entity_type, lock.entity_id, false).await?;
     Ok(())
 }
 
@@ -99,7 +100,7 @@ pub async fn force_unlock(state: &AppState, lock_id: i64) -> Result<()> {
         .ok_or_else(|| AsterError::record_not_found("lock not found"))?;
 
     lock_repo::delete_by_id(db, lock_id).await?;
-    set_entity_locked(db, &lock.entity_type, lock.entity_id, false).await?;
+    set_entity_locked(db, lock.entity_type, lock.entity_id, false).await?;
     Ok(())
 }
 
@@ -117,7 +118,7 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
 
     // 批量重置 is_locked
     for lock in &expired {
-        let _ = set_entity_locked(db, &lock.entity_type, lock.entity_id, false).await;
+        let _ = set_entity_locked(db, lock.entity_type, lock.entity_id, false).await;
     }
 
     // 批量删除
@@ -128,7 +129,11 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
 
 // ── Internal helpers ────────────────────────────────────────────────
 
-async fn do_unlock_by_entity(state: &AppState, entity_type: &str, entity_id: i64) -> Result<()> {
+async fn do_unlock_by_entity(
+    state: &AppState,
+    entity_type: EntityType,
+    entity_id: i64,
+) -> Result<()> {
     lock_repo::delete_by_entity(&state.db, entity_type, entity_id).await?;
     set_entity_locked(&state.db, entity_type, entity_id, false).await?;
     Ok(())
@@ -137,7 +142,7 @@ async fn do_unlock_by_entity(state: &AppState, entity_type: &str, entity_id: i64
 /// 同步 is_locked boolean 缓存（pub 给 db_lock_system 调用）
 pub async fn set_entity_locked(
     db: &sea_orm::DatabaseConnection,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
     locked: bool,
 ) -> Result<()> {
@@ -145,7 +150,7 @@ pub async fn set_entity_locked(
     let now = Utc::now();
 
     match entity_type {
-        "file" => {
+        EntityType::File => {
             if let Ok(f) = file_repo::find_by_id(db, entity_id).await {
                 let mut active: crate::entities::file::ActiveModel = f.into();
                 active.is_locked = Set(locked);
@@ -153,7 +158,7 @@ pub async fn set_entity_locked(
                 let _ = active.update(db).await;
             }
         }
-        "folder" => {
+        EntityType::Folder => {
             if let Ok(f) = folder_repo::find_by_id(db, entity_id).await {
                 let mut active: crate::entities::folder::ActiveModel = f.into();
                 active.is_locked = Set(locked);
@@ -161,7 +166,6 @@ pub async fn set_entity_locked(
                 let _ = active.update(db).await;
             }
         }
-        _ => {}
     }
     Ok(())
 }
@@ -169,41 +173,39 @@ pub async fn set_entity_locked(
 /// 校验资源归属
 async fn check_entity_ownership(
     db: &sea_orm::DatabaseConnection,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
 ) -> Result<bool> {
     match entity_type {
-        "file" => {
+        EntityType::File => {
             let f = file_repo::find_by_id(db, entity_id).await?;
             Ok(f.user_id == user_id)
         }
-        "folder" => {
+        EntityType::Folder => {
             let f = folder_repo::find_by_id(db, entity_id).await?;
             Ok(f.user_id == user_id)
         }
-        _ => Ok(false),
     }
 }
 
 /// 从 entity 反查 WebDAV 路径
 pub async fn resolve_entity_path(
     db: &sea_orm::DatabaseConnection,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
 ) -> Result<String> {
     match entity_type {
-        "file" => {
+        EntityType::File => {
             let f = file_repo::find_by_id(db, entity_id).await?;
             let folder_path = resolve_folder_path(db, f.folder_id).await?;
             Ok(format!("{}{}", folder_path, f.name))
         }
-        "folder" => {
+        EntityType::Folder => {
             let f = folder_repo::find_by_id(db, entity_id).await?;
             let parent_path = resolve_folder_path(db, Some(f.id)).await?;
             Ok(parent_path)
         }
-        _ => Ok("/".to_string()),
     }
 }
 

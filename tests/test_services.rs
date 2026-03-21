@@ -139,7 +139,7 @@ async fn test_lock_service_lock_unlock() {
     // 锁定
     let lock = aster_drive::services::lock_service::lock(
         &state,
-        "folder",
+        aster_drive::types::EntityType::Folder,
         folder.id,
         Some(user.id),
         None,
@@ -158,7 +158,7 @@ async fn test_lock_service_lock_unlock() {
     // 重复锁定应失败
     let err = aster_drive::services::lock_service::lock(
         &state,
-        "folder",
+        aster_drive::types::EntityType::Folder,
         folder.id,
         Some(user.id),
         None,
@@ -172,9 +172,14 @@ async fn test_lock_service_lock_unlock() {
     assert!(err.is_err());
 
     // 解锁
-    aster_drive::services::lock_service::unlock(&state, "folder", folder.id, user.id)
-        .await
-        .unwrap();
+    aster_drive::services::lock_service::unlock(
+        &state,
+        aster_drive::types::EntityType::Folder,
+        folder.id,
+        user.id,
+    )
+    .await
+    .unwrap();
 
     // is_locked 应该回到 false
     let f = aster_drive::db::repository::folder_repo::find_by_id(&state.db, folder.id)
@@ -207,7 +212,7 @@ async fn test_lock_service_force_unlock() {
 
     let lock = aster_drive::services::lock_service::lock(
         &state,
-        "folder",
+        aster_drive::types::EntityType::Folder,
         folder.id,
         Some(user.id),
         None,
@@ -404,7 +409,7 @@ async fn test_property_service_dav_readonly() {
     // 普通命名空间 OK
     let prop = aster_drive::services::property_service::set(
         &state,
-        "folder",
+        aster_drive::types::EntityType::Folder,
         folder.id,
         user.id,
         "aster:",
@@ -418,7 +423,7 @@ async fn test_property_service_dav_readonly() {
     // DAV: 命名空间被拒绝
     let err = aster_drive::services::property_service::set(
         &state,
-        "folder",
+        aster_drive::types::EntityType::Folder,
         folder.id,
         user.id,
         "DAV:",

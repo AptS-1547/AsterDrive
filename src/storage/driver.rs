@@ -40,4 +40,18 @@ pub trait StorageDriver: Send + Sync {
 
     /// 生成临时访问 URL（本地存储返回 None）
     async fn presigned_url(&self, path: &str, expires: Duration) -> Result<Option<String>>;
+
+    /// 生成 presigned PUT URL 供客户端直传（S3 only，本地返回 None）
+    async fn presigned_put_url(&self, path: &str, expires: Duration) -> Result<Option<String>> {
+        let _ = (path, expires);
+        Ok(None)
+    }
+
+    /// 同 bucket 内复制对象（S3 server-side copy）
+    async fn copy_object(&self, src_path: &str, dest_path: &str) -> Result<String> {
+        let _ = (src_path, dest_path);
+        Err(crate::errors::AsterError::storage_driver_error(
+            "copy_object not supported by this driver",
+        ))
+    }
 }

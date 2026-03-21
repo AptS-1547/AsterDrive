@@ -2,31 +2,27 @@ use crate::db::repository::{file_repo, folder_repo, property_repo};
 use crate::entities::entity_property;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
+use crate::types::EntityType;
 
-/// 验证实体归属并返回（entity_type 必须是 "file" 或 "folder"）
+/// 验证实体归属并返回
 async fn verify_ownership(
     state: &AppState,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
 ) -> Result<()> {
     match entity_type {
-        "file" => {
+        EntityType::File => {
             let f = file_repo::find_by_id(&state.db, entity_id).await?;
             if f.user_id != user_id {
                 return Err(AsterError::auth_forbidden("not your file"));
             }
         }
-        "folder" => {
+        EntityType::Folder => {
             let f = folder_repo::find_by_id(&state.db, entity_id).await?;
             if f.user_id != user_id {
                 return Err(AsterError::auth_forbidden("not your folder"));
             }
-        }
-        _ => {
-            return Err(AsterError::validation_error(
-                "entity_type must be 'file' or 'folder'",
-            ));
         }
     }
     Ok(())
@@ -35,7 +31,7 @@ async fn verify_ownership(
 /// 列出实体的所有属性
 pub async fn list(
     state: &AppState,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
 ) -> Result<Vec<entity_property::Model>> {
@@ -46,7 +42,7 @@ pub async fn list(
 /// 设置（新增/更新）属性
 pub async fn set(
     state: &AppState,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
     namespace: &str,
@@ -65,7 +61,7 @@ pub async fn set(
 /// 删除单个属性
 pub async fn delete(
     state: &AppState,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
     namespace: &str,

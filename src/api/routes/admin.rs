@@ -166,6 +166,7 @@ pub struct PatchPolicyReq {
     pub max_file_size: Option<i64>,
     pub chunk_size: Option<i64>,
     pub is_default: Option<bool>,
+    pub options: Option<String>,
 }
 
 #[utoipa::path(
@@ -203,6 +204,7 @@ pub async fn update_policy(
         body.max_file_size,
         body.chunk_size,
         body.is_default,
+        body.options,
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))

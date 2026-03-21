@@ -5,6 +5,7 @@ use crate::errors::AsterError;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, file_service, thumbnail_service, upload_service};
+use crate::types::EntityType;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
@@ -384,9 +385,17 @@ pub async fn set_lock(
 ) -> Result<HttpResponse> {
     use crate::services::lock_service;
     if body.locked {
-        lock_service::lock(&state, "file", *path, Some(claims.user_id), None, None).await?;
+        lock_service::lock(
+            &state,
+            EntityType::File,
+            *path,
+            Some(claims.user_id),
+            None,
+            None,
+        )
+        .await?;
     } else {
-        lock_service::unlock(&state, "file", *path, claims.user_id).await?;
+        lock_service::unlock(&state, EntityType::File, *path, claims.user_id).await?;
     }
     let file = file_service::get_info(&state, *path, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))

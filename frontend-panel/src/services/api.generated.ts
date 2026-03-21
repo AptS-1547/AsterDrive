@@ -420,6 +420,22 @@ export interface paths {
         patch: operations["patch_file"];
         trace?: never;
     };
+    "/api/v1/files/{id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["copy_file"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/files/{id}/download": {
         parameters: {
             query?: never;
@@ -468,6 +484,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/files/{id}/versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_version"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/files/{id}/versions/{version_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restore_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/folders": {
         parameters: {
             query?: never;
@@ -498,6 +562,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["patch_folder"];
+        trace?: never;
+    };
+    "/api/v1/folders/{id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["copy_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/folders/{id}/lock": {
@@ -821,6 +901,14 @@ export interface components {
             /** Format: int32 */
             total_chunks: number;
         };
+        CopyFileReq: {
+            /** Format: int64 */
+            folder_id?: number | null;
+        };
+        CopyFolderReq: {
+            /** Format: int64 */
+            parent_id?: number | null;
+        };
         CreateFolderReq: {
             name: string;
             /** Format: int64 */
@@ -897,6 +985,19 @@ export interface components {
             /** Format: int64 */
             folder_id?: number | null;
         };
+        FileVersion: {
+            /** Format: int64 */
+            blob_id: number;
+            created_at: string;
+            /** Format: int64 */
+            file_id: number;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            size: number;
+            /** Format: int32 */
+            version: number;
+        };
         FolderContentsResponse: {
             files: components["schemas"]["FileInfo"][];
             folders: components["schemas"]["FolderInfo"][];
@@ -932,6 +1033,8 @@ export interface components {
             /** Format: int64 */
             chunk_size?: number | null;
             mode: string;
+            /** @description S3 presigned PUT URL（仅 presigned 模式） */
+            presigned_url?: string | null;
             /** Format: int32 */
             total_chunks?: number | null;
             upload_id?: string | null;
@@ -983,6 +1086,22 @@ export interface components {
             email: string;
             password: string;
             username: string;
+        };
+        ResourceLock: {
+            created_at: string;
+            deep: boolean;
+            /** Format: int64 */
+            entity_id: number;
+            entity_type: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            owner_id?: number | null;
+            owner_info?: string | null;
+            path: string;
+            shared: boolean;
+            timeout_at?: string | null;
+            token: string;
         };
         SetConfigReq: {
             value: string;
@@ -1105,6 +1224,7 @@ export interface components {
             policy_id: number;
             /** Format: int32 */
             received_count: number;
+            s3_temp_key?: string | null;
             status: string;
             /** Format: int32 */
             total_chunks: number;
@@ -1186,18 +1306,6 @@ export interface components {
             root_folder_path?: string | null;
             updated_at: string;
             username: string;
-        };
-        WebdavLock: {
-            created_at: string;
-            deep: boolean;
-            /** Format: int64 */
-            id: number;
-            owner_xml?: string | null;
-            path: string;
-            principal?: string | null;
-            shared: boolean;
-            timeout_at?: string | null;
-            token: string;
         };
     };
     responses: never;
@@ -1426,10 +1534,14 @@ export interface operations {
                             created_at: string;
                             deep: boolean;
                             /** Format: int64 */
+                            entity_id: number;
+                            entity_type: string;
+                            /** Format: int64 */
                             id: number;
-                            owner_xml?: string | null;
+                            /** Format: int64 */
+                            owner_id?: number | null;
+                            owner_info?: string | null;
                             path: string;
-                            principal?: string | null;
                             shared: boolean;
                             timeout_at?: string | null;
                             token: string;
@@ -2610,6 +2722,8 @@ export interface operations {
                             /** Format: int64 */
                             chunk_size?: number | null;
                             mode: string;
+                            /** @description S3 presigned PUT URL（仅 presigned 模式） */
+                            presigned_url?: string | null;
                             /** Format: int32 */
                             total_chunks?: number | null;
                             upload_id?: string | null;
@@ -2971,6 +3085,66 @@ export interface operations {
             };
         };
     };
+    copy_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Source file ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyFileReq"];
+            };
+        };
+        responses: {
+            /** @description File copied */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            blob_id: number;
+                            created_at: string;
+                            deleted_at?: string | null;
+                            /** Format: int64 */
+                            folder_id?: number | null;
+                            /** Format: int64 */
+                            id: number;
+                            is_locked?: boolean;
+                            mime_type: string;
+                            name: string;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     download_file: {
         parameters: {
             query?: never;
@@ -3093,6 +3267,147 @@ export interface operations {
                 content?: never;
             };
             /** @description Not found or not an image */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File versions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            blob_id: number;
+                            created_at: string;
+                            /** Format: int64 */
+                            file_id: number;
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: int64 */
+                            size: number;
+                            /** Format: int32 */
+                            version: number;
+                        }[];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+                /** @description Version ID */
+                version_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Version deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    restore_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+                /** @description Version ID */
+                version_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Version restored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            blob_id: number;
+                            created_at: string;
+                            deleted_at?: string | null;
+                            /** Format: int64 */
+                            folder_id?: number | null;
+                            /** Format: int64 */
+                            id: number;
+                            is_locked?: boolean;
+                            mime_type: string;
+                            name: string;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3281,6 +3596,65 @@ export interface operations {
         responses: {
             /** @description Folder updated */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            deleted_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            is_locked?: boolean;
+                            name: string;
+                            /** Format: int64 */
+                            parent_id?: number | null;
+                            /** Format: int64 */
+                            policy_id?: number | null;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Folder not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    copy_folder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Source folder ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyFolderReq"];
+            };
+        };
+        responses: {
+            /** @description Folder copied */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

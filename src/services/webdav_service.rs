@@ -67,8 +67,12 @@ pub fn recursive_purge_folder<'a>(
         }
 
         // 清理属性
-        crate::db::repository::property_repo::delete_all_for_entity(db, "folder", folder_id)
-            .await?;
+        crate::db::repository::property_repo::delete_all_for_entity(
+            db,
+            crate::types::EntityType::Folder,
+            folder_id,
+        )
+        .await?;
 
         // 硬删除文件夹
         folder_repo::delete(db, folder_id).await?;

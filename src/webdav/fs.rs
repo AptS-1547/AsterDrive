@@ -16,6 +16,7 @@ use crate::config::Config;
 use crate::db::repository::{file_repo, folder_repo, policy_repo, property_repo, user_repo};
 use crate::services::{file_service, folder_service, webdav_service};
 use crate::storage::DriverRegistry;
+use crate::types::EntityType;
 use crate::webdav::dir_entry::AsterDavDirEntry;
 use crate::webdav::file::AsterDavFile;
 use crate::webdav::metadata::AsterDavMeta;
@@ -454,7 +455,7 @@ impl DavFileSystem for AsterDavFs {
                     Some(v) => v,
                     None => return false,
                 };
-            property_repo::has_properties(&self.db, &entity_type, entity_id)
+            property_repo::has_properties(&self.db, entity_type, entity_id)
                 .await
                 .unwrap_or(false)
         })
@@ -467,7 +468,7 @@ impl DavFileSystem for AsterDavFs {
                     .await
                     .ok_or(FsError::NotFound)?;
 
-            let props = property_repo::find_by_entity(&self.db, &entity_type, entity_id)
+            let props = property_repo::find_by_entity(&self.db, entity_type, entity_id)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
@@ -517,7 +518,7 @@ impl DavFileSystem for AsterDavFs {
                     let value = prop.xml.as_ref().map(|x| String::from_utf8_lossy(x));
                     match property_repo::upsert(
                         &self.db,
-                        &entity_type,
+                        entity_type,
                         entity_id,
                         ns,
                         &prop.name,
@@ -531,7 +532,7 @@ impl DavFileSystem for AsterDavFs {
                 } else {
                     match property_repo::delete_prop(
                         &self.db,
-                        &entity_type,
+                        entity_type,
                         entity_id,
                         ns,
                         &prop.name,
@@ -557,10 +558,10 @@ async fn resolve_entity(
     user_id: i64,
     path: &DavPath,
     root_folder_id: Option<i64>,
-) -> Option<(String, i64)> {
+) -> Option<(EntityType, i64)> {
     match path_resolver::resolve_path(db, user_id, path, root_folder_id).await {
-        Ok(ResolvedNode::File(f)) => Some(("file".to_string(), f.id)),
-        Ok(ResolvedNode::Folder(f)) => Some(("folder".to_string(), f.id)),
+        Ok(ResolvedNode::File(f)) => Some((EntityType::File, f.id)),
+        Ok(ResolvedNode::Folder(f)) => Some((EntityType::Folder, f.id)),
         _ => None,
     }
 }

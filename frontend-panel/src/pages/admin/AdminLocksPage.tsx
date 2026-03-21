@@ -138,9 +138,7 @@ export default function AdminLocksPage() {
 												<Badge variant="outline">
 													{l.shared ? "Shared" : "Exclusive"}
 												</Badge>
-												{l.deep && (
-													<Badge variant="outline">Deep</Badge>
-												)}
+												{l.deep && <Badge variant="outline">Deep</Badge>}
 											</div>
 										</TableCell>
 										<TableCell>

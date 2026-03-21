@@ -5,11 +5,12 @@ use sea_orm::{
 
 use crate::entities::entity_property::{self, Entity as EntityProperty};
 use crate::errors::{AsterError, Result};
+use crate::types::EntityType;
 
 /// 查询实体的所有属性
 pub async fn find_by_entity(
     db: &DatabaseConnection,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
 ) -> Result<Vec<entity_property::Model>> {
     EntityProperty::find()
@@ -23,7 +24,7 @@ pub async fn find_by_entity(
 /// 插入或更新属性
 pub async fn upsert(
     db: &DatabaseConnection,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
     namespace: &str,
     name: &str,
@@ -45,7 +46,7 @@ pub async fn upsert(
         active.update(db).await.map_err(AsterError::from)
     } else {
         let model = entity_property::ActiveModel {
-            entity_type: Set(entity_type.to_string()),
+            entity_type: Set(entity_type),
             entity_id: Set(entity_id),
             namespace: Set(namespace.to_string()),
             name: Set(name.to_string()),
@@ -59,7 +60,7 @@ pub async fn upsert(
 /// 删除单个属性
 pub async fn delete_prop(
     db: &DatabaseConnection,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
     namespace: &str,
     name: &str,
@@ -78,7 +79,7 @@ pub async fn delete_prop(
 /// 删除实体的所有属性（实体删除时级联清理）
 pub async fn delete_all_for_entity(
     db: &DatabaseConnection,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
 ) -> Result<()> {
     EntityProperty::delete_many()
@@ -93,7 +94,7 @@ pub async fn delete_all_for_entity(
 /// 检查实体是否有自定义属性
 pub async fn has_properties(
     db: &DatabaseConnection,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
 ) -> Result<bool> {
     let count = EntityProperty::find()

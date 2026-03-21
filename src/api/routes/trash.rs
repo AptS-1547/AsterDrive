@@ -1,8 +1,9 @@
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::response::ApiResponse;
-use crate::errors::{AsterError, Result};
+use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, trash_service};
+use crate::types::EntityType;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
@@ -18,7 +19,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
 
 #[derive(Deserialize, ToSchema)]
 pub struct TrashItemPath {
-    pub entity_type: String, // "file" | "folder"
+    pub entity_type: EntityType,
     pub id: i64,
 }
 
@@ -47,7 +48,7 @@ pub async fn list_trash(
     tag = "trash",
     operation_id = "restore_from_trash",
     params(
-        ("entity_type" = String, Path, description = "file or folder"),
+        ("entity_type" = EntityType, Path, description = "file or folder"),
         ("id" = i64, Path, description = "Entity ID"),
     ),
     responses(
@@ -62,13 +63,10 @@ pub async fn restore(
     claims: web::ReqData<Claims>,
     path: web::Path<TrashItemPath>,
 ) -> Result<HttpResponse> {
-    match path.entity_type.as_str() {
-        "file" => trash_service::restore_file(&state, path.id, claims.user_id).await?,
-        "folder" => trash_service::restore_folder(&state, path.id, claims.user_id).await?,
-        _ => {
-            return Err(AsterError::validation_error(
-                "entity_type must be 'file' or 'folder'",
-            ));
+    match path.entity_type {
+        EntityType::File => trash_service::restore_file(&state, path.id, claims.user_id).await?,
+        EntityType::Folder => {
+            trash_service::restore_folder(&state, path.id, claims.user_id).await?
         }
     }
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
@@ -80,7 +78,7 @@ pub async fn restore(
     tag = "trash",
     operation_id = "purge_from_trash",
     params(
-        ("entity_type" = String, Path, description = "file or folder"),
+        ("entity_type" = EntityType, Path, description = "file or folder"),
         ("id" = i64, Path, description = "Entity ID"),
     ),
     responses(
@@ -95,14 +93,9 @@ pub async fn purge_one(
     claims: web::ReqData<Claims>,
     path: web::Path<TrashItemPath>,
 ) -> Result<HttpResponse> {
-    match path.entity_type.as_str() {
-        "file" => trash_service::purge_file(&state, path.id, claims.user_id).await?,
-        "folder" => trash_service::purge_folder(&state, path.id, claims.user_id).await?,
-        _ => {
-            return Err(AsterError::validation_error(
-                "entity_type must be 'file' or 'folder'",
-            ));
-        }
+    match path.entity_type {
+        EntityType::File => trash_service::purge_file(&state, path.id, claims.user_id).await?,
+        EntityType::Folder => trash_service::purge_folder(&state, path.id, claims.user_id).await?,
     }
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

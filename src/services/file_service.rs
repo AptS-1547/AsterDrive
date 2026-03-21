@@ -334,7 +334,12 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     file_repo::delete(db, id).await?;
 
     // 清理属性
-    crate::db::repository::property_repo::delete_all_for_entity(db, "file", id).await?;
+    crate::db::repository::property_repo::delete_all_for_entity(
+        db,
+        crate::types::EntityType::File,
+        id,
+    )
+    .await?;
 
     // 清理所有版本（级联删除版本 blob）
     crate::services::version_service::purge_all_versions(state, id).await?;

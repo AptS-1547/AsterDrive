@@ -207,4 +207,42 @@ impl StorageDriver for S3Driver {
 
         Ok(Some(url.uri().to_string()))
     }
+
+    async fn presigned_put_url(&self, path: &str, expires: Duration) -> Result<Option<String>> {
+        let key = self.full_key(path);
+        let presign_config = PresigningConfig::builder()
+            .expires_in(expires)
+            .build()
+            .map_err(|e| AsterError::storage_driver_error(format!("presign config: {e}")))?;
+
+        let url = self
+            .client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .presigned(presign_config)
+            .await
+            .map_err(|e| {
+                AsterError::storage_driver_error(format!("S3 presigned PUT failed: {e}"))
+            })?;
+
+        Ok(Some(url.uri().to_string()))
+    }
+
+    async fn copy_object(&self, src_path: &str, dest_path: &str) -> Result<String> {
+        let src_key = self.full_key(src_path);
+        let dest_key = self.full_key(dest_path);
+        let copy_source = format!("{}/{}", self.bucket, src_key);
+
+        self.client
+            .copy_object()
+            .bucket(&self.bucket)
+            .copy_source(&copy_source)
+            .key(&dest_key)
+            .send()
+            .await
+            .map_err(|e| AsterError::storage_driver_error(format!("S3 copy_object failed: {e}")))?;
+
+        Ok(dest_path.to_string())
+    }
 }

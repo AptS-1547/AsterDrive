@@ -1,4 +1,11 @@
-import { ArrowLeft, HardDrive, Link, Lock, Settings, Users } from "lucide-react";
+import {
+	ArrowLeft,
+	HardDrive,
+	Link,
+	Lock,
+	Settings,
+	Users,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";

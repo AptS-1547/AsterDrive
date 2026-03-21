@@ -110,8 +110,7 @@ export const adminLockService = {
 
 	forceUnlock: (id: number) => api.delete<void>(`/admin/locks/${id}`),
 
-	cleanupExpired: () =>
-		api.delete<{ removed: number }>("/admin/locks/expired"),
+	cleanupExpired: () => api.delete<{ removed: number }>("/admin/locks/expired"),
 };
 
 // --- System Config ---

@@ -3,6 +3,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, Qu
 
 use crate::entities::resource_lock::{self, Entity as ResourceLock};
 use crate::errors::{AsterError, Result};
+use crate::types::EntityType;
 
 pub async fn create(
     db: &DatabaseConnection,
@@ -36,7 +37,7 @@ pub async fn find_by_token(
 /// 查询单个资源的锁
 pub async fn find_by_entity(
     db: &DatabaseConnection,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
 ) -> Result<Option<resource_lock::Model>> {
     ResourceLock::find()
@@ -93,7 +94,7 @@ pub async fn delete_by_token(db: &DatabaseConnection, token: &str) -> Result<()>
 
 pub async fn delete_by_entity(
     db: &DatabaseConnection,
-    entity_type: &str,
+    entity_type: EntityType,
     entity_id: i64,
 ) -> Result<()> {
     ResourceLock::delete_many()

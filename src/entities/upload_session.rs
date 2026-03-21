@@ -2,6 +2,8 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::types::UploadSessionStatus;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, ToSchema)]
 #[schema(as = UploadSession)]
 #[sea_orm(table_name = "upload_sessions")]
@@ -16,7 +18,8 @@ pub struct Model {
     pub received_count: i32,
     pub folder_id: Option<i64>,
     pub policy_id: i64,
-    pub status: String, // "uploading" | "assembling" | "completed" | "failed"
+    pub status: UploadSessionStatus,
+    pub s3_temp_key: Option<String>,
     #[schema(value_type = String)]
     pub created_at: DateTimeUtc,
     #[schema(value_type = String)]

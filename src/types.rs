@@ -53,6 +53,47 @@ pub enum DriverType {
     S3,
 }
 
+/// 上传 session 状态
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema,
+)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
+#[serde(rename_all = "lowercase")]
+pub enum UploadSessionStatus {
+    #[sea_orm(string_value = "uploading")]
+    Uploading,
+    #[sea_orm(string_value = "assembling")]
+    Assembling,
+    #[sea_orm(string_value = "completed")]
+    Completed,
+    #[sea_orm(string_value = "failed")]
+    Failed,
+    #[sea_orm(string_value = "presigned")]
+    Presigned,
+}
+
+/// 上传模式（不存 DB，仅 API 响应用）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum UploadMode {
+    Direct,
+    Chunked,
+    Presigned,
+}
+
+/// 实体类型（文件/文件夹）
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema,
+)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
+#[serde(rename_all = "lowercase")]
+pub enum EntityType {
+    #[sea_orm(string_value = "file")]
+    File,
+    #[sea_orm(string_value = "folder")]
+    Folder,
+}
+
 /// JWT Token 类型（不存 DB）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]

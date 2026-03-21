@@ -3,6 +3,7 @@ use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, folder_service};
+use crate::types::EntityType;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
@@ -177,9 +178,17 @@ pub async fn set_lock(
 ) -> Result<HttpResponse> {
     use crate::services::lock_service;
     if body.locked {
-        lock_service::lock(&state, "folder", *path, Some(claims.user_id), None, None).await?;
+        lock_service::lock(
+            &state,
+            EntityType::Folder,
+            *path,
+            Some(claims.user_id),
+            None,
+            None,
+        )
+        .await?;
     } else {
-        lock_service::unlock(&state, "folder", *path, claims.user_id).await?;
+        lock_service::unlock(&state, EntityType::Folder, *path, claims.user_id).await?;
     }
     // 返回更新后的文件夹信息
     let folder = crate::db::repository::folder_repo::find_by_id(&state.db, *path).await?;

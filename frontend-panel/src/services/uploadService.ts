@@ -3,10 +3,11 @@ import type { FileInfo } from "@/types/api";
 import { api } from "./http";
 
 export interface InitUploadResponse {
-	mode: "direct" | "chunked";
+	mode: "direct" | "chunked" | "presigned";
 	upload_id?: string;
 	chunk_size?: number;
 	total_chunks?: number;
+	presigned_url?: string;
 }
 
 export interface ChunkUploadResponse {
@@ -76,4 +77,33 @@ export const uploadService = {
 
 	getProgress: (uploadId: string) =>
 		api.get<UploadProgressResponse>(`/files/upload/${uploadId}`),
+
+	/** PUT 直传 S3 presigned URL */
+	presignedUpload: (
+		presignedUrl: string,
+		file: File,
+		onProgress?: (loaded: number, total: number) => void,
+	): Promise<void> => {
+		return new Promise((resolve, reject) => {
+			const xhr = new XMLHttpRequest();
+			xhr.open("PUT", presignedUrl);
+			xhr.setRequestHeader("Content-Type", "application/octet-stream");
+
+			if (onProgress) {
+				xhr.upload.onprogress = (e) => {
+					if (e.lengthComputable) onProgress(e.loaded, e.total);
+				};
+			}
+
+			xhr.onload = () => {
+				if (xhr.status >= 200 && xhr.status < 300) {
+					resolve();
+				} else {
+					reject(new Error(`S3 upload failed: ${xhr.status}`));
+				}
+			};
+			xhr.onerror = () => reject(new Error("network error"));
+			xhr.send(file);
+		});
+	},
 };

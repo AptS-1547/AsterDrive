@@ -56,6 +56,19 @@ interface PolicyFormData {
 	max_file_size: string;
 	chunk_size: string;
 	is_default: boolean;
+	presigned_upload: boolean;
+}
+
+interface PolicyOptions {
+	presigned_upload?: boolean;
+}
+
+function parsePolicyOptions(options: string): PolicyOptions {
+	try {
+		return JSON.parse(options);
+	} catch {
+		return {};
+	}
 }
 
 const emptyForm: PolicyFormData = {
@@ -69,6 +82,7 @@ const emptyForm: PolicyFormData = {
 	max_file_size: "",
 	chunk_size: "5",
 	is_default: false,
+	presigned_upload: false,
 };
 
 function TestConnectionButton({
@@ -157,6 +171,7 @@ export default function AdminPoliciesPage() {
 
 	const openEdit = (p: StoragePolicy) => {
 		setEditingId(p.id);
+		const opts = parsePolicyOptions(p.options);
 		setForm({
 			name: p.name,
 			driver_type: p.driver_type,
@@ -170,6 +185,7 @@ export default function AdminPoliciesPage() {
 				? String(Math.round(p.chunk_size / 1024 / 1024))
 				: "5",
 			is_default: p.is_default,
+			presigned_upload: opts.presigned_upload ?? false,
 		});
 		setDialogOpen(true);
 	};
@@ -177,6 +193,9 @@ export default function AdminPoliciesPage() {
 	const handleSubmit = async (e: FormEvent) => {
 		e.preventDefault();
 		try {
+			const options = JSON.stringify({
+				presigned_upload: form.presigned_upload,
+			});
 			if (editingId) {
 				const payload: Record<string, unknown> = {
 					name: form.name,
@@ -190,6 +209,7 @@ export default function AdminPoliciesPage() {
 						? Number(form.chunk_size) * 1024 * 1024
 						: 0,
 					is_default: form.is_default,
+					options,
 				};
 				// Only send credentials if user typed new values
 				if (form.access_key) payload.access_key = form.access_key;
@@ -208,6 +228,7 @@ export default function AdminPoliciesPage() {
 					chunk_size: form.chunk_size
 						? Number(form.chunk_size) * 1024 * 1024
 						: 0,
+					options,
 				};
 				const created = await adminPolicyService.create(payload);
 				setPolicies((prev) => [...prev, created]);
@@ -440,6 +461,22 @@ export default function AdminPoliciesPage() {
 												value={form.secret_key}
 												onChange={(e) => setField("secret_key", e.target.value)}
 											/>
+										</div>
+									</div>
+									<div className="flex items-center gap-2 pt-1">
+										<Switch
+											id="presigned_upload"
+											checked={form.presigned_upload}
+											onCheckedChange={(v) => setField("presigned_upload", v)}
+										/>
+										<div>
+											<Label htmlFor="presigned_upload">
+												Presigned Upload (client direct to S3)
+											</Label>
+											<p className="text-xs text-muted-foreground">
+												Files ≤ 5 GB upload directly to S3. Requires CORS on the
+												bucket.
+											</p>
 										</div>
 									</div>
 								</>
