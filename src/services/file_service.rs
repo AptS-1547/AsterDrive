@@ -244,6 +244,11 @@ pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<file::M
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your file"));
     }
+    if f.deleted_at.is_some() {
+        return Err(AsterError::file_not_found(format!(
+            "file #{id} is in trash"
+        )));
+    }
     Ok(f)
 }
 
@@ -253,6 +258,11 @@ pub async fn download(state: &AppState, id: i64, user_id: i64) -> Result<HttpRes
     let f = file_repo::find_by_id(db, id).await?;
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your file"));
+    }
+    if f.deleted_at.is_some() {
+        return Err(AsterError::file_not_found(format!(
+            "file #{id} is in trash"
+        )));
     }
 
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
@@ -287,8 +297,17 @@ pub async fn download_raw(state: &AppState, id: i64) -> Result<HttpResponse> {
         .body(data))
 }
 
-/// 删除文件
+/// 删除文件（软删除 → 回收站）
 pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
+    let f = file_repo::find_by_id(&state.db, id).await?;
+    if f.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your file"));
+    }
+    file_repo::soft_delete(&state.db, id).await
+}
+
+/// 永久删除文件（回收站清理用，处理 blob ref_count + 物理文件 + 缩略图 + 配额）
+pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
     if f.user_id != user_id {
@@ -298,12 +317,14 @@ pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
     file_repo::delete(db, id).await?;
 
+    // 清理属性
+    crate::db::repository::property_repo::delete_all_for_entity(db, "file", id).await?;
+
     // 回减用户已用空间
     user_repo::update_storage_used(db, user_id, -blob.size).await?;
 
     // 减少引用计数，如果为 0 则删除物理文件
     if blob.ref_count <= 1 {
-        // best-effort 删除缩略图
         if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, &blob).await {
             tracing::warn!("failed to delete thumbnail for blob {}: {e}", blob.id);
         }

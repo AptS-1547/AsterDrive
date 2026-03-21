@@ -10,10 +10,8 @@ use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::file_service;
 
-/// 递归删除文件夹及其所有内容
-///
-/// 深度优先：删文件 → 递归子文件夹 → 删空文件夹
-pub fn recursive_delete_folder<'a>(
+/// 递归软删除文件夹及其所有内容（→ 回收站）
+pub fn recursive_soft_delete<'a>(
     state: &'a AppState,
     user_id: i64,
     folder_id: i64,
@@ -21,19 +19,58 @@ pub fn recursive_delete_folder<'a>(
     Box::pin(async move {
         let db = &state.db;
 
-        // 删除该文件夹下所有文件
+        // 软删除该文件夹下所有文件
         let files = file_repo::find_by_folder(db, user_id, Some(folder_id)).await?;
         for f in files {
-            file_service::delete(state, f.id, user_id).await?;
+            file_repo::soft_delete(db, f.id).await?;
         }
 
-        // 递归删除子文件夹
+        // 递归软删除子文件夹
         let children = folder_repo::find_children(db, user_id, Some(folder_id)).await?;
         for child in children {
-            recursive_delete_folder(state, user_id, child.id).await?;
+            recursive_soft_delete(state, user_id, child.id).await?;
         }
 
-        // 删除当前文件夹
+        // 软���除当前文件夹
+        folder_repo::soft_delete(db, folder_id).await?;
+        Ok(())
+    })
+}
+
+/// 递归永久删除文件夹及其所有内容（回收站清理用）
+pub fn recursive_purge_folder<'a>(
+    state: &'a AppState,
+    user_id: i64,
+    folder_id: i64,
+) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let db = &state.db;
+
+        // 永久删除文件（含 blob cleanup）
+        let files = file_repo::find_by_folder(db, user_id, Some(folder_id)).await?;
+        for f in files {
+            file_service::purge(state, f.id, user_id).await?;
+        }
+
+        // 也要处理已软删除但还未清理的文件
+        let deleted_files = file_repo::find_deleted_by_user(db, user_id).await?;
+        for f in deleted_files {
+            if f.folder_id == Some(folder_id) {
+                file_service::purge(state, f.id, user_id).await?;
+            }
+        }
+
+        // 递归子文件夹
+        let children = folder_repo::find_children(db, user_id, Some(folder_id)).await?;
+        for child in children {
+            recursive_purge_folder(state, user_id, child.id).await?;
+        }
+
+        // 清理属性
+        crate::db::repository::property_repo::delete_all_for_entity(db, "folder", folder_id)
+            .await?;
+
+        // 硬删除文件夹
         folder_repo::delete(db, folder_id).await?;
         Ok(())
     })

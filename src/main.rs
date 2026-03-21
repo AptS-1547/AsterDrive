@@ -39,6 +39,7 @@ async fn main() -> std::io::Result<()> {
 
     let state = web::Data::new(state);
     let cleanup_state = state.clone();
+    let trash_state = state.clone();
 
     let server = HttpServer::new(move || {
         App::new()
@@ -69,6 +70,19 @@ async fn main() -> std::io::Result<()> {
                 aster_drive::services::upload_service::cleanup_expired(&cleanup_state).await
             {
                 tracing::warn!("upload cleanup failed: {e}");
+            }
+        }
+    });
+
+    // 后台清理：过期回收站条目（每小时）
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            if let Err(e) =
+                aster_drive::services::trash_service::cleanup_expired(&trash_state).await
+            {
+                tracing::warn!("trash cleanup failed: {e}");
             }
         }
     });

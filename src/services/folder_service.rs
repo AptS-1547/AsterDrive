@@ -61,12 +61,13 @@ pub async fn list(
     Ok(FolderContents { folders, files })
 }
 
+/// 删除文件夹（软删除 → 回收站，递归标记子项）
 pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let folder = folder_repo::find_by_id(&state.db, id).await?;
     if folder.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your folder"));
     }
-    folder_repo::delete(&state.db, id).await
+    crate::services::webdav_service::recursive_soft_delete(state, user_id, id).await
 }
 
 pub async fn update(

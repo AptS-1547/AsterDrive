@@ -52,6 +52,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/policies/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_policy_params"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/policies/{id}": {
         parameters: {
             query?: never;
@@ -66,6 +82,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["update_policy"];
+        trace?: never;
+    };
+    "/api/v1/admin/policies/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_policy_connection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/admin/shares": {
@@ -500,6 +532,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_trash"];
+        put?: never;
+        post?: never;
+        delete: operations["purge_all_trash"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trash/{entity_type}/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["purge_from_trash"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/trash/{entity_type}/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restore_from_trash"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/webdav-accounts": {
         parameters: {
             query?: never;
@@ -510,6 +590,22 @@ export interface paths {
         get: operations["list_webdav_accounts"];
         put?: never;
         post: operations["create_webdav_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/webdav-accounts/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_webdav_connection"];
         delete?: never;
         options?: never;
         head?: never;
@@ -647,6 +743,7 @@ export interface components {
             /** Format: int64 */
             blob_id: number;
             created_at: string;
+            deleted_at?: string | null;
             /** Format: int64 */
             folder_id?: number | null;
             /** Format: int64 */
@@ -667,6 +764,7 @@ export interface components {
         };
         FolderInfo: {
             created_at: string;
+            deleted_at?: string | null;
             /** Format: int64 */
             id: number;
             name: string;
@@ -811,9 +909,30 @@ export interface components {
             updated_by?: number | null;
             value: string;
         };
+        TestConnectionReq: {
+            password: string;
+            username: string;
+        };
+        TestPolicyParamsReq: {
+            access_key?: string | null;
+            base_path?: string | null;
+            bucket?: string | null;
+            driver_type: components["schemas"]["DriverType"];
+            endpoint?: string | null;
+            secret_key?: string | null;
+        };
         TokenResponse: {
             access_token: string;
             refresh_token: string;
+        };
+        TrashContents: {
+            files: components["schemas"]["FileInfo"][];
+            folders: components["schemas"]["FolderInfo"][];
+        };
+        TrashItemPath: {
+            entity_type: string;
+            /** Format: int64 */
+            id: number;
         };
         UploadProgressResponse: {
             chunks_on_disk: number[];
@@ -1240,6 +1359,42 @@ export interface operations {
             };
         };
     };
+    test_policy_params: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestPolicyParamsReq"];
+            };
+        };
+        responses: {
+            /** @description Connection successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Connection failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_policy: {
         parameters: {
             query?: never;
@@ -1409,6 +1564,41 @@ export interface operations {
             };
             /** @description Policy not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_policy_connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Connection failed */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2108,6 +2298,7 @@ export interface operations {
                             /** Format: int64 */
                             blob_id: number;
                             created_at: string;
+                            deleted_at?: string | null;
                             /** Format: int64 */
                             folder_id?: number | null;
                             /** Format: int64 */
@@ -2282,6 +2473,7 @@ export interface operations {
                             /** Format: int64 */
                             blob_id: number;
                             created_at: string;
+                            deleted_at?: string | null;
                             /** Format: int64 */
                             folder_id?: number | null;
                             /** Format: int64 */
@@ -2388,6 +2580,7 @@ export interface operations {
                             /** Format: int64 */
                             blob_id: number;
                             created_at: string;
+                            deleted_at?: string | null;
                             /** Format: int64 */
                             folder_id?: number | null;
                             /** Format: int64 */
@@ -2481,6 +2674,7 @@ export interface operations {
                             /** Format: int64 */
                             blob_id: number;
                             created_at: string;
+                            deleted_at?: string | null;
                             /** Format: int64 */
                             folder_id?: number | null;
                             /** Format: int64 */
@@ -2638,6 +2832,7 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             created_at: string;
+                            deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
                             name: string;
@@ -2767,6 +2962,7 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             created_at: string;
+                            deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
                             name: string;
@@ -3110,6 +3306,139 @@ export interface operations {
             };
         };
     };
+    list_trash: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trash contents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            files: components["schemas"]["FileInfo"][];
+                            folders: components["schemas"]["FolderInfo"][];
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    purge_all_trash: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trash emptied */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    purge_from_trash: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description file or folder */
+                entity_type: string;
+                /** @description Entity ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Permanently deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    restore_from_trash: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description file or folder */
+                entity_type: string;
+                /** @description Entity ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Restored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_webdav_accounts: {
         parameters: {
             query?: never;
@@ -3187,6 +3516,35 @@ export interface operations {
                 };
             };
             /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_webdav_connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestConnectionReq"];
+            };
+        };
+        responses: {
+            /** @description Connection successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid credentials */
             401: {
                 headers: {
                     [name: string]: unknown;

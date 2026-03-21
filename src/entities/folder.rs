@@ -16,6 +16,9 @@ pub struct Model {
     pub created_at: DateTimeUtc,
     #[schema(value_type = String)]
     pub updated_at: DateTimeUtc,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    pub deleted_at: Option<DateTimeUtc>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -6,6 +6,8 @@ mod m20250321_000002_create_shares;
 mod m20250321_000003_chunked_upload;
 mod m20250321_000004_webdav_accounts;
 mod m20250321_000005_webdav_root_folder;
+mod m20250321_000006_entity_properties;
+mod m20250321_000007_soft_delete;
 
 pub struct Migrator;
 
@@ -19,6 +21,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20250321_000003_chunked_upload::Migration),
             Box::new(m20250321_000004_webdav_accounts::Migration),
             Box::new(m20250321_000005_webdav_root_folder::Migration),
+            Box::new(m20250321_000006_entity_properties::Migration),
+            Box::new(m20250321_000007_soft_delete::Migration),
         ]
     }
 }

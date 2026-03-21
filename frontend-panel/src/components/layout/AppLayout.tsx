@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { HardDrive } from "lucide-react";
+import { HardDrive, Trash2 } from "lucide-react";
 import { FolderTree } from "@/components/folders/FolderTree";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -25,7 +25,18 @@ export function AppLayout({ children }: AppLayoutProps) {
 						<FolderTree />
 					</ScrollArea>
 					<Separator />
-					<div className="p-2">
+					<div className="p-2 space-y-1">
+						<Link
+							to="/trash"
+							className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+								location.pathname === "/trash"
+									? "bg-accent text-accent-foreground"
+									: "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+							}`}
+						>
+							<Trash2 className="h-4 w-4" />
+							Trash
+						</Link>
 						<Link
 							to="/settings/webdav"
 							className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${

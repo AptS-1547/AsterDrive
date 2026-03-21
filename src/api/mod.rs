@@ -18,6 +18,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(routes::shares::routes())
             .service(routes::share_public::routes())
             .service(routes::webdav_accounts::routes())
+            .service(routes::trash::routes())
             .default_service(web::to(api_not_found)),
     )
     .service(routes::health::routes());

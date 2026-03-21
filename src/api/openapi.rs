@@ -56,6 +56,11 @@ use utoipa::OpenApi;
         crate::api::routes::shares::create_share,
         crate::api::routes::shares::list_shares,
         crate::api::routes::shares::delete_share,
+        // trash
+        crate::api::routes::trash::list_trash,
+        crate::api::routes::trash::restore,
+        crate::api::routes::trash::purge_one,
+        crate::api::routes::trash::purge_all,
         // webdav accounts
         crate::api::routes::webdav_accounts::list_accounts,
         crate::api::routes::webdav_accounts::create_account,
@@ -110,6 +115,8 @@ use utoipa::OpenApi;
             crate::services::webdav_account_service::WebdavAccountCreated,
             crate::services::webdav_account_service::WebdavAccountInfo,
             crate::api::routes::webdav_accounts::CreateWebdavAccountReq,
+            crate::services::trash_service::TrashContents,
+            crate::api::routes::trash::TrashItemPath,
             crate::api::routes::webdav_accounts::TestConnectionReq,
         ),
     ),
@@ -119,6 +126,7 @@ use utoipa::OpenApi;
         (name = "folders", description = "Folder operations"),
         (name = "admin", description = "Admin operations"),
         (name = "shares", description = "File/folder sharing"),
+        (name = "trash", description = "Recycle bin"),
         (name = "webdav", description = "WebDAV account management"),
         (name = "health", description = "Health checks"),
     ),

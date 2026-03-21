@@ -9,6 +9,7 @@ import {
 import { useState } from "react";
 import type { FileInfo } from "@/types/api";
 import { toast } from "sonner";
+import { FilePreview } from "@/components/files/FilePreview";
 import { ShareDialog } from "@/components/files/ShareDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +71,7 @@ export function FileList() {
 		name: string;
 	} | null>(null);
 	const [downloadingId, setDownloadingId] = useState<number | null>(null);
+	const [previewFile, setPreviewFile] = useState<FileInfo | null>(null);
 
 	const handleDownload = async (fileId: number, fileName: string) => {
 		setDownloadingId(fileId);
@@ -182,7 +184,10 @@ export function FileList() {
 					))}
 					{files.map((file) => (
 						<TableRow key={`file-${file.id}`}>
-							<TableCell className="flex items-center gap-2">
+							<TableCell
+								className="flex items-center gap-2 cursor-pointer hover:text-blue-600"
+								onClick={() => setPreviewFile(file)}
+							>
 								<FileThumbnail file={file} />
 								{file.name}
 							</TableCell>
@@ -241,6 +246,9 @@ export function FileList() {
 					folderId={shareTarget.folderId}
 					name={shareTarget.name}
 				/>
+			)}
+			{previewFile && (
+				<FilePreview file={previewFile} onClose={() => setPreviewFile(null)} />
 			)}
 		</>
 	);

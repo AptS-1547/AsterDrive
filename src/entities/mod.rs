@@ -1,3 +1,4 @@
+pub mod entity_property;
 pub mod file;
 pub mod file_blob;
 pub mod folder;

@@ -19,6 +19,7 @@ export type WebdavAccount = components["schemas"]["WebdavAccount"];
 export type WebdavAccountCreated =
 	components["schemas"]["WebdavAccountCreated"];
 export type WebdavAccountInfo = components["schemas"]["WebdavAccountInfo"];
+export type TrashContents = components["schemas"]["TrashContents"];
 
 // ErrorCode constants (generated type is a union of literal numbers, we need named constants)
 export const ErrorCode = {

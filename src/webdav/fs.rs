@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use std::pin::Pin;
+
 use dav_server::davpath::DavPath;
 use dav_server::fs::{
-    DavDirEntry, DavFile, DavFileSystem, DavMetaData, FsError, FsFuture, FsStream, OpenOptions,
-    ReadDirMeta,
+    DavDirEntry, DavFile, DavFileSystem, DavMetaData, DavProp, FsError, FsFuture, FsStream,
+    OpenOptions, ReadDirMeta,
 };
 use futures::stream;
 use sea_orm::DatabaseConnection;
@@ -11,7 +13,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::cache::CacheBackend;
 use crate::config::Config;
-use crate::db::repository::{file_repo, folder_repo, policy_repo, user_repo};
+use crate::db::repository::{file_repo, folder_repo, policy_repo, property_repo, user_repo};
 use crate::services::{file_service, folder_service, webdav_service};
 use crate::storage::DriverRegistry;
 use crate::webdav::dir_entry::AsterDavDirEntry;
@@ -267,7 +269,7 @@ impl DavFileSystem for AsterDavFs {
             };
 
             let state = self.app_state();
-            webdav_service::recursive_delete_folder(&state, self.user_id, folder.id)
+            webdav_service::recursive_soft_delete(&state, self.user_id, folder.id)
                 .await
                 .map_err(to_fs_error)?;
 
@@ -452,6 +454,126 @@ impl DavFileSystem for AsterDavFs {
 
             Ok((used, total))
         })
+    }
+
+    fn have_props<'a>(
+        &'a self,
+        path: &'a DavPath,
+    ) -> Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+        Box::pin(async move {
+            let (entity_type, entity_id) =
+                match resolve_entity(&self.db, self.user_id, path, self.root_folder_id).await {
+                    Some(v) => v,
+                    None => return false,
+                };
+            property_repo::has_properties(&self.db, &entity_type, entity_id)
+                .await
+                .unwrap_or(false)
+        })
+    }
+
+    fn get_props<'a>(&'a self, path: &'a DavPath, do_content: bool) -> FsFuture<'a, Vec<DavProp>> {
+        Box::pin(async move {
+            let (entity_type, entity_id) =
+                resolve_entity(&self.db, self.user_id, path, self.root_folder_id)
+                    .await
+                    .ok_or(FsError::NotFound)?;
+
+            let props = property_repo::find_by_entity(&self.db, &entity_type, entity_id)
+                .await
+                .map_err(|_| FsError::GeneralFailure)?;
+
+            Ok(props
+                .into_iter()
+                .map(|p| DavProp {
+                    name: p.name,
+                    prefix: None,
+                    namespace: if p.namespace.is_empty() {
+                        None
+                    } else {
+                        Some(p.namespace)
+                    },
+                    xml: if do_content {
+                        p.value.map(|v| v.into_bytes())
+                    } else {
+                        None
+                    },
+                })
+                .collect())
+        })
+    }
+
+    fn patch_props<'a>(
+        &'a self,
+        path: &'a DavPath,
+        patches: Vec<(bool, DavProp)>,
+    ) -> FsFuture<'a, Vec<(http::StatusCode, DavProp)>> {
+        Box::pin(async move {
+            let (entity_type, entity_id) =
+                resolve_entity(&self.db, self.user_id, path, self.root_folder_id)
+                    .await
+                    .ok_or(FsError::NotFound)?;
+
+            let mut results = Vec::new();
+
+            for (set, prop) in patches {
+                let ns = prop.namespace.as_deref().unwrap_or("");
+
+                // DAV: 命名空间只读
+                if ns == "DAV:" {
+                    results.push((http::StatusCode::FORBIDDEN, prop));
+                    continue;
+                }
+
+                let status = if set {
+                    let value = prop.xml.as_ref().map(|x| String::from_utf8_lossy(x));
+                    match property_repo::upsert(
+                        &self.db,
+                        &entity_type,
+                        entity_id,
+                        ns,
+                        &prop.name,
+                        value.as_deref(),
+                    )
+                    .await
+                    {
+                        Ok(_) => http::StatusCode::OK,
+                        Err(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
+                    }
+                } else {
+                    match property_repo::delete_prop(
+                        &self.db,
+                        &entity_type,
+                        entity_id,
+                        ns,
+                        &prop.name,
+                    )
+                    .await
+                    {
+                        Ok(_) => http::StatusCode::OK,
+                        Err(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
+                    }
+                };
+
+                results.push((status, prop));
+            }
+
+            Ok(results)
+        })
+    }
+}
+
+/// 从 DavPath 解析出 (entity_type, entity_id)
+async fn resolve_entity(
+    db: &DatabaseConnection,
+    user_id: i64,
+    path: &DavPath,
+    root_folder_id: Option<i64>,
+) -> Option<(String, i64)> {
+    match path_resolver::resolve_path(db, user_id, path, root_folder_id).await {
+        Ok(ResolvedNode::File(f)) => Some(("file".to_string(), f.id)),
+        Ok(ResolvedNode::Folder(f)) => Some(("folder".to_string(), f.id)),
+        _ => None,
     }
 }
 
