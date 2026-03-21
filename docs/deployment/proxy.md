@@ -9,7 +9,7 @@
 
 ## 代理时需要保留的内容
 
-如果你启用了 WebDAV，请确认代理层不会丢失：
+如果启用了 WebDAV，请确认代理层不会丢失：
 
 - `Authorization`
 - `Depth`
@@ -17,7 +17,22 @@
 - `Overwrite`
 - `If`
 - `Lock-Token`
-- 各类 WebDAV 方法，例如 `PROPFIND`、`MOVE`、`COPY`、`LOCK`、`UNLOCK`
+- `Timeout`
+- 各类 WebDAV 方法：`PROPFIND`、`MOVE`、`COPY`、`LOCK`、`UNLOCK`
+
+## 上传大小
+
+代理层要先取消自己的 body 限制，例如在 Nginx 里：
+
+```nginx
+client_max_body_size 0;
+```
+
+真正的限制仍然来自：
+
+- 普通 REST：后端固定 payload 限制
+- WebDAV：`webdav.payload_limit`
+- 文件落盘：存储策略 `max_file_size`
 
 ## Caddy
 
@@ -27,7 +42,7 @@ drive.example.com {
 }
 ```
 
-Caddy 默认会把大部分头和方法透传，适合先跑起来。
+Caddy 默认会透传大部分头和方法，适合快速起步。
 
 ## Nginx
 
@@ -62,17 +77,7 @@ server {
 }
 ```
 
-## 注意事项
+## 当前代码相关的注意事项
 
-### 上传大小
-
-`client_max_body_size 0` 用于取消 Nginx 自身限制。
-
-真正的限制仍然来自：
-
-- 存储策略的 `max_file_size`
-- WebDAV 的 `payload_limit`
-
-### Swagger
-
-如果你的上游服务是 release 构建，则不会有 `/swagger-ui`，这不是代理配置问题，而是当前编译行为决定的。
+- `/swagger-ui` 只在 `debug` 构建存在；如果上游是发布镜像，没有这个路径是正常行为
+- `/s/:token`、`/assets/*` 和其余前端页面都由同一个后端服务返回，不需要再额外拆分静态站点

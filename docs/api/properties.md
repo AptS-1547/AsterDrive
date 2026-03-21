@@ -7,7 +7,7 @@
 ## 接口列表
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | `GET` | `/properties/{entity_type}/{entity_id}` | 列出实体属性 |
 | `PUT` | `/properties/{entity_type}/{entity_id}` | 新增或更新属性 |
 | `DELETE` | `/properties/{entity_type}/{entity_id}/{namespace}/{name}` | 删除属性 |
@@ -19,7 +19,7 @@
 
 ## `GET /properties/{entity_type}/{entity_id}`
 
-返回该实体的所有属性数组。
+返回该实体的全部属性数组。
 
 ## `PUT /properties/{entity_type}/{entity_id}`
 
@@ -47,3 +47,5 @@
 
 - `namespace = "DAV:"` 不能 `PUT`
 - `namespace = "DAV:"` 不能 `DELETE`
+
+这是为了避免 REST 接口破坏 WebDAV 协议属性。

@@ -7,43 +7,46 @@ AsterDrive 当前有两层配置面：
 
 首次启动时，如果当前工作目录不存在 `config.toml`，服务会自动生成一份默认配置。
 
-## 配置优先级
+## 优先级
 
 ```text
-环境变量 (ASTER__ 前缀) > config.toml > 默认值
+环境变量 (ASTER__ 前缀) > config.toml > 代码默认值
 ```
 
-环境变量使用双下划线 `__` 分隔层级：
+环境变量使用双下划线 `__` 表示层级：
 
 ```bash
 ASTER__SERVER__PORT=8080
 ASTER__DATABASE__URL="postgres://user:pass@localhost/asterdrive"
+ASTER__WEBDAV__PREFIX=/dav
 ```
 
-## 静态配置分区
+## 当前静态配置分区
 
-| 分区 | 说明 |
-|------|------|
+| 分区 | 作用 |
+| --- | --- |
 | [server](/config/server) | 监听地址、端口、工作线程 |
-| [database](/config/database) | 数据库连接、连接池 |
-| [auth](/config/auth) | JWT 密钥、token 有效期 |
-| [cache](/config/cache) | 缓存后端和 TTL |
-| [logging](/config/logging) | 日志级别、格式、输出 |
-| [webdav](/config/webdav) | WebDAV 前缀与请求体硬上限 |
-| [storage](/config/storage) | 数据库存储的策略模型与解析规则 |
+| [database](/config/database) | 数据库连接、连接池、启动重试 |
+| [auth](/config/auth) | JWT 密钥、token 生命周期 |
+| [cache](/config/cache) | 内存缓存 / Redis / 关闭缓存 |
+| [logging](/config/logging) | 日志级别、格式、输出文件 |
+| [webdav](/config/webdav) | WebDAV 路由前缀和请求体硬上限 |
+| [storage](/config/storage) | 数据库存储策略模型与解析规则 |
 
-## 运行时配置
+## 当前真正生效的运行时配置
 
-运行时配置保存在数据库，由管理员通过 `/api/v1/admin/config/*` 在线维护。
+| Key | 作用 |
+| --- | --- |
+| `default_storage_quota` | 新注册用户的默认总配额 |
+| `webdav_enabled` | 是否启用 WebDAV |
+| `trash_retention_days` | 回收站保留天数 |
+| `max_versions_per_file` | 单文件最大历史版本数 |
 
-当前实现中应重点关注：
+运行时配置由管理员通过 `/api/v1/admin/config/*` 在线维护，详情见 [运行时配置](/config/runtime)。
 
-- [运行时配置项](/config/runtime)
-- `webdav_enabled`
-- `trash_retention_days`
-- `max_versions_per_file`
+## 当前生成的默认配置
 
-## 完整默认配置
+下面这份内容来自 `src/config/schema.rs` 的默认值，而不是旧示例文件。
 
 ```toml
 [server]
@@ -57,7 +60,7 @@ pool_size = 10
 retry_count = 3
 
 [auth]
-jwt_secret = "<自动生成的随机密钥>"
+jwt_secret = "<首次启动自动生成>"
 access_token_ttl_secs = 900
 refresh_token_ttl_secs = 604800
 
@@ -77,12 +80,13 @@ prefix = "/webdav"
 payload_limit = 10737418240
 ```
 
-## 配置文件路径约定
+## 路径语义
 
-代码当前固定从当前工作目录读取 `config.toml`，没有额外的命令行参数可覆盖路径。
+代码固定从当前工作目录读取 `config.toml`。这会影响：
 
-这意味着：
+- 配置文件默认位置
+- 默认 SQLite 文件位置
+- 相对路径形式的本地存储目录
+- 运行时优先读取的 `./frontend-panel/dist`
 
-- 本地直接运行时，配置文件应放在执行目录
-- systemd 场景下，`WorkingDirectory` 会决定配置文件位置
-- 容器场景下，镜像工作目录与挂载路径必须和这一行为保持一致
+部署时请始终先确定工作目录，再决定挂载方案。

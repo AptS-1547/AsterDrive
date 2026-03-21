@@ -20,7 +20,7 @@ const VERSION = getVersion()
 
 export default defineConfig({
   title: 'AsterDrive',
-  description: '自托管云存储系统，支持分享、WebDAV、版本、回收站与多存储策略',
+  description: '自托管云存储系统，支持多存储策略、三种上传模式、分享、WebDAV、版本历史与回收站',
 
   locales: {
     root: {
@@ -77,7 +77,8 @@ export default defineConfig({
           items: [
             { text: '安装', link: '/guide/installation' },
             { text: '快速开始', link: '/guide/getting-started' },
-            { text: '核心流程', link: '/guide/core-workflows' }
+            { text: '核心流程', link: '/guide/core-workflows' },
+            { text: '管理面板', link: '/guide/admin-console' }
           ]
         }
       ],

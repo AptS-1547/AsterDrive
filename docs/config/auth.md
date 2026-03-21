@@ -10,19 +10,25 @@ refresh_token_ttl_secs = 604800
 ## 字段说明
 
 | 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `jwt_secret` | string | 随机生成 | JWT 签名密钥，生产环境必须固定 |
+| --- | --- | --- | --- |
+| `jwt_secret` | string | 首次启动自动生成 | JWT 签名密钥，生产环境必须固定 |
 | `access_token_ttl_secs` | u64 | `900` | Access token 有效期，默认 15 分钟 |
 | `refresh_token_ttl_secs` | u64 | `604800` | Refresh token 有效期，默认 7 天 |
 
-## 认证机制
+## 当前认证机制
 
 - 登录成功后会写入两个 HttpOnly Cookie：
   - `aster_access`
   - `aster_refresh`
 - `/api/v1/auth/me` 同时支持 Cookie 与 `Authorization: Bearer <token>`
-- `/api/v1/auth/refresh` 当前只从 refresh Cookie 读取 token
-- 用户密码与分享密码都使用 Argon2 哈希存储
+- `/api/v1/auth/refresh` 当前只读取 refresh Cookie
+- 当前实现会刷新 access token，但不会轮换 refresh token
+
+## 注册行为
+
+- 第一个注册用户自动成为管理员
+- 新注册用户的 `storage_quota` 会从运行时配置 `default_storage_quota` 读取
+- 该默认配额只影响未来新注册用户，不会回写已有用户
 
 ## 限流
 
@@ -33,7 +39,7 @@ refresh_token_ttl_secs = 604800
 
 ## 生产环境注意事项
 
-如果继续使用自动生成的 `jwt_secret`，每次重启都会让已签发 token 失效。
+如果继续使用自动生成的 `jwt_secret`，每次重启都会让已签发 token 全部失效。
 
 推荐固定为显式值：
 

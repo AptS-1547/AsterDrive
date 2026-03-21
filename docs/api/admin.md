@@ -5,7 +5,7 @@
 ## 存储策略
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | `GET` | `/admin/policies` | 列出全部存储策略 |
 | `POST` | `/admin/policies` | 创建存储策略 |
 | `GET` | `/admin/policies/{id}` | 读取策略详情 |
@@ -31,12 +31,16 @@
 }
 ```
 
-注意：当前创建逻辑会先把 `chunk_size` 写成默认值 `5 MiB`，若要精确调整，建议创建后再 `PATCH`。
+当前实现注意点：
+
+- 创建逻辑目前不会采用请求里的 `chunk_size`，而是先写固定 `5 MiB`
+- 若要精确调整分片大小，需要创建后再 `PATCH`
+- 当前 `PATCH` 不能修改 `driver_type`
 
 ## 用户与用户策略
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | `GET` | `/admin/users` | 列出用户 |
 | `GET` | `/admin/users/{id}` | 获取用户详情 |
 | `PATCH` | `/admin/users/{id}` | 更新角色、状态、总配额 |
@@ -55,10 +59,11 @@
 }
 ```
 
-当前实现有一个保护规则：
+注意：
 
-- 初始管理员账号 `id = 1` 不能被禁用
-- 初始管理员账号 `id = 1` 不能被降级为非管理员
+- `storage_quota = 0` 表示不限
+- 当前实现禁止禁用初始管理员 `id = 1`
+- 当前实现也禁止把初始管理员 `id = 1` 降级为非管理员
 
 ### 分配用户策略示例
 
@@ -70,16 +75,23 @@
 }
 ```
 
-`quota_bytes` 是该用户在该策略上的额度。
+`quota_bytes` 是“用户在该策略项上的额度”，与用户总配额不是同一个概念。
 
 ## 系统运行时配置
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | `GET` | `/admin/config` | 列出全部运行时配置 |
 | `GET` | `/admin/config/{key}` | 获取单个配置项 |
 | `PUT` | `/admin/config/{key}` | 设置配置项 |
 | `DELETE` | `/admin/config/{key}` | 删除配置项 |
+
+### 当前常用 key
+
+- `default_storage_quota`
+- `webdav_enabled`
+- `trash_retention_days`
+- `max_versions_per_file`
 
 ### 设置配置项示例
 
@@ -92,16 +104,22 @@
 ## 分享审计
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | `GET` | `/admin/shares` | 查看全站分享 |
 | `DELETE` | `/admin/shares/{id}` | 管理员删除任意分享 |
 
 ## 锁管理
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | `GET` | `/admin/locks` | 查看全部资源锁 |
 | `DELETE` | `/admin/locks/{id}` | 强制解锁 |
 | `DELETE` | `/admin/locks/expired` | 清理全部过期锁 |
 
-这些锁主要服务于 WebDAV 与覆盖写入流程。
+`DELETE /admin/locks/expired` 会返回：
+
+```json
+{
+  "removed": 3
+}
+```

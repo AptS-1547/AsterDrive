@@ -1,114 +1,121 @@
 # 核心流程
 
-这一页把当前版本最常见的操作流程串起来，便于从“能跑起来”过渡到“按产品方式使用”。
+这一页把当前版本最常见的业务流程串起来，便于从“服务能跑”过渡到“产品能用”。
 
 ## 1. 管理员初始化
 
-第一个注册的用户会自动成为管理员。管理员通常需要完成三件事：
+第一个注册用户会自动成为管理员。管理员通常需要完成：
 
 - 检查系统默认存储策略
-- 为用户分配存储策略和配额
-- 根据需要设置运行时开关，例如回收站保留天数
+- 给用户分配默认策略和配额
+- 设置运行时配置，例如默认新用户配额、回收站保留期、版本保留数量
 
-相关页面与接口：
+对应页面与接口：
 
 - 前端：`/admin/users`、`/admin/policies`、`/admin/settings`
 - API：`/api/v1/admin/*`
 
-## 2. 存储策略生效顺序
+## 2. 存储策略如何生效
 
-文件真正落到哪里，取决于下面这条链路：
+文件落到哪个后端，取决于这条优先级链：
 
 ```text
 文件夹 policy_id -> 用户默认策略 -> 系统默认策略
 ```
 
-这允许你把不同用户或不同目录分配到不同后端，例如：
+典型用法：
 
-- 默认走本地磁盘
-- 某些团队目录单独走 S3
-- 某个用户单独配置更大的配额
+- 全局默认走本地磁盘
+- 某些团队目录改走 S3
+- 某个用户单独分配更大的策略配额
 
-## 3. 小文件与大文件上传
+## 3. 上传协商
 
-当前系统有两种上传路径：
+当前上传链路不是只有一种。
 
-- 直传：`POST /api/v1/files/upload`
-- 分片上传：`/files/upload/init -> PUT chunk -> complete`
+`POST /api/v1/files/upload/init` 会返回：
 
-推荐流程是先调用协商接口：
+- `direct`：小文件走普通 multipart
+- `chunked`：大文件走分片上传，可断点续传
+- `presigned`：S3 策略可直接让客户端 PUT 到预签名 URL
 
-```text
-POST /api/v1/files/upload/init
-```
+其中 `presigned` 只有在同时满足这些条件时才会出现：
 
-服务端会根据目标策略的 `chunk_size` 和文件大小，返回：
+- 当前策略驱动是 `s3`
+- 策略 `options` 里启用了 `{"presigned_upload": true}`
+- 文件大小不超过单次 `PUT` 的 5 GiB
 
-- `mode = "direct"`：走普通 multipart 上传
-- `mode = "chunked"`：按返回的分片大小上传
+## 4. 覆盖写入、版本与锁
 
-## 4. 文件覆盖、版本与锁
+REST 普通上传不会覆盖同名文件；覆盖写入主要来自 WebDAV `PUT`。
 
-版本并不是每次普通上传都会生成。当前实现中，历史版本主要来自覆盖写入流程，例如 WebDAV 客户端直接覆盖已有文件。
+覆盖时会发生：
 
-相关能力：
+1. 先检查文件是否被锁定
+2. 旧 Blob 被写入历史版本表
+3. 当前文件切换到新 Blob
+4. 超过 `max_versions_per_file` 的最老版本会被自动清理
+
+相关接口：
 
 - 查看版本：`GET /api/v1/files/{id}/versions`
 - 恢复版本：`POST /api/v1/files/{id}/versions/{version_id}/restore`
 - 删除版本：`DELETE /api/v1/files/{id}/versions/{version_id}`
-- 简单锁定：`POST /api/v1/files/{id}/lock` 或 `POST /api/v1/folders/{id}/lock`
-
-管理员还能查看和清理底层资源锁：
-
-- `GET /api/v1/admin/locks`
-- `DELETE /api/v1/admin/locks/{id}`
-- `DELETE /api/v1/admin/locks/expired`
+- REST 简化锁：`POST /api/v1/files/{id}/lock`、`POST /api/v1/folders/{id}/lock`
+- 管理员锁管理：`GET /api/v1/admin/locks`
 
 ## 5. 分享
 
-分享支持文件与文件夹两种资源类型，且都支持：
-
-- 密码
-- 过期时间
-- 下载次数上限
+分享支持文件和文件夹两种资源。
 
 典型流程：
 
-1. 调用 `POST /api/v1/shares` 创建分享
-2. 将生成的 token 拼成公开地址
-3. 若有密码，公开访问者先调用 `POST /api/v1/s/{token}/verify`
-4. 再下载文件或浏览分享文件夹
+1. `POST /api/v1/shares` 创建分享
+2. 将返回的 token 组装为公开地址
+3. 如果分享有密码，访问者先调用 `/api/v1/s/{token}/verify`
+4. 再下载文件或读取文件夹根层内容
 
-前端公开页路径为 `/s/:token`。
+当前实现里，文件夹公开页只展示分享根目录的内容，不提供继续下钻到子目录的 REST 接口。
 
 ## 6. WebDAV
 
-WebDAV 不是直接复用用户登录密码，而是单独维护一套账号：
+WebDAV 有两种认证方式：
 
-- 创建账号：`POST /api/v1/webdav-accounts`
-- 测试凭据：`POST /api/v1/webdav-accounts/test`
-- 启用/停用：`POST /api/v1/webdav-accounts/{id}/toggle`
+- Basic Auth：使用专用 WebDAV 账号，可限制到某个根目录
+- Bearer JWT：直接复用登录态，访问范围是整个用户空间
 
-创建时可选 `root_folder_id`，把该账号限制在某个目录树下。
+管理员或用户通常会这样使用：
 
-默认挂载地址：
+1. 在前端 `/settings/webdav` 或 `POST /api/v1/webdav-accounts` 创建专用账号
+2. 选择是否限制 `root_folder_id`
+3. 用桌面客户端挂载默认地址 `http://<host>:3000/webdav`
 
-```text
-http://<host>:3000/webdav
-```
+WebDAV 侧还额外支持：
 
-## 7. 删除、恢复与彻底清理
+- 数据库锁
+- 属性存储
+- DeltaV 最小子集：`REPORT version-tree`、`VERSION-CONTROL`
 
-普通删除不会直接删除物理内容，而是进入回收站：
+## 7. 删除、恢复与清理
+
+普通删除不会立刻删除物理文件，而是进入回收站。
 
 - 删除文件：`DELETE /api/v1/files/{id}`
 - 删除文件夹：`DELETE /api/v1/folders/{id}`
-
-然后可以：
-
 - 查看回收站：`GET /api/v1/trash`
 - 恢复：`POST /api/v1/trash/{entity_type}/{id}/restore`
 - 彻底删除：`DELETE /api/v1/trash/{entity_type}/{id}`
 - 清空回收站：`DELETE /api/v1/trash`
 
-后台还会按 `trash_retention_days` 每小时清理一次过期条目。
+后台任务还会按 `trash_retention_days` 每小时清理一次过期条目。
+
+## 8. 前端操作与后端接口的对应关系
+
+当前前端已经接好这些核心流程：
+
+- 文件树浏览、上传、预览、分享、版本查看
+- 回收站恢复与清空
+- WebDAV 账号创建、停用、测试
+- 管理员用户、策略、分享、锁、系统设置
+
+也就是说，`docs` 里描述的大部分主流程，已经可以直接在当前前端界面里完成，而不是只存在于 API 层。

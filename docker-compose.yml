@@ -5,11 +5,12 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - asterdrive-data:/app/data
+      - asterdrive-data:/data
       - /etc/localtime:/etc/localtime:ro
-      - ./config.toml:/app/config.toml:ro
+      - ./config.toml:/config.toml:ro
     environment:
       - ASTER__SERVER__HOST=0.0.0.0
+      - ASTER__DATABASE__URL=sqlite:///data/asterdrive.db?mode=rwc
     restart: unless-stopped
 
 volumes:

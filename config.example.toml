@@ -4,7 +4,7 @@ port = 3000
 workers = 0  # 0 = auto (num_cpus)
 
 [database]
-url = "sqlite://asterdrive.db"  # 或 postgres://user:pass@localhost/asterdrive
+url = "sqlite://asterdrive.db?mode=rwc"  # 或 postgres://user:pass@localhost/asterdrive
 pool_size = 10
 retry_count = 3
 
@@ -23,3 +23,7 @@ default_ttl = 3600
 level = "info"       # trace | debug | info | warn | error
 format = "text"      # "text" | "json"
 file = ""            # 留空 = stdout only
+
+[webdav]
+prefix = "/webdav"
+payload_limit = 10737418240  # 10 GiB
