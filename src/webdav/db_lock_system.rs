@@ -71,7 +71,13 @@ impl DavLockSystem for DbLockSystem {
                 // 过期锁：清理
                 let _ = lock_repo::delete_by_entity(&self.db, &entity_type, entity_id).await;
                 // 重置 is_locked
-                let _ = crate::services::lock_service::set_entity_locked(&self.db, &entity_type, entity_id, false).await;
+                let _ = crate::services::lock_service::set_entity_locked(
+                    &self.db,
+                    &entity_type,
+                    entity_id,
+                    false,
+                )
+                .await;
             }
 
             let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
@@ -96,7 +102,13 @@ impl DavLockSystem for DbLockSystem {
                 .map_err(|_| empty_dav_lock(&path_owned))?;
 
             // 同步 is_locked
-            let _ = crate::services::lock_service::set_entity_locked(&self.db, &entity_type, entity_id, true).await;
+            let _ = crate::services::lock_service::set_entity_locked(
+                &self.db,
+                &entity_type,
+                entity_id,
+                true,
+            )
+            .await;
 
             Ok(DavLock {
                 token,
@@ -125,7 +137,13 @@ impl DavLockSystem for DbLockSystem {
                 .map_err(|_| ())?;
 
             // 同步 is_locked
-            let _ = crate::services::lock_service::set_entity_locked(&self.db, &lock.entity_type, lock.entity_id, false).await;
+            let _ = crate::services::lock_service::set_entity_locked(
+                &self.db,
+                &lock.entity_type,
+                lock.entity_id,
+                false,
+            )
+            .await;
             Ok(())
         })
     }
@@ -260,7 +278,13 @@ impl DavLockSystem for DbLockSystem {
                 .unwrap_or_default();
 
             for lock in &locks {
-                let _ = crate::services::lock_service::set_entity_locked(&self.db, &lock.entity_type, lock.entity_id, false).await;
+                let _ = crate::services::lock_service::set_entity_locked(
+                    &self.db,
+                    &lock.entity_type,
+                    lock.entity_id,
+                    false,
+                )
+                .await;
             }
 
             lock_repo::delete_by_path_prefix(&self.db, &path_str)
