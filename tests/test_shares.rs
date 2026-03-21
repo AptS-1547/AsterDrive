@@ -119,3 +119,88 @@ async fn test_share_password() {
     let resp = test::call_service(&app, req).await;
     assert!(resp.status() == 401 || resp.status() == 403);
 }
+
+#[actix_web::test]
+async fn test_share_download_limit() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    // 创建限 1 次下载的分享
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_id": file_id,
+            "max_downloads": 1
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    // 第一次下载 OK
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/download"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // 第二次下载应被拒绝（403 或 410）
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/download"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 403 || resp.status() == 410,
+        "download limit should block, got {}",
+        resp.status()
+    );
+}
+
+#[actix_web::test]
+async fn test_share_folder() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 创建文件夹
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Shared Folder" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    // 分享文件夹
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "folder_id": folder_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    // 公开查看分享信息
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["share_type"], "folder");
+
+    // 公开列出文件夹内容
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/content"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
