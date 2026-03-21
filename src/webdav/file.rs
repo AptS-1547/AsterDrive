@@ -117,11 +117,11 @@ impl AsterDavFile {
         })
     }
 
-    /// 清理临时文件（best-effort）
+    /// 清理临时文件（best-effort，异步后台执行）
     fn cleanup_temp(temp_path: &str) {
         let path = temp_path.to_string();
         tokio::spawn(async move {
-            let _ = tokio::fs::remove_file(&path).await;
+            crate::utils::cleanup_temp_file(&path).await;
         });
     }
 }

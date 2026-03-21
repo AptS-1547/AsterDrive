@@ -29,7 +29,12 @@ struct PolicyOptions {
 }
 
 fn parse_policy_options(options: &str) -> PolicyOptions {
-    serde_json::from_str(options).unwrap_or_default()
+    serde_json::from_str(options).unwrap_or_else(|e| {
+        if !options.is_empty() && options != "{}" {
+            tracing::warn!("invalid policy options JSON '{options}': {e}");
+        }
+        PolicyOptions::default()
+    })
 }
 
 #[derive(Serialize, ToSchema)]
@@ -406,7 +411,9 @@ async fn complete_presigned_upload(
     let actual_size = meta.size as i64;
 
     if actual_size != session.total_size {
-        let _ = driver.delete(temp_key).await;
+        if let Err(e) = driver.delete(temp_key).await {
+            tracing::warn!("failed to delete S3 temp object: {e}");
+        }
         return Err(AsterError::upload_assembly_failed(format!(
             "size mismatch: declared {} but uploaded {}",
             session.total_size, actual_size
@@ -445,7 +452,9 @@ async fn complete_presigned_upload(
     let blob = match file_repo::find_blob_by_hash(db, &file_hash, policy.id).await? {
         Some(existing) => {
             // 已有相同内容，删临时对象，ref_count++
-            let _ = driver.delete(temp_key).await;
+            if let Err(e) = driver.delete(temp_key).await {
+                tracing::warn!("failed to delete S3 temp object: {e}");
+            }
             let new_ref_count = existing.ref_count + 1;
             let mut blob_active: file_blob::ActiveModel = existing.into();
             blob_active.ref_count = Set(new_ref_count);
@@ -456,7 +465,9 @@ async fn complete_presigned_upload(
             // 新内容：S3 server-side copy 到最终路径
             let storage_path = format!("{}/{}/{}", &file_hash[..2], &file_hash[2..4], &file_hash);
             driver.copy_object(temp_key, &storage_path).await?;
-            let _ = driver.delete(temp_key).await;
+            if let Err(e) = driver.delete(temp_key).await {
+                tracing::warn!("failed to delete S3 temp object: {e}");
+            }
 
             let blob_model = file_blob::ActiveModel {
                 hash: Set(file_hash),
@@ -520,8 +531,10 @@ pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> R
     // 清理 S3 临时对象
     if let Some(ref temp_key) = session.s3_temp_key {
         let policy = policy_repo::find_by_id(&state.db, session.policy_id).await?;
-        if let Ok(driver) = state.driver_registry.get_driver(&policy) {
-            let _ = driver.delete(temp_key).await;
+        if let Ok(driver) = state.driver_registry.get_driver(&policy)
+            && let Err(e) = driver.delete(temp_key).await
+        {
+            tracing::warn!("failed to delete S3 temp object: {e}");
         }
     }
 
@@ -581,8 +594,9 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
         if let Some(ref temp_key) = session.s3_temp_key
             && let Ok(policy) = policy_repo::find_by_id(&state.db, session.policy_id).await
             && let Ok(driver) = state.driver_registry.get_driver(&policy)
+            && let Err(e) = driver.delete(temp_key).await
         {
-            let _ = driver.delete(temp_key).await;
+            tracing::warn!("failed to delete S3 temp object: {e}");
         }
         let temp_dir = format!("data/.uploads/{}", session.id);
         crate::utils::cleanup_temp_dir(&temp_dir).await;

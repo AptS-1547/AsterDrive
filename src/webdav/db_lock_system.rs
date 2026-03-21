@@ -70,15 +70,23 @@ impl DavLockSystem for DbLockSystem {
                     return Err(model_to_dav_lock(&existing));
                 }
                 // 过期锁：清理
-                let _ = lock_repo::delete_by_entity(&self.db, entity_type, entity_id).await;
+                if let Err(e) = lock_repo::delete_by_entity(&self.db, entity_type, entity_id).await
+                {
+                    tracing::warn!(
+                        "failed to cleanup expired lock for {entity_type:?}#{entity_id}: {e}"
+                    );
+                }
                 // 重置 is_locked
-                let _ = crate::services::lock_service::set_entity_locked(
+                if let Err(e) = crate::services::lock_service::set_entity_locked(
                     &self.db,
                     entity_type,
                     entity_id,
                     false,
                 )
-                .await;
+                .await
+                {
+                    tracing::warn!("failed to sync is_locked for {entity_type:?}#{entity_id}: {e}");
+                }
             }
 
             let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
@@ -104,13 +112,16 @@ impl DavLockSystem for DbLockSystem {
                 .map_err(|_| empty_dav_lock(&path_owned))?;
 
             // 同步 is_locked
-            let _ = crate::services::lock_service::set_entity_locked(
+            if let Err(e) = crate::services::lock_service::set_entity_locked(
                 &self.db,
                 entity_type,
                 entity_id,
                 true,
             )
-            .await;
+            .await
+            {
+                tracing::warn!("failed to sync is_locked for {entity_type:?}#{entity_id}: {e}");
+            }
 
             Ok(DavLock {
                 token,
@@ -139,13 +150,16 @@ impl DavLockSystem for DbLockSystem {
                 .map_err(|_| ())?;
 
             // 同步 is_locked
-            let _ = crate::services::lock_service::set_entity_locked(
+            if let Err(e) = crate::services::lock_service::set_entity_locked(
                 &self.db,
                 lock.entity_type,
                 lock.entity_id,
                 false,
             )
-            .await;
+            .await
+            {
+                tracing::warn!("failed to sync is_locked after unlock: {e}");
+            }
             Ok(())
         })
     }
@@ -281,13 +295,16 @@ impl DavLockSystem for DbLockSystem {
                 .unwrap_or_default();
 
             for lock in &locks {
-                let _ = crate::services::lock_service::set_entity_locked(
+                if let Err(e) = crate::services::lock_service::set_entity_locked(
                     &self.db,
                     lock.entity_type,
                     lock.entity_id,
                     false,
                 )
-                .await;
+                .await
+                {
+                    tracing::warn!("failed to sync is_locked during lock delete: {e}");
+                }
             }
 
             lock_repo::delete_by_path_prefix(&self.db, &path_str)
