@@ -4,6 +4,7 @@ pub mod files;
 pub mod folders;
 pub mod frontend;
 pub mod health;
+pub mod properties;
 pub mod share_public;
 pub mod shares;
 pub mod trash;

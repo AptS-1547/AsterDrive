@@ -67,6 +67,9 @@ pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     if folder.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your folder"));
     }
+    if folder.is_locked {
+        return Err(AsterError::resource_locked("folder is locked"));
+    }
     crate::services::webdav_service::recursive_soft_delete(state, user_id, id).await
 }
 
@@ -82,6 +85,9 @@ pub async fn update(
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your folder"));
     }
+    if f.is_locked {
+        return Err(AsterError::resource_locked("folder is locked"));
+    }
     let mut active: folder::ActiveModel = f.into();
     if let Some(n) = name {
         active.name = Set(n);
@@ -93,6 +99,24 @@ pub async fn update(
         active.policy_id = Set(Some(pid));
     }
     active.updated_at = Set(Utc::now());
+    use sea_orm::ActiveModelTrait;
+    active.update(&state.db).await.map_err(AsterError::from)
+}
+
+/// 锁定/解锁文件夹
+pub async fn set_locked(
+    state: &AppState,
+    id: i64,
+    user_id: i64,
+    locked: bool,
+) -> Result<folder::Model> {
+    let f = folder_repo::find_by_id(&state.db, id).await?;
+    if f.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your folder"));
+    }
+    let mut active: folder::ActiveModel = f.into();
+    active.is_locked = sea_orm::Set(locked);
+    active.updated_at = sea_orm::Set(Utc::now());
     use sea_orm::ActiveModelTrait;
     active.update(&state.db).await.map_err(AsterError::from)
 }

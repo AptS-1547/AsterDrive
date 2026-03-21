@@ -96,8 +96,11 @@ define_errors! {
     ChunkUploadFailed(     "E056", "Chunk Upload Failed"),
     UploadAssemblyFailed(  "E057", "Upload Assembly Failed"),
 
-    // ========== E058-E059: 缩略图错误 ==========
+    // ========== E058-E058: 缩略图错误 ==========
     ThumbnailGenerationFailed("E058", "Thumbnail Generation Failed"),
+
+    // ========== E059-E059: 资源锁定 ==========
+    ResourceLocked("E059", "Resource Locked"),
 }
 
 impl AsterError {
@@ -114,6 +117,8 @@ impl AsterError {
             | Self::AuthTokenInvalid(_) => StatusCode::UNAUTHORIZED,
 
             Self::AuthForbidden(_) => StatusCode::FORBIDDEN,
+
+            Self::ResourceLocked(_) => StatusCode::LOCKED,
 
             Self::RecordNotFound(_)
             | Self::FileNotFound(_)

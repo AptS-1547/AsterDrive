@@ -46,6 +46,7 @@ pub enum ErrorCode {
     ChunkUploadFailed = 3006,
     UploadAssemblyFailed = 3007,
     ThumbnailFailed = 3008,
+    ResourceLocked = 3009,
 
     // 存储策略错误 4000-4099
     StoragePolicyNotFound = 4000,
@@ -104,6 +105,9 @@ impl From<&AsterError> for ErrorCode {
 
             // 缩略图
             AsterError::ThumbnailGenerationFailed(_) => ErrorCode::ThumbnailFailed,
+
+            // 资源锁定
+            AsterError::ResourceLocked(_) => ErrorCode::ResourceLocked,
 
             // 分享
             AsterError::ShareNotFound(_) => ErrorCode::ShareNotFound,

@@ -13,6 +13,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("", web::get().to(list_root))
         .route("", web::post().to(create_folder))
         .route("/{id}", web::get().to(list_folder))
+        .route("/{id}/lock", web::post().to(set_lock))
         .route("/{id}", web::delete().to(delete_folder))
         .route("/{id}", web::patch().to(patch_folder))
 }
@@ -143,5 +144,36 @@ pub async fn patch_folder(
         body.policy_id,
     )
     .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
+}
+
+// ── Lock ────────────────────────────────────────────────────────────
+
+#[derive(Deserialize, ToSchema)]
+pub struct SetLockReq {
+    pub locked: bool,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/folders/{id}/lock",
+    tag = "folders",
+    operation_id = "set_folder_lock",
+    params(("id" = i64, Path, description = "Folder ID")),
+    request_body = SetLockReq,
+    responses(
+        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn set_lock(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<SetLockReq>,
+) -> Result<HttpResponse> {
+    let folder = folder_service::set_locked(&state, *path, claims.user_id, body.locked).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
 }

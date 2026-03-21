@@ -29,6 +29,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/{id}", web::get().to(get_file))
         .route("/{id}/download", web::get().to(download))
         .route("/{id}/thumbnail", web::get().to(get_thumbnail))
+        .route("/{id}/lock", web::post().to(set_lock))
         .route("/{id}", web::delete().to(delete_file))
         .route("/{id}", web::patch().to(patch_file))
 }
@@ -342,4 +343,35 @@ pub async fn cancel_upload(
 ) -> Result<HttpResponse> {
     upload_service::cancel_upload(&state, &path.upload_id, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+// ── Lock ────────────────────────────────────────────────────────────
+
+#[derive(Deserialize, ToSchema)]
+pub struct SetLockReq {
+    pub locked: bool,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/files/{id}/lock",
+    tag = "files",
+    operation_id = "set_file_lock",
+    params(("id" = i64, Path, description = "File ID")),
+    request_body = SetLockReq,
+    responses(
+        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn set_lock(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<SetLockReq>,
+) -> Result<HttpResponse> {
+    let file = file_service::set_locked(&state, *path, claims.user_id, body.locked).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
 }

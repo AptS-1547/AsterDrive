@@ -118,6 +118,9 @@ pub async fn store_from_temp(
     if let Some(existing_id) = existing_file_id {
         // 覆盖现有文件
         let old_file = file_repo::find_by_id(db, existing_id).await?;
+        if old_file.is_locked {
+            return Err(AsterError::resource_locked("file is locked"));
+        }
         let old_blob = file_repo::find_blob_by_id(db, old_file.blob_id).await?;
 
         let mut active: file::ActiveModel = old_file.into();
@@ -305,6 +308,9 @@ pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your file"));
     }
+    if f.is_locked {
+        return Err(AsterError::resource_locked("file is locked"));
+    }
     file_repo::soft_delete(&state.db, id).await
 }
 
@@ -314,6 +320,9 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let f = file_repo::find_by_id(db, id).await?;
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your file"));
+    }
+    if f.is_locked {
+        return Err(AsterError::resource_locked("file is locked"));
     }
 
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
@@ -358,6 +367,9 @@ pub async fn update(
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your file"));
     }
+    if f.is_locked {
+        return Err(AsterError::resource_locked("file is locked"));
+    }
     let mut active: file::ActiveModel = f.into();
     if let Some(n) = name {
         active.name = Set(n);
@@ -365,6 +377,25 @@ pub async fn update(
     if let Some(fid) = folder_id {
         active.folder_id = Set(Some(fid));
     }
+    active.updated_at = Set(Utc::now());
+    use sea_orm::ActiveModelTrait;
+    active.update(db).await.map_err(AsterError::from)
+}
+
+/// 锁定/解锁文件
+pub async fn set_locked(
+    state: &AppState,
+    id: i64,
+    user_id: i64,
+    locked: bool,
+) -> Result<file::Model> {
+    let db = &state.db;
+    let f = file_repo::find_by_id(db, id).await?;
+    if f.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your file"));
+    }
+    let mut active: file::ActiveModel = f.into();
+    active.is_locked = Set(locked);
     active.updated_at = Set(Utc::now());
     use sea_orm::ActiveModelTrait;
     active.update(db).await.map_err(AsterError::from)

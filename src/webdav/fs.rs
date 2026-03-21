@@ -88,11 +88,19 @@ impl DavFileSystem for AsterDavFs {
                 )
                 .await?;
 
-                let existing_file_id =
+                let existing_file =
                     file_repo::find_by_name_in_folder(&self.db, self.user_id, parent_id, &filename)
                         .await
-                        .map_err(|_| FsError::GeneralFailure)?
-                        .map(|f| f.id);
+                        .map_err(|_| FsError::GeneralFailure)?;
+
+                // 覆盖锁定文件时拒绝
+                if let Some(ref ef) = existing_file
+                    && ef.is_locked
+                {
+                    return Err(FsError::Forbidden);
+                }
+
+                let existing_file_id = existing_file.map(|f| f.id);
 
                 if options.create_new && existing_file_id.is_some() {
                     return Err(FsError::Exists);
@@ -267,6 +275,9 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::Folder(f) => f,
                 _ => return Err(FsError::Forbidden),
             };
+            if folder.is_locked {
+                return Err(FsError::Forbidden);
+            }
 
             let state = self.app_state();
             webdav_service::recursive_soft_delete(&state, self.user_id, folder.id)
@@ -286,6 +297,9 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::File(f) => f,
                 _ => return Err(FsError::Forbidden),
             };
+            if file.is_locked {
+                return Err(FsError::Forbidden);
+            }
 
             let state = self.app_state();
             file_service::delete(&state, file.id, self.user_id)
@@ -301,6 +315,14 @@ impl DavFileSystem for AsterDavFs {
             let node =
                 path_resolver::resolve_path(&self.db, self.user_id, from, self.root_folder_id)
                     .await?;
+
+            // 检查源是否锁定
+            match &node {
+                ResolvedNode::File(f) if f.is_locked => return Err(FsError::Forbidden),
+                ResolvedNode::Folder(f) if f.is_locked => return Err(FsError::Forbidden),
+                _ => {}
+            }
+
             let (dest_parent_id, dest_name) =
                 path_resolver::resolve_parent(&self.db, self.user_id, to, self.root_folder_id)
                     .await?;
@@ -595,6 +617,8 @@ fn to_fs_error(err: crate::errors::AsterError) -> FsError {
         crate::errors::AsterError::ValidationError(msg) if msg.contains("already exists") => {
             FsError::Exists
         }
+
+        crate::errors::AsterError::ResourceLocked(_) => FsError::Forbidden,
 
         _ => FsError::GeneralFailure,
     }
