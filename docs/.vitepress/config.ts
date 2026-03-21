@@ -78,6 +78,7 @@ export default defineConfig({
             { text: '安装', link: '/guide/installation' },
             { text: '快速开始', link: '/guide/getting-started' },
             { text: '核心流程', link: '/guide/core-workflows' },
+            { text: '文件编辑', link: '/guide/editing' },
             { text: '管理面板', link: '/guide/admin-console' }
           ]
         }
