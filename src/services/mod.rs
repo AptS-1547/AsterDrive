@@ -1,10 +1,13 @@
+pub mod audit_service;
 pub mod auth_service;
+pub mod batch_service;
 pub mod config_service;
 pub mod file_service;
 pub mod folder_service;
 pub mod lock_service;
 pub mod policy_service;
 pub mod property_service;
+pub mod search_service;
 pub mod share_service;
 pub mod thumbnail_service;
 pub mod trash_service;

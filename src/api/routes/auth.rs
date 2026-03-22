@@ -2,7 +2,7 @@ use crate::api::response::ApiResponse;
 use crate::db::repository::user_repo;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::auth_service;
+use crate::services::{audit_service, auth_service};
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::cookie::time::Duration as CookieDuration;
 use actix_web::cookie::{Cookie, SameSite};
@@ -87,9 +87,32 @@ fn clear_cookie(name: &str) -> Cookie<'static> {
 )]
 pub async fn register(
     state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
     body: web::Json<RegisterReq>,
 ) -> Result<HttpResponse> {
     let user = auth_service::register(&state, &body.username, &body.email, &body.password).await?;
+    let ctx = audit_service::AuditContext {
+        user_id: user.id,
+        ip_address: req
+            .connection_info()
+            .realip_remote_addr()
+            .map(|s| s.to_string()),
+        user_agent: req
+            .headers()
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()),
+    };
+    audit_service::log(
+        &state,
+        &ctx,
+        "user_register",
+        None,
+        None,
+        Some(&user.username),
+        None,
+    )
+    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
 }
 
@@ -104,8 +127,38 @@ pub async fn register(
         (status = 401, description = "Invalid credentials"),
     ),
 )]
-pub async fn login(state: web::Data<AppState>, body: web::Json<LoginReq>) -> Result<HttpResponse> {
+pub async fn login(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    body: web::Json<LoginReq>,
+) -> Result<HttpResponse> {
     let (access, refresh_tok) = auth_service::login(&state, &body.username, &body.password).await?;
+
+    // 审计日志 — 从 token 解析 user_id
+    if let Ok(claims) = auth_service::verify_token(&access, &state.config.auth.jwt_secret) {
+        let ctx = audit_service::AuditContext {
+            user_id: claims.user_id,
+            ip_address: req
+                .connection_info()
+                .realip_remote_addr()
+                .map(|s| s.to_string()),
+            user_agent: req
+                .headers()
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string()),
+        };
+        audit_service::log(
+            &state,
+            &ctx,
+            "user_login",
+            None,
+            None,
+            Some(&body.username),
+            None,
+        )
+        .await;
+    }
 
     Ok(HttpResponse::Ok()
         .cookie(build_cookie(

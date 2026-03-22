@@ -194,10 +194,7 @@ async fn test_concurrent_chunk_upload_idempotent() {
         let count_after_third = body["data"]["received_count"].as_i64().unwrap();
 
         // received_count 应该都是 1（幂等，不多算）
-        assert_eq!(
-            count_after_first, 1,
-            "first upload should set count to 1"
-        );
+        assert_eq!(count_after_first, 1, "first upload should set count to 1");
         assert_eq!(
             count_after_second, count_after_first,
             "duplicate chunk should not increment count: got {count_after_second}"

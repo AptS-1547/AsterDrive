@@ -1,0 +1,290 @@
+#[macro_use]
+mod common;
+
+use actix_web::test;
+use serde_json::Value;
+
+fn upload_named_file(name: &str, content: &str, mime: &str, boundary: &str) -> String {
+    format!(
+        "--{boundary}\r\n\
+         Content-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n\
+         Content-Type: {mime}\r\n\r\n\
+         {content}\r\n\
+         --{boundary}--\r\n"
+    )
+}
+
+#[actix_web::test]
+async fn test_search_by_name() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let boundary = "----TestBoundary123";
+
+    // Upload "report.pdf"
+    let payload = upload_named_file("report.pdf", "pdf content", "application/pdf", boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // Upload "notes.txt"
+    let payload = upload_named_file("notes.txt", "some notes", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // Search for "rep" — should only match report.pdf
+    let req = test::TestRequest::get()
+        .uri("/api/v1/search?q=rep")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["total_files"], 1);
+    let files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0]["name"], "report.pdf");
+}
+
+#[actix_web::test]
+async fn test_search_by_mime_type() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let boundary = "----TestBoundary123";
+
+    // Upload text file
+    let payload = upload_named_file("doc.txt", "text content", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // Upload PDF file
+    let payload = upload_named_file("report.pdf", "pdf content", "application/pdf", boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // Search by MIME type — only PDF should match
+    let req = test::TestRequest::get()
+        .uri("/api/v1/search?mime_type=application/pdf")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["total_files"], 1);
+    let files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0]["mime_type"], "application/pdf");
+}
+
+#[actix_web::test]
+async fn test_search_folders() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // Create "Documents" folder
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .set_json(serde_json::json!({ "name": "Documents", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // Create "Photos" folder
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .set_json(serde_json::json!({ "name": "Photos", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // Search folders with q=doc — only "Documents" should match
+    let req = test::TestRequest::get()
+        .uri("/api/v1/search?type=folder&q=doc")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["total_folders"], 1);
+    assert_eq!(body["data"]["total_files"], 0);
+    let folders = body["data"]["folders"].as_array().unwrap();
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0]["name"], "Documents");
+}
+
+#[actix_web::test]
+async fn test_search_excludes_deleted() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let boundary = "----TestBoundary123";
+
+    // Upload a file
+    let payload = upload_named_file("searchable.txt", "find me", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    // Verify file is searchable before deletion
+    let req = test::TestRequest::get()
+        .uri("/api/v1/search?q=searchable")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total_files"], 1);
+
+    // Soft delete the file
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Search again — deleted file should not appear
+    let req = test::TestRequest::get()
+        .uri("/api/v1/search?q=searchable")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["total_files"], 0);
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
+}
+
+#[actix_web::test]
+async fn test_search_only_own_files() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    // Register user1 (first user = admin)
+    let (token1, _) = register_and_login!(app);
+
+    let boundary = "----TestBoundary123";
+
+    // Upload file as user1
+    let payload = upload_named_file("user1_report.txt", "user1 data", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", token1)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // Register user2 (non-admin)
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "user2",
+            "email": "user2@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // Login as user2
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "user2",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let token2 = common::extract_cookie(&resp, "aster_access").unwrap();
+
+    // Upload file as user2
+    let payload = upload_named_file("user2_report.txt", "user2 data", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", token2)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // User1 searches for "report" — should only see own file
+    let req = test::TestRequest::get()
+        .uri("/api/v1/search?q=report")
+        .insert_header(("Cookie", format!("aster_access={}", token1)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["total_files"], 1);
+    let files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0]["name"], "user1_report.txt");
+}

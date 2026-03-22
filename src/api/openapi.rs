@@ -62,6 +62,15 @@ use utoipa::OpenApi;
         crate::api::routes::admin::list_locks,
         crate::api::routes::admin::force_unlock,
         crate::api::routes::admin::cleanup_expired_locks,
+        crate::api::routes::admin::list_audit_logs,
+        crate::api::routes::admin::config_schema,
+        crate::api::routes::admin::force_delete_user,
+        // search
+        crate::api::routes::search::search,
+        // batch
+        crate::api::routes::batch::batch_delete,
+        crate::api::routes::batch::batch_move,
+        crate::api::routes::batch::batch_copy,
         // shares (authenticated)
         crate::api::routes::shares::create_share,
         crate::api::routes::shares::list_shares,
@@ -141,6 +150,19 @@ use utoipa::OpenApi;
             crate::entities::entity_property::Model,
             crate::entities::resource_lock::Model,
             crate::api::routes::properties::SetPropReq,
+            // audit log
+            crate::entities::audit_log::Model,
+            crate::services::audit_service::AuditLogPage,
+            // search
+            crate::db::repository::search_repo::FileSearchItem,
+            crate::services::search_service::SearchParams,
+            crate::services::search_service::SearchResults,
+            // batch
+            crate::api::routes::batch::BatchDeleteReq,
+            crate::api::routes::batch::BatchMoveReq,
+            crate::api::routes::batch::BatchCopyReq,
+            crate::services::batch_service::BatchResult,
+            crate::services::batch_service::BatchItemError,
         ),
     ),
     tags(
@@ -153,6 +175,8 @@ use utoipa::OpenApi;
         (name = "webdav", description = "WebDAV account management"),
         (name = "properties", description = "Entity properties"),
         (name = "health", description = "Health checks"),
+        (name = "search", description = "Search files and folders"),
+        (name = "batch", description = "Batch operations"),
     ),
 )]
 pub struct ApiDoc;

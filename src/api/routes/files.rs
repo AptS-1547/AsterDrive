@@ -4,7 +4,11 @@ use crate::db::repository::file_repo;
 use crate::errors::AsterError;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{auth_service::Claims, file_service, thumbnail_service, upload_service};
+use crate::services::{
+    audit_service::{self, AuditContext},
+    auth_service::Claims,
+    file_service, thumbnail_service, upload_service,
+};
 use crate::types::EntityType;
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
@@ -67,10 +71,22 @@ pub struct FileQuery {
 pub async fn upload(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     query: web::Query<FileQuery>,
     mut payload: actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
     let file = file_service::upload(&state, claims.user_id, &mut payload, query.folder_id).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "file_upload",
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        None,
+    )
+    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 
@@ -112,9 +128,22 @@ pub async fn get_file(
 pub async fn download(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let response = file_service::download(&state, *path, claims.user_id).await?;
+    let file_id = *path;
+    let response = file_service::download(&state, file_id, claims.user_id).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "file_download",
+        Some("file"),
+        Some(file_id),
+        None,
+        None,
+    )
+    .await;
     Ok(response)
 }
 
@@ -166,9 +195,22 @@ pub async fn get_thumbnail(
 pub async fn delete_file(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    file_service::delete(&state, *path, claims.user_id).await?;
+    let file_id = *path;
+    file_service::delete(&state, file_id, claims.user_id).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "file_delete",
+        Some("file"),
+        Some(file_id),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -195,6 +237,7 @@ pub struct PatchFileReq {
 pub async fn patch_file(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<PatchFileReq>,
 ) -> Result<HttpResponse> {
@@ -206,6 +249,22 @@ pub async fn patch_file(
         body.folder_id,
     )
     .await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    let action = if body.folder_id.is_some() {
+        "file_move"
+    } else {
+        "file_rename"
+    };
+    audit_service::log(
+        &state,
+        &ctx,
+        action,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
 }
 
@@ -387,6 +446,18 @@ pub async fn update_content(
     let (file, new_hash) =
         file_service::update_content(&state, *path, claims.user_id, body, if_match).await?;
 
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "file_edit",
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        None,
+    )
+    .await;
+
     Ok(HttpResponse::Ok()
         .insert_header(("ETag", format!("\"{new_hash}\"")))
         .json(ApiResponse::ok(file)))
@@ -461,10 +532,22 @@ pub struct CopyFileReq {
 pub async fn copy_file(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<CopyFileReq>,
 ) -> Result<HttpResponse> {
     let file = file_service::copy_file(&state, *path, claims.user_id, body.folder_id).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "file_copy",
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        None,
+    )
+    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 

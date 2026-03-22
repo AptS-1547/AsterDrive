@@ -20,6 +20,8 @@ pub fn configure(cfg: &mut web::ServiceConfig, db: &sea_orm::DatabaseConnection)
             .service(routes::webdav_accounts::routes())
             .service(routes::trash::routes())
             .service(routes::properties::routes())
+            .service(routes::batch::routes())
+            .service(routes::search::routes())
             .default_service(web::to(api_not_found)),
     )
     .service(routes::health::routes());

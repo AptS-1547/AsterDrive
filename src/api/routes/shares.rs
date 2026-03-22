@@ -2,8 +2,12 @@ use crate::api::middleware::auth::JwtAuth;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{auth_service::Claims, share_service};
-use actix_web::{HttpResponse, web};
+use crate::services::{
+    audit_service::{self, AuditContext},
+    auth_service::Claims,
+    share_service,
+};
+use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
 
@@ -41,6 +45,7 @@ pub struct CreateShareReq {
 pub async fn create_share(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     body: web::Json<CreateShareReq>,
 ) -> Result<HttpResponse> {
     let share = share_service::create_share(
@@ -53,6 +58,17 @@ pub async fn create_share(
         body.max_downloads,
     )
     .await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "share_create",
+        None,
+        Some(share.id),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(share)))
 }
 
@@ -91,8 +107,21 @@ pub async fn list_shares(
 pub async fn delete_share(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    share_service::delete_share(&state, *path, claims.user_id).await?;
+    let share_id = *path;
+    share_service::delete_share(&state, share_id, claims.user_id).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "share_delete",
+        None,
+        Some(share_id),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

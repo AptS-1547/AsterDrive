@@ -61,4 +61,23 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         category: "storage",
         description: "Default storage quota for new users in bytes (0 = unlimited)",
     },
+    // ── Audit ─────────────────────────────────────────────
+    ConfigDef {
+        key: "audit_log_enabled",
+        value_type: "boolean",
+        default_fn: || "true".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "audit",
+        description: "Enable or disable audit logging",
+    },
+    ConfigDef {
+        key: "audit_log_retention_days",
+        value_type: "number",
+        default_fn: || "90".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "audit",
+        description: "Days before audit log entries are permanently deleted",
+    },
 ];

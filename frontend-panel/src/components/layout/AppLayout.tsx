@@ -1,6 +1,6 @@
+import { HardDrive, Search, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { HardDrive, Trash2 } from "lucide-react";
 import { FolderTree } from "@/components/folders/FolderTree";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -47,6 +47,17 @@ export function AppLayout({ children }: AppLayoutProps) {
 						>
 							<HardDrive className="h-4 w-4" />
 							WebDAV
+						</Link>
+						<Link
+							to="/search"
+							className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+								location.pathname === "/search"
+									? "bg-accent text-accent-foreground"
+									: "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+							}`}
+						>
+							<Search className="h-4 w-4" />
+							Search
 						</Link>
 					</div>
 				</aside>

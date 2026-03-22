@@ -1,3 +1,4 @@
+pub mod audit_log;
 pub mod entity_property;
 pub mod file;
 pub mod file_blob;

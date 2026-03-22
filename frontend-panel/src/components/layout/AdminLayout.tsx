@@ -1,5 +1,6 @@
 import {
 	ArrowLeft,
+	ClipboardList,
 	HardDrive,
 	Link,
 	Lock,
@@ -17,6 +18,7 @@ const navItems = [
 	{ to: "/admin/shares", label: "Shares", icon: Link },
 	{ to: "/admin/locks", label: "Locks", icon: Lock },
 	{ to: "/admin/settings", label: "Settings", icon: Settings },
+	{ to: "/admin/audit", label: "Audit Log", icon: ClipboardList },
 ];
 
 interface AdminLayoutProps {

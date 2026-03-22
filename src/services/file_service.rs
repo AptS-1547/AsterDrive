@@ -485,6 +485,46 @@ pub async fn update(
     active.update(db).await.map_err(AsterError::from)
 }
 
+/// 移动文件到指定文件夹（None = 根目录）
+///
+/// 与 `update()` 的区别：`update()` 的 `folder_id: Option<i64>` 中 `None` 表示"不变"，
+/// 而本函数的 `target_folder_id: None` 明确表示"移到根目录"。
+pub async fn move_file(
+    state: &AppState,
+    id: i64,
+    user_id: i64,
+    target_folder_id: Option<i64>,
+) -> Result<file::Model> {
+    let db = &state.db;
+    let f = file_repo::find_by_id(db, id).await?;
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
+    if f.is_locked {
+        return Err(AsterError::resource_locked("file is locked"));
+    }
+
+    // 验证目标文件夹
+    if let Some(fid) = target_folder_id {
+        let target = crate::db::repository::folder_repo::find_by_id(db, fid).await?;
+        crate::utils::verify_owner(target.user_id, user_id, "folder")?;
+    }
+
+    // 检查同名冲突
+    if let Some(existing) =
+        file_repo::find_by_name_in_folder(db, user_id, target_folder_id, &f.name).await?
+        && existing.id != id
+    {
+        return Err(AsterError::validation_error(format!(
+            "file '{}' already exists in target folder",
+            f.name
+        )));
+    }
+
+    let mut active: file::ActiveModel = f.into();
+    active.folder_id = Set(target_folder_id);
+    active.updated_at = Set(Utc::now());
+    active.update(db).await.map_err(AsterError::from)
+}
+
 /// 复制文件（REST API 入口，带权限检查 + 副本命名）
 pub async fn copy_file(
     state: &AppState,

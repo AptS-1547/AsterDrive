@@ -15,6 +15,7 @@ mod m20250321_000011_resource_locks;
 mod m20250321_000012_presigned_upload;
 mod m20250322_000001_system_config_metadata;
 mod m20250322_000002_config_source_namespace;
+mod m20260322_000001_create_audit_logs;
 
 pub struct Migrator;
 
@@ -37,6 +38,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250321_000012_presigned_upload::Migration),
             Box::new(m20250322_000001_system_config_metadata::Migration),
             Box::new(m20250322_000002_config_source_namespace::Migration),
+            Box::new(m20260322_000001_create_audit_logs::Migration),
         ]
     }
 }

@@ -1,9 +1,19 @@
-import { useEffect, useState } from "react";
+import {
+	ChevronDown,
+	ChevronUp,
+	FolderPlus,
+	Layers,
+	LogOut,
+	Shield,
+} from "lucide-react";
 import type { FormEvent } from "react";
-import { AppLayout } from "@/components/layout/AppLayout";
-import { PageHeader } from "@/components/layout/PageHeader";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import { FileList } from "@/components/files/FileList";
 import { UploadArea } from "@/components/files/UploadArea";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -13,14 +23,12 @@ import {
 	DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { FolderPlus, LogOut, Shield } from "lucide-react";
-import { useFileStore } from "@/stores/fileStore";
-import { useAuthStore } from "@/stores/authStore";
-import { handleApiError } from "@/hooks/useApiError";
-import { toast } from "sonner";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
-import { Link } from "react-router-dom";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { handleApiError } from "@/hooks/useApiError";
+import { batchService } from "@/services/batchService";
+import { useAuthStore } from "@/stores/authStore";
+import { useFileStore } from "@/stores/fileStore";
 
 function formatBytes(bytes: number): string {
 	if (bytes === 0) return "0 B";
@@ -50,13 +58,86 @@ function StorageIndicator({
 	);
 }
 
+function parseIds(s: string): number[] {
+	return s
+		.split(",")
+		.map((x) => Number(x.trim()))
+		.filter((x) => !Number.isNaN(x) && x > 0);
+}
+
 export default function FileBrowserPage() {
 	const navigateTo = useFileStore((s) => s.navigateTo);
 	const createFolder = useFileStore((s) => s.createFolder);
+	const refresh = useFileStore((s) => s.refresh);
 	const logout = useAuthStore((s) => s.logout);
 	const user = useAuthStore((s) => s.user);
 	const [folderName, setFolderName] = useState("");
 	const [dialogOpen, setDialogOpen] = useState(false);
+	const [batchOpen, setBatchOpen] = useState(false);
+	const [batchFileIds, setBatchFileIds] = useState("");
+	const [batchFolderIds, setBatchFolderIds] = useState("");
+
+	const handleBatchDelete = async () => {
+		try {
+			const result = await batchService.batchDelete(
+				parseIds(batchFileIds),
+				parseIds(batchFolderIds),
+			);
+			toast.success(
+				`Deleted: ${result.succeeded} succeeded, ${result.failed} failed`,
+			);
+			for (const e of result.errors) {
+				toast.error(`${e.entity_type} #${e.entity_id}: ${e.error}`);
+			}
+			setBatchFileIds("");
+			setBatchFolderIds("");
+			await refresh();
+		} catch (err) {
+			handleApiError(err);
+		}
+	};
+
+	const handleBatchMove = async () => {
+		try {
+			const result = await batchService.batchMove(
+				parseIds(batchFileIds),
+				parseIds(batchFolderIds),
+				null,
+			);
+			toast.success(
+				`Moved to root: ${result.succeeded} succeeded, ${result.failed} failed`,
+			);
+			for (const e of result.errors) {
+				toast.error(`${e.entity_type} #${e.entity_id}: ${e.error}`);
+			}
+			setBatchFileIds("");
+			setBatchFolderIds("");
+			await refresh();
+		} catch (err) {
+			handleApiError(err);
+		}
+	};
+
+	const handleBatchCopy = async () => {
+		try {
+			const result = await batchService.batchCopy(
+				parseIds(batchFileIds),
+				parseIds(batchFolderIds),
+				null,
+			);
+			toast.success(
+				`Copied to root: ${result.succeeded} succeeded, ${result.failed} failed`,
+			);
+			for (const e of result.errors) {
+				toast.error(`${e.entity_type} #${e.entity_id}: ${e.error}`);
+			}
+			setBatchFileIds("");
+			setBatchFolderIds("");
+			await refresh();
+		} catch (err) {
+			handleApiError(err);
+		}
+	};
 
 	useEffect(() => {
 		navigateTo(null).catch(handleApiError);
@@ -116,6 +197,65 @@ export default function FileBrowserPage() {
 					</>
 				}
 			/>
+			{/* Batch Operations PoC */}
+			<div className="px-4 py-2 border-b">
+				<button
+					type="button"
+					onClick={() => setBatchOpen(!batchOpen)}
+					className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+				>
+					<Layers className="h-4 w-4" />
+					Batch Operations
+					{batchOpen ? (
+						<ChevronUp className="h-3 w-3" />
+					) : (
+						<ChevronDown className="h-3 w-3" />
+					)}
+				</button>
+				{batchOpen && (
+					<div className="mt-2 flex flex-wrap gap-2 items-end">
+						<div>
+							<label
+								htmlFor="batch-file-ids"
+								className="text-xs text-muted-foreground"
+							>
+								File IDs
+							</label>
+							<Input
+								id="batch-file-ids"
+								value={batchFileIds}
+								onChange={(e) => setBatchFileIds(e.target.value)}
+								placeholder="1, 2, 3"
+								className="w-40 h-8"
+							/>
+						</div>
+						<div>
+							<label
+								htmlFor="batch-folder-ids"
+								className="text-xs text-muted-foreground"
+							>
+								Folder IDs
+							</label>
+							<Input
+								id="batch-folder-ids"
+								value={batchFolderIds}
+								onChange={(e) => setBatchFolderIds(e.target.value)}
+								placeholder="1, 2"
+								className="w-40 h-8"
+							/>
+						</div>
+						<Button size="sm" variant="destructive" onClick={handleBatchDelete}>
+							Delete
+						</Button>
+						<Button size="sm" variant="outline" onClick={handleBatchMove}>
+							Move to Root
+						</Button>
+						<Button size="sm" variant="outline" onClick={handleBatchCopy}>
+							Copy to Root
+						</Button>
+					</div>
+				)}
+			</div>
 			<UploadArea>
 				<ScrollArea className="flex-1">
 					<FileList />

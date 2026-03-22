@@ -3,12 +3,13 @@ use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
-    auth_service::Claims, config_service, policy_service, share_service, user_service,
+    audit_service, auth_service::Claims, config_service, policy_service, share_service,
+    user_service,
 };
 use crate::types::{DriverType, UserRole, UserStatus};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
     web::scope("/admin")
@@ -55,6 +56,8 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/config/{key}", web::get().to(get_config))
         .route("/config/{key}", web::put().to(set_config))
         .route("/config/{key}", web::delete().to(delete_config))
+        // audit logs
+        .route("/audit-logs", web::get().to(list_audit_logs))
         // webdav locks
         .route("/locks", web::get().to(list_locks))
         .route("/locks/expired", web::delete().to(cleanup_expired_locks))
@@ -731,11 +734,23 @@ pub struct SetConfigReq {
 pub async fn set_config(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: actix_web::HttpRequest,
     path: web::Path<String>,
     body: web::Json<SetConfigReq>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
     let config = config_service::set(&state, &path, &body.value, claims.user_id).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "config_update",
+        None,
+        None,
+        Some(&path),
+        Some(serde_json::json!({ "value": body.value })),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
 }
 
@@ -829,6 +844,67 @@ pub async fn cleanup_expired_locks(
     let count = crate::services::lock_service::cleanup_expired(&state).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({ "removed": count }))))
 }
+
+// ── Audit Logs ─────────────────────────────────────────────────────
+
+#[derive(Deserialize, IntoParams)]
+pub struct AuditLogQuery {
+    pub user_id: Option<i64>,
+    pub action: Option<String>,
+    pub entity_type: Option<String>,
+    pub after: Option<String>,
+    pub before: Option<String>,
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/audit-logs",
+    tag = "admin",
+    operation_id = "list_audit_logs",
+    params(AuditLogQuery),
+    responses(
+        (status = 200, description = "Audit log entries", body = inline(ApiResponse<audit_service::AuditLogPage>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_audit_logs(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    query: web::Query<AuditLogQuery>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+
+    let after = query
+        .after
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+    let before = query
+        .before
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
+    let page = audit_service::query(
+        &state,
+        query.user_id,
+        query.action.as_deref(),
+        query.entity_type.as_deref(),
+        after,
+        before,
+        query.limit.unwrap_or(50),
+        query.offset.unwrap_or(0),
+    )
+    .await?;
+
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(page)))
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
 
 fn require_admin(claims: &Claims) -> Result<()> {
     use crate::errors::AsterError;

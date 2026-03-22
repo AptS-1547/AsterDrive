@@ -50,6 +50,7 @@ async fn main() -> std::io::Result<()> {
     let cleanup_state = state.clone();
     let trash_state = state.clone();
     let lock_cleanup_state = state.clone();
+    let audit_cleanup_state = state.clone();
 
     let server = HttpServer::new(move || {
         let db = db.clone();
@@ -107,6 +108,19 @@ async fn main() -> std::io::Result<()> {
                 Ok(n) if n > 0 => tracing::info!("cleaned up {n} expired locks"),
                 Err(e) => tracing::warn!("lock cleanup failed: {e}"),
                 _ => {}
+            }
+        }
+    });
+
+    // 后台清理：过期审计日志（每小时）
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            if let Err(e) =
+                aster_drive::services::audit_service::cleanup_expired(&audit_cleanup_state).await
+            {
+                tracing::warn!("audit log cleanup failed: {e}");
             }
         }
     });

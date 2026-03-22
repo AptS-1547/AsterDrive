@@ -2,9 +2,13 @@ use crate::api::middleware::auth::JwtAuth;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{auth_service::Claims, folder_service};
+use crate::services::{
+    audit_service::{self, AuditContext},
+    auth_service::Claims,
+    folder_service,
+};
 use crate::types::EntityType;
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
 
@@ -41,9 +45,21 @@ pub struct CreateFolderReq {
 pub async fn create_folder(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     body: web::Json<CreateFolderReq>,
 ) -> Result<HttpResponse> {
     let folder = folder_service::create(&state, claims.user_id, &body.name, body.parent_id).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "folder_create",
+        Some("folder"),
+        Some(folder.id),
+        Some(&folder.name),
+        None,
+    )
+    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
 }
 
@@ -104,9 +120,22 @@ pub async fn list_folder(
 pub async fn delete_folder(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    folder_service::delete(&state, *path, claims.user_id).await?;
+    let folder_id = *path;
+    folder_service::delete(&state, folder_id, claims.user_id).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "folder_delete",
+        Some("folder"),
+        Some(folder_id),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -134,6 +163,7 @@ pub struct PatchFolderReq {
 pub async fn patch_folder(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<PatchFolderReq>,
 ) -> Result<HttpResponse> {
@@ -146,6 +176,22 @@ pub async fn patch_folder(
         body.policy_id,
     )
     .await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    let action = if body.parent_id.is_some() {
+        "folder_move"
+    } else {
+        "folder_rename"
+    };
+    audit_service::log(
+        &state,
+        &ctx,
+        action,
+        Some("folder"),
+        Some(folder.id),
+        Some(&folder.name),
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
 }
 
@@ -219,9 +265,21 @@ pub struct CopyFolderReq {
 pub async fn copy_folder(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<CopyFolderReq>,
 ) -> Result<HttpResponse> {
     let folder = folder_service::copy_folder(&state, *path, claims.user_id, body.parent_id).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        "folder_copy",
+        Some("folder"),
+        Some(folder.id),
+        Some(&folder.name),
+        None,
+    )
+    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
 }

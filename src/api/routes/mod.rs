@@ -1,10 +1,12 @@
 pub mod admin;
 pub mod auth;
+pub mod batch;
 pub mod files;
 pub mod folders;
 pub mod frontend;
 pub mod health;
 pub mod properties;
+pub mod search;
 pub mod share_public;
 pub mod shares;
 pub mod trash;
