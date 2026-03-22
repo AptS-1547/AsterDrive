@@ -51,7 +51,7 @@ base64 = "0.22"
 bytes = "1"
 aws-config = "1.8.15"
 aws-credential-types = { version = "1.2.14", features = ["hardcoded-credentials"] }
-aws-sdk-s3 = "1.127.0"
+aws-sdk-s3 = { version = "1.127.0", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
 chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive"], optional = true }
 config = { version = "0.15", default-features = false, features = ["toml"] }
