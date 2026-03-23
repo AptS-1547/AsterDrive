@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 90" role="img" aria-label="AsterDrive">
+  <style>
+    .logo-text {
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 48px;
+      font-weight: 800;
+      letter-spacing: -0.75px;
+      fill: #0f172a;
+      stroke: rgba(248, 250, 252, 0.72);
+      stroke-width: 1.2px;
+      paint-order: stroke fill;
+      stroke-linejoin: round;
+    }
+    .blue-dot {
+      fill: #3b82f6;
+    }
+    @media (prefers-color-scheme: dark) {
+      .logo-text {
+        fill: #f8fafc;
+        stroke: rgba(15, 23, 42, 0.72);
+      }
+      .blue-dot {
+        stroke: #93c5fd;
+      }
+    }
+  </style>
+
+  <g transform="translate(180 0)">
+    <text x="0" y="63" text-anchor="middle" class="logo-text">
+      AsterDr<tspan>ı</tspan>ve
+    </text>
+    <circle cx="60.5" cy="27" r="5.5" class="blue-dot" />
+  </g>
+</svg>

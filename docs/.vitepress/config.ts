@@ -63,7 +63,8 @@ export default defineConfig({
   },
 
   head: [
-    ['meta', { name: 'theme-color', content: '#1f8f6a' }],
+    ['meta', { name: 'theme-color', content: '#0F172A' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
     ['meta', { name: 'og:type', content: 'website' }],
     ['meta', { name: 'og:locale', content: 'zh_CN' }],
     ['meta', { name: 'og:title', content: 'AsterDrive | 自托管云存储' }],
@@ -71,6 +72,9 @@ export default defineConfig({
   ],
 
   themeConfig: {
+    logo: '/logo.svg',
+    siteTitle: false,
+
     sidebar: {
       '/guide/': [
         {
