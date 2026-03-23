@@ -16,6 +16,7 @@ interface FileGridProps {
 	}) => void;
 	onDownload: (fileId: number, fileName: string) => void;
 	onCopy: (type: "file" | "folder", id: number) => void;
+	onMove?: (type: "file" | "folder", id: number) => void;
 	onToggleLock: (type: "file" | "folder", id: number, locked: boolean) => void;
 	onDelete: (type: "file" | "folder", id: number) => void;
 	onVersions?: (fileId: number) => void;
@@ -39,6 +40,7 @@ export function FileGrid({
 	onShare,
 	onDownload,
 	onCopy,
+	onMove,
 	onToggleLock,
 	onDelete,
 	onVersions,
@@ -88,6 +90,7 @@ export function FileGrid({
 									onShare({ folderId: folder.id, name: folder.name })
 								}
 								onCopy={() => onCopy("folder", folder.id)}
+								onMove={onMove ? () => onMove("folder", folder.id) : undefined}
 								onToggleLock={() =>
 									onToggleLock("folder", folder.id, folder.is_locked ?? false)
 								}
@@ -125,6 +128,7 @@ export function FileGrid({
 								onDownload={() => onDownload(file.id, file.name)}
 								onShare={() => onShare({ fileId: file.id, name: file.name })}
 								onCopy={() => onCopy("file", file.id)}
+								onMove={onMove ? () => onMove("file", file.id) : undefined}
 								onToggleLock={() =>
 									onToggleLock("file", file.id, file.is_locked ?? false)
 								}

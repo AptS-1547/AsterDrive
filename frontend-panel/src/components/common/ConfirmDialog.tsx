@@ -30,6 +30,12 @@ export function ConfirmDialog({
 	variant = "default",
 }: ConfirmDialogProps) {
 	const { t } = useTranslation();
+
+	const handleConfirm = () => {
+		onOpenChange(false);
+		onConfirm();
+	};
+
 	return (
 		<AlertDialog open={open} onOpenChange={onOpenChange}>
 			<AlertDialogContent>
@@ -42,7 +48,7 @@ export function ConfirmDialog({
 				<AlertDialogFooter>
 					<AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
 					<AlertDialogAction
-						onClick={onConfirm}
+						onClick={handleConfirm}
 						className={
 							variant === "destructive"
 								? "bg-destructive text-white hover:bg-destructive/90"

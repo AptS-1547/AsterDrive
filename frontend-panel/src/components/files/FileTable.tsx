@@ -2,7 +2,13 @@ import type React from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileContextMenu } from "@/components/files/FileContextMenu";
-import { FileThumbnail } from "@/components/files/FileThumbnail";
+import {
+	FileNameCell,
+	FileSizeCell,
+	FolderNameCell,
+	FolderSizeCell,
+	UpdatedAtCell,
+} from "@/components/files/FileTableCells";
 import { Icon } from "@/components/ui/icon";
 import {
 	Table,
@@ -12,7 +18,6 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { formatBytes, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { SortBy } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
@@ -30,6 +35,7 @@ interface FileTableProps {
 	}) => void;
 	onDownload: (fileId: number, fileName: string) => void;
 	onCopy: (type: "file" | "folder", id: number) => void;
+	onMove?: (type: "file" | "folder", id: number) => void;
 	onToggleLock: (type: "file" | "folder", id: number, locked: boolean) => void;
 	onDelete: (type: "file" | "folder", id: number) => void;
 	onVersions?: (fileId: number) => void;
@@ -67,6 +73,7 @@ export function FileTable({
 	onShare,
 	onDownload,
 	onCopy,
+	onMove,
 	onToggleLock,
 	onDelete,
 	onVersions,
@@ -155,7 +162,7 @@ export function FileTable({
 		<Table>
 			<TableHeader>
 				<TableRow>
-					<TableHead className="w-10">
+					<TableHead className="w-8 px-1">
 						{/* biome-ignore lint/a11y/useSemanticElements: custom styled checkbox */}
 						<div
 							className={cn(
@@ -216,6 +223,7 @@ export function FileTable({
 			<TableBody>
 				{folders.map((folder) => (
 					<FileContextMenu
+						renderTrigger
 						key={`folder-${folder.id}`}
 						isFolder
 						isLocked={folder.is_locked ?? false}
@@ -226,6 +234,7 @@ export function FileTable({
 							})
 						}
 						onCopy={() => onCopy("folder", folder.id)}
+						onMove={onMove ? () => onMove("folder", folder.id) : undefined}
 						onToggleLock={() =>
 							onToggleLock("folder", folder.id, folder.is_locked ?? false)
 						}
@@ -244,7 +253,7 @@ export function FileTable({
 							onDrop={(e) => handleFolderDrop(e, folder.id)}
 							onClick={() => onFolderOpen(folder.id, folder.name)}
 						>
-							<TableCell onClick={(e) => e.stopPropagation()}>
+							<TableCell className="px-1" onClick={(e) => e.stopPropagation()}>
 								{/* biome-ignore lint/a11y/useSemanticElements: custom styled checkbox */}
 								<div
 									className={cn(
@@ -273,30 +282,22 @@ export function FileTable({
 									)}
 								</div>
 							</TableCell>
-							<TableCell>
-								<div className="flex items-center gap-2">
-									<Icon
-										name="Folder"
-										className="h-4 w-4 text-amber-500 shrink-0"
-									/>
-									<span className="truncate">{folder.name}</span>
-								</div>
-							</TableCell>
-							<TableCell className="text-muted-foreground">---</TableCell>
-							<TableCell className="text-muted-foreground">
-								{formatDate(folder.updated_at)}
-							</TableCell>
+							<FolderNameCell folder={folder} />
+							<FolderSizeCell />
+							<UpdatedAtCell updatedAt={folder.updated_at} />
 						</TableRow>
 					</FileContextMenu>
 				))}
 				{files.map((file) => (
 					<FileContextMenu
+						renderTrigger
 						key={`file-${file.id}`}
 						isFolder={false}
 						isLocked={file.is_locked ?? false}
 						onDownload={() => onDownload(file.id, file.name)}
 						onShare={() => onShare({ fileId: file.id, name: file.name })}
 						onCopy={() => onCopy("file", file.id)}
+						onMove={onMove ? () => onMove("file", file.id) : undefined}
 						onToggleLock={() =>
 							onToggleLock("file", file.id, file.is_locked ?? false)
 						}
@@ -312,7 +313,7 @@ export function FileTable({
 							onDragStart={(e) => handleDragStart(e, file.id, false)}
 							onClick={() => onFileClick(file)}
 						>
-							<TableCell onClick={(e) => e.stopPropagation()}>
+							<TableCell className="px-1" onClick={(e) => e.stopPropagation()}>
 								{/* biome-ignore lint/a11y/useSemanticElements: custom styled checkbox */}
 								<div
 									className={cn(
@@ -341,18 +342,9 @@ export function FileTable({
 									)}
 								</div>
 							</TableCell>
-							<TableCell>
-								<div className="flex items-center gap-2">
-									<FileThumbnail file={file} size="sm" />
-									<span className="truncate">{file.name}</span>
-								</div>
-							</TableCell>
-							<TableCell className="text-muted-foreground">
-								{formatBytes(file.size)}
-							</TableCell>
-							<TableCell className="text-muted-foreground">
-								{formatDate(file.updated_at)}
-							</TableCell>
+							<FileNameCell file={file} />
+							<FileSizeCell size={file.size} />
+							<UpdatedAtCell updatedAt={file.updated_at} />
 						</TableRow>
 					</FileContextMenu>
 				))}

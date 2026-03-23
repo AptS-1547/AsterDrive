@@ -96,6 +96,7 @@ use utoipa::OpenApi;
         crate::api::routes::share_public::get_share_info,
         crate::api::routes::share_public::verify_password,
         crate::api::routes::share_public::download_shared,
+        crate::api::routes::share_public::download_shared_folder_file,
         crate::api::routes::share_public::list_shared_content,
         crate::api::routes::share_public::shared_thumbnail,
     ),

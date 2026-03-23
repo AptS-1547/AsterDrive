@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonFileGrid } from "@/components/common/SkeletonFileGrid";
 import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
 import { ViewToggle } from "@/components/common/ViewToggle";
+import { BatchTargetFolderDialog } from "@/components/files/BatchTargetFolderDialog";
 import { CreateFolderDialog } from "@/components/files/CreateFolderDialog";
 import { FileGrid } from "@/components/files/FileGrid";
 import { FilePreview } from "@/components/files/FilePreview";
@@ -77,7 +78,20 @@ export default function FileBrowserPage() {
 		folderId?: number;
 		name: string;
 	} | null>(null);
-	const [versionFileId, setVersionFileId] = useState<number | null>(null);
+	const [copyTarget, setCopyTarget] = useState<{
+		type: "file" | "folder";
+		id: number;
+	} | null>(null);
+	const [moveTarget, setMoveTarget] = useState<{
+		fileIds: number[];
+		folderIds: number[];
+	} | null>(null);
+	const [versionTarget, setVersionTarget] = useState<{
+		fileId: number;
+		fileName: string;
+		mimeType: string;
+		size: number;
+	} | null>(null);
 
 	useEffect(() => {
 		navigateTo(folderId, folderName).catch(handleApiError);
@@ -102,19 +116,36 @@ export default function FileBrowserPage() {
 		[],
 	);
 
-	const handleCopy = useCallback(
-		async (type: "file" | "folder", id: number) => {
+	const handleCopy = useCallback((type: "file" | "folder", id: number) => {
+		setCopyTarget({ type, id });
+	}, []);
+
+	const handleCopyConfirm = useCallback(
+		async (targetFolderId: number | null) => {
+			if (!copyTarget) return;
 			try {
-				if (type === "file") await fileService.copyFile(id);
-				else await fileService.copyFolder(id);
+				if (copyTarget.type === "file") {
+					await fileService.copyFile(copyTarget.id, targetFolderId);
+				} else {
+					await fileService.copyFolder(copyTarget.id, targetFolderId);
+				}
 				toast.success(t("copy_success"));
-				refresh();
+				setCopyTarget(null);
+				await refresh();
 			} catch (err) {
 				handleApiError(err);
 			}
 		},
-		[refresh, t],
+		[copyTarget, refresh, t],
 	);
+
+	const handleMove = useCallback((type: "file" | "folder", id: number) => {
+		setMoveTarget(
+			type === "file"
+				? { fileIds: [id], folderIds: [] }
+				: { fileIds: [], folderIds: [id] },
+		);
+	}, []);
 
 	const handleToggleLock = useCallback(
 		async (type: "file" | "folder", id: number, locked: boolean) => {
@@ -144,7 +175,11 @@ export default function FileBrowserPage() {
 	);
 
 	const handleMoveToFolder = useCallback(
-		async (fileIds: number[], folderIds: number[], targetFolderId: number) => {
+		async (
+			fileIds: number[],
+			folderIds: number[],
+			targetFolderId: number | null,
+		) => {
 			try {
 				// Fade out moved items before refreshing
 				setFadingFileIds(new Set(fileIds));
@@ -173,6 +208,19 @@ export default function FileBrowserPage() {
 		[moveToFolder, t],
 	);
 
+	const handleMoveConfirm = useCallback(
+		async (targetFolderId: number | null) => {
+			if (!moveTarget) return;
+			await handleMoveToFolder(
+				moveTarget.fileIds,
+				moveTarget.folderIds,
+				targetFolderId,
+			);
+			setMoveTarget(null);
+		},
+		[handleMoveToFolder, moveTarget],
+	);
+
 	const sharedProps = {
 		folders: displayFolders,
 		files: displayFiles,
@@ -182,9 +230,19 @@ export default function FileBrowserPage() {
 		onShare: setShareTarget,
 		onDownload: handleDownload,
 		onCopy: handleCopy,
+		onMove: handleMove,
 		onToggleLock: handleToggleLock,
 		onDelete: handleDelete,
-		onVersions: (fileId: number) => setVersionFileId(fileId),
+		onVersions: (fileId: number) => {
+			const targetFile = displayFiles.find((file) => file.id === fileId);
+			if (!targetFile) return;
+			setVersionTarget({
+				fileId,
+				fileName: targetFile.name,
+				mimeType: targetFile.mime_type,
+				size: targetFile.size,
+			});
+		},
 		onMoveToFolder: handleMoveToFolder,
 		fadingFileIds,
 		fadingFolderIds,
@@ -288,14 +346,52 @@ export default function FileBrowserPage() {
 				/>
 			)}
 			{previewFile && (
-				<FilePreview file={previewFile} onClose={() => setPreviewFile(null)} />
+				<FilePreview
+					file={previewFile}
+					onClose={() => setPreviewFile(null)}
+					onFileUpdated={() => refresh()}
+				/>
 			)}
-			{versionFileId && (
+			{copyTarget && (
+				<BatchTargetFolderDialog
+					open={true}
+					onOpenChange={(open) => {
+						if (!open) setCopyTarget(null);
+					}}
+					mode="copy"
+					onConfirm={handleCopyConfirm}
+					currentFolderId={folderId}
+					initialBreadcrumb={breadcrumb}
+					selectedFolderIds={
+						copyTarget.type === "folder" ? [copyTarget.id] : []
+					}
+				/>
+			)}
+			{moveTarget && (
+				<BatchTargetFolderDialog
+					open={true}
+					onOpenChange={(open) => {
+						if (!open) setMoveTarget(null);
+					}}
+					mode="move"
+					onConfirm={handleMoveConfirm}
+					currentFolderId={folderId}
+					initialBreadcrumb={breadcrumb}
+					selectedFolderIds={moveTarget.folderIds}
+				/>
+			)}
+			{versionTarget && (
 				<VersionHistoryDialog
-					fileId={versionFileId}
-					fileName=""
+					open={true}
+					onOpenChange={(open) => {
+						if (!open) setVersionTarget(null);
+					}}
+					fileId={versionTarget.fileId}
+					fileName={versionTarget.fileName}
+					mimeType={versionTarget.mimeType}
+					currentSize={versionTarget.size}
 					onRestored={() => {
-						setVersionFileId(null);
+						setVersionTarget(null);
 						refresh();
 					}}
 				/>

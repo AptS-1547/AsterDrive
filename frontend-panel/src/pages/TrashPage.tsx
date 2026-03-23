@@ -71,6 +71,7 @@ export default function TrashPage() {
 
 	const handlePurgeAll = async () => {
 		try {
+			setPurgeAllOpen(false);
 			await trashService.purgeAll();
 			toast.success(t("trash_emptied"));
 			load();
@@ -224,10 +225,11 @@ export default function TrashPage() {
 				description={t("admin:confirm_purge")}
 				confirmLabel={t("admin:purge")}
 				onConfirm={() => {
-					if (purgeTarget) {
-						handlePurge(purgeTarget.type, purgeTarget.id);
-					}
+					const target = purgeTarget;
 					setPurgeTarget(null);
+					if (target) {
+						void handlePurge(target.type, target.id);
+					}
 				}}
 				variant="destructive"
 			/>

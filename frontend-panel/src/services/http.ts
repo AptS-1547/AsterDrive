@@ -21,6 +21,11 @@ const SKIP_REFRESH_PATHS = [
 	"/auth/setup",
 ];
 
+function shouldSkipRefresh(url: string) {
+	if (SKIP_REFRESH_PATHS.some((path) => url.endsWith(path))) return true;
+	return url.includes("/s/");
+}
+
 let isRefreshing = false;
 let refreshQueue: Array<() => void> = [];
 
@@ -30,8 +35,8 @@ client.interceptors.response.use(
 		const original = error.config;
 		const url = original?.url || "";
 
-		// 跳过 auth 端点的自动 refresh（避免死循环）
-		const shouldSkip = SKIP_REFRESH_PATHS.some((p) => url.endsWith(p));
+		// 跳过公开端点的自动 refresh（避免把分享页误当成登录态接口）
+		const shouldSkip = shouldSkipRefresh(url);
 		if (error.response?.status === 401 && !original._retry && !shouldSkip) {
 			original._retry = true;
 
@@ -46,7 +51,9 @@ client.interceptors.response.use(
 				await axios.post(`${config.apiBaseUrl}/auth/refresh`, null, {
 					withCredentials: true,
 				});
-				refreshQueue.forEach((cb) => cb());
+				refreshQueue.forEach((cb) => {
+					cb();
+				});
 				refreshQueue = [];
 				return client(original);
 			} catch {

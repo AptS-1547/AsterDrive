@@ -11,6 +11,10 @@ pub fn routes() -> actix_web::Scope {
         .route("/{token}", web::get().to(get_share_info))
         .route("/{token}/verify", web::post().to(verify_password))
         .route("/{token}/download", web::get().to(download_shared))
+        .route(
+            "/{token}/files/{file_id}/download",
+            web::get().to(download_shared_folder_file),
+        )
         .route("/{token}/content", web::get().to(list_shared_content))
         .route("/{token}/thumbnail", web::get().to(shared_thumbnail))
 }
@@ -94,6 +98,32 @@ pub async fn download_shared(
     check_share_password_cookie(&state, &path, &req).await?;
 
     share_service::download_shared_file(&state, &path).await
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/s/{token}/files/{file_id}/download",
+    tag = "shares",
+    operation_id = "download_shared_folder_file",
+    params(
+        ("token" = String, Path, description = "Share token"),
+        ("file_id" = i64, Path, description = "File ID inside shared folder")
+    ),
+    responses(
+        (status = 200, description = "File content"),
+        (status = 403, description = "Password required or file outside shared folder"),
+        (status = 404, description = "Share or file not found"),
+    )
+)]
+pub async fn download_shared_folder_file(
+    state: web::Data<AppState>,
+    path: web::Path<(String, i64)>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let (token, file_id) = path.into_inner();
+    check_share_password_cookie(&state, &token, &req).await?;
+
+    share_service::download_shared_folder_file(&state, &token, file_id).await
 }
 
 #[utoipa::path(

@@ -788,6 +788,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/s/{token}/files/{file_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["download_shared_folder_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/s/{token}/thumbnail": {
         parameters: {
             query?: never;
@@ -1414,8 +1430,11 @@ export interface components {
             is_expired: boolean;
             /** Format: int64 */
             max_downloads: number;
+            mime_type?: string | null;
             name: string;
             share_type: string;
+            /** Format: int64 */
+            size?: number | null;
             token: string;
             /** Format: int64 */
             view_count: number;
@@ -4671,8 +4690,11 @@ export interface operations {
                             is_expired: boolean;
                             /** Format: int64 */
                             max_downloads: number;
+                            mime_type?: string | null;
                             name: string;
                             share_type: string;
+                            /** Format: int64 */
+                            size?: number | null;
                             token: string;
                             /** Format: int64 */
                             view_count: number;
@@ -4768,6 +4790,43 @@ export interface operations {
                 content?: never;
             };
             /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    download_shared_folder_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+                /** @description File ID inside shared folder */
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Password required or file outside shared folder */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share or file not found */
             404: {
                 headers: {
                     [name: string]: unknown;

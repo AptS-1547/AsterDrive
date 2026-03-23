@@ -361,8 +361,9 @@ export default function AdminSettingsPage() {
 					description={t("delete_config_desc")}
 					confirmLabel={t("common:delete")}
 					onConfirm={() => {
-						if (deleteKey !== null) handleDelete(deleteKey);
+						const key = deleteKey;
 						setDeleteKey(null);
+						if (key !== null) void handleDelete(key);
 					}}
 					variant="destructive"
 				/>

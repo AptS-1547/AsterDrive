@@ -5,10 +5,17 @@ import { api } from "@/services/http";
 export function useBlobUrl(path: string | null) {
 	const [blobUrl, setBlobUrl] = useState<string | null>(null);
 	const [error, setError] = useState(false);
+	const [loading, setLoading] = useState(false);
 
 	useEffect(() => {
-		if (!path) return;
+		setBlobUrl(null);
+		setError(false);
+		if (!path) {
+			setLoading(false);
+			return;
+		}
 		let revoke: string | null = null;
+		setLoading(true);
 		api.client
 			.get(path, { responseType: "blob" })
 			.then((r) => {
@@ -16,11 +23,12 @@ export function useBlobUrl(path: string | null) {
 				revoke = objectUrl;
 				setBlobUrl(objectUrl);
 			})
-			.catch(() => setError(true));
+			.catch(() => setError(true))
+			.finally(() => setLoading(false));
 		return () => {
 			if (revoke) URL.revokeObjectURL(revoke);
 		};
 	}, [path]);
 
-	return { blobUrl, error };
+	return { blobUrl, error, loading };
 }

@@ -49,9 +49,20 @@ impl FrontendService {
         Self::serve_index().await
     }
 
-    pub async fn handle_static(req: HttpRequest) -> HttpResponse {
+    pub async fn handle_assets(req: HttpRequest) -> HttpResponse {
         let path = req.match_info().query("path");
         let asset_path = format!("assets/{path}");
+        let content_type = Self::get_content_type(path);
+
+        match Self::load_file(&asset_path).await {
+            Some(data) => HttpResponse::Ok().content_type(content_type).body(data),
+            None => HttpResponse::NotFound().body("File not found"),
+        }
+    }
+
+    pub async fn handle_static(req: HttpRequest) -> HttpResponse {
+        let path = req.match_info().query("path");
+        let asset_path = format!("static/{path}");
         let content_type = Self::get_content_type(path);
 
         match Self::load_file(&asset_path).await {
@@ -98,6 +109,10 @@ pub fn routes() -> actix_web::Scope {
         .route("/", web::get().to(FrontendService::handle_index))
         .route(
             "/assets/{path:.*}",
+            web::get().to(FrontendService::handle_assets),
+        )
+        .route(
+            "/static/{path:.*}",
             web::get().to(FrontendService::handle_static),
         )
         .route(

@@ -1,4 +1,3 @@
-import { config } from "@/config/app";
 import type { FolderContents, ShareInfo, SharePublicInfo } from "@/types/api";
 import { api } from "./http";
 
@@ -20,7 +19,10 @@ export const shareService = {
 	verifyPassword: (token: string, password: string) =>
 		api.post<null>(`/s/${token}/verify`, { password }),
 
-	downloadUrl: (token: string) => `${config.apiBaseUrl}/s/${token}/download`,
+	downloadUrl: (token: string) => `/s/${token}/download`,
+
+	downloadFolderFileUrl: (token: string, fileId: number) =>
+		`/s/${token}/files/${fileId}/download`,
 
 	listContent: (token: string) =>
 		api.get<FolderContents>(`/s/${token}/content`),

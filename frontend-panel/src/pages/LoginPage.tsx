@@ -298,10 +298,11 @@ export default function LoginPage() {
 					<div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-amber-500 blur-3xl" />
 				</div>
 				<div className="relative text-center px-12 max-w-md">
-					<Icon name="Cloud" className="h-16 w-16 text-white/80 mx-auto mb-6" />
-					<h1 className="text-4xl font-bold text-white tracking-tight mb-3">
-						AsterDrive
-					</h1>
+					<img
+						src="/static/logo.svg"
+						alt="AsterDrive"
+						className="mx-auto h-20 w-auto"
+					/>
 					<p className="text-lg text-white/50 leading-relaxed">
 						Your files, your server, your rules.
 					</p>
@@ -313,11 +314,11 @@ export default function LoginPage() {
 				<div className="w-full max-w-sm">
 					{/* Mobile logo */}
 					<div className="lg:hidden text-center mb-8">
-						<Icon
-							name="Cloud"
-							className="h-10 w-10 text-foreground mx-auto mb-3"
+						<img
+							src="/static/logo.svg"
+							alt="AsterDrive"
+							className="mx-auto h-14 w-auto"
 						/>
-						<h1 className="text-2xl font-bold tracking-tight">AsterDrive</h1>
 					</div>
 
 					{/* Header */}

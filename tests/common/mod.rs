@@ -168,6 +168,37 @@ macro_rules! upload_test_file {
     }};
 }
 
+/// 上传测试文件到指定文件夹，返回 file_id
+#[macro_export]
+macro_rules! upload_test_file_to_folder {
+    ($app:expr, $token:expr, $folder_id:expr) => {{
+        use actix_web::test;
+        use serde_json::Value;
+
+        let boundary = "----TestBoundary123";
+        let payload = format!(
+            "------TestBoundary123\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"test-in-folder.txt\"\r\n\
+             Content-Type: text/plain\r\n\r\n\
+             test content in folder\r\n\
+             ------TestBoundary123--\r\n"
+        );
+        let req = test::TestRequest::post()
+            .uri(&format!("/api/v1/files/upload?folder_id={}", $folder_id))
+            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header((
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(payload)
+            .to_request();
+        let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201, "upload to folder should return 201");
+        let body: Value = test::read_body_json(resp).await;
+        body["data"]["id"].as_i64().unwrap()
+    }};
+}
+
 /// 构建带 WebDAV 路由的测试 App
 #[macro_export]
 macro_rules! setup_with_webdav {

@@ -313,6 +313,144 @@ async fn test_version_service_list_delete() {
     assert_eq!(versions.len(), 0);
 }
 
+#[actix_web::test]
+async fn test_version_restore_truncates_future_versions_without_deleting_target_blob() {
+    let state = common::setup().await;
+
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "restoreuser",
+        "restore@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+
+    let temp_dir = format!("/tmp/asterdrive-restore-test-{}", uuid::Uuid::new_v4());
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let temp1 = format!("{}/v1.txt", temp_dir);
+    std::fs::write(&temp1, "version 1").unwrap();
+    let file = aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "restore.txt",
+        &temp1,
+        9,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+
+    let temp2 = format!("{}/v2.txt", temp_dir);
+    std::fs::write(&temp2, "version 2").unwrap();
+    aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "restore.txt",
+        &temp2,
+        9,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+
+    let temp3 = format!("{}/v3.txt", temp_dir);
+    std::fs::write(&temp3, "version 3").unwrap();
+    aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "restore.txt",
+        &temp3,
+        9,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+
+    let temp4 = format!("{}/v4.txt", temp_dir);
+    std::fs::write(&temp4, "version 4").unwrap();
+    let latest = aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "restore.txt",
+        &temp4,
+        9,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+
+    let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(versions.iter().map(|v| v.version).collect::<Vec<_>>(), vec![3, 2, 1]);
+
+    let v3 = versions.iter().find(|v| v.version == 3).unwrap().clone();
+    let v2 = versions.iter().find(|v| v.version == 2).unwrap().clone();
+    let v1 = versions.iter().find(|v| v.version == 1).unwrap().clone();
+    let old_current_blob_id = latest.blob_id;
+
+    let restored = aster_drive::services::version_service::restore_version(
+        &state,
+        file.id,
+        v2.id,
+        user.id,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(restored.blob_id, v2.blob_id);
+
+    let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0].version, 1);
+    assert_eq!(versions[0].blob_id, v1.blob_id);
+
+    assert!(aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v1.blob_id)
+        .await
+        .is_ok());
+    assert!(aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v2.blob_id)
+        .await
+        .is_ok());
+    assert!(aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v3.blob_id)
+        .await
+        .is_err());
+    assert!(aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, old_current_blob_id)
+        .await
+        .is_err());
+
+    let temp5 = format!("{}/v5.txt", temp_dir);
+    std::fs::write(&temp5, "version 5").unwrap();
+    aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "restore.txt",
+        &temp5,
+        9,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+
+    let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(versions.iter().map(|v| v.version).collect::<Vec<_>>(), vec![2, 1]);
+}
+
 // ─── Copy Naming ──────────────────────────────────────────────────
 
 #[actix_web::test]

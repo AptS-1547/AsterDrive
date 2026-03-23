@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { isValidElement } from "react";
 import { useTranslation } from "react-i18next";
 import {
 	ContextMenu,
@@ -14,12 +15,14 @@ interface FileContextMenuProps {
 	onDownload?: () => void;
 	onShare: () => void;
 	onCopy: () => void;
+	onMove?: () => void;
 	onToggleLock: () => void;
 	onDelete: () => void;
 	onRename?: () => void;
 	onVersions?: () => void;
 	isLocked: boolean;
 	isFolder: boolean;
+	renderTrigger?: boolean;
 }
 
 export function FileContextMenu({
@@ -27,18 +30,27 @@ export function FileContextMenu({
 	onDownload,
 	onShare,
 	onCopy,
+	onMove,
 	onRename,
 	onToggleLock,
 	onDelete,
 	onVersions,
 	isLocked,
 	isFolder,
+	renderTrigger = false,
 }: FileContextMenuProps) {
 	const { t } = useTranslation("files");
 
+	const trigger =
+		renderTrigger && isValidElement(children) ? (
+			<ContextMenuTrigger render={children} />
+		) : (
+			<ContextMenuTrigger className="w-full">{children}</ContextMenuTrigger>
+		);
+
 	return (
 		<ContextMenu>
-			<ContextMenuTrigger className="w-full">{children}</ContextMenuTrigger>
+			{trigger}
 			<ContextMenuContent>
 				{!isFolder && onDownload && (
 					<ContextMenuItem onClick={onDownload}>
@@ -54,6 +66,12 @@ export function FileContextMenu({
 					<Icon name="Copy" className="h-4 w-4 mr-2" />
 					{t("copy")}
 				</ContextMenuItem>
+				{onMove && (
+					<ContextMenuItem onClick={onMove}>
+						<Icon name="ArrowsOutCardinal" className="h-4 w-4 mr-2" />
+						{t("move")}
+					</ContextMenuItem>
+				)}
 				{onRename && (
 					<ContextMenuItem onClick={onRename}>
 						<Icon name="PencilSimple" className="h-4 w-4 mr-2" />

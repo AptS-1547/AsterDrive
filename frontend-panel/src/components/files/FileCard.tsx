@@ -20,6 +20,7 @@ interface FileCardProps {
 		targetFolderId: number,
 	) => void;
 	fading?: boolean;
+	draggable?: boolean;
 }
 
 export function FileCard({
@@ -31,6 +32,7 @@ export function FileCard({
 	dragData,
 	onDrop,
 	fading,
+	draggable = true,
 }: FileCardProps) {
 	const [dragOver, setDragOver] = useState(false);
 
@@ -75,14 +77,14 @@ export function FileCard({
 			className={cn(
 				"group relative flex flex-col items-center p-3 rounded-lg border cursor-pointer transition-all duration-300 hover:bg-accent/50",
 				selected && "bg-accent border-primary",
-				dragOver && "ring-2 ring-primary bg-accent/30",
+				draggable && dragOver && "ring-2 ring-primary bg-accent/30",
 				fading && "opacity-0 scale-95",
 			)}
-			draggable
-			onDragStart={handleDragStart}
-			onDragOver={handleDragOver}
-			onDragLeave={handleDragLeave}
-			onDrop={handleDrop}
+			draggable={draggable}
+			onDragStart={draggable ? handleDragStart : undefined}
+			onDragOver={draggable ? handleDragOver : undefined}
+			onDragLeave={draggable ? handleDragLeave : undefined}
+			onDrop={draggable ? handleDrop : undefined}
 			onClick={onClick}
 			onKeyDown={(e) => e.key === "Enter" && onClick()}
 			role="button"

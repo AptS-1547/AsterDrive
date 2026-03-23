@@ -44,6 +44,40 @@ pub async fn delete_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// 查找指定版本及之后的所有版本（version DESC）
+pub async fn find_by_file_id_from_version<C: ConnectionTrait>(
+    db: &C,
+    file_id: i64,
+    min_version: i32,
+) -> Result<Vec<file_version::Model>> {
+    FileVersion::find()
+        .filter(file_version::Column::FileId.eq(file_id))
+        .filter(file_version::Column::Version.gte(min_version))
+        .order_by_desc(file_version::Column::Version)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+/// 删除指定版本及之后的所有版本，返回对应 blob_id 列表
+pub async fn delete_by_file_id_from_version<C: ConnectionTrait>(
+    db: &C,
+    file_id: i64,
+    min_version: i32,
+) -> Result<Vec<i64>> {
+    let versions = find_by_file_id_from_version(db, file_id, min_version).await?;
+    let blob_ids: Vec<i64> = versions.iter().map(|v| v.blob_id).collect();
+
+    FileVersion::delete_many()
+        .filter(file_version::Column::FileId.eq(file_id))
+        .filter(file_version::Column::Version.gte(min_version))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    Ok(blob_ids)
+}
+
 /// 统计文件的版本数量
 pub async fn count_by_file_id<C: ConnectionTrait>(db: &C, file_id: i64) -> Result<u64> {
     FileVersion::find()

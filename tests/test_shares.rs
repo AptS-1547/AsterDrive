@@ -42,6 +42,8 @@ async fn test_shares_crud() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["name"], "test.txt");
+    assert_eq!(body["data"]["mime_type"], "text/plain");
+    assert!(body["data"]["size"].as_i64().unwrap() > 0);
 
     // 公开下载
     let req = test::TestRequest::get()
@@ -177,6 +179,9 @@ async fn test_share_folder() {
     let body: Value = test::read_body_json(resp).await;
     let folder_id = body["data"]["id"].as_i64().unwrap();
 
+    // 上传一个文件到该文件夹
+    let file_id = upload_test_file_to_folder!(app, token, folder_id);
+
     // 分享文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
@@ -200,6 +205,13 @@ async fn test_share_folder() {
     // 公开列出文件夹内容
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/s/{share_token}/content"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // 下载文件夹内文件
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/files/{file_id}/download"))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

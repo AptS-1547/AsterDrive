@@ -1,6 +1,7 @@
 #[macro_use]
 mod common;
 
+use actix_web::body::to_bytes;
 use actix_web::test;
 use serde_json::Value;
 
@@ -81,6 +82,62 @@ async fn test_update_content_creates_version() {
         !versions.is_empty(),
         "should have at least 1 history version"
     );
+}
+
+#[actix_web::test]
+async fn test_restore_single_history_version_recovers_original_content() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/{file_id}/content"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload("v2")
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/versions"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let versions = body["data"].as_array().unwrap();
+    assert_eq!(versions.len(), 1, "should have exactly one history version");
+    let version_id = versions[0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/files/{file_id}/versions/{version_id}/restore"
+        ))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/download"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = to_bytes(resp.into_body()).await.unwrap();
+    assert_eq!(body.as_ref(), b"test content");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/versions"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let versions = body["data"].as_array().unwrap();
+    assert!(versions.is_empty(), "history should be empty after restoring v1");
 }
 
 // ── ETag 乐观锁：正确 ETag 通过 ────────────────────────────

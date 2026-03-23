@@ -176,8 +176,9 @@ export default function AdminLocksPage() {
 				description={t("force_unlock_desc")}
 				confirmLabel={t("common:confirm")}
 				onConfirm={() => {
-					if (unlockId !== null) handleForceUnlock(unlockId);
+					const id = unlockId;
 					setUnlockId(null);
+					if (id !== null) void handleForceUnlock(id);
 				}}
 				variant="destructive"
 			/>

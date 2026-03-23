@@ -36,12 +36,7 @@ export function Sidebar({
 	const sidebarContent = (
 		<div className="flex flex-col h-full">
 			{/* Header with collapse toggle */}
-			<div className="p-3 flex items-center justify-between">
-				{!collapsed && (
-					<span className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-						{t("app_name")}
-					</span>
-				)}
+			<div className="p-3 flex items-center justify-end">
 				<Button
 					variant="ghost"
 					size="icon"

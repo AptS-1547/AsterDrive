@@ -1,5 +1,4 @@
 import { useBlobUrl } from "@/hooks/useBlobUrl";
-import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import type { FileInfo } from "@/types/api";
 import { FileTypeIcon } from "./FileTypeIcon";
@@ -16,23 +15,33 @@ export function FileThumbnail({ file, size = "sm" }: FileThumbnailProps) {
 		isImage ? fileService.thumbnailPath(file.id) : null,
 	);
 
+	if (size === "sm") {
+		return (
+			<div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/40">
+				{!isImage || error || !blobUrl ? (
+					<FileTypeIcon
+						mimeType={file.mime_type}
+						fileName={file.name}
+						className="h-4 w-4"
+					/>
+				) : (
+					<img src={blobUrl} alt="" className="h-full w-full object-cover" />
+				)}
+			</div>
+		);
+	}
+
 	if (!isImage || error || !blobUrl) {
 		return (
 			<FileTypeIcon
 				mimeType={file.mime_type}
-				className={cn(size === "sm" ? "h-4 w-4" : "h-12 w-12")}
+				fileName={file.name}
+				className="h-12 w-12"
 			/>
 		);
 	}
 
 	return (
-		<img
-			src={blobUrl}
-			alt=""
-			className={cn(
-				"rounded object-cover",
-				size === "sm" ? "h-8 w-8" : "h-20 w-20",
-			)}
-		/>
+		<img src={blobUrl} alt="" className="h-20 w-20 rounded object-cover" />
 	);
 }

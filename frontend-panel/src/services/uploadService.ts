@@ -83,9 +83,11 @@ export const uploadService = {
 		presignedUrl: string,
 		file: File,
 		onProgress?: (loaded: number, total: number) => void,
+		onCreateXhr?: (xhr: XMLHttpRequest) => void,
 	): Promise<void> => {
 		return new Promise((resolve, reject) => {
 			const xhr = new XMLHttpRequest();
+			onCreateXhr?.(xhr);
 			xhr.open("PUT", presignedUrl);
 			xhr.setRequestHeader("Content-Type", "application/octet-stream");
 

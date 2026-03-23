@@ -172,8 +172,9 @@ export default function AdminSharesPage() {
 				description={t("delete_share_desc")}
 				confirmLabel={t("common:delete")}
 				onConfirm={() => {
-					if (deleteId !== null) handleDelete(deleteId);
+					const id = deleteId;
 					setDeleteId(null);
+					if (id !== null) void handleDelete(id);
 				}}
 				variant="destructive"
 			/>

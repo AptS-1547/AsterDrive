@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::Set;
+use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
 
 use crate::db::repository::{config_repo, file_repo, policy_repo, version_repo};
 use crate::entities::file_version;
@@ -17,7 +17,7 @@ pub async fn list_versions(
     version_repo::find_by_file_id(&state.db, file_id).await
 }
 
-/// 恢复到指定版本（把文件 blob_id 换回旧版本的 blob，当前版本变成新的历史版本）
+/// 恢复到指定版本，并截断该版本及之后的历史版本
 pub async fn restore_version(
     state: &AppState,
     file_id: i64,
@@ -51,15 +51,38 @@ pub async fn restore_version(
         );
     }
 
-    // 直接切换 blob_id（不创建新版本记录，避免回滚产生冗余版本）
-    let mut active: crate::entities::file::ActiveModel = f.into();
-    active.blob_id = Set(version.blob_id);
-    active.updated_at = Set(now);
-    use sea_orm::ActiveModelTrait;
-    let updated = active.update(db).await.map_err(AsterError::from)?;
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
 
-    // 删除被恢复的版本记录（它现在是当前版本了）
-    version_repo::delete_by_id(db, version_id).await?;
+    let previous_blob_id = current_blob.id;
+    let target_blob_id = version.blob_id;
+
+    let mut active: crate::entities::file::ActiveModel = f.into();
+    active.blob_id = Set(target_blob_id);
+    active.updated_at = Set(now);
+    let updated = active.update(&txn).await.map_err(AsterError::from)?;
+
+    let truncated_blob_ids =
+        version_repo::delete_by_file_id_from_version(&txn, file_id, version.version).await?;
+
+    txn.commit().await.map_err(AsterError::from)?;
+
+    let mut cleanup_counts = std::collections::HashMap::<i64, usize>::new();
+    for blob_id in truncated_blob_ids {
+        *cleanup_counts.entry(blob_id).or_default() += 1;
+    }
+
+    if previous_blob_id != target_blob_id {
+        *cleanup_counts.entry(previous_blob_id).or_default() += 1;
+        if let Some(count) = cleanup_counts.get_mut(&target_blob_id) {
+            *count = count.saturating_sub(1);
+        }
+    }
+
+    for (blob_id, count) in cleanup_counts {
+        for _ in 0..count {
+            cleanup_blob_if_unused(state, blob_id).await?;
+        }
+    }
 
     Ok(updated)
 }

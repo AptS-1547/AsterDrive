@@ -361,8 +361,9 @@ export default function WebdavAccountsPage() {
 				description={t("cannot_undo")}
 				confirmLabel={t("delete")}
 				onConfirm={() => {
-					if (deleteId !== null) handleDelete(deleteId);
+					const id = deleteId;
 					setDeleteId(null);
+					if (id !== null) void handleDelete(id);
 				}}
 				variant="destructive"
 			/>

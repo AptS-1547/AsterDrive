@@ -62,9 +62,11 @@ export function TopBar({ onSidebarToggle, actions }: TopBarProps) {
 				<Icon name="List" className="h-4 w-4" />
 			</Button>
 
-			<span className="font-semibold text-sm shrink-0 hidden md:inline">
-				{t("app_name")}
-			</span>
+			<img
+				src="/static/logo.svg"
+				alt={t("app_name")}
+				className="hidden h-10 w-auto shrink-0 md:block"
+			/>
 
 			{/* Center: search */}
 			<div className="flex-1 max-w-md hidden sm:flex items-center">

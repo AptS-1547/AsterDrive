@@ -5,11 +5,19 @@ import { router } from "@/router";
 import { useAuthStore } from "@/stores/authStore";
 import { useThemeStore } from "@/stores/themeStore";
 
+function shouldSkipInitialAuthCheck(pathname: string) {
+	return pathname === "/login" || pathname.startsWith("/s/");
+}
+
 function App() {
 	const checkAuth = useAuthStore((s) => s.checkAuth);
 
 	useEffect(() => {
-		checkAuth();
+		if (!shouldSkipInitialAuthCheck(window.location.pathname)) {
+			checkAuth();
+		} else {
+			useAuthStore.setState({ isChecking: false });
+		}
 		useThemeStore.getState().init();
 	}, [checkAuth]);
 

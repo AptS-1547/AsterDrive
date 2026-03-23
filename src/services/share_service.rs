@@ -22,6 +22,8 @@ pub struct SharePublicInfo {
     pub download_count: i64,
     pub view_count: i64,
     pub max_downloads: i64,
+    pub mime_type: Option<String>,
+    pub size: Option<i64>,
 }
 
 pub async fn create_share(
@@ -101,7 +103,7 @@ pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublic
     // increment view count (fire and forget)
     let _ = share_repo::increment_view_count(db, share.id).await;
 
-    let (name, share_type) = resolve_share_name(db, &share).await?;
+    let (name, share_type, mime_type, size) = resolve_share_name(db, &share).await?;
 
     let is_expired = share.expires_at.is_some_and(|exp| exp < Utc::now());
 
@@ -115,6 +117,8 @@ pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublic
         download_count: share.download_count,
         view_count: share.view_count,
         max_downloads: share.max_downloads,
+        mime_type,
+        size,
     })
 }
 
@@ -155,6 +159,49 @@ pub async fn download_shared_file(
     let _ = share_repo::increment_download_count(&state.db, share.id).await;
 
     // reuse existing download logic (bypass user ownership check)
+    file_service::download_raw(state, file_id).await
+}
+
+pub async fn download_shared_folder_file(
+    state: &AppState,
+    token: &str,
+    file_id: i64,
+) -> Result<actix_web::HttpResponse> {
+    let share = share_repo::find_by_token(&state.db, token)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+
+    validate_share(&share)?;
+
+    let root_folder_id = share
+        .folder_id
+        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
+
+    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    if file.deleted_at.is_some() {
+        return Err(AsterError::file_not_found(format!(
+            "file #{file_id} is in trash"
+        )));
+    }
+
+    let mut current_folder_id = file.folder_id;
+    let mut allowed = false;
+    while let Some(folder_id) = current_folder_id {
+        if folder_id == root_folder_id {
+            allowed = true;
+            break;
+        }
+        let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+        current_folder_id = folder.parent_id;
+    }
+
+    if !allowed {
+        return Err(AsterError::auth_forbidden(
+            "file is outside shared folder scope",
+        ));
+    }
+
+    let _ = share_repo::increment_download_count(&state.db, share.id).await;
     file_service::download_raw(state, file_id).await
 }
 
@@ -214,14 +261,14 @@ fn validate_share(share: &share::Model) -> Result<()> {
 async fn resolve_share_name(
     db: &DatabaseConnection,
     share: &share::Model,
-) -> Result<(String, String)> {
+) -> Result<(String, String, Option<String>, Option<i64>)> {
     if let Some(file_id) = share.file_id {
         let f = file_repo::find_by_id(db, file_id).await?;
-        Ok((f.name, "file".to_string()))
+        Ok((f.name, "file".to_string(), Some(f.mime_type), Some(f.size)))
     } else if let Some(folder_id) = share.folder_id {
         let f = folder_repo::find_by_id(db, folder_id).await?;
-        Ok((f.name, "folder".to_string()))
+        Ok((f.name, "folder".to_string(), None, None))
     } else {
-        Ok(("Unknown".to_string(), "unknown".to_string()))
+        Ok(("Unknown".to_string(), "unknown".to_string(), None, None))
     }
 }

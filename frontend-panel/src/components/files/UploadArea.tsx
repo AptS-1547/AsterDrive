@@ -1,178 +1,418 @@
-import { Uppy } from "@uppy/core";
-import XHRUpload from "@uppy/xhr-upload";
 import type { DragEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import {
+	UploadPanel,
+	type UploadTaskView,
+} from "@/components/files/UploadPanel";
 import { Icon } from "@/components/ui/icon";
-import { Progress } from "@/components/ui/progress";
-import { config } from "@/config/app";
-import { useChunkedUpload } from "@/hooks/useChunkedUpload";
-import { usePresignedUpload } from "@/hooks/usePresignedUpload";
 import { cn } from "@/lib/utils";
-import { uploadService } from "@/services/uploadService";
+import { api } from "@/services/http";
+import {
+	type InitUploadResponse,
+	uploadService,
+} from "@/services/uploadService";
 import { useFileStore } from "@/stores/fileStore";
 
 interface UploadAreaProps {
 	children: ReactNode;
 }
 
+type UploadMode = "direct" | "chunked" | "presigned";
+type UploadStatus =
+	| "queued"
+	| "initializing"
+	| "uploading"
+	| "processing"
+	| "completed"
+	| "failed"
+	| "cancelled";
+
+interface UploadTask {
+	id: string;
+	file: File;
+	mode: UploadMode | null;
+	status: UploadStatus;
+	progress: number;
+	error: string | null;
+	uploadId: string | null;
+	completedChunks?: number;
+	totalChunks?: number;
+}
+
+const MAX_FILE_CONCURRENT = 2;
+const CHUNK_CONCURRENT = 3;
+const CHUNK_MAX_RETRIES = 3;
+
+function createTaskId() {
+	return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function UploadArea({ children }: UploadAreaProps) {
-	const { t } = useTranslation("files");
+	const { t } = useTranslation(["files", "common"]);
 	const refresh = useFileStore((s) => s.refresh);
 	const currentFolderId = useFileStore((s) => s.currentFolderId);
 	const currentFolderIdRef = useRef(currentFolderId);
 	const [isDragging, setIsDragging] = useState(false);
 	const dragCounter = useRef(0);
-
-	// Uppy progress for small files
-	const [uppyProgress, setUppyProgress] = useState<{
-		filename: string;
-		percent: number;
-	} | null>(null);
-
-	// Chunked upload for large files
-	const {
-		state: chunkedState,
-		startUpload,
-		resumeUpload,
-		cancelUpload,
-		reset,
-	} = useChunkedUpload(() => {
-		toast.success(t("upload_success"));
-		refresh();
-	});
-
-	// Presigned upload for S3 direct
-	const {
-		state: presignedState,
-		startUpload: presignedStartUpload,
-		cancelUpload: presignedCancel,
-		reset: presignedReset,
-	} = usePresignedUpload(() => {
-		toast.success(t("upload_success"));
-		refresh();
-	});
-
-	// Resume file ref — user must re-select file to resume
-	const resumeInputRef = useRef<HTMLInputElement | null>(null);
+	const [uploadPanelOpen, setUploadPanelOpen] = useState(true);
+	const [tasks, setTasks] = useState<UploadTask[]>([]);
+	const tasksRef = useRef<UploadTask[]>([]);
+	const abortFlagsRef = useRef(new Map<string, boolean>());
+	const directAbortRef = useRef(new Map<string, AbortController>());
+	const presignedXhrRef = useRef(new Map<string, XMLHttpRequest>());
+	const refreshTimeoutRef = useRef<number | null>(null);
 
 	useEffect(() => {
 		currentFolderIdRef.current = currentFolderId;
 	}, [currentFolderId]);
 
-	const [uppy] = useState(() => {
-		const instance = new Uppy({
-			restrictions: { maxNumberOfFiles: 10 },
-			autoProceed: true,
-		});
-		instance.use(XHRUpload, {
-			endpoint: `${config.apiBaseUrl}/files/upload`,
-			fieldName: "file",
-			withCredentials: true,
-		});
-		instance.on("progress", (progress) => {
-			// progress is 0-100 for all files combined
-			if (progress > 0 && progress < 100) {
-				setUppyProgress((p) => ({
-					filename: p?.filename ?? t("uploading_to_storage"),
-					percent: progress,
-				}));
-			}
-		});
-		instance.on("upload", () => {
-			const files = instance.getFiles();
-			setUppyProgress({
-				filename: files[0]?.name ?? t("uploading_to_storage"),
-				percent: 0,
-			});
-		});
-		instance.on("complete", (result) => {
-			setUppyProgress(null);
-			const count = result.successful?.length ?? 0;
-			if (count > 0) {
-				toast.success(
-					count === 1
-						? t("upload_success")
-						: t("upload_multiple_success", { count }),
-				);
-				refresh();
-			}
-			instance.cancelAll();
-		});
-		instance.on("error", (error) => {
-			setUppyProgress(null);
-			toast.error(t("upload_failed"), { description: error.message });
-		});
-		return instance;
-	});
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: currentFolderId triggers re-sync intentionally
 	useEffect(() => {
-		const folderId = currentFolderIdRef.current;
-		const base = `${config.apiBaseUrl}/files/upload`;
-		const endpoint = folderId !== null ? `${base}?folder_id=${folderId}` : base;
-		const xhrPlugin = uppy.getPlugin("XHRUpload");
-		if (xhrPlugin) {
-			xhrPlugin.setOptions({ endpoint });
-		}
-	}, [currentFolderId, uppy]);
+		tasksRef.current = tasks;
+	}, [tasks]);
 
 	useEffect(() => {
-		return () => uppy.destroy();
-	}, [uppy]);
-
-	const addFileViaUppy = (file: File) => {
-		try {
-			uppy.addFile({ name: file.name, type: file.type, data: file });
-		} catch (err) {
-			if (err instanceof Error && !err.message.includes("already been added")) {
-				toast.error(t("upload_failed"), { description: err.message });
+		return () => {
+			for (const controller of directAbortRef.current.values()) {
+				controller.abort();
 			}
-		}
-	};
-
-	const addFiles = async (files: FileList | null) => {
-		if (!files || files.length === 0) return;
-		for (const file of files) {
-			try {
-				// 向服务端协商上传模式
-				const resp = await uploadService.initUpload({
-					filename: file.name,
-					total_size: file.size,
-					folder_id: currentFolderIdRef.current,
-				});
-				if (resp.mode === "presigned") {
-					presignedStartUpload(
-						file,
-						resp.upload_id as string,
-						resp.presigned_url as string,
-					);
-				} else if (resp.mode === "chunked") {
-					startUpload(file, currentFolderIdRef.current, resp);
-				} else {
-					addFileViaUppy(file);
-				}
-			} catch {
-				// init 失败（配额/大小限制等），fallback 到直传让后端再报具体错误
-				addFileViaUppy(file);
+			for (const xhr of presignedXhrRef.current.values()) {
+				xhr.abort();
 			}
-		}
-	};
-
-	const handleResume = useCallback(() => {
-		resumeInputRef.current?.click();
+			if (refreshTimeoutRef.current !== null) {
+				window.clearTimeout(refreshTimeoutRef.current);
+			}
+		};
 	}, []);
 
-	const handleResumeFileSelected = useCallback(
-		(e: React.ChangeEvent<HTMLInputElement>) => {
-			const file = e.target.files?.[0];
-			if (file) resumeUpload(file);
-			e.target.value = "";
+	const scheduleRefresh = useCallback(() => {
+		if (refreshTimeoutRef.current !== null) return;
+		refreshTimeoutRef.current = window.setTimeout(() => {
+			refreshTimeoutRef.current = null;
+			void refresh();
+		}, 300);
+	}, [refresh]);
+
+	const patchTask = useCallback(
+		(taskId: string, patch: Partial<UploadTask>) => {
+			setTasks((prev) =>
+				prev.map((task) => (task.id === taskId ? { ...task, ...patch } : task)),
+			);
 		},
-		[resumeUpload],
+		[],
 	);
+
+	const clearCompletedTasks = useCallback(() => {
+		setTasks((prev) => prev.filter((task) => task.status !== "completed"));
+	}, []);
+
+	const markTaskFailed = useCallback(
+		(taskId: string, message: string) => {
+			patchTask(taskId, {
+				status: "failed",
+				error: message,
+			});
+		},
+		[patchTask],
+	);
+
+	const runDirectUpload = useCallback(
+		async (task: UploadTask) => {
+			patchTask(task.id, { mode: "direct", status: "uploading", progress: 0 });
+			const controller = new AbortController();
+			directAbortRef.current.set(task.id, controller);
+
+			try {
+				const formData = new FormData();
+				formData.append("file", task.file);
+				const folderId = currentFolderIdRef.current;
+				const path =
+					folderId !== null
+						? `/files/upload?folder_id=${folderId}`
+						: "/files/upload";
+
+				await api.client.post(path, formData, {
+					headers: { "Content-Type": "multipart/form-data" },
+					signal: controller.signal,
+					onUploadProgress: (event) => {
+						if (!event.total) return;
+						patchTask(task.id, {
+							progress: Math.round((event.loaded / event.total) * 100),
+						});
+					},
+				});
+
+				patchTask(task.id, {
+					status: "completed",
+					progress: 100,
+					error: null,
+				});
+				scheduleRefresh();
+			} catch (error) {
+				if (controller.signal.aborted) {
+					patchTask(task.id, { status: "cancelled", error: null });
+					return;
+				}
+				const message =
+					error instanceof Error ? error.message : t("common:unexpected_error");
+				markTaskFailed(task.id, message);
+			} finally {
+				directAbortRef.current.delete(task.id);
+			}
+		},
+		[markTaskFailed, patchTask, scheduleRefresh, t],
+	);
+
+	const runChunkedUpload = useCallback(
+		async (task: UploadTask, init: InitUploadResponse) => {
+			const uploadId = init.upload_id as string;
+			const chunkSize = init.chunk_size as number;
+			const totalChunks = init.total_chunks as number;
+			abortFlagsRef.current.set(task.id, false);
+			patchTask(task.id, {
+				mode: "chunked",
+				status: "uploading",
+				uploadId,
+				totalChunks,
+				completedChunks: 0,
+				progress: 0,
+			});
+
+			let completed = 0;
+			const queue = Array.from({ length: totalChunks }, (_, index) => index);
+
+			const uploadOneChunk = async () => {
+				while (queue.length > 0) {
+					if (abortFlagsRef.current.get(task.id)) return;
+					const chunkNumber = queue.shift();
+					if (chunkNumber === undefined) return;
+					const start = chunkNumber * chunkSize;
+					const end = Math.min(start + chunkSize, task.file.size);
+					const blob = task.file.slice(start, end);
+
+					let lastError: Error | null = null;
+					for (let attempt = 0; attempt < CHUNK_MAX_RETRIES; attempt++) {
+						try {
+							await uploadService.uploadChunk(uploadId, chunkNumber, blob);
+							lastError = null;
+							break;
+						} catch (error) {
+							lastError =
+								error instanceof Error ? error : new Error(String(error));
+							if (attempt < CHUNK_MAX_RETRIES - 1) {
+								await new Promise((resolve) =>
+									setTimeout(resolve, 1000 * 2 ** attempt),
+								);
+							}
+						}
+					}
+
+					if (lastError) throw lastError;
+					completed += 1;
+					patchTask(task.id, {
+						completedChunks: completed,
+						progress: Math.round((completed / totalChunks) * 95),
+					});
+				}
+			};
+
+			try {
+				const workers = Array.from(
+					{ length: Math.min(CHUNK_CONCURRENT, queue.length || 1) },
+					() => uploadOneChunk(),
+				);
+				await Promise.all(workers);
+
+				if (abortFlagsRef.current.get(task.id)) {
+					patchTask(task.id, { status: "cancelled", error: null });
+					return;
+				}
+
+				patchTask(task.id, { status: "processing", progress: 95 });
+				await uploadService.completeUpload(uploadId);
+				patchTask(task.id, {
+					status: "completed",
+					progress: 100,
+					error: null,
+				});
+				scheduleRefresh();
+			} catch (error) {
+				if (abortFlagsRef.current.get(task.id)) {
+					patchTask(task.id, { status: "cancelled", error: null });
+					return;
+				}
+				const message =
+					error instanceof Error ? error.message : t("common:unexpected_error");
+				markTaskFailed(task.id, message);
+			} finally {
+				abortFlagsRef.current.delete(task.id);
+			}
+		},
+		[markTaskFailed, patchTask, scheduleRefresh, t],
+	);
+
+	const runPresignedUpload = useCallback(
+		async (task: UploadTask, init: InitUploadResponse) => {
+			const uploadId = init.upload_id as string;
+			const presignedUrl = init.presigned_url as string;
+			patchTask(task.id, {
+				mode: "presigned",
+				status: "uploading",
+				uploadId,
+				progress: 0,
+			});
+
+			try {
+				await uploadService.presignedUpload(
+					presignedUrl,
+					task.file,
+					(loaded, total) => {
+						patchTask(task.id, {
+							progress: Math.round((loaded / total) * 90),
+						});
+					},
+					(xhr) => {
+						presignedXhrRef.current.set(task.id, xhr);
+					},
+				);
+
+				patchTask(task.id, { status: "processing", progress: 90 });
+				await uploadService.completeUpload(uploadId);
+				patchTask(task.id, {
+					status: "completed",
+					progress: 100,
+					error: null,
+				});
+				scheduleRefresh();
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : t("common:unexpected_error");
+				if (message.includes("abort")) {
+					patchTask(task.id, { status: "cancelled", error: null });
+					return;
+				}
+				markTaskFailed(task.id, message);
+			} finally {
+				presignedXhrRef.current.delete(task.id);
+			}
+		},
+		[markTaskFailed, patchTask, scheduleRefresh, t],
+	);
+
+	const runTask = useCallback(
+		async (taskId: string) => {
+			const task = tasksRef.current.find((item) => item.id === taskId);
+			if (!task || task.status !== "queued") return;
+
+			patchTask(taskId, { status: "initializing", error: null, progress: 0 });
+			try {
+				const init = await uploadService.initUpload({
+					filename: task.file.name,
+					total_size: task.file.size,
+					folder_id: currentFolderIdRef.current,
+				});
+				if (init.mode === "chunked") {
+					await runChunkedUpload(task, init);
+				} else if (init.mode === "presigned") {
+					await runPresignedUpload(task, init);
+				} else {
+					await runDirectUpload(task);
+				}
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : t("common:unexpected_error");
+				markTaskFailed(taskId, message);
+			}
+		},
+		[
+			markTaskFailed,
+			patchTask,
+			runChunkedUpload,
+			runDirectUpload,
+			runPresignedUpload,
+			t,
+		],
+	);
+
+	useEffect(() => {
+		const activeCount = tasks.filter((task) =>
+			["initializing", "uploading", "processing"].includes(task.status),
+		).length;
+		if (activeCount >= MAX_FILE_CONCURRENT) return;
+		const queued = tasks.filter((task) => task.status === "queued");
+		if (queued.length === 0) return;
+		const nextTasks = queued.slice(0, MAX_FILE_CONCURRENT - activeCount);
+		nextTasks.forEach((task) => {
+			void runTask(task.id);
+		});
+	}, [runTask, tasks]);
+
+	const cancelTask = useCallback(
+		async (taskId: string) => {
+			const task = tasksRef.current.find((item) => item.id === taskId);
+			if (!task) return;
+
+			if (task.mode === "direct") {
+				directAbortRef.current.get(taskId)?.abort();
+				patchTask(taskId, { status: "cancelled", error: null });
+				return;
+			}
+
+			if (task.mode === "presigned") {
+				presignedXhrRef.current.get(taskId)?.abort();
+				if (task.uploadId) {
+					try {
+						await uploadService.cancelUpload(task.uploadId);
+					} catch {
+						// ignore
+					}
+				}
+				patchTask(taskId, { status: "cancelled", error: null });
+				return;
+			}
+
+			abortFlagsRef.current.set(taskId, true);
+			if (task.uploadId) {
+				try {
+					await uploadService.cancelUpload(task.uploadId);
+				} catch {
+					// ignore
+				}
+			}
+			patchTask(taskId, { status: "cancelled", error: null });
+		},
+		[patchTask],
+	);
+
+	const retryTask = useCallback(
+		(taskId: string) => {
+			patchTask(taskId, {
+				status: "queued",
+				progress: 0,
+				error: null,
+				uploadId: null,
+				completedChunks: 0,
+				totalChunks: 0,
+			});
+			setUploadPanelOpen(true);
+		},
+		[patchTask],
+	);
+
+	const addFiles = useCallback((files: FileList | null) => {
+		if (!files || files.length === 0) return;
+		const nextTasks = Array.from(files).map((file) => ({
+			id: createTaskId(),
+			file,
+			mode: null,
+			status: "queued" as UploadStatus,
+			progress: 0,
+			error: null,
+			uploadId: null,
+		}));
+		setTasks((prev) => [...nextTasks, ...prev]);
+		setUploadPanelOpen(true);
+	}, []);
 
 	const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
 		e.preventDefault();
@@ -192,17 +432,79 @@ export function UploadArea({ children }: UploadAreaProps) {
 		addFiles(e.dataTransfer.files);
 	};
 
-	const showChunkedProgress =
-		chunkedState.status !== "idle" && chunkedState.status !== "completed";
-	const showResumePrompt =
-		chunkedState.canResume && chunkedState.status === "idle";
-	const showPresignedProgress =
-		presignedState.status !== "idle" && presignedState.status !== "completed";
+	const uploadTasks: UploadTaskView[] = tasks.map((task) => {
+		const modeLabel =
+			task.mode === "chunked"
+				? "Chunked"
+				: task.mode === "presigned"
+					? "S3"
+					: task.mode === "direct"
+						? "Direct"
+						: "Pending";
+
+		const statusLabel =
+			task.status === "queued"
+				? t("files:processing")
+				: task.status === "initializing"
+					? t("files:processing")
+					: task.status === "uploading"
+						? t("files:uploading_to_storage")
+						: task.status === "processing"
+							? t("files:upload_processing")
+							: task.status === "completed"
+								? t("files:upload_success")
+								: task.status === "cancelled"
+									? t("files:upload_dismiss")
+									: t("files:upload_failed");
+
+		const detail =
+			task.status === "failed"
+				? (task.error ?? t("files:upload_failed"))
+				: task.mode === "chunked" && task.status === "uploading"
+					? t("files:upload_chunk_status", {
+							current: task.completedChunks ?? 0,
+							total: task.totalChunks ?? 0,
+						})
+					: statusLabel;
+
+		const actions =
+			task.status === "failed"
+				? [
+						{
+							label: t("files:upload_retry"),
+							icon: "ArrowsClockwise" as const,
+							onClick: () => retryTask(task.id),
+							variant: "outline" as const,
+						},
+					]
+				: ["queued", "initializing", "uploading", "processing"].includes(
+							task.status,
+						)
+					? [
+							{
+								label: t("files:upload_dismiss"),
+								icon: "X" as const,
+								onClick: () => void cancelTask(task.id),
+							},
+						]
+					: [];
+
+		return {
+			id: task.id,
+			title: task.file.name,
+			status: statusLabel,
+			mode: modeLabel,
+			progress: task.progress,
+			detail,
+			completed: task.status === "completed",
+			actions,
+		};
+	});
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: drop zone
 		<div
-			className="relative flex-1 flex flex-col overflow-hidden"
+			className="relative flex flex-1 flex-col overflow-hidden"
 			onDragEnter={handleDragEnter}
 			onDragLeave={handleDragLeave}
 			onDragOver={handleDragOver}
@@ -210,154 +512,31 @@ export function UploadArea({ children }: UploadAreaProps) {
 		>
 			{children}
 
-			{/* Hidden input for resume file selection */}
-			<input
-				ref={resumeInputRef}
-				type="file"
-				className="hidden"
-				onChange={handleResumeFileSelected}
-			/>
-
-			{/* Resume prompt — shown on page load if there's a saved session */}
-			{showResumePrompt && (
-				<div className="absolute bottom-4 right-4 z-40 w-80 bg-card border rounded-lg shadow-lg p-4 space-y-2">
-					<p className="text-sm font-medium">
-						{t("upload_resume_title", { filename: chunkedState.filename })}
-					</p>
-					<p className="text-xs text-muted-foreground">
-						{t("upload_resume_desc")}
-					</p>
-					<div className="flex gap-2">
-						<Button size="sm" className="flex-1" onClick={handleResume}>
-							<Icon name="ArrowsClockwise" className="h-3.5 w-3.5 mr-1" />
-							{t("upload_resume")}
-						</Button>
-						<Button size="sm" variant="outline" onClick={reset}>
-							{t("upload_dismiss")}
-						</Button>
-					</div>
-				</div>
+			{uploadTasks.length > 0 && (
+				<UploadPanel
+					open={uploadPanelOpen}
+					onToggle={() => setUploadPanelOpen((prev) => !prev)}
+					title={t("files:upload")}
+					summary={t("common:selected_count", { count: uploadTasks.length })}
+					tasks={uploadTasks}
+					emptyText={t("common:no_data")}
+					onClearCompleted={clearCompletedTasks}
+					clearCompletedLabel={t("files:upload_clear_completed")}
+				/>
 			)}
 
-			{/* Chunked upload progress */}
-			{showChunkedProgress && (
-				<div className="absolute bottom-4 right-4 z-40 w-80 bg-card border rounded-lg shadow-lg p-4 space-y-2">
-					<div className="flex items-center justify-between">
-						<div className="text-sm font-medium truncate flex-1 mr-2">
-							{chunkedState.filename}
-						</div>
-						<Button
-							variant="ghost"
-							size="icon"
-							className="h-6 w-6 shrink-0"
-							onClick={cancelUpload}
-						>
-							<Icon name="X" className="h-3.5 w-3.5" />
-						</Button>
-					</div>
-					<Progress value={chunkedState.progress} className="h-2" />
-					<div className="flex justify-between text-xs text-muted-foreground">
-						<span>
-							{chunkedState.status === "assembling"
-								? t("upload_assembling")
-								: chunkedState.status === "failed"
-									? (chunkedState.error ?? t("upload_failed"))
-									: `Chunk ${chunkedState.completedChunks}/${chunkedState.totalChunks}`}
-						</span>
-						<span className="text-muted-foreground/60">
-							{t("upload_progress_chunked", {
-								progress: chunkedState.progress,
-							})}
-						</span>
-					</div>
-					{chunkedState.status === "failed" && (
-						<div className="flex gap-2">
-							<Button
-								size="sm"
-								variant="outline"
-								className="flex-1"
-								onClick={handleResume}
-							>
-								<Icon name="ArrowsClockwise" className="h-3.5 w-3.5 mr-1" />
-								{t("upload_retry")}
-							</Button>
-							<Button size="sm" variant="outline" onClick={reset}>
-								{t("upload_dismiss")}
-							</Button>
-						</div>
-					)}
-				</div>
-			)}
-
-			{/* Presigned S3 direct upload progress */}
-			{showPresignedProgress && (
-				<div className="absolute bottom-4 right-4 z-40 w-80 bg-card border rounded-lg shadow-lg p-4 space-y-2">
-					<div className="flex items-center justify-between">
-						<div className="text-sm font-medium truncate flex-1 mr-2">
-							{presignedState.filename}
-						</div>
-						<Button
-							variant="ghost"
-							size="icon"
-							className="h-6 w-6 shrink-0"
-							onClick={presignedCancel}
-						>
-							<Icon name="X" className="h-3.5 w-3.5" />
-						</Button>
-					</div>
-					<Progress value={presignedState.progress} className="h-2" />
-					<div className="flex justify-between text-xs text-muted-foreground">
-						<span>
-							{presignedState.status === "processing"
-								? t("upload_processing")
-								: presignedState.status === "failed"
-									? (presignedState.error ?? t("upload_failed"))
-									: t("uploading_to_storage")}
-						</span>
-						<span className="text-muted-foreground/60">
-							{t("upload_progress_direct", {
-								progress: presignedState.progress,
-							})}
-						</span>
-					</div>
-					{presignedState.status === "failed" && (
-						<Button
-							size="sm"
-							variant="outline"
-							className="w-full"
-							onClick={presignedReset}
-						>
-							{t("upload_dismiss")}
-						</Button>
-					)}
-				</div>
-			)}
-
-			{/* Uppy small-file upload progress */}
-			{uppyProgress && (
-				<div className="absolute bottom-4 right-4 z-40 w-72 bg-card border rounded-lg shadow-lg p-3 space-y-1.5">
-					<div className="text-sm font-medium truncate">
-						{uppyProgress.filename}
-					</div>
-					<Progress value={uppyProgress.percent} className="h-1.5" />
-					<div className="text-xs text-muted-foreground text-right">
-						{t("upload_progress_direct", { progress: uppyProgress.percent })}
-					</div>
-				</div>
-			)}
-
-			{/* Drag overlay */}
 			{isDragging && (
 				<div
 					className={cn(
-						"absolute inset-0 z-50 flex flex-col items-center justify-center",
-						"bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary rounded-lg",
+						"absolute inset-0 z-50 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-primary bg-background/80 backdrop-blur-sm",
 					)}
 				>
-					<Icon name="Upload" className="h-10 w-10 text-primary mb-3" />
-					<p className="text-lg font-medium text-primary">{t("drop_files")}</p>
-					<p className="text-sm text-muted-foreground mt-1">
-						{t("drop_files_desc")}
+					<Icon name="Upload" className="mb-3 h-10 w-10 text-primary" />
+					<p className="text-lg font-medium text-primary">
+						{t("files:drop_files")}
+					</p>
+					<p className="mt-1 text-sm text-muted-foreground">
+						{t("files:drop_files_desc")}
 					</p>
 				</div>
 			)}

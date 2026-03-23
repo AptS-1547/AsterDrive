@@ -11,4 +11,5 @@ export const STORAGE_KEYS = {
 	sortBy: "aster-sort-by",
 	sortOrder: "aster-sort-order",
 	sidebarCollapsed: "aster-sidebar-collapsed",
+	previewOpenWith: "aster-preview-open-with",
 } as const;
