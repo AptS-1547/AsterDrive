@@ -19,7 +19,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 	login: async (identifier, password) => {
 		await authService.login(identifier, password);
 		const user = await authService.me();
-		set({ isAuthenticated: true, user });
+		set({ isAuthenticated: true, isChecking: false, user });
 	},
 
 	logout: async () => {

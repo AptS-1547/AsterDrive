@@ -36,7 +36,7 @@ export function AppLayout({ children, title, actions }: AppLayoutProps) {
 	}, []);
 
 	return (
-		<div className="h-screen flex flex-col">
+		<div className="h-screen flex flex-col animate-in fade-in duration-300">
 			<TopBar
 				onSidebarToggle={handleMobileToggle}
 				title={title}

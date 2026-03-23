@@ -121,6 +121,7 @@ export default function LoginPage() {
 	const [mode, setMode] = useState<AuthMode>("idle");
 	const [checking, setChecking] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
+	const [exiting, setExiting] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 
 	const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -214,6 +215,13 @@ export default function LoginPage() {
 		return Object.keys(errs).length === 0;
 	};
 
+	// ── Exit animation → navigate ──
+
+	const exitAndNavigate = () => {
+		setExiting(true);
+		setTimeout(() => navigate("/", { replace: true }), 350);
+	};
+
 	// ── Submit ──
 
 	const handleSubmit = async (e: React.FormEvent) => {
@@ -231,9 +239,8 @@ export default function LoginPage() {
 
 			if (mode === "login") {
 				await login(id, password);
-				navigate("/", { replace: true });
+				exitAndNavigate();
 			} else {
-				// register or setup: figure out which is username, which is email
 				const un = isEmail ? extra : id;
 				const em = isEmail ? id : extra;
 
@@ -245,11 +252,10 @@ export default function LoginPage() {
 					toast.success(t("register_success"));
 				}
 				await login(em, password);
-				navigate("/", { replace: true });
+				exitAndNavigate();
 			}
 		} catch (error) {
 			handleApiError(error);
-		} finally {
 			setSubmitting(false);
 		}
 	};
@@ -274,7 +280,12 @@ export default function LoginPage() {
 	};
 
 	return (
-		<div className="min-h-screen flex">
+		<div
+			className={cn(
+				"min-h-screen flex transition-all duration-300 ease-out",
+				exiting && "opacity-0 scale-[1.02]",
+			)}
+		>
 			{/* Left — brand panel */}
 			<div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-900 items-center justify-center relative overflow-hidden">
 				<div className="absolute inset-0 opacity-[0.03]">

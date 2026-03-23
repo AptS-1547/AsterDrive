@@ -13,11 +13,12 @@ const client: AxiosInstance = axios.create({
 
 // 不需要自动 refresh 的路径
 const SKIP_REFRESH_PATHS = [
-	"/auth/me",
 	"/auth/refresh",
 	"/auth/login",
 	"/auth/register",
 	"/auth/logout",
+	"/auth/check",
+	"/auth/setup",
 ];
 
 let isRefreshing = false;
@@ -50,6 +51,10 @@ client.interceptors.response.use(
 				return client(original);
 			} catch {
 				refreshQueue = [];
+				// Refresh failed — session expired, force logout
+				const { useAuthStore } = await import("@/stores/authStore");
+				useAuthStore.getState().logout();
+				window.location.href = "/login";
 				return Promise.reject(error);
 			} finally {
 				isRefreshing = false;
