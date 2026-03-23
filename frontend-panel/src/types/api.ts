@@ -21,6 +21,22 @@ export type WebdavAccountCreated =
 export type WebdavAccountInfo = components["schemas"]["WebdavAccountInfo"];
 export type TrashContents = components["schemas"]["TrashContents"];
 
+// Auth
+export type CheckResp = components["schemas"]["CheckResp"];
+
+// Search
+export type FileSearchItem = components["schemas"]["FileSearchItem"];
+export type SearchParams = components["schemas"]["SearchParams"];
+export type SearchResults = components["schemas"]["SearchResults"];
+
+// Batch
+export type BatchResult = components["schemas"]["BatchResult"];
+export type BatchItemError = components["schemas"]["BatchItemError"];
+
+// Audit
+export type AuditLogEntry = components["schemas"]["AuditLogEntry"];
+export type AuditLogPage = components["schemas"]["AuditLogPage"];
+
 // ErrorCode constants (generated type is a union of literal numbers, we need named constants)
 export const ErrorCode = {
 	Success: 0,

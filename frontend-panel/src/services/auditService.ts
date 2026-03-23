@@ -1,24 +1,5 @@
+import type { AuditLogPage } from "@/types/api";
 import { api } from "@/services/http";
-
-interface AuditLogEntry {
-	id: number;
-	user_id: number;
-	action: string;
-	entity_type: string | null;
-	entity_id: number | null;
-	entity_name: string | null;
-	details: string | null;
-	ip_address: string | null;
-	user_agent: string | null;
-	created_at: string;
-}
-
-interface AuditLogPage {
-	items: AuditLogEntry[];
-	total: number;
-	limit: number;
-	offset: number;
-}
 
 interface AuditLogQuery {
 	user_id?: number;
@@ -29,8 +10,6 @@ interface AuditLogQuery {
 	limit?: number;
 	offset?: number;
 }
-
-export type { AuditLogEntry, AuditLogPage };
 
 export const auditService = {
 	list: (params: AuditLogQuery = {}) => {

@@ -97,12 +97,47 @@ pub async fn register(
     Ok(user)
 }
 
+/// 检查标识符（邮箱或用户名）是否存在，以及系统是否有用户
+pub async fn check_identifier(state: &AppState, identifier: &str) -> Result<(bool, bool)> {
+    let db = &state.db;
+    let has_users = user_repo::count_all(db).await? > 0;
+    let exists = find_user_by_identifier(db, identifier).await?.is_some();
+    Ok((exists, has_users))
+}
+
+/// 按标识符查找用户（支持邮箱或用户名）
+async fn find_user_by_identifier(
+    db: &sea_orm::DatabaseConnection,
+    identifier: &str,
+) -> Result<Option<crate::entities::user::Model>> {
+    if identifier.contains('@') {
+        user_repo::find_by_email(db, identifier).await
+    } else {
+        user_repo::find_by_username(db, identifier).await
+    }
+}
+
+/// 首次设置：仅在无用户时创建管理员
+pub async fn setup(
+    state: &AppState,
+    username: &str,
+    email: &str,
+    password: &str,
+) -> Result<crate::entities::user::Model> {
+    let db = &state.db;
+    if user_repo::count_all(db).await? > 0 {
+        return Err(AsterError::validation_error("system already initialized"));
+    }
+    register(state, username, email, password).await
+}
+
 /// 登录，返回 (access_token, refresh_token)
-pub async fn login(state: &AppState, username: &str, password: &str) -> Result<(String, String)> {
+/// identifier 支持邮箱或用户名
+pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result<(String, String)> {
     let db = &state.db;
     let auth_config = &state.config.auth;
 
-    let user = user_repo::find_by_username(db, username)
+    let user = find_user_by_identifier(db, identifier)
         .await?
         .ok_or_else(|| AsterError::auth_invalid_credentials("user not found"))?;
 

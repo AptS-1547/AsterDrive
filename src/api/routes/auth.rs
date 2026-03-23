@@ -27,10 +27,16 @@ pub fn routes() -> actix_web::Scope {
         .unwrap();
 
     web::scope("/auth")
+        .route("/check", web::post().to(check))
         .service(
             web::resource("/register")
                 .wrap(Governor::new(&register_limiter))
                 .route(web::post().to(register)),
+        )
+        .service(
+            web::resource("/setup")
+                .wrap(Governor::new(&register_limiter))
+                .route(web::post().to(setup)),
         )
         .service(
             web::resource("/login")
@@ -50,8 +56,26 @@ pub struct RegisterReq {
 }
 
 #[derive(Deserialize, ToSchema)]
-pub struct LoginReq {
+pub struct CheckReq {
+    pub identifier: String,
+}
+
+#[derive(serde::Serialize, ToSchema)]
+pub struct CheckResp {
+    pub exists: bool,
+    pub has_users: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct SetupReq {
     pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct LoginReq {
+    pub identifier: String,
     pub password: String,
 }
 
@@ -72,6 +96,63 @@ fn clear_cookie(name: &str) -> Cookie<'static> {
         .http_only(true)
         .max_age(CookieDuration::ZERO)
         .finish()
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/check",
+    tag = "auth",
+    operation_id = "check_identifier",
+    request_body = CheckReq,
+    responses(
+        (status = 200, description = "Check result", body = inline(ApiResponse<CheckResp>)),
+    ),
+)]
+pub async fn check(state: web::Data<AppState>, body: web::Json<CheckReq>) -> Result<HttpResponse> {
+    let (exists, has_users) = auth_service::check_identifier(&state, &body.identifier).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(CheckResp { exists, has_users })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/setup",
+    tag = "auth",
+    operation_id = "setup",
+    request_body = SetupReq,
+    responses(
+        (status = 201, description = "Admin account created", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 400, description = "System already initialized"),
+    ),
+)]
+pub async fn setup(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    body: web::Json<SetupReq>,
+) -> Result<HttpResponse> {
+    let user = auth_service::setup(&state, &body.username, &body.email, &body.password).await?;
+    let ctx = audit_service::AuditContext {
+        user_id: user.id,
+        ip_address: req
+            .connection_info()
+            .realip_remote_addr()
+            .map(|s| s.to_string()),
+        user_agent: req
+            .headers()
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()),
+    };
+    audit_service::log(
+        &state,
+        &ctx,
+        "system_setup",
+        None,
+        None,
+        Some(&user.username),
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
 }
 
 #[utoipa::path(
@@ -132,7 +213,8 @@ pub async fn login(
     req: actix_web::HttpRequest,
     body: web::Json<LoginReq>,
 ) -> Result<HttpResponse> {
-    let (access, refresh_tok) = auth_service::login(&state, &body.username, &body.password).await?;
+    let (access, refresh_tok) =
+        auth_service::login(&state, &body.identifier, &body.password).await?;
 
     // 审计日志 — 从 token 解析 user_id
     if let Ok(claims) = auth_service::verify_token(&access, &state.config.auth.jwt_secret) {
@@ -154,7 +236,7 @@ pub async fn login(
             "user_login",
             None,
             None,
-            Some(&body.username),
+            Some(&body.identifier),
             None,
         )
         .await;

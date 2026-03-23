@@ -24,8 +24,8 @@ import {
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
 import { formatDateAbsolute } from "@/lib/format";
-import type { AuditLogEntry } from "@/services/auditService";
 import { auditService } from "@/services/auditService";
+import type { AuditLogEntry } from "@/types/api";
 
 export default function AdminAuditPage() {
 	const { t } = useTranslation("admin");

@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/api/v1/admin/audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_audit_logs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/config": {
         parameters: {
             query?: never;
@@ -12,6 +28,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["list_config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/config/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["config_schema"];
         put?: never;
         post?: never;
         delete?: never;
@@ -206,7 +238,7 @@ export interface paths {
         get: operations["get_user"];
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["force_delete_user"];
         options?: never;
         head?: never;
         patch: operations["update_user"];
@@ -242,6 +274,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["update_user_policy"];
+        trace?: never;
+    };
+    "/api/v1/auth/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["check_identifier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/auth/login": {
@@ -318,6 +366,70 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["setup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batch/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batch_copy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batch/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batch_delete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batch/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batch_move"];
         delete?: never;
         options?: never;
         head?: never;
@@ -708,6 +820,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/shares": {
         parameters: {
             query?: never;
@@ -895,6 +1023,73 @@ export interface components {
             /** Format: int64 */
             quota_bytes?: number;
         };
+        AuditLogEntry: {
+            action: string;
+            created_at: string;
+            details?: string | null;
+            /** Format: int64 */
+            entity_id?: number | null;
+            entity_name?: string | null;
+            entity_type?: string | null;
+            /** Format: int64 */
+            id: number;
+            ip_address?: string | null;
+            user_agent?: string | null;
+            /** Format: int64 */
+            user_id: number;
+        };
+        /** @description Admin 分页查询 */
+        AuditLogPage: {
+            items: components["schemas"]["AuditLogEntry"][];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
+        BatchCopyReq: {
+            file_ids?: number[];
+            folder_ids?: number[];
+            /**
+             * Format: int64
+             * @description 目标文件夹 ID（null = 复制到与源相同位置）
+             */
+            target_folder_id?: number | null;
+        };
+        BatchDeleteReq: {
+            file_ids?: number[];
+            folder_ids?: number[];
+        };
+        BatchItemError: {
+            /** Format: int64 */
+            entity_id: number;
+            entity_type: string;
+            error: string;
+        };
+        BatchMoveReq: {
+            file_ids?: number[];
+            folder_ids?: number[];
+            /**
+             * Format: int64
+             * @description 目标文件夹 ID（null = 根目录）
+             */
+            target_folder_id?: number | null;
+        };
+        BatchResult: {
+            errors: components["schemas"]["BatchItemError"][];
+            /** Format: int32 */
+            failed: number;
+            /** Format: int32 */
+            succeeded: number;
+        };
+        CheckReq: {
+            identifier: string;
+        };
+        CheckResp: {
+            exists: boolean;
+            has_users: boolean;
+        };
         ChunkUploadResponse: {
             /** Format: int32 */
             received_count: number;
@@ -969,7 +1164,7 @@ export interface components {
          * @example 0
          * @enum {integer}
          */
-        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
+        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
         FileInfo: {
             /** Format: int64 */
             blob_id: number;
@@ -989,6 +1184,24 @@ export interface components {
         FileQuery: {
             /** Format: int64 */
             folder_id?: number | null;
+        };
+        /** @description Search result file item (includes blob size from JOIN) */
+        FileSearchItem: {
+            /** Format: int64 */
+            blob_id: number;
+            created_at: string;
+            /** Format: int64 */
+            folder_id?: number | null;
+            /** Format: int64 */
+            id: number;
+            is_locked: boolean;
+            mime_type: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+            updated_at: string;
+            /** Format: int64 */
+            user_id: number;
         };
         FileVersion: {
             /** Format: int64 */
@@ -1045,8 +1258,8 @@ export interface components {
             upload_id?: string | null;
         };
         LoginReq: {
+            identifier: string;
             password: string;
-            username: string;
         };
         PatchFileReq: {
             /** Format: int64 */
@@ -1109,6 +1322,51 @@ export interface components {
             timeout_at?: string | null;
             token: string;
         };
+        SearchParams: {
+            /** @description ISO 8601 datetime — only return items created after this time */
+            created_after?: string | null;
+            /** @description ISO 8601 datetime — only return items created before this time */
+            created_before?: string | null;
+            /**
+             * Format: int64
+             * @description Scope search to a specific folder (folder_id for files, parent_id for folders)
+             */
+            folder_id?: number | null;
+            /**
+             * Format: int64
+             * @description Max results per type (default 50, max 100)
+             */
+            limit?: number | null;
+            /**
+             * Format: int64
+             * @description Maximum file size in bytes
+             */
+            max_size?: number | null;
+            /** @description Filter by exact MIME type (e.g. "image/png") */
+            mime_type?: string | null;
+            /**
+             * Format: int64
+             * @description Minimum file size in bytes
+             */
+            min_size?: number | null;
+            /**
+             * Format: int64
+             * @description Offset for pagination
+             */
+            offset?: number | null;
+            /** @description Name search pattern (case-insensitive substring match) */
+            q?: string | null;
+            /** @description Result type filter: "file", "folder", or "all" (default) */
+            type?: string | null;
+        };
+        SearchResults: {
+            files: components["schemas"]["FileSearchItem"][];
+            folders: components["schemas"]["FolderInfo"][];
+            /** Format: int64 */
+            total_files: number;
+            /** Format: int64 */
+            total_folders: number;
+        };
         SetConfigReq: {
             value: string;
         };
@@ -1119,6 +1377,11 @@ export interface components {
             name: string;
             namespace: string;
             value?: string | null;
+        };
+        SetupReq: {
+            email: string;
+            password: string;
+            username: string;
         };
         ShareInfo: {
             created_at: string;
@@ -1346,6 +1609,61 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_audit_logs: {
+        parameters: {
+            query?: {
+                user_id?: number | null;
+                action?: string | null;
+                entity_type?: string | null;
+                after?: string | null;
+                before?: string | null;
+                limit?: number | null;
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audit log entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        /** @description Admin 分页查询 */
+                        data?: {
+                            items: components["schemas"]["AuditLogEntry"][];
+                            /** Format: int64 */
+                            limit: number;
+                            /** Format: int64 */
+                            offset: number;
+                            /** Format: int64 */
+                            total: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_config: {
         parameters: {
             query?: never;
@@ -1385,6 +1703,52 @@ export interface operations {
                             value: string;
                             /** @description 值类型：string / number / boolean */
                             value_type?: string;
+                        }[];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    config_schema: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Config schema */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            category: string;
+                            default_value: string;
+                            description: string;
+                            is_sensitive: boolean;
+                            key: string;
+                            requires_restart: boolean;
+                            value_type: string;
                         }[];
                         msg: string;
                     };
@@ -2263,6 +2627,55 @@ export interface operations {
             };
         };
     };
+    force_delete_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User and all data permanently deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Cannot delete admin user */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     update_user: {
         parameters: {
             query?: never;
@@ -2552,6 +2965,37 @@ export interface operations {
             };
         };
     };
+    check_identifier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckReq"];
+            };
+        };
+        responses: {
+            /** @description Check result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            exists: boolean;
+                            has_users: boolean;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -2709,6 +3153,198 @@ export interface operations {
             };
             /** @description Validation error */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    setup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupReq"];
+            };
+        };
+        responses: {
+            /** @description Admin account created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            email: string;
+                            /** Format: int64 */
+                            id: number;
+                            role: components["schemas"]["UserRole"];
+                            status: components["schemas"]["UserStatus"];
+                            /** Format: int64 */
+                            storage_quota: number;
+                            /** Format: int64 */
+                            storage_used: number;
+                            updated_at: string;
+                            username: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description System already initialized */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    batch_copy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchCopyReq"];
+            };
+        };
+        responses: {
+            /** @description Batch copy result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            errors: components["schemas"]["BatchItemError"][];
+                            /** Format: int32 */
+                            failed: number;
+                            /** Format: int32 */
+                            succeeded: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    batch_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchDeleteReq"];
+            };
+        };
+        responses: {
+            /** @description Batch delete result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            errors: components["schemas"]["BatchItemError"][];
+                            /** Format: int32 */
+                            failed: number;
+                            /** Format: int32 */
+                            succeeded: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    batch_move: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchMoveReq"];
+            };
+        };
+        responses: {
+            /** @description Batch move result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            errors: components["schemas"]["BatchItemError"][];
+                            /** Format: int32 */
+                            failed: number;
+                            /** Format: int32 */
+                            succeeded: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4191,6 +4827,65 @@ export interface operations {
             };
             /** @description Share not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query?: {
+                /** @description Name search pattern (case-insensitive substring match) */
+                q?: string | null;
+                /** @description Result type filter: "file", "folder", or "all" (default) */
+                type?: string | null;
+                /** @description Filter by exact MIME type (e.g. "image/png") */
+                mime_type?: string | null;
+                /** @description Minimum file size in bytes */
+                min_size?: number | null;
+                /** @description Maximum file size in bytes */
+                max_size?: number | null;
+                /** @description ISO 8601 datetime — only return items created after this time */
+                created_after?: string | null;
+                /** @description ISO 8601 datetime — only return items created before this time */
+                created_before?: string | null;
+                /** @description Scope search to a specific folder (folder_id for files, parent_id for folders) */
+                folder_id?: number | null;
+                /** @description Max results per type (default 50, max 100) */
+                limit?: number | null;
+                /** @description Offset for pagination */
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Search results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            files: components["schemas"]["FileSearchItem"][];
+                            folders: components["schemas"]["FolderInfo"][];
+                            /** Format: int64 */
+                            total_files: number;
+                            /** Format: int64 */
+                            total_folders: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

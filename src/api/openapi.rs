@@ -9,6 +9,8 @@ use utoipa::OpenApi;
         license(name = "MIT"),
     ),
     paths(
+        crate::api::routes::auth::check,
+        crate::api::routes::auth::setup,
         crate::api::routes::auth::login,
         crate::api::routes::auth::register,
         crate::api::routes::auth::refresh,
@@ -111,6 +113,9 @@ use utoipa::OpenApi;
             crate::types::UserRole,
             crate::types::UserStatus,
             crate::types::DriverType,
+            crate::api::routes::auth::CheckReq,
+            crate::api::routes::auth::CheckResp,
+            crate::api::routes::auth::SetupReq,
             crate::api::routes::auth::RegisterReq,
             crate::api::routes::auth::LoginReq,
             crate::api::routes::files::FileQuery,
