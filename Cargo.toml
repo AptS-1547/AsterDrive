@@ -85,7 +85,7 @@ serde_repr = "0.1.20"
 sha2 = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "io-util"] }
 tokio-util = { version = "0.7", features = ["io"] }
-toml = "1.0"
+toml = "1.1"
 tracing = { version = "0.1.44", default-features = false}
 tracing-appender = "0.2.4"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "env-filter", "fmt", "json"] }
