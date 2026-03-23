@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +36,7 @@ export function ShareDialog({
 	folderId,
 	name,
 }: ShareDialogProps) {
+	const { t } = useTranslation(["common", "files"]);
 	const [password, setPassword] = useState("");
 	const [expiry, setExpiry] = useState("never");
 	const [maxDownloads, setMaxDownloads] = useState("");
@@ -59,7 +61,7 @@ export function ShareDialog({
 
 			const url = `${window.location.origin}/s/${share.token}`;
 			setShareUrl(url);
-			toast.success("Share link created");
+			toast.success(t("files:share_created"));
 		} catch (error) {
 			handleApiError(error);
 		} finally {
@@ -70,6 +72,7 @@ export function ShareDialog({
 	const handleCopy = async () => {
 		if (!shareUrl) return;
 		await navigator.clipboard.writeText(shareUrl);
+		toast.success(t("common:copied_to_clipboard"));
 		setCopied(true);
 		setTimeout(() => setCopied(false), 2000);
 	};
@@ -91,7 +94,7 @@ export function ShareDialog({
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
 						<Icon name="Link" className="h-4 w-4" />
-						Share "{name}"
+						{t("files:share_dialog_title", { name })}
 					</DialogTitle>
 				</DialogHeader>
 
@@ -109,7 +112,7 @@ export function ShareDialog({
 						</div>
 						{password && (
 							<p className="text-xs text-muted-foreground">
-								Password protected. Share the password separately.
+								{t("files:share_password_hint")}
 							</p>
 						)}
 						<Button
@@ -117,24 +120,26 @@ export function ShareDialog({
 							className="w-full"
 							onClick={() => handleClose(false)}
 						>
-							Done
+							{t("files:share_done")}
 						</Button>
 					</div>
 				) : (
 					<form onSubmit={handleCreate} className="space-y-4">
 						<div className="space-y-2">
-							<Label htmlFor="share-password">Password (optional)</Label>
+							<Label htmlFor="share-password">
+								{t("files:share_password_optional")}
+							</Label>
 							<Input
 								id="share-password"
 								type="password"
-								placeholder="Leave empty for no password"
+								placeholder={t("files:share_password_placeholder")}
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
 							/>
 						</div>
 
 						<div className="space-y-2">
-							<Label>Expiration</Label>
+							<Label>{t("files:share_expiration")}</Label>
 							<Select
 								value={expiry}
 								onValueChange={(v) => setExpiry(v ?? "never")}
@@ -143,28 +148,42 @@ export function ShareDialog({
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="never">Never</SelectItem>
-									<SelectItem value="1h">1 hour</SelectItem>
-									<SelectItem value="1d">1 day</SelectItem>
-									<SelectItem value="7d">7 days</SelectItem>
-									<SelectItem value="30d">30 days</SelectItem>
+									<SelectItem value="never">
+										{t("files:share_expiry_never")}
+									</SelectItem>
+									<SelectItem value="1h">
+										{t("files:share_expiry_1h")}
+									</SelectItem>
+									<SelectItem value="1d">
+										{t("files:share_expiry_1d")}
+									</SelectItem>
+									<SelectItem value="7d">
+										{t("files:share_expiry_7d")}
+									</SelectItem>
+									<SelectItem value="30d">
+										{t("files:share_expiry_30d")}
+									</SelectItem>
 								</SelectContent>
 							</Select>
 						</div>
 
 						<div className="space-y-2">
-							<Label htmlFor="max-downloads">Download limit (optional)</Label>
+							<Label htmlFor="max-downloads">
+								{t("files:share_download_limit")}
+							</Label>
 							<Input
 								id="max-downloads"
 								type="number"
-								placeholder="0 = unlimited"
+								placeholder={t("files:share_download_limit_placeholder")}
 								value={maxDownloads}
 								onChange={(e) => setMaxDownloads(e.target.value)}
 							/>
 						</div>
 
 						<Button type="submit" className="w-full" disabled={loading}>
-							{loading ? "Creating..." : "Create Share Link"}
+							{loading
+								? t("files:share_creating")
+								: t("files:share_create_button")}
 						</Button>
 					</form>
 				)}

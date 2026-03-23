@@ -1,5 +1,6 @@
 import Editor from "@monaco-editor/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -20,6 +21,7 @@ export function FilePreview({
 	onClose,
 	onFileUpdated,
 }: FilePreviewProps) {
+	const { t } = useTranslation("files");
 	const isImage =
 		file.mime_type.startsWith("image/") && file.mime_type !== "image/svg+xml";
 	const isText =
@@ -37,10 +39,14 @@ export function FilePreview({
 	);
 
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: overlay click closes preview
+		// biome-ignore lint/a11y/useKeyWithClickEvents: explicit close button already supports keyboard users
 		<div
 			className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
 			onClick={onClose}
 		>
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: container only stops propagation */}
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: container is not an interactive surface */}
 			<div
 				className="relative max-w-[90vw] max-h-[90vh] flex flex-col"
 				onClick={(e) => e.stopPropagation()}
@@ -53,10 +59,14 @@ export function FilePreview({
 				</div>
 				<div className="flex-1 overflow-auto bg-background/50 rounded-b-lg p-2">
 					{needsBlob && !blobUrl && !blobError && (
-						<div className="text-muted-foreground p-4">Loading...</div>
+						<div className="text-muted-foreground p-4">
+							{t("loading_preview")}
+						</div>
 					)}
 					{needsBlob && blobError && (
-						<div className="text-destructive p-4">Failed to load</div>
+						<div className="text-destructive p-4">
+							{t("preview_load_failed")}
+						</div>
 					)}
 					{isImage && blobUrl && (
 						<img
@@ -66,6 +76,7 @@ export function FilePreview({
 						/>
 					)}
 					{isVideo && blobUrl && (
+						// biome-ignore lint/a11y/useMediaCaption: user-uploaded media may not have captions available
 						<video
 							src={blobUrl}
 							controls
@@ -73,6 +84,7 @@ export function FilePreview({
 						/>
 					)}
 					{isAudio && blobUrl && (
+						// biome-ignore lint/a11y/useMediaCaption: user-uploaded media may not have captions available
 						<audio src={blobUrl} controls className="w-full mt-4" />
 					)}
 					{isPdf && blobUrl && (
@@ -91,7 +103,7 @@ export function FilePreview({
 					)}
 					{!isImage && !isVideo && !isAudio && !isPdf && !isText && (
 						<div className="text-center text-muted-foreground py-12">
-							Preview not available for this file type
+							{t("preview_not_available")}
 						</div>
 					)}
 				</div>
@@ -175,6 +187,7 @@ function TextPreview({
 	url: string;
 	onFileUpdated?: () => void;
 }) {
+	const { t } = useTranslation("files");
 	const [content, setContent] = useState<string | null>(null);
 	const [error, setError] = useState(false);
 	const [editing, setEditing] = useState(false);
@@ -249,7 +262,7 @@ function TextPreview({
 			await fileService.updateContent(file.id, editContent, etag ?? undefined);
 			setContent(editContent);
 			setEditing(false);
-			toast.success("File saved");
+			toast.success(t("file_saved"));
 			loadContent();
 			onFileUpdated?.();
 			try {
@@ -260,7 +273,7 @@ function TextPreview({
 		} catch (e: unknown) {
 			const status = (e as { status?: number })?.status;
 			if (status === 412) {
-				toast.error("File was modified by someone else. Please reload.");
+				toast.error(t("edited_by_others"));
 			} else {
 				handleApiError(e);
 			}
@@ -271,9 +284,10 @@ function TextPreview({
 
 	// Ref to always call the latest handleSave without recreating the callback
 	const saveRef = useRef(handleSave);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: ref sync intentionally tracks latest handler
 	useEffect(() => {
 		saveRef.current = handleSave;
-	}, [handleSave]);
+	});
 
 	// Monaco onMount: bind Ctrl+S
 	const handleEditorMount = useCallback(
@@ -288,9 +302,14 @@ function TextPreview({
 		[],
 	);
 
-	if (error) return <div className="text-destructive p-4">Failed to load</div>;
+	if (error)
+		return (
+			<div className="text-destructive p-4">{t("preview_load_failed")}</div>
+		);
 	if (content === null)
-		return <div className="text-muted-foreground p-4">Loading...</div>;
+		return (
+			<div className="text-muted-foreground p-4">{t("loading_preview")}</div>
+		);
 
 	const language = getLanguage(file.name);
 
@@ -300,7 +319,7 @@ function TextPreview({
 				{!editing ? (
 					<Button variant="outline" size="sm" onClick={handleEdit}>
 						<Icon name="PencilSimple" className="h-3.5 w-3.5 mr-1" />
-						Edit
+						{t("edit")}
 					</Button>
 				) : (
 					<>
@@ -311,11 +330,11 @@ function TextPreview({
 							disabled={saving}
 						>
 							<Icon name="FloppyDisk" className="h-3.5 w-3.5 mr-1" />
-							{saving ? "Saving..." : "Save"}
+							{saving ? t("saving") : t("common:save")}
 						</Button>
 						<Button variant="outline" size="sm" onClick={handleCancel}>
 							<Icon name="Undo" className="h-3.5 w-3.5 mr-1" />
-							Cancel
+							{t("common:cancel")}
 						</Button>
 					</>
 				)}

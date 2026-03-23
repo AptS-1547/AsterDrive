@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
+import { formatBatchToast } from "@/lib/formatBatchToast";
 import { batchService } from "@/services/batchService";
 import { useFileStore } from "@/stores/fileStore";
 
@@ -22,12 +23,14 @@ export function BatchActionBar() {
 	const handleDelete = async () => {
 		try {
 			const result = await batchService.batchDelete(fileIds, folderIds);
-			toast.success(
-				t("batch_success", {
-					succeeded: result.succeeded,
-					failed: result.failed,
-				}),
-			);
+			const batchToast = formatBatchToast(t, "delete", result);
+			if (batchToast.variant === "error") {
+				toast.error(batchToast.title, { description: batchToast.description });
+			} else {
+				toast.success(batchToast.title, {
+					description: batchToast.description,
+				});
+			}
 			clearSelection();
 			await refresh();
 		} catch (err) {
@@ -38,12 +41,14 @@ export function BatchActionBar() {
 	const handleMove = async () => {
 		try {
 			const result = await batchService.batchMove(fileIds, folderIds, null);
-			toast.success(
-				t("batch_success", {
-					succeeded: result.succeeded,
-					failed: result.failed,
-				}),
-			);
+			const batchToast = formatBatchToast(t, "move", result);
+			if (batchToast.variant === "error") {
+				toast.error(batchToast.title, { description: batchToast.description });
+			} else {
+				toast.success(batchToast.title, {
+					description: batchToast.description,
+				});
+			}
 			clearSelection();
 			await refresh();
 		} catch (err) {
@@ -54,12 +59,14 @@ export function BatchActionBar() {
 	const handleCopy = async () => {
 		try {
 			const result = await batchService.batchCopy(fileIds, folderIds, null);
-			toast.success(
-				t("batch_success", {
-					succeeded: result.succeeded,
-					failed: result.failed,
-				}),
-			);
+			const batchToast = formatBatchToast(t, "copy", result);
+			if (batchToast.variant === "error") {
+				toast.error(batchToast.title, { description: batchToast.description });
+			} else {
+				toast.success(batchToast.title, {
+					description: batchToast.description,
+				});
+			}
 			clearSelection();
 			await refresh();
 		} catch (err) {

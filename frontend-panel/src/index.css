@@ -185,3 +185,34 @@
 		@apply font-sans;
 	}
 }
+
+[data-sonner-toast][data-x-position="right"][data-y-position="bottom"] {
+	--toast-slide-x: 110%;
+	transform: var(--y) translateX(var(--toast-slide-x));
+	transition:
+		transform 220ms ease,
+		opacity 220ms ease,
+		height 400ms,
+		box-shadow 200ms;
+}
+
+[data-sonner-toast][data-x-position="right"][data-y-position="bottom"]:not(
+		[data-mounted="true"]
+	) {
+	--y: translateY(0);
+}
+
+[data-sonner-toast][data-x-position="right"][data-y-position="bottom"][data-mounted="true"] {
+	--toast-slide-x: 0%;
+}
+
+[data-sonner-toast][data-x-position="right"][data-y-position="bottom"][data-removed="true"][data-swipe-out="false"] {
+	--toast-slide-x: 110%;
+}
+
+[data-sonner-toast][data-x-position="right"][data-y-position="bottom"][data-swiping="true"] {
+	transform: var(--y)
+		translateX(calc(var(--toast-slide-x) + var(--swipe-amount-x, 0px)))
+		translateY(var(--swipe-amount-y, 0px));
+	transition: none;
+}

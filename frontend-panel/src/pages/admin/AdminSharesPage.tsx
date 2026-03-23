@@ -47,7 +47,7 @@ export default function AdminSharesPage() {
 		try {
 			await api.delete<void>(`/admin/shares/${id}`);
 			setShares((prev) => prev.filter((s) => s.id !== id));
-			toast.success("Share deleted");
+			toast.success(t("share_deleted"));
 		} catch (e) {
 			handleApiError(e);
 		}

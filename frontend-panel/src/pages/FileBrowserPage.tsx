@@ -32,6 +32,7 @@ import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { formatBatchToast } from "@/lib/formatBatchToast";
 import { fileService } from "@/services/fileService";
 import { api } from "@/services/http";
 import { useFileStore } from "@/stores/fileStore";
@@ -106,7 +107,7 @@ export default function FileBrowserPage() {
 			try {
 				if (type === "file") await fileService.copyFile(id);
 				else await fileService.copyFolder(id);
-				toast.success(t("copy"));
+				toast.success(t("copy_success"));
 				refresh();
 			} catch (err) {
 				handleApiError(err);
@@ -120,7 +121,7 @@ export default function FileBrowserPage() {
 			try {
 				if (type === "file") await fileService.setFileLock(id, !locked);
 				else await fileService.setFolderLock(id, !locked);
-				toast.success(!locked ? t("lock") : t("unlock"));
+				toast.success(!locked ? t("lock_success") : t("unlock_success"));
 				refresh();
 			} catch (err) {
 				handleApiError(err);
@@ -134,7 +135,7 @@ export default function FileBrowserPage() {
 			try {
 				if (type === "file") await useFileStore.getState().deleteFile(id);
 				else await useFileStore.getState().deleteFolder(id);
-				toast.success(t("common:delete"));
+				toast.success(t("delete_success"));
 			} catch (err) {
 				handleApiError(err);
 			}
@@ -153,12 +154,16 @@ export default function FileBrowserPage() {
 				await new Promise((r) => setTimeout(r, 300));
 				setFadingFileIds(new Set());
 				setFadingFolderIds(new Set());
-				toast.success(
-					t("batch_success", {
-						succeeded: result.succeeded,
-						failed: result.failed,
-					}),
-				);
+				const batchToast = formatBatchToast(t, "move", result);
+				if (batchToast.variant === "error") {
+					toast.error(batchToast.title, {
+						description: batchToast.description,
+					});
+				} else {
+					toast.success(batchToast.title, {
+						description: batchToast.description,
+					});
+				}
 			} catch (err) {
 				setFadingFileIds(new Set());
 				setFadingFolderIds(new Set());

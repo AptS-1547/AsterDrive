@@ -2,8 +2,11 @@ import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { SkeletonTree } from "@/components/common/SkeletonTree";
 import { Icon } from "@/components/ui/icon";
+import { handleApiError } from "@/hooks/useApiError";
+import { formatBatchToast } from "@/lib/formatBatchToast";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import { useFileStore } from "@/stores/fileStore";
@@ -245,9 +248,22 @@ export function FolderTree() {
 
 	const handleDrop = useCallback(
 		(fileIds: number[], folderIds: number[], targetFolderId: number) => {
-			moveToFolder(fileIds, folderIds, targetFolderId).catch(() => {});
+			moveToFolder(fileIds, folderIds, targetFolderId)
+				.then((result) => {
+					const batchToast = formatBatchToast(t, "move", result);
+					if (batchToast.variant === "error") {
+						toast.error(batchToast.title, {
+							description: batchToast.description,
+						});
+					} else {
+						toast.success(batchToast.title, {
+							description: batchToast.description,
+						});
+					}
+				})
+				.catch(handleApiError);
 		},
-		[moveToFolder],
+		[moveToFolder, t],
 	);
 
 	// Root drop target state
@@ -264,7 +280,20 @@ export function FolderTree() {
 		const raw = e.dataTransfer.getData(DRAG_MIME);
 		if (!raw) return;
 		const data = JSON.parse(raw) as { fileIds: number[]; folderIds: number[] };
-		moveToFolder(data.fileIds, data.folderIds, null).catch(() => {});
+		moveToFolder(data.fileIds, data.folderIds, null)
+			.then((result) => {
+				const batchToast = formatBatchToast(t, "move", result);
+				if (batchToast.variant === "error") {
+					toast.error(batchToast.title, {
+						description: batchToast.description,
+					});
+				} else {
+					toast.success(batchToast.title, {
+						description: batchToast.description,
+					});
+				}
+			})
+			.catch(handleApiError);
 	};
 
 	return (

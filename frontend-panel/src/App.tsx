@@ -16,7 +16,7 @@ function App() {
 	return (
 		<>
 			<RouterProvider router={router} />
-			<Toaster position="top-right" richColors />
+			<Toaster position="bottom-right" richColors swipeDirections={["right"]} />
 		</>
 	);
 }

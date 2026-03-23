@@ -352,7 +352,7 @@ export default function AdminUsersPage() {
 		try {
 			const updated = await adminUserService.update(id, { role });
 			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
-			toast.success("Role updated");
+			toast.success(t("role_updated"));
 		} catch (e) {
 			handleApiError(e);
 		}
@@ -362,7 +362,7 @@ export default function AdminUsersPage() {
 		try {
 			const updated = await adminUserService.update(id, { status });
 			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
-			toast.success("Status updated");
+			toast.success(t("status_updated"));
 		} catch (e) {
 			handleApiError(e);
 		}
@@ -374,7 +374,7 @@ export default function AdminUsersPage() {
 				storage_quota,
 			});
 			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
-			toast.success("Quota updated");
+			toast.success(t("quota_updated"));
 		} catch (e) {
 			handleApiError(e);
 		}

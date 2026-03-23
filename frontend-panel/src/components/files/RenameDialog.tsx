@@ -46,7 +46,7 @@ export function RenameDialog({
 			} else {
 				await fileService.renameFolder(id, trimmed);
 			}
-			toast.success(t("rename"));
+			toast.success(t("rename_success"));
 			onOpenChange(false);
 			await refresh();
 		} catch (error) {

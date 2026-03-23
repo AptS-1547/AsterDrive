@@ -3,7 +3,7 @@ import { STORAGE_KEYS } from "@/config/app";
 import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
 import { searchService } from "@/services/searchService";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type { BatchResult, FileInfo, FolderInfo } from "@/types/api";
 
 interface BreadcrumbItem {
 	id: number | null;
@@ -72,7 +72,7 @@ interface FileState {
 		fileIds: number[],
 		folderIds: number[],
 		targetFolderId: number | null,
-	) => Promise<{ succeeded: number; failed: number }>;
+	) => Promise<BatchResult>;
 }
 
 export type { BreadcrumbItem, SortBy, SortOrder, ViewMode };
@@ -287,6 +287,6 @@ export const useFileStore = create<FileState>((set, get) => ({
 				? await fileService.listRoot()
 				: await fileService.listFolder(currentFolderId);
 		set({ folders: contents.folders, files: contents.files });
-		return { succeeded: result.succeeded, failed: result.failed };
+		return result;
 	},
 }));

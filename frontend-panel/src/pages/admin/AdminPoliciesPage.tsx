@@ -217,7 +217,7 @@ export default function AdminPoliciesPage() {
 				setPolicies((prev) =>
 					prev.map((p) => (p.id === editingId ? updated : p)),
 				);
-				toast.success("Policy updated");
+				toast.success(t("policy_updated"));
 			} else {
 				const payload = {
 					...form,
@@ -231,7 +231,7 @@ export default function AdminPoliciesPage() {
 				};
 				const created = await adminPolicyService.create(payload);
 				setPolicies((prev) => [...prev, created]);
-				toast.success("Policy created");
+				toast.success(t("policy_created"));
 			}
 			setDialogOpen(false);
 		} catch (e) {
@@ -243,7 +243,7 @@ export default function AdminPoliciesPage() {
 		try {
 			await adminPolicyService.delete(id);
 			setPolicies((prev) => prev.filter((p) => p.id !== id));
-			toast.success("Policy deleted");
+			toast.success(t("policy_deleted"));
 		} catch (e) {
 			handleApiError(e);
 		}

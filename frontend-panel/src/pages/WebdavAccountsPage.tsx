@@ -93,7 +93,7 @@ export default function WebdavAccountsPage() {
 			setNewUsername("");
 			setNewPassword("");
 			setSelectedFolderId(undefined);
-			toast.success("WebDAV account created");
+			toast.success(t("admin:webdav_account_created"));
 			fetchAccounts();
 		} catch (err) {
 			handleApiError(err);
@@ -105,7 +105,7 @@ export default function WebdavAccountsPage() {
 	const handleDelete = async (id: number) => {
 		try {
 			await webdavAccountService.delete(id);
-			toast.success("Account deleted");
+			toast.success(t("admin:webdav_account_deleted"));
 			fetchAccounts();
 		} catch (err) {
 			handleApiError(err);
@@ -134,7 +134,7 @@ export default function WebdavAccountsPage() {
 			toast.success(t("admin:connection_success"));
 		} catch {
 			setTestResult(false);
-			toast.error("Connection test failed");
+			toast.error(t("admin:connection_test_failed"));
 		} finally {
 			setTesting(false);
 		}

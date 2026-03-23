@@ -2,6 +2,7 @@ import { Uppy } from "@uppy/core";
 import XHRUpload from "@uppy/xhr-upload";
 import type { DragEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -18,6 +19,7 @@ interface UploadAreaProps {
 }
 
 export function UploadArea({ children }: UploadAreaProps) {
+	const { t } = useTranslation("files");
 	const refresh = useFileStore((s) => s.refresh);
 	const currentFolderId = useFileStore((s) => s.currentFolderId);
 	const currentFolderIdRef = useRef(currentFolderId);
@@ -38,7 +40,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 		cancelUpload,
 		reset,
 	} = useChunkedUpload(() => {
-		toast.success("Upload complete (chunked)");
+		toast.success(t("upload_success"));
 		refresh();
 	});
 
@@ -49,7 +51,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 		cancelUpload: presignedCancel,
 		reset: presignedReset,
 	} = usePresignedUpload(() => {
-		toast.success("Upload complete (S3 direct)");
+		toast.success(t("upload_success"));
 		refresh();
 	});
 
@@ -74,7 +76,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 			// progress is 0-100 for all files combined
 			if (progress > 0 && progress < 100) {
 				setUppyProgress((p) => ({
-					filename: p?.filename ?? "Uploading...",
+					filename: p?.filename ?? t("uploading_to_storage"),
 					percent: progress,
 				}));
 			}
@@ -82,7 +84,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 		instance.on("upload", () => {
 			const files = instance.getFiles();
 			setUppyProgress({
-				filename: files[0]?.name ?? "Uploading...",
+				filename: files[0]?.name ?? t("uploading_to_storage"),
 				percent: 0,
 			});
 		});
@@ -90,14 +92,18 @@ export function UploadArea({ children }: UploadAreaProps) {
 			setUppyProgress(null);
 			const count = result.successful?.length ?? 0;
 			if (count > 0) {
-				toast.success(`Uploaded ${count} file(s)`);
+				toast.success(
+					count === 1
+						? t("upload_success")
+						: t("upload_multiple_success", { count }),
+				);
 				refresh();
 			}
 			instance.cancelAll();
 		});
 		instance.on("error", (error) => {
 			setUppyProgress(null);
-			toast.error(`Upload failed: ${error.message}`);
+			toast.error(t("upload_failed"), { description: error.message });
 		});
 		return instance;
 	});
@@ -122,7 +128,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 			uppy.addFile({ name: file.name, type: file.type, data: file });
 		} catch (err) {
 			if (err instanceof Error && !err.message.includes("already been added")) {
-				toast.error(err.message);
+				toast.error(t("upload_failed"), { description: err.message });
 			}
 		}
 	};
@@ -216,18 +222,18 @@ export function UploadArea({ children }: UploadAreaProps) {
 			{showResumePrompt && (
 				<div className="absolute bottom-4 right-4 z-40 w-80 bg-card border rounded-lg shadow-lg p-4 space-y-2">
 					<p className="text-sm font-medium">
-						Incomplete upload: {chunkedState.filename}
+						{t("upload_resume_title", { filename: chunkedState.filename })}
 					</p>
 					<p className="text-xs text-muted-foreground">
-						Select the same file to resume
+						{t("upload_resume_desc")}
 					</p>
 					<div className="flex gap-2">
 						<Button size="sm" className="flex-1" onClick={handleResume}>
 							<Icon name="ArrowsClockwise" className="h-3.5 w-3.5 mr-1" />
-							Resume
+							{t("upload_resume")}
 						</Button>
 						<Button size="sm" variant="outline" onClick={reset}>
-							Dismiss
+							{t("upload_dismiss")}
 						</Button>
 					</div>
 				</div>
@@ -253,13 +259,15 @@ export function UploadArea({ children }: UploadAreaProps) {
 					<div className="flex justify-between text-xs text-muted-foreground">
 						<span>
 							{chunkedState.status === "assembling"
-								? "Assembling..."
+								? t("upload_assembling")
 								: chunkedState.status === "failed"
-									? (chunkedState.error ?? "Failed")
+									? (chunkedState.error ?? t("upload_failed"))
 									: `Chunk ${chunkedState.completedChunks}/${chunkedState.totalChunks}`}
 						</span>
 						<span className="text-muted-foreground/60">
-							{chunkedState.progress}% chunked
+							{t("upload_progress_chunked", {
+								progress: chunkedState.progress,
+							})}
 						</span>
 					</div>
 					{chunkedState.status === "failed" && (
@@ -271,10 +279,10 @@ export function UploadArea({ children }: UploadAreaProps) {
 								onClick={handleResume}
 							>
 								<Icon name="ArrowsClockwise" className="h-3.5 w-3.5 mr-1" />
-								Retry
+								{t("upload_retry")}
 							</Button>
 							<Button size="sm" variant="outline" onClick={reset}>
-								Dismiss
+								{t("upload_dismiss")}
 							</Button>
 						</div>
 					)}
@@ -301,13 +309,15 @@ export function UploadArea({ children }: UploadAreaProps) {
 					<div className="flex justify-between text-xs text-muted-foreground">
 						<span>
 							{presignedState.status === "processing"
-								? "Processing..."
+								? t("upload_processing")
 								: presignedState.status === "failed"
-									? (presignedState.error ?? "Failed")
-									: "Uploading to S3..."}
+									? (presignedState.error ?? t("upload_failed"))
+									: t("uploading_to_storage")}
 						</span>
 						<span className="text-muted-foreground/60">
-							{presignedState.progress}% S3 direct
+							{t("upload_progress_direct", {
+								progress: presignedState.progress,
+							})}
 						</span>
 					</div>
 					{presignedState.status === "failed" && (
@@ -317,7 +327,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 							className="w-full"
 							onClick={presignedReset}
 						>
-							Dismiss
+							{t("upload_dismiss")}
 						</Button>
 					)}
 				</div>
@@ -331,7 +341,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 					</div>
 					<Progress value={uppyProgress.percent} className="h-1.5" />
 					<div className="text-xs text-muted-foreground text-right">
-						{uppyProgress.percent}% direct
+						{t("upload_progress_direct", { progress: uppyProgress.percent })}
 					</div>
 				</div>
 			)}
@@ -345,11 +355,9 @@ export function UploadArea({ children }: UploadAreaProps) {
 					)}
 				>
 					<Icon name="Upload" className="h-10 w-10 text-primary mb-3" />
-					<p className="text-lg font-medium text-primary">
-						Drop files to upload
-					</p>
+					<p className="text-lg font-medium text-primary">{t("drop_files")}</p>
 					<p className="text-sm text-muted-foreground mt-1">
-						Files will be uploaded to the current folder
+						{t("drop_files_desc")}
 					</p>
 				</div>
 			)}

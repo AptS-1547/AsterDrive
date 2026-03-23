@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +40,7 @@ export function VersionHistoryDialog({
 	fileName,
 	onRestored,
 }: VersionHistoryDialogProps) {
+	const { t } = useTranslation("files");
 	const [open, setOpen] = useState(false);
 	const [versions, setVersions] = useState<FileVersion[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -62,7 +64,7 @@ export function VersionHistoryDialog({
 	const handleRestore = async (versionId: number) => {
 		try {
 			await fileService.restoreVersion(fileId, versionId);
-			toast.success("Version restored");
+			toast.success(t("version_restored"));
 			load();
 			onRestored?.();
 		} catch (e) {
@@ -73,7 +75,7 @@ export function VersionHistoryDialog({
 	const handleDelete = async (versionId: number) => {
 		try {
 			await fileService.deleteVersion(fileId, versionId);
-			toast.success("Version deleted");
+			toast.success(t("version_deleted"));
 			setVersions((prev) => prev.filter((v) => v.id !== versionId));
 		} catch (e) {
 			handleApiError(e);
@@ -89,24 +91,26 @@ export function VersionHistoryDialog({
 			</DialogTrigger>
 			<DialogContent className="max-w-lg">
 				<DialogHeader>
-					<DialogTitle>Version History - {fileName}</DialogTitle>
+					<DialogTitle>
+						{t("version_history_title", { name: fileName })}
+					</DialogTitle>
 				</DialogHeader>
 				{loading ? (
 					<p className="text-muted-foreground text-sm py-4 text-center">
-						Loading...
+						{t("loading_preview")}
 					</p>
 				) : versions.length === 0 ? (
 					<p className="text-muted-foreground text-sm py-4 text-center">
-						No previous versions
+						{t("version_empty")}
 					</p>
 				) : (
 					<Table>
 						<TableHeader>
 							<TableRow>
-								<TableHead>Version</TableHead>
-								<TableHead>Size</TableHead>
-								<TableHead>Date</TableHead>
-								<TableHead className="w-20">Actions</TableHead>
+								<TableHead>{t("version_column")}</TableHead>
+								<TableHead>{t("version_size")}</TableHead>
+								<TableHead>{t("version_date")}</TableHead>
+								<TableHead className="w-20">{t("version_actions")}</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
@@ -127,7 +131,7 @@ export function VersionHistoryDialog({
 												variant="ghost"
 												size="icon"
 												className="h-7 w-7"
-												title="Restore"
+												title={t("version_restore")}
 												onClick={() => handleRestore(v.id)}
 											>
 												<Icon
@@ -139,7 +143,7 @@ export function VersionHistoryDialog({
 												variant="ghost"
 												size="icon"
 												className="h-7 w-7 text-destructive"
-												title="Delete"
+												title={t("version_delete")}
 												onClick={() => handleDelete(v.id)}
 											>
 												<Icon name="Trash" className="h-3.5 w-3.5" />

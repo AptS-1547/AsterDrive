@@ -129,7 +129,7 @@ export default function AdminSettingsPage() {
 				}
 				return [...prev, updated];
 			});
-			toast.success(editingKey ? "Config updated" : "Config created");
+			toast.success(editingKey ? t("config_updated") : t("config_created"));
 			setDialogOpen(false);
 		} catch (e) {
 			handleApiError(e);
@@ -140,7 +140,7 @@ export default function AdminSettingsPage() {
 		try {
 			await adminConfigService.delete(key);
 			setConfigs((prev) => prev.filter((c) => c.key !== key));
-			toast.success("Config deleted");
+			toast.success(t("config_deleted"));
 		} catch (e) {
 			handleApiError(e);
 		}
@@ -168,7 +168,7 @@ export default function AdminSettingsPage() {
 			setConfigs((prev) =>
 				prev.map((item) => (item.key === c.key ? updated : item)),
 			);
-			toast.success(`Reset to default: ${schema.default_value}`);
+			toast.success(t("config_reset", { value: schema.default_value }));
 		} catch (e) {
 			handleApiError(e);
 		}

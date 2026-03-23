@@ -31,7 +31,7 @@ export function CreateFolderDialog({
 		if (!name.trim()) return;
 		try {
 			await createFolder(name.trim());
-			toast.success(t("create_folder"));
+			toast.success(t("create_folder_success"));
 			setName("");
 			onOpenChange(false);
 		} catch (error) {

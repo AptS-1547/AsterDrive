@@ -58,7 +58,7 @@ export default function AdminLocksPage() {
 		try {
 			await adminLockService.forceUnlock(id);
 			setLocks((prev) => prev.filter((l) => l.id !== id));
-			toast.success("Lock released");
+			toast.success(t("lock_released"));
 		} catch (e) {
 			handleApiError(e);
 		}
@@ -67,7 +67,7 @@ export default function AdminLocksPage() {
 	const handleCleanupExpired = async () => {
 		try {
 			const result = await adminLockService.cleanupExpired();
-			toast.success(`Cleaned up ${result.removed} expired locks`);
+			toast.success(t("expired_locks_cleaned", { count: result.removed }));
 			load();
 		} catch (e) {
 			handleApiError(e);
