@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -260,7 +260,7 @@ export default function WebdavAccountsPage() {
 
 				{/* Accounts list */}
 				{loading ? (
-					<LoadingSpinner text={t("loading")} />
+					<SkeletonTable columns={5} rows={6} />
 				) : accounts.length === 0 ? (
 					<EmptyState
 						title={t("no_webdav_accounts")}

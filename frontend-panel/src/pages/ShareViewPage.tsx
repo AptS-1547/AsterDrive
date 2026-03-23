@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SkeletonCard } from "@/components/common/SkeletonCard";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -94,7 +94,7 @@ export default function ShareViewPage() {
 	if (loading) {
 		return (
 			<div className="min-h-screen flex items-center justify-center bg-background">
-				<LoadingSpinner text={t("loading")} />
+				<SkeletonCard />
 			</div>
 		);
 	}

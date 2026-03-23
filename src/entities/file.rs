@@ -11,6 +11,7 @@ pub struct Model {
     pub name: String,
     pub folder_id: Option<i64>,
     pub blob_id: i64,
+    pub size: i64,
     pub user_id: i64,
     pub mime_type: String,
     #[schema(value_type = String)]

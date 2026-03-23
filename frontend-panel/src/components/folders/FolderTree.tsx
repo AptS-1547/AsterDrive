@@ -1,6 +1,8 @@
+import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
+import { SkeletonTree } from "@/components/common/SkeletonTree";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
@@ -14,29 +16,62 @@ interface TreeNodeData {
 	loading: boolean;
 }
 
+const DRAG_MIME = "application/x-asterdrive-move";
+
 function TreeNode({
 	node,
 	depth,
 	onToggle,
 	onNavigate,
+	onDrop,
 	currentFolderId,
 }: {
 	node: TreeNodeData;
 	depth: number;
 	onToggle: (id: number) => void;
 	onNavigate: (id: number, name: string) => void;
+	onDrop: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number,
+	) => void;
 	currentFolderId: number | null;
 }) {
 	const isActive = currentFolderId === node.folder.id;
+	const [dragOver, setDragOver] = useState(false);
+
+	const handleDragOver = (e: React.DragEvent) => {
+		if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = "move";
+		setDragOver(true);
+	};
+
+	const handleDragLeave = () => setDragOver(false);
+
+	const handleDrop = (e: React.DragEvent) => {
+		setDragOver(false);
+		e.preventDefault();
+		const raw = e.dataTransfer.getData(DRAG_MIME);
+		if (!raw) return;
+		const data = JSON.parse(raw) as { fileIds: number[]; folderIds: number[] };
+		if (data.folderIds.includes(node.folder.id)) return;
+		onDrop(data.fileIds, data.folderIds, node.folder.id);
+	};
 
 	return (
 		<div>
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: drag-drop target */}
 			<div
 				className={cn(
 					"flex items-center gap-0.5 py-1.5 rounded-md text-sm hover:bg-accent transition-colors",
 					isActive && "bg-accent font-medium",
+					dragOver && "ring-2 ring-primary bg-accent/30",
 				)}
 				style={{ paddingLeft: `${depth * 16 + 4}px` }}
+				onDragOver={handleDragOver}
+				onDragLeave={handleDragLeave}
+				onDrop={handleDrop}
 			>
 				<button
 					type="button"
@@ -79,6 +114,7 @@ function TreeNode({
 							depth={depth + 1}
 							onToggle={onToggle}
 							onNavigate={onNavigate}
+							onDrop={onDrop}
 							currentFolderId={currentFolderId}
 						/>
 					))}
@@ -109,6 +145,7 @@ function updateNode(
 export function FolderTree() {
 	const { t } = useTranslation("files");
 	const currentFolderId = useFileStore((s) => s.currentFolderId);
+	const moveToFolder = useFileStore((s) => s.moveToFolder);
 	const storeFolders = useFileStore((s) => s.folders);
 	const storeCurrentFolderId = useFileStore((s) => s.currentFolderId);
 	const [nodes, setNodes] = useState<TreeNodeData[]>([]);
@@ -206,35 +243,70 @@ export function FolderTree() {
 		[navigate],
 	);
 
+	const handleDrop = useCallback(
+		(fileIds: number[], folderIds: number[], targetFolderId: number) => {
+			moveToFolder(fileIds, folderIds, targetFolderId).catch(() => {});
+		},
+		[moveToFolder],
+	);
+
+	// Root drop target state
+	const [rootDragOver, setRootDragOver] = useState(false);
+	const handleRootDragOver = (e: React.DragEvent) => {
+		if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = "move";
+		setRootDragOver(true);
+	};
+	const handleRootDrop = (e: React.DragEvent) => {
+		setRootDragOver(false);
+		e.preventDefault();
+		const raw = e.dataTransfer.getData(DRAG_MIME);
+		if (!raw) return;
+		const data = JSON.parse(raw) as { fileIds: number[]; folderIds: number[] };
+		moveToFolder(data.fileIds, data.folderIds, null).catch(() => {});
+	};
+
 	return (
 		<div className="p-2 space-y-0.5">
-			{/* Root */}
-			<button
-				type="button"
-				className={cn(
-					"w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-accent transition-colors text-left",
-					currentFolderId === null &&
-						(location.pathname === "/" ||
-							location.pathname.startsWith("/folder")) &&
-						"bg-accent font-medium",
-				)}
-				onClick={() => navigate("/")}
-			>
-				<Icon name="Folder" className="h-4 w-4 text-muted-foreground" />
-				{t("root")}
-			</button>
+			{!rootLoaded ? (
+				<SkeletonTree count={4} />
+			) : (
+				<>
+					{/* Root */}
+					<button
+						type="button"
+						className={cn(
+							"w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-accent transition-colors text-left",
+							currentFolderId === null &&
+								(location.pathname === "/" ||
+									location.pathname.startsWith("/folder")) &&
+								"bg-accent font-medium",
+							rootDragOver && "ring-2 ring-primary bg-accent/30",
+						)}
+						onClick={() => navigate("/")}
+						onDragOver={handleRootDragOver}
+						onDragLeave={() => setRootDragOver(false)}
+						onDrop={handleRootDrop}
+					>
+						<Icon name="Folder" className="h-4 w-4 text-muted-foreground" />
+						{t("root")}
+					</button>
 
-			{/* Tree nodes */}
-			{nodes.map((node) => (
-				<TreeNode
-					key={node.folder.id}
-					node={node}
-					depth={1}
-					onToggle={handleToggle}
-					onNavigate={handleNavigate}
-					currentFolderId={currentFolderId}
-				/>
-			))}
+					{/* Tree nodes */}
+					{nodes.map((node) => (
+						<TreeNode
+							key={node.folder.id}
+							node={node}
+							depth={1}
+							onToggle={handleToggle}
+							onNavigate={handleNavigate}
+							onDrop={handleDrop}
+							currentFolderId={currentFolderId}
+						/>
+					))}
+				</>
+			)}
 		</div>
 	);
 }

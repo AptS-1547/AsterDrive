@@ -149,6 +149,7 @@ pub async fn store_from_temp(
         let existing_id = old_file.id;
         let mut active: file::ActiveModel = old_file.into();
         active.blob_id = Set(blob.id);
+        active.size = Set(blob.size);
         active.mime_type = Set(mime);
         active.updated_at = Set(now);
         let updated = active.update(&txn).await.map_err(AsterError::from)?;
@@ -190,6 +191,7 @@ pub async fn store_from_temp(
             name: Set(filename.to_string()),
             folder_id: Set(folder_id),
             blob_id: Set(blob.id),
+            size: Set(blob.size),
             user_id: Set(user_id),
             mime_type: Set(mime),
             created_at: Set(now),
@@ -584,6 +586,7 @@ pub async fn duplicate_file_record(
             name: Set(dest_name.to_string()),
             folder_id: Set(dest_folder_id),
             blob_id: Set(src.blob_id),
+            size: Set(src.size),
             user_id: Set(src.user_id),
             mime_type: Set(src.mime_type.clone()),
             created_at: Set(now),

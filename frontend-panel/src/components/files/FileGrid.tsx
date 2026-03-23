@@ -19,6 +19,13 @@ interface FileGridProps {
 	onToggleLock: (type: "file" | "folder", id: number, locked: boolean) => void;
 	onDelete: (type: "file" | "folder", id: number) => void;
 	onVersions?: (fileId: number) => void;
+	onMoveToFolder?: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number,
+	) => void;
+	fadingFileIds?: Set<number>;
+	fadingFolderIds?: Set<number>;
 }
 
 const GRID_CLASSES =
@@ -35,6 +42,9 @@ export function FileGrid({
 	onToggleLock,
 	onDelete,
 	onVersions,
+	onMoveToFolder,
+	fadingFileIds,
+	fadingFolderIds,
 }: FileGridProps) {
 	const { t } = useTranslation("files");
 	const selectedFileIds = useFileStore((s) => s.selectedFileIds);
@@ -43,6 +53,21 @@ export function FileGrid({
 	const toggleFolderSelection = useFileStore((s) => s.toggleFolderSelection);
 
 	const hasBoth = folders.length > 0 && files.length > 0;
+
+	const getDragData = (itemId: number, isFolder: boolean) => {
+		const isSelected = isFolder
+			? selectedFolderIds.has(itemId)
+			: selectedFileIds.has(itemId);
+		if (isSelected && selectedFileIds.size + selectedFolderIds.size > 1) {
+			return {
+				fileIds: [...selectedFileIds],
+				folderIds: [...selectedFolderIds],
+			};
+		}
+		return isFolder
+			? { fileIds: [], folderIds: [itemId] }
+			: { fileIds: [itemId], folderIds: [] };
+	};
 
 	return (
 		<div className="p-4 space-y-4">
@@ -74,6 +99,9 @@ export function FileGrid({
 									selected={selectedFolderIds.has(folder.id)}
 									onSelect={() => toggleFolderSelection(folder.id)}
 									onClick={() => onFolderOpen(folder.id, folder.name)}
+									dragData={getDragData(folder.id, true)}
+									onDrop={onMoveToFolder}
+									fading={fadingFolderIds?.has(folder.id)}
 								/>
 							</FileContextMenu>
 						))}
@@ -109,6 +137,8 @@ export function FileGrid({
 									selected={selectedFileIds.has(file.id)}
 									onSelect={() => toggleFileSelection(file.id)}
 									onClick={() => onFileClick(file)}
+									dragData={getDragData(file.id, false)}
+									fading={fadingFileIds?.has(file.id)}
 								/>
 							</FileContextMenu>
 						))}

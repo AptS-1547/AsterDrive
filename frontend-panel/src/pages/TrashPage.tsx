@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -98,7 +98,7 @@ export default function TrashPage() {
 		>
 			<div className="flex-1 overflow-auto p-6">
 				{loading ? (
-					<LoadingSpinner text={t("loading")} />
+					<SkeletonTable columns={3} rows={8} />
 				) : isEmpty ? (
 					<EmptyState
 						icon={<Icon name="Trash" className="h-10 w-10" />}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -96,7 +96,7 @@ export default function AdminAuditPage() {
 				</div>
 
 				{loading ? (
-					<LoadingSpinner text={t("common:loading")} />
+					<SkeletonTable columns={6} rows={8} />
 				) : items.length === 0 ? (
 					<EmptyState
 						icon={<Icon name="Scroll" className="h-10 w-10" />}

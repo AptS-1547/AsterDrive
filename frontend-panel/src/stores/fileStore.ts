@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { STORAGE_KEYS } from "@/config/app";
+import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
 import { searchService } from "@/services/searchService";
 import type { FileInfo, FolderInfo } from "@/types/api";
@@ -67,6 +68,11 @@ interface FileState {
 	createFolder: (name: string) => Promise<void>;
 	deleteFile: (id: number) => Promise<void>;
 	deleteFolder: (id: number) => Promise<void>;
+	moveToFolder: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number | null,
+	) => Promise<{ succeeded: number; failed: number }>;
 }
 
 export type { BreadcrumbItem, SortBy, SortOrder, ViewMode };
@@ -265,5 +271,22 @@ export const useFileStore = create<FileState>((set, get) => ({
 		next.delete(id);
 		set({ selectedFolderIds: next });
 		await get().refresh();
+	},
+
+	moveToFolder: async (fileIds, folderIds, targetFolderId) => {
+		const result = await batchService.batchMove(
+			fileIds,
+			folderIds,
+			targetFolderId,
+		);
+		get().clearSelection();
+		// Silent refresh — don't set loading to avoid flash
+		const { currentFolderId } = get();
+		const contents =
+			currentFolderId === null
+				? await fileService.listRoot()
+				: await fileService.listFolder(currentFolderId);
+		set({ folders: contents.folders, files: contents.files });
+		return { succeeded: result.succeeded, failed: result.failed };
 	},
 }));

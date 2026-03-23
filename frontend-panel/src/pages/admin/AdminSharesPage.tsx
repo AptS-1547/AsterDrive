@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,7 +69,7 @@ export default function AdminSharesPage() {
 			<div className="p-6 space-y-4">
 				<h2 className="text-lg font-semibold">{t("shares")}</h2>
 				{loading ? (
-					<LoadingSpinner text={t("common:loading")} />
+					<SkeletonTable columns={8} rows={6} />
 				) : shares.length === 0 ? (
 					<EmptyState
 						icon={<Icon name="LinkSimple" className="h-10 w-10" />}

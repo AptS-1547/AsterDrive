@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -101,7 +101,7 @@ export default function SearchPage() {
 				)}
 
 				{loading ? (
-					<LoadingSpinner text={t("loading")} />
+					<SkeletonTable columns={5} rows={8} />
 				) : (
 					<ScrollArea className="flex-1">
 						{(folders.length > 0 || files.length > 0) && (

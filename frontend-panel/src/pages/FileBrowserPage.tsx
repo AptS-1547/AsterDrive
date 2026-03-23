@@ -4,7 +4,8 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { BatchActionBar } from "@/components/common/BatchActionBar";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SkeletonFileGrid } from "@/components/common/SkeletonFileGrid";
+import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
 import { ViewToggle } from "@/components/common/ViewToggle";
 import { CreateFolderDialog } from "@/components/files/CreateFolderDialog";
 import { FileGrid } from "@/components/files/FileGrid";
@@ -46,6 +47,7 @@ export default function FileBrowserPage() {
 
 	const navigateTo = useFileStore((s) => s.navigateTo);
 	const refresh = useFileStore((s) => s.refresh);
+	const moveToFolder = useFileStore((s) => s.moveToFolder);
 	const breadcrumb = useFileStore((s) => s.breadcrumb);
 	const folders = useFileStore((s) => s.folders);
 	const files = useFileStore((s) => s.files);
@@ -64,6 +66,10 @@ export default function FileBrowserPage() {
 	useKeyboardShortcuts();
 
 	const [createFolderOpen, setCreateFolderOpen] = useState(false);
+	const [fadingFileIds, setFadingFileIds] = useState<Set<number>>(new Set());
+	const [fadingFolderIds, setFadingFolderIds] = useState<Set<number>>(
+		new Set(),
+	);
 	const [previewFile, setPreviewFile] = useState<FileInfo | null>(null);
 	const [shareTarget, setShareTarget] = useState<{
 		fileId?: number;
@@ -136,6 +142,32 @@ export default function FileBrowserPage() {
 		[t],
 	);
 
+	const handleMoveToFolder = useCallback(
+		async (fileIds: number[], folderIds: number[], targetFolderId: number) => {
+			try {
+				// Fade out moved items before refreshing
+				setFadingFileIds(new Set(fileIds));
+				setFadingFolderIds(new Set(folderIds));
+				const result = await moveToFolder(fileIds, folderIds, targetFolderId);
+				// Wait for fade-out animation to finish, then clear
+				await new Promise((r) => setTimeout(r, 300));
+				setFadingFileIds(new Set());
+				setFadingFolderIds(new Set());
+				toast.success(
+					t("batch_success", {
+						succeeded: result.succeeded,
+						failed: result.failed,
+					}),
+				);
+			} catch (err) {
+				setFadingFileIds(new Set());
+				setFadingFolderIds(new Set());
+				handleApiError(err);
+			}
+		},
+		[moveToFolder, t],
+	);
+
 	const sharedProps = {
 		folders: displayFolders,
 		files: displayFiles,
@@ -148,6 +180,9 @@ export default function FileBrowserPage() {
 		onToggleLock: handleToggleLock,
 		onDelete: handleDelete,
 		onVersions: (fileId: number) => setVersionFileId(fileId),
+		onMoveToFolder: handleMoveToFolder,
+		fadingFileIds,
+		fadingFolderIds,
 	};
 
 	const isEmpty =
@@ -196,7 +231,11 @@ export default function FileBrowserPage() {
 					<ContextMenuTrigger className="flex-1 flex flex-col">
 						<ScrollArea className="flex-1">
 							{loading ? (
-								<LoadingSpinner />
+								viewMode === "grid" ? (
+									<SkeletonFileGrid />
+								) : (
+									<SkeletonFileTable />
+								)
 							) : error ? (
 								<EmptyState
 									icon={<Icon name="Warning" className="h-12 w-12" />}

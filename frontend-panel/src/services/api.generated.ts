@@ -1177,6 +1177,8 @@ export interface components {
             is_locked?: boolean;
             mime_type: string;
             name: string;
+            /** Format: int64 */
+            size: number;
             updated_at: string;
             /** Format: int64 */
             user_id: number;
@@ -3388,6 +3390,8 @@ export interface operations {
                             is_locked?: boolean;
                             mime_type: string;
                             name: string;
+                            /** Format: int64 */
+                            size: number;
                             updated_at: string;
                             /** Format: int64 */
                             user_id: number;
@@ -3566,6 +3570,8 @@ export interface operations {
                             is_locked?: boolean;
                             mime_type: string;
                             name: string;
+                            /** Format: int64 */
+                            size: number;
                             updated_at: string;
                             /** Format: int64 */
                             user_id: number;
@@ -3674,6 +3680,8 @@ export interface operations {
                             is_locked?: boolean;
                             mime_type: string;
                             name: string;
+                            /** Format: int64 */
+                            size: number;
                             updated_at: string;
                             /** Format: int64 */
                             user_id: number;
@@ -3769,6 +3777,8 @@ export interface operations {
                             is_locked?: boolean;
                             mime_type: string;
                             name: string;
+                            /** Format: int64 */
+                            size: number;
                             updated_at: string;
                             /** Format: int64 */
                             user_id: number;
@@ -3829,6 +3839,8 @@ export interface operations {
                             is_locked?: boolean;
                             mime_type: string;
                             name: string;
+                            /** Format: int64 */
+                            size: number;
                             updated_at: string;
                             /** Format: int64 */
                             user_id: number;
@@ -3924,6 +3936,8 @@ export interface operations {
                             is_locked?: boolean;
                             mime_type: string;
                             name: string;
+                            /** Format: int64 */
+                            size: number;
                             updated_at: string;
                             /** Format: int64 */
                             user_id: number;
@@ -4100,6 +4114,8 @@ export interface operations {
                             is_locked?: boolean;
                             mime_type: string;
                             name: string;
+                            /** Format: int64 */
+                            size: number;
                             updated_at: string;
                             /** Format: int64 */
                             user_id: number;

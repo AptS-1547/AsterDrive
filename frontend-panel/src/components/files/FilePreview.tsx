@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import Editor from "@monaco-editor/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -99,6 +100,72 @@ export function FilePreview({
 	);
 }
 
+// ── Language detection ────────────────────────────────────
+
+const EXT_LANG_MAP: Record<string, string> = {
+	js: "javascript",
+	jsx: "javascript",
+	ts: "typescript",
+	tsx: "typescript",
+	json: "json",
+	md: "markdown",
+	py: "python",
+	rs: "rust",
+	go: "go",
+	html: "html",
+	htm: "html",
+	css: "css",
+	scss: "scss",
+	less: "less",
+	xml: "xml",
+	yaml: "yaml",
+	yml: "yaml",
+	toml: "ini",
+	sh: "shell",
+	bash: "shell",
+	zsh: "shell",
+	sql: "sql",
+	java: "java",
+	kt: "kotlin",
+	swift: "swift",
+	c: "c",
+	h: "c",
+	cpp: "cpp",
+	hpp: "cpp",
+	cs: "csharp",
+	rb: "ruby",
+	php: "php",
+	lua: "lua",
+	r: "r",
+	dockerfile: "dockerfile",
+};
+
+function getLanguage(filename: string): string {
+	const dot = filename.lastIndexOf(".");
+	if (dot < 0) return "plaintext";
+	const ext = filename.slice(dot + 1).toLowerCase();
+	return EXT_LANG_MAP[ext] ?? "plaintext";
+}
+
+function useIsDark(): boolean {
+	const [dark, setDark] = useState(
+		document.documentElement.classList.contains("dark"),
+	);
+	useEffect(() => {
+		const observer = new MutationObserver(() => {
+			setDark(document.documentElement.classList.contains("dark"));
+		});
+		observer.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ["class"],
+		});
+		return () => observer.disconnect();
+	}, []);
+	return dark;
+}
+
+// ── TextPreview with Monaco ───────────────────────────────
+
 function TextPreview({
 	file,
 	url,
@@ -114,6 +181,13 @@ function TextPreview({
 	const [editContent, setEditContent] = useState("");
 	const [etag, setEtag] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
+	const editingRef = useRef(false);
+	const isDark = useIsDark();
+
+	// Keep ref in sync for cleanup
+	useEffect(() => {
+		editingRef.current = editing;
+	}, [editing]);
 
 	const loadContent = useCallback(() => {
 		api.client
@@ -130,6 +204,25 @@ function TextPreview({
 	useEffect(() => {
 		loadContent();
 	}, [loadContent]);
+
+	// Release lock on unmount if editing
+	useEffect(() => {
+		return () => {
+			if (editingRef.current) {
+				fileService.setFileLock(file.id, false).catch(() => {});
+			}
+		};
+	}, [file.id]);
+
+	// beforeunload warning when editing
+	useEffect(() => {
+		if (!editing) return;
+		const handler = (e: BeforeUnloadEvent) => {
+			e.preventDefault();
+		};
+		window.addEventListener("beforeunload", handler);
+		return () => window.removeEventListener("beforeunload", handler);
+	}, [editing]);
 
 	const handleEdit = async () => {
 		try {
@@ -157,7 +250,6 @@ function TextPreview({
 			setContent(editContent);
 			setEditing(false);
 			toast.success("File saved");
-			// 重新加载获取新 ETag
 			loadContent();
 			onFileUpdated?.();
 			try {
@@ -177,9 +269,30 @@ function TextPreview({
 		}
 	};
 
+	// Ref to always call the latest handleSave without recreating the callback
+	const saveRef = useRef(handleSave);
+	useEffect(() => {
+		saveRef.current = handleSave;
+	}, [handleSave]);
+
+	// Monaco onMount: bind Ctrl+S
+	const handleEditorMount = useCallback(
+		(editor: {
+			addCommand: (keybinding: number, handler: () => void) => void;
+		}) => {
+			// monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS = 2048 + 49
+			editor.addCommand(2048 + 49, () => {
+				saveRef.current();
+			});
+		},
+		[],
+	);
+
 	if (error) return <div className="text-destructive p-4">Failed to load</div>;
 	if (content === null)
 		return <div className="text-muted-foreground p-4">Loading...</div>;
+
+	const language = getLanguage(file.name);
 
 	return (
 		<div className="flex flex-col">
@@ -206,19 +319,29 @@ function TextPreview({
 						</Button>
 					</>
 				)}
+				<span className="text-xs text-muted-foreground ml-auto">
+					{language}
+				</span>
 			</div>
-			{editing ? (
-				<textarea
-					className="w-[80vw] h-[70vh] p-4 font-mono text-sm bg-background resize-none focus:outline-none"
-					value={editContent}
-					onChange={(e) => setEditContent(e.target.value)}
-					spellCheck={false}
-				/>
-			) : (
-				<pre className="text-sm font-mono whitespace-pre-wrap p-4 max-h-[80vh] overflow-auto">
-					{content}
-				</pre>
-			)}
+			<Editor
+				width="80vw"
+				height="70vh"
+				language={language}
+				theme={isDark ? "vs-dark" : "light"}
+				value={editing ? editContent : content}
+				onChange={(v) => setEditContent(v ?? "")}
+				onMount={editing ? handleEditorMount : undefined}
+				options={{
+					readOnly: !editing,
+					minimap: { enabled: false },
+					wordWrap: "on",
+					fontSize: 13,
+					lineNumbers: "on",
+					scrollBeyondLastLine: false,
+					renderLineHighlight: editing ? "line" : "none",
+					domReadOnly: !editing,
+				}}
+			/>
 		</div>
 	);
 }

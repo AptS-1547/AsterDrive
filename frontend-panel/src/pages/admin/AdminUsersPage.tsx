@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -216,7 +216,7 @@ function UserPolicyDialog({
 				</DialogHeader>
 
 				{loading ? (
-					<LoadingSpinner />
+					<SkeletonTable columns={4} rows={5} />
 				) : (
 					<div className="space-y-4">
 						{/* Existing assignments */}
@@ -385,7 +385,7 @@ export default function AdminUsersPage() {
 			<div className="p-6 space-y-4">
 				<h2 className="text-lg font-semibold">{t("users")}</h2>
 				{loading ? (
-					<LoadingSpinner text={t("common:loading")} />
+					<SkeletonTable columns={8} rows={6} />
 				) : users.length === 0 ? (
 					<EmptyState title={t("no_users")} />
 				) : (

@@ -1,3 +1,5 @@
+import type React from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileContextMenu } from "@/components/files/FileContextMenu";
 import { FileThumbnail } from "@/components/files/FileThumbnail";
@@ -10,7 +12,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { formatDate } from "@/lib/format";
+import { formatBytes, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { SortBy } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
@@ -31,6 +33,13 @@ interface FileTableProps {
 	onToggleLock: (type: "file" | "folder", id: number, locked: boolean) => void;
 	onDelete: (type: "file" | "folder", id: number) => void;
 	onVersions?: (fileId: number) => void;
+	onMoveToFolder?: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number,
+	) => void;
+	fadingFileIds?: Set<number>;
+	fadingFolderIds?: Set<number>;
 }
 
 function SortIcon({
@@ -61,6 +70,9 @@ export function FileTable({
 	onToggleLock,
 	onDelete,
 	onVersions,
+	onMoveToFolder,
+	fadingFileIds,
+	fadingFolderIds,
 }: FileTableProps) {
 	const { t } = useTranslation("files");
 	const selectedFileIds = useFileStore((s) => s.selectedFileIds);
@@ -90,6 +102,53 @@ export function FileTable({
 	const handleSelectAll = () => {
 		if (allSelected) clearSelection();
 		else selectAll();
+	};
+
+	const DRAG_MIME = "application/x-asterdrive-move";
+	const [dragOverId, setDragOverId] = useState<number | null>(null);
+
+	const makeDragData = (itemId: number, isFolder: boolean) => {
+		const isSelected = isFolder
+			? selectedFolderIds.has(itemId)
+			: selectedFileIds.has(itemId);
+		if (isSelected && selectedFileIds.size + selectedFolderIds.size > 1) {
+			return {
+				fileIds: [...selectedFileIds],
+				folderIds: [...selectedFolderIds],
+			};
+		}
+		return isFolder
+			? { fileIds: [], folderIds: [itemId] }
+			: { fileIds: [itemId], folderIds: [] };
+	};
+
+	const handleDragStart = (
+		e: React.DragEvent,
+		itemId: number,
+		isFolder: boolean,
+	) => {
+		e.dataTransfer.setData(
+			DRAG_MIME,
+			JSON.stringify(makeDragData(itemId, isFolder)),
+		);
+		e.dataTransfer.effectAllowed = "move";
+	};
+
+	const handleFolderDragOver = (e: React.DragEvent, folderId: number) => {
+		if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = "move";
+		setDragOverId(folderId);
+	};
+
+	const handleFolderDrop = (e: React.DragEvent, folderId: number) => {
+		setDragOverId(null);
+		e.preventDefault();
+		const raw = e.dataTransfer.getData(DRAG_MIME);
+		if (!raw) return;
+		const data = JSON.parse(raw) as { fileIds: number[]; folderIds: number[] };
+		if (data.folderIds.includes(folderId)) return;
+		onMoveToFolder?.(data.fileIds, data.folderIds, folderId);
 	};
 
 	return (
@@ -135,6 +194,15 @@ export function FileTable({
 						</div>
 					</TableHead>
 					<TableHead
+						className="w-[100px] cursor-pointer select-none"
+						onClick={() => handleSort("size")}
+					>
+						<div className="flex items-center">
+							{t("common:size")}
+							<SortIcon column="size" current={sortBy} order={sortOrder} />
+						</div>
+					</TableHead>
+					<TableHead
 						className="cursor-pointer select-none"
 						onClick={() => handleSort("date")}
 					>
@@ -164,7 +232,16 @@ export function FileTable({
 						onDelete={() => onDelete("folder", folder.id)}
 					>
 						<TableRow
-							className="cursor-pointer"
+							className={cn(
+								"cursor-pointer transition-all duration-300",
+								dragOverId === folder.id && "ring-2 ring-primary bg-accent/30",
+								fadingFolderIds?.has(folder.id) && "opacity-0 scale-95",
+							)}
+							draggable
+							onDragStart={(e) => handleDragStart(e, folder.id, true)}
+							onDragOver={(e) => handleFolderDragOver(e, folder.id)}
+							onDragLeave={() => setDragOverId(null)}
+							onDrop={(e) => handleFolderDrop(e, folder.id)}
 							onClick={() => onFolderOpen(folder.id, folder.name)}
 						>
 							<TableCell onClick={(e) => e.stopPropagation()}>
@@ -205,6 +282,7 @@ export function FileTable({
 									<span className="truncate">{folder.name}</span>
 								</div>
 							</TableCell>
+							<TableCell className="text-muted-foreground">---</TableCell>
 							<TableCell className="text-muted-foreground">
 								{formatDate(folder.updated_at)}
 							</TableCell>
@@ -226,7 +304,12 @@ export function FileTable({
 						onVersions={onVersions ? () => onVersions(file.id) : undefined}
 					>
 						<TableRow
-							className="cursor-pointer"
+							className={cn(
+								"cursor-pointer transition-all duration-300",
+								fadingFileIds?.has(file.id) && "opacity-0 scale-95",
+							)}
+							draggable
+							onDragStart={(e) => handleDragStart(e, file.id, false)}
 							onClick={() => onFileClick(file)}
 						>
 							<TableCell onClick={(e) => e.stopPropagation()}>
@@ -263,6 +346,9 @@ export function FileTable({
 									<FileThumbnail file={file} size="sm" />
 									<span className="truncate">{file.name}</span>
 								</div>
+							</TableCell>
+							<TableCell className="text-muted-foreground">
+								{formatBytes(file.size)}
 							</TableCell>
 							<TableCell className="text-muted-foreground">
 								{formatDate(file.updated_at)}
