@@ -36,9 +36,12 @@ import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import type { InternalDragData } from "@/lib/dragDrop";
 import { formatBatchToast } from "@/lib/formatBatchToast";
+import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
 import { api } from "@/services/http";
+import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
 import type { FileInfo } from "@/types/api";
 
@@ -53,6 +56,7 @@ export default function FileBrowserPage() {
 	const navigateTo = useFileStore((s) => s.navigateTo);
 	const refresh = useFileStore((s) => s.refresh);
 	const moveToFolder = useFileStore((s) => s.moveToFolder);
+	const search = useFileStore((s) => s.search);
 	const breadcrumb = useFileStore((s) => s.breadcrumb);
 	const folders = useFileStore((s) => s.folders);
 	const files = useFileStore((s) => s.files);
@@ -63,6 +67,7 @@ export default function FileBrowserPage() {
 	const searchFolders = useFileStore((s) => s.searchFolders);
 	const searchFiles = useFileStore((s) => s.searchFiles);
 	const error = useFileStore((s) => s.error);
+	const clearSelection = useFileStore((s) => s.clearSelection);
 
 	const isSearching = searchQuery !== null;
 	const displayFolders = isSearching ? searchFolders : folders;
@@ -225,6 +230,40 @@ export default function FileBrowserPage() {
 		[handleMoveToFolder, moveTarget],
 	);
 
+	const handleTrashDrop = useCallback(
+		async ({ fileIds, folderIds }: InternalDragData) => {
+			if (fileIds.length === 0 && folderIds.length === 0) return;
+			try {
+				setFadingFileIds(new Set(fileIds));
+				setFadingFolderIds(new Set(folderIds));
+				const result = await batchService.batchDelete(fileIds, folderIds);
+				await new Promise((resolve) => setTimeout(resolve, 300));
+				setFadingFileIds(new Set());
+				setFadingFolderIds(new Set());
+				const batchToast = formatBatchToast(t, "delete", result);
+				if (batchToast.variant === "error") {
+					toast.error(batchToast.title, {
+						description: batchToast.description,
+					});
+				} else {
+					toast.success(batchToast.title, {
+						description: batchToast.description,
+					});
+				}
+				clearSelection();
+				await Promise.all([
+					searchQuery ? search(searchQuery) : refresh(),
+					useAuthStore.getState().refreshUser(),
+				]);
+			} catch (err) {
+				setFadingFileIds(new Set());
+				setFadingFolderIds(new Set());
+				handleApiError(err);
+			}
+		},
+		[clearSelection, refresh, search, searchQuery, t],
+	);
+
 	const sharedProps = {
 		folders: displayFolders,
 		files: displayFiles,
@@ -256,7 +295,10 @@ export default function FileBrowserPage() {
 		!loading && displayFolders.length === 0 && displayFiles.length === 0;
 
 	return (
-		<AppLayout actions={<ViewToggle value={viewMode} onChange={setViewMode} />}>
+		<AppLayout
+			actions={<ViewToggle value={viewMode} onChange={setViewMode} />}
+			onTrashDrop={handleTrashDrop}
+		>
 			<UploadArea ref={uploadAreaRef}>
 				{/* Breadcrumb / search indicator */}
 				<div className="px-4 pt-3 pb-1">
@@ -295,8 +337,8 @@ export default function FileBrowserPage() {
 					)}
 				</div>
 				<ContextMenu>
-					<ContextMenuTrigger className="flex-1 flex flex-col">
-						<ScrollArea className="flex-1">
+					<ContextMenuTrigger className="flex min-h-0 flex-1 flex-col">
+						<ScrollArea className="min-h-0 flex-1">
 							{loading ? (
 								viewMode === "grid" ? (
 									<SkeletonFileGrid />

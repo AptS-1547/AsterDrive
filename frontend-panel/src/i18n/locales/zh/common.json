@@ -22,6 +22,7 @@
 	"name": "名称",
 	"size": "大小",
 	"type": "类型",
+	"original_location": "原位置",
 	"date": "日期",
 	"status": "状态",
 	"created_at": "创建时间",

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -10,16 +12,135 @@ use crate::services::{file_service, webdav_service};
 const DEFAULT_RETENTION_DAYS: i64 = 7;
 
 #[derive(Serialize, ToSchema)]
+pub struct TrashFileItem {
+    pub id: i64,
+    pub name: String,
+    pub size: i64,
+    pub mime_type: String,
+    #[schema(value_type = String)]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String)]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String)]
+    pub deleted_at: chrono::DateTime<chrono::Utc>,
+    pub is_locked: bool,
+    pub original_path: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TrashFolderItem {
+    pub id: i64,
+    pub name: String,
+    #[schema(value_type = String)]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String)]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String)]
+    pub deleted_at: chrono::DateTime<chrono::Utc>,
+    pub is_locked: bool,
+    pub original_path: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct TrashContents {
-    pub folders: Vec<folder::Model>,
-    pub files: Vec<file::Model>,
+    pub folders: Vec<TrashFolderItem>,
+    pub files: Vec<TrashFileItem>,
 }
 
 /// 列出用户回收站内容
 pub async fn list_trash(state: &AppState, user_id: i64) -> Result<TrashContents> {
-    let folders = folder_repo::find_deleted_by_user(&state.db, user_id).await?;
-    let files = file_repo::find_deleted_by_user(&state.db, user_id).await?;
+    let deleted_folders = folder_repo::find_deleted_by_user(&state.db, user_id).await?;
+    let deleted_folder_ids = deleted_folders
+        .iter()
+        .map(|folder| folder.id)
+        .collect::<HashSet<_>>();
+
+    let mut folders = Vec::new();
+    for folder in deleted_folders {
+        if is_top_level_deleted_folder(&deleted_folder_ids, &folder) {
+            folders.push(build_trash_folder_item(&state.db, folder).await?);
+        }
+    }
+
+    let mut files = Vec::new();
+    for file in file_repo::find_deleted_by_user(&state.db, user_id).await? {
+        if is_top_level_deleted_file(&deleted_folder_ids, &file) {
+            files.push(build_trash_file_item(&state.db, file).await?);
+        }
+    }
+
     Ok(TrashContents { folders, files })
+}
+
+fn is_top_level_deleted_folder(deleted_folder_ids: &HashSet<i64>, folder: &folder::Model) -> bool {
+    match folder.parent_id {
+        Some(parent_id) => !deleted_folder_ids.contains(&parent_id),
+        None => true,
+    }
+}
+
+fn is_top_level_deleted_file(deleted_folder_ids: &HashSet<i64>, file: &file::Model) -> bool {
+    match file.folder_id {
+        Some(folder_id) => !deleted_folder_ids.contains(&folder_id),
+        None => true,
+    }
+}
+
+async fn build_trash_file_item(
+    db: &sea_orm::DatabaseConnection,
+    file: file::Model,
+) -> Result<TrashFileItem> {
+    Ok(TrashFileItem {
+        id: file.id,
+        name: file.name,
+        size: file.size,
+        mime_type: file.mime_type,
+        created_at: file.created_at,
+        updated_at: file.updated_at,
+        deleted_at: file
+            .deleted_at
+            .ok_or_else(|| AsterError::validation_error("file is not in trash"))?,
+        is_locked: file.is_locked,
+        original_path: resolve_folder_path(db, file.folder_id).await?,
+    })
+}
+
+async fn build_trash_folder_item(
+    db: &sea_orm::DatabaseConnection,
+    folder: folder::Model,
+) -> Result<TrashFolderItem> {
+    Ok(TrashFolderItem {
+        id: folder.id,
+        name: folder.name,
+        created_at: folder.created_at,
+        updated_at: folder.updated_at,
+        deleted_at: folder
+            .deleted_at
+            .ok_or_else(|| AsterError::validation_error("folder is not in trash"))?,
+        is_locked: folder.is_locked,
+        original_path: resolve_folder_path(db, folder.parent_id).await?,
+    })
+}
+
+async fn resolve_folder_path(
+    db: &sea_orm::DatabaseConnection,
+    folder_id: Option<i64>,
+) -> Result<String> {
+    let mut segments = Vec::new();
+    let mut current = folder_id;
+
+    while let Some(folder_id) = current {
+        let folder = folder_repo::find_by_id(db, folder_id).await?;
+        segments.push(folder.name);
+        current = folder.parent_id;
+    }
+
+    segments.reverse();
+    if segments.is_empty() {
+        Ok("/".to_string())
+    } else {
+        Ok(format!("/{}", segments.join("/")))
+    }
 }
 
 /// 恢复文件

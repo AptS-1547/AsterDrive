@@ -157,6 +157,8 @@ use utoipa::OpenApi;
             crate::services::webdav_account_service::WebdavAccountInfo,
             crate::api::routes::webdav_accounts::CreateWebdavAccountReq,
             crate::services::trash_service::TrashContents,
+            crate::services::trash_service::TrashFileItem,
+            crate::services::trash_service::TrashFolderItem,
             crate::api::routes::trash::TrashItemPath,
             crate::api::routes::webdav_accounts::TestConnectionReq,
             crate::entities::entity_property::Model,

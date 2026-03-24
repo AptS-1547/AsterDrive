@@ -1,5 +1,9 @@
 use actix_web::{App, HttpServer, web};
 
+#[cfg(debug_assertions)]
+#[global_allocator]
+static GLOBAL: aster_drive::alloc::TrackingAlloc = aster_drive::alloc::TrackingAlloc;
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // 0. 安装自定义 panic hook（最先执行）

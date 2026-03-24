@@ -3,40 +3,86 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { SkeletonFileGrid } from "@/components/common/SkeletonFileGrid";
+import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
+import { ViewToggle } from "@/components/common/ViewToggle";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { TrashBatchActionBar } from "@/components/trash/TrashBatchActionBar";
+import { TrashGrid } from "@/components/trash/TrashGrid";
+import { TrashTable } from "@/components/trash/TrashTable";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
+import { ItemCheckbox } from "@/components/ui/item-checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { STORAGE_KEYS } from "@/config/app";
 import { handleApiError } from "@/hooks/useApiError";
-import { formatDate } from "@/lib/format";
+import { useSelectionShortcuts } from "@/hooks/useSelectionShortcuts";
 import { trashService } from "@/services/trashService";
 import { useAuthStore } from "@/stores/authStore";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type { TrashContents, TrashItem } from "@/types/api";
+
+type ViewMode = "grid" | "list";
+type TrashOperation = "restore" | "purge";
+
+function getStoredViewMode(): ViewMode {
+	if (typeof window === "undefined") return "list";
+	const stored = localStorage.getItem(STORAGE_KEYS.trashViewMode);
+	return stored === "grid" ? "grid" : "list";
+}
+
+function getItemKey(item: TrashItem) {
+	return `${item.entity_type}:${item.id}`;
+}
+
+function toTrashItems(contents: TrashContents): TrashItem[] {
+	return [
+		...contents.folders.map(
+			(folder) =>
+				({
+					...folder,
+					entity_type: "folder",
+				}) as const,
+		),
+		...contents.files.map(
+			(file) =>
+				({
+					...file,
+					entity_type: "file",
+				}) as const,
+		),
+	].sort(
+		(a, b) =>
+			new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime(),
+	);
+}
 
 export default function TrashPage() {
-	const { t } = useTranslation();
-	const [files, setFiles] = useState<FileInfo[]>([]);
-	const [folders, setFolders] = useState<FolderInfo[]>([]);
+	const { t } = useTranslation(["common", "files", "admin"]);
+	const refreshUser = useAuthStore((s) => s.refreshUser);
+	const [contents, setContents] = useState<TrashContents>({
+		files: [],
+		folders: [],
+	});
 	const [loading, setLoading] = useState(true);
+	const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode);
+	const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+	const [purgeTargets, setPurgeTargets] = useState<TrashItem[] | null>(null);
 	const [purgeAllOpen, setPurgeAllOpen] = useState(false);
-	const [purgeTarget, setPurgeTarget] = useState<{
-		type: "file" | "folder";
-		id: number;
-	} | null>(null);
+
+	const items = toTrashItems(contents);
+	const selectedItems = items.filter((item) =>
+		selectedKeys.has(getItemKey(item)),
+	);
+	const selectionCount = selectedItems.length;
+	const allSelected = items.length > 0 && selectionCount === items.length;
+	const isEmpty = !loading && items.length === 0;
 
 	const load = useCallback(async () => {
+		setLoading(true);
 		try {
 			const data = await trashService.list();
-			setFiles(data.files);
-			setFolders(data.folders);
+			setContents(data);
+			setSelectedKeys(new Set());
 		} catch (err) {
 			handleApiError(err);
 		} finally {
@@ -45,193 +91,274 @@ export default function TrashPage() {
 	}, []);
 
 	useEffect(() => {
-		load();
+		void load();
 	}, [load]);
 
-	const handleRestore = async (type: "file" | "folder", id: number) => {
-		try {
-			if (type === "file") await trashService.restoreFile(id);
-			else await trashService.restoreFolder(id);
-			toast.success(t("restored"));
-			await Promise.all([load(), useAuthStore.getState().refreshUser()]);
-		} catch (err) {
-			handleApiError(err);
-		}
+	const handleViewModeChange = (mode: ViewMode) => {
+		localStorage.setItem(STORAGE_KEYS.trashViewMode, mode);
+		setViewMode(mode);
 	};
 
-	const handlePurge = async (type: "file" | "folder", id: number) => {
-		try {
-			if (type === "file") await trashService.purgeFile(id);
-			else await trashService.purgeFolder(id);
-			toast.success(t("permanently_deleted"));
-			await Promise.all([load(), useAuthStore.getState().refreshUser()]);
-		} catch (err) {
-			handleApiError(err);
-		}
+	const toggleSelect = (item: TrashItem) => {
+		const key = getItemKey(item);
+		setSelectedKeys((prev) => {
+			const next = new Set(prev);
+			if (next.has(key)) next.delete(key);
+			else next.add(key);
+			return next;
+		});
 	};
+
+	const clearSelection = useCallback(() => {
+		setSelectedKeys(new Set());
+	}, []);
+
+	const selectAllItems = useCallback(() => {
+		setSelectedKeys(new Set(items.map(getItemKey)));
+	}, [items]);
+
+	const toggleSelectAll = useCallback(() => {
+		if (allSelected) {
+			clearSelection();
+			return;
+		}
+		selectAllItems();
+	}, [allSelected, clearSelection, selectAllItems]);
+
+	useSelectionShortcuts({
+		selectAll: selectAllItems,
+		clearSelection,
+		enabled: purgeTargets === null && !purgeAllOpen,
+	});
+
+	const showBatchToast = useCallback(
+		(operation: TrashOperation, succeeded: number, failed: number) => {
+			if (failed === 0) {
+				toast.success(
+					t(`files:trash_${operation}_success`, {
+						count: succeeded,
+					}),
+				);
+				return;
+			}
+
+			if (succeeded === 0) {
+				toast.error(t(`files:trash_${operation}_failed`));
+				return;
+			}
+
+			toast.success(
+				t(`files:trash_${operation}_partial`, {
+					succeeded,
+					failed,
+				}),
+			);
+		},
+		[t],
+	);
+
+	const runOperation = useCallback(
+		async (targets: TrashItem[], operation: TrashOperation) => {
+			if (targets.length === 0) return;
+
+			const results = await Promise.allSettled(
+				targets.map(async (item) => {
+					if (operation === "restore") {
+						if (item.entity_type === "file") {
+							await trashService.restoreFile(item.id);
+						} else {
+							await trashService.restoreFolder(item.id);
+						}
+						return;
+					}
+
+					if (item.entity_type === "file") {
+						await trashService.purgeFile(item.id);
+					} else {
+						await trashService.purgeFolder(item.id);
+					}
+				}),
+			);
+
+			const succeeded = results.filter(
+				(result) => result.status === "fulfilled",
+			).length;
+			const failed = results.length - succeeded;
+
+			showBatchToast(operation, succeeded, failed);
+
+			if (succeeded > 0) {
+				await Promise.all([load(), refreshUser()]);
+			}
+		},
+		[load, refreshUser, showBatchToast],
+	);
+
+	const handleRestore = useCallback(
+		async (targets: TrashItem[]) => {
+			try {
+				await runOperation(targets, "restore");
+			} catch (err) {
+				handleApiError(err);
+			}
+		},
+		[runOperation],
+	);
+
+	const handlePurge = useCallback(
+		async (targets: TrashItem[]) => {
+			try {
+				await runOperation(targets, "purge");
+			} catch (err) {
+				handleApiError(err);
+			}
+		},
+		[runOperation],
+	);
 
 	const handlePurgeAll = async () => {
 		try {
 			setPurgeAllOpen(false);
 			await trashService.purgeAll();
-			toast.success(t("trash_emptied"));
-			await Promise.all([load(), useAuthStore.getState().refreshUser()]);
+			toast.success(t("common:trash_emptied"));
+			await Promise.all([load(), refreshUser()]);
 		} catch (err) {
 			handleApiError(err);
 		}
 	};
 
-	const isEmpty = files.length === 0 && folders.length === 0;
-
 	return (
 		<AppLayout
-			actions={
-				!isEmpty && !loading ? (
-					<Button
-						variant="destructive"
-						size="sm"
-						onClick={() => setPurgeAllOpen(true)}
-					>
-						<Icon name="Trash" className="h-4 w-4 mr-1" />
-						{t("admin:empty_trash")}
-					</Button>
-				) : undefined
-			}
+			actions={<ViewToggle value={viewMode} onChange={handleViewModeChange} />}
 		>
-			<div className="flex-1 overflow-auto p-6">
-				{loading ? (
-					<SkeletonTable columns={3} rows={8} />
-				) : isEmpty ? (
-					<EmptyState
-						icon={<Icon name="Trash" className="h-10 w-10" />}
-						title={t("admin:trash_empty")}
-						description={t("admin:trash_empty_desc")}
-					/>
-				) : (
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead className="w-[50%]">{t("name")}</TableHead>
-								<TableHead>{t("admin:deleted_at")}</TableHead>
-								<TableHead className="w-[120px]">{t("actions")}</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{folders.map((f) => (
-								<TableRow key={`folder-${f.id}`}>
-									<TableCell className="flex items-center gap-2">
-										<Icon name="Folder" className="h-4 w-4 text-blue-500" />
-										{f.name}
-									</TableCell>
-									<TableCell className="text-muted-foreground">
-										{f.deleted_at ? formatDate(f.deleted_at) : "-"}
-									</TableCell>
-									<TableCell>
-										<div className="flex gap-1">
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-8 w-8"
-												title={t("admin:restore")}
-												onClick={() => handleRestore("folder", f.id)}
-											>
-												<Icon
-													name="ArrowCounterClockwise"
-													className="h-4 w-4"
-												/>
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-8 w-8 text-destructive"
-												title={t("admin:purge")}
-												onClick={() =>
-													setPurgeTarget({
-														type: "folder",
-														id: f.id,
-													})
-												}
-											>
-												<Icon name="Trash" className="h-4 w-4" />
-											</Button>
-										</div>
-									</TableCell>
-								</TableRow>
-							))}
-							{files.map((f) => (
-								<TableRow key={`file-${f.id}`}>
-									<TableCell className="flex items-center gap-2">
-										<Icon
-											name="File"
-											className="h-4 w-4 text-muted-foreground"
-										/>
-										{f.name}
-									</TableCell>
-									<TableCell className="text-muted-foreground">
-										{f.deleted_at ? formatDate(f.deleted_at) : "-"}
-									</TableCell>
-									<TableCell>
-										<div className="flex gap-1">
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-8 w-8"
-												title={t("admin:restore")}
-												onClick={() => handleRestore("file", f.id)}
-											>
-												<Icon
-													name="ArrowCounterClockwise"
-													className="h-4 w-4"
-												/>
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-8 w-8 text-destructive"
-												title={t("admin:purge")}
-												onClick={() =>
-													setPurgeTarget({
-														type: "file",
-														id: f.id,
-													})
-												}
-											>
-												<Icon name="Trash" className="h-4 w-4" />
-											</Button>
-										</div>
-									</TableCell>
-								</TableRow>
-							))}
-						</TableBody>
-					</Table>
-				)}
+			<div className="flex flex-1 flex-col gap-4 overflow-hidden p-4">
+				<div className="rounded-xl border bg-muted/20 px-4 py-4">
+					<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+						<div className="flex items-center gap-3">
+							<div className="flex h-11 w-11 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
+								<Icon name="Trash" className="h-5 w-5" />
+							</div>
+							<div className="min-w-0">
+								<h1 className="text-lg font-semibold">{t("common:trash")}</h1>
+								<p className="text-sm text-muted-foreground">
+									{t("files:trash_page_desc")}
+								</p>
+							</div>
+						</div>
+						{!isEmpty && !loading ? (
+							<Button
+								variant="destructive"
+								size="sm"
+								className="self-start"
+								onClick={() => setPurgeAllOpen(true)}
+							>
+								<Icon name="Trash" className="mr-1 h-4 w-4" />
+								{t("admin:empty_trash")}
+							</Button>
+						) : null}
+					</div>
+				</div>
+
+				{!loading && !isEmpty ? (
+					<div className="flex items-center justify-between rounded-xl border bg-background px-4 py-3">
+						<div className="flex items-center gap-3">
+							{viewMode === "grid" ? (
+								<ItemCheckbox
+									checked={allSelected}
+									onChange={toggleSelectAll}
+								/>
+							) : null}
+							<span className="text-sm font-medium">
+								{selectionCount > 0
+									? t("common:selected_count", { count: selectionCount })
+									: t("common:items_count", { count: items.length })}
+							</span>
+						</div>
+						<span className="hidden text-sm text-muted-foreground md:inline">
+							{t("files:trash_page_desc")}
+						</span>
+					</div>
+				) : null}
+
+				<div className="min-h-0 flex flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+					{loading ? (
+						viewMode === "grid" ? (
+							<SkeletonFileGrid />
+						) : (
+							<SkeletonFileTable />
+						)
+					) : isEmpty ? (
+						<EmptyState
+							icon={<Icon name="Trash" className="h-10 w-10" />}
+							title={t("files:trash_empty_title")}
+							description={t("files:trash_empty_desc")}
+						/>
+					) : (
+						<ScrollArea className="min-h-0 flex-1">
+							{viewMode === "grid" ? (
+								<TrashGrid
+									items={items}
+									selectedKeys={selectedKeys}
+									onToggleSelect={toggleSelect}
+									onRestore={(item) => {
+										void handleRestore([item]);
+									}}
+									onPurge={(item) => setPurgeTargets([item])}
+								/>
+							) : (
+								<TrashTable
+									items={items}
+									allSelected={allSelected}
+									selectedKeys={selectedKeys}
+									onToggleSelectAll={toggleSelectAll}
+									onToggleSelect={toggleSelect}
+									onRestore={(item) => {
+										void handleRestore([item]);
+									}}
+									onPurge={(item) => setPurgeTargets([item])}
+								/>
+							)}
+						</ScrollArea>
+					)}
+				</div>
 			</div>
 
+			<TrashBatchActionBar
+				count={selectionCount}
+				onRestore={() => {
+					void handleRestore(selectedItems);
+				}}
+				onPurge={() => setPurgeTargets(selectedItems)}
+				onClearSelection={clearSelection}
+			/>
+
 			<ConfirmDialog
-				open={purgeAllOpen}
-				onOpenChange={setPurgeAllOpen}
-				title={t("are_you_sure")}
-				description={t("admin:confirm_empty_trash")}
-				confirmLabel={t("admin:empty_trash")}
-				onConfirm={handlePurgeAll}
+				open={purgeTargets !== null}
+				onOpenChange={(open) => {
+					if (!open) setPurgeTargets(null);
+				}}
+				title={t("files:trash_purge_confirm_title", {
+					count: purgeTargets?.length ?? 0,
+				})}
+				description={t("files:trash_purge_confirm_desc")}
+				confirmLabel={t("files:trash_delete_permanently")}
+				onConfirm={() => {
+					const targets = purgeTargets;
+					setPurgeTargets(null);
+					if (targets) {
+						void handlePurge(targets);
+					}
+				}}
 				variant="destructive"
 			/>
 
 			<ConfirmDialog
-				open={purgeTarget !== null}
-				onOpenChange={(open) => {
-					if (!open) setPurgeTarget(null);
-				}}
-				title={t("are_you_sure")}
-				description={t("admin:confirm_purge")}
-				confirmLabel={t("admin:purge")}
-				onConfirm={() => {
-					const target = purgeTarget;
-					setPurgeTarget(null);
-					if (target) {
-						void handlePurge(target.type, target.id);
-					}
-				}}
+				open={purgeAllOpen}
+				onOpenChange={setPurgeAllOpen}
+				title={t("common:are_you_sure")}
+				description={t("admin:confirm_empty_trash")}
+				confirmLabel={t("admin:empty_trash")}
+				onConfirm={handlePurgeAll}
 				variant="destructive"
 			/>
 		</AppLayout>

@@ -13,25 +13,23 @@ export function ItemCheckbox({
 	className,
 }: ItemCheckboxProps) {
 	return (
-		// biome-ignore lint/a11y/useSemanticElements: custom styled checkbox matching design system
-		<div
+		<button
+			type="button"
 			className={cn(
-				"h-4 w-4 rounded border flex items-center justify-center cursor-pointer",
-				checked ? "bg-primary border-primary" : "border-muted-foreground",
+				"inline-flex size-5 shrink-0 items-center justify-center rounded-md border shadow-sm transition-colors",
+				checked
+					? "border-primary bg-primary text-primary-foreground hover:border-primary hover:bg-primary/90"
+					: "border-muted-foreground/70 bg-background/90 text-transparent hover:border-foreground/30 hover:bg-accent/40",
 				className,
 			)}
 			onClick={(e) => {
 				e.stopPropagation();
 				onChange();
 			}}
-			onKeyDown={() => {}}
-			role="checkbox"
-			aria-checked={checked}
+			aria-pressed={checked}
 			tabIndex={-1}
 		>
-			{checked && (
-				<Icon name="Check" className="h-3 w-3 text-primary-foreground" />
-			)}
-		</div>
+			{checked && <Icon name="Check" className="h-3.5 w-3.5 text-current" />}
+		</button>
 	);
 }

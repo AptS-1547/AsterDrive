@@ -1,3 +1,4 @@
+import { type DragEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { FolderTree } from "@/components/folders/FolderTree";
@@ -5,6 +6,11 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import {
+	hasInternalDragData,
+	type InternalDragData,
+	readInternalDragData,
+} from "@/lib/dragDrop";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -12,18 +18,48 @@ import { useAuthStore } from "@/stores/authStore";
 interface SidebarProps {
 	mobileOpen: boolean;
 	onMobileClose: () => void;
+	onTrashDrop?: (data: InternalDragData) => void | Promise<void>;
 }
 
-export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
+export function Sidebar({
+	mobileOpen,
+	onMobileClose,
+	onTrashDrop,
+}: SidebarProps) {
 	const { t } = useTranslation();
 	const location = useLocation();
 	const user = useAuthStore((s) => s.user);
+	const [trashDragOver, setTrashDragOver] = useState(false);
 
 	const navLinks: { to: string; icon: IconName; label: string }[] = [
 		{ to: "/trash", icon: "Trash", label: t("trash") },
 		{ to: "/settings/webdav", icon: "HardDrive", label: t("webdav") },
 		{ to: "/settings", icon: "Gear", label: t("settings") },
 	];
+
+	const handleTrashDragOver = (e: DragEvent<HTMLAnchorElement>) => {
+		if (!onTrashDrop || !hasInternalDragData(e.dataTransfer)) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = "move";
+		setTrashDragOver(true);
+	};
+
+	const handleTrashDragLeave = (e: DragEvent<HTMLAnchorElement>) => {
+		const nextTarget = e.relatedTarget;
+		if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+			return;
+		}
+		setTrashDragOver(false);
+	};
+
+	const handleTrashDrop = (e: DragEvent<HTMLAnchorElement>) => {
+		setTrashDragOver(false);
+		if (!onTrashDrop) return;
+		e.preventDefault();
+		const data = readInternalDragData(e.dataTransfer);
+		if (!data) return;
+		void onTrashDrop(data);
+	};
 
 	const sidebarContent = (
 		<div className="flex flex-col h-full">
@@ -41,11 +77,19 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 						key={link.to}
 						to={link.to}
 						onClick={onMobileClose}
+						onDragOver={link.to === "/trash" ? handleTrashDragOver : undefined}
+						onDragLeave={
+							link.to === "/trash" ? handleTrashDragLeave : undefined
+						}
+						onDrop={link.to === "/trash" ? handleTrashDrop : undefined}
 						className={cn(
 							"flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors",
 							location.pathname === link.to
 								? "bg-accent text-accent-foreground"
 								: "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+							link.to === "/trash" &&
+								trashDragOver &&
+								"bg-destructive/10 text-destructive ring-1 ring-destructive/30",
 						)}
 					>
 						<Icon name={link.icon} className="h-4 w-4 shrink-0" />

@@ -19,7 +19,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { DRAG_MIME } from "@/lib/constants";
+import {
+	hasInternalDragData,
+	readInternalDragData,
+	writeInternalDragData,
+} from "@/lib/dragDrop";
 import { cn } from "@/lib/utils";
 import type { SortBy } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
@@ -135,15 +139,11 @@ export function FileTable({
 		itemId: number,
 		isFolder: boolean,
 	) => {
-		e.dataTransfer.setData(
-			DRAG_MIME,
-			JSON.stringify(makeDragData(itemId, isFolder)),
-		);
-		e.dataTransfer.effectAllowed = "move";
+		writeInternalDragData(e.dataTransfer, makeDragData(itemId, isFolder));
 	};
 
 	const handleFolderDragOver = (e: React.DragEvent, folderId: number) => {
-		if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
+		if (!hasInternalDragData(e.dataTransfer)) return;
 		e.preventDefault();
 		e.dataTransfer.dropEffect = "move";
 		setDragOverId(folderId);
@@ -152,9 +152,8 @@ export function FileTable({
 	const handleFolderDrop = (e: React.DragEvent, folderId: number) => {
 		setDragOverId(null);
 		e.preventDefault();
-		const raw = e.dataTransfer.getData(DRAG_MIME);
-		if (!raw) return;
-		const data = JSON.parse(raw) as { fileIds: number[]; folderIds: number[] };
+		const data = readInternalDragData(e.dataTransfer);
+		if (!data) return;
 		if (data.folderIds.includes(folderId)) return;
 		onMoveToFolder?.(data.fileIds, data.folderIds, folderId);
 	};
@@ -163,8 +162,10 @@ export function FileTable({
 		<Table>
 			<TableHeader>
 				<TableRow>
-					<TableHead className="w-8 px-1">
-						<ItemCheckbox checked={allSelected} onChange={handleSelectAll} />
+					<TableHead className="w-12 pl-3 pr-0">
+						<div className="flex justify-center">
+							<ItemCheckbox checked={allSelected} onChange={handleSelectAll} />
+						</div>
 					</TableHead>
 					<TableHead
 						className="cursor-pointer select-none"
@@ -228,11 +229,16 @@ export function FileTable({
 							onDrop={(e) => handleFolderDrop(e, folder.id)}
 							onClick={() => onFolderOpen(folder.id, folder.name)}
 						>
-							<TableCell className="px-1" onClick={(e) => e.stopPropagation()}>
-								<ItemCheckbox
-									checked={selectedFolderIds.has(folder.id)}
-									onChange={() => toggleFolderSelection(folder.id)}
-								/>
+							<TableCell
+								className="w-12 pl-3 pr-0"
+								onClick={(e) => e.stopPropagation()}
+							>
+								<div className="flex justify-center">
+									<ItemCheckbox
+										checked={selectedFolderIds.has(folder.id)}
+										onChange={() => toggleFolderSelection(folder.id)}
+									/>
+								</div>
 							</TableCell>
 							<FolderNameCell folder={folder} />
 							<FolderSizeCell />
@@ -265,11 +271,16 @@ export function FileTable({
 							onDragStart={(e) => handleDragStart(e, file.id, false)}
 							onClick={() => onFileClick(file)}
 						>
-							<TableCell className="px-1" onClick={(e) => e.stopPropagation()}>
-								<ItemCheckbox
-									checked={selectedFileIds.has(file.id)}
-									onChange={() => toggleFileSelection(file.id)}
-								/>
+							<TableCell
+								className="w-12 pl-3 pr-0"
+								onClick={(e) => e.stopPropagation()}
+							>
+								<div className="flex justify-center">
+									<ItemCheckbox
+										checked={selectedFileIds.has(file.id)}
+										onChange={() => toggleFileSelection(file.id)}
+									/>
+								</div>
 							</TableCell>
 							<FileNameCell file={file} />
 							<FileSizeCell size={file.size} />

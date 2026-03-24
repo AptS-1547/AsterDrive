@@ -19,7 +19,37 @@ export type WebdavAccount = components["schemas"]["WebdavAccount"];
 export type WebdavAccountCreated =
 	components["schemas"]["WebdavAccountCreated"];
 export type WebdavAccountInfo = components["schemas"]["WebdavAccountInfo"];
-export type TrashContents = components["schemas"]["TrashContents"];
+
+export interface TrashFileItem {
+	id: number;
+	name: string;
+	size: number;
+	mime_type: string;
+	created_at: string;
+	updated_at: string;
+	deleted_at: string;
+	is_locked: boolean;
+	original_path: string;
+}
+
+export interface TrashFolderItem {
+	id: number;
+	name: string;
+	created_at: string;
+	updated_at: string;
+	deleted_at: string;
+	is_locked: boolean;
+	original_path: string;
+}
+
+export type TrashItem =
+	| (TrashFileItem & { entity_type: "file" })
+	| (TrashFolderItem & { entity_type: "folder" });
+
+export interface TrashContents {
+	files: TrashFileItem[];
+	folders: TrashFolderItem[];
+}
 
 // Auth
 export type CheckResp = components["schemas"]["CheckResp"];

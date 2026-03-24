@@ -2,7 +2,11 @@ import { useState } from "react";
 import { FileThumbnail } from "@/components/files/FileThumbnail";
 import { Icon } from "@/components/ui/icon";
 import { ItemCheckbox } from "@/components/ui/item-checkbox";
-import { DRAG_MIME } from "@/lib/constants";
+import {
+	hasInternalDragData,
+	readInternalDragData,
+	writeInternalDragData,
+} from "@/lib/dragDrop";
 import { cn } from "@/lib/utils";
 import type { FileInfo, FolderInfo } from "@/types/api";
 
@@ -45,12 +49,11 @@ export function FileCard({
 				: isFolder
 					? { fileIds: [], folderIds: [item.id] }
 					: { fileIds: [item.id], folderIds: [] };
-		e.dataTransfer.setData(DRAG_MIME, JSON.stringify(data));
-		e.dataTransfer.effectAllowed = "move";
+		writeInternalDragData(e.dataTransfer, data);
 	};
 
 	const handleDragOver = (e: React.DragEvent) => {
-		if (!isFolder || !e.dataTransfer.types.includes(DRAG_MIME)) return;
+		if (!isFolder || !hasInternalDragData(e.dataTransfer)) return;
 		e.preventDefault();
 		e.dataTransfer.dropEffect = "move";
 		setDragOver(true);
@@ -62,12 +65,8 @@ export function FileCard({
 		setDragOver(false);
 		if (!isFolder) return;
 		e.preventDefault();
-		const raw = e.dataTransfer.getData(DRAG_MIME);
-		if (!raw) return;
-		const data = JSON.parse(raw) as {
-			fileIds: number[];
-			folderIds: number[];
-		};
+		const data = readInternalDragData(e.dataTransfer);
+		if (!data) return;
 		// Don't drop a folder into itself
 		if (data.folderIds.includes(item.id)) return;
 		onDrop?.(data.fileIds, data.folderIds, item.id);

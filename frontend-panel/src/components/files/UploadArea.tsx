@@ -1066,7 +1066,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				/>
 				{/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone */}
 				<div
-					className="relative flex flex-1 flex-col overflow-hidden"
+					className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
 					onDragEnter={handleDragEnter}
 					onDragLeave={handleDragLeave}
 					onDragOver={handleDragOver}

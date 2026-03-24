@@ -22,6 +22,7 @@
 	"name": "Name",
 	"size": "Size",
 	"type": "Type",
+	"original_location": "Original location",
 	"date": "Date",
 	"status": "Status",
 	"created_at": "Created",

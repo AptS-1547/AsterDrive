@@ -8,6 +8,7 @@ export const STORAGE_KEYS = {
 	colorPreset: "aster-color-preset",
 	language: "aster-language",
 	viewMode: "aster-view-mode",
+	trashViewMode: "aster-trash-view-mode",
 	sortBy: "aster-sort-by",
 	sortOrder: "aster-sort-order",
 	previewOpenWith: "aster-preview-open-with",
