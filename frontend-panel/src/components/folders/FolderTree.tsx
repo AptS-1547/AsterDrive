@@ -10,6 +10,7 @@ import { DRAG_MIME } from "@/lib/constants";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
+import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
 import type { FolderInfo } from "@/types/api";
 
@@ -18,6 +19,38 @@ interface TreeNodeData {
 	children: TreeNodeData[] | null; // null = not loaded
 	expanded: boolean;
 	loading: boolean;
+}
+
+interface FolderTreeCache {
+	userId: number | null;
+	nodes: TreeNodeData[];
+	rootLoaded: boolean;
+}
+
+let folderTreeCache: FolderTreeCache | null = null;
+
+function cloneTreeNodes(nodes: TreeNodeData[]): TreeNodeData[] {
+	return nodes.map((node) => ({
+		...node,
+		children: node.children ? cloneTreeNodes(node.children) : null,
+	}));
+}
+
+function createTreeNode(
+	folder: FolderInfo,
+	existing?: TreeNodeData,
+): TreeNodeData {
+	return existing
+		? {
+				...existing,
+				folder,
+			}
+		: {
+				folder,
+				children: null,
+				expanded: false,
+				loading: false,
+			};
 }
 
 function TreeNode({
@@ -40,6 +73,8 @@ function TreeNode({
 	currentFolderId: number | null;
 }) {
 	const isActive = currentFolderId === node.folder.id;
+	const showToggle =
+		node.loading || node.children === null || node.children.length > 0;
 	const [dragOver, setDragOver] = useState(false);
 
 	const handleDragOver = (e: React.DragEvent) => {
@@ -75,19 +110,30 @@ function TreeNode({
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}
 			>
-				<button
-					type="button"
-					className="p-0.5 hover:bg-accent-foreground/10 rounded shrink-0"
-					onClick={() => onToggle(node.folder.id)}
-				>
-					{node.loading ? (
-						<div className="h-3 w-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
-					) : node.expanded ? (
-						<Icon name="CaretDown" className="h-3 w-3 text-muted-foreground" />
-					) : (
-						<Icon name="CaretRight" className="h-3 w-3 text-muted-foreground" />
-					)}
-				</button>
+				{showToggle ? (
+					<button
+						type="button"
+						className="p-0.5 hover:bg-accent-foreground/10 rounded shrink-0 disabled:cursor-default disabled:hover:bg-transparent"
+						onClick={() => onToggle(node.folder.id)}
+						disabled={node.loading}
+					>
+						{node.loading ? (
+							<div className="h-3 w-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
+						) : node.expanded ? (
+							<Icon
+								name="CaretDown"
+								className="h-3 w-3 text-muted-foreground"
+							/>
+						) : (
+							<Icon
+								name="CaretRight"
+								className="h-3 w-3 text-muted-foreground"
+							/>
+						)}
+					</button>
+				) : (
+					<span className="h-4 w-4 shrink-0" aria-hidden="true" />
+				)}
 				<button
 					type="button"
 					className="flex-1 flex items-center gap-1.5 text-left min-w-0 px-1"
@@ -107,7 +153,7 @@ function TreeNode({
 					<span className="truncate">{node.folder.name}</span>
 				</button>
 			</div>
-			{node.expanded && node.children && (
+			{node.expanded && node.children && node.children.length > 0 && (
 				<div>
 					{node.children.map((child) => (
 						<TreeNode
@@ -146,62 +192,118 @@ function updateNode(
 
 export function FolderTree() {
 	const { t } = useTranslation("files");
+	const userId = useAuthStore((s) => s.user?.id ?? null);
+	const location = useLocation();
 	const currentFolderId = useFileStore((s) => s.currentFolderId);
 	const moveToFolder = useFileStore((s) => s.moveToFolder);
 	const storeFolders = useFileStore((s) => s.folders);
 	const storeCurrentFolderId = useFileStore((s) => s.currentFolderId);
-	const [nodes, setNodes] = useState<TreeNodeData[]>([]);
-	const [rootLoaded, setRootLoaded] = useState(false);
+	const isFileBrowserRoute =
+		location.pathname === "/" || location.pathname.startsWith("/folder");
+	const cachedTree =
+		folderTreeCache?.userId === userId ? folderTreeCache : null;
+	const [nodes, setNodes] = useState<TreeNodeData[]>(() =>
+		cachedTree ? cloneTreeNodes(cachedTree.nodes) : [],
+	);
+	const [rootLoaded, setRootLoaded] = useState(
+		() => cachedTree?.rootLoaded ?? false,
+	);
+
+	useEffect(() => {
+		if (folderTreeCache?.userId === userId) return;
+		folderTreeCache = null;
+		setNodes([]);
+		setRootLoaded(false);
+	}, [userId]);
+
+	useEffect(() => {
+		folderTreeCache = {
+			userId,
+			nodes: cloneTreeNodes(nodes),
+			rootLoaded,
+		};
+	}, [nodes, rootLoaded, userId]);
 
 	// Load root folders on mount
 	useEffect(() => {
+		if (rootLoaded) return;
+
+		let cancelled = false;
+
 		async function loadRoot() {
 			try {
 				const contents = await fileService.listRoot();
-				setNodes(
-					contents.folders.map((f) => ({
-						folder: f,
-						children: null,
-						expanded: false,
-						loading: false,
-					})),
-				);
+				if (cancelled) return;
+				setNodes(contents.folders.map((f) => createTreeNode(f)));
 				setRootLoaded(true);
 			} catch {
 				// Silently fail - file store will show errors
 			}
 		}
-		loadRoot();
-	}, []);
+		void loadRoot();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [rootLoaded]);
 
 	// Refresh root when navigating to root and store folders change
 	useEffect(() => {
-		if (rootLoaded && storeCurrentFolderId === null) {
+		if (rootLoaded && storeCurrentFolderId === null && isFileBrowserRoute) {
 			setNodes((prev) =>
 				storeFolders.map((f) => {
 					const existing = prev.find((n) => n.folder.id === f.id);
-					return existing
-						? { ...existing, folder: f }
-						: {
-								folder: f,
-								children: null,
-								expanded: false,
-								loading: false,
-							};
+					return createTreeNode(f, existing);
 				}),
 			);
 		}
-	}, [storeFolders, storeCurrentFolderId, rootLoaded]);
+	}, [isFileBrowserRoute, storeFolders, storeCurrentFolderId, rootLoaded]);
+
+	useEffect(() => {
+		if (!rootLoaded || storeCurrentFolderId === null) return;
+
+		setNodes((prev) =>
+			updateNode(prev, storeCurrentFolderId, (node) => {
+				const existingChildren = node.children ?? [];
+				const nextChildren = storeFolders.map((folder) =>
+					createTreeNode(
+						folder,
+						existingChildren.find((child) => child.folder.id === folder.id),
+					),
+				);
+
+				return {
+					...node,
+					loading: false,
+					children: nextChildren,
+					expanded:
+						nextChildren.length > 0
+							? node.expanded || currentFolderId === storeCurrentFolderId
+							: false,
+				};
+			}),
+		);
+	}, [currentFolderId, rootLoaded, storeCurrentFolderId, storeFolders]);
 
 	const handleToggle = useCallback(async (folderId: number) => {
 		let shouldLoad = false;
 
 		setNodes((prev) =>
 			updateNode(prev, folderId, (n) => {
+				if (n.loading) return n;
+
 				if (n.expanded) {
 					// Collapse
 					return { ...n, expanded: false };
 				}
+
+				if (n.children !== null) {
+					return {
+						...n,
+						expanded: n.children.length > 0,
+					};
+				}
+
 				// Expand - need to load children
 				shouldLoad = true;
 				return { ...n, loading: true, expanded: true };
@@ -212,16 +314,13 @@ export function FolderTree() {
 
 		try {
 			const contents = await fileService.listFolder(folderId);
+			const childNodes = contents.folders.map((f) => createTreeNode(f));
 			setNodes((prev) =>
 				updateNode(prev, folderId, (n) => ({
 					...n,
 					loading: false,
-					children: contents.folders.map((f) => ({
-						folder: f,
-						children: null,
-						expanded: false,
-						loading: false,
-					})),
+					expanded: childNodes.length > 0,
+					children: childNodes,
 				})),
 			);
 		} catch {
@@ -236,7 +335,6 @@ export function FolderTree() {
 	}, []);
 
 	const navigate = useNavigate();
-	const location = useLocation();
 
 	const handleNavigate = useCallback(
 		(id: number, name: string) => {
