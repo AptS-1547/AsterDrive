@@ -1,7 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { FolderTree } from "@/components/folders/FolderTree";
-import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,18 +10,11 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 
 interface SidebarProps {
-	collapsed: boolean;
-	onToggle: () => void;
 	mobileOpen: boolean;
 	onMobileClose: () => void;
 }
 
-export function Sidebar({
-	collapsed,
-	onToggle,
-	mobileOpen,
-	onMobileClose,
-}: SidebarProps) {
+export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
 	const { t } = useTranslation();
 	const location = useLocation();
 	const user = useAuthStore((s) => s.user);
@@ -35,25 +27,10 @@ export function Sidebar({
 
 	const sidebarContent = (
 		<div className="flex flex-col h-full">
-			{/* Header with collapse toggle */}
-			<div className="p-3 flex items-center justify-end">
-				<Button
-					variant="ghost"
-					size="icon"
-					className="h-7 w-7 hidden md:flex"
-					onClick={onToggle}
-				>
-					{collapsed ? (
-						<Icon name="CaretRight" className="h-4 w-4" />
-					) : (
-						<Icon name="CaretLeft" className="h-4 w-4" />
-					)}
-				</Button>
-			</div>
-			<Separator />
-
 			{/* Folder tree */}
-			<ScrollArea className="flex-1">{!collapsed && <FolderTree />}</ScrollArea>
+			<ScrollArea className="flex-1">
+				<FolderTree />
+			</ScrollArea>
 
 			<Separator />
 
@@ -66,20 +43,19 @@ export function Sidebar({
 						onClick={onMobileClose}
 						className={cn(
 							"flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors",
-							collapsed && "justify-center px-2",
 							location.pathname === link.to
 								? "bg-accent text-accent-foreground"
 								: "text-muted-foreground hover:text-foreground hover:bg-accent/50",
 						)}
 					>
 						<Icon name={link.icon} className="h-4 w-4 shrink-0" />
-						{!collapsed && link.label}
+						{link.label}
 					</Link>
 				))}
 			</div>
 
 			{/* Storage usage */}
-			{!collapsed && user && (
+			{user && (
 				<>
 					<Separator />
 					<div className="p-3 space-y-1.5">
@@ -131,7 +107,7 @@ export function Sidebar({
 					"border-r flex flex-col bg-background transition-all duration-200",
 					// Desktop
 					"hidden md:flex",
-					collapsed ? "w-14" : "w-60",
+					"w-60",
 					// Mobile override when open
 					mobileOpen &&
 						"fixed inset-y-0 left-0 z-50 flex w-60 md:relative md:z-auto",
