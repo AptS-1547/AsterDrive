@@ -158,7 +158,9 @@ async fn cleanup_blob_if_unused(state: &AppState, blob_id: i64) -> Result<()> {
         }
         let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
         let driver = state.driver_registry.get_driver(&policy)?;
-        let _ = driver.delete(&blob.storage_path).await;
+        if let Err(e) = driver.delete(&blob.storage_path).await {
+            tracing::warn!("failed to delete blob file {}: {e}", blob.id);
+        }
         file_repo::delete_blob(db, blob.id).await?;
     } else {
         file_repo::decrement_blob_ref_count(db, blob.id).await?;

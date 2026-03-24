@@ -365,49 +365,16 @@ pub async fn complete_upload(
         driver.put_file(&storage_path, &assembled_path).await?;
     }
 
-    // ── [事务内] blob 查找/创建 → 文件记录创建 → 配额更新 → session 状态更新 ──
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
-
-    // Blob 去重（事务内重新检查，防止并发竞争）
-    let blob =
-        file_repo::find_or_create_blob(&txn, &file_hash, size, policy.id, &storage_path).await?;
-
-    let final_name = file_repo::resolve_unique_filename(
-        &txn,
-        session.user_id,
-        session.folder_id,
-        &session.filename,
+    let created = finalize_upload_session(
+        state,
+        &session,
+        &file_hash,
+        size,
+        policy.id,
+        &storage_path,
+        now,
     )
     .await?;
-
-    let mime = mime_guess::from_path(&final_name)
-        .first_or_octet_stream()
-        .to_string();
-
-    let file_model = file::ActiveModel {
-        name: Set(final_name),
-        folder_id: Set(session.folder_id),
-        blob_id: Set(blob.id),
-        size: Set(blob.size),
-        user_id: Set(session.user_id),
-        mime_type: Set(mime),
-        created_at: Set(now),
-        updated_at: Set(now),
-        ..Default::default()
-    };
-    let created = file_repo::create(&txn, file_model).await?;
-
-    // 配额更新
-    user_repo::update_storage_used(&txn, session.user_id, size).await?;
-
-    // session 状态更新
-    let session_fresh = upload_session_repo::find_by_id(&txn, upload_id).await?;
-    let mut active: upload_session::ActiveModel = session_fresh.into();
-    active.status = Set(UploadSessionStatus::Completed);
-    active.updated_at = Set(Utc::now());
-    upload_session_repo::update(&txn, active).await?;
-
-    txn.commit().await.map_err(AsterError::from)?;
 
     // ── [事务外] 清理临时文件 ──
     let temp_dir = format!("data/.uploads/{upload_id}");
@@ -496,13 +463,39 @@ async fn complete_presigned_upload(
         driver.copy_object(&temp_key, &storage_path).await?;
     }
 
-    // ── [事务内] blob 查找/创建 → 文件记录创建 → 配额更新 → session 状态更新 ──
+    let created = finalize_upload_session(
+        state,
+        &session,
+        &file_hash,
+        actual_size,
+        policy.id,
+        &storage_path,
+        now,
+    )
+    .await?;
+
+    // ── [事务外] S3 临时对象清理（best-effort） ──
+    if let Err(e) = driver.delete(&temp_key).await {
+        tracing::warn!("failed to delete S3 temp object: {e}");
+    }
+
+    Ok(created)
+}
+
+/// 上传完成的事务内共用逻辑：blob 去重 → 文件记录 → 配额 → session 状态
+async fn finalize_upload_session(
+    state: &AppState,
+    session: &upload_session::Model,
+    file_hash: &str,
+    size: i64,
+    policy_id: i64,
+    storage_path: &str,
+    now: chrono::DateTime<Utc>,
+) -> Result<file::Model> {
     let txn = state.db.begin().await.map_err(AsterError::from)?;
 
-    // Blob 去重（事务内重新检查，防止并发竞争）
     let blob =
-        file_repo::find_or_create_blob(&txn, &file_hash, actual_size, policy.id, &storage_path)
-            .await?;
+        file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
 
     let final_name = file_repo::resolve_unique_filename(
         &txn,
@@ -516,23 +509,24 @@ async fn complete_presigned_upload(
         .first_or_octet_stream()
         .to_string();
 
-    let file_model = file::ActiveModel {
-        name: Set(final_name),
-        folder_id: Set(session.folder_id),
-        blob_id: Set(blob.id),
-        size: Set(blob.size),
-        user_id: Set(session.user_id),
-        mime_type: Set(mime),
-        created_at: Set(now),
-        updated_at: Set(now),
-        ..Default::default()
-    };
-    let created = file_repo::create(&txn, file_model).await?;
+    let created = file_repo::create(
+        &txn,
+        file::ActiveModel {
+            name: Set(final_name),
+            folder_id: Set(session.folder_id),
+            blob_id: Set(blob.id),
+            size: Set(blob.size),
+            user_id: Set(session.user_id),
+            mime_type: Set(mime),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await?;
 
-    // 配额更新
-    user_repo::update_storage_used(&txn, session.user_id, actual_size).await?;
+    user_repo::update_storage_used(&txn, session.user_id, size).await?;
 
-    // session 状态更新
     let session_fresh = upload_session_repo::find_by_id(&txn, &session.id).await?;
     let mut active: upload_session::ActiveModel = session_fresh.into();
     active.status = Set(UploadSessionStatus::Completed);
@@ -540,12 +534,6 @@ async fn complete_presigned_upload(
     upload_session_repo::update(&txn, active).await?;
 
     txn.commit().await.map_err(AsterError::from)?;
-
-    // ── [事务外] S3 临时对象清理（best-effort） ──
-    if let Err(e) = driver.delete(&temp_key).await {
-        tracing::warn!("failed to delete S3 temp object: {e}");
-    }
-
     Ok(created)
 }
 
@@ -626,7 +614,12 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
         }
         let temp_dir = format!("data/.uploads/{}", session.id);
         crate::utils::cleanup_temp_dir(&temp_dir).await;
-        let _ = upload_session_repo::delete(&state.db, &session.id).await;
+        if let Err(e) = upload_session_repo::delete(&state.db, &session.id).await {
+            tracing::warn!(
+                "failed to delete expired upload session {}: {e}",
+                session.id
+            );
+        }
     }
     if count > 0 {
         tracing::info!("cleaned up {count} expired upload sessions");
