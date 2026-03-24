@@ -7,15 +7,15 @@
 <p align="center">
   基于 Rust 和 React 构建的自托管云存储系统。
   <br />
-  支持单二进制交付、Alpine 容器部署、存储策略、WebDAV、分享、版本历史、回收站，以及三种上传模式。
+  支持单二进制交付、Alpine 容器部署、存储策略、WebDAV、分享、版本历史、回收站，以及四种上传模式。
 </p>
 
 <p align="center">
   <a href="https://asterdrive.docs.esap.cc/"><img alt="在线文档" src="https://img.shields.io/badge/docs-VitePress-7C3AED?style=for-the-badge&logo=vitepress&logoColor=white"></a>
   <a href="README.md"><img alt="English README" src="https://img.shields.io/badge/README-English-E11D48?style=for-the-badge"></a>
   <a href="docs/guide/getting-started.md"><img alt="快速开始" src="https://img.shields.io/badge/快速开始-guide-2563EB?style=for-the-badge"></a>
-  <a href="docs/architecture.md"><img alt="架构文档" src="https://img.shields.io/badge/架构-总览-0F172A?style=for-the-badge"></a>
-  <a href="docs/api/index.md"><img alt="API 文档" src="https://img.shields.io/badge/API-reference-059669?style=for-the-badge"></a>
+  <a href="developer-docs/architecture.md"><img alt="架构文档" src="https://img.shields.io/badge/架构-总览-0F172A?style=for-the-badge"></a>
+  <a href="developer-docs/api/index.md"><img alt="API 文档" src="https://img.shields.io/badge/API-reference-059669?style=for-the-badge"></a>
   <a href="docs/deployment/docker.md"><img alt="Docker 部署" src="https://img.shields.io/badge/docker-deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
 </p>
 
@@ -24,7 +24,7 @@
 - **单二进制交付** - 前端资源通过 `rust-embed` 嵌入 Rust 服务端，无需额外 Web 服务器
 - **多数据库支持** - 默认 SQLite，也支持 MySQL 和 PostgreSQL，统一通过 SeaORM 接入
 - **可插拔存储策略** - 支持本地文件系统和 S3 兼容对象存储，并支持用户级、文件夹级覆盖
-- **三种上传模式** - `direct`、`chunked`、`presigned`，由存储策略和文件大小协商决定
+- **四种上传模式** - `direct`、`chunked`、`presigned`、`presigned_multipart`，由存储策略和文件大小协商决定
 - **分享能力** - 支持文件和文件夹分享，支持密码、过期时间、下载次数限制、公开分享页，以及分享目录下子文件下载
 - **WebDAV 支持** - 独立 WebDAV 账号、访问根目录限制、数据库锁、自定义属性
 - **生命周期管理** - 内置回收站、版本历史、缩略图、资源锁、周期清理任务和运行时配置管理

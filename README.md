@@ -7,15 +7,15 @@
 <p align="center">
   Self-hosted cloud storage built with Rust and React.
   <br />
-  Single-binary delivery, Alpine container support, storage policies, WebDAV, sharing, version history, trash, and three upload modes.
+  Single-binary delivery, Alpine container support, storage policies, WebDAV, sharing, version history, trash, and four upload modes.
 </p>
 
 <p align="center">
   <a href="https://asterdrive.docs.esap.cc/"><img alt="Documentation Site" src="https://img.shields.io/badge/docs-VitePress-7C3AED?style=for-the-badge&logo=vitepress&logoColor=white"></a>
   <a href="README.zh.md"><img alt="中文 README" src="https://img.shields.io/badge/README-中文-E11D48?style=for-the-badge"></a>
   <a href="docs/guide/getting-started.md"><img alt="Quick Start" src="https://img.shields.io/badge/quick%20start-guide-2563EB?style=for-the-badge"></a>
-  <a href="docs/architecture.md"><img alt="Architecture" src="https://img.shields.io/badge/architecture-overview-0F172A?style=for-the-badge"></a>
-  <a href="docs/api/index.md"><img alt="API Docs" src="https://img.shields.io/badge/API-reference-059669?style=for-the-badge"></a>
+  <a href="developer-docs/architecture.md"><img alt="Architecture" src="https://img.shields.io/badge/architecture-overview-0F172A?style=for-the-badge"></a>
+  <a href="developer-docs/api/index.md"><img alt="API Docs" src="https://img.shields.io/badge/API-reference-059669?style=for-the-badge"></a>
   <a href="docs/deployment/docker.md"><img alt="Docker" src="https://img.shields.io/badge/docker-deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
 </p>
 
@@ -24,7 +24,7 @@
 - **Single binary delivery** - frontend assets are embedded into the Rust server with `rust-embed`
 - **Multi-database** - SQLite by default, with MySQL and PostgreSQL support through SeaORM
 - **Pluggable storage policies** - local filesystem and S3-compatible object storage, with user-level and folder-level overrides
-- **Three upload modes** - `direct`, `chunked`, and `presigned`, negotiated by policy and file size
+- **Four upload modes** - `direct`, `chunked`, `presigned`, and `presigned_multipart`, negotiated by policy and file size
 - **Sharing** - file and folder sharing with password, expiration time, download limits, public share page, and shared child-file download support
 - **WebDAV** - dedicated WebDAV accounts, scoped root folder access, database-backed locks, and custom properties
 - **Lifecycle management** - trash, version history, thumbnails, locks, periodic cleanup jobs, and runtime config management

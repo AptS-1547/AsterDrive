@@ -12,6 +12,7 @@ retry_count = 3
 jwt_secret = "change-me-in-production"
 access_token_ttl_secs = 900       # 15 分钟
 refresh_token_ttl_secs = 604800   # 7 天
+cookie_secure = false             # 本地 HTTP 测试可设为 false；HTTPS 正式环境建议改为 true
 
 [cache]
 enabled = true

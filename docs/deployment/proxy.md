@@ -7,7 +7,7 @@
 - 大文件上传
 - WebDAV 客户端接入
 
-## 代理时需要保留的内容
+## 代理时要保留什么
 
 如果启用了 WebDAV，请确认代理层不会丢失：
 
@@ -22,12 +22,12 @@
 
 ## 上传大小
 
-代理层要先取消自己的 body 限制，例如在 Nginx 里：
+代理层要先取消自己的上传大小限制，例如在 Nginx 里：
 
-注意三种上传模式对代理层的压力不同：
+注意四种上传方式对代理层的压力不同：
 
 - `direct` / `chunked`：上传流量直接经过 AsterDrive 与代理层
-- `presigned`：浏览器会直接把文件 `PUT` 到对象存储，代理层和 AsterDrive 只参与协商与完成阶段
+- `presigned` / `presigned_multipart`：浏览器会直接把文件或分片发到对象存储，代理层和 AsterDrive 只参与协商与完成阶段
 
 ```nginx
 client_max_body_size 0;
@@ -35,7 +35,6 @@ client_max_body_size 0;
 
 真正的限制仍然来自：
 
-- 普通 REST：后端固定 payload 限制
 - WebDAV：`webdav.payload_limit`
 - 文件落盘：存储策略 `max_file_size`
 
@@ -82,7 +81,7 @@ server {
 }
 ```
 
-## 当前代码相关的注意事项
+## 额外提醒
 
-- `/swagger-ui` 只在 `debug` 构建存在；如果上游是发布镜像，没有这个路径是正常行为
-- `/s/:token`、`/assets/*` 和其余前端页面都由同一个后端服务返回，不需要再额外拆分静态站点
+- 如果你修改了 WebDAV 前缀，代理路径和客户端地址都要一起改
+- 公开分享页、主站页面和静态资源都由同一个 AsterDrive 服务返回，不需要额外再拆静态站点

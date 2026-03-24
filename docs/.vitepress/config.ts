@@ -20,7 +20,7 @@ const VERSION = getVersion()
 
 export default defineConfig({
   title: 'AsterDrive',
-  description: '自托管云存储系统，支持多存储策略、三种上传模式、分享、WebDAV、版本历史与回收站',
+  description: 'AsterDrive 使用与部署手册，涵盖安装、配置、文件管理、分享、WebDAV 和管理后台',
 
   locales: {
     root: {
@@ -30,11 +30,10 @@ export default defineConfig({
         nav: [
           { text: '首页', link: '/' },
           { text: '快速开始', link: '/guide/getting-started' },
-          { text: '使用指南', link: '/guide/user-guide' },
+          { text: '用户手册', link: '/guide/user-guide' },
+          { text: '管理后台', link: '/guide/admin-console' },
           { text: '配置', link: '/config/' },
-          { text: 'API', link: '/api/' },
           { text: '部署', link: '/deployment/' },
-          { text: '架构', link: '/architecture' },
           {
             text: `v${VERSION}`,
             items: [
@@ -78,13 +77,13 @@ export default defineConfig({
     sidebar: {
       '/guide/': [
         {
-          text: '开始使用',
+          text: '使用指南',
           items: [
-            { text: '安装', link: '/guide/installation' },
+            { text: '安装部署', link: '/guide/installation' },
             { text: '快速开始', link: '/guide/getting-started' },
             { text: '用户手册', link: '/guide/user-guide' },
-            { text: '核心流程', link: '/guide/core-workflows' },
-            { text: '上传模式', link: '/guide/upload-modes' },
+            { text: '常用流程', link: '/guide/core-workflows' },
+            { text: '上传与大文件', link: '/guide/upload-modes' },
             { text: '分享', link: '/guide/sharing' },
             { text: '文件编辑', link: '/guide/editing' },
             { text: '管理面板', link: '/guide/admin-console' }
@@ -98,30 +97,12 @@ export default defineConfig({
             { text: '配置概览', link: '/config/' },
             { text: '服务器', link: '/config/server' },
             { text: '数据库', link: '/config/database' },
-            { text: '认证', link: '/config/auth' },
+            { text: '登录与会话', link: '/config/auth' },
             { text: '存储策略', link: '/config/storage' },
             { text: 'WebDAV', link: '/config/webdav' },
-            { text: '运行时配置', link: '/config/runtime' },
+            { text: '系统设置', link: '/config/runtime' },
             { text: '缓存', link: '/config/cache' },
             { text: '日志', link: '/config/logging' }
-          ]
-        }
-      ],
-      '/api/': [
-        {
-          text: 'API 文档',
-          items: [
-            { text: 'API 概览', link: '/api/' },
-            { text: '认证', link: '/api/auth' },
-            { text: '文件', link: '/api/files' },
-            { text: '文件夹', link: '/api/folders' },
-            { text: '批量操作', link: '/api/batch' },
-            { text: '分享', link: '/api/shares' },
-            { text: '回收站', link: '/api/trash' },
-            { text: 'WebDAV', link: '/api/webdav' },
-            { text: '属性', link: '/api/properties' },
-            { text: '管理', link: '/api/admin' },
-            { text: '健康检查', link: '/api/health' }
           ]
         }
       ],
@@ -130,18 +111,11 @@ export default defineConfig({
           text: '部署',
           items: [
             { text: '部署概览', link: '/deployment/' },
-            { text: '运行时行为', link: '/deployment/runtime-behavior' },
-            { text: '前端资源', link: '/deployment/frontend-assets' },
             { text: 'Docker', link: '/deployment/docker' },
             { text: 'systemd', link: '/deployment/systemd' },
-            { text: '反向代理', link: '/deployment/proxy' }
+            { text: '反向代理', link: '/deployment/proxy' },
+            { text: '首次启动', link: '/deployment/runtime-behavior' }
           ]
-        }
-      ],
-      '/architecture': [
-        {
-          text: '架构',
-          items: [{ text: '系统架构', link: '/architecture' }]
         }
       ]
     },

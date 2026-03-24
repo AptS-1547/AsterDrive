@@ -98,4 +98,3 @@ cargo build --release
 - [部署概览](/deployment/)
 - [安装部署](/guide/installation)
 - [启动后的运行时行为](/deployment/runtime-behavior)
-- [架构概览](/architecture)

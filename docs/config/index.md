@@ -1,16 +1,17 @@
 # 配置概览
 
-AsterDrive 当前有两层配置面：
+AsterDrive 的配置可以分成三类来看：
 
-- 静态配置：`config.toml` 与 `ASTER__` 环境变量
-- 运行时配置：数据库表 `system_config`
+- `config.toml`：决定服务怎么启动
+- 管理后台里的系统设置：决定回收站、版本、WebDAV 这类运行行为
+- 存储策略：决定文件存到哪里、怎么上传
 
 首次启动时，如果当前工作目录不存在 `config.toml`，服务会自动生成一份默认配置。
 
 ## 优先级
 
 ```text
-环境变量 (ASTER__ 前缀) > config.toml > 代码默认值
+环境变量 (ASTER__ 前缀) > config.toml > 内置默认值
 ```
 
 环境变量使用双下划线 `__` 表示层级：
@@ -21,42 +22,43 @@ ASTER__DATABASE__URL="postgres://user:pass@localhost/asterdrive"
 ASTER__WEBDAV__PREFIX=/dav
 ```
 
-## 当前静态配置分区
+## `config.toml` 里有哪些分区
 
 | 分区 | 作用 |
 | --- | --- |
 | [server](/config/server) | 监听地址、端口、工作线程 |
 | [database](/config/database) | 数据库连接、连接池、启动重试 |
-| [auth](/config/auth) | JWT 密钥、token 生命周期 |
+| [auth](/config/auth) | 登录密钥、会话有效期、Cookie 安全设置 |
 | [cache](/config/cache) | 内存缓存 / Redis / 关闭缓存 |
 | [logging](/config/logging) | 日志级别、格式、输出文件 |
-| [webdav](/config/webdav) | WebDAV 路由前缀和请求体硬上限 |
-| [storage](/config/storage) | 数据库存储策略模型与解析规则 |
+| [webdav](/config/webdav) | WebDAV 路径前缀和上传体积上限 |
 
-## 当前真正生效的运行时配置
+## 管理后台里的系统设置
 
-| Key | 作用 |
+管理员可以在后台直接调整这些常见设置：
+
+| 设置项 | 作用 |
 | --- | --- |
-| `default_storage_quota` | 新注册用户的默认总配额 |
-| `webdav_enabled` | 是否启用 WebDAV |
-| `trash_retention_days` | 回收站保留天数 |
-| `max_versions_per_file` | 单文件最大历史版本数 |
-| `audit_log_enabled` | 是否记录审计日志 |
-| `audit_log_retention_days` | 审计日志保留天数 |
+| 默认用户配额 | 新用户注册后默认能使用多少空间 |
+| WebDAV 开关 | 是否允许 WebDAV 访问 |
+| 回收站保留天数 | 已删除项目保留多久 |
+| 历史版本数量 | 单个文件最多保留多少个旧版本 |
+| 审计日志开关 | 是否记录关键操作 |
+| 审计日志保留天数 | 审计日志保留多久 |
 
-运行时配置由管理员通过 `/api/v1/admin/config/*` 在线维护，详情见 [运行时配置](/config/runtime)。
+详情见 [系统设置](/config/runtime)。
 
-## 三类配置各自适合放什么
+## 三类配置该怎么分工
 
 | 类型 | 放什么 | 典型示例 |
 | --- | --- | --- |
-| 静态配置 | 影响启动与路由注册的参数 | 监听地址、数据库 URL、JWT 密钥、日志格式、WebDAV 前缀 |
-| 运行时配置 | 允许管理员在线调整的业务开关 | WebDAV 开关、回收站保留期、版本保留数、审计日志保留期 |
-| 存储策略 | 文件写入哪个后端以及怎么上传 | local / s3、`base_path`、`chunk_size`、`presigned_upload` |
+| `config.toml` | 影响启动和登录的参数 | 监听地址、数据库 URL、JWT 密钥、Cookie 安全设置 |
+| 系统设置 | 允许管理员在线调整的业务开关 | WebDAV 开关、回收站保留期、版本保留数 |
+| 存储策略 | 文件写到哪里，以及怎么上传 | 本地目录、S3、分片大小、是否开启直传 |
 
-## 当前生成的默认配置
+## 默认配置示例
 
-下面这份内容来自 `src/config/schema.rs` 的默认值，而不是旧示例文件。
+下面这份是当前版本会生成的默认配置结构：
 
 ```toml
 [server]
@@ -73,6 +75,7 @@ retry_count = 3
 jwt_secret = "<首次启动自动生成>"
 access_token_ttl_secs = 900
 refresh_token_ttl_secs = 604800
+cookie_secure = true
 
 [cache]
 enabled = true
@@ -92,18 +95,18 @@ payload_limit = 10737418240
 
 ## 路径语义
 
-代码固定从当前工作目录读取 `config.toml`。这会影响：
+如果你使用相对路径，当前工作目录会影响：
 
-- 配置文件默认位置
-- 默认 SQLite 文件位置
-- 相对路径形式的本地存储目录
-- 运行时优先读取的 `./frontend-panel/dist`
+- `config.toml` 的位置
+- 默认 SQLite 的位置
+- 默认本地上传目录的位置
 
 部署时请始终先确定工作目录，再决定挂载方案。
 
 ## 继续阅读
 
 - [服务器](/config/server)
+- [登录与会话](/config/auth)
 - [存储策略](/config/storage)
-- [运行时配置](/config/runtime)
+- [系统设置](/config/runtime)
 - [WebDAV](/config/webdav)

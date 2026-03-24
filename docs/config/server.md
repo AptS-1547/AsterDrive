@@ -7,36 +7,43 @@ port = 3000
 workers = 0
 ```
 
+## 什么时候需要改
+
+- 本机测试：一般保持默认即可
+- Docker 或容器：通常把 `host` 改成 `0.0.0.0`
+- 反向代理部署：端口可以继续用 `3000`
+- 机器负载较高时：再考虑调整 `workers`
+
 ## 字段说明
 
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `host` | string | `"127.0.0.1"` | 绑定地址；容器或反向代理场景通常应设为 `0.0.0.0` |
+| `host` | string | `"127.0.0.1"` | 绑定地址；容器部署通常设为 `0.0.0.0` |
 | `port` | u16 | `3000` | HTTP 监听端口 |
-| `workers` | usize | `0` | Actix worker 数量；`0` 表示自动取 CPU 核心数 |
+| `workers` | usize | `0` | 工作线程数；`0` 表示自动选择 |
 
-## 固定的请求体限制
+## 常见写法
 
-除 WebDAV 以外，当前代码里还有两处固定上限：
+### 本机测试
 
-- 通用 payload：`10 MiB`
-- JSON body：`1 MiB`
-
-这两个值在 `src/main.rs` 里硬编码，不能通过 `config.toml` 修改。
-
-WebDAV 例外，单独走 `[webdav].payload_limit`。
-
-## Keep-Alive 与超时
-
-当前 HTTP 服务还固定了这些行为：
-
-- keep-alive：30 秒
-- client request timeout：5 秒
-- client disconnect timeout：1 秒
-
-## 容器环境常见设置
-
-```bash
-ASTER__SERVER__HOST=0.0.0.0
-ASTER__SERVER__PORT=3000
+```toml
+[server]
+host = "127.0.0.1"
+port = 3000
+workers = 0
 ```
+
+### Docker 或容器
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 3000
+workers = 0
+```
+
+## 部署建议
+
+- 不确定时，先保持 `workers = 0`
+- 对外访问是否稳定，通常更依赖反向代理和 HTTPS 配置
+- 如果你已经用了 Caddy 或 Nginx，应用本身继续监听本地端口即可

@@ -1,39 +1,8 @@
 # Docker 部署
 
-当前仓库的 `Dockerfile` 是三阶段构建：
+Docker 适合 NAS、单机和小团队部署。推荐把数据库和默认上传目录一起放到 `/data`，这样持久化最简单。
 
-1. 构建前端
-2. 构建 Rust 二进制
-3. 打包到 Alpine 运行镜像
-
-## 当前镜像的重要事实
-
-镜像里只有一个入口：
-
-```text
-/aster_drive
-```
-
-当前 `Dockerfile` 仍然没有设置 `WORKDIR`，因此进程默认在 `/` 目录启动。这会直接影响默认路径：
-
-- 配置文件：`/config.toml`
-- 默认 SQLite：`/asterdrive.db`
-- 默认本地存储目录：`/data/uploads`
-
-## 推荐做法
-
-容器第一次成功启动时，仍会自动执行 migration、自动创建默认本地存储策略，并在数据库中补齐默认 `system_config`。因此镜像本身不需要额外的初始化脚本，但你必须先把数据库和存储目录挂成持久化卷。
-
-如果你用默认本地存储，建议显式把数据库也放到 `/data` 下，这样一个卷就能持久化数据库和上传内容：
-
-```bash
--e ASTER__DATABASE__URL="sqlite:///data/asterdrive.db?mode=rwc"
--v asterdrive-data:/data
-```
-
-## 直接运行镜像
-
-最小示例：
+## 推荐启动命令
 
 ```bash
 docker run -d \
@@ -45,6 +14,12 @@ docker run -d \
   -v $(pwd)/config.toml:/config.toml:ro \
   ghcr.io/apts-1547/asterdrive:latest
 ```
+
+这个启动方式会让：
+
+- 配置文件位于 `/config.toml`
+- 数据库位于 `/data/asterdrive.db`
+- 默认本地上传目录位于 `/data/uploads`
 
 ## Compose 示例
 
@@ -66,15 +41,18 @@ volumes:
   asterdrive-data:
 ```
 
-## 配置文件生成方式
+## 配置文件怎么准备
 
-当前程序没有 `--print-config` 之类的参数。常见做法有两种：
+常见做法有两种：
 
 - 在容器外先准备好 `config.toml`，再只读挂载进去
 - 或先让服务在持久化工作目录里启动一次，利用自动生成逻辑产出默认配置，再回头修改
 
-- 参考仓库根目录的 `config.example.toml`
-- 先在本地运行一次二进制，让它自动生成 `config.toml`
+第一次部署时，最值得先确认的是这几项：
+
+- `auth.jwt_secret` 是否已经固定
+- 如果暂时是本地 HTTP 测试，`auth.cookie_secure` 是否已改成 `false`
+- WebDAV 路径和上传大小是否符合预期
 
 ## 从源码构建镜像
 
@@ -82,12 +60,10 @@ volumes:
 docker build -t asterdrive .
 ```
 
-也可以显式指定 feature：
+## 启动后先检查
 
-```bash
-docker build --build-arg CARGO_FEATURES="server" -t asterdrive .
-```
-
-## Swagger 说明
-
-发布镜像是 `release` 构建，因此默认不会暴露 `/swagger-ui`。这是构建行为，不是 Alpine 运行镜像或代理配置问题。
+1. 打开 `http://你的主机:3000`
+2. 创建第一个管理员账号
+3. 上传一个测试文件
+4. 检查 `/health` 和 `/health/ready`
+5. 如果要用 WebDAV，再做一次客户端真实连接测试

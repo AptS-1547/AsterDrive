@@ -1,18 +1,21 @@
 # 快速开始
 
+这篇文档适合第一次试用 AsterDrive。目标很简单：把服务跑起来，创建第一个管理员，然后完成一次上传、一次分享和一次基础管理检查。
+
 ## 1. 启动服务
 
 ```bash
 cargo run
 ```
 
-首次启动会自动完成这些动作：
+如果你已经有编译好的二进制，也可以直接运行 `./aster_drive`。首次启动时，AsterDrive 会自动完成这些准备工作：
 
 - 在当前工作目录生成 `config.toml`
-- 创建默认 SQLite 数据库
-- 执行数据库迁移
-- 如果系统里还没有任何存储策略，自动创建默认本地策略 `Local Default`
-- 初始化内置运行时配置 `system_config`
+- 创建默认 SQLite 数据库 `asterdrive.db`
+- 创建默认本地上传目录 `data/uploads`
+- 自动执行数据库迁移
+- 自动创建默认本地存储策略 `Local Default`
+- 初始化管理后台里会用到的系统设置
 
 默认地址：
 
@@ -20,116 +23,65 @@ cargo run
 http://127.0.0.1:3000
 ```
 
-## 2. 注册第一个账号
+如果你想用 Docker 或 systemd 部署，直接看 [安装部署](/guide/installation)。
 
-第一个注册的用户会自动成为管理员。
+## 2. 打开页面并创建第一个管理员
 
-```bash
-curl -X POST http://localhost:3000/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","email":"admin@example.com","password":"your-password"}'
-```
+1. 在浏览器打开 `http://127.0.0.1:3000`
+2. 输入用户名、邮箱和密码
+3. 完成首次注册后登录
 
-## 3. 登录
+第一个创建出来的账号会自动成为管理员。
 
-```bash
-curl -X POST http://localhost:3000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -c cookies.txt \
-  -d '{"username":"admin","password":"your-password"}'
-```
+如果你是在本机用纯 HTTP 访问，发现登录后页面马上又回到登录页，请把配置文件里的 `auth.cookie_secure` 改成 `false`，然后重启服务。正式上线到 HTTPS 域名后，再改回 `true`。
 
-登录成功后服务会写入两个 HttpOnly Cookie：
+## 3. 上传第一个文件
 
-- `aster_access`
-- `aster_refresh`
+登录后你会进入文件浏览器首页。先做三件事：
 
-## 4. 打开管理面板
+- 创建一个测试文件夹
+- 上传一个文件
+- 打开它，确认能正常预览或下载
 
-浏览器访问：
+如果你测试的是大文件，上传过程会自动在普通上传、分片上传和 S3 直传之间选择，不需要手动切换。
 
-```text
-http://localhost:3000
-```
+## 4. 试一次分享
 
-当前前端已落地的主要页面包括：
+在文件列表里打开某个文件或文件夹的操作菜单，创建一个分享链接。你可以按需设置：
 
-- 文件浏览器 `/`
-- 回收站 `/trash`
-- WebDAV 账号管理 `/settings/webdav`
-- 管理后台 `/admin/*`
-- 公开分享页 `/s/:token`
+- 密码
+- 过期时间
+- 最大下载次数
 
-## 5. 上传第一个文件
+把链接粘到无痕窗口或另一台设备里，确认公开访问页面能正常打开。
 
-小文件可直接 multipart 上传：
+## 5. 管理员首次检查
 
-```bash
-curl -X POST http://localhost:3000/api/v1/files/upload \
-  -b cookies.txt \
-  -F "file=@/path/to/file.pdf"
-```
+建议第一次登录后把下面几项检查一遍：
 
-更推荐先调用协商接口：
+- `管理员后台 -> 用户`
+  - 检查用户状态、角色和总配额
+- `管理员后台 -> 存储策略`
+  - 确认默认策略是否正确，是否需要改成本地目录或 S3
+- `管理员后台 -> 系统设置`
+  - 调整回收站保留天数、历史版本数量、默认用户配额、WebDAV 开关
+- `设置 -> WebDAV`
+  - 如果你要给 Finder、Windows 或同步工具使用，先创建一个专用 WebDAV 账号
 
-```text
-POST /api/v1/files/upload/init
-```
+## 6. 做一次上线前验收
 
-服务端会根据当前存储策略返回三种模式之一：
+至少确认下面几项：
 
-- `direct`
-- `chunked`
-- `presigned`
-
-## 6. 创建分享
-
-```bash
-curl -X POST http://localhost:3000/api/v1/shares \
-  -b cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"file_id":1,"password":"123456","max_downloads":10}'
-```
-
-公开 API 地址：
-
-```text
-/api/v1/s/{token}
-```
-
-公开前端页面地址：
-
-```text
-/s/{token}
-```
-
-## 7. 配置管理员常用项
-
-启动后通常还要做三件事：
-
-1. 检查默认存储策略与用户策略分配
-2. 为新用户设置默认配额或单独配额
-3. 设置运行时开关，例如 WebDAV 开关、回收站保留天数、版本保留数量
-
-对应页面：
-
-- `/admin/users`
-- `/admin/policies`
-- `/admin/settings`
-
-## 8. 健康检查与 OpenAPI
-
-- `GET /health`
-- `GET /health/ready`
-- `GET /health/memory`
-
-OpenAPI 有两种使用方式：
-
-- `debug` 构建下访问 `http://localhost:3000/swagger-ui`
-- 运行 `cargo test --test generate_openapi` 生成静态规范
+- 浏览器可以正常登录和退出
+- 文件可以上传、下载、移动到回收站并恢复
+- 分享链接可以打开
+- `http://127.0.0.1:3000/health` 返回正常
+- 如果你启用了 WebDAV，客户端可以成功连接并读写
 
 ## 继续阅读
 
+- [安装部署](/guide/installation)
 - [用户手册](/guide/user-guide)
+- [管理后台](/guide/admin-console)
 - [部署概览](/deployment/)
 - [配置概览](/config/)

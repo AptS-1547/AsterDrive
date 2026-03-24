@@ -1,11 +1,6 @@
 # systemd 部署
 
-systemd 场景下，最重要的是把 `WorkingDirectory` 设对，因为当前代码会从工作目录读取：
-
-- `config.toml`
-- 默认 SQLite 数据库
-- 默认本地存储目录 `data/uploads`
-- 运行时前端覆盖目录 `./frontend-panel/dist`
+systemd 适合长期稳定运行。这里最重要的是先确定 `WorkingDirectory`，因为默认配置、SQLite 和本地上传目录都会受它影响。
 
 ## 1. 安装二进制
 
@@ -25,14 +20,14 @@ sudo chown -R asterdrive:asterdrive /var/lib/asterdrive
 
 把配置文件放进工作目录：
 
-如果你不想手写，也可以先让服务在这个工作目录里启动一次，利用自动生成逻辑产出默认 `config.toml`，再补上数据库地址、JWT 密钥和日志配置。
-
 ```bash
 sudo cp config.toml /var/lib/asterdrive/config.toml
 sudo chown asterdrive:asterdrive /var/lib/asterdrive/config.toml
 ```
 
-如果继续使用默认 SQLite 与默认本地存储策略，工作目录下会自动出现：
+如果你不想手写配置，也可以先让服务在这个目录里启动一次，让它自动生成默认配置，再回头修改。
+
+如果继续使用默认 SQLite 和默认本地存储，工作目录下会自动出现：
 
 - `asterdrive.db`
 - `data/uploads`
@@ -60,6 +55,8 @@ Environment=RUST_LOG=info
 WantedBy=multi-user.target
 ```
 
+如果你现在还只是内网 HTTP 测试，记得在 `config.toml` 里把 `auth.cookie_secure` 设成 `false`。
+
 ## 5. 启动服务
 
 ```bash
@@ -78,7 +75,8 @@ journalctl -u asterdrive -f
 
 - `/health` 返回 200
 - `/health/ready` 返回 200
-- 首次启动日志里已完成 migration 与默认策略初始化
+- 首次启动日志里已完成数据库迁移和默认策略初始化
+- 浏览器可以正常登录
 - 如果启用了 WebDAV，实际挂载路径与 `[webdav].prefix` 一致
 
 ## 7. 常见变体
@@ -103,10 +101,4 @@ Environment=ASTER__AUTH__JWT_SECRET=your-fixed-secret
 
 ## 8. HTTPS 与域名
 
-systemd 只负责拉起服务。若你需要：
-
-- HTTPS
-- 公开域名
-- WebDAV 客户端访问
-
-请在前面再加一层反向代理，见 [反向代理部署](/deployment/proxy)。
+systemd 只负责拉起服务。若你需要 HTTPS、域名和 WebDAV 客户端访问，请在前面再加一层反向代理，见 [反向代理部署](/deployment/proxy)。

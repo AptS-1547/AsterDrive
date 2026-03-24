@@ -1,10 +1,10 @@
 # 存储策略
 
-存储策略不在 `config.toml` 里，而是持久化在数据库中，通过 [管理 API](/api/admin) 和管理面板维护。
+存储策略不在 `config.toml` 里，而是在管理后台里维护。它决定文件真正存到哪里，也决定大文件上传怎么处理。
 
 ## 作用
 
-`StoragePolicy` 决定：
+每条存储策略都会决定：
 
 - 文件存储在哪个后端
 - 上传时使用哪种模式
@@ -23,66 +23,63 @@
 ## 生效顺序
 
 ```text
-文件夹 policy_id -> 用户默认策略 -> 系统默认策略
+文件夹指定策略 -> 用户默认策略 -> 系统默认策略
 ```
 
-## 当前重要字段
+这意味着同一个系统里，不同用户或不同目录，可以落到不同存储后端。
+
+## 管理员最常设置的字段
 
 | 字段 | 说明 |
 | --- | --- |
 | `driver_type` | `local` 或 `s3` |
-| `endpoint` | S3 兼容服务地址；本地策略可为空 |
-| `bucket` | S3 bucket 名称 |
+| `endpoint` | S3 兼容服务地址；本地策略可留空 |
+| `bucket` | S3 桶名 |
 | `base_path` | 本地目录或对象前缀 |
 | `max_file_size` | 单文件大小上限；`0` 表示不限制 |
-| `chunk_size` | 分片大小；`0` 表示禁用分片上传 |
+| `chunk_size` | 分片大小；大文件会按这个值拆分上传 |
 | `is_default` | 是否为系统默认策略 |
-| `options` | JSON 对象；当前只识别 `presigned_upload` |
+| `presigned_upload` | 仅 S3 使用；开启后浏览器可以直传对象存储 |
 
-## 三种上传模式的决策
+## 本地存储和 S3 怎么选
 
-`POST /api/v1/files/upload/init` 会根据当前策略返回：
+### 选 `local`
+
+适合：
+
+- 单机
+- NAS
+- 文件直接落本地磁盘
+
+### 选 `s3`
+
+适合：
+
+- 想把文件放到 MinIO、AWS S3 或其他兼容对象存储
+- 想减轻应用服务器本地磁盘压力
+- 想开启浏览器直传对象存储
+
+## 上传方式会怎么变化
+
+系统会根据当前存储策略自动在这几种方式里切换：
 
 - `direct`
 - `chunked`
 - `presigned`
+- `presigned_multipart`
 
-规则如下：
+你只需要记住：
 
-### `direct`
-
-- `chunk_size == 0`
-- 或文件大小 `<= chunk_size`
-
-### `chunked`
-
-- 文件大小 `> chunk_size`
-- 且当前不是可用的 S3 预签名直传场景
-
-### `presigned`
-
-只有同时满足这些条件才会返回：
-
-- 当前策略驱动是 `s3`
-- `options` 含 `{"presigned_upload": true}`
-- 文件大小不超过 5 GiB
-
-## `options` 的当前有效键
-
-```json
-{
-  "presigned_upload": true
-}
-```
-
-启用后，前端和 API 都会协商出 `presigned` 上传模式。
+- 小文件一般直接上传
+- 大文件一般分片上传
+- 只有 S3 策略才可能出现 `presigned` 和 `presigned_multipart`
 
 ## 部署时要额外注意什么
 
-- `presigned` 只对 `s3` 驱动有效，本地策略永远不会返回这个模式
-- 开启 `presigned_upload` 后，浏览器会直接把文件 `PUT` 到对象存储，代理层和应用层不再承载完整上传流量
-- 对象存储侧必须允许浏览器跨域 `PUT`，否则前端会在直传阶段失败
-- 即使使用 `presigned`，服务端仍会在 `complete` 阶段做哈希、去重、落库和最终对象整理
+- 开启 Presigned 直传后，对象存储必须配置浏览器上传所需的 CORS
+- 使用本地存储时，要确认 `base_path` 所在磁盘空间足够
+- 使用 S3 时，要确认桶、访问密钥和前缀都正确
+- 单文件大小限制和用户配额都会影响上传是否成功
 
 ## 默认本地策略
 
@@ -92,12 +89,3 @@
 - 驱动：`local`
 - 路径：`data/uploads`
 - 默认分片大小：`5 MiB`
-
-## 当前 API 限制
-
-这些限制都来自当前实现本身：
-
-- `POST /api/v1/admin/policies` 虽然请求体带 `chunk_size`，但创建逻辑仍会先写固定值 `5 MiB`
-- 若要调整 `chunk_size`，需要创建后再 `PATCH`
-- 当前 `PATCH /api/v1/admin/policies/{id}` 不能修改 `driver_type`
-- `allowed_types` 字段已经在模型中存在，但当前 REST API 没有管理它，上传链路也没有执行类型限制

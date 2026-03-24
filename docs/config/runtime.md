@@ -1,143 +1,55 @@
-# 运行时配置
+# 系统设置
 
-运行时配置存放在数据库 `system_config` 表，而不是 `config.toml`。
+系统设置是管理员在后台直接维护的全站选项。和 `config.toml` 不同，它们通常不需要改文件，也不需要重启服务。
 
-## 架构设计
+## 适合在这里改什么
 
-### 两类配置
+这类设置通常影响：
 
-| | 系统配置 | 自定义配置 |
-|---|---|---|
-| `source` | `"system"` | `"custom"` |
-| 来源 | `ALL_CONFIGS` 静态定义 | Admin 手动创建 |
-| 启动时 | 自动初始化默认值 | 不自动创建 |
-| 可删除 | 否（API 返回 403） | 是 |
-| 用途 | 后端业务逻辑读取 | 自定义前端/插件配置 |
+- WebDAV 是否开启
+- 回收站保留多久
+- 历史版本保留多少个
+- 新用户默认能用多少空间
+- 是否记录审计日志
 
-### 配置定义（单一数据源）
+## 当前内置设置
 
-所有系统配置在 `src/config/definitions.rs` 的 `ALL_CONFIGS` 数组中集中定义：
+| 设置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `webdav_enabled` | `true` | 控制 WebDAV 是否可用 |
+| `max_versions_per_file` | `10` | 单个文件最多保留多少个历史版本 |
+| `trash_retention_days` | `7` | 回收站项目保留天数 |
+| `default_storage_quota` | `0` | 新用户默认配额，`0` 表示不限制 |
+| `audit_log_enabled` | `true` | 是否记录审计日志 |
+| `audit_log_retention_days` | `90` | 审计日志保留天数 |
 
-```rust
-pub struct ConfigDef {
-    pub key: &'static str,         // 数据库 unique key
-    pub value_type: &'static str,  // "string" | "number" | "boolean"
-    pub default_fn: fn() -> String,// 默认值生成函数
-    pub requires_restart: bool,    // 修改后是否需重启生效
-    pub is_sensitive: bool,        // 是否敏感值（前端脱敏）
-    pub category: &'static str,   // 分类（前端分组）
-    pub description: &'static str, // 描述
-}
-```
+## 这些设置什么时候生效
 
-### 启动时初始化
+- WebDAV 开关：修改后立即生效
+- 回收站保留天数：后台清理任务会按新值清理
+- 历史版本数量：新版本产生时按新规则处理
+- 默认用户配额：只影响之后新创建的用户
+- 审计日志开关和保留天数：修改后按新规则生效
 
-`runtime/startup.rs` 中，数据库迁移完成后自动调用 `config_repo::ensure_defaults()`：
+## 日常最常改的三项
 
-- 遍历 `ALL_CONFIGS`，对每项执行 `INSERT ... ON CONFLICT(key) DO NOTHING`
-- 已存在的配置值不会被覆盖（用户修改过的值保持不变）
-- 新增的配置项自动写入默认值
+### 1. 新用户默认配额
 
-## 系统配置项
+适合你希望每个新用户一开始就有统一额度时使用。
 
-| Key | 类型 | 默认值 | 分类 | 作用 |
-|-----|------|--------|------|------|
-| `webdav_enabled` | boolean | `"true"` | webdav | 控制 WebDAV 是否接受请求 |
-| `max_versions_per_file` | number | `"10"` | storage | 单文件最多保留多少历史版本 |
-| `trash_retention_days` | number | `"7"` | storage | 回收站保留天数 |
-| `default_storage_quota` | number | `"0"` | storage | 新用户默认配额（字节，0=不限制） |
-| `audit_log_enabled` | boolean | `"true"` | audit | 是否记录审计日志 |
-| `audit_log_retention_days` | number | `"90"` | audit | 审计日志保留天数 |
+### 2. 回收站保留天数
 
-### 生效时机
+如果磁盘空间紧张，可以缩短保留时间；如果你更看重误删恢复，可以适当延长。
 
-- **`webdav_enabled`** — 实时生效，关闭后 `/webdav` 返回 503
-- **`max_versions_per_file`** — 文件被覆盖产生新版本时读取
-- **`trash_retention_days`** — 后台任务每小时读取并清理
-- **`default_storage_quota`** — 新用户注册时读取，不影响已有用户
-- **`audit_log_enabled`** — 实时生效；关闭后新业务操作不再写审计日志
-- **`audit_log_retention_days`** — 后台清理任务每小时读取并清理
+### 3. 历史版本数量
 
-## 自定义配置
+如果用户经常编辑文本文件或通过 WebDAV 覆盖保存，版本数量越大，恢复空间越大，但也会占用更多存储。
 
-自定义配置用于自定义前端或插件存储自己的设置。
+## 关于“自定义配置”
 
-### 创建自定义配置
+后台里还支持新增自定义配置项。如果你只是正常部署和使用 AsterDrive，通常不需要碰这一块。
 
-```bash
-curl -X PUT http://localhost:3000/api/v1/admin/config/my-frontend.theme \
-  -b cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"value":"dark"}'
-```
+它更适合：
 
-### 命名约定
-
-自定义配置的 key 建议使用 `{namespace}.{name}` 格式，避免与系统配置或其他自定义前端冲突：
-
-```
-my-frontend.theme          # 主题设置
-my-frontend.locale         # 语言设置
-my-frontend.sidebar_width  # 侧边栏宽度
-custom-app.api_endpoint    # 自定义应用的 API 地址
-```
-
-### 读取配置（前端）
-
-自定义前端可以通过 Admin API 读取配置：
-
-```typescript
-// 获取所有配置
-const configs = await api.get("/admin/config");
-
-// 筛选自己的命名空间
-const myConfigs = configs.filter(c => c.key.startsWith("my-frontend."));
-```
-
-### 与系统配置的区别
-
-- 自定义配置 **可以删除**，系统配置不可以
-- 自定义配置不会在启动时自动创建
-- 自定义配置的 `value_type` 默认为 `"string"`，创建时可指定
-
-## 管理 API
-
-### 列出所有配置
-
-```bash
-curl -X GET http://localhost:3000/api/v1/admin/config \
-  -b cookies.txt
-```
-
-### 设置配置值
-
-```bash
-curl -X PUT http://localhost:3000/api/v1/admin/config/{key} \
-  -b cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"value":"14"}'
-```
-
-### 删除配置
-
-```bash
-curl -X DELETE http://localhost:3000/api/v1/admin/config/{key} \
-  -b cookies.txt
-```
-
-系统配置（`source="system"`）不允许删除，返回 403。
-
-## 数据库表结构
-
-```sql
-CREATE TABLE system_config (
-    id          BIGINT PRIMARY KEY AUTO_INCREMENT,
-    key         VARCHAR(128) NOT NULL UNIQUE,
-    value       TEXT NOT NULL,
-    value_type  VARCHAR(32) NOT NULL DEFAULT 'string',
-    requires_restart BOOLEAN NOT NULL DEFAULT FALSE,
-    is_sensitive     BOOLEAN NOT NULL DEFAULT FALSE,
-    updated_at  TIMESTAMP NOT NULL,
-    updated_by  BIGINT NULL
-);
-```
+- 你自己做了自定义前端
+- 你有插件或外部集成，需要在后台保存额外参数
