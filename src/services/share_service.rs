@@ -253,6 +253,29 @@ pub async fn admin_delete_share(state: &AppState, share_id: i64) -> Result<()> {
     share_repo::delete(&state.db, share_id).await
 }
 
+/// 获取公开分享文件的缩略图（公开访问，无需认证）
+pub async fn get_shared_thumbnail(state: &AppState, token: &str) -> Result<Vec<u8>> {
+    let share = share_repo::find_by_token(&state.db, token)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+
+    validate_share(&share)?;
+
+    let file_id = share
+        .file_id
+        .ok_or_else(|| AsterError::validation_error("share is not a file"))?;
+
+    let f = file_repo::find_by_id(&state.db, file_id).await?;
+    if !crate::services::thumbnail_service::is_supported_mime(&f.mime_type) {
+        return Err(AsterError::thumbnail_generation_failed(
+            "unsupported image type",
+        ));
+    }
+
+    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
+    crate::services::thumbnail_service::get_or_generate(state, &blob).await
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 fn validate_share(share: &share::Model) -> Result<()> {

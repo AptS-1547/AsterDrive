@@ -57,6 +57,7 @@ pub async fn setup() -> AppState {
             jwt_secret: "test-secret-key-for-integration-tests".to_string(),
             access_token_ttl_secs: 900,
             refresh_token_ttl_secs: 604800,
+            cookie_secure: false,
         },
         ..Default::default()
     });

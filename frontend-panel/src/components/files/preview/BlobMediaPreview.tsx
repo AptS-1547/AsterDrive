@@ -58,6 +58,7 @@ export function BlobMediaPreview({ file, mode, path }: BlobMediaPreviewProps) {
 		<iframe
 			src={blobUrl}
 			title={file.name}
+			sandbox="allow-same-origin"
 			className="h-full w-full min-h-[70vh] rounded-lg"
 		/>
 	);

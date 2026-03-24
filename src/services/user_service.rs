@@ -1,7 +1,10 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
-use crate::db::repository::user_repo;
+use crate::db::repository::{
+    file_repo, folder_repo, lock_repo, policy_repo, share_repo, upload_session_repo, user_repo,
+    webdav_account_repo,
+};
 use crate::entities::user;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
@@ -73,14 +76,7 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     );
 
     // 1. 永久删除所有文件（含软删除的）
-    let all_files = {
-        use crate::entities::file::Entity as File;
-        File::find()
-            .filter(crate::entities::file::Column::UserId.eq(target_user_id))
-            .all(db)
-            .await
-            .map_err(AsterError::from)?
-    };
+    let all_files = file_repo::find_all_by_user(db, target_user_id).await?;
     for f in &all_files {
         if let Err(e) = crate::services::file_service::purge(state, f.id, target_user_id).await {
             tracing::warn!("failed to purge file #{}: {e}", f.id);
@@ -88,14 +84,7 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     }
 
     // 2. 删除所有文件夹（+ 属性）
-    let all_folders = {
-        use crate::entities::folder::Entity as Folder;
-        Folder::find()
-            .filter(crate::entities::folder::Column::UserId.eq(target_user_id))
-            .all(db)
-            .await
-            .map_err(AsterError::from)?
-    };
+    let all_folders = folder_repo::find_all_by_user(db, target_user_id).await?;
     for f in &all_folders {
         // 清理属性
         if let Err(e) = crate::db::repository::property_repo::delete_all_for_entity(
@@ -114,68 +103,29 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     }
 
     // 3. 删除所有分享链接
-    {
-        use crate::entities::share::Entity as Share;
-        Share::delete_many()
-            .filter(crate::entities::share::Column::UserId.eq(target_user_id))
-            .exec(db)
-            .await
-            .map_err(AsterError::from)?;
-    }
+    share_repo::delete_all_by_user(db, target_user_id).await?;
 
     // 4. 删除所有 WebDAV 账号
-    {
-        use crate::entities::webdav_account::Entity as WA;
-        WA::delete_many()
-            .filter(crate::entities::webdav_account::Column::UserId.eq(target_user_id))
-            .exec(db)
-            .await
-            .map_err(AsterError::from)?;
-    }
+    webdav_account_repo::delete_all_by_user(db, target_user_id).await?;
 
     // 5. 删除用户存储策略分配
-    {
-        use crate::entities::user_storage_policy::Entity as USP;
-        USP::delete_many()
-            .filter(crate::entities::user_storage_policy::Column::UserId.eq(target_user_id))
-            .exec(db)
-            .await
-            .map_err(AsterError::from)?;
-    }
+    policy_repo::delete_user_policies_by_user(db, target_user_id).await?;
 
     // 6. 清理上传 session
-    {
-        use crate::entities::upload_session::Entity as US;
-        US::delete_many()
-            .filter(crate::entities::upload_session::Column::UserId.eq(target_user_id))
-            .exec(db)
-            .await
-            .map_err(AsterError::from)?;
-    }
+    upload_session_repo::delete_all_by_user(db, target_user_id).await?;
 
     // 7. 清理用户持有的资源锁
-    {
-        use crate::entities::resource_lock::Entity as RL;
-        let locks = RL::find()
-            .filter(crate::entities::resource_lock::Column::OwnerId.eq(target_user_id))
-            .all(db)
-            .await
-            .map_err(AsterError::from)?;
-        for lock in &locks {
-            let _ = crate::services::lock_service::set_entity_locked(
-                db,
-                lock.entity_type,
-                lock.entity_id,
-                false,
-            )
-            .await;
-        }
-        RL::delete_many()
-            .filter(crate::entities::resource_lock::Column::OwnerId.eq(target_user_id))
-            .exec(db)
-            .await
-            .map_err(AsterError::from)?;
+    let locks = lock_repo::find_by_owner(db, target_user_id).await?;
+    for lock in &locks {
+        let _ = crate::services::lock_service::set_entity_locked(
+            db,
+            lock.entity_type,
+            lock.entity_id,
+            false,
+        )
+        .await;
     }
+    lock_repo::delete_all_by_owner(db, target_user_id).await?;
 
     // 8. 删除用户记录
     user::Entity::delete_by_id(target_user_id)

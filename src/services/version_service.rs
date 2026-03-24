@@ -161,12 +161,7 @@ async fn cleanup_blob_if_unused(state: &AppState, blob_id: i64) -> Result<()> {
         let _ = driver.delete(&blob.storage_path).await;
         file_repo::delete_blob(db, blob.id).await?;
     } else {
-        let new_ref_count = blob.ref_count - 1;
-        let mut active: crate::entities::file_blob::ActiveModel = blob.into();
-        active.ref_count = Set(new_ref_count);
-        active.updated_at = Set(Utc::now());
-        use sea_orm::ActiveModelTrait;
-        active.update(db).await.map_err(AsterError::from)?;
+        file_repo::decrement_blob_ref_count(db, blob.id).await?;
     }
 
     Ok(())

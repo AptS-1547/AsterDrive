@@ -54,3 +54,13 @@ pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
         .map_err(AsterError::from)?;
     Ok(())
 }
+
+/// 批量删除用户的所有 WebDAV 账号
+pub async fn delete_all_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<u64> {
+    let res = WebdavAccount::delete_many()
+        .filter(webdav_account::Column::UserId.eq(user_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(res.rows_affected)
+}

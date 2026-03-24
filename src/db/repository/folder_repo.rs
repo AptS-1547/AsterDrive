@@ -138,3 +138,15 @@ pub async fn find_expired_deleted<C: ConnectionTrait>(
         .await
         .map_err(AsterError::from)
 }
+
+/// 查询用户的所有文件夹（含已删除，force_delete 用）
+pub async fn find_all_by_user<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+) -> Result<Vec<folder::Model>> {
+    Folder::find()
+        .filter(folder::Column::UserId.eq(user_id))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}

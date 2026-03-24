@@ -44,6 +44,18 @@ pub async fn create<C: ConnectionTrait>(db: &C, model: user::ActiveModel) -> Res
     model.insert(db).await.map_err(AsterError::from)
 }
 
+/// 检查用户配额是否足够。quota=0 表示不限。
+pub async fn check_quota<C: ConnectionTrait>(db: &C, user_id: i64, needed_size: i64) -> Result<()> {
+    let user = find_by_id(db, user_id).await?;
+    if user.storage_quota > 0 && user.storage_used + needed_size > user.storage_quota {
+        return Err(AsterError::storage_quota_exceeded(format!(
+            "quota {}, used {}, need {}",
+            user.storage_quota, user.storage_used, needed_size
+        )));
+    }
+    Ok(())
+}
+
 pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64) -> Result<()> {
     let expr = if delta >= 0 {
         Expr::cust_with_values("storage_used + ?", [delta])

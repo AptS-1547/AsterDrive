@@ -80,20 +80,22 @@ pub struct LoginReq {
 }
 
 /// 构建 HttpOnly cookie
-fn build_cookie(name: &str, value: &str, max_age_secs: i64) -> Cookie<'static> {
+fn build_cookie(name: &str, value: &str, max_age_secs: i64, secure: bool) -> Cookie<'static> {
     Cookie::build(name.to_string(), value.to_string())
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
+        .secure(secure)
         .max_age(CookieDuration::seconds(max_age_secs))
         .finish()
 }
 
 /// 构建清除 cookie
-fn clear_cookie(name: &str) -> Cookie<'static> {
+fn clear_cookie(name: &str, secure: bool) -> Cookie<'static> {
     Cookie::build(name.to_string(), "")
         .path("/")
         .http_only(true)
+        .secure(secure)
         .max_age(CookieDuration::ZERO)
         .finish()
 }
@@ -242,16 +244,19 @@ pub async fn login(
         .await;
     }
 
+    let secure = state.config.auth.cookie_secure;
     Ok(HttpResponse::Ok()
         .cookie(build_cookie(
             ACCESS_COOKIE,
             &access,
             state.config.auth.access_token_ttl_secs as i64,
+            secure,
         ))
         .cookie(build_cookie(
             REFRESH_COOKIE,
             &refresh_tok,
             state.config.auth.refresh_token_ttl_secs as i64,
+            secure,
         ))
         .json(ApiResponse::<()>::ok_empty()))
 }
@@ -277,11 +282,13 @@ pub async fn refresh(
 
     let access = auth_service::refresh_token(&state, &refresh_tok)?;
 
+    let secure = state.config.auth.cookie_secure;
     Ok(HttpResponse::Ok()
         .cookie(build_cookie(
             ACCESS_COOKIE,
             &access,
             state.config.auth.access_token_ttl_secs as i64,
+            secure,
         ))
         .json(ApiResponse::<()>::ok_empty()))
 }
@@ -295,10 +302,11 @@ pub async fn refresh(
         (status = 200, description = "Logged out, cookies cleared"),
     ),
 )]
-pub async fn logout() -> HttpResponse {
+pub async fn logout(state: web::Data<AppState>) -> HttpResponse {
+    let secure = state.config.auth.cookie_secure;
     HttpResponse::Ok()
-        .cookie(clear_cookie(ACCESS_COOKIE))
-        .cookie(clear_cookie(REFRESH_COOKIE))
+        .cookie(clear_cookie(ACCESS_COOKIE, secure))
+        .cookie(clear_cookie(REFRESH_COOKIE, secure))
         .json(ApiResponse::<()>::ok_empty())
 }
 

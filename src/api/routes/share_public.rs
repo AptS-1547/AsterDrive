@@ -183,27 +183,7 @@ pub async fn shared_thumbnail(
 ) -> Result<HttpResponse> {
     check_share_password_cookie(&state, &path, &req).await?;
 
-    use crate::db::repository::{file_repo, share_repo};
-    use crate::errors::AsterError;
-    use crate::services::thumbnail_service;
-
-    let share = share_repo::find_by_token(&state.db, &path)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={}", &*path)))?;
-
-    let file_id = share
-        .file_id
-        .ok_or_else(|| AsterError::validation_error("share is not a file"))?;
-
-    let f = file_repo::find_by_id(&state.db, file_id).await?;
-    if !thumbnail_service::is_supported_mime(&f.mime_type) {
-        return Err(AsterError::thumbnail_generation_failed(
-            "unsupported image type",
-        ));
-    }
-
-    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
-    let data = thumbnail_service::get_or_generate(&state, &blob).await?;
+    let data = share_service::get_shared_thumbnail(&state, &path).await?;
 
     Ok(HttpResponse::Ok()
         .content_type("image/webp")

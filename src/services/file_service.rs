@@ -73,19 +73,13 @@ pub async fn store_from_temp(
     }
 
     // ── [事务外] 配额检查 ──
-    let user = user_repo::find_by_id(db, user_id).await?;
-    if user.storage_quota > 0 && user.storage_used + size > user.storage_quota {
-        return Err(AsterError::storage_quota_exceeded(format!(
-            "quota {}, used {}, need {}",
-            user.storage_quota, user.storage_used, size
-        )));
-    }
+    user_repo::check_quota(db, user_id, size).await?;
 
     let now = Utc::now();
     let driver = state.driver_registry.get_driver(&policy)?;
 
     // ── [事务外] driver.put_file（仅新 blob 时需要） ──
-    let storage_path = format!("{}/{}/{}", &file_hash[..2], &file_hash[2..4], &file_hash);
+    let storage_path = crate::utils::storage_path_from_hash(&file_hash);
     let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
         .await?
         .is_some();
@@ -114,35 +108,15 @@ pub async fn store_from_temp(
         .first_or_octet_stream()
         .to_string();
 
-    // ── [事务内] blob 查找/创建(ref_count) → 文件记录创建/更新 → 版本记录 → 配额更新 ──
+    // ── [事务内] 配额再校验 → blob 查找/创建(ref_count) → 文件记录创建/更新 → 版本记录 → 配额更新 ──
     let txn = state.db.begin().await.map_err(AsterError::from)?;
 
+    // 事务内配额权威检查（防止并发上传绕过事务外 fast-fail）
+    user_repo::check_quota(&txn, user_id, size).await?;
+
     // Blob 去重（事务内重新检查，防止并发竞争）
-    let blob = match file_repo::find_blob_by_hash(&txn, &file_hash, policy.id).await? {
-        Some(existing) => {
-            let new_ref_count = existing.ref_count + 1;
-            let mut active: file_blob::ActiveModel = existing.into();
-            active.ref_count = Set(new_ref_count);
-            active.updated_at = Set(now);
-            active.update(&txn).await.map_err(AsterError::from)?
-        }
-        None => {
-            file_repo::create_blob(
-                &txn,
-                file_blob::ActiveModel {
-                    hash: Set(file_hash),
-                    size: Set(size),
-                    policy_id: Set(policy.id),
-                    storage_path: Set(storage_path),
-                    ref_count: Set(1),
-                    created_at: Set(now),
-                    updated_at: Set(now),
-                    ..Default::default()
-                },
-            )
-            .await?
-        }
-    };
+    let blob =
+        file_repo::find_or_create_blob(&txn, &file_hash, size, policy.id, &storage_path).await?;
 
     let result = if let Some((old_file, old_blob)) = overwrite_ctx {
         // 覆盖现有文件
@@ -175,13 +149,8 @@ pub async fn store_from_temp(
         updated
     } else {
         // 新建文件
-        let mut final_name = filename.to_string();
-        while file_repo::find_by_name_in_folder(&txn, user_id, folder_id, &final_name)
-            .await?
-            .is_some()
-        {
-            final_name = crate::utils::next_copy_name(&final_name);
-        }
+        let final_name =
+            file_repo::resolve_unique_filename(&txn, user_id, folder_id, filename).await?;
 
         let file_model = file::ActiveModel {
             name: Set(final_name),
@@ -407,17 +376,6 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
     let blob_size = blob.size;
     let blob_id = blob.id;
-    let blob_ref_count = blob.ref_count;
-
-    // ── [事务外] 物理文件删除、缩略图删除（best-effort） ──
-    if blob_ref_count <= 1 {
-        if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, &blob).await {
-            tracing::warn!("failed to delete thumbnail for blob {}: {e}", blob.id);
-        }
-        let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
-        let driver = state.driver_registry.get_driver(&policy)?;
-        driver.delete(&blob.storage_path).await?;
-    }
 
     // ── [事务内] 版本清理 → 属性删除 → 文件删除 → blob ref_count-- → 配额更新 ──
     // 注意：文件删除必须在 blob 删除之前（files.blob_id → file_blobs.id FK 约束）
@@ -439,31 +397,25 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     file_repo::delete(&txn, id).await?;
 
     // 版本 blob 引用处理（文件和版本记录已删除，可安全操作 blob）
-    let mut version_blobs_to_cleanup: Vec<file_blob::Model> = Vec::new();
+    let mut blobs_to_cleanup: Vec<file_blob::Model> = Vec::new();
     for vblob_id in version_blob_ids {
         let vblob = file_repo::find_blob_by_id(&txn, vblob_id).await?;
         if vblob.ref_count <= 1 {
             let vblob_saved = vblob.clone();
             file_repo::delete_blob(&txn, vblob.id).await?;
-            version_blobs_to_cleanup.push(vblob_saved);
+            blobs_to_cleanup.push(vblob_saved);
         } else {
-            let new_ref = vblob.ref_count - 1;
-            let mut active: file_blob::ActiveModel = vblob.into();
-            active.ref_count = Set(new_ref);
-            active.updated_at = Set(Utc::now());
-            active.update(&txn).await.map_err(AsterError::from)?;
+            file_repo::decrement_blob_ref_count(&txn, vblob.id).await?;
         }
     }
 
-    // 主 blob ref_count-- 或删除（文件记录已删除，FK 约束已解除）
-    if blob_ref_count <= 1 {
+    // 主 blob: 事务内重新读取当前 ref_count（防止事务外预读的 TOCTOU）
+    let current_blob = file_repo::find_blob_by_id(&txn, blob_id).await?;
+    if current_blob.ref_count <= 1 {
         file_repo::delete_blob(&txn, blob_id).await?;
+        blobs_to_cleanup.push(current_blob);
     } else {
-        let new_ref = blob_ref_count - 1;
-        let mut active: file_blob::ActiveModel = blob.into();
-        active.ref_count = Set(new_ref);
-        active.updated_at = Set(Utc::now());
-        active.update(&txn).await.map_err(AsterError::from)?;
+        file_repo::decrement_blob_ref_count(&txn, blob_id).await?;
     }
 
     // 配额更新
@@ -471,19 +423,21 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
 
     txn.commit().await.map_err(AsterError::from)?;
 
-    // ── [事务后] 版本 blob 物理清理（best-effort） ──
-    for vblob in version_blobs_to_cleanup {
-        if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, &vblob).await {
+    // ── [事务后] 物理文件/缩略图清理（best-effort） ──
+    for blob_to_clean in blobs_to_cleanup {
+        if let Err(e) =
+            crate::services::thumbnail_service::delete_thumbnail(state, &blob_to_clean).await
+        {
             tracing::warn!(
-                "failed to delete version thumbnail for blob {}: {e}",
-                vblob.id
+                "failed to delete thumbnail for blob {}: {e}",
+                blob_to_clean.id
             );
         }
-        if let Ok(policy) = policy_repo::find_by_id(db, vblob.policy_id).await
+        if let Ok(policy) = policy_repo::find_by_id(db, blob_to_clean.policy_id).await
             && let Ok(driver) = state.driver_registry.get_driver(&policy)
-            && let Err(e) = driver.delete(&vblob.storage_path).await
+            && let Err(e) = driver.delete(&blob_to_clean.storage_path).await
         {
-            tracing::warn!("failed to delete version blob file {}: {e}", vblob.id);
+            tracing::warn!("failed to delete blob file {}: {e}", blob_to_clean.id);
         }
     }
 
@@ -593,20 +547,11 @@ pub async fn copy_file(
 
     // 配额检查
     let blob = file_repo::find_blob_by_id(db, src.blob_id).await?;
-    let user = user_repo::find_by_id(db, user_id).await?;
-    if user.storage_quota > 0 && user.storage_used + blob.size > user.storage_quota {
-        return Err(AsterError::storage_quota_exceeded("quota exceeded"));
-    }
+    user_repo::check_quota(db, user_id, blob.size).await?;
 
     // 副本命名：目标无冲突保留原名，有冲突则递增
     let dest = dest_folder_id.or(src.folder_id);
-    let mut copy_name = src.name.clone();
-    while file_repo::find_by_name_in_folder(db, user_id, dest, &copy_name)
-        .await?
-        .is_some()
-    {
-        copy_name = crate::utils::next_copy_name(&copy_name);
-    }
+    let copy_name = file_repo::resolve_unique_filename(db, user_id, dest, &src.name).await?;
 
     duplicate_file_record(state, &src, dest, &copy_name).await
 }
@@ -624,14 +569,13 @@ pub async fn duplicate_file_record(
     let now = Utc::now();
     let blob_size = blob.size;
 
-    // ── [事务内] blob ref_count++ → 文件记录创建 → 配额更新 ──
+    // ── [事务内] 配额再校验 → blob ref_count++ → 文件记录创建 → 配额更新 ──
     let txn = state.db.begin().await.map_err(AsterError::from)?;
 
-    let new_ref_count = blob.ref_count + 1;
-    let mut blob_active: file_blob::ActiveModel = blob.into();
-    blob_active.ref_count = Set(new_ref_count);
-    blob_active.updated_at = Set(now);
-    blob_active.update(&txn).await.map_err(AsterError::from)?;
+    // 事务内配额权威检查（防止并发 copy 绕过事务外 fast-fail）
+    user_repo::check_quota(&txn, src.user_id, blob_size).await?;
+
+    file_repo::increment_blob_ref_count(&txn, blob.id).await?;
 
     let new_file = file_repo::create(
         &txn,

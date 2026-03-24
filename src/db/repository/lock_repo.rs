@@ -158,3 +158,25 @@ pub async fn refresh<C: ConnectionTrait>(
         None => Ok(None),
     }
 }
+
+/// 查询用户持有的所有资源锁
+pub async fn find_by_owner<C: ConnectionTrait>(
+    db: &C,
+    owner_id: i64,
+) -> Result<Vec<resource_lock::Model>> {
+    ResourceLock::find()
+        .filter(resource_lock::Column::OwnerId.eq(owner_id))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+/// 批量删除用户持有的所有资源锁
+pub async fn delete_all_by_owner<C: ConnectionTrait>(db: &C, owner_id: i64) -> Result<u64> {
+    let res = ResourceLock::delete_many()
+        .filter(resource_lock::Column::OwnerId.eq(owner_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(res.rows_affected)
+}

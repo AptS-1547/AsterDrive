@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, Set,
+    QueryOrder, Set, sea_query::Expr,
 };
 
 use crate::entities::{
@@ -53,6 +53,23 @@ pub async fn find_by_name_in_folder<C: ConnectionTrait>(
     q.one(db).await.map_err(AsterError::from)
 }
 
+/// 查找不冲突的文件名：如果 name 已存在则递增 " (1)", " (2)" ...
+pub async fn resolve_unique_filename<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    folder_id: Option<i64>,
+    name: &str,
+) -> Result<String> {
+    let mut final_name = name.to_string();
+    while find_by_name_in_folder(db, user_id, folder_id, &final_name)
+        .await?
+        .is_some()
+    {
+        final_name = crate::utils::next_copy_name(&final_name);
+    }
+    Ok(final_name)
+}
+
 pub async fn find_blob_by_hash<C: ConnectionTrait>(
     db: &C,
     hash: &str,
@@ -71,6 +88,72 @@ pub async fn create_blob<C: ConnectionTrait>(
     model: file_blob::ActiveModel,
 ) -> Result<file_blob::Model> {
     model.insert(db).await.map_err(AsterError::from)
+}
+
+/// Blob 去重：查找已有 blob 则原子递增 ref_count 并返回，否则新建 ref_count=1。
+pub async fn find_or_create_blob<C: ConnectionTrait>(
+    db: &C,
+    hash: &str,
+    size: i64,
+    policy_id: i64,
+    storage_path: &str,
+) -> Result<file_blob::Model> {
+    match find_blob_by_hash(db, hash, policy_id).await? {
+        Some(existing) => {
+            increment_blob_ref_count(db, existing.id).await?;
+            Ok(existing)
+        }
+        None => {
+            let now = Utc::now();
+            create_blob(
+                db,
+                file_blob::ActiveModel {
+                    hash: Set(hash.to_string()),
+                    size: Set(size),
+                    policy_id: Set(policy_id),
+                    storage_path: Set(storage_path.to_string()),
+                    ref_count: Set(1),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                    ..Default::default()
+                },
+            )
+            .await
+        }
+    }
+}
+
+/// 原子递增 blob ref_count（防止并发丢更新）
+pub async fn increment_blob_ref_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::RefCount,
+            Expr::cust_with_values("ref_count + ?", [1i32]),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 原子递减 blob ref_count（floor 0，防止并发丢更新）
+pub async fn decrement_blob_ref_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::RefCount,
+            Expr::cust_with_values(
+                "CASE WHEN ref_count < ? THEN 0 ELSE ref_count - ? END",
+                [1i32, 1i32],
+            ),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
 }
 
 /// 统计某存储策略下的 blob 数量（策略删除保护用）
@@ -182,6 +265,18 @@ pub async fn find_expired_deleted<C: ConnectionTrait>(
     File::find()
         .filter(file::Column::DeletedAt.is_not_null())
         .filter(file::Column::DeletedAt.lt(before))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+/// 查询用户的所有文件（含已删除，force_delete 用）
+pub async fn find_all_by_user<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+) -> Result<Vec<file::Model>> {
+    File::find()
+        .filter(file::Column::UserId.eq(user_id))
         .all(db)
         .await
         .map_err(AsterError::from)

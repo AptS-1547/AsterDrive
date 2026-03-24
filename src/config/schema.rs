@@ -86,6 +86,9 @@ pub struct AuthConfig {
     pub access_token_ttl_secs: u64,
     #[serde(default = "AuthConfig::default_refresh_ttl")]
     pub refresh_token_ttl_secs: u64,
+    /// 为 cookie 设置 Secure 标志（仅 HTTPS 传输）。本地开发需设为 false。
+    #[serde(default = "AuthConfig::default_cookie_secure")]
+    pub cookie_secure: bool,
 }
 
 impl Default for AuthConfig {
@@ -94,6 +97,7 @@ impl Default for AuthConfig {
             jwt_secret: Self::default_jwt_secret(),
             access_token_ttl_secs: Self::default_access_ttl(),
             refresh_token_ttl_secs: Self::default_refresh_ttl(),
+            cookie_secure: true,
         }
     }
 }
@@ -111,6 +115,9 @@ impl AuthConfig {
     fn default_refresh_ttl() -> u64 {
         604800
     } // 7 days
+    fn default_cookie_secure() -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

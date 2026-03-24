@@ -70,6 +70,11 @@ pub fn validate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// 根据 SHA256 hex hash 计算内容寻址存储路径：`ab/cd/abcdef...`
+pub fn storage_path_from_hash(hash: &str) -> String {
+    format!("{}/{}/{}", &hash[..2], &hash[2..4], hash)
+}
+
 /// macOS / Office 生成的隐藏文件名，不在目录列表中显示
 pub fn is_hidden_name(name: &str) -> bool {
     name.starts_with("._")
@@ -182,5 +187,11 @@ mod tests {
         assert_eq!(next_copy_name("my.file.tar.gz"), "my.file.tar (1).gz");
         assert_eq!(next_copy_name("photo (1).jpg"), "photo (2).jpg");
         assert_eq!(next_copy_name(".hidden"), ".hidden (1)");
+    }
+
+    #[test]
+    fn test_storage_path_from_hash() {
+        let hash = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+        assert_eq!(storage_path_from_hash(hash), format!("ab/cd/{hash}"));
     }
 }

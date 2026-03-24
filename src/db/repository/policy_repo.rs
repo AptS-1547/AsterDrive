@@ -125,3 +125,13 @@ pub async fn delete_user_policy<C: ConnectionTrait>(db: &C, id: i64) -> Result<(
         .map_err(AsterError::from)?;
     Ok(())
 }
+
+/// 批量删除用户的所有存储策略分配
+pub async fn delete_user_policies_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<u64> {
+    let res = UserStoragePolicy::delete_many()
+        .filter(user_storage_policy::Column::UserId.eq(user_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(res.rows_affected)
+}

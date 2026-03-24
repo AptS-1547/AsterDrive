@@ -62,13 +62,12 @@ async fn test_upload_to_other_users_folder_returns_403() {
 
     // user2 尝试上传到 user1 的文件夹 → 403
     let boundary = "----CrossUserBoundary";
-    let payload = format!(
-        "------CrossUserBoundary\r\n\
+    let payload = "------CrossUserBoundary\r\n\
          Content-Disposition: form-data; name=\"file\"; filename=\"evil.txt\"\r\n\
          Content-Type: text/plain\r\n\r\n\
          pwned\r\n\
          ------CrossUserBoundary--\r\n"
-    );
+        .to_string();
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/upload?folder_id={folder_id}"))
         .insert_header(("Cookie", format!("aster_access={token2}")))
@@ -142,13 +141,12 @@ async fn test_directory_upload_to_other_users_base_folder_returns_403() {
 
     // user2 尝试目录上传到 user1 的文件夹 → 403
     let boundary = "----DirCrossBoundary";
-    let payload = format!(
-        "------DirCrossBoundary\r\n\
+    let payload = "------DirCrossBoundary\r\n\
          Content-Disposition: form-data; name=\"file\"; filename=\"sneaky.txt\"\r\n\
          Content-Type: text/plain\r\n\r\n\
          pwned via directory upload\r\n\
          ------DirCrossBoundary--\r\n"
-    );
+        .to_string();
     let req = test::TestRequest::post()
         .uri(&format!(
             "/api/v1/files/upload?folder_id={folder_id}&relative_path=sub/sneaky.txt"
@@ -165,6 +163,43 @@ async fn test_directory_upload_to_other_users_base_folder_returns_403() {
         resp.status(),
         403,
         "directory upload to another user's base folder should return 403"
+    );
+}
+
+// ─── A1: 在别人文件夹下建子文件夹被拒 ──────────────────────
+
+#[actix_web::test]
+async fn test_create_folder_in_other_users_folder_returns_403() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token1, _) = register_and_login!(app);
+    let token2 = register_user2!(app);
+
+    // user1 创建文件夹
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token1}")))
+        .set_json(serde_json::json!({ "name": "user1-only" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    // user2 尝试在 user1 的文件夹下建子文件夹 → 403
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token2}")))
+        .set_json(serde_json::json!({
+            "name": "evil-subfolder",
+            "parent_id": folder_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "creating folder in another user's folder should return 403"
     );
 }
 
@@ -208,7 +243,10 @@ async fn test_share_download_304_does_not_increment_count() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["download_count"], 1, "first download should count");
+    assert_eq!(
+        body["data"]["download_count"], 1,
+        "first download should count"
+    );
 
     // 带 If-None-Match 再次请求 → 304
     let req = test::TestRequest::get()

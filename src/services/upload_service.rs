@@ -1,10 +1,10 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
+use sea_orm::{Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::db::repository::{file_repo, policy_repo, upload_session_repo, user_repo};
-use crate::entities::{file, file_blob, upload_session};
+use crate::entities::{file, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{file_service, folder_service};
@@ -87,13 +87,7 @@ pub async fn init_upload(
     }
 
     // 检查用户配额
-    let user = user_repo::find_by_id(db, user_id).await?;
-    if user.storage_quota > 0 && user.storage_used + total_size > user.storage_quota {
-        return Err(AsterError::storage_quota_exceeded(format!(
-            "quota {}, used {}, need {}",
-            user.storage_quota, user.storage_used, total_size
-        )));
-    }
+    user_repo::check_quota(db, user_id, total_size).await?;
 
     // S3 presigned 直传：策略开启 + S3 驱动 + 文件 ≤ 5GiB
     const S3_SINGLE_PUT_LIMIT: i64 = 5 * 1024 * 1024 * 1024; // 5 GiB
@@ -286,13 +280,6 @@ pub async fn complete_upload(
         return complete_presigned_upload(state, session).await;
     }
 
-    if session.status != UploadSessionStatus::Uploading {
-        return Err(AsterError::upload_assembly_failed(format!(
-            "session status is '{:?}', expected 'uploading' or 'presigned'",
-            session.status
-        )));
-    }
-
     if session.received_count != session.total_chunks {
         return Err(AsterError::upload_assembly_failed(format!(
             "expected {} chunks, got {}",
@@ -300,11 +287,20 @@ pub async fn complete_upload(
         )));
     }
 
-    // ── [事务外] 标记为 assembling ──
-    let mut active: upload_session::ActiveModel = session.clone().into();
-    active.status = Set(UploadSessionStatus::Assembling);
-    active.updated_at = Set(Utc::now());
-    upload_session_repo::update(db, active).await?;
+    // ── 原子状态转换 uploading → assembling（防止并发 complete 双重触发） ──
+    let transitioned = upload_session_repo::try_transition_status(
+        db,
+        upload_id,
+        UploadSessionStatus::Uploading,
+        UploadSessionStatus::Assembling,
+    )
+    .await?;
+    if !transitioned {
+        return Err(AsterError::upload_assembly_failed(format!(
+            "session status is '{:?}', expected 'uploading'",
+            session.status
+        )));
+    }
 
     // ── [事务外] 流式拼接分片 + sha256 ──
     use sha2::{Digest, Sha256};
@@ -357,7 +353,7 @@ pub async fn complete_upload(
     let policy = policy_repo::find_by_id(db, session.policy_id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
 
-    let storage_path = format!("{}/{}/{}", &file_hash[..2], &file_hash[2..4], &file_hash);
+    let storage_path = crate::utils::storage_path_from_hash(&file_hash);
     let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
         .await?
         .is_some();
@@ -373,35 +369,16 @@ pub async fn complete_upload(
     let txn = state.db.begin().await.map_err(AsterError::from)?;
 
     // Blob 去重（事务内重新检查，防止并发竞争）
-    let blob = match file_repo::find_blob_by_hash(&txn, &file_hash, policy.id).await? {
-        Some(existing) => {
-            let new_ref_count = existing.ref_count + 1;
-            let mut blob_active: file_blob::ActiveModel = existing.into();
-            blob_active.ref_count = Set(new_ref_count);
-            blob_active.update(&txn).await.map_err(AsterError::from)?
-        }
-        None => {
-            let blob_model = file_blob::ActiveModel {
-                hash: Set(file_hash),
-                size: Set(size),
-                ref_count: Set(1),
-                policy_id: Set(policy.id),
-                storage_path: Set(storage_path),
-                created_at: Set(now),
-                updated_at: Set(now),
-                ..Default::default()
-            };
-            file_repo::create_blob(&txn, blob_model).await?
-        }
-    };
+    let blob =
+        file_repo::find_or_create_blob(&txn, &file_hash, size, policy.id, &storage_path).await?;
 
-    let mut final_name = session.filename.clone();
-    while file_repo::find_by_name_in_folder(&txn, session.user_id, session.folder_id, &final_name)
-        .await?
-        .is_some()
-    {
-        final_name = crate::utils::next_copy_name(&final_name);
-    }
+    let final_name = file_repo::resolve_unique_filename(
+        &txn,
+        session.user_id,
+        session.folder_id,
+        &session.filename,
+    )
+    .await?;
 
     let mime = mime_guess::from_path(&final_name)
         .first_or_octet_stream()
@@ -472,11 +449,21 @@ async fn complete_presigned_upload(
         )));
     }
 
-    // ── [事务外] 标记 assembling ──
-    let mut active: upload_session::ActiveModel = session.clone().into();
-    active.status = Set(UploadSessionStatus::Assembling);
-    active.updated_at = Set(Utc::now());
-    upload_session_repo::update(db, active).await?;
+    // ── 原子状态转换 presigned → assembling（防止并发 complete 双重触发） ──
+    let upload_id = &session.id;
+    let transitioned = upload_session_repo::try_transition_status(
+        db,
+        upload_id,
+        UploadSessionStatus::Presigned,
+        UploadSessionStatus::Assembling,
+    )
+    .await?;
+    if !transitioned {
+        return Err(AsterError::upload_assembly_failed(format!(
+            "session status is '{:?}', expected 'presigned'",
+            session.status
+        )));
+    }
 
     // ── [事务外] 流式 SHA256（从 S3 读，64KB buffer） ──
     let file_hash = {
@@ -501,7 +488,7 @@ async fn complete_presigned_upload(
     let now = Utc::now();
 
     // ── [事务外] copy_object（仅新 blob 时需要） ──
-    let storage_path = format!("{}/{}/{}", &file_hash[..2], &file_hash[2..4], &file_hash);
+    let storage_path = crate::utils::storage_path_from_hash(&file_hash);
     let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
         .await?
         .is_some();
@@ -513,36 +500,17 @@ async fn complete_presigned_upload(
     let txn = state.db.begin().await.map_err(AsterError::from)?;
 
     // Blob 去重（事务内重新检查，防止并发竞争）
-    let blob = match file_repo::find_blob_by_hash(&txn, &file_hash, policy.id).await? {
-        Some(existing) => {
-            let new_ref_count = existing.ref_count + 1;
-            let mut blob_active: file_blob::ActiveModel = existing.into();
-            blob_active.ref_count = Set(new_ref_count);
-            blob_active.updated_at = Set(now);
-            blob_active.update(&txn).await.map_err(AsterError::from)?
-        }
-        None => {
-            let blob_model = file_blob::ActiveModel {
-                hash: Set(file_hash),
-                size: Set(actual_size),
-                ref_count: Set(1),
-                policy_id: Set(policy.id),
-                storage_path: Set(storage_path),
-                created_at: Set(now),
-                updated_at: Set(now),
-                ..Default::default()
-            };
-            file_repo::create_blob(&txn, blob_model).await?
-        }
-    };
+    let blob =
+        file_repo::find_or_create_blob(&txn, &file_hash, actual_size, policy.id, &storage_path)
+            .await?;
 
-    let mut final_name = session.filename.clone();
-    while file_repo::find_by_name_in_folder(&txn, session.user_id, session.folder_id, &final_name)
-        .await?
-        .is_some()
-    {
-        final_name = crate::utils::next_copy_name(&final_name);
-    }
+    let final_name = file_repo::resolve_unique_filename(
+        &txn,
+        session.user_id,
+        session.folder_id,
+        &session.filename,
+    )
+    .await?;
 
     let mime = mime_guess::from_path(&final_name)
         .first_or_octet_stream()
