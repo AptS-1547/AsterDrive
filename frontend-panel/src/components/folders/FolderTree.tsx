@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { SkeletonTree } from "@/components/common/SkeletonTree";
 import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
+import { DRAG_MIME } from "@/lib/constants";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
@@ -18,8 +19,6 @@ interface TreeNodeData {
 	expanded: boolean;
 	loading: boolean;
 }
-
-const DRAG_MIME = "application/x-asterdrive-move";
 
 function TreeNode({
 	node,

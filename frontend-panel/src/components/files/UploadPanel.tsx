@@ -186,7 +186,7 @@ export function UploadPanel({
 													<div className="space-y-1 px-1 text-[11px] text-muted-foreground">
 														<div className="flex items-center justify-between gap-2">
 															<div className="min-w-0 truncate font-medium">
-																{group || "根目录"}
+																{group || t("root")}
 															</div>
 															<div className="shrink-0">
 																{batchStatus === "active"
@@ -198,11 +198,16 @@ export function UploadPanel({
 														</div>
 														<div className="flex items-center justify-between gap-2">
 															<div className="min-w-0 truncate">
-																目标位置：{targetLabel ?? "当前目录"}
+																{t("upload_target_location")}：
+																{targetLabel ?? t("upload_target_current")}
 															</div>
 															<div className="shrink-0">
-																{total} 个 · {success} 成功 · {failed} 失败 ·{" "}
-																{active} 进行中
+																{t("upload_group_stats", {
+																	total,
+																	success,
+																	failed,
+																	active,
+																})}
 															</div>
 														</div>
 													</div>

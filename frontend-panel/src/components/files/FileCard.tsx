@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { FileThumbnail } from "@/components/files/FileThumbnail";
 import { Icon } from "@/components/ui/icon";
+import { ItemCheckbox } from "@/components/ui/item-checkbox";
+import { DRAG_MIME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { FileInfo, FolderInfo } from "@/types/api";
-
-const DRAG_MIME = "application/x-asterdrive-move";
 
 interface FileCardProps {
 	item: FileInfo | FolderInfo;
@@ -90,36 +90,14 @@ export function FileCard({
 			role="button"
 			tabIndex={0}
 		>
-			{/* biome-ignore lint/a11y/useSemanticElements: custom styled checkbox */}
-			<div
+			<ItemCheckbox
+				checked={selected}
+				onChange={onSelect}
 				className={cn(
-					"absolute top-2 left-2 h-4 w-4 rounded border flex items-center justify-center transition-opacity",
-					selected
-						? "opacity-100 bg-primary border-primary"
-						: "opacity-0 group-hover:opacity-100 border-muted-foreground",
+					"absolute top-2 left-2 transition-opacity",
+					selected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
 				)}
-				onClick={(e) => {
-					e.stopPropagation();
-					onSelect();
-				}}
-				onKeyDown={() => {}}
-				role="checkbox"
-				aria-checked={selected}
-				tabIndex={-1}
-			>
-				{selected && (
-					// biome-ignore lint/a11y/noSvgWithoutTitle: decorative checkmark
-					<svg
-						viewBox="0 0 12 12"
-						className="h-3 w-3 text-primary-foreground"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="2"
-					>
-						<polyline points="2,6 5,9 10,3" />
-					</svg>
-				)}
-			</div>
+			/>
 
 			{/* Icon / Thumbnail */}
 			<div className="h-20 w-full flex items-center justify-center mb-2 rounded-lg bg-muted/40">

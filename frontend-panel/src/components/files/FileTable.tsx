@@ -10,6 +10,7 @@ import {
 	UpdatedAtCell,
 } from "@/components/files/FileTableCells";
 import { Icon } from "@/components/ui/icon";
+import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import {
 	Table,
 	TableBody,
@@ -18,6 +19,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { DRAG_MIME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { SortBy } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
@@ -111,7 +113,6 @@ export function FileTable({
 		else selectAll();
 	};
 
-	const DRAG_MIME = "application/x-asterdrive-move";
 	const [dragOverId, setDragOverId] = useState<number | null>(null);
 
 	const makeDragData = (itemId: number, isFolder: boolean) => {
@@ -163,33 +164,7 @@ export function FileTable({
 			<TableHeader>
 				<TableRow>
 					<TableHead className="w-8 px-1">
-						{/* biome-ignore lint/a11y/useSemanticElements: custom styled checkbox */}
-						<div
-							className={cn(
-								"h-4 w-4 rounded border flex items-center justify-center cursor-pointer",
-								allSelected
-									? "bg-primary border-primary"
-									: "border-muted-foreground",
-							)}
-							onClick={handleSelectAll}
-							onKeyDown={() => {}}
-							role="checkbox"
-							aria-checked={allSelected}
-							tabIndex={0}
-						>
-							{allSelected && (
-								// biome-ignore lint/a11y/noSvgWithoutTitle: decorative checkmark
-								<svg
-									viewBox="0 0 12 12"
-									className="h-3 w-3 text-primary-foreground"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2"
-								>
-									<polyline points="2,6 5,9 10,3" />
-								</svg>
-							)}
-						</div>
+						<ItemCheckbox checked={allSelected} onChange={handleSelectAll} />
 					</TableHead>
 					<TableHead
 						className="cursor-pointer select-none"
@@ -254,33 +229,10 @@ export function FileTable({
 							onClick={() => onFolderOpen(folder.id, folder.name)}
 						>
 							<TableCell className="px-1" onClick={(e) => e.stopPropagation()}>
-								{/* biome-ignore lint/a11y/useSemanticElements: custom styled checkbox */}
-								<div
-									className={cn(
-										"h-4 w-4 rounded border flex items-center justify-center cursor-pointer",
-										selectedFolderIds.has(folder.id)
-											? "bg-primary border-primary"
-											: "border-muted-foreground/50",
-									)}
-									onClick={() => toggleFolderSelection(folder.id)}
-									onKeyDown={() => {}}
-									role="checkbox"
-									aria-checked={selectedFolderIds.has(folder.id)}
-									tabIndex={-1}
-								>
-									{selectedFolderIds.has(folder.id) && (
-										// biome-ignore lint/a11y/noSvgWithoutTitle: decorative checkmark
-										<svg
-											viewBox="0 0 12 12"
-											className="h-3 w-3 text-primary-foreground"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="2"
-										>
-											<polyline points="2,6 5,9 10,3" />
-										</svg>
-									)}
-								</div>
+								<ItemCheckbox
+									checked={selectedFolderIds.has(folder.id)}
+									onChange={() => toggleFolderSelection(folder.id)}
+								/>
 							</TableCell>
 							<FolderNameCell folder={folder} />
 							<FolderSizeCell />
@@ -314,33 +266,10 @@ export function FileTable({
 							onClick={() => onFileClick(file)}
 						>
 							<TableCell className="px-1" onClick={(e) => e.stopPropagation()}>
-								{/* biome-ignore lint/a11y/useSemanticElements: custom styled checkbox */}
-								<div
-									className={cn(
-										"h-4 w-4 rounded border flex items-center justify-center cursor-pointer",
-										selectedFileIds.has(file.id)
-											? "bg-primary border-primary"
-											: "border-muted-foreground/50",
-									)}
-									onClick={() => toggleFileSelection(file.id)}
-									onKeyDown={() => {}}
-									role="checkbox"
-									aria-checked={selectedFileIds.has(file.id)}
-									tabIndex={-1}
-								>
-									{selectedFileIds.has(file.id) && (
-										// biome-ignore lint/a11y/noSvgWithoutTitle: decorative checkmark
-										<svg
-											viewBox="0 0 12 12"
-											className="h-3 w-3 text-primary-foreground"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="2"
-										>
-											<polyline points="2,6 5,9 10,3" />
-										</svg>
-									)}
-								</div>
+								<ItemCheckbox
+									checked={selectedFileIds.has(file.id)}
+									onChange={() => toggleFileSelection(file.id)}
+								/>
 							</TableCell>
 							<FileNameCell file={file} />
 							<FileSizeCell size={file.size} />

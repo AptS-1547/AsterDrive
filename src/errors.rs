@@ -160,8 +160,22 @@ impl actix_web::ResponseError for AsterError {
 
     fn error_response(&self) -> actix_web::HttpResponse {
         use crate::api::response::ApiResponse;
+        let status = self.http_status();
+
+        // 5xx 服务端错误 → error 级别，含调试信息
+        // 4xx 客户端错误 → 跳过常见的 401/403/404 避免刷屏，其余 warn
+        if status.is_server_error() {
+            tracing::error!(status = %status, error = %self, "server error");
+        } else if status.is_client_error()
+            && status != StatusCode::UNAUTHORIZED
+            && status != StatusCode::FORBIDDEN
+            && status != StatusCode::NOT_FOUND
+        {
+            tracing::warn!(status = %status, error = %self, "client error");
+        }
+
         let error_code: crate::api::error_code::ErrorCode = self.into();
-        actix_web::HttpResponse::build(self.http_status())
+        actix_web::HttpResponse::build(status)
             .json(ApiResponse::<()>::error(error_code, self.message()))
     }
 }

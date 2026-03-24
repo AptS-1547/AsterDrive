@@ -22,15 +22,9 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { invalidateBlobUrl } from "@/hooks/useBlobUrl";
 import { invalidateTextContent } from "@/hooks/useTextContent";
+import { formatBytes } from "@/lib/format";
 import type { FileVersion } from "@/services/fileService";
 import { fileService } from "@/services/fileService";
-
-function formatSize(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-	if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
-	return `${(bytes / 1073741824).toFixed(1)} GB`;
-}
 
 interface VersionHistoryDialogProps {
 	open: boolean;
@@ -142,7 +136,7 @@ export function VersionHistoryDialog({
 									<div className="mt-1 text-xs text-muted-foreground">
 										{mimeType ?? t("common:file")}
 										{currentSize !== undefined
-											? ` · ${formatSize(currentSize)}`
+											? ` · ${formatBytes(currentSize)}`
 											: ""}
 									</div>
 								)}
@@ -164,7 +158,7 @@ export function VersionHistoryDialog({
 								</div>
 								<div className="mt-1 text-xs text-muted-foreground">
 									{currentSize !== undefined
-										? formatSize(currentSize)
+										? formatBytes(currentSize)
 										: t("common:file")}
 									{mimeType ? ` · ${mimeType}` : ""}
 								</div>
@@ -199,7 +193,7 @@ export function VersionHistoryDialog({
 											v{v.version}
 										</TableCell>
 										<TableCell className="text-sm">
-											{formatSize(v.size)}
+											{formatBytes(v.size)}
 										</TableCell>
 										<TableCell className="text-muted-foreground text-xs">
 											{new Date(v.created_at).toLocaleString()}
