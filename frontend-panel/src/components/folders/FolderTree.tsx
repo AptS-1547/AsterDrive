@@ -198,8 +198,7 @@ export function FolderTree() {
 	const moveToFolder = useFileStore((s) => s.moveToFolder);
 	const storeFolders = useFileStore((s) => s.folders);
 	const storeCurrentFolderId = useFileStore((s) => s.currentFolderId);
-	const isFileBrowserRoute =
-		location.pathname === "/" || location.pathname.startsWith("/folder");
+	const isRootRoute = location.pathname === "/";
 	const cachedTree =
 		folderTreeCache?.userId === userId ? folderTreeCache : null;
 	const [nodes, setNodes] = useState<TreeNodeData[]>(() =>
@@ -249,7 +248,7 @@ export function FolderTree() {
 
 	// Refresh root when navigating to root and store folders change
 	useEffect(() => {
-		if (rootLoaded && storeCurrentFolderId === null && isFileBrowserRoute) {
+		if (rootLoaded && storeCurrentFolderId === null && isRootRoute) {
 			setNodes((prev) =>
 				storeFolders.map((f) => {
 					const existing = prev.find((n) => n.folder.id === f.id);
@@ -257,7 +256,7 @@ export function FolderTree() {
 				}),
 			);
 		}
-	}, [isFileBrowserRoute, storeFolders, storeCurrentFolderId, rootLoaded]);
+	}, [isRootRoute, storeFolders, storeCurrentFolderId, rootLoaded]);
 
 	useEffect(() => {
 		if (!rootLoaded || storeCurrentFolderId === null) return;
