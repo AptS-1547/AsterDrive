@@ -1,5 +1,6 @@
 use crate::config::LoggingConfig;
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::rolling;
 
 pub struct LoggingInitResult {
     pub guard: WorkerGuard,
@@ -7,9 +8,38 @@ pub struct LoggingInitResult {
 }
 
 pub fn init_logging(config: &LoggingConfig) -> LoggingInitResult {
-    // 创建 writer：文件 or stdout
-    let (writer, warning): (Box<dyn std::io::Write + Send + Sync>, Option<String>) =
-        if !config.file.is_empty() {
+    // 创建 writer：文件（可选轮转）or stdout
+    let (writer, warning): (Box<dyn std::io::Write + Send + Sync>, Option<String>) = if !config
+        .file
+        .is_empty()
+    {
+        if config.enable_rotation {
+            // 按天轮转，保留 max_backups 个历史文件
+            let dir = std::path::Path::new(&config.file)
+                .parent()
+                .unwrap_or(std::path::Path::new("."));
+            let filename = std::path::Path::new(&config.file)
+                .file_name()
+                .unwrap_or(std::ffi::OsStr::new("aster_drive.log"));
+            let filename_str = filename.to_str().unwrap_or("aster_drive.log");
+            match rolling::Builder::new()
+                .rotation(rolling::Rotation::DAILY)
+                .filename_prefix(filename_str.trim_end_matches(".log"))
+                .filename_suffix("log")
+                .max_log_files(config.max_backups as usize)
+                .build(dir)
+            {
+                Ok(appender) => (Box::new(appender), None),
+                Err(e) => (
+                    Box::new(std::io::stdout()),
+                    Some(format!(
+                        "Failed to create rolling log appender for '{}': {}. Falling back to stdout.",
+                        config.file, e
+                    )),
+                ),
+            }
+        } else {
+            // 不轮转，追加写入单文件
             match std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -24,9 +54,10 @@ pub fn init_logging(config: &LoggingConfig) -> LoggingInitResult {
                     )),
                 ),
             }
-        } else {
-            (Box::new(std::io::stdout()), None)
-        };
+        }
+    } else {
+        (Box::new(std::io::stdout()), None)
+    };
 
     let (non_blocking_writer, guard) = tracing_appender::non_blocking(writer);
 

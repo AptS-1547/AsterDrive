@@ -26,6 +26,21 @@ pub async fn cleanup_temp_file(path: &str) {
 }
 
 pub async fn cleanup_temp_dir(path: &str) {
+    // macOS Spotlight/Finder 可能在删除过程中往目录里塞 .DS_Store 等文件，
+    // 导致 remove_dir_all 的最终 rmdir 返回 ENOTEMPTY，重试即可。
+    for _ in 0..3 {
+        match tokio::fs::remove_dir_all(path).await {
+            Ok(()) => return,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            Err(e) => {
+                tracing::warn!("failed to cleanup temp dir {path}: {e}");
+                return;
+            }
+        }
+    }
     if let Err(e) = tokio::fs::remove_dir_all(path).await
         && e.kind() != std::io::ErrorKind::NotFound
     {

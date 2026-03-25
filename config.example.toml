@@ -21,9 +21,11 @@ redis_url = ""
 default_ttl = 3600
 
 [logging]
-level = "info"       # trace | debug | info | warn | error
-format = "text"      # "text" | "json"
-file = ""            # 留空 = stdout only
+level = "info"            # trace | debug | info | warn | error
+format = "text"           # "text" | "json"
+file = ""                 # 留空 = stdout only
+enable_rotation = true    # 按天轮转（仅 file 非空时生效）
+max_backups = 5           # 保留的历史日志文件数量
 
 [webdav]
 prefix = "/webdav"

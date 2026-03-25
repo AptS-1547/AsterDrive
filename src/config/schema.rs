@@ -163,6 +163,12 @@ pub struct LoggingConfig {
     pub format: String, // "text" | "json"
     #[serde(default)]
     pub file: String, // 留空 = stdout only
+    /// 启用日志轮转（按天），仅在 file 非空时生效
+    #[serde(default = "LoggingConfig::default_enable_rotation")]
+    pub enable_rotation: bool,
+    /// 保留的历史日志文件数量
+    #[serde(default = "LoggingConfig::default_max_backups")]
+    pub max_backups: u32,
 }
 
 impl Default for LoggingConfig {
@@ -171,6 +177,8 @@ impl Default for LoggingConfig {
             level: Self::default_level(),
             format: Self::default_format(),
             file: String::new(),
+            enable_rotation: Self::default_enable_rotation(),
+            max_backups: Self::default_max_backups(),
         }
     }
 }
@@ -181,6 +189,12 @@ impl LoggingConfig {
     }
     fn default_format() -> String {
         "text".to_string()
+    }
+    fn default_enable_rotation() -> bool {
+        true
+    }
+    fn default_max_backups() -> u32 {
+        5
     }
 }
 

@@ -53,6 +53,24 @@ pub struct UploadProgressResponse {
     pub filename: String,
 }
 
+/// 生成唯一的 upload_id（UUID v4），最多重试 5 次防止极低概率碰撞
+async fn generate_upload_id<C: sea_orm::ConnectionTrait>(db: &C) -> Result<String> {
+    for _ in 0..5 {
+        let candidate = id::new_uuid();
+        match upload_session_repo::find_by_id(db, &candidate).await {
+            Err(e) if e.code() == "E054" => return Ok(candidate), // NotFound → 可用
+            Err(e) => return Err(e),                              // 真实 DB 错误向上传播
+            Ok(_) => {
+                tracing::warn!("upload_id collision: {candidate}, retrying");
+                continue;
+            }
+        }
+    }
+    Err(AsterError::internal_error(
+        "failed to generate unique upload_id after 5 attempts",
+    ))
+}
+
 /// 上传协商：服务端根据存储策略决定上传模式
 pub async fn init_upload(
     state: &AppState,
@@ -94,8 +112,8 @@ pub async fn init_upload(
         let opts = parse_policy_options(&policy.options);
         if opts.presigned_upload {
             let driver = state.driver_registry.get_driver(&policy)?;
-            let upload_id = id::new_uuid();
-            let temp_key = format!("_tmp/{upload_id}");
+            let upload_id = generate_upload_id(db).await?;
+            let temp_key = format!("files/{upload_id}");
 
             // chunk_size == 0 → 禁用分片；文件 ≤ chunk_size → 单次 presigned PUT
             if policy.chunk_size == 0 || total_size <= policy.chunk_size {
@@ -189,7 +207,7 @@ pub async fn init_upload(
 
     let chunk_size = policy.chunk_size;
     let total_chunks = ((total_size + chunk_size - 1) / chunk_size) as i32;
-    let upload_id = id::new_uuid();
+    let upload_id = generate_upload_id(db).await?;
     let now = Utc::now();
     let expires_at = now + chrono::Duration::hours(24);
 
@@ -513,33 +531,10 @@ async fn complete_presigned_upload(
         )));
     }
 
-    // ── [事务外] 流式 SHA256 → copy → finalize（失败时回滚 session 状态） ──
+    // ── [事务外] 直接用 temp_key 作为最终路径，不做 SHA256 也不做 copy（S3 不去重） ──
     let result = async {
-        use sha2::{Digest, Sha256};
-        use tokio::io::AsyncReadExt;
-        let mut hasher = Sha256::new();
-        let mut stream = driver.get_stream(&temp_key).await?;
-        let mut buf = vec![0u8; 65536];
-        loop {
-            let n = stream
-                .read(&mut buf)
-                .await
-                .map_aster_err_ctx("read S3 stream", AsterError::upload_assembly_failed)?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&buf[..n]);
-        }
-        let file_hash = format!("{:x}", hasher.finalize());
-
+        let file_hash = format!("s3-{}", upload_id); // 占位 hash，保证唯一性
         let now = Utc::now();
-        let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-        let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
-            .await?
-            .is_some();
-        if !blob_pre_exists {
-            driver.copy_object(&temp_key, &storage_path).await?;
-        }
 
         let created = finalize_upload_session(
             state,
@@ -547,14 +542,11 @@ async fn complete_presigned_upload(
             &file_hash,
             actual_size,
             policy.id,
-            &storage_path,
+            &temp_key, // 直接用 temp_key，无需 copy
             now,
         )
         .await?;
 
-        if let Err(e) = driver.delete(&temp_key).await {
-            tracing::warn!("failed to delete S3 temp object: {e}");
-        }
         Ok(created)
     }
     .await;
@@ -605,7 +597,7 @@ async fn complete_s3_multipart(
         )));
     }
 
-    // ── 完成 S3 multipart → hash → finalize（失败时回滚 session 状态） ──
+    // ── 完成 S3 multipart → finalize（不做 SHA256，S3 不去重） ──
     let result = async {
         // 完成 S3 multipart upload（parts 按 part_number 排序）
         parts.sort_by_key(|(num, _)| *num);
@@ -631,34 +623,8 @@ async fn complete_s3_multipart(
             )));
         }
 
-        // 流式 SHA256
-        let file_hash = {
-            use sha2::{Digest, Sha256};
-            use tokio::io::AsyncReadExt;
-            let mut hasher = Sha256::new();
-            let mut stream = driver.get_stream(&temp_key).await?;
-            let mut buf = vec![0u8; 65536];
-            loop {
-                let n = stream
-                    .read(&mut buf)
-                    .await
-                    .map_aster_err_ctx("read S3 stream", AsterError::upload_assembly_failed)?;
-                if n == 0 {
-                    break;
-                }
-                hasher.update(&buf[..n]);
-            }
-            format!("{:x}", hasher.finalize())
-        };
-
+        let file_hash = format!("s3-{}", upload_id); // 占位 hash，S3 不去重
         let now = Utc::now();
-        let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-        let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
-            .await?
-            .is_some();
-        if !blob_pre_exists {
-            driver.copy_object(&temp_key, &storage_path).await?;
-        }
 
         let created = finalize_upload_session(
             state,
@@ -666,14 +632,11 @@ async fn complete_s3_multipart(
             &file_hash,
             actual_size,
             policy.id,
-            &storage_path,
+            &temp_key, // 直接用 temp_key，无需 copy
             now,
         )
         .await?;
 
-        if let Err(e) = driver.delete(&temp_key).await {
-            tracing::warn!("failed to delete S3 temp object: {e}");
-        }
         Ok(created)
     }
     .await;
