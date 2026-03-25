@@ -1,33 +1,19 @@
 import { config } from "@/config/app";
-import type { FileInfo } from "@/types/api";
+import type {
+	ChunkUploadResponse,
+	CompletedPart,
+	FileInfo,
+	InitUploadResponse,
+	UploadProgressResponse,
+} from "@/types/api";
 import { api } from "./http";
 
-export interface InitUploadResponse {
-	mode: "direct" | "chunked" | "presigned" | "presigned_multipart";
-	upload_id?: string;
-	chunk_size?: number;
-	total_chunks?: number;
-	presigned_url?: string;
-}
-
-export interface ChunkUploadResponse {
-	received_count: number;
-	total_chunks: number;
-}
-
-export interface UploadProgressResponse {
-	upload_id: string;
-	status: string;
-	received_count: number;
-	chunks_on_disk: number[];
-	total_chunks: number;
-	filename: string;
-}
-
-export interface CompletedPart {
-	part_number: number;
-	etag: string;
-}
+export type {
+	ChunkUploadResponse,
+	CompletedPart,
+	InitUploadResponse,
+	UploadProgressResponse,
+};
 
 export const uploadService = {
 	initUpload: (data: {

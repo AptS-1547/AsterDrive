@@ -20,36 +20,21 @@ export type WebdavAccountCreated =
 	components["schemas"]["WebdavAccountCreated"];
 export type WebdavAccountInfo = components["schemas"]["WebdavAccountInfo"];
 
-export interface TrashFileItem {
-	id: number;
-	name: string;
-	size: number;
-	mime_type: string;
-	created_at: string;
-	updated_at: string;
-	deleted_at: string;
-	is_locked: boolean;
-	original_path: string;
-}
-
-export interface TrashFolderItem {
-	id: number;
-	name: string;
-	created_at: string;
-	updated_at: string;
-	deleted_at: string;
-	is_locked: boolean;
-	original_path: string;
-}
+export type TrashFileItem = components["schemas"]["TrashFileItem"];
+export type TrashFolderItem = components["schemas"]["TrashFolderItem"];
+export type TrashContents = components["schemas"]["TrashContents"];
 
 export type TrashItem =
 	| (TrashFileItem & { entity_type: "file" })
 	| (TrashFolderItem & { entity_type: "folder" });
 
-export interface TrashContents {
-	files: TrashFileItem[];
-	folders: TrashFolderItem[];
-}
+export type FileVersion = components["schemas"]["FileVersion"];
+export type UploadMode = components["schemas"]["UploadMode"];
+export type UploadSessionStatus = components["schemas"]["UploadSessionStatus"];
+export type InitUploadResponse = components["schemas"]["InitUploadResponse"];
+export type ChunkUploadResponse = components["schemas"]["ChunkUploadResponse"];
+export type UploadProgressResponse = components["schemas"]["UploadProgressResponse"];
+export type CompletedPart = components["schemas"]["CompletedPartReq"];
 
 // Auth
 export type CheckResp = components["schemas"]["CheckResp"];

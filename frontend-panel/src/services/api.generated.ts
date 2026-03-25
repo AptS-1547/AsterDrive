@@ -1558,8 +1558,31 @@ export interface components {
             refresh_token: string;
         };
         TrashContents: {
-            files: components["schemas"]["FileInfo"][];
-            folders: components["schemas"]["FolderInfo"][];
+            files: components["schemas"]["TrashFileItem"][];
+            folders: components["schemas"]["TrashFolderItem"][];
+        };
+        TrashFileItem: {
+            created_at: string;
+            deleted_at: string;
+            /** Format: int64 */
+            id: number;
+            is_locked: boolean;
+            mime_type: string;
+            name: string;
+            original_path: string;
+            /** Format: int64 */
+            size: number;
+            updated_at: string;
+        };
+        TrashFolderItem: {
+            created_at: string;
+            deleted_at: string;
+            /** Format: int64 */
+            id: number;
+            is_locked: boolean;
+            name: string;
+            original_path: string;
+            updated_at: string;
         };
         TrashItemPath: {
             entity_type: components["schemas"]["EntityType"];
@@ -5323,8 +5346,8 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            files: components["schemas"]["FileInfo"][];
-                            folders: components["schemas"]["FolderInfo"][];
+                            files: components["schemas"]["TrashFileItem"][];
+                            folders: components["schemas"]["TrashFolderItem"][];
                         };
                         msg: string;
                     };

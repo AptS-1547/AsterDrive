@@ -1,6 +1,7 @@
 import type {
 	ErrorCode,
 	FileInfo,
+	FileVersion,
 	FolderContents,
 	FolderInfo,
 } from "@/types/api";
@@ -82,12 +83,3 @@ export const fileService = {
 	deleteVersion: (fileId: number, versionId: number) =>
 		api.delete<void>(`/files/${fileId}/versions/${versionId}`),
 };
-
-export interface FileVersion {
-	id: number;
-	file_id: number;
-	blob_id: number;
-	version: number;
-	size: number;
-	created_at: string;
-}
