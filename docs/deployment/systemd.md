@@ -1,38 +1,39 @@
 # systemd 部署
 
-systemd 适合长期稳定运行。这里最重要的是先确定 `WorkingDirectory`，因为默认配置、SQLite 和本地上传目录都会受它影响。
+systemd 适合长期稳定运行的 Linux 主机。先把工作目录定下来，再决定配置文件、数据库和本地上传目录放在哪。
 
-## 1. 准备二进制
+## 1. 准备运行目录
 
-```bash
-sudo install -m 0755 target/release/aster_drive /usr/local/bin/aster_drive
-```
-
-## 2. 创建运行用户与目录
-
-```bash
 sudo useradd -r -s /usr/sbin/nologin asterdrive
 sudo mkdir -p /var/lib/asterdrive
 sudo chown -R asterdrive:asterdrive /var/lib/asterdrive
 ```
 
-## 3. 准备配置文件和工作目录
+## 2. 放置可执行文件
 
-把配置文件放进工作目录：
+把 `aster_drive` 可执行文件放到一个固定路径，例如：
+
+```bash
+sudo install -m 0755 ./aster_drive /usr/local/bin/aster_drive
+```
+
+## 3. 准备配置文件
+
+把 `config.toml` 放进工作目录：
 
 ```bash
 sudo cp config.toml /var/lib/asterdrive/config.toml
 sudo chown asterdrive:asterdrive /var/lib/asterdrive/config.toml
 ```
 
-如果你不想手写配置，也可以先让服务在这个目录里启动一次，让它自动生成默认配置，再回头修改。
-
 如果继续使用默认 SQLite 和默认本地存储，工作目录下会自动出现：
 
 - `asterdrive.db`
 - `data/uploads`
 
-## 4. Service 文件
+如果你打算长期运行，建议数据库路径和本地存储路径尽量使用绝对路径，避免以后修改 `WorkingDirectory` 时找错数据。
+
+## 4. 写入 Service 文件
 
 创建 `/etc/systemd/system/asterdrive.service`：
 
@@ -55,7 +56,7 @@ Environment=RUST_LOG=info
 WantedBy=multi-user.target
 ```
 
-如果你现在还只是内网 HTTP 测试，记得在 `config.toml` 里把 `auth.cookie_secure` 设成 `false`。正式切到 HTTPS 后再改回 `true`。
+如果你现在还是内网 HTTP 测试，记得在 `config.toml` 里把 `auth.cookie_secure` 设成 `false`。正式切到 HTTPS 后再改回 `true`。
 
 ## 5. 启动服务
 
@@ -71,7 +72,7 @@ sudo systemctl status asterdrive
 journalctl -u asterdrive -f
 ```
 
-上线后建议先确认：
+## 7. 首次验收
 
 - `/health` 返回 200
 - `/health/ready` 返回 200
@@ -79,7 +80,7 @@ journalctl -u asterdrive -f
 - 浏览器可以正常登录
 - 如果启用了 WebDAV，实际挂载路径与 `[webdav].prefix` 一致
 
-## 7. 常见变体
+## 8. 常见环境变量写法
 
 ### 把数据库放到其他位置
 
@@ -99,6 +100,6 @@ Environment=ASTER__SERVER__HOST=0.0.0.0
 Environment=ASTER__AUTH__JWT_SECRET=your-fixed-secret
 ```
 
-## 8. HTTPS 与域名
+## 9. HTTPS 与域名
 
-systemd 只负责拉起服务。若你需要 HTTPS、域名和 WebDAV 客户端访问，请在前面再加一层反向代理，见 [反向代理部署](/deployment/proxy)。
+systemd 只负责拉起服务。要提供 HTTPS、域名和 WebDAV 客户端访问，还需要在前面加一层反向代理，见 [反向代理部署](/deployment/proxy)。

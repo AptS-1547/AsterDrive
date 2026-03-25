@@ -9,6 +9,12 @@ enable_rotation = true
 max_backups = 5
 ```
 
+## 先决定日志写到哪里
+
+- Docker：通常直接输出到 stdout
+- systemd：通常交给 journald
+- 单进程裸跑：可以写入单独的日志文件
+
 ## 字段说明
 
 | 字段 | 默认值 | 说明 |

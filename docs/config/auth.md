@@ -8,6 +8,11 @@ refresh_token_ttl_secs = 604800
 cookie_secure = true
 ```
 
+## 最先确认的两项
+
+- `jwt_secret`：正式环境一定要固定
+- `cookie_secure`：纯 HTTP 测试时设为 `false`，正式 HTTPS 时设为 `true`
+
 ## 字段说明
 
 | 字段 | 默认值 | 说明 |
@@ -17,7 +22,7 @@ cookie_secure = true
 | `refresh_token_ttl_secs` | `604800` | 长期续期令牌有效期，默认 7 天 |
 | `cookie_secure` | `true` | 是否只允许浏览器通过 HTTPS 发送登录 Cookie |
 
-## 最重要的一项：`cookie_secure`
+## `cookie_secure` 怎么选
 
 ### 本地 HTTP 测试
 
@@ -35,9 +40,10 @@ cookie_secure = true
 
 如果你已经通过反向代理对外提供 HTTPS，通常就应该保持 `true`。
 
-## 其他需要知道的事情
+## 其他需要知道的事
 
 - 第一个创建成功的账号会自动成为管理员
+- 当前版本默认允许新用户从登录页自行注册，未提供内置的“关闭注册”开关
 - 修改 `jwt_secret` 后，现有登录会话会失效，需要重新登录
 - 新用户默认配额由管理员后台里的系统设置决定
 

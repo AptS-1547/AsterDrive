@@ -20,7 +20,7 @@ const VERSION = getVersion()
 
 export default defineConfig({
   title: 'AsterDrive',
-  description: 'AsterDrive 使用与部署手册，涵盖安装、配置、文件管理、分享、WebDAV 和管理后台',
+  description: 'AsterDrive 使用与部署手册，涵盖安装、配置、文件管理、分享、WebDAV、限流和管理后台',
 
   locales: {
     root: {
@@ -84,8 +84,8 @@ export default defineConfig({
             { text: '快速开始', link: '/guide/getting-started' },
             { text: '用户手册', link: '/guide/user-guide' },
             { text: '常用流程', link: '/guide/core-workflows' },
-            { text: '上传与大文件', link: '/guide/upload-modes' },
             { text: '分享', link: '/guide/sharing' },
+            { text: '上传与大文件', link: '/guide/upload-modes' },
             { text: '文件编辑', link: '/guide/editing' },
             { text: '管理后台', link: '/guide/admin-console' }
           ]
@@ -102,6 +102,7 @@ export default defineConfig({
             { text: '存储策略', link: '/config/storage' },
             { text: 'WebDAV', link: '/config/webdav' },
             { text: '系统设置', link: '/config/runtime' },
+            { text: '访问限流', link: '/config/rate-limit' },
             { text: '缓存', link: '/config/cache' },
             { text: '日志', link: '/config/logging' }
           ]
@@ -115,7 +116,8 @@ export default defineConfig({
             { text: 'Docker', link: '/deployment/docker' },
             { text: 'systemd', link: '/deployment/systemd' },
             { text: '反向代理', link: '/deployment/proxy' },
-            { text: '首次启动', link: '/deployment/runtime-behavior' }
+            { text: '首次启动', link: '/deployment/runtime-behavior' },
+            { text: '升级与页面版本', link: '/deployment/frontend-assets' }
           ]
         }
       ]

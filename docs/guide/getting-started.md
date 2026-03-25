@@ -1,14 +1,21 @@
 # 快速开始
 
-这篇文档适合第一次试用 AsterDrive。目标很简单：把服务跑起来，创建第一个管理员账号，然后完成一次上传、一次分享和一次基础验收。
+下面这套流程按 Docker 编写，适合第一次把 AsterDrive 跑起来做验证。
 
 ## 1. 启动服务
 
 ```bash
-cargo run
+docker run -d \
+  --name asterdrive \
+  -p 3000:3000 \
+  -e ASTER__SERVER__HOST=0.0.0.0 \
+  -e ASTER__AUTH__COOKIE_SECURE=false \
+  -e ASTER__DATABASE__URL="sqlite:///data/asterdrive.db?mode=rwc" \
+  -v asterdrive-data:/data \
+  ghcr.io/apts-1547/asterdrive:latest
 ```
 
-如果你已经有编译好的二进制，也可以直接运行 `./aster_drive`。首次启动时，AsterDrive 会自动完成这些准备工作：
+第一次启动时，AsterDrive 会自动完成这些准备工作：
 
 - 在当前工作目录生成 `config.toml`
 - 创建默认 SQLite 数据库 `asterdrive.db`
@@ -20,34 +27,30 @@ cargo run
 默认地址：
 
 ```text
-http://127.0.0.1:3000
+http://服务器地址:3000
 ```
 
-如果你想用 Docker 或 systemd 部署，直接看 [安装部署](/guide/installation)。
+上面的命令里把 `auth.cookie_secure` 临时设成了 `false`，这样本机或内网用 HTTP 测试时可以正常登录。正式上线到 HTTPS 域名后，把它改回 `true`。
 
 ## 2. 打开页面并创建第一个账号
 
-1. 在浏览器打开 `http://127.0.0.1:3000`
+1. 在浏览器打开 `http://服务器地址:3000`
 2. 输入用户名、邮箱和密码
 3. 完成首次创建后登录
 
 第一个创建出来的账号会自动成为管理员。
 
-如果你是在本机用纯 HTTP 访问，发现登录后页面马上又回到登录页，请把配置文件里的 `auth.cookie_secure` 改成 `false`，然后重启服务。正式上线到 HTTPS 域名后，再改回 `true`。
-
 ## 3. 上传并确认第一个文件
 
-登录后你会进入文件浏览器首页。先做三件事：
+登录后先做三件事：
 
 - 创建一个测试文件夹
 - 上传一个文件
 - 打开它，确认可以预览或下载
 
-如果你测试的是大文件，AsterDrive 会自动选择更合适的上传方式，不需要手动切换。
-
 ## 4. 试一次分享
 
-在文件列表里打开某个文件或文件夹的操作菜单，创建一个分享链接。你可以按需设置：
+在文件或文件夹的操作菜单里创建分享链接。可以按需设置：
 
 - 密码
 - 过期时间
@@ -57,7 +60,7 @@ http://127.0.0.1:3000
 
 ## 5. 如果要用 WebDAV，再做一次连接测试
 
-如果你希望在 Finder、Windows 资源管理器、rclone 或其他客户端里使用 AsterDrive：
+如果你要在 Finder、Windows 资源管理器、rclone 或其他客户端里使用 AsterDrive：
 
 1. 打开 `WebDAV`
 2. 创建一个专用 WebDAV 账号
@@ -70,9 +73,9 @@ http://127.0.0.1:3000
 
 建议第一次登录后把下面几项检查一遍：
 
-- `管理员后台 -> 用户`
-- `管理员后台 -> 存储策略`
-- `管理员后台 -> 系统设置`
+- `管理 -> 用户`
+- `管理 -> 存储策略`
+- `管理 -> 系统设置`
 - `WebDAV`
 
 建议至少确认：
@@ -92,11 +95,3 @@ http://127.0.0.1:3000
 - 分享链接可以打开
 - `http://127.0.0.1:3000/health` 返回正常
 - 如果你启用了 WebDAV，客户端可以成功连接并读写
-
-## 继续阅读
-
-- [安装部署](/guide/installation)
-- [用户手册](/guide/user-guide)
-- [管理后台](/guide/admin-console)
-- [配置概览](/config/)
-- [部署概览](/deployment/)

@@ -13,6 +13,8 @@ prefix = "/webdav"
 payload_limit = 10737418240
 ```
 
+这两项都在 `config.toml` 里修改，改完需要重启服务。
+
 ## 字段说明
 
 | 字段 | 默认值 | 说明 |

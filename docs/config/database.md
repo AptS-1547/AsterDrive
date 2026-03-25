@@ -7,7 +7,7 @@ pool_size = 10
 retry_count = 3
 ```
 
-## 该选哪种数据库
+## 先选数据库类型
 
 - SQLite：单机、NAS、个人或小团队部署最省心
 - PostgreSQL：已有现成 PostgreSQL 环境，或希望接入现有运维体系
@@ -31,11 +31,11 @@ retry_count = 3
 url = "sqlite://asterdrive.db?mode=rwc"
 ```
 
-适合：
+如果你在 Docker 里部署，常见写法是：
 
-- 本机部署
-- 小型团队
-- 先快速把系统跑起来
+```toml
+url = "sqlite:///data/asterdrive.db?mode=rwc"
+```
 
 ### PostgreSQL
 
@@ -66,3 +66,5 @@ url = "mysql://user:password@localhost:3306/asterdrive"
 - 本地直接运行：落在你执行命令的目录
 - systemd：落在 `WorkingDirectory`
 - Docker：如果你显式指定了 `sqlite:///data/asterdrive.db?mode=rwc`，数据库会落在 `/data`
+
+长期部署时，建议把 SQLite 放到固定目录或持久化卷里。
