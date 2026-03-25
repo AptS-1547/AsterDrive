@@ -75,6 +75,8 @@ interface UploadTask {
 const MAX_FILE_CONCURRENT = 2;
 const CHUNK_CONCURRENT = 3;
 const CHUNK_MAX_RETRIES = 3;
+const PROGRESS_FLUSH_INTERVAL = 500;
+const MAX_FINISHED_TASKS = 50;
 
 /** completeUpload with polling retry when backend is still assembling (3011) */
 async function completeWithRetry(
@@ -155,6 +157,9 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				if (refreshTimeoutRef.current !== null) {
 					window.clearTimeout(refreshTimeoutRef.current);
 				}
+				if (progressFlushTimerRef.current !== null) {
+					window.clearTimeout(progressFlushTimerRef.current);
+				}
 			};
 		}, []);
 
@@ -179,13 +184,58 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 		const patchTask = useCallback(
 			(taskId: string, patch: Partial<UploadTask>) => {
+				const terminalStatus: UploadStatus[] = [
+					"completed",
+					"failed",
+					"cancelled",
+				];
+				const finalPatch =
+					patch.status && terminalStatus.includes(patch.status)
+						? { ...patch, file: null }
+						: patch;
 				setTasks((prev) =>
 					prev.map((task) =>
-						task.id === taskId ? { ...task, ...patch } : task,
+						task.id === taskId ? { ...task, ...finalPatch } : task,
 					),
 				);
 			},
 			[],
+		);
+
+		// ── 节流进度更新：累积到 buffer，每 500ms 批量 flush ──
+		const progressBufferRef = useRef(new Map<string, Partial<UploadTask>>());
+		const progressFlushTimerRef = useRef<number | null>(null);
+
+		const flushProgress = useCallback(() => {
+			progressFlushTimerRef.current = null;
+			const buffer = progressBufferRef.current;
+			if (buffer.size === 0) return;
+			const updates = new Map(buffer);
+			buffer.clear();
+			setTasks((prev) =>
+				prev.map((task) => {
+					const patch = updates.get(task.id);
+					return patch ? { ...task, ...patch } : task;
+				}),
+			);
+		}, []);
+
+		/** 节流版 patchTask — 仅用于 progress/completedChunks 等高频更新 */
+		const patchTaskThrottled = useCallback(
+			(taskId: string, patch: Partial<UploadTask>) => {
+				const existing = progressBufferRef.current.get(taskId);
+				progressBufferRef.current.set(
+					taskId,
+					existing ? { ...existing, ...patch } : patch,
+				);
+				if (progressFlushTimerRef.current === null) {
+					progressFlushTimerRef.current = window.setTimeout(
+						flushProgress,
+						PROGRESS_FLUSH_INTERVAL,
+					);
+				}
+			},
+			[flushProgress],
 		);
 
 		const finalizeTaskRefresh = useCallback(
@@ -339,7 +389,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						signal: controller.signal,
 						onUploadProgress: (event) => {
 							if (!event.total) return;
-							patchTask(task.id, {
+							patchTaskThrottled(task.id, {
 								progress: Math.round((event.loaded / event.total) * 100),
 							});
 						},
@@ -370,6 +420,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				finalizeTaskRefresh,
 				markTaskFailed,
 				patchTask,
+				patchTaskThrottled,
 				t,
 			],
 		);
@@ -427,7 +478,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 						if (lastError) throw lastError;
 						completed += 1;
-						patchTask(task.id, {
+						patchTaskThrottled(task.id, {
 							completedChunks: completed,
 							progress: Math.round((completed / totalChunks) * 95),
 						});
@@ -446,6 +497,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						return;
 					}
 
+					flushProgress();
 					patchTask(task.id, { status: "processing", progress: 95 });
 					await completeWithRetry(uploadId);
 					removeSession(uploadId);
@@ -469,7 +521,14 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					abortFlagsRef.current.delete(task.id);
 				}
 			},
-			[finalizeTaskRefresh, markTaskFailed, patchTask, t],
+			[
+				finalizeTaskRefresh,
+				flushProgress,
+				markTaskFailed,
+				patchTask,
+				patchTaskThrottled,
+				t,
+			],
 		);
 
 		const runPresignedUpload = useCallback(
@@ -488,7 +547,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						presignedUrl,
 						task.file!,
 						(loaded, total) => {
-							patchTask(task.id, {
+							patchTaskThrottled(task.id, {
 								progress: Math.round((loaded / total) * 90),
 							});
 						},
@@ -497,6 +556,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						},
 					);
 
+					flushProgress();
 					patchTask(task.id, { status: "processing", progress: 90 });
 					await completeWithRetry(uploadId);
 					patchTask(task.id, {
@@ -519,7 +579,14 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					presignedXhrRef.current.delete(task.id);
 				}
 			},
-			[finalizeTaskRefresh, markTaskFailed, patchTask, t],
+			[
+				finalizeTaskRefresh,
+				flushProgress,
+				markTaskFailed,
+				patchTask,
+				patchTaskThrottled,
+				t,
+			],
 		);
 
 		const runMultipartUpload = useCallback(
@@ -608,7 +675,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 						if (lastError) throw lastError;
 						completed += 1;
-						patchTask(task.id, {
+						patchTaskThrottled(task.id, {
 							completedChunks: completed,
 							progress: Math.round((completed / totalChunks) * 90),
 						});
@@ -627,6 +694,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						return;
 					}
 
+					flushProgress();
 					patchTask(task.id, { status: "processing", progress: 90 });
 
 					// 按 part_number 排序后发送
@@ -653,7 +721,14 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					abortFlagsRef.current.delete(task.id);
 				}
 			},
-			[finalizeTaskRefresh, markTaskFailed, patchTask, t],
+			[
+				finalizeTaskRefresh,
+				flushProgress,
+				markTaskFailed,
+				patchTask,
+				patchTaskThrottled,
+				t,
+			],
 		);
 
 		const runTask = useCallback(
@@ -782,6 +857,40 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				void runTask(task.id);
 			});
 		}, [runTask, tasks]);
+
+		// ── 自动清理：已完成/已取消的 task 超过上限时移除最旧的 ──
+		useEffect(() => {
+			const finishedStatuses: UploadStatus[] = ["completed", "cancelled"];
+			const finishedCount = tasks.filter((task) =>
+				finishedStatuses.includes(task.status),
+			).length;
+			if (finishedCount <= MAX_FINISHED_TASKS) return;
+			// tasks 数组中靠后的是先加入的（addFiles 用 prepend）
+			// 从尾部开始移除最旧的已完成 task
+			const toRemove = finishedCount - MAX_FINISHED_TASKS;
+			let removed = 0;
+			const keepSet = new Set<string>();
+			// 从尾部扫描，标记要移除的
+			for (let i = tasks.length - 1; i >= 0 && removed < toRemove; i--) {
+				if (finishedStatuses.includes(tasks[i].status)) {
+					removed++;
+				} else {
+					keepSet.add(tasks[i].id);
+				}
+			}
+			setTasks((prev) => {
+				let r = 0;
+				const result: UploadTask[] = [];
+				for (let i = prev.length - 1; i >= 0; i--) {
+					if (finishedStatuses.includes(prev[i].status) && r < toRemove) {
+						r++;
+					} else {
+						result.push(prev[i]);
+					}
+				}
+				return result.reverse();
+			});
+		}, [tasks]);
 
 		const cancelTask = useCallback(
 			async (taskId: string) => {
@@ -952,36 +1061,43 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			addFiles(e.dataTransfer.files);
 		};
 
+		// ── 统计：单次遍历代替 4 次 filter + 1 次 reduce ──
+		let successCount = 0;
+		let failedCount = 0;
+		let activeCount = 0;
+		let progressSum = 0;
+		for (const task of tasks) {
+			progressSum += task.progress;
+			if (task.status === "completed") successCount++;
+			else if (task.status === "failed") failedCount++;
+			else if (
+				task.status === "queued" ||
+				task.status === "initializing" ||
+				task.status === "uploading" ||
+				task.status === "processing"
+			)
+				activeCount++;
+		}
 		const totalCount = tasks.length;
-		const successCount = tasks.filter(
-			(task) => task.status === "completed",
-		).length;
-		const failedCount = tasks.filter((task) => task.status === "failed").length;
-		const activeCount = tasks.filter((task) =>
-			["queued", "initializing", "uploading", "processing"].includes(
-				task.status,
-			),
-		).length;
 		const overallProgress =
-			totalCount === 0
-				? 0
-				: Math.round(
-						tasks.reduce((sum, task) => sum + task.progress, 0) / totalCount,
-					);
+			totalCount === 0 ? 0 : Math.round(progressSum / totalCount);
+
+		// ── 只为可见 task 生成 UploadTaskView（活跃的优先，完成的限量展示）──
+		// pending_file 任务需要从 localStorage 获取文件名，预加载一次
+		const hasPendingFile = tasks.some(
+			(task) => task.status === "pending_file" && !task.file,
+		);
+		const sessionCache = hasPendingFile ? loadSessions() : [];
 
 		const uploadTasks: UploadTaskView[] = tasks.map((task) => {
 			const isPendingFile = task.status === "pending_file";
 
-			// 从 localStorage 获取 pending_file 任务的文件名
 			const taskTitle = task.file
 				? task.file.name
-				: (() => {
-						const sessions = loadSessions();
-						return (
-							sessions.find((s) => s.uploadId === task.uploadId)?.filename ??
-							"?"
-						);
-					})();
+				: isPendingFile
+					? (sessionCache.find((s) => s.uploadId === task.uploadId)?.filename ??
+						"?")
+					: "?";
 
 			const modeLabel =
 				task.mode === "chunked"

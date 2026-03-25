@@ -349,6 +349,24 @@ pub async fn soft_delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// 批量软删除：一次 UPDATE 标记多个文件的 deleted_at
+pub async fn soft_delete_many<C: ConnectionTrait>(
+    db: &C,
+    ids: &[i64],
+    now: chrono::DateTime<Utc>,
+) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    File::update_many()
+        .col_expr(file::Column::DeletedAt, Expr::value(Some(now)))
+        .filter(file::Column::Id.is_in(ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
 /// 恢复：清除 deleted_at
 pub async fn restore<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     let f = find_by_id(db, id).await?;

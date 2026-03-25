@@ -2,52 +2,93 @@ use std::future::Future;
 use std::pin::Pin;
 
 use chrono::Utc;
-use sea_orm::Set;
+use sea_orm::{Set, TransactionTrait};
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::folder;
-use crate::errors::Result;
+use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::file_service;
 
-/// 递归软删除文件夹及其所有内容（→ 回收站）
-pub fn recursive_soft_delete<'a>(
-    state: &'a AppState,
+/// 递归收集文件夹树内的所有文件和子文件夹 ID
+///
+/// - `include_deleted = true`：收集全部（含已软删除），用于 purge
+/// - `include_deleted = false`：只收集未删除项，用于 soft_delete
+pub async fn collect_folder_tree(
+    db: &sea_orm::DatabaseConnection,
     user_id: i64,
     folder_id: i64,
+    include_deleted: bool,
+) -> Result<(Vec<crate::entities::file::Model>, Vec<i64>)> {
+    let mut files = Vec::new();
+    let mut folder_ids = Vec::new();
+    collect_tree_inner(
+        db,
+        user_id,
+        folder_id,
+        include_deleted,
+        &mut files,
+        &mut folder_ids,
+    )
+    .await?;
+    Ok((files, folder_ids))
+}
+
+fn collect_tree_inner<'a>(
+    db: &'a sea_orm::DatabaseConnection,
+    user_id: i64,
+    folder_id: i64,
+    include_deleted: bool,
+    files: &'a mut Vec<crate::entities::file::Model>,
+    folder_ids: &'a mut Vec<i64>,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
     Box::pin(async move {
-        let db = &state.db;
+        folder_ids.push(folder_id);
 
-        // 软删除该文件夹下所有文件
-        let files = file_repo::find_by_folder(db, user_id, Some(folder_id)).await?;
-        for f in files {
-            file_repo::soft_delete(db, f.id).await?;
-        }
+        let folder_files = if include_deleted {
+            folder_repo::find_all_files_in_folder(db, folder_id).await?
+        } else {
+            file_repo::find_by_folder(db, user_id, Some(folder_id)).await?
+        };
+        files.extend(folder_files);
 
-        // 递归软删除子文件夹
-        let children = folder_repo::find_children(db, user_id, Some(folder_id)).await?;
+        let children = if include_deleted {
+            folder_repo::find_all_children(db, folder_id).await?
+        } else {
+            folder_repo::find_children(db, user_id, Some(folder_id)).await?
+        };
         for child in children {
-            recursive_soft_delete(state, user_id, child.id).await?;
+            collect_tree_inner(db, user_id, child.id, include_deleted, files, folder_ids).await?;
         }
 
-        // 软���除当前文件夹
-        folder_repo::soft_delete(db, folder_id).await?;
         Ok(())
     })
 }
 
+/// 递归软删除文件夹及其所有内容（→ 回收站）
+///
+/// 先收集所有未删除的文件和文件夹 ID，再一次事务内批量 soft_delete。
+pub async fn recursive_soft_delete(state: &AppState, user_id: i64, folder_id: i64) -> Result<()> {
+    let (files, folder_ids) = collect_folder_tree(&state.db, user_id, folder_id, false).await?;
+
+    let file_ids: Vec<i64> = files.into_iter().map(|f| f.id).collect();
+    let now = Utc::now();
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    file_repo::soft_delete_many(&txn, &file_ids, now).await?;
+    folder_repo::soft_delete_many(&txn, &folder_ids, now).await?;
+    txn.commit().await.map_err(AsterError::from)?;
+
+    Ok(())
+}
+
 /// 递归永久删除文件夹及其所有内容（批量优化版）
 ///
-/// 先递归收集所有文件和文件夹 ID，然后一次 batch_purge 处理所有文件，
+/// 先递归收集所有文件和文件夹 ID（含已删除），然后一次 batch_purge 处理所有文件，
 /// 再批量删除文件夹记录和属性。比逐个 purge 快得多。
 pub async fn recursive_purge_folder(state: &AppState, user_id: i64, folder_id: i64) -> Result<()> {
-    let db = &state.db;
-
-    // ── 收集阶段：递归收集所有文件和文件夹 ID ──
-    let mut all_files: Vec<crate::entities::file::Model> = Vec::new();
-    let mut all_folder_ids: Vec<i64> = Vec::new();
-    collect_folder_tree(db, folder_id, &mut all_files, &mut all_folder_ids).await?;
+    let (all_files, all_folder_ids) =
+        collect_folder_tree(&state.db, user_id, folder_id, true).await?;
 
     // ── 批量清理文件（一次事务 + 并行物理清理） ──
     if let Err(e) = file_service::batch_purge(state, all_files, user_id).await {
@@ -56,40 +97,16 @@ pub async fn recursive_purge_folder(state: &AppState, user_id: i64, folder_id: i
 
     // ── 批量清理文件夹属性 ──
     crate::db::repository::property_repo::delete_all_for_entities(
-        db,
+        &state.db,
         crate::types::EntityType::Folder,
         &all_folder_ids,
     )
     .await?;
 
     // ── 批量硬删除文件夹记录 ──
-    folder_repo::delete_many(db, &all_folder_ids).await?;
+    folder_repo::delete_many(&state.db, &all_folder_ids).await?;
 
     Ok(())
-}
-
-/// 递归收集文件夹树内的所有文件和子文件夹 ID
-fn collect_folder_tree<'a>(
-    db: &'a sea_orm::DatabaseConnection,
-    folder_id: i64,
-    files: &'a mut Vec<crate::entities::file::Model>,
-    folder_ids: &'a mut Vec<i64>,
-) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
-    Box::pin(async move {
-        folder_ids.push(folder_id);
-
-        // 收集该文件夹下所有文件（含已删除）
-        let folder_files = folder_repo::find_all_files_in_folder(db, folder_id).await?;
-        files.extend(folder_files);
-
-        // 递归子文件夹（含已删除）
-        let children = folder_repo::find_all_children(db, folder_id).await?;
-        for child in children {
-            collect_folder_tree(db, child.id, files, folder_ids).await?;
-        }
-
-        Ok(())
-    })
 }
 
 /// 递归复制文件夹及其所有内容到新位置
