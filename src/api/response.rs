@@ -46,27 +46,6 @@ impl<T: Serialize> ApiResponse<T> {
     }
 }
 
-// DTO schemas for OpenAPI
-
-#[derive(Serialize, ToSchema)]
-pub struct TokenResponse {
-    pub access_token: String,
-    pub refresh_token: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct RefreshResponse {
-    pub access_token: String,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct FolderContentsResponse {
-    pub folders: Vec<crate::entities::folder::Model>,
-    pub files: Vec<crate::entities::file::Model>,
-    pub folders_total: u64,
-    pub files_total: u64,
-}
-
 #[derive(Serialize, ToSchema)]
 pub struct HealthResponse {
     pub status: String,

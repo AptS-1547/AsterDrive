@@ -21,6 +21,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::health::health,
         crate::api::routes::health::ready,
         crate::api::routes::files::upload,
+        crate::api::routes::files::create_empty,
         crate::api::routes::files::get_file,
         crate::api::routes::files::download,
         crate::api::routes::files::get_thumbnail,
@@ -32,6 +33,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::files::presign_parts,
         crate::api::routes::files::get_upload_progress,
         crate::api::routes::files::cancel_upload,
+        crate::api::routes::files::update_content,
         crate::api::routes::files::set_lock,
         crate::api::routes::files::copy_file,
         crate::api::routes::files::list_versions,
@@ -108,9 +110,6 @@ use utoipa::{Modify, OpenApi};
     components(
         schemas(
             crate::api::error_code::ErrorCode,
-            crate::api::response::TokenResponse,
-            crate::api::response::RefreshResponse,
-            crate::api::response::FolderContentsResponse,
             crate::services::folder_service::FolderContents,
             crate::api::response::HealthResponse,
             crate::entities::user::Model,
