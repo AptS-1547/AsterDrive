@@ -130,7 +130,8 @@ impl AsterError {
             Self::PreconditionFailed(_) => StatusCode::PRECONDITION_FAILED,
 
             Self::UploadAssembling(_) => StatusCode::ACCEPTED,
-            Self::FileNotFound(_)
+            Self::RecordNotFound(_)
+            | Self::FileNotFound(_)
             | Self::StoragePolicyNotFound(_)
             | Self::FolderNotFound(_)
             | Self::ShareNotFound(_)

@@ -3,6 +3,8 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use image::ImageFormat;
+use image::imageops::FilterType;
+use image::{ImageReader, Limits};
 use tokio::sync::{Mutex, Semaphore, mpsc};
 
 use crate::db::repository::{file_repo, policy_repo};
@@ -13,6 +15,8 @@ use crate::storage::DriverRegistry;
 
 const THUMB_MAX_DIM: u32 = 200;
 const THUMB_PREFIX: &str = "_thumb";
+/// 单次解码最大内存分配（防止恶意/超大图 OOM）
+const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
 
 /// 判断 MIME 类型是否支持生成缩略图
 pub fn is_supported_mime(mime: &str) -> bool {
@@ -63,7 +67,7 @@ pub async fn get_or_generate(state: &AppState, blob: &file_blob::Model) -> Resul
 
     // 同步生成（CPU 密集部分走 blocking 线程池）
     let original = driver.get(&blob.storage_path).await?;
-    let webp_bytes = tokio::task::spawn_blocking(move || generate_thumbnail(&original))
+    let webp_bytes = tokio::task::spawn_blocking(move || generate_thumbnail(original))
         .await
         .map_aster_err_ctx(
             "thumbnail task panicked",
@@ -90,17 +94,40 @@ pub async fn delete_thumbnail(state: &AppState, blob: &file_blob::Model) -> Resu
 }
 
 /// 解码图片 → 缩放 → 编码为 WebP（CPU 密集，应在 spawn_blocking 中调用）
-fn generate_thumbnail(data: &[u8]) -> Result<Vec<u8>> {
-    let img = image::load_from_memory(data)
+///
+/// 接管 Vec 所有权：decode 后原始字节立即释放，减少峰值内存
+fn generate_thumbnail(data: Vec<u8>) -> Result<Vec<u8>> {
+    // ImageReader: 支持格式检测 + 内存限制
+    let mut reader = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_aster_err_ctx("guess format", AsterError::thumbnail_generation_failed)?;
+
+    // 限制解码内存，防止恶意超大图 OOM
+    let mut limits = Limits::default();
+    limits.max_alloc = Some(MAX_DECODE_ALLOC);
+    reader.limits(limits);
+
+    // decode() 消费 reader → 内部 Cursor 持有的 Vec<u8> 原始字节在此释放
+    let img = reader
+        .decode()
         .map_aster_err_ctx("decode", AsterError::thumbnail_generation_failed)?;
 
-    let thumb = img.thumbnail(THUMB_MAX_DIM, THUMB_MAX_DIM);
+    // 已经小于目标尺寸 → 直接编码，跳过 resize
+    if img.width() <= THUMB_MAX_DIM && img.height() <= THUMB_MAX_DIM {
+        return encode_webp(&img);
+    }
 
+    // Triangle（双线性）滤镜：比 Lanczos3 快 2-3 倍，200px 缩略图肉眼无差
+    let thumb = img.resize(THUMB_MAX_DIM, THUMB_MAX_DIM, FilterType::Triangle);
+    drop(img); // 释放全尺寸像素 buffer，再编码
+
+    encode_webp(&thumb)
+}
+
+fn encode_webp(img: &image::DynamicImage) -> Result<Vec<u8>> {
     let mut buf = Cursor::new(Vec::new());
-    thumb
-        .write_to(&mut buf, ImageFormat::WebP)
+    img.write_to(&mut buf, ImageFormat::WebP)
         .map_aster_err_ctx("encode webp", AsterError::thumbnail_generation_failed)?;
-
     Ok(buf.into_inner())
 }
 
@@ -174,7 +201,7 @@ async fn process_one_thumbnail(
 
     // 读取原文件 + 生成缩略图（CPU 密集部分走 blocking 线程池）
     let original = driver.get(&blob.storage_path).await?;
-    let webp_bytes = tokio::task::spawn_blocking(move || generate_thumbnail(&original))
+    let webp_bytes = tokio::task::spawn_blocking(move || generate_thumbnail(original))
         .await
         .map_aster_err_ctx(
             "thumbnail task panicked",
