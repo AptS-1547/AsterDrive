@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import {
-	PiArrowCounterClockwise,
 	PiArrowClockwise,
+	PiArrowCounterClockwise,
 	PiArrowDown,
 	PiArrowLeft,
 	PiArrowSquareOut,
@@ -26,6 +26,7 @@ import {
 	PiFile,
 	PiFileAudio,
 	PiFileCode,
+	PiFilePlus,
 	PiFileText,
 	PiFileVideo,
 	PiFileZip,
@@ -93,6 +94,7 @@ export type IconName =
 	| "File"
 	| "FileAudio"
 	| "FileCode"
+	| "FilePlus"
 	| "FileText"
 	| "FileVideo"
 	| "FileZip"
@@ -159,6 +161,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	File: PiFile,
 	FileAudio: PiFileAudio,
 	FileCode: PiFileCode,
+	FilePlus: PiFilePlus,
 	FileText: PiFileText,
 	FileVideo: PiFileVideo,
 	FileZip: PiFileZip,

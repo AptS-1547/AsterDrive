@@ -63,6 +63,8 @@ pub struct RefreshResponse {
 pub struct FolderContentsResponse {
     pub folders: Vec<crate::entities::folder::Model>,
     pub files: Vec<crate::entities::file::Model>,
+    pub folders_total: u64,
+    pub files_total: u64,
 }
 
 #[derive(Serialize, ToSchema)]

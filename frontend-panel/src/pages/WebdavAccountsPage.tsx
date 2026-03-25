@@ -102,7 +102,10 @@ export default function WebdavAccountsPage() {
 
 	const fetchFolders = useCallback(async () => {
 		try {
-			const data = await fileService.listRoot();
+			const data = await fileService.listRoot({
+				file_limit: 0,
+				folder_limit: 1000,
+			});
 			setFolders(data.folders);
 		} catch (err) {
 			handleApiError(err);

@@ -208,6 +208,10 @@ pub async fn download_shared_folder_file(
 pub async fn list_shared_folder(
     state: &AppState,
     token: &str,
+    folder_limit: u64,
+    folder_offset: u64,
+    file_limit: u64,
+    file_offset: u64,
 ) -> Result<folder_service::FolderContents> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
@@ -220,7 +224,15 @@ pub async fn list_shared_folder(
         .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
 
     // list folder contents (bypass user ownership — shared access)
-    folder_service::list_shared(state, folder_id).await
+    folder_service::list_shared(
+        state,
+        folder_id,
+        folder_limit,
+        folder_offset,
+        file_limit,
+        file_offset,
+    )
+    .await
 }
 
 pub async fn list_my_shares(state: &AppState, user_id: i64) -> Result<Vec<share::Model>> {
@@ -308,6 +320,10 @@ pub async fn list_shared_subfolder(
     state: &AppState,
     token: &str,
     folder_id: i64,
+    folder_limit: u64,
+    folder_offset: u64,
+    file_limit: u64,
+    file_offset: u64,
 ) -> Result<folder_service::FolderContents> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
@@ -330,7 +346,15 @@ pub async fn list_shared_subfolder(
     // 校验目标文件夹在分享范围内
     verify_folder_in_share_scope(&state.db, folder_id, root_folder_id).await?;
 
-    folder_service::list_shared(state, folder_id).await
+    folder_service::list_shared(
+        state,
+        folder_id,
+        folder_limit,
+        folder_offset,
+        file_limit,
+        file_offset,
+    )
+    .await
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

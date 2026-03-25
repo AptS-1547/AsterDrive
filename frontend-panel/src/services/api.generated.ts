@@ -1291,9 +1291,21 @@ export interface components {
             /** Format: int32 */
             version: number;
         };
+        FolderContents: {
+            files: components["schemas"]["FileInfo"][];
+            /** Format: int64 */
+            files_total: number;
+            folders: components["schemas"]["FolderInfo"][];
+            /** Format: int64 */
+            folders_total: number;
+        };
         FolderContentsResponse: {
             files: components["schemas"]["FileInfo"][];
+            /** Format: int64 */
+            files_total: number;
             folders: components["schemas"]["FolderInfo"][];
+            /** Format: int64 */
+            folders_total: number;
         };
         FolderInfo: {
             created_at: string;
@@ -1559,7 +1571,11 @@ export interface components {
         };
         TrashContents: {
             files: components["schemas"]["TrashFileItem"][];
+            /** Format: int64 */
+            files_total: number;
             folders: components["schemas"]["TrashFolderItem"][];
+            /** Format: int64 */
+            folders_total: number;
         };
         TrashFileItem: {
             created_at: string;
@@ -4304,7 +4320,16 @@ export interface operations {
     };
     list_root: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 文件夹最大返回数量（默认 200，最大 1000；传 0 跳过文件夹查询） */
+                folder_limit?: number | null;
+                /** @description 文件夹偏移量（默认 0） */
+                folder_offset?: number | null;
+                /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
+                file_limit?: number | null;
+                /** @description 文件偏移量（默认 0） */
+                file_offset?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4321,7 +4346,11 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             files: components["schemas"]["FileInfo"][];
+                            /** Format: int64 */
+                            files_total: number;
                             folders: components["schemas"]["FolderInfo"][];
+                            /** Format: int64 */
+                            folders_total: number;
                         };
                         msg: string;
                     };
@@ -4387,7 +4416,16 @@ export interface operations {
     };
     list_folder: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 文件夹最大返回数量（默认 200，最大 1000；传 0 跳过文件夹查询） */
+                folder_limit?: number | null;
+                /** @description 文件夹偏移量（默认 0） */
+                folder_offset?: number | null;
+                /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
+                file_limit?: number | null;
+                /** @description 文件偏移量（默认 0） */
+                file_offset?: number | null;
+            };
             header?: never;
             path: {
                 /** @description Folder ID */
@@ -4407,7 +4445,11 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             files: components["schemas"]["FileInfo"][];
+                            /** Format: int64 */
+                            files_total: number;
                             folders: components["schemas"]["FolderInfo"][];
+                            /** Format: int64 */
+                            folders_total: number;
                         };
                         msg: string;
                     };
@@ -4864,7 +4906,16 @@ export interface operations {
     };
     list_shared_content: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 文件夹最大返回数量（默认 200，最大 1000；传 0 跳过文件夹查询） */
+                folder_limit?: number | null;
+                /** @description 文件夹偏移量（默认 0） */
+                folder_offset?: number | null;
+                /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
+                file_limit?: number | null;
+                /** @description 文件偏移量（默认 0） */
+                file_offset?: number | null;
+            };
             header?: never;
             path: {
                 /** @description Share token */
@@ -4884,7 +4935,11 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             files: components["schemas"]["FileInfo"][];
+                            /** Format: int64 */
+                            files_total: number;
                             folders: components["schemas"]["FolderInfo"][];
+                            /** Format: int64 */
+                            folders_total: number;
                         };
                         msg: string;
                     };
@@ -5017,7 +5072,16 @@ export interface operations {
     };
     list_shared_subfolder_content: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 文件夹最大返回数量（默认 200，最大 1000；传 0 跳过文件夹查询） */
+                folder_limit?: number | null;
+                /** @description 文件夹偏移量（默认 0） */
+                folder_offset?: number | null;
+                /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
+                file_limit?: number | null;
+                /** @description 文件偏移量（默认 0） */
+                file_offset?: number | null;
+            };
             header?: never;
             path: {
                 /** @description Share token */
@@ -5039,7 +5103,11 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             files: components["schemas"]["FileInfo"][];
+                            /** Format: int64 */
+                            files_total: number;
                             folders: components["schemas"]["FolderInfo"][];
+                            /** Format: int64 */
+                            folders_total: number;
                         };
                         msg: string;
                     };
@@ -5335,7 +5403,16 @@ export interface operations {
     };
     list_trash: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 文件夹最大返回数量（默认 200，最大 1000；传 0 跳过文件夹查询） */
+                folder_limit?: number | null;
+                /** @description 文件夹偏移量（默认 0） */
+                folder_offset?: number | null;
+                /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
+                file_limit?: number | null;
+                /** @description 文件偏移量（默认 0） */
+                file_offset?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5352,7 +5429,11 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             files: components["schemas"]["TrashFileItem"][];
+                            /** Format: int64 */
+                            files_total: number;
                             folders: components["schemas"]["TrashFolderItem"][];
+                            /** Format: int64 */
+                            folders_total: number;
                         };
                         msg: string;
                     };

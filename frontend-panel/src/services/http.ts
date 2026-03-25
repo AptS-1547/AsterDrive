@@ -90,7 +90,8 @@ async function unwrap<T>(
 }
 
 export const api = {
-	get: <T>(url: string) => unwrap<T>(client.get(url)),
+	get: <T>(url: string, config?: { params?: object }) =>
+		unwrap<T>(client.get(url, config)),
 	post: <T>(url: string, data?: unknown) => unwrap<T>(client.post(url, data)),
 	put: <T>(url: string, data?: unknown) => unwrap<T>(client.put(url, data)),
 	patch: <T>(url: string, data?: unknown) => unwrap<T>(client.patch(url, data)),

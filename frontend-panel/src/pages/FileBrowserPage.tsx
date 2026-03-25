@@ -8,6 +8,7 @@ import { SkeletonFileGrid } from "@/components/common/SkeletonFileGrid";
 import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
 import { ViewToggle } from "@/components/common/ViewToggle";
 import { BatchTargetFolderDialog } from "@/components/files/BatchTargetFolderDialog";
+import { CreateFileDialog } from "@/components/files/CreateFileDialog";
 import { CreateFolderDialog } from "@/components/files/CreateFolderDialog";
 import { FileGrid } from "@/components/files/FileGrid";
 import { FilePreview } from "@/components/files/FilePreview";
@@ -68,6 +69,10 @@ export default function FileBrowserPage() {
 	const searchFiles = useFileStore((s) => s.searchFiles);
 	const error = useFileStore((s) => s.error);
 	const clearSelection = useFileStore((s) => s.clearSelection);
+	const loadMoreFiles = useFileStore((s) => s.loadMoreFiles);
+	const loadingMore = useFileStore((s) => s.loadingMore);
+	const filesTotalCount = useFileStore((s) => s.filesTotalCount);
+	const filesLength = useFileStore((s) => s.files.length);
 
 	const isSearching = searchQuery !== null;
 	const displayFolders = isSearching ? searchFolders : folders;
@@ -76,7 +81,28 @@ export default function FileBrowserPage() {
 	useKeyboardShortcuts();
 
 	const uploadAreaRef = useRef<UploadAreaHandle | null>(null);
+	const sentinelRef = useRef<HTMLDivElement | null>(null);
+	const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+
+	// Infinite scroll: load more files when sentinel is visible
+	useEffect(() => {
+		if (isSearching || filesLength >= filesTotalCount || loadingMore) return;
+		const el = sentinelRef.current;
+		if (!el) return;
+		// scrollAreaRef.current is the Viewport element (via forwardRef)
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0].isIntersecting) {
+					void loadMoreFiles();
+				}
+			},
+			{ root: scrollAreaRef.current ?? null, rootMargin: "200px" },
+		);
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [isSearching, filesLength, filesTotalCount, loadingMore, loadMoreFiles]);
 	const [createFolderOpen, setCreateFolderOpen] = useState(false);
+	const [createFileOpen, setCreateFileOpen] = useState(false);
 	const [fadingFileIds, setFadingFileIds] = useState<Set<number>>(new Set());
 	const [fadingFolderIds, setFadingFolderIds] = useState<Set<number>>(
 		new Set(),
@@ -338,7 +364,7 @@ export default function FileBrowserPage() {
 				</div>
 				<ContextMenu>
 					<ContextMenuTrigger className="flex min-h-0 flex-1 flex-col">
-						<ScrollArea className="min-h-0 flex-1">
+						<ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
 							{loading ? (
 								viewMode === "grid" ? (
 									<SkeletonFileGrid />
@@ -362,6 +388,13 @@ export default function FileBrowserPage() {
 							) : (
 								<FileTable {...sharedProps} />
 							)}
+							{!isSearching && filesLength < filesTotalCount && (
+								<div ref={sentinelRef} className="flex justify-center py-4">
+									{loadingMore && (
+										<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+									)}
+								</div>
+							)}
 						</ScrollArea>
 					</ContextMenuTrigger>
 					<ContextMenuContent>
@@ -381,6 +414,10 @@ export default function FileBrowserPage() {
 							<Icon name="FolderPlus" className="h-4 w-4 mr-2" />
 							{t("new_folder")}
 						</ContextMenuItem>
+						<ContextMenuItem onClick={() => setCreateFileOpen(true)}>
+							<Icon name="FilePlus" className="h-4 w-4 mr-2" />
+							{t("new_file")}
+						</ContextMenuItem>
 					</ContextMenuContent>
 				</ContextMenu>
 			</UploadArea>
@@ -388,6 +425,11 @@ export default function FileBrowserPage() {
 			<CreateFolderDialog
 				open={createFolderOpen}
 				onOpenChange={setCreateFolderOpen}
+			/>
+
+			<CreateFileDialog
+				open={createFileOpen}
+				onOpenChange={setCreateFileOpen}
 			/>
 
 			<BatchActionBar />

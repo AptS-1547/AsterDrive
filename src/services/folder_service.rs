@@ -1,16 +1,19 @@
 use chrono::Utc;
 use sea_orm::{ConnectionTrait, Set, TransactionTrait};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct FolderContents {
     pub folders: Vec<folder::Model>,
     pub files: Vec<file::Model>,
+    pub folders_total: u64,
+    pub files_total: u64,
 }
 
 pub async fn create(
@@ -153,18 +156,63 @@ pub async fn list(
     state: &AppState,
     user_id: i64,
     parent_id: Option<i64>,
+    folder_limit: u64,
+    folder_offset: u64,
+    file_limit: u64,
+    file_offset: u64,
 ) -> Result<FolderContents> {
-    let folders = folder_repo::find_children(&state.db, user_id, parent_id)
-        .await?
-        .into_iter()
-        .filter(|f| !crate::utils::is_hidden_name(&f.name))
-        .collect();
-    let files = file_repo::find_by_folder(&state.db, user_id, parent_id)
-        .await?
-        .into_iter()
-        .filter(|f| !crate::utils::is_hidden_name(&f.name))
-        .collect();
-    Ok(FolderContents { folders, files })
+    let (folders, folders_total) = if folder_limit == 0 {
+        (
+            vec![],
+            folder_repo::find_children_paginated(&state.db, user_id, parent_id, 0, 0)
+                .await?
+                .1,
+        )
+    } else {
+        let (raw, total) = folder_repo::find_children_paginated(
+            &state.db,
+            user_id,
+            parent_id,
+            folder_limit,
+            folder_offset,
+        )
+        .await?;
+        let filtered: Vec<_> = raw
+            .into_iter()
+            .filter(|f| !crate::utils::is_hidden_name(&f.name))
+            .collect();
+        (filtered, total)
+    };
+
+    let (files, files_total) = if file_limit == 0 {
+        (
+            vec![],
+            file_repo::find_by_folder_paginated(&state.db, user_id, parent_id, 0, 0)
+                .await?
+                .1,
+        )
+    } else {
+        let (raw, total) = file_repo::find_by_folder_paginated(
+            &state.db,
+            user_id,
+            parent_id,
+            file_limit,
+            file_offset,
+        )
+        .await?;
+        let filtered: Vec<_> = raw
+            .into_iter()
+            .filter(|f| !crate::utils::is_hidden_name(&f.name))
+            .collect();
+        (filtered, total)
+    };
+
+    Ok(FolderContents {
+        folders,
+        files,
+        folders_total,
+        files_total,
+    })
 }
 
 /// 删除文件夹（软删除 → 回收站，递归标记子项）
@@ -331,9 +379,35 @@ pub async fn copy_folder(
 }
 
 /// 列出文件夹内容（无用户校验，用于分享链接）
-pub async fn list_shared(state: &AppState, folder_id: i64) -> Result<FolderContents> {
+pub async fn list_shared(
+    state: &AppState,
+    folder_id: i64,
+    folder_limit: u64,
+    folder_offset: u64,
+    file_limit: u64,
+    file_offset: u64,
+) -> Result<FolderContents> {
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
-    let folders = folder_repo::find_children(&state.db, folder.user_id, Some(folder_id)).await?;
-    let files = file_repo::find_by_folder(&state.db, folder.user_id, Some(folder_id)).await?;
-    Ok(FolderContents { folders, files })
+    let (folders, folders_total) = folder_repo::find_children_paginated(
+        &state.db,
+        folder.user_id,
+        Some(folder_id),
+        folder_limit,
+        folder_offset,
+    )
+    .await?;
+    let (files, files_total) = file_repo::find_by_folder_paginated(
+        &state.db,
+        folder.user_id,
+        Some(folder_id),
+        file_limit,
+        file_offset,
+    )
+    .await?;
+    Ok(FolderContents {
+        folders,
+        files,
+        folders_total,
+        files_total,
+    })
 }

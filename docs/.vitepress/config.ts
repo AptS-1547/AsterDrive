@@ -37,7 +37,8 @@ export default defineConfig({
           {
             text: `v${VERSION}`,
             items: [
-              { text: '更新日志', link: 'https://github.com/AptS-1547/AsterDrive/releases' },
+              { text: '更新日志', link: 'https://github.com/AptS-1547/AsterDrive/blob/master/CHANGELOG.md' },
+              { text: '发布页面', link: 'https://github.com/AptS-1547/AsterDrive/releases' },
               { text: 'GitHub', link: 'https://github.com/AptS-1547/AsterDrive' }
             ]
           }

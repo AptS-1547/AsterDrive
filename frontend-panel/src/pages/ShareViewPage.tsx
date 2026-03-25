@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -50,6 +50,12 @@ export default function ShareViewPage() {
 	const [previewFile, setPreviewFile] = useState<FileInfo | null>(null);
 	const [breadcrumb, setBreadcrumb] = useState<ShareBreadcrumbItem[]>([]);
 	const [navigating, setNavigating] = useState(false);
+	const [loadingMore, setLoadingMore] = useState(false);
+	const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+	const SHARE_PAGE_SIZE = 100;
+	const hasMoreFiles =
+		(folderContents?.files.length ?? 0) < (folderContents?.files_total ?? 0);
 
 	const loadInfo = useCallback(async () => {
 		if (!token) return;
@@ -60,7 +66,7 @@ export default function ShareViewPage() {
 			setNeedsPassword(data.has_password);
 
 			if (data.share_type === "folder" && !data.has_password) {
-				const contents = await shareService.listContent(token);
+				const contents = await shareService.listContent(token, sharePageParams);
 				setFolderContents(contents);
 				setBreadcrumb([{ id: null, name: data.name }]);
 			}
@@ -87,6 +93,11 @@ export default function ShareViewPage() {
 		loadInfo();
 	}, [loadInfo]);
 
+	const sharePageParams = {
+		folder_limit: 1000,
+		file_limit: SHARE_PAGE_SIZE,
+	};
+
 	const navigateToFolder = useCallback(
 		async (folderId: number | null, folderName?: string) => {
 			if (!token) return;
@@ -94,8 +105,12 @@ export default function ShareViewPage() {
 			try {
 				const contents =
 					folderId === null
-						? await shareService.listContent(token)
-						: await shareService.listSubfolderContent(token, folderId);
+						? await shareService.listContent(token, sharePageParams)
+						: await shareService.listSubfolderContent(
+								token,
+								folderId,
+								sharePageParams,
+							);
 				setFolderContents(contents);
 
 				setBreadcrumb((prev) => {
@@ -117,6 +132,49 @@ export default function ShareViewPage() {
 		[token],
 	);
 
+	const loadMoreShareFiles = useCallback(async () => {
+		if (!token || !folderContents || loadingMore) return;
+		setLoadingMore(true);
+		try {
+			// Current folder = last breadcrumb item
+			const currentId = breadcrumb[breadcrumb.length - 1]?.id ?? null;
+			const contents =
+				currentId === null
+					? await shareService.listContent(token, {
+							folder_limit: 0,
+							file_limit: SHARE_PAGE_SIZE,
+							file_offset: folderContents.files.length,
+						})
+					: await shareService.listSubfolderContent(token, currentId, {
+							folder_limit: 0,
+							file_limit: SHARE_PAGE_SIZE,
+							file_offset: folderContents.files.length,
+						});
+			setFolderContents((prev) =>
+				prev ? { ...prev, files: [...prev.files, ...contents.files] } : prev,
+			);
+		} catch (e) {
+			handleApiError(e);
+		} finally {
+			setLoadingMore(false);
+		}
+	}, [token, folderContents, loadingMore, breadcrumb]);
+
+	// Infinite scroll for share page
+	useEffect(() => {
+		if (!hasMoreFiles || loadingMore) return;
+		const el = sentinelRef.current;
+		if (!el) return;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0].isIntersecting) void loadMoreShareFiles();
+			},
+			{ rootMargin: "200px" },
+		);
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [hasMoreFiles, loadingMore, loadMoreShareFiles]);
+
 	const handleVerifyPassword = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!token) return;
@@ -127,7 +185,7 @@ export default function ShareViewPage() {
 			toast.success(t("password_verified"));
 
 			if (info?.share_type === "folder") {
-				const contents = await shareService.listContent(token);
+				const contents = await shareService.listContent(token, sharePageParams);
 				setFolderContents(contents);
 				setBreadcrumb([{ id: null, name: info.name }]);
 			}
@@ -334,20 +392,31 @@ export default function ShareViewPage() {
 				{navigating ? (
 					<SkeletonCard />
 				) : folderContents ? (
-					<ReadOnlyFileCollection
-						folders={folderContents.folders}
-						files={folderContents.files}
-						viewMode={viewMode}
-						onViewModeChange={setViewMode}
-						onFileClick={setPreviewFile}
-						onFileDownload={handleFolderFileDownload}
-						onFolderClick={(folder) => navigateToFolder(folder.id, folder.name)}
-						getThumbnailPath={(file) =>
-							`/s/${token}/files/${file.id}/thumbnail`
-						}
-						emptyTitle={t("empty_folder")}
-						emptyDescription={t("folder_empty_desc")}
-					/>
+					<>
+						<ReadOnlyFileCollection
+							folders={folderContents.folders}
+							files={folderContents.files}
+							viewMode={viewMode}
+							onViewModeChange={setViewMode}
+							onFileClick={setPreviewFile}
+							onFileDownload={handleFolderFileDownload}
+							onFolderClick={(folder) =>
+								navigateToFolder(folder.id, folder.name)
+							}
+							getThumbnailPath={(file) =>
+								`/s/${token}/files/${file.id}/thumbnail`
+							}
+							emptyTitle={t("empty_folder")}
+							emptyDescription={t("folder_empty_desc")}
+						/>
+						{hasMoreFiles && (
+							<div ref={sentinelRef} className="flex justify-center py-4">
+								{loadingMore && (
+									<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+								)}
+							</div>
+						)}
+					</>
 				) : (
 					<Card className="shadow-sm">
 						<CardContent className="py-8 text-sm text-muted-foreground">

@@ -22,7 +22,6 @@ import {
 } from "@/lib/uploadPersistence";
 import { cn } from "@/lib/utils";
 import { ApiError, api } from "@/services/http";
-import { ErrorCode } from "@/types/api";
 import {
 	type CompletedPart,
 	type InitUploadResponse,
@@ -30,6 +29,7 @@ import {
 } from "@/services/uploadService";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
+import { ErrorCode } from "@/types/api";
 import {
 	extractFilesFromDrop,
 	extractFilesFromInput,

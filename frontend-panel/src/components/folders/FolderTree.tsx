@@ -223,15 +223,17 @@ export function FolderTree() {
 		};
 	}, [nodes, rootLoaded, userId]);
 
-	// Load root folders on mount
+	// Load root folders on mount (skip files — tree only needs folders)
 	useEffect(() => {
 		if (rootLoaded) return;
 
 		let cancelled = false;
 
+		const treeParams = { file_limit: 0, folder_limit: 1000 };
+
 		async function loadRoot() {
 			try {
-				const contents = await fileService.listRoot();
+				const contents = await fileService.listRoot(treeParams);
 				if (cancelled) return;
 				setNodes(contents.folders.map((f) => createTreeNode(f)));
 				setRootLoaded(true);
@@ -312,7 +314,10 @@ export function FolderTree() {
 		if (!shouldLoad) return;
 
 		try {
-			const contents = await fileService.listFolder(folderId);
+			const contents = await fileService.listFolder(folderId, {
+				file_limit: 0,
+				folder_limit: 1000,
+			});
 			const childNodes = contents.folders.map((f) => createTreeNode(f));
 			setNodes((prev) =>
 				updateNode(prev, folderId, (n) => ({

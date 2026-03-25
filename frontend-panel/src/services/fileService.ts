@@ -7,10 +7,19 @@ import type {
 } from "@/types/api";
 import { ApiError, api } from "./http";
 
-export const fileService = {
-	listRoot: () => api.get<FolderContents>("/folders"),
+export interface FolderListParams {
+	folder_limit?: number;
+	folder_offset?: number;
+	file_limit?: number;
+	file_offset?: number;
+}
 
-	listFolder: (id: number) => api.get<FolderContents>(`/folders/${id}`),
+export const fileService = {
+	listRoot: (params?: FolderListParams) =>
+		api.get<FolderContents>("/folders", { params }),
+
+	listFolder: (id: number, params?: FolderListParams) =>
+		api.get<FolderContents>(`/folders/${id}`, { params }),
 
 	createFolder: (name: string, parentId?: number | null) =>
 		api.post<FolderInfo>("/folders", { name, parent_id: parentId ?? null }),
@@ -36,6 +45,19 @@ export const fileService = {
 
 	setFolderLock: (id: number, locked: boolean) =>
 		api.post<FolderInfo>(`/folders/${id}/lock`, { locked }),
+
+	createEmptyFile: async (name: string, folderId?: number | null) => {
+		const formData = new FormData();
+		formData.append("file", new Blob([]), name);
+		const params = new URLSearchParams();
+		if (folderId != null) params.set("folder_id", String(folderId));
+		const resp = await api.client.post(
+			`/files/upload${params.size ? `?${params}` : ""}`,
+			formData,
+			{ headers: { "Content-Type": "multipart/form-data" } },
+		);
+		return resp.data.data as FileInfo;
+	},
 
 	copyFile: (id: number, folderId?: number | null) =>
 		api.post<FileInfo>(`/files/${id}/copy`, {

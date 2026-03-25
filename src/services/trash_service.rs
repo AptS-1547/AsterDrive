@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -45,45 +43,47 @@ pub struct TrashFolderItem {
 pub struct TrashContents {
     pub folders: Vec<TrashFolderItem>,
     pub files: Vec<TrashFileItem>,
+    pub folders_total: u64,
+    pub files_total: u64,
 }
 
-/// 列出用户回收站内容
-pub async fn list_trash(state: &AppState, user_id: i64) -> Result<TrashContents> {
-    let deleted_folders = folder_repo::find_deleted_by_user(&state.db, user_id).await?;
-    let deleted_folder_ids = deleted_folders
-        .iter()
-        .map(|folder| folder.id)
-        .collect::<HashSet<_>>();
+/// 列出用户回收站内容（分页）
+pub async fn list_trash(
+    state: &AppState,
+    user_id: i64,
+    folder_limit: u64,
+    folder_offset: u64,
+    file_limit: u64,
+    file_offset: u64,
+) -> Result<TrashContents> {
+    let (raw_folders, folders_total) = folder_repo::find_top_level_deleted_paginated(
+        &state.db,
+        user_id,
+        folder_limit,
+        folder_offset,
+    )
+    .await?;
 
     let mut folders = Vec::new();
-    for folder in deleted_folders {
-        if is_top_level_deleted_folder(&deleted_folder_ids, &folder) {
-            folders.push(build_trash_folder_item(&state.db, folder).await?);
-        }
+    for folder in raw_folders {
+        folders.push(build_trash_folder_item(&state.db, folder).await?);
     }
+
+    let (raw_files, files_total) =
+        file_repo::find_top_level_deleted_paginated(&state.db, user_id, file_limit, file_offset)
+            .await?;
 
     let mut files = Vec::new();
-    for file in file_repo::find_deleted_by_user(&state.db, user_id).await? {
-        if is_top_level_deleted_file(&deleted_folder_ids, &file) {
-            files.push(build_trash_file_item(&state.db, file).await?);
-        }
+    for file in raw_files {
+        files.push(build_trash_file_item(&state.db, file).await?);
     }
 
-    Ok(TrashContents { folders, files })
-}
-
-fn is_top_level_deleted_folder(deleted_folder_ids: &HashSet<i64>, folder: &folder::Model) -> bool {
-    match folder.parent_id {
-        Some(parent_id) => !deleted_folder_ids.contains(&parent_id),
-        None => true,
-    }
-}
-
-fn is_top_level_deleted_file(deleted_folder_ids: &HashSet<i64>, file: &file::Model) -> bool {
-    match file.folder_id {
-        Some(folder_id) => !deleted_folder_ids.contains(&folder_id),
-        None => true,
-    }
+    Ok(TrashContents {
+        folders,
+        files,
+        folders_total,
+        files_total,
+    })
 }
 
 async fn build_trash_file_item(

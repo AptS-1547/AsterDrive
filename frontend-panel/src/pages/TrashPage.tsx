@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -62,14 +62,21 @@ export default function TrashPage() {
 	const [contents, setContents] = useState<TrashContents>({
 		files: [],
 		folders: [],
+		files_total: 0,
+		folders_total: 0,
 	});
 	const [loading, setLoading] = useState(true);
 	const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode);
 	const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 	const [purgeTargets, setPurgeTargets] = useState<TrashItem[] | null>(null);
 	const [purgeAllOpen, setPurgeAllOpen] = useState(false);
+	const [loadingMore, setLoadingMore] = useState(false);
+	const sentinelRef = useRef<HTMLDivElement | null>(null);
 
 	const items = toTrashItems(contents);
+	const hasMoreFiles = contents.files.length < contents.files_total;
+	const hasMoreFolders = contents.folders.length < contents.folders_total;
+	const hasMore = hasMoreFiles || hasMoreFolders;
 	const selectedItems = items.filter((item) =>
 		selectedKeys.has(getItemKey(item)),
 	);
@@ -77,10 +84,15 @@ export default function TrashPage() {
 	const allSelected = items.length > 0 && selectionCount === items.length;
 	const isEmpty = !loading && items.length === 0;
 
+	const TRASH_PAGE_SIZE = 100;
+
 	const load = useCallback(async () => {
 		setLoading(true);
 		try {
-			const data = await trashService.list();
+			const data = await trashService.list({
+				folder_limit: 1000,
+				file_limit: TRASH_PAGE_SIZE,
+			});
 			setContents(data);
 			setSelectedKeys(new Set());
 		} catch (err) {
@@ -90,9 +102,44 @@ export default function TrashPage() {
 		}
 	}, []);
 
+	const loadMore = useCallback(async () => {
+		if (loadingMore) return;
+		setLoadingMore(true);
+		try {
+			const data = await trashService.list({
+				folder_limit: 0,
+				file_limit: TRASH_PAGE_SIZE,
+				file_offset: contents.files.length,
+			});
+			setContents((prev) => ({
+				...prev,
+				files: [...prev.files, ...data.files],
+			}));
+		} catch (err) {
+			handleApiError(err);
+		} finally {
+			setLoadingMore(false);
+		}
+	}, [contents.files.length, loadingMore]);
+
 	useEffect(() => {
 		void load();
 	}, [load]);
+
+	// Infinite scroll
+	useEffect(() => {
+		if (!hasMore || loadingMore) return;
+		const el = sentinelRef.current;
+		if (!el) return;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0].isIntersecting) void loadMore();
+			},
+			{ rootMargin: "200px" },
+		);
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [hasMore, loadingMore, loadMore]);
 
 	const handleViewModeChange = (mode: ViewMode) => {
 		localStorage.setItem(STORAGE_KEYS.trashViewMode, mode);
@@ -317,6 +364,13 @@ export default function TrashPage() {
 									}}
 									onPurge={(item) => setPurgeTargets([item])}
 								/>
+							)}
+							{hasMore && (
+								<div ref={sentinelRef} className="flex justify-center py-4">
+									{loadingMore && (
+										<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+									)}
+								</div>
 							)}
 						</ScrollArea>
 					)}

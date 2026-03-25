@@ -1,4 +1,5 @@
 use crate::api::middleware::auth::JwtAuth;
+use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -68,8 +69,9 @@ pub async fn create_folder(
     path = "/api/v1/folders",
     tag = "folders",
     operation_id = "list_root",
+    params(FolderListQuery),
     responses(
-        (status = 200, description = "Root folder contents", body = inline(ApiResponse<crate::api::response::FolderContentsResponse>)),
+        (status = 200, description = "Root folder contents", body = inline(ApiResponse<folder_service::FolderContents>)),
         (status = 401, description = "Unauthorized"),
     ),
     security(("bearer" = [])),
@@ -77,8 +79,18 @@ pub async fn create_folder(
 pub async fn list_root(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    query: web::Query<FolderListQuery>,
 ) -> Result<HttpResponse> {
-    let contents = folder_service::list(&state, claims.user_id, None).await?;
+    let contents = folder_service::list(
+        &state,
+        claims.user_id,
+        None,
+        query.folder_limit(),
+        query.folder_offset(),
+        query.file_limit(),
+        query.file_offset(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
@@ -87,9 +99,9 @@ pub async fn list_root(
     path = "/api/v1/folders/{id}",
     tag = "folders",
     operation_id = "list_folder",
-    params(("id" = i64, Path, description = "Folder ID")),
+    params(("id" = i64, Path, description = "Folder ID"), FolderListQuery),
     responses(
-        (status = 200, description = "Folder contents", body = inline(ApiResponse<crate::api::response::FolderContentsResponse>)),
+        (status = 200, description = "Folder contents", body = inline(ApiResponse<folder_service::FolderContents>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Folder not found"),
     ),
@@ -99,8 +111,18 @@ pub async fn list_folder(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
+    query: web::Query<FolderListQuery>,
 ) -> Result<HttpResponse> {
-    let contents = folder_service::list(&state, claims.user_id, Some(*path)).await?;
+    let contents = folder_service::list(
+        &state,
+        claims.user_id,
+        Some(*path),
+        query.folder_limit(),
+        query.folder_offset(),
+        query.file_limit(),
+        query.file_offset(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 

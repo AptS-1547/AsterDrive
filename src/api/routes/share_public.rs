@@ -1,3 +1,4 @@
+use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -154,9 +155,9 @@ pub async fn download_shared_folder_file(
     path = "/api/v1/s/{token}/content",
     tag = "shares",
     operation_id = "list_shared_content",
-    params(("token" = String, Path, description = "Share token")),
+    params(("token" = String, Path, description = "Share token"), FolderListQuery),
     responses(
-        (status = 200, description = "Folder contents", body = inline(ApiResponse<crate::api::response::FolderContentsResponse>)),
+        (status = 200, description = "Folder contents", body = inline(ApiResponse<crate::services::folder_service::FolderContents>)),
         (status = 403, description = "Password required"),
         (status = 404, description = "Share not found"),
     ),
@@ -164,11 +165,20 @@ pub async fn download_shared_folder_file(
 pub async fn list_shared_content(
     state: web::Data<AppState>,
     path: web::Path<String>,
+    query: web::Query<FolderListQuery>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     check_share_password_cookie(&state, &path, &req).await?;
 
-    let contents = share_service::list_shared_folder(&state, &path).await?;
+    let contents = share_service::list_shared_folder(
+        &state,
+        &path,
+        query.folder_limit(),
+        query.folder_offset(),
+        query.file_limit(),
+        query.file_offset(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
@@ -179,10 +189,11 @@ pub async fn list_shared_content(
     operation_id = "list_shared_subfolder_content",
     params(
         ("token" = String, Path, description = "Share token"),
-        ("folder_id" = i64, Path, description = "Subfolder ID inside shared folder")
+        ("folder_id" = i64, Path, description = "Subfolder ID inside shared folder"),
+        FolderListQuery,
     ),
     responses(
-        (status = 200, description = "Subfolder contents", body = inline(ApiResponse<crate::api::response::FolderContentsResponse>)),
+        (status = 200, description = "Subfolder contents", body = inline(ApiResponse<crate::services::folder_service::FolderContents>)),
         (status = 403, description = "Password required or folder outside shared scope"),
         (status = 404, description = "Share or folder not found"),
     )
@@ -190,12 +201,22 @@ pub async fn list_shared_content(
 pub async fn list_shared_subfolder_content(
     state: web::Data<AppState>,
     path: web::Path<(String, i64)>,
+    query: web::Query<FolderListQuery>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, folder_id) = path.into_inner();
     check_share_password_cookie(&state, &token, &req).await?;
 
-    let contents = share_service::list_shared_subfolder(&state, &token, folder_id).await?;
+    let contents = share_service::list_shared_subfolder(
+        &state,
+        &token,
+        folder_id,
+        query.folder_limit(),
+        query.folder_offset(),
+        query.file_limit(),
+        query.file_offset(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 

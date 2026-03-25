@@ -23,8 +23,8 @@ import { handleApiError } from "@/hooks/useApiError";
 import { invalidateBlobUrl } from "@/hooks/useBlobUrl";
 import { invalidateTextContent } from "@/hooks/useTextContent";
 import { formatBytes } from "@/lib/format";
-import type { FileVersion } from "@/types/api";
 import { fileService } from "@/services/fileService";
+import type { FileVersion } from "@/types/api";
 
 interface VersionHistoryDialogProps {
 	open: boolean;

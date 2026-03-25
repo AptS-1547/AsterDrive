@@ -1,15 +1,14 @@
 import { config } from "@/config/app";
 import type {
+	ApiResponse,
 	ChunkUploadResponse,
 	CompletedPart,
 	FileInfo,
 	InitUploadResponse,
 	UploadProgressResponse,
 } from "@/types/api";
-import { ApiError } from "./http";
-import { api } from "./http";
-import type { ApiResponse } from "@/types/api";
 import { ErrorCode } from "@/types/api";
+import { ApiError, api } from "./http";
 
 export type {
 	ChunkUploadResponse,

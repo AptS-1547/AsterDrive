@@ -1,6 +1,7 @@
 pub mod error_code;
 pub mod middleware;
 pub mod openapi;
+pub mod pagination;
 pub mod response;
 pub mod routes;
 

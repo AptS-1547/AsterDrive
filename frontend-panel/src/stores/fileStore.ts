@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { STORAGE_KEYS } from "@/config/app";
 import { batchService } from "@/services/batchService";
+import type { FolderListParams } from "@/services/fileService";
 import { fileService } from "@/services/fileService";
 import { searchService } from "@/services/searchService";
 import { useAuthStore } from "@/stores/authStore";
@@ -14,6 +15,9 @@ interface BreadcrumbItem {
 type ViewMode = "grid" | "list";
 type SortBy = "name" | "date" | "size" | "type";
 type SortOrder = "asc" | "desc";
+
+const FILE_PAGE_SIZE = 100;
+const FOLDER_LIMIT = 1000;
 
 function getStored<T extends string>(key: string, fallback: T): T {
 	if (typeof window === "undefined") return fallback;
@@ -30,6 +34,11 @@ interface FileState {
 	files: FileInfo[];
 	loading: boolean;
 	error: string | null;
+
+	// Pagination
+	filesTotalCount: number;
+	foldersTotalCount: number;
+	loadingMore: boolean;
 
 	// Search
 	searchQuery: string | null;
@@ -49,6 +58,10 @@ interface FileState {
 	navigateTo: (folderId: number | null, folderName?: string) => Promise<void>;
 	refresh: () => Promise<void>;
 
+	// Pagination actions
+	loadMoreFiles: () => Promise<void>;
+	hasMoreFiles: () => boolean;
+
 	// View actions
 	setViewMode: (mode: ViewMode) => void;
 	setSortBy: (sortBy: SortBy) => void;
@@ -66,6 +79,7 @@ interface FileState {
 	clearSearch: () => void;
 
 	// CRUD actions
+	createFile: (name: string) => Promise<void>;
 	createFolder: (name: string) => Promise<void>;
 	deleteFile: (id: number) => Promise<void>;
 	deleteFolder: (id: number) => Promise<void>;
@@ -78,6 +92,17 @@ interface FileState {
 
 export type { BreadcrumbItem, SortBy, SortOrder, ViewMode };
 
+const initialPageParams: FolderListParams = {
+	folder_limit: FOLDER_LIMIT,
+	file_limit: FILE_PAGE_SIZE,
+};
+
+async function fetchFolder(folderId: number | null, params?: FolderListParams) {
+	return folderId === null
+		? await fileService.listRoot(params)
+		: await fileService.listFolder(folderId, params);
+}
+
 export const useFileStore = create<FileState>((set, get) => ({
 	currentFolderId: null,
 	folders: [],
@@ -85,6 +110,10 @@ export const useFileStore = create<FileState>((set, get) => ({
 	breadcrumb: [{ id: null, name: "Root" }],
 	loading: false,
 	error: null,
+
+	filesTotalCount: 0,
+	foldersTotalCount: 0,
+	loadingMore: false,
 
 	viewMode: getStored(STORAGE_KEYS.viewMode, "list"),
 	sortBy: getStored(STORAGE_KEYS.sortBy, "name"),
@@ -108,10 +137,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 			selectedFolderIds: new Set(),
 		});
 		try {
-			const contents =
-				folderId === null
-					? await fileService.listRoot()
-					: await fileService.listFolder(folderId);
+			const contents = await fetchFolder(folderId, initialPageParams);
 
 			// Update breadcrumb
 			const { breadcrumb } = get();
@@ -140,6 +166,8 @@ export const useFileStore = create<FileState>((set, get) => ({
 				currentFolderId: folderId,
 				folders: contents.folders,
 				files: contents.files,
+				foldersTotalCount: contents.folders_total,
+				filesTotalCount: contents.files_total,
 				breadcrumb: newBreadcrumb,
 				loading: false,
 				error: null,
@@ -158,19 +186,43 @@ export const useFileStore = create<FileState>((set, get) => ({
 		const { currentFolderId } = get();
 		set({ loading: true });
 		try {
-			const contents =
-				currentFolderId === null
-					? await fileService.listRoot()
-					: await fileService.listFolder(currentFolderId);
+			const contents = await fetchFolder(currentFolderId, initialPageParams);
 			set({
 				folders: contents.folders,
 				files: contents.files,
+				foldersTotalCount: contents.folders_total,
+				filesTotalCount: contents.files_total,
 				loading: false,
 			});
 		} catch (error) {
 			set({ loading: false });
 			throw error;
 		}
+	},
+
+	loadMoreFiles: async () => {
+		const { currentFolderId, files, filesTotalCount, loadingMore } = get();
+		if (loadingMore || files.length >= filesTotalCount) return;
+
+		set({ loadingMore: true });
+		try {
+			const contents = await fetchFolder(currentFolderId, {
+				folder_limit: 0,
+				file_limit: FILE_PAGE_SIZE,
+				file_offset: files.length,
+			});
+			set((state) => ({
+				files: [...state.files, ...contents.files],
+				loadingMore: false,
+			}));
+		} catch {
+			set({ loadingMore: false });
+		}
+	},
+
+	hasMoreFiles: () => {
+		const { files, filesTotalCount } = get();
+		return files.length < filesTotalCount;
 	},
 
 	setViewMode: (mode) => {
@@ -251,6 +303,12 @@ export const useFileStore = create<FileState>((set, get) => ({
 		});
 	},
 
+	createFile: async (name) => {
+		const { currentFolderId } = get();
+		await fileService.createEmptyFile(name, currentFolderId);
+		await Promise.all([get().refresh(), useAuthStore.getState().refreshUser()]);
+	},
+
 	createFolder: async (name) => {
 		const { currentFolderId } = get();
 		await fileService.createFolder(name, currentFolderId);
@@ -283,11 +341,13 @@ export const useFileStore = create<FileState>((set, get) => ({
 		get().clearSelection();
 		// Silent refresh — don't set loading to avoid flash
 		const { currentFolderId } = get();
-		const contents =
-			currentFolderId === null
-				? await fileService.listRoot()
-				: await fileService.listFolder(currentFolderId);
-		set({ folders: contents.folders, files: contents.files });
+		const contents = await fetchFolder(currentFolderId, initialPageParams);
+		set({
+			folders: contents.folders,
+			files: contents.files,
+			foldersTotalCount: contents.folders_total,
+			filesTotalCount: contents.files_total,
+		});
 		return result;
 	},
 }));

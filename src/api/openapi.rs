@@ -1,4 +1,5 @@
-use utoipa::OpenApi;
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
+use utoipa::{Modify, OpenApi};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -8,6 +9,7 @@ use utoipa::OpenApi;
         description = "Self-hosted cloud storage API",
         license(name = "MIT"),
     ),
+    modifiers(&SecurityAddon),
     paths(
         crate::api::routes::auth::check,
         crate::api::routes::auth::setup,
@@ -109,6 +111,7 @@ use utoipa::OpenApi;
             crate::api::response::TokenResponse,
             crate::api::response::RefreshResponse,
             crate::api::response::FolderContentsResponse,
+            crate::services::folder_service::FolderContents,
             crate::api::response::HealthResponse,
             crate::entities::user::Model,
             crate::entities::file::Model,
@@ -194,3 +197,21 @@ use utoipa::OpenApi;
     ),
 )]
 pub struct ApiDoc;
+
+/// 注册 Cookie + Bearer 两种认证方式到 OpenAPI security schemes
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        // "bearer" 匹配 utoipa actix_extras 从 JwtAuth 中间件自动推断的 scheme 名
+        components.add_security_scheme(
+            "bearer",
+            SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+        );
+        components.add_security_scheme(
+            "cookie_auth",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("aster_access"))),
+        );
+    }
+}

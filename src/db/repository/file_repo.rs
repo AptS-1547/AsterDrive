@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, Set, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set, sea_query::Expr,
 };
 
 use crate::entities::{
@@ -33,6 +33,87 @@ pub async fn find_by_folder<C: ConnectionTrait>(
         None => q.filter(file::Column::FolderId.is_null()),
     };
     q.all(db).await.map_err(AsterError::from)
+}
+
+/// 查询文件夹下的文件（排除已删除，分页）
+pub async fn find_by_folder_paginated<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    folder_id: Option<i64>,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<file::Model>, u64)> {
+    let mut cond = sea_orm::Condition::all()
+        .add(file::Column::UserId.eq(user_id))
+        .add(file::Column::DeletedAt.is_null());
+    cond = match folder_id {
+        Some(fid) => cond.add(file::Column::FolderId.eq(fid)),
+        None => cond.add(file::Column::FolderId.is_null()),
+    };
+
+    let base = File::find().filter(cond);
+
+    let total = base.clone().count(db).await.map_err(AsterError::from)?;
+    if total == 0 || limit == 0 {
+        return Ok((vec![], total));
+    }
+
+    let items = base
+        .order_by_asc(file::Column::Name)
+        .offset(offset)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    Ok((items, total))
+}
+
+/// 查询顶层已删除文件（分页），用 SQL 过滤而非内存过滤
+pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<file::Model>, u64)> {
+    use sea_orm::sea_query::{Alias, Expr, Query};
+
+    // 顶层 = deleted_at IS NOT NULL 且 folder 要么 NULL，要么 folder 未被删除
+    let folder_deleted_subquery = Query::select()
+        .expr(Expr::val(1i32))
+        .from_as(Alias::new("folders"), Alias::new("f2"))
+        .and_where(
+            Expr::col((Alias::new("f2"), Alias::new("id")))
+                .equals((Alias::new("files"), file::Column::FolderId)),
+        )
+        .and_where(Expr::col((Alias::new("f2"), Alias::new("deleted_at"))).is_not_null())
+        .to_owned();
+
+    let cond = sea_orm::Condition::all()
+        .add(file::Column::UserId.eq(user_id))
+        .add(file::Column::DeletedAt.is_not_null())
+        .add(
+            sea_orm::Condition::any()
+                .add(file::Column::FolderId.is_null())
+                .add(Expr::exists(folder_deleted_subquery).not()),
+        );
+
+    let base = File::find().filter(cond);
+
+    let total = base.clone().count(db).await.map_err(AsterError::from)?;
+    if total == 0 || limit == 0 {
+        return Ok((vec![], total));
+    }
+
+    let items = base
+        .order_by_desc(file::Column::DeletedAt)
+        .offset(offset)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    Ok((items, total))
 }
 
 /// 按名称查文件（排除已删除）

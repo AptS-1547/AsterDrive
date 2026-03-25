@@ -74,10 +74,11 @@ export function BatchTargetFolderDialog({
 	const loadFolder = useCallback(async (folderId: number | null) => {
 		setLoading(true);
 		try {
+			const folderOnlyParams = { file_limit: 0, folder_limit: 1000 };
 			const contents =
 				folderId === null
-					? await fileService.listRoot()
-					: await fileService.listFolder(folderId);
+					? await fileService.listRoot(folderOnlyParams)
+					: await fileService.listFolder(folderId, folderOnlyParams);
 			setFolders(contents.folders);
 			setActiveFolderId(folderId);
 		} catch (error) {

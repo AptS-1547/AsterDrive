@@ -1,4 +1,5 @@
 import type { FolderContents, ShareInfo, SharePublicInfo } from "@/types/api";
+import type { FolderListParams } from "./fileService";
 import { api } from "./http";
 
 export const shareService = {
@@ -24,9 +25,15 @@ export const shareService = {
 	downloadFolderFileUrl: (token: string, fileId: number) =>
 		`/s/${token}/files/${fileId}/download`,
 
-	listContent: (token: string) =>
-		api.get<FolderContents>(`/s/${token}/content`),
+	listContent: (token: string, params?: FolderListParams) =>
+		api.get<FolderContents>(`/s/${token}/content`, { params }),
 
-	listSubfolderContent: (token: string, folderId: number) =>
-		api.get<FolderContents>(`/s/${token}/folders/${folderId}/content`),
+	listSubfolderContent: (
+		token: string,
+		folderId: number,
+		params?: FolderListParams,
+	) =>
+		api.get<FolderContents>(`/s/${token}/folders/${folderId}/content`, {
+			params,
+		}),
 };
