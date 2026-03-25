@@ -340,7 +340,8 @@ async fn build_stream_response(
     let driver = state.driver_registry.get_driver(&policy)?;
     let stream = driver.get_stream(&blob.storage_path).await?;
 
-    let reader_stream = tokio_util::io::ReaderStream::new(stream);
+    // 64KB buffer — 比默认 4KB 减少系统调用和分配开销
+    let reader_stream = tokio_util::io::ReaderStream::with_capacity(stream, 64 * 1024);
 
     Ok(HttpResponse::Ok()
         .content_type(f.mime_type.clone())
@@ -351,6 +352,8 @@ async fn build_stream_response(
         ))
         .insert_header(("ETag", etag))
         .insert_header(("Cache-Control", "private, max-age=0, must-revalidate"))
+        // 跳过全局 Compress 中间件，避免压缩编码器缓冲导致内存暴涨
+        .insert_header(("Content-Encoding", "identity"))
         .streaming(reader_stream))
 }
 
