@@ -177,7 +177,7 @@ pub async fn list(
                 .1,
         )
     } else {
-        let (raw, total) = folder_repo::find_children_paginated(
+        let (folders, total) = folder_repo::find_children_paginated(
             &state.db,
             user_id,
             parent_id,
@@ -185,11 +185,7 @@ pub async fn list(
             folder_offset,
         )
         .await?;
-        let filtered: Vec<_> = raw
-            .into_iter()
-            .filter(|f| !crate::utils::is_hidden_name(&f.name))
-            .collect();
-        (filtered, total)
+        (folders, total)
     };
 
     let (files, files_total) = if file_limit == 0 {
@@ -200,19 +196,8 @@ pub async fn list(
                 .1,
         )
     } else {
-        let (raw, total) = file_repo::find_by_folder_cursor(
-            &state.db,
-            user_id,
-            parent_id,
-            file_limit,
-            file_cursor,
-        )
-        .await?;
-        let filtered: Vec<_> = raw
-            .into_iter()
-            .filter(|f| !crate::utils::is_hidden_name(&f.name))
-            .collect();
-        (filtered, total)
+        file_repo::find_by_folder_cursor(&state.db, user_id, parent_id, file_limit, file_cursor)
+            .await?
     };
 
     let next_file_cursor = if files.len() as u64 == file_limit && file_limit > 0 {
