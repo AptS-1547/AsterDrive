@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.8] - 2026-03-27
+
+### Release Highlights
+
+- 管理后台新增**管理员创建用户**能力，适合自托管场景下集中管理账号
+- 多个管理接口与用户侧列表统一为 **offset 分页结构**，大数据量场景下体验更稳、前后端类型更一致
+- 文件拖拽体验升级：新增**自定义拖拽预览**，文件夹树支持**拖拽悬停自动展开**
+- PWA 启动体验优化：新增**离线启动降级页**，并在登录后预热常用路由资源
+- 分享访问边界与 WebDAV 账号管理补强，公开访问、路径展示与权限校验更可靠
+
+### Added
+
+- **管理员创建用户**
+  - 后端新增 `POST /api/v1/admin/users`
+  - 管理后台支持直接创建用户，无需依赖用户自行注册
+- **管理后台用户详情面板**
+  - 用户详情查看与编辑体验升级
+  - 角色、状态、配额等信息改为统一保存交互
+- **拖拽体验增强**
+  - 文件卡片与列表行新增自定义拖拽预览
+  - 文件夹树支持拖拽悬停自动展开，移动到深层目录更顺手
+- **PWA 启动增强**
+  - 新增离线启动降级页面
+  - 登录后预热常用路由资源，改善安装态和弱网场景体验
+- **统一分页基础结构**
+  - 新增通用 `LimitOffsetQuery` / `OffsetPage<T>` 分页结构
+  - 管理接口与部分用户接口统一接入 offset 分页
+
+### Changed
+
+- **管理后台列表统一分页**
+  - 用户、策略、分享、配置、锁、审计日志、用户策略列表统一切换到 offset 分页返回
+- **用户侧部分列表统一分页**
+  - `/api/v1/shares` 与 `/api/v1/webdav-accounts` 改为分页对象返回
+- **管理后台布局重构**
+  - 顶栏、页面容器、说明文案与控件尺寸做了一轮统一整理
+- **WebDAV 账号路径构建优化**
+  - 通过批量路径构建减少重复查询，路径展示更稳定
+- **依赖与构建配置更新**
+  - 升级部分前后端依赖
+  - 新增性能构建 profile，并适配新版 `sha2` Digest API
+
+### Fixed
+
+- 修复分享公开访问中的多个边界问题，包括过期分享、越界访问、已删除子文件 / 子目录访问等情况
+- 修复重复活跃分享创建未被正确拦截的问题
+- 修复 WebDAV 账号 root folder 校验与禁用账号测试相关边界问题
+- 修复 PWA 离线启动时无缓存用户场景下的启动流程问题
+- 补强审计日志、分享、WebDAV 相关测试覆盖与权限边界验证
+
+### Breaking Changes
+
+- **API**：多个列表接口的响应结构已从数组调整为分页对象：
+  - `/api/v1/shares`
+  - `/api/v1/webdav-accounts`
+  - 多个 `/api/v1/admin/*` 列表接口
+- 依赖旧数组响应格式的自定义前端、脚本或第三方客户端需要同步适配
+
+---
+
+**统计数据**：
+- 87 files changed, 6,021 insertions(+), 1,783 deletions(-)
+- 15 commits
+
 ## [v0.0.1-alpha.7] - 2026-03-26
 
 ### Release Highlights
@@ -522,7 +586,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.7...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.8...HEAD
+[v0.0.1-alpha.8]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.7...v0.0.1-alpha.8
 [v0.0.1-alpha.7]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.6...v0.0.1-alpha.7
 [v0.0.1-alpha.6]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.5...v0.0.1-alpha.6
 [v0.0.1-alpha.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.4...v0.0.1-alpha.5

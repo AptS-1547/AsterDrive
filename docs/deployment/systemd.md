@@ -1,9 +1,11 @@
 # systemd 部署
 
-systemd 适合长期稳定运行的 Linux 主机。先把工作目录定下来，再决定配置文件、数据库和本地上传目录放在哪。
+systemd 适合长期稳定运行的 Linux 主机。  
+先把工作目录定下来，再决定配置文件、数据库和本地上传目录放在哪。
 
 ## 1. 准备运行目录
 
+```bash
 sudo useradd -r -s /usr/sbin/nologin asterdrive
 sudo mkdir -p /var/lib/asterdrive
 sudo chown -R asterdrive:asterdrive /var/lib/asterdrive
@@ -76,7 +78,7 @@ journalctl -u asterdrive -f
 
 - `/health` 返回 200
 - `/health/ready` 返回 200
-- 首次启动日志里已完成数据库迁移和默认策略初始化
+- 首次启动日志里已完成数据库更新和默认策略初始化
 - 浏览器可以正常登录
 - 如果启用了 WebDAV，实际挂载路径与 `[webdav].prefix` 一致
 

@@ -19,7 +19,7 @@ default_ttl = 3600
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `enabled` | `true` | 是否启用缓存 |
-| `backend` | `"memory"` | 缓存后端，支持 `memory` 与 `redis` |
+| `backend` | `"memory"` | 缓存方式，支持 `memory` 与 `redis` |
 | `redis_url` | `""` | Redis 连接地址，仅 `backend = "redis"` 时使用 |
 | `default_ttl` | `3600` | 默认 TTL，单位秒 |
 
@@ -37,3 +37,11 @@ enabled = false
 ```
 
 即使关闭缓存，AsterDrive 仍然可以正常运行，只是部分查询和读取不会命中缓存。
+
+## 对应环境变量
+
+```bash
+ASTER__CACHE__ENABLED=true
+ASTER__CACHE__BACKEND=memory
+ASTER__CACHE__REDIS_URL=redis://127.0.0.1:6379/0
+```

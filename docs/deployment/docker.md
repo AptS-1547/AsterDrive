@@ -1,6 +1,7 @@
 # Docker 部署
 
-Docker 适合 NAS、单机和小团队部署。最简单的做法是把数据库和默认上传目录都放到 `/data`。
+Docker 适合 NAS、单机和小团队部署。  
+最简单的做法是把数据库和默认上传目录都放到 `/data`，这样升级容器时最不容易丢数据。
 
 ## 先准备两个持久化位置
 
@@ -22,7 +23,7 @@ docker run -d \
   ghcr.io/apts-1547/asterdrive:latest
 ```
 
-这样会让：
+这条命令会让：
 
 - 数据库位于 `/data/asterdrive.db`
 - 默认本地上传目录位于 `/data/uploads`
@@ -95,4 +96,4 @@ docker compose pull
 docker compose up -d
 ```
 
-升级后建议刷新浏览器缓存，再检查一次上传、分享和 WebDAV。
+升级后建议重新打开浏览器页面，再检查一次登录、上传、分享和 WebDAV。

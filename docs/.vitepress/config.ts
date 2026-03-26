@@ -20,7 +20,7 @@ const VERSION = getVersion()
 
 export default defineConfig({
   title: 'AsterDrive',
-  description: 'AsterDrive 使用与部署手册，涵盖安装、配置、文件管理、分享、WebDAV、限流和管理后台',
+  description: 'AsterDrive 部署与使用手册，按当前版本的实际页面和配置编写',
 
   locales: {
     root: {
@@ -117,7 +117,7 @@ export default defineConfig({
             { text: 'systemd', link: '/deployment/systemd' },
             { text: '反向代理', link: '/deployment/proxy' },
             { text: '首次启动', link: '/deployment/runtime-behavior' },
-            { text: '升级与页面版本', link: '/deployment/frontend-assets' }
+            { text: '升级与浏览器缓存', link: '/deployment/frontend-assets' }
           ]
         }
       ]

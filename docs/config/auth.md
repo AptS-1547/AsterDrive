@@ -8,6 +8,9 @@ refresh_token_ttl_secs = 604800
 cookie_secure = true
 ```
 
+这一组主要影响登录和会话。  
+大多数部署最需要确认的其实只有两项：`jwt_secret` 和 `cookie_secure`。
+
 ## 最先确认的两项
 
 - `jwt_secret`：正式环境一定要固定
@@ -47,7 +50,7 @@ cookie_secure = true
 - 修改 `jwt_secret` 后，现有登录会话会失效，需要重新登录
 - 新用户默认配额由管理员后台里的系统设置决定
 
-## 推荐写法
+## 一个常见的正式环境写法
 
 ```toml
 [auth]
@@ -63,3 +66,11 @@ cookie_secure = true
 ASTER__AUTH__JWT_SECRET="your-fixed-secret-at-least-32-chars"
 ASTER__AUTH__COOKIE_SECURE=true
 ```
+
+## 一般什么时候需要改有效期
+
+- 默认 15 分钟访问令牌、7 天刷新令牌，对大多数部署已经够用
+- 如果你更看重少登录，可以适当加长刷新令牌
+- 如果你更看重会话收紧，可以缩短刷新令牌
+
+通常不需要为了日常使用专门去改它们。

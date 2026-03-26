@@ -10,7 +10,7 @@ retry_count = 3
 ## 先选数据库类型
 
 - SQLite：单机、NAS、个人或小团队部署最省心
-- PostgreSQL：已有现成 PostgreSQL 环境，或希望接入现有运维体系
+- PostgreSQL：你已经有现成 PostgreSQL，或希望接入现有运维体系
 - MySQL：你已经在用 MySQL，想保持统一
 
 大多数第一次部署都可以先用 SQLite。
@@ -54,7 +54,7 @@ url = "mysql://user:password@localhost:3306/asterdrive"
 每次启动都会：
 
 1. 建立数据库连接
-2. 自动执行数据库迁移
+2. 自动更新数据库结构
 3. 然后继续启动服务
 
 ## 相对路径语义
@@ -68,3 +68,17 @@ url = "mysql://user:password@localhost:3306/asterdrive"
 - Docker：如果你显式指定了 `sqlite:///data/asterdrive.db?mode=rwc`，数据库会落在 `/data`
 
 长期部署时，建议把 SQLite 放到固定目录或持久化卷里。
+
+## 一般什么时候需要动 `pool_size` 和 `retry_count`
+
+- 单机、小团队：通常保持默认
+- 外部数据库偶尔启动较慢：可以适当提高 `retry_count`
+- 并发较高、数据库本身也允许更多连接：再考虑提高 `pool_size`
+
+## 对应环境变量
+
+```bash
+ASTER__DATABASE__URL="sqlite:///data/asterdrive.db?mode=rwc"
+ASTER__DATABASE__POOL_SIZE=10
+ASTER__DATABASE__RETRY_COUNT=3
+```
