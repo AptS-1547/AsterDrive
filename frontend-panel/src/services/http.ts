@@ -56,8 +56,12 @@ client.interceptors.response.use(
 				});
 				refreshQueue = [];
 				return client(original);
-			} catch {
+			} catch (refreshError) {
 				refreshQueue = [];
+				// 网络错误（离线）时不强制登出
+				if (!axios.isAxiosError(refreshError) || !refreshError.response) {
+					return Promise.reject(error);
+				}
 				// Refresh failed — session expired, force logout
 				const { useAuthStore } = await import("@/stores/authStore");
 				useAuthStore.getState().logout();

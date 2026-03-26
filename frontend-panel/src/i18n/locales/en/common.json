@@ -137,5 +137,11 @@
 	"folder_not_found": "The folder does not exist or has been removed",
 	"share_password_required": "Enter the share password to continue",
 	"share_download_limit_reached": "This share link has reached its download limit",
-	"unexpected_error": "Something went wrong. Please try again later"
+	"unexpected_error": "Something went wrong. Please try again later",
+	"pwa_update_available": "A new version is available",
+	"pwa_refresh": "Refresh",
+	"offline_mode": "Offline mode",
+	"auth_stale": "Session pending verification",
+	"offline_status_short": "Offline",
+	"auth_stale_detail": "Session will be verified automatically when connection is restored"
 }

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
+import { usePwaUpdate } from "@/hooks/usePwaUpdate";
 import { router } from "@/router";
 import { useAuthStore } from "@/stores/authStore";
 import { useThemeStore } from "@/stores/themeStore";
@@ -11,6 +12,7 @@ function shouldSkipInitialAuthCheck(pathname: string) {
 
 function App() {
 	const checkAuth = useAuthStore((s) => s.checkAuth);
+	usePwaUpdate();
 
 	useEffect(() => {
 		if (!shouldSkipInitialAuthCheck(window.location.pathname)) {

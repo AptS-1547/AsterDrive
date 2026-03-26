@@ -15,6 +15,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
 
@@ -27,6 +32,7 @@ export function TopBar({ onSidebarToggle, actions }: TopBarProps) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const user = useAuthStore((s) => s.user);
+	const isAuthStale = useAuthStore((s) => s.isAuthStale);
 	const logout = useAuthStore((s) => s.logout);
 	const search = useFileStore((s) => s.search);
 	const clearSearch = useFileStore((s) => s.clearSearch);
@@ -85,6 +91,8 @@ export function TopBar({ onSidebarToggle, actions }: TopBarProps) {
 					{activeQuery && (
 						<button
 							type="button"
+							title={t("clear_search")}
+							aria-label={t("clear_search")}
 							className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
 							onClick={() => {
 								setSearchInput("");
@@ -103,6 +111,25 @@ export function TopBar({ onSidebarToggle, actions }: TopBarProps) {
 			{/* Right: page actions + theme + lang + user */}
 			<div className="flex items-center gap-1 shrink-0">
 				{actions}
+				{isAuthStale && (
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Badge
+									variant="outline"
+									className="hidden cursor-help items-center gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-700 md:inline-flex dark:text-amber-300"
+								/>
+							}
+						>
+							<Icon name="Warning" className="h-3.5 w-3.5" />
+							<span>{t("offline_status_short")}</span>
+						</TooltipTrigger>
+						<TooltipContent className="max-w-64 text-left leading-relaxed">
+							<div>{t("offline_mode")}</div>
+							<div className="text-background/80">{t("auth_stale_detail")}</div>
+						</TooltipContent>
+					</Tooltip>
+				)}
 				<ThemeSwitcher />
 				<LanguageSwitcher />
 

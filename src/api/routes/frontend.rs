@@ -84,6 +84,18 @@ impl FrontendService {
         Self::serve_index().await
     }
 
+    pub async fn handle_pwa_file(req: HttpRequest) -> HttpResponse {
+        let filename = req
+            .uri()
+            .path()
+            .trim_start_matches('/');
+        let content_type = Self::get_content_type(filename);
+        match Self::load_file(filename).await {
+            Some(data) => HttpResponse::Ok().content_type(content_type).body(data),
+            None => HttpResponse::NotFound().body("File not found"),
+        }
+    }
+
     fn get_content_type(path: &str) -> &'static str {
         match path.rsplit('.').next() {
             Some("css") => "text/css",
@@ -118,6 +130,19 @@ pub fn routes() -> actix_web::Scope {
         .route(
             "/favicon.svg",
             web::get().to(FrontendService::handle_favicon),
+        )
+        // PWA 文件（sw.js, workbox-*.js, manifest.webmanifest）
+        .route(
+            "/sw.js",
+            web::get().to(FrontendService::handle_pwa_file),
+        )
+        .route(
+            "/manifest.webmanifest",
+            web::get().to(FrontendService::handle_pwa_file),
+        )
+        .route(
+            "/{filename:workbox-[^/]*}",
+            web::get().to(FrontendService::handle_pwa_file),
         )
         // SPA fallback（最后）
         .route(

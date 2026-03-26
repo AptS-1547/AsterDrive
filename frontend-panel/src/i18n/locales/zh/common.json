@@ -137,5 +137,11 @@
 	"folder_not_found": "文件夹不存在或已被删除",
 	"share_password_required": "请输入分享密码后继续",
 	"share_download_limit_reached": "该分享链接的下载次数已达上限",
-	"unexpected_error": "暂时无法完成操作，请稍后再试"
+	"unexpected_error": "暂时无法完成操作，请稍后再试",
+	"pwa_update_available": "有新版本可用",
+	"pwa_refresh": "刷新",
+	"offline_mode": "离线模式",
+	"auth_stale": "登录状态待校验",
+	"offline_status_short": "离线",
+	"auth_stale_detail": "恢复连接后将自动校验登录状态"
 }
