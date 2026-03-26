@@ -436,6 +436,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files/new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_empty_file"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/files/upload": {
         parameters: {
             query?: never;
@@ -546,6 +562,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["patch_file"];
+        trace?: never;
+    };
+    "/api/v1/files/{id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_file_content"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/files/{id}/copy": {
@@ -1176,6 +1208,11 @@ export interface components {
             /** Format: int64 */
             parent_id?: number | null;
         };
+        CreateEmptyRequest: {
+            /** Format: int64 */
+            folder_id?: number | null;
+            name: string;
+        };
         CreateFolderReq: {
             name: string;
             /** Format: int64 */
@@ -1240,7 +1277,8 @@ export interface components {
         FileCursor: {
             /** Format: int64 */
             id: number;
-            name: string;
+            /** @description 排序字段值（序列化为字符串） */
+            value: string;
         };
         FileInfo: {
             /** Format: int64 */
@@ -1304,14 +1342,6 @@ export interface components {
             /** Format: int64 */
             folders_total: number;
             next_file_cursor?: null | components["schemas"]["FileCursor"];
-        };
-        FolderContentsResponse: {
-            files: components["schemas"]["FileInfo"][];
-            /** Format: int64 */
-            files_total: number;
-            folders: components["schemas"]["FolderInfo"][];
-            /** Format: int64 */
-            folders_total: number;
         };
         FolderInfo: {
             created_at: string;
@@ -1394,9 +1424,6 @@ export interface components {
         };
         PresignPartsReq: {
             part_numbers: number[];
-        };
-        RefreshResponse: {
-            access_token: string;
         };
         RegisterReq: {
             email: string;
@@ -1518,6 +1545,10 @@ export interface components {
             /** Format: int64 */
             view_count: number;
         };
+        /** @enum {string} */
+        SortBy: "name" | "size" | "created_at" | "updated_at" | "type";
+        /** @enum {string} */
+        SortOrder: "asc" | "desc";
         StoragePolicy: {
             allowed_types: string;
             base_path: string;
@@ -1570,10 +1601,6 @@ export interface components {
             driver_type: components["schemas"]["DriverType"];
             endpoint?: string | null;
             secret_key?: string | null;
-        };
-        TokenResponse: {
-            access_token: string;
-            refresh_token: string;
         };
         TrashContents: {
             files: components["schemas"]["TrashFileItem"][];
@@ -3492,6 +3519,65 @@ export interface operations {
             };
         };
     };
+    create_empty_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEmptyRequest"];
+            };
+        };
+        responses: {
+            /** @description Empty file created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            blob_id: number;
+                            created_at: string;
+                            deleted_at?: string | null;
+                            /** Format: int64 */
+                            folder_id?: number | null;
+                            /** Format: int64 */
+                            id: number;
+                            is_locked?: boolean;
+                            mime_type: string;
+                            name: string;
+                            /** Format: int64 */
+                            size: number;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     upload_file: {
         parameters: {
             query?: {
@@ -3994,6 +4080,82 @@ export interface operations {
             };
         };
     };
+    update_file_content: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": number[];
+            };
+        };
+        responses: {
+            /** @description Content updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            blob_id: number;
+                            created_at: string;
+                            deleted_at?: string | null;
+                            /** Format: int64 */
+                            folder_id?: number | null;
+                            /** Format: int64 */
+                            id: number;
+                            is_locked?: boolean;
+                            mime_type: string;
+                            name: string;
+                            /** Format: int64 */
+                            size: number;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Precondition failed (ETag mismatch) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File is locked by another user */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     copy_file: {
         parameters: {
             query?: never;
@@ -4340,9 +4502,13 @@ export interface operations {
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description cursor 分页：上一页最后一条文件的 name（与 file_after_id 配合使用） */
-                file_after_name?: string | null;
-                /** @description cursor 分页：上一页最后一条文件的 id（与 file_after_name 配合使用） */
+                /** @description 排序字段（name|size|created_at|updated_at|type，默认 name） */
+                sort_by?: null | components["schemas"]["SortBy"];
+                /** @description 排序方向（asc|desc，默认 asc） */
+                sort_order?: null | components["schemas"]["SortOrder"];
+                /** @description cursor 分页：上一页最后一条文件的排序字段值（序列化为字符串） */
+                file_after_value?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 id */
                 file_after_id?: number | null;
             };
             header?: never;
@@ -4439,9 +4605,13 @@ export interface operations {
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description cursor 分页：上一页最后一条文件的 name（与 file_after_id 配合使用） */
-                file_after_name?: string | null;
-                /** @description cursor 分页：上一页最后一条文件的 id（与 file_after_name 配合使用） */
+                /** @description 排序字段（name|size|created_at|updated_at|type，默认 name） */
+                sort_by?: null | components["schemas"]["SortBy"];
+                /** @description 排序方向（asc|desc，默认 asc） */
+                sort_order?: null | components["schemas"]["SortOrder"];
+                /** @description cursor 分页：上一页最后一条文件的排序字段值（序列化为字符串） */
+                file_after_value?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 id */
                 file_after_id?: number | null;
             };
             header?: never;
@@ -4932,9 +5102,13 @@ export interface operations {
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description cursor 分页：上一页最后一条文件的 name（与 file_after_id 配合使用） */
-                file_after_name?: string | null;
-                /** @description cursor 分页：上一页最后一条文件的 id（与 file_after_name 配合使用） */
+                /** @description 排序字段（name|size|created_at|updated_at|type，默认 name） */
+                sort_by?: null | components["schemas"]["SortBy"];
+                /** @description 排序方向（asc|desc，默认 asc） */
+                sort_order?: null | components["schemas"]["SortOrder"];
+                /** @description cursor 分页：上一页最后一条文件的排序字段值（序列化为字符串） */
+                file_after_value?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 id */
                 file_after_id?: number | null;
             };
             header?: never;
@@ -5101,9 +5275,13 @@ export interface operations {
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description cursor 分页：上一页最后一条文件的 name（与 file_after_id 配合使用） */
-                file_after_name?: string | null;
-                /** @description cursor 分页：上一页最后一条文件的 id（与 file_after_name 配合使用） */
+                /** @description 排序字段（name|size|created_at|updated_at|type，默认 name） */
+                sort_by?: null | components["schemas"]["SortBy"];
+                /** @description 排序方向（asc|desc，默认 asc） */
+                sort_order?: null | components["schemas"]["SortOrder"];
+                /** @description cursor 分页：上一页最后一条文件的排序字段值（序列化为字符串） */
+                file_after_value?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 id */
                 file_after_id?: number | null;
             };
             header?: never;
@@ -5429,15 +5607,15 @@ export interface operations {
     list_trash: {
         parameters: {
             query?: {
-                /** @description 文件夹最大返回数量（默认 200，最大 1000） */
+                /** @description 文件夹最大返回数量（默认 200，最大 1000；传 0 跳过文件夹查询） */
                 folder_limit?: number | null;
                 /** @description 文件夹偏移量（默认 0） */
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description cursor 分页：上一页最后一条文件的 deleted_at（RFC3339，与 file_after_id 配合使用） */
+                /** @description cursor 分页：上一页最后一条文件的 deleted_at（ISO 8601） */
                 file_after_deleted_at?: string | null;
-                /** @description cursor 分页：上一页最后一条文件的 id（与 file_after_deleted_at 配合使用） */
+                /** @description cursor 分页：上一页最后一条文件的 id */
                 file_after_id?: number | null;
             };
             header?: never;

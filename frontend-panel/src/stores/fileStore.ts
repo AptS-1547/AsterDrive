@@ -23,9 +23,9 @@ interface Clipboard {
 	mode: "copy" | "cut";
 }
 
-type ViewMode = "grid" | "list";
-type SortBy = "name" | "date" | "size" | "type";
-type SortOrder = "asc" | "desc";
+export type ViewMode = "grid" | "list";
+export type SortBy = "name" | "size" | "created_at" | "updated_at" | "type";
+export type SortOrder = "asc" | "desc";
 
 const FILE_PAGE_SIZE = 100;
 const FOLDER_LIMIT = 1000;
@@ -80,7 +80,7 @@ interface FileState {
 	// View actions
 	setViewMode: (mode: ViewMode) => void;
 	setSortBy: (sortBy: SortBy) => void;
-	toggleSortOrder: () => void;
+	setSortOrder: (sortOrder: SortOrder) => void;
 
 	// Selection actions
 	toggleFileSelection: (id: number) => void;
@@ -111,12 +111,19 @@ interface FileState {
 	) => Promise<BatchResult>;
 }
 
-export type { BreadcrumbItem, Clipboard, SortBy, SortOrder, ViewMode };
+export type { BreadcrumbItem, Clipboard };
 
-const initialPageParams: FolderListParams = {
-	folder_limit: FOLDER_LIMIT,
-	file_limit: FILE_PAGE_SIZE,
-};
+function getInitialPageParams(
+	sortBy: SortBy,
+	sortOrder: SortOrder,
+): FolderListParams {
+	return {
+		folder_limit: FOLDER_LIMIT,
+		file_limit: FILE_PAGE_SIZE,
+		sort_by: sortBy,
+		sort_order: sortOrder,
+	};
+}
 
 async function fetchFolder(folderId: number | null, params?: FolderListParams) {
 	return folderId === null
@@ -166,7 +173,10 @@ export const useFileStore = create<FileState>((set, get) => ({
 			nextFileCursor: null,
 		});
 		try {
-			const contents = await fetchFolder(folderId, initialPageParams);
+			const contents = await fetchFolder(
+				folderId,
+				getInitialPageParams(get().sortBy, get().sortOrder),
+			);
 
 			// Update breadcrumb
 			const { breadcrumb } = get();
@@ -223,7 +233,10 @@ export const useFileStore = create<FileState>((set, get) => ({
 			nextFileCursor: null,
 		});
 		try {
-			const contents = await fetchFolder(currentFolderId, initialPageParams);
+			const contents = await fetchFolder(
+				currentFolderId,
+				getInitialPageParams(get().sortBy, get().sortOrder),
+			);
 			set({
 				folders: contents.folders,
 				files: contents.files,
@@ -239,7 +252,8 @@ export const useFileStore = create<FileState>((set, get) => ({
 	},
 
 	loadMoreFiles: async () => {
-		const { currentFolderId, nextFileCursor, loadingMore } = get();
+		const { currentFolderId, nextFileCursor, loadingMore, sortBy, sortOrder } =
+			get();
 		if (loadingMore || !nextFileCursor) return;
 
 		set({ loadingMore: true });
@@ -247,8 +261,10 @@ export const useFileStore = create<FileState>((set, get) => ({
 			const contents = await fetchFolder(currentFolderId, {
 				folder_limit: 0,
 				file_limit: FILE_PAGE_SIZE,
-				file_after_name: nextFileCursor.name,
+				file_after_value: nextFileCursor.value,
 				file_after_id: nextFileCursor.id,
+				sort_by: sortBy,
+				sort_order: sortOrder,
 			});
 			set((state) => ({
 				files: [...state.files, ...contents.files],
@@ -272,13 +288,34 @@ export const useFileStore = create<FileState>((set, get) => ({
 
 	setSortBy: (sortBy) => {
 		localStorage.setItem(STORAGE_KEYS.sortBy, sortBy);
-		set({ sortBy });
+		set({ sortBy, files: [], nextFileCursor: null, filesTotalCount: 0 });
+		const { currentFolderId, sortOrder } = get();
+		void fetchFolder(
+			currentFolderId,
+			getInitialPageParams(sortBy, sortOrder),
+		).then((contents) =>
+			set({
+				files: contents.files,
+				filesTotalCount: contents.files_total,
+				nextFileCursor: contents.next_file_cursor ?? null,
+			}),
+		);
 	},
 
-	toggleSortOrder: () => {
-		const newOrder = get().sortOrder === "asc" ? "desc" : "asc";
-		localStorage.setItem(STORAGE_KEYS.sortOrder, newOrder);
-		set({ sortOrder: newOrder });
+	setSortOrder: (sortOrder) => {
+		localStorage.setItem(STORAGE_KEYS.sortOrder, sortOrder);
+		set({ sortOrder, files: [], nextFileCursor: null, filesTotalCount: 0 });
+		const { currentFolderId, sortBy } = get();
+		void fetchFolder(
+			currentFolderId,
+			getInitialPageParams(sortBy, sortOrder),
+		).then((contents) =>
+			set({
+				files: contents.files,
+				filesTotalCount: contents.files_total,
+				nextFileCursor: contents.next_file_cursor ?? null,
+			}),
+		);
 	},
 
 	toggleFileSelection: (id) => {
@@ -397,7 +434,10 @@ export const useFileStore = create<FileState>((set, get) => ({
 
 		// Silent refresh
 		get().clearSelection();
-		const contents = await fetchFolder(currentFolderId, initialPageParams);
+		const contents = await fetchFolder(
+			currentFolderId,
+			getInitialPageParams(get().sortBy, get().sortOrder),
+		);
 		set({
 			folders: contents.folders,
 			files: contents.files,
@@ -450,7 +490,10 @@ export const useFileStore = create<FileState>((set, get) => ({
 		get().clearSelection();
 		// Silent refresh — don't set loading to avoid flash
 		const { currentFolderId } = get();
-		const contents = await fetchFolder(currentFolderId, initialPageParams);
+		const contents = await fetchFolder(
+			currentFolderId,
+			getInitialPageParams(get().sortBy, get().sortOrder),
+		);
 		set({
 			folders: contents.folders,
 			files: contents.files,

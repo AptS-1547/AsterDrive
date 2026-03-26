@@ -210,5 +210,13 @@
 	"info_policy_id": "Storage Policy ID",
 	"info_children": "Contents",
 	"info_children_count": "{{folders}} folder(s), {{files}} file(s)",
-	"info_loading": "Loading..."
+	"info_loading": "Loading...",
+	"sort_by": "Sort",
+	"sort_name": "Name",
+	"sort_size": "Size",
+	"sort_created_at": "Upload date",
+	"sort_updated_at": "Modified date",
+	"sort_type": "Type",
+	"sort_asc": "Ascending",
+	"sort_desc": "Descending"
 }

@@ -212,6 +212,8 @@ pub async fn list_shared_folder(
     folder_offset: u64,
     file_limit: u64,
     file_cursor: Option<(String, i64)>,
+    sort_by: crate::api::pagination::SortBy,
+    sort_order: crate::api::pagination::SortOrder,
 ) -> Result<folder_service::FolderContents> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
@@ -231,6 +233,8 @@ pub async fn list_shared_folder(
         folder_offset,
         file_limit,
         file_cursor,
+        sort_by,
+        sort_order,
     )
     .await
 }
@@ -324,6 +328,8 @@ pub async fn list_shared_subfolder(
     folder_offset: u64,
     file_limit: u64,
     file_cursor: Option<(String, i64)>,
+    sort_by: crate::api::pagination::SortBy,
+    sort_order: crate::api::pagination::SortOrder,
 ) -> Result<folder_service::FolderContents> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
@@ -353,6 +359,8 @@ pub async fn list_shared_subfolder(
         folder_offset,
         file_limit,
         file_cursor,
+        sort_by,
+        sort_order,
     )
     .await
 }

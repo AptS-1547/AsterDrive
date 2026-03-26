@@ -110,6 +110,8 @@ use utoipa::{Modify, OpenApi};
     components(
         schemas(
             crate::api::error_code::ErrorCode,
+            crate::api::pagination::SortBy,
+            crate::api::pagination::SortOrder,
             crate::services::folder_service::FolderContents,
             crate::api::response::HealthResponse,
             crate::entities::user::Model,

@@ -172,6 +172,38 @@ macro_rules! upload_test_file {
     }};
 }
 
+/// 上传指定名称测试文件，返回 file_id
+#[macro_export]
+macro_rules! upload_test_file_named {
+    ($app:expr, $token:expr, $name:expr) => {{
+        use actix_web::test;
+        use serde_json::Value;
+
+        let boundary = "----TestBoundary123";
+        let payload = format!(
+            "------TestBoundary123\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n\
+             Content-Type: text/plain\r\n\r\n\
+             test content\r\n\
+             ------TestBoundary123--\r\n",
+            name = $name
+        );
+        let req = test::TestRequest::post()
+            .uri("/api/v1/files/upload")
+            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header((
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(payload)
+            .to_request();
+        let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201, "upload should return 201");
+        let body: Value = test::read_body_json(resp).await;
+        body["data"]["id"].as_i64().unwrap()
+    }};
+}
+
 /// 上传测试文件到指定文件夹，返回 file_id
 #[macro_export]
 macro_rules! upload_test_file_to_folder {

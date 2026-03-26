@@ -57,6 +57,8 @@ import {
 	PiScroll,
 	PiShield,
 	PiSignOut,
+	PiSortAscending,
+	PiSortDescending,
 	PiSpinner,
 	PiSun,
 	PiTable,
@@ -126,6 +128,8 @@ export type IconName =
 	| "Scroll"
 	| "Shield"
 	| "SignOut"
+	| "SortAscending"
+	| "SortDescending"
 	| "Spinner"
 	| "Sun"
 	| "Table"
@@ -194,6 +198,8 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Scroll: PiScroll,
 	Shield: PiShield,
 	SignOut: PiSignOut,
+	SortAscending: PiSortAscending,
+	SortDescending: PiSortDescending,
 	Spinner: PiSpinner,
 	Sun: PiSun,
 	Table: PiTable,

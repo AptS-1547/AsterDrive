@@ -83,7 +83,7 @@ async fn test_folder_list_file_cursor_pagination() {
     // next_file_cursor must be set (more pages exist)
     assert!(!body["data"]["next_file_cursor"].is_null());
 
-    let cursor_name = body["data"]["next_file_cursor"]["name"]
+    let cursor_value = body["data"]["next_file_cursor"]["value"]
         .as_str()
         .unwrap()
         .to_string();
@@ -95,8 +95,8 @@ async fn test_folder_list_file_cursor_pagination() {
 
     // Page 2: use cursor
     let uri = format!(
-        "/api/v1/folders?folder_limit=0&file_limit=3&file_after_name={}&file_after_id={}",
-        urlencoding::encode(&cursor_name),
+        "/api/v1/folders?folder_limit=0&file_limit=3&file_after_value={}&file_after_id={}",
+        urlencoding::encode(&cursor_value),
         cursor_id
     );
     let req = test::TestRequest::get()
@@ -113,7 +113,7 @@ async fn test_folder_list_file_cursor_pagination() {
         let id = f["id"].as_i64().unwrap();
         assert!(!page1_ids.contains(&id), "duplicate file id {id} in page 2");
     }
-    let cursor_name2 = body["data"]["next_file_cursor"]["name"]
+    let cursor_value2 = body["data"]["next_file_cursor"]["value"]
         .as_str()
         .unwrap()
         .to_string();
@@ -121,8 +121,8 @@ async fn test_folder_list_file_cursor_pagination() {
 
     // Page 3: last page (2 files)
     let uri = format!(
-        "/api/v1/folders?folder_limit=0&file_limit=3&file_after_name={}&file_after_id={}",
-        urlencoding::encode(&cursor_name2),
+        "/api/v1/folders?folder_limit=0&file_limit=3&file_after_value={}&file_after_id={}",
+        urlencoding::encode(&cursor_value2),
         cursor_id2
     );
     let req = test::TestRequest::get()
@@ -264,5 +264,116 @@ async fn test_trash_pagination() {
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 2);
+    assert!(body["data"]["next_file_cursor"].is_null(), "no more pages");
+}
+
+#[actix_web::test]
+async fn test_sort_by_name() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    for name in ["charlie.txt", "alpha.txt", "beta.txt"] {
+        upload_test_file_named!(app, token, name);
+    }
+
+    // sort_by=name&sort_order=asc
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders?folder_limit=0&file_limit=10&sort_by=name&sort_order=asc")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let files = body["data"]["files"].as_array().unwrap();
+    let names: Vec<&str> = files.iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["alpha.txt", "beta.txt", "charlie.txt"]);
+
+    // sort_by=name&sort_order=desc
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders?folder_limit=0&file_limit=10&sort_by=name&sort_order=desc")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let files = body["data"]["files"].as_array().unwrap();
+    let names: Vec<&str> = files.iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["charlie.txt", "beta.txt", "alpha.txt"]);
+}
+
+#[actix_web::test]
+async fn test_sort_cursor_no_duplicates() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    for _ in 0..7 {
+        upload_test_file!(app, token);
+    }
+
+    // Page 1 with sort_by=size
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders?folder_limit=0&file_limit=3&sort_by=size&sort_order=asc")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let page1_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(page1_files.len(), 3);
+    assert_eq!(body["data"]["files_total"], 7);
+    let cursor = &body["data"]["next_file_cursor"];
+    assert!(!cursor.is_null());
+
+    let cursor_value = cursor["value"].as_str().unwrap();
+    let cursor_id = cursor["id"].as_i64().unwrap();
+    let page1_ids: Vec<i64> = page1_files
+        .iter()
+        .map(|f| f["id"].as_i64().unwrap())
+        .collect();
+
+    // Page 2
+    let uri = format!(
+        "/api/v1/folders?folder_limit=0&file_limit=3&sort_by=size&sort_order=asc&file_after_value={}&file_after_id={}",
+        urlencoding::encode(cursor_value),
+        cursor_id
+    );
+    let req = test::TestRequest::get()
+        .uri(&uri)
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let page2_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(page2_files.len(), 3);
+
+    // No duplicates between pages
+    let page2_ids: Vec<i64> = page2_files
+        .iter()
+        .map(|f| f["id"].as_i64().unwrap())
+        .collect();
+    for id in &page1_ids {
+        assert!(
+            !page2_ids.contains(id),
+            "duplicate file id {id} across pages"
+        );
+    }
+
+    // Page 3: last page (1 file)
+    let cursor = &body["data"]["next_file_cursor"];
+    assert!(!cursor.is_null());
+    let cursor_value = cursor["value"].as_str().unwrap();
+    let cursor_id = cursor["id"].as_i64().unwrap();
+    let uri = format!(
+        "/api/v1/folders?folder_limit=0&file_limit=3&sort_by=size&sort_order=asc&file_after_value={}&file_after_id={}",
+        urlencoding::encode(cursor_value),
+        cursor_id
+    );
+    let req = test::TestRequest::get()
+        .uri(&uri)
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let page3_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(page3_files.len(), 1);
     assert!(body["data"]["next_file_cursor"].is_null(), "no more pages");
 }

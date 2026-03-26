@@ -10,7 +10,8 @@ use crate::runtime::AppState;
 
 #[derive(Serialize, ToSchema)]
 pub struct FileCursor {
-    pub name: String,
+    /// 排序字段值（序列化为字符串）
+    pub value: String,
     pub id: i64,
 }
 
@@ -168,6 +169,8 @@ pub async fn list(
     folder_offset: u64,
     file_limit: u64,
     file_cursor: Option<(String, i64)>,
+    sort_by: crate::api::pagination::SortBy,
+    sort_order: crate::api::pagination::SortOrder,
 ) -> Result<FolderContents> {
     let (folders, folders_total) = if folder_limit == 0 {
         (
@@ -191,18 +194,28 @@ pub async fn list(
     let (files, files_total) = if file_limit == 0 {
         (
             vec![],
-            file_repo::find_by_folder_cursor(&state.db, user_id, parent_id, 0, None)
-                .await?
-                .1,
+            file_repo::find_by_folder_cursor(
+                &state.db, user_id, parent_id, 0, None, sort_by, sort_order,
+            )
+            .await?
+            .1,
         )
     } else {
-        file_repo::find_by_folder_cursor(&state.db, user_id, parent_id, file_limit, file_cursor)
-            .await?
+        file_repo::find_by_folder_cursor(
+            &state.db,
+            user_id,
+            parent_id,
+            file_limit,
+            file_cursor,
+            sort_by,
+            sort_order,
+        )
+        .await?
     };
 
     let next_file_cursor = if files.len() as u64 == file_limit && file_limit > 0 {
         files.last().map(|f| FileCursor {
-            name: f.name.clone(),
+            value: crate::api::pagination::SortBy::cursor_value(f, sort_by),
             id: f.id,
         })
     } else {
@@ -389,6 +402,8 @@ pub async fn list_shared(
     folder_offset: u64,
     file_limit: u64,
     file_cursor: Option<(String, i64)>,
+    sort_by: crate::api::pagination::SortBy,
+    sort_order: crate::api::pagination::SortOrder,
 ) -> Result<FolderContents> {
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
     let (folders, folders_total) = folder_repo::find_children_paginated(
@@ -405,11 +420,13 @@ pub async fn list_shared(
         Some(folder_id),
         file_limit,
         file_cursor,
+        sort_by,
+        sort_order,
     )
     .await?;
     let next_file_cursor = if files.len() as u64 == file_limit && file_limit > 0 {
         files.last().map(|f| FileCursor {
-            name: f.name.clone(),
+            value: crate::api::pagination::SortBy::cursor_value(f, sort_by),
             id: f.id,
         })
     } else {

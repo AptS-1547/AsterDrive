@@ -189,6 +189,8 @@ pub async fn list_shared_content(
         query.folder_offset(),
         query.file_limit(),
         query.file_cursor(),
+        query.sort_by(),
+        query.sort_order(),
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
@@ -227,6 +229,8 @@ pub async fn list_shared_subfolder_content(
         query.folder_offset(),
         query.file_limit(),
         query.file_cursor(),
+        query.sort_by(),
+        query.sort_order(),
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))

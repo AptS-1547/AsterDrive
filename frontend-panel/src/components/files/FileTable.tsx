@@ -67,9 +67,9 @@ function SortIcon({
 }) {
 	if (column !== current) return null;
 	return order === "asc" ? (
-		<Icon name="ArrowUp" className="h-3 w-3 ml-1" />
+		<Icon name="SortAscending" className="h-3 w-3 ml-1" />
 	) : (
-		<Icon name="ArrowDown" className="h-3 w-3 ml-1" />
+		<Icon name="SortDescending" className="h-3 w-3 ml-1" />
 	);
 }
 
@@ -101,7 +101,7 @@ export function FileTable({
 	const sortBy = useFileStore((s) => s.sortBy);
 	const sortOrder = useFileStore((s) => s.sortOrder);
 	const setSortBy = useFileStore((s) => s.setSortBy);
-	const toggleSortOrder = useFileStore((s) => s.toggleSortOrder);
+	const setSortOrder = useFileStore((s) => s.setSortOrder);
 
 	const allSelected =
 		folders.length + files.length > 0 &&
@@ -110,7 +110,7 @@ export function FileTable({
 
 	const handleSort = (col: SortBy) => {
 		if (sortBy === col) {
-			toggleSortOrder();
+			setSortOrder(sortOrder === "asc" ? "desc" : "asc");
 		} else {
 			setSortBy(col);
 		}
@@ -191,11 +191,15 @@ export function FileTable({
 					</TableHead>
 					<TableHead
 						className="cursor-pointer select-none"
-						onClick={() => handleSort("date")}
+						onClick={() => handleSort("created_at")}
 					>
 						<div className="flex items-center">
 							{t("common:date")}
-							<SortIcon column="date" current={sortBy} order={sortOrder} />
+							<SortIcon
+								column="created_at"
+								current={sortBy}
+								order={sortOrder}
+							/>
 						</div>
 					</TableHead>
 				</TableRow>

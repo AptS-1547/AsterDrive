@@ -35,15 +35,18 @@ pub async fn find_by_folder<C: ConnectionTrait>(
     q.all(db).await.map_err(AsterError::from)
 }
 
-/// 查询文件夹下的文件（排除已删除，cursor 分页）
-/// after: 上一页最后一条文件的 (name, id)，None 表示从头开始
+/// 查询文件夹下的文件（排除已删除，cursor 分页，支持多字段排序）
 pub async fn find_by_folder_cursor<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
     folder_id: Option<i64>,
     limit: u64,
     after: Option<(String, i64)>,
+    sort_by: crate::api::pagination::SortBy,
+    sort_order: crate::api::pagination::SortOrder,
 ) -> Result<(Vec<file::Model>, u64)> {
+    use crate::api::pagination::{SortBy, SortOrder};
+
     let mut cond = sea_orm::Condition::all()
         .add(file::Column::UserId.eq(user_id))
         .add(file::Column::DeletedAt.is_null());
@@ -59,32 +62,138 @@ pub async fn find_by_folder_cursor<C: ConnectionTrait>(
         return Ok((vec![], total));
     }
 
-    let items = if let Some((after_name, after_id)) = after {
-        // (name > after_name) OR (name = after_name AND id > after_id)
-        let cursor_cond = sea_orm::Condition::any()
-            .add(file::Column::Name.gt(after_name.clone()))
-            .add(
-                sea_orm::Condition::all()
-                    .add(file::Column::Name.eq(after_name))
-                    .add(file::Column::Id.gt(after_id)),
-            );
-        base.filter(cursor_cond)
-            .order_by_asc(file::Column::Name)
-            .order_by_asc(file::Column::Id)
-            .limit(limit)
-            .all(db)
-            .await
-            .map_err(AsterError::from)?
-    } else {
-        base.order_by_asc(file::Column::Name)
-            .order_by_asc(file::Column::Id)
-            .limit(limit)
-            .all(db)
-            .await
-            .map_err(AsterError::from)?
+    let is_asc = matches!(sort_order, SortOrder::Asc);
+
+    // 构建 cursor 条件
+    let mut q = base;
+    if let Some((after_value, after_id)) = after {
+        let cursor_cond = build_cursor_condition(sort_by, is_asc, &after_value, after_id)?;
+        q = q.filter(cursor_cond);
+    }
+
+    // 排序
+    let primary_col = match sort_by {
+        SortBy::Name => file::Column::Name,
+        SortBy::Size => file::Column::Size,
+        SortBy::CreatedAt => file::Column::CreatedAt,
+        SortBy::UpdatedAt => file::Column::UpdatedAt,
+        SortBy::Type => file::Column::MimeType,
     };
 
+    q = if is_asc {
+        q.order_by_asc(primary_col).order_by_asc(file::Column::Id)
+    } else {
+        q.order_by_desc(primary_col).order_by_desc(file::Column::Id)
+    };
+
+    let items = q.limit(limit).all(db).await.map_err(AsterError::from)?;
     Ok((items, total))
+}
+
+/// 构建 cursor WHERE 条件
+/// ASC:  (col > val) OR (col = val AND id > after_id)
+/// DESC: (col < val) OR (col = val AND id < after_id)
+fn build_cursor_condition(
+    sort_by: crate::api::pagination::SortBy,
+    is_asc: bool,
+    after_value: &str,
+    after_id: i64,
+) -> Result<sea_orm::Condition> {
+    use crate::api::pagination::SortBy;
+
+    let id_cond = if is_asc {
+        file::Column::Id.gt(after_id)
+    } else {
+        file::Column::Id.lt(after_id)
+    };
+
+    match sort_by {
+        SortBy::Name => {
+            let val = after_value.to_string();
+            let (gt, eq) = if is_asc {
+                (
+                    file::Column::Name.gt(val.clone()),
+                    file::Column::Name.eq(val),
+                )
+            } else {
+                (
+                    file::Column::Name.lt(val.clone()),
+                    file::Column::Name.eq(val),
+                )
+            };
+            Ok(sea_orm::Condition::any()
+                .add(gt)
+                .add(sea_orm::Condition::all().add(eq).add(id_cond)))
+        }
+        SortBy::Size => {
+            let val: i64 = after_value
+                .parse()
+                .map_err(|_| AsterError::validation_error("invalid cursor value for size sort"))?;
+            let (gt, eq) = if is_asc {
+                (file::Column::Size.gt(val), file::Column::Size.eq(val))
+            } else {
+                (file::Column::Size.lt(val), file::Column::Size.eq(val))
+            };
+            Ok(sea_orm::Condition::any()
+                .add(gt)
+                .add(sea_orm::Condition::all().add(eq).add(id_cond)))
+        }
+        SortBy::CreatedAt => {
+            let val: chrono::DateTime<chrono::Utc> = after_value.parse().map_err(|_| {
+                AsterError::validation_error("invalid cursor value for created_at sort")
+            })?;
+            let (gt, eq) = if is_asc {
+                (
+                    file::Column::CreatedAt.gt(val),
+                    file::Column::CreatedAt.eq(val),
+                )
+            } else {
+                (
+                    file::Column::CreatedAt.lt(val),
+                    file::Column::CreatedAt.eq(val),
+                )
+            };
+            Ok(sea_orm::Condition::any()
+                .add(gt)
+                .add(sea_orm::Condition::all().add(eq).add(id_cond)))
+        }
+        SortBy::UpdatedAt => {
+            let val: chrono::DateTime<chrono::Utc> = after_value.parse().map_err(|_| {
+                AsterError::validation_error("invalid cursor value for updated_at sort")
+            })?;
+            let (gt, eq) = if is_asc {
+                (
+                    file::Column::UpdatedAt.gt(val),
+                    file::Column::UpdatedAt.eq(val),
+                )
+            } else {
+                (
+                    file::Column::UpdatedAt.lt(val),
+                    file::Column::UpdatedAt.eq(val),
+                )
+            };
+            Ok(sea_orm::Condition::any()
+                .add(gt)
+                .add(sea_orm::Condition::all().add(eq).add(id_cond)))
+        }
+        SortBy::Type => {
+            let val = after_value.to_string();
+            let (gt, eq) = if is_asc {
+                (
+                    file::Column::MimeType.gt(val.clone()),
+                    file::Column::MimeType.eq(val),
+                )
+            } else {
+                (
+                    file::Column::MimeType.lt(val.clone()),
+                    file::Column::MimeType.eq(val),
+                )
+            };
+            Ok(sea_orm::Condition::any()
+                .add(gt)
+                .add(sea_orm::Condition::all().add(eq).add(id_cond)))
+        }
+    }
 }
 
 /// 查询顶层已删除文件（cursor 分页），cursor = (deleted_at, id) 降序

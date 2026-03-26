@@ -149,13 +149,13 @@ export default function ShareViewPage() {
 					? await shareService.listContent(token, {
 							folder_limit: 0,
 							file_limit: SHARE_PAGE_SIZE,
-							file_after_name: cursor.name,
+							file_after_value: cursor.value,
 							file_after_id: cursor.id,
 						})
 					: await shareService.listSubfolderContent(token, currentId, {
 							folder_limit: 0,
 							file_limit: SHARE_PAGE_SIZE,
-							file_after_name: cursor.name,
+							file_after_value: cursor.value,
 							file_after_id: cursor.id,
 						});
 			setFolderContents((prev) =>

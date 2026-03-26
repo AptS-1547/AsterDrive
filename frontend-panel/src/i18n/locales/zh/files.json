@@ -210,5 +210,13 @@
 	"info_policy_id": "存储策略 ID",
 	"info_children": "内容",
 	"info_children_count": "{{folders}} 个文件夹，{{files}} 个文件",
-	"info_loading": "加载中..."
+	"info_loading": "加载中...",
+	"sort_by": "排序",
+	"sort_name": "文件名",
+	"sort_size": "大小",
+	"sort_created_at": "上传时间",
+	"sort_updated_at": "修改时间",
+	"sort_type": "类型",
+	"sort_asc": "升序",
+	"sort_desc": "降序"
 }

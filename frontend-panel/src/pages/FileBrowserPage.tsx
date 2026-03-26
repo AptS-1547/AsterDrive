@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonFileGrid } from "@/components/common/SkeletonFileGrid";
 import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
 import { ViewToggle } from "@/components/common/ViewToggle";
+import { SortMenu } from "@/components/common/SortMenu";
 import { BatchTargetFolderDialog } from "@/components/files/BatchTargetFolderDialog";
 import { CreateFileDialog } from "@/components/files/CreateFileDialog";
 import { CreateFolderDialog } from "@/components/files/CreateFolderDialog";
@@ -73,8 +74,12 @@ export default function FileBrowserPage() {
 	const clearSelection = useFileStore((s) => s.clearSelection);
 	const loadMoreFiles = useFileStore((s) => s.loadMoreFiles);
 	const loadingMore = useFileStore((s) => s.loadingMore);
-	const filesTotalCount = useFileStore((s) => s.filesTotalCount);
-	const filesLength = useFileStore((s) => s.files.length);
+	const sortBy = useFileStore((s) => s.sortBy);
+	const sortOrder = useFileStore((s) => s.sortOrder);
+	const setSortBy = useFileStore((s) => s.setSortBy);
+	const setSortOrder = useFileStore((s) => s.setSortOrder);
+
+	const hasMoreFiles = useFileStore((s) => s.hasMoreFiles);
 
 	const isSearching = searchQuery !== null;
 	const displayFolders = isSearching ? searchFolders : folders;
@@ -88,7 +93,7 @@ export default function FileBrowserPage() {
 
 	// Infinite scroll: load more files when sentinel is visible
 	useEffect(() => {
-		if (isSearching || filesLength >= filesTotalCount || loadingMore) return;
+		if (isSearching || !hasMoreFiles() || loadingMore) return;
 		const el = sentinelRef.current;
 		if (!el) return;
 		// scrollAreaRef.current is the Viewport element (via forwardRef)
@@ -102,7 +107,7 @@ export default function FileBrowserPage() {
 		);
 		observer.observe(el);
 		return () => observer.disconnect();
-	}, [isSearching, filesLength, filesTotalCount, loadingMore, loadMoreFiles]);
+	}, [isSearching, hasMoreFiles, loadingMore, loadMoreFiles]);
 	const [createFolderOpen, setCreateFolderOpen] = useState(false);
 	const [createFileOpen, setCreateFileOpen] = useState(false);
 	const [fadingFileIds, setFadingFileIds] = useState<Set<number>>(new Set());
@@ -358,7 +363,17 @@ export default function FileBrowserPage() {
 
 	return (
 		<AppLayout
-			actions={<ViewToggle value={viewMode} onChange={setViewMode} />}
+			actions={
+				<div className="flex items-center gap-2">
+					<SortMenu
+						sortBy={sortBy}
+						sortOrder={sortOrder}
+						onSortBy={setSortBy}
+						onSortOrder={setSortOrder}
+					/>
+					<ViewToggle value={viewMode} onChange={setViewMode} />
+				</div>
+			}
 			onTrashDrop={handleTrashDrop}
 		>
 			<UploadArea ref={uploadAreaRef}>
@@ -424,7 +439,7 @@ export default function FileBrowserPage() {
 							) : (
 								<FileTable {...sharedProps} />
 							)}
-							{!isSearching && filesLength < filesTotalCount && (
+							{!isSearching && hasMoreFiles() && (
 								<div ref={sentinelRef} className="flex justify-center py-4">
 									{loadingMore && (
 										<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />

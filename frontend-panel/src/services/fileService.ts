@@ -11,8 +11,10 @@ export interface FolderListParams {
 	folder_limit?: number;
 	folder_offset?: number;
 	file_limit?: number;
-	file_after_name?: string;
+	file_after_value?: string;
 	file_after_id?: number;
+	sort_by?: "name" | "size" | "created_at" | "updated_at" | "type";
+	sort_order?: "asc" | "desc";
 }
 
 export const fileService = {
