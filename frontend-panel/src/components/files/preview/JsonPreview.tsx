@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTextContent } from "@/hooks/useTextContent";
+import { PreviewError } from "./PreviewError";
 
 interface JsonPreviewProps {
 	path: string;
@@ -10,7 +11,7 @@ interface JsonPreviewProps {
 
 export function JsonPreview({ path }: JsonPreviewProps) {
 	const { t } = useTranslation("files");
-	const { content, loading, error } = useTextContent(path);
+	const { content, loading, error, reload } = useTextContent(path);
 
 	const formatted = useMemo(() => {
 		if (!content) return null;
@@ -30,11 +31,7 @@ export function JsonPreview({ path }: JsonPreviewProps) {
 	}
 
 	if (error || content === null) {
-		return (
-			<div className="p-6 text-sm text-destructive">
-				{t("preview_load_failed")}
-			</div>
-		);
+		return <PreviewError onRetry={() => void reload()} />;
 	}
 
 	if (!formatted) {

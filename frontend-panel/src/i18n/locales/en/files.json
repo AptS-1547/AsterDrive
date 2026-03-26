@@ -138,6 +138,7 @@
 	"storage_space": "Storage",
 	"loading_preview": "Loading...",
 	"preview_load_failed": "Failed to load",
+	"preview_retry": "Retry",
 	"pdf_page_count": "{{count}} pages",
 	"pdf_page_of_total": "Page {{page}} / {{count}}",
 	"pdf_page_input_label": "Page number",

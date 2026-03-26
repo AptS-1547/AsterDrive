@@ -138,6 +138,7 @@
 	"storage_space": "存储空间",
 	"loading_preview": "加载中...",
 	"preview_load_failed": "加载失败",
+	"preview_retry": "重试",
 	"pdf_page_count": "{{count}} 页",
 	"pdf_page_of_total": "第 {{page}} / {{count}} 页",
 	"pdf_page_input_label": "页码",

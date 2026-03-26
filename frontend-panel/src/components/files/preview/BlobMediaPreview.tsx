@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
+import { PreviewError } from "./PreviewError";
 import type { PreviewableFileLike } from "./types";
 
 interface BlobMediaPreviewProps {
@@ -10,7 +11,7 @@ interface BlobMediaPreviewProps {
 
 export function BlobMediaPreview({ file, mode, path }: BlobMediaPreviewProps) {
 	const { t } = useTranslation("files");
-	const { blobUrl, error, loading } = useBlobUrl(path);
+	const { blobUrl, error, loading, retry } = useBlobUrl(path);
 
 	if (loading) {
 		return (
@@ -21,11 +22,7 @@ export function BlobMediaPreview({ file, mode, path }: BlobMediaPreviewProps) {
 	}
 
 	if (error || !blobUrl) {
-		return (
-			<div className="p-6 text-sm text-destructive">
-				{t("preview_load_failed")}
-			</div>
-		);
+		return <PreviewError onRetry={retry} />;
 	}
 
 	if (mode === "image") {

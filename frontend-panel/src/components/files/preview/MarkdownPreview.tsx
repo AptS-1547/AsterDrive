@@ -4,6 +4,7 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTextContent } from "@/hooks/useTextContent";
+import { PreviewError } from "./PreviewError";
 
 interface MarkdownPreviewProps {
 	path: string;
@@ -11,7 +12,7 @@ interface MarkdownPreviewProps {
 
 export function MarkdownPreview({ path }: MarkdownPreviewProps) {
 	const { t } = useTranslation("files");
-	const { content, loading, error } = useTextContent(path);
+	const { content, loading, error, reload } = useTextContent(path);
 
 	if (loading) {
 		return (
@@ -22,11 +23,7 @@ export function MarkdownPreview({ path }: MarkdownPreviewProps) {
 	}
 
 	if (error || content === null) {
-		return (
-			<div className="p-6 text-sm text-destructive">
-				{t("preview_load_failed")}
-			</div>
-		);
+		return <PreviewError onRetry={() => void reload()} />;
 	}
 
 	return (

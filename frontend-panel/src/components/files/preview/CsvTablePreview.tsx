@@ -10,6 +10,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { useTextContent } from "@/hooks/useTextContent";
+import { PreviewError } from "./PreviewError";
 
 interface CsvTablePreviewProps {
 	path: string;
@@ -20,7 +21,7 @@ const MAX_ROWS = 500;
 
 export function CsvTablePreview({ path, delimiter }: CsvTablePreviewProps) {
 	const { t } = useTranslation(["files", "common"]);
-	const { content, loading, error } = useTextContent(path);
+	const { content, loading, error, reload } = useTextContent(path);
 
 	const parsed = useMemo(() => {
 		if (!content) return null;
@@ -39,11 +40,7 @@ export function CsvTablePreview({ path, delimiter }: CsvTablePreviewProps) {
 	}
 
 	if (error || content === null) {
-		return (
-			<div className="p-6 text-sm text-destructive">
-				{t("files:preview_load_failed")}
-			</div>
-		);
+		return <PreviewError onRetry={() => void reload()} />;
 	}
 
 	if (!parsed || parsed.errors.length > 0 || parsed.data.length === 0) {

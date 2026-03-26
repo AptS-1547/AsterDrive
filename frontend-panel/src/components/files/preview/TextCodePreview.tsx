@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/icon";
 import { useFileEditorSession } from "@/hooks/useFileEditorSession";
 import { useTextContent } from "@/hooks/useTextContent";
 import { getEditorLanguage } from "./file-capabilities";
+import { PreviewError } from "./PreviewError";
 import type { PreviewableFileLike } from "./types";
 
 interface TextCodePreviewProps {
@@ -98,11 +99,7 @@ export function TextCodePreview({
 	}
 
 	if (error || content === null) {
-		return (
-			<div className="p-6 text-sm text-destructive">
-				{t("files:preview_load_failed")}
-			</div>
-		);
+		return <PreviewError onRetry={() => void reload()} />;
 	}
 
 	const language = getEditorLanguage(file);

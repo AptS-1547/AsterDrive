@@ -139,6 +139,13 @@ export function useBlobUrl(path: string | null) {
 	const [blobUrl, setBlobUrl] = useState<string | null>(null);
 	const [error, setError] = useState(false);
 	const [loading, setLoading] = useState(false);
+	const [retryCount, setRetryCount] = useState(0);
+
+	const retry = () => {
+		if (path) invalidateBlobUrl(path);
+		setError(false);
+		setRetryCount((n) => n + 1);
+	};
 
 	useEffect(() => {
 		setBlobUrl(null);
@@ -174,7 +181,7 @@ export function useBlobUrl(path: string | null) {
 			cancelled = true;
 			releaseBlobUrl(path);
 		};
-	}, [path]);
+	}, [path, retryCount]);
 
-	return { blobUrl, error, loading };
+	return { blobUrl, error, loading, retry };
 }

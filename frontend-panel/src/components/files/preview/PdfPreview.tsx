@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
+import { PreviewError } from "./PreviewError";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 	"pdfjs-dist/build/pdf.worker.min.mjs",
@@ -41,7 +42,12 @@ interface PdfPreviewProps {
 
 export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 	const { t } = useTranslation("files");
-	const { blobUrl, error: blobError, loading: blobLoading } = useBlobUrl(path);
+	const {
+		blobUrl,
+		error: blobError,
+		loading: blobLoading,
+		retry,
+	} = useBlobUrl(path);
 	const [numPages, setNumPages] = useState<number | null>(null);
 	const [pdfError, setPdfError] = useState(false);
 	const [currentPage, setCurrentPage] = useState(1);
@@ -314,19 +320,11 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 	}
 
 	if (blobError || !blobUrl) {
-		return (
-			<div className="p-6 text-sm text-destructive">
-				{t("preview_load_failed")}
-			</div>
-		);
+		return <PreviewError onRetry={retry} />;
 	}
 
 	if (pdfError) {
-		return (
-			<div className="p-6 text-sm text-destructive">
-				{t("preview_load_failed")}
-			</div>
-		);
+		return <PreviewError onRetry={retry} />;
 	}
 
 	return (
