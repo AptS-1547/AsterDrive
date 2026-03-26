@@ -217,6 +217,34 @@ pub async fn find_all_files_in_folder<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+/// 查找文件夹的祖先链（从根下第一层到当前文件夹），校验归属与未删除
+pub async fn find_ancestors<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    folder_id: i64,
+) -> Result<Vec<(i64, String)>> {
+    let mut path = Vec::new();
+    let mut current_id = folder_id;
+
+    loop {
+        let folder = find_by_id(db, current_id).await?;
+        crate::utils::verify_owner(folder.user_id, user_id, "folder")?;
+        if folder.deleted_at.is_some() {
+            return Err(AsterError::file_not_found(format!(
+                "folder #{current_id} is in trash"
+            )));
+        }
+        path.push((folder.id, folder.name));
+        match folder.parent_id {
+            Some(pid) => current_id = pid,
+            None => break,
+        }
+    }
+
+    path.reverse();
+    Ok(path)
+}
+
 // ── 软删除 / 回收站 ─────────────────────────────────────────────────
 
 /// 软删除：标记 deleted_at

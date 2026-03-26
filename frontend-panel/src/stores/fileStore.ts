@@ -70,7 +70,11 @@ interface FileState {
 	clipboard: Clipboard | null;
 
 	// Navigation actions
-	navigateTo: (folderId: number | null, folderName?: string) => Promise<void>;
+	navigateTo: (
+		folderId: number | null,
+		folderName?: string,
+		breadcrumbPath?: BreadcrumbItem[],
+	) => Promise<void>;
 	refresh: () => Promise<void>;
 
 	// Pagination actions
@@ -131,6 +135,25 @@ async function fetchFolder(folderId: number | null, params?: FolderListParams) {
 		: await fileService.listFolder(folderId, params);
 }
 
+async function resolveBreadcrumb(
+	folderId: number | null,
+	breadcrumbPath?: BreadcrumbItem[],
+): Promise<BreadcrumbItem[]> {
+	if (folderId === null) {
+		return [{ id: null, name: "Root" }];
+	}
+
+	if (breadcrumbPath && breadcrumbPath.length > 0) {
+		return breadcrumbPath;
+	}
+
+	const ancestors = await fileService.getFolderAncestors(folderId);
+	return [
+		{ id: null, name: "Root" },
+		...ancestors.map((item) => ({ id: item.id, name: item.name })),
+	];
+}
+
 export const useFileStore = create<FileState>((set, get) => ({
 	currentFolderId: null,
 	folders: [],
@@ -157,7 +180,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 
 	clipboard: null,
 
-	navigateTo: async (folderId, folderName) => {
+	navigateTo: async (folderId, folderName, breadcrumbPath) => {
 		set({
 			loading: true,
 			error: null,
@@ -173,33 +196,10 @@ export const useFileStore = create<FileState>((set, get) => ({
 			nextFileCursor: null,
 		});
 		try {
-			const contents = await fetchFolder(
-				folderId,
-				getInitialPageParams(get().sortBy, get().sortOrder),
-			);
-
-			// Update breadcrumb
-			const { breadcrumb } = get();
-			let newBreadcrumb: BreadcrumbItem[];
-
-			if (folderId === null) {
-				newBreadcrumb = [{ id: null, name: "Root" }];
-			} else {
-				const existingIndex = breadcrumb.findIndex((b) => b.id === folderId);
-				if (existingIndex >= 0) {
-					// Going back up -- trim breadcrumb
-					newBreadcrumb = breadcrumb.slice(0, existingIndex + 1);
-				} else {
-					// Going deeper
-					newBreadcrumb = [
-						...breadcrumb,
-						{
-							id: folderId,
-							name: folderName || `Folder ${folderId}`,
-						},
-					];
-				}
-			}
+			const [contents, newBreadcrumb] = await Promise.all([
+				fetchFolder(folderId, getInitialPageParams(get().sortBy, get().sortOrder)),
+				resolveBreadcrumb(folderId, breadcrumbPath),
+			]);
 
 			set({
 				currentFolderId: folderId,
@@ -216,7 +216,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 			const msg =
 				error && typeof error === "object" && "message" in error
 					? (error as { message: string }).message
-					: "Failed to load folder";
+					: folderName || "Failed to load folder";
 			set({ loading: false, error: msg });
 			throw error;
 		}

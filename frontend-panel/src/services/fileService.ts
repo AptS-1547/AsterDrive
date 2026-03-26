@@ -2,6 +2,7 @@ import type {
 	ErrorCode,
 	FileInfo,
 	FileVersion,
+	FolderAncestorItem,
 	FolderContents,
 	FolderInfo,
 } from "@/types/api";
@@ -23,6 +24,9 @@ export const fileService = {
 
 	listFolder: (id: number, params?: FolderListParams) =>
 		api.get<FolderContents>(`/folders/${id}`, { params }),
+
+	getFolderAncestors: (id: number) =>
+		api.get<FolderAncestorItem[]>(`/folders/${id}/ancestors`),
 
 	createFolder: (name: string, parentId?: number | null) =>
 		api.post<FolderInfo>("/folders", { name, parent_id: parentId ?? null }),

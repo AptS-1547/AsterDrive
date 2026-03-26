@@ -26,6 +26,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("", web::get().to(list_root))
         .route("", web::post().to(create_folder))
         .route("/{id}", web::get().to(list_folder))
+        .route("/{id}/ancestors", web::get().to(get_ancestors))
         .route("/{id}/lock", web::post().to(set_lock))
         .route("/{id}/copy", web::post().to(copy_folder))
         .route("/{id}", web::delete().to(delete_folder))
@@ -135,6 +136,28 @@ pub async fn list_folder(
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/folders/{id}/ancestors",
+    tag = "folders",
+    operation_id = "get_folder_ancestors",
+    params(("id" = i64, Path, description = "Folder ID")),
+    responses(
+        (status = 200, description = "Folder ancestors", body = inline(ApiResponse<Vec<folder_service::FolderAncestorItem>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_ancestors(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let ancestors = folder_service::get_ancestors(&state, claims.user_id, *path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(ancestors)))
 }
 
 #[utoipa::path(

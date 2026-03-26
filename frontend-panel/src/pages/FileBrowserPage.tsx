@@ -1,4 +1,12 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import {
+	Fragment,
+	Suspense,
+	lazy,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -8,20 +16,9 @@ import { SkeletonFileGrid } from "@/components/common/SkeletonFileGrid";
 import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
 import { ViewToggle } from "@/components/common/ViewToggle";
 import { SortMenu } from "@/components/common/SortMenu";
-import { BatchTargetFolderDialog } from "@/components/files/BatchTargetFolderDialog";
-import { CreateFileDialog } from "@/components/files/CreateFileDialog";
-import { CreateFolderDialog } from "@/components/files/CreateFolderDialog";
 import { FileGrid } from "@/components/files/FileGrid";
-import { FileInfoDialog } from "@/components/files/FileInfoDialog";
-import { FilePreview } from "@/components/files/FilePreview";
 import { FileTable } from "@/components/files/FileTable";
-import { RenameDialog } from "@/components/files/RenameDialog";
-import { ShareDialog } from "@/components/files/ShareDialog";
-import {
-	UploadArea,
-	type UploadAreaHandle,
-} from "@/components/files/UploadArea";
-import { VersionHistoryDialog } from "@/components/files/VersionHistoryDialog";
+import type { UploadAreaHandle } from "@/components/files/UploadArea";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
 	Breadcrumb,
@@ -48,6 +45,43 @@ import { api } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
 import type { FileInfo, FolderInfo } from "@/types/api";
+
+const BatchTargetFolderDialog = lazy(async () => {
+	const module = await import("@/components/files/BatchTargetFolderDialog");
+	return { default: module.BatchTargetFolderDialog };
+});
+const CreateFileDialog = lazy(async () => {
+	const module = await import("@/components/files/CreateFileDialog");
+	return { default: module.CreateFileDialog };
+});
+const CreateFolderDialog = lazy(async () => {
+	const module = await import("@/components/files/CreateFolderDialog");
+	return { default: module.CreateFolderDialog };
+});
+const FileInfoDialog = lazy(async () => {
+	const module = await import("@/components/files/FileInfoDialog");
+	return { default: module.FileInfoDialog };
+});
+const FilePreview = lazy(async () => {
+	const module = await import("@/components/files/FilePreview");
+	return { default: module.FilePreview };
+});
+const RenameDialog = lazy(async () => {
+	const module = await import("@/components/files/RenameDialog");
+	return { default: module.RenameDialog };
+});
+const ShareDialog = lazy(async () => {
+	const module = await import("@/components/files/ShareDialog");
+	return { default: module.ShareDialog };
+});
+const VersionHistoryDialog = lazy(async () => {
+	const module = await import("@/components/files/VersionHistoryDialog");
+	return { default: module.VersionHistoryDialog };
+});
+const UploadArea = lazy(async () => {
+	const module = await import("@/components/files/UploadArea");
+	return { default: module.UploadArea };
+});
 
 export default function FileBrowserPage() {
 	const { t } = useTranslation("files");
@@ -360,6 +394,110 @@ export default function FileBrowserPage() {
 
 	const isEmpty =
 		!loading && displayFolders.length === 0 && displayFiles.length === 0;
+	const uploadReady = uploadAreaRef.current !== null;
+	const handleUploadAreaReady = useCallback((instance: UploadAreaHandle | null) => {
+		uploadAreaRef.current = instance;
+	}, []);
+	const pageCore = (
+		<>
+			{/* Breadcrumb / search indicator */}
+			<div className="px-4 pt-3 pb-1">
+				{isSearching ? (
+					<span className="text-sm text-muted-foreground">
+						{t("common:search")}: &quot;{searchQuery}&quot;
+					</span>
+				) : (
+					<Breadcrumb>
+						<BreadcrumbList>
+							{breadcrumb.map((item, i) => (
+								<Fragment key={item.id ?? "root"}>
+									{i > 0 && <BreadcrumbSeparator />}
+									<BreadcrumbItem>
+										{i < breadcrumb.length - 1 ? (
+											<BreadcrumbLink
+												className="cursor-pointer"
+												onClick={() =>
+													navigate(
+														item.id === null
+															? "/"
+															: `/folder/${item.id}?name=${encodeURIComponent(item.name)}`,
+													)
+												}
+											>
+												{item.name}
+											</BreadcrumbLink>
+										) : (
+											<span className="font-medium">{item.name}</span>
+										)}
+									</BreadcrumbItem>
+								</Fragment>
+							))}
+						</BreadcrumbList>
+					</Breadcrumb>
+				)}
+			</div>
+			<ContextMenu>
+				<ContextMenuTrigger className="flex min-h-0 flex-1 flex-col">
+					<ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
+						{loading ? (
+							viewMode === "grid" ? (
+								<SkeletonFileGrid />
+							) : (
+								<SkeletonFileTable />
+							)
+						) : error ? (
+							<EmptyState
+								icon={<Icon name="Warning" className="h-12 w-12" />}
+								title={t("common:error")}
+								description={error}
+							/>
+						) : isEmpty ? (
+							<EmptyState
+								icon={<Icon name="FolderOpen" className="h-12 w-12" />}
+								title={t("folder_empty")}
+								description={t("folder_empty_desc")}
+							/>
+						) : viewMode === "grid" ? (
+							<FileGrid {...sharedProps} />
+						) : (
+							<FileTable {...sharedProps} />
+						)}
+						{!isSearching && hasMoreFiles() && (
+							<div ref={sentinelRef} className="flex justify-center py-4">
+								{loadingMore && (
+									<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+								)}
+							</div>
+						)}
+					</ScrollArea>
+				</ContextMenuTrigger>
+				<ContextMenuContent>
+					<ContextMenuItem
+						disabled={!uploadReady}
+						onClick={() => uploadAreaRef.current?.triggerFileUpload()}
+					>
+						<Icon name="Upload" className="h-4 w-4 mr-2" />
+						{t("upload_file")}
+					</ContextMenuItem>
+					<ContextMenuItem
+						disabled={!uploadReady}
+						onClick={() => uploadAreaRef.current?.triggerFolderUpload()}
+					>
+						<Icon name="FolderOpen" className="h-4 w-4 mr-2" />
+						{t("upload_folder")}
+					</ContextMenuItem>
+					<ContextMenuItem onClick={() => setCreateFolderOpen(true)}>
+						<Icon name="FolderPlus" className="h-4 w-4 mr-2" />
+						{t("new_folder")}
+					</ContextMenuItem>
+					<ContextMenuItem onClick={() => setCreateFileOpen(true)}>
+						<Icon name="FilePlus" className="h-4 w-4 mr-2" />
+						{t("new_file")}
+					</ContextMenuItem>
+				</ContextMenuContent>
+			</ContextMenu>
+		</>
+	);
 
 	return (
 		<AppLayout
@@ -376,196 +514,121 @@ export default function FileBrowserPage() {
 			}
 			onTrashDrop={handleTrashDrop}
 		>
-			<UploadArea ref={uploadAreaRef}>
-				{/* Breadcrumb / search indicator */}
-				<div className="px-4 pt-3 pb-1">
-					{isSearching ? (
-						<span className="text-sm text-muted-foreground">
-							{t("common:search")}: &quot;{searchQuery}&quot;
-						</span>
-					) : (
-						<Breadcrumb>
-							<BreadcrumbList>
-								{breadcrumb.map((item, i) => (
-									<Fragment key={item.id ?? "root"}>
-										{i > 0 && <BreadcrumbSeparator />}
-										<BreadcrumbItem>
-											{i < breadcrumb.length - 1 ? (
-												<BreadcrumbLink
-													className="cursor-pointer"
-													onClick={() =>
-														navigate(
-															item.id === null
-																? "/"
-																: `/folder/${item.id}?name=${encodeURIComponent(item.name)}`,
-														)
-													}
-												>
-													{item.name}
-												</BreadcrumbLink>
-											) : (
-												<span className="font-medium">{item.name}</span>
-											)}
-										</BreadcrumbItem>
-									</Fragment>
-								))}
-							</BreadcrumbList>
-						</Breadcrumb>
-					)}
-				</div>
-				<ContextMenu>
-					<ContextMenuTrigger className="flex min-h-0 flex-1 flex-col">
-						<ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
-							{loading ? (
-								viewMode === "grid" ? (
-									<SkeletonFileGrid />
-								) : (
-									<SkeletonFileTable />
-								)
-							) : error ? (
-								<EmptyState
-									icon={<Icon name="Warning" className="h-12 w-12" />}
-									title={t("common:error")}
-									description={error}
-								/>
-							) : isEmpty ? (
-								<EmptyState
-									icon={<Icon name="FolderOpen" className="h-12 w-12" />}
-									title={t("folder_empty")}
-									description={t("folder_empty_desc")}
-								/>
-							) : viewMode === "grid" ? (
-								<FileGrid {...sharedProps} />
-							) : (
-								<FileTable {...sharedProps} />
-							)}
-							{!isSearching && hasMoreFiles() && (
-								<div ref={sentinelRef} className="flex justify-center py-4">
-									{loadingMore && (
-										<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-									)}
-								</div>
-							)}
-						</ScrollArea>
-					</ContextMenuTrigger>
-					<ContextMenuContent>
-						<ContextMenuItem
-							onClick={() => uploadAreaRef.current?.triggerFileUpload()}
-						>
-							<Icon name="Upload" className="h-4 w-4 mr-2" />
-							{t("upload_file")}
-						</ContextMenuItem>
-						<ContextMenuItem
-							onClick={() => uploadAreaRef.current?.triggerFolderUpload()}
-						>
-							<Icon name="FolderOpen" className="h-4 w-4 mr-2" />
-							{t("upload_folder")}
-						</ContextMenuItem>
-						<ContextMenuItem onClick={() => setCreateFolderOpen(true)}>
-							<Icon name="FolderPlus" className="h-4 w-4 mr-2" />
-							{t("new_folder")}
-						</ContextMenuItem>
-						<ContextMenuItem onClick={() => setCreateFileOpen(true)}>
-							<Icon name="FilePlus" className="h-4 w-4 mr-2" />
-							{t("new_file")}
-						</ContextMenuItem>
-					</ContextMenuContent>
-				</ContextMenu>
-			</UploadArea>
+			<Suspense fallback={pageCore}>
+				<UploadArea ref={handleUploadAreaReady}>{pageCore}</UploadArea>
+			</Suspense>
 
-			<CreateFolderDialog
-				open={createFolderOpen}
-				onOpenChange={setCreateFolderOpen}
-			/>
+			<Suspense fallback={null}>
+				<CreateFolderDialog
+					open={createFolderOpen}
+					onOpenChange={setCreateFolderOpen}
+				/>
+			</Suspense>
 
-			<CreateFileDialog
-				open={createFileOpen}
-				onOpenChange={setCreateFileOpen}
-			/>
+			<Suspense fallback={null}>
+				<CreateFileDialog
+					open={createFileOpen}
+					onOpenChange={setCreateFileOpen}
+				/>
+			</Suspense>
 
 			<BatchActionBar />
 
 			{shareTarget && (
-				<ShareDialog
-					open={true}
-					onOpenChange={(open) => {
-						if (!open) setShareTarget(null);
-					}}
-					fileId={shareTarget.fileId}
-					folderId={shareTarget.folderId}
-					name={shareTarget.name}
-				/>
+				<Suspense fallback={null}>
+					<ShareDialog
+						open={true}
+						onOpenChange={(open) => {
+							if (!open) setShareTarget(null);
+						}}
+						fileId={shareTarget.fileId}
+						folderId={shareTarget.folderId}
+						name={shareTarget.name}
+					/>
+				</Suspense>
 			)}
 			{previewFile && (
-				<FilePreview
-					file={previewFile}
-					onClose={() => setPreviewFile(null)}
-					onFileUpdated={() => refresh()}
-				/>
+				<Suspense fallback={null}>
+					<FilePreview
+						file={previewFile}
+						onClose={() => setPreviewFile(null)}
+						onFileUpdated={() => refresh()}
+					/>
+				</Suspense>
 			)}
 			{copyTarget && (
-				<BatchTargetFolderDialog
-					open={true}
-					onOpenChange={(open) => {
-						if (!open) setCopyTarget(null);
-					}}
-					mode="copy"
-					onConfirm={handleCopyConfirm}
-					currentFolderId={folderId}
-					initialBreadcrumb={breadcrumb}
-					selectedFolderIds={
-						copyTarget.type === "folder" ? [copyTarget.id] : []
-					}
-				/>
+				<Suspense fallback={null}>
+					<BatchTargetFolderDialog
+						open={true}
+						onOpenChange={(open) => {
+							if (!open) setCopyTarget(null);
+						}}
+						mode="copy"
+						onConfirm={handleCopyConfirm}
+						currentFolderId={folderId}
+						initialBreadcrumb={breadcrumb}
+						selectedFolderIds={
+							copyTarget.type === "folder" ? [copyTarget.id] : []
+						}
+					/>
+				</Suspense>
 			)}
 			{moveTarget && (
-				<BatchTargetFolderDialog
-					open={true}
-					onOpenChange={(open) => {
-						if (!open) setMoveTarget(null);
-					}}
-					mode="move"
-					onConfirm={handleMoveConfirm}
-					currentFolderId={folderId}
-					initialBreadcrumb={breadcrumb}
-					selectedFolderIds={moveTarget.folderIds}
-				/>
+				<Suspense fallback={null}>
+					<BatchTargetFolderDialog
+						open={true}
+						onOpenChange={(open) => {
+							if (!open) setMoveTarget(null);
+						}}
+						mode="move"
+						onConfirm={handleMoveConfirm}
+						currentFolderId={folderId}
+						initialBreadcrumb={breadcrumb}
+						selectedFolderIds={moveTarget.folderIds}
+					/>
+				</Suspense>
 			)}
 			{versionTarget && (
-				<VersionHistoryDialog
-					open={true}
-					onOpenChange={(open) => {
-						if (!open) setVersionTarget(null);
-					}}
-					fileId={versionTarget.fileId}
-					fileName={versionTarget.fileName}
-					mimeType={versionTarget.mimeType}
-					currentSize={versionTarget.size}
-					onRestored={() => {
-						setVersionTarget(null);
-						refresh();
-					}}
-				/>
+				<Suspense fallback={null}>
+					<VersionHistoryDialog
+						open={true}
+						onOpenChange={(open) => {
+							if (!open) setVersionTarget(null);
+						}}
+						fileId={versionTarget.fileId}
+						fileName={versionTarget.fileName}
+						mimeType={versionTarget.mimeType}
+						currentSize={versionTarget.size}
+						onRestored={() => {
+							setVersionTarget(null);
+							refresh();
+						}}
+					/>
+				</Suspense>
 			)}
 			{renameTarget && (
-				<RenameDialog
-					open={true}
-					onOpenChange={(open) => {
-						if (!open) setRenameTarget(null);
-					}}
-					type={renameTarget.type}
-					id={renameTarget.id}
-					currentName={renameTarget.name}
-				/>
+				<Suspense fallback={null}>
+					<RenameDialog
+						open={true}
+						onOpenChange={(open) => {
+							if (!open) setRenameTarget(null);
+						}}
+						type={renameTarget.type}
+						id={renameTarget.id}
+						currentName={renameTarget.name}
+					/>
+				</Suspense>
 			)}
-			<FileInfoDialog
-				open={infoTarget !== null}
-				onOpenChange={(open) => {
-					if (!open) setInfoTarget(null);
-				}}
-				file={infoTarget?.file}
-				folder={infoTarget?.folder}
-			/>
+			<Suspense fallback={null}>
+				<FileInfoDialog
+					open={infoTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) setInfoTarget(null);
+					}}
+					file={infoTarget?.file}
+					folder={infoTarget?.folder}
+				/>
+			</Suspense>
 		</AppLayout>
 	);
 }

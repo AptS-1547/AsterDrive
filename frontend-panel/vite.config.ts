@@ -34,9 +34,25 @@ export default defineConfig({
 				],
 			},
 			workbox: {
-				globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+				globPatterns: ["**/*.{html,ico,png,svg,woff2}"],
 				navigateFallback: "index.html",
 				navigateFallbackDenylist: [/^\/api\//, /^\/health\//],
+				runtimeCaching: [
+					{
+						urlPattern: ({ request, url }) =>
+							url.pathname.startsWith("/assets/") &&
+							(request.destination === "script" ||
+								request.destination === "style"),
+						handler: "StaleWhileRevalidate",
+						options: {
+							cacheName: "asset-chunks",
+							expiration: {
+								maxEntries: 128,
+								maxAgeSeconds: 60 * 60 * 24 * 30,
+							},
+						},
+					},
+				],
 			},
 		}),
 	],

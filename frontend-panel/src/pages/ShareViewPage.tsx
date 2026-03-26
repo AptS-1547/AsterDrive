@@ -1,9 +1,16 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import {
+	Fragment,
+	Suspense,
+	lazy,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { SkeletonCard } from "@/components/common/SkeletonCard";
-import { FilePreview } from "@/components/files/FilePreview";
 import { ReadOnlyFileCollection } from "@/components/files/ReadOnlyFileCollection";
 import {
 	Breadcrumb,
@@ -33,6 +40,11 @@ interface ShareBreadcrumbItem {
 	id: number | null;
 	name: string;
 }
+
+const FilePreview = lazy(async () => {
+	const module = await import("@/components/files/FilePreview");
+	return { default: module.FilePreview };
+});
 
 export default function ShareViewPage() {
 	const { t } = useTranslation();
@@ -346,12 +358,14 @@ export default function ShareViewPage() {
 					</Card>
 				</div>
 				{previewFile && token && (
-					<FilePreview
-						file={previewFile}
-						onClose={() => setPreviewFile(null)}
-						downloadPath={shareService.downloadUrl(token)}
-						editable={false}
-					/>
+					<Suspense fallback={null}>
+						<FilePreview
+							file={previewFile}
+							onClose={() => setPreviewFile(null)}
+							downloadPath={shareService.downloadUrl(token)}
+							editable={false}
+						/>
+					</Suspense>
 				)}
 			</div>
 		);
@@ -440,15 +454,17 @@ export default function ShareViewPage() {
 				)}
 			</div>
 			{previewFile && token && (
-				<FilePreview
-					file={previewFile}
-					onClose={() => setPreviewFile(null)}
-					downloadPath={shareService.downloadFolderFileUrl(
-						token,
-						previewFile.id,
-					)}
-					editable={false}
-				/>
+				<Suspense fallback={null}>
+					<FilePreview
+						file={previewFile}
+						onClose={() => setPreviewFile(null)}
+						downloadPath={shareService.downloadFolderFileUrl(
+							token,
+							previewFile.id,
+						)}
+						editable={false}
+					/>
+				</Suspense>
 			)}
 		</div>
 	);

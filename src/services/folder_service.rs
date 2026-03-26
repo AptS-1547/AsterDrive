@@ -9,6 +9,12 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 
 #[derive(Serialize, ToSchema)]
+pub struct FolderAncestorItem {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct FileCursor {
     /// 排序字段值（序列化为字符串）
     pub value: String,
@@ -445,4 +451,17 @@ pub async fn list_shared(
         files_total,
         next_file_cursor,
     })
+}
+
+/// 获取文件夹的祖先链（从根下第一层到当前文件夹）
+pub async fn get_ancestors(
+    state: &AppState,
+    user_id: i64,
+    folder_id: i64,
+) -> Result<Vec<FolderAncestorItem>> {
+    let ancestors = folder_repo::find_ancestors(&state.db, user_id, folder_id).await?;
+    Ok(ancestors
+        .into_iter()
+        .map(|(id, name)| FolderAncestorItem { id, name })
+        .collect())
 }

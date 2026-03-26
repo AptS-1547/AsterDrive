@@ -724,6 +724,22 @@ export interface paths {
         patch: operations["patch_folder"];
         trace?: never;
     };
+    "/api/v1/folders/{id}/ancestors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_folder_ancestors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/folders/{id}/copy": {
         parameters: {
             query?: never;
@@ -1333,6 +1349,11 @@ export interface components {
             size: number;
             /** Format: int32 */
             version: number;
+        };
+        FolderAncestorItem: {
+            /** Format: int64 */
+            id: number;
+            name: string;
         };
         FolderContents: {
             files: components["schemas"]["FileInfo"][];
@@ -4734,6 +4755,51 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Folder not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_folder_ancestors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Folder ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Folder ancestors */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            id: number;
+                            name: string;
+                        }[];
                         msg: string;
                     };
                 };

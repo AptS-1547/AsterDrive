@@ -8,6 +8,7 @@ export type FolderInfo = components["schemas"]["FolderInfo"];
 export type StoragePolicy = components["schemas"]["StoragePolicy"];
 export type SystemConfig = components["schemas"]["SystemConfig"];
 export type FolderContents = components["schemas"]["FolderContents"];
+export type FolderAncestorItem = components["schemas"]["FolderAncestorItem"];
 export type ErrorCode = components["schemas"]["ErrorCode"];
 export type UserRole = components["schemas"]["UserRole"];
 export type UserStatus = components["schemas"]["UserStatus"];
