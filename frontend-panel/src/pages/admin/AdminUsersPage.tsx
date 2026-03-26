@@ -55,7 +55,12 @@ import {
 } from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
 import { adminUserService } from "@/services/adminService";
-import type { CreateUserReq, UserInfo, UserRole, UserStatus } from "@/types/api";
+import type {
+	CreateUserReq,
+	UserInfo,
+	UserRole,
+	UserStatus,
+} from "@/types/api";
 
 const USER_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
@@ -274,11 +279,15 @@ export default function AdminUsersPage() {
 		if (!usernameResult.success) {
 			nextErrors.username = usernameResult.error.issues[0]?.message ?? "";
 		}
-		const emailResult = createUserEmailSchema.safeParse(createForm.email.trim());
+		const emailResult = createUserEmailSchema.safeParse(
+			createForm.email.trim(),
+		);
 		if (!emailResult.success) {
 			nextErrors.email = emailResult.error.issues[0]?.message ?? "";
 		}
-		const passwordResult = createUserPasswordSchema.safeParse(createForm.password);
+		const passwordResult = createUserPasswordSchema.safeParse(
+			createForm.password,
+		);
 		if (!passwordResult.success) {
 			nextErrors.password = passwordResult.error.issues[0]?.message ?? "";
 		}
@@ -700,9 +709,7 @@ export default function AdminUsersPage() {
 					<form onSubmit={handleCreateUser} className="space-y-4">
 						<DialogHeader>
 							<DialogTitle>{t("create_user")}</DialogTitle>
-							<DialogDescription>
-								{t("create_user_desc")}
-							</DialogDescription>
+							<DialogDescription>{t("create_user_desc")}</DialogDescription>
 						</DialogHeader>
 						<div className="space-y-2">
 							<Label htmlFor="create-user-username">{t("username")}</Label>
@@ -719,7 +726,9 @@ export default function AdminUsersPage() {
 								aria-invalid={!!createErrors.username}
 							/>
 							{createErrors.username ? (
-								<p className="text-xs text-destructive">{createErrors.username}</p>
+								<p className="text-xs text-destructive">
+									{createErrors.username}
+								</p>
 							) : null}
 						</div>
 						<div className="space-y-2">
@@ -756,7 +765,9 @@ export default function AdminUsersPage() {
 								aria-invalid={!!createErrors.password}
 							/>
 							{createErrors.password ? (
-								<p className="text-xs text-destructive">{createErrors.password}</p>
+								<p className="text-xs text-destructive">
+									{createErrors.password}
+								</p>
 							) : null}
 						</div>
 						<DialogFooter>

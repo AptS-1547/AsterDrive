@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
-import { AppLayout } from "@/components/layout/AppLayout";
 import { AdminSurface } from "@/components/layout/AdminSurface";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -443,18 +443,23 @@ export default function WebdavAccountsPage() {
 													<div className="flex min-w-[180px] items-center gap-2 text-sm text-foreground">
 														<Icon
 															name={
-																account.root_folder_path ? "FolderOpen" : "Globe"
+																account.root_folder_path
+																	? "FolderOpen"
+																	: "Globe"
 															}
 															className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
 														/>
 														<span className="truncate">
-															{account.root_folder_path ?? t("common:all_files")}
+															{account.root_folder_path ??
+																t("common:all_files")}
 														</span>
 													</div>
 												</TableCell>
 												<TableCell>
 													<Badge
-														variant={account.is_active ? "secondary" : "outline"}
+														variant={
+															account.is_active ? "secondary" : "outline"
+														}
 														className={
 															account.is_active
 																? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"

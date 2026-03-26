@@ -24,7 +24,10 @@ export function OfflineBootFallback() {
 						<Icon name="ArrowClockwise" className="mr-2 h-4 w-4" />
 						{t("offline_boot_retry")}
 					</Button>
-					<Button variant="outline" onClick={() => window.location.assign("/login")}>
+					<Button
+						variant="outline"
+						onClick={() => window.location.assign("/login")}
+					>
 						<Icon name="SignIn" className="mr-2 h-4 w-4" />
 						{t("offline_boot_login")}
 					</Button>

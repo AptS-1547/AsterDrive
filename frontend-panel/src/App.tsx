@@ -36,7 +36,11 @@ function App() {
 
 	return (
 		<>
-			{bootOffline ? <OfflineBootFallback /> : <RouterProvider router={router} />}
+			{bootOffline ? (
+				<OfflineBootFallback />
+			) : (
+				<RouterProvider router={router} />
+			)}
 			<Toaster position="bottom-right" richColors swipeDirections={["right"]} />
 		</>
 	);

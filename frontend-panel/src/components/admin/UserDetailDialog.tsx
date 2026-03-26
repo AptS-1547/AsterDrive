@@ -77,6 +77,9 @@ export function UserDetailDialog({
 }: UserDetailDialogProps) {
 	const { t } = useTranslation("admin");
 	const [quotaValue, setQuotaValue] = useState("");
+	const [draftRole, setDraftRole] = useState<UserRole>("user");
+	const [draftStatus, setDraftStatus] = useState<UserStatus>("active");
+	const [savingProfile, setSavingProfile] = useState(false);
 	const [assignments, setAssignments] = useState<UserStoragePolicy[]>([]);
 	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
 	const [policiesLoading, setPoliciesLoading] = useState(true);
@@ -91,6 +94,9 @@ export function UserDetailDialog({
 	useEffect(() => {
 		if (!user) {
 			setQuotaValue("");
+			setDraftRole("user");
+			setDraftStatus("active");
+			setSavingProfile(false);
 			setAssignments([]);
 			setPolicies([]);
 			setPoliciesLoading(true);
@@ -106,6 +112,8 @@ export function UserDetailDialog({
 				? String(Math.round(user.storage_quota / 1024 / 1024))
 				: "0",
 		);
+		setDraftRole(user.role);
+		setDraftStatus(user.status);
 	}, [user]);
 
 	const loadPolicies = useCallback(async () => {
@@ -141,10 +149,30 @@ export function UserDetailDialog({
 	const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
 	const isInitialAdmin = user.id === 1;
 
-	const handleQuotaSave = async () => {
+	// TODO: 后端应提供批量更新用户设置端点（一次提交 role/status/storage_quota），
+	// 替代当前前端保存时按字段拆成多次请求的 N+1 更新模式。
+	const handleProfileSave = async () => {
 		const mb = Number.parseInt(quotaValue, 10);
 		const newQuota = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
-		await onUpdateQuota(user.id, newQuota);
+		const actions: Array<() => Promise<void>> = [];
+		if (draftRole !== user.role) {
+			actions.push(() => onUpdateRole(user.id, draftRole));
+		}
+		if (draftStatus !== user.status) {
+			actions.push(() => onUpdateStatus(user.id, draftStatus));
+		}
+		if (newQuota !== (user.storage_quota ?? 0)) {
+			actions.push(() => onUpdateQuota(user.id, newQuota));
+		}
+		if (actions.length === 0) return;
+		try {
+			setSavingProfile(true);
+			for (const action of actions) {
+				await action();
+			}
+		} finally {
+			setSavingProfile(false);
+		}
 	};
 
 	const policyName = (policyId: number) =>
@@ -225,6 +253,14 @@ export function UserDetailDialog({
 		(p) => !assignments.some((a) => a.policy_id === p.id),
 	);
 	const hasDefaultPolicy = assignments.some((a) => a.is_default);
+	const currentQuotaMb =
+		user.storage_quota && user.storage_quota > 0
+			? String(Math.round(user.storage_quota / 1024 / 1024))
+			: "0";
+	const hasProfileChanges =
+		draftRole !== user.role ||
+		draftStatus !== user.status ||
+		quotaValue !== currentQuotaMb;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -338,11 +374,11 @@ export function UserDetailDialog({
 											<TooltipTrigger>
 												<div>
 													<Select
-														value={user.status}
+														value={draftStatus}
 														onValueChange={(value) =>
-															void onUpdateStatus(user.id, value as UserStatus)
+															setDraftStatus(value as UserStatus)
 														}
-														disabled={isInitialAdmin}
+														disabled={isInitialAdmin || savingProfile}
 													>
 														<SelectTrigger
 															className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
@@ -382,11 +418,11 @@ export function UserDetailDialog({
 											<TooltipTrigger>
 												<div>
 													<Select
-														value={user.role}
+														value={draftRole}
 														onValueChange={(value) =>
-															void onUpdateRole(user.id, value as UserRole)
+															setDraftRole(value as UserRole)
 														}
-														disabled={isInitialAdmin}
+														disabled={isInitialAdmin || savingProfile}
 													>
 														<SelectTrigger
 															className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
@@ -418,10 +454,8 @@ export function UserDetailDialog({
 											onChange={(e) => setQuotaValue(e.target.value)}
 											placeholder={`0 = ${t("common:unlimited").toLowerCase()}`}
 											className={ADMIN_CONTROL_HEIGHT_CLASS}
+											disabled={savingProfile}
 										/>
-										<Button onClick={() => void handleQuotaSave()}>
-											{t("save_changes")}
-										</Button>
 									</div>
 								</div>
 							</div>
@@ -597,10 +631,18 @@ export function UserDetailDialog({
 						</section>
 					</div>
 				</div>
-				<DialogFooter className="mx-0 mb-0 justify-between rounded-b-xl px-6 py-3 sm:flex-row sm:items-center">
-					<p className="text-xs text-muted-foreground">
-						{t("user_details_footer_hint")}
-					</p>
+				<DialogFooter className="mx-0 mb-0 rounded-b-xl px-6 py-3 sm:flex-row sm:items-center sm:justify-end">
+					{hasProfileChanges ? (
+						<Button
+							onClick={() => void handleProfileSave()}
+							disabled={savingProfile}
+						>
+							{savingProfile ? (
+								<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+							) : null}
+							{t("save_changes")}
+						</Button>
+					) : null}
 					<Button variant="outline" onClick={() => onOpenChange(false)}>
 						{t("common:close")}
 					</Button>

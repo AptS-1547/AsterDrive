@@ -316,7 +316,9 @@ async fn test_cannot_delete_default_user_policy() {
 
     // 删除 default 策略分配 → 应被拒绝
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies/{default_assignment_id}"))
+        .uri(&format!(
+            "/api/v1/admin/users/{user_id}/policies/{default_assignment_id}"
+        ))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
@@ -383,7 +385,9 @@ async fn test_can_delete_non_default_user_policy_with_multiple_assignments() {
     let assignment_id = body["data"]["id"].as_i64().unwrap();
 
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies/{assignment_id}"))
+        .uri(&format!(
+            "/api/v1/admin/users/{user_id}/policies/{assignment_id}"
+        ))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;

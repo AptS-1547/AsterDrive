@@ -59,8 +59,13 @@ async fn test_audit_log_recorded_on_admin_create_user() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     let items = body["data"]["items"].as_array().unwrap();
-    let entry = items.iter().find(|item| item["action"] == "admin_create_user");
-    assert!(entry.is_some(), "audit log should contain admin_create_user");
+    let entry = items
+        .iter()
+        .find(|item| item["action"] == "admin_create_user");
+    assert!(
+        entry.is_some(),
+        "audit log should contain admin_create_user"
+    );
     let entry = entry.unwrap();
     assert_eq!(entry["entity_type"], "user");
     assert_eq!(entry["entity_name"], "audituser");

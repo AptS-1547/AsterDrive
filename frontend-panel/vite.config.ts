@@ -8,77 +8,75 @@ export default defineConfig(({ command }) => {
 	const isDevServer = command === "serve";
 
 	return {
-	plugins: [
-		react(),
-		tailwindcss(),
-		VitePWA({
-			registerType: "prompt",
-			includeAssets: ["favicon.svg"],
-			devOptions: {
-				enabled: true,
-				navigateFallbackAllowlist: [/^\/$/],
-			},
-			manifest: {
-				name: "AsterDrive",
-				short_name: "AsterDrive",
-				description: "Self-hosted cloud storage",
-				theme_color: "#0F172A",
-				background_color: "#ffffff",
-				display: "standalone",
-				icons: [
-					{
-						src: "/favicon.svg",
-						sizes: "any",
-						type: "image/svg+xml",
-						purpose: "any",
-					},
-					{
-						src: "/favicon.svg",
-						sizes: "any",
-						type: "image/svg+xml",
-						purpose: "maskable",
-					},
-				],
-			},
-			workbox: {
-				globPatterns: isDevServer
-					? []
-					: ["**/*.{html,js,css,ico,png,svg,woff2,mjs}"],
-				skipWaiting: true,
-				clientsClaim: true,
-				navigateFallback: "index.html",
-				navigateFallbackDenylist: [/^\/api\//, /^\/health\//],
-				runtimeCaching: [
-					{
-						urlPattern: ({ request, url }) =>
-							url.pathname.startsWith("/assets/") &&
-							(request.destination === "script" ||
-								request.destination === "style"),
-						handler: "StaleWhileRevalidate",
-						options: {
-							cacheName: "asset-chunks",
-							expiration: {
-								maxEntries: 128,
-								maxAgeSeconds: 60 * 60 * 24 * 30,
+		plugins: [
+			react(),
+			tailwindcss(),
+			VitePWA({
+				registerType: "prompt",
+				includeAssets: ["favicon.svg"],
+				devOptions: {
+					enabled: true,
+					navigateFallbackAllowlist: [/^\/$/],
+				},
+				manifest: {
+					name: "AsterDrive",
+					short_name: "AsterDrive",
+					description: "Self-hosted cloud storage",
+					theme_color: "#0F172A",
+					background_color: "#ffffff",
+					display: "standalone",
+					icons: [
+						{
+							src: "/favicon.svg",
+							sizes: "any",
+							type: "image/svg+xml",
+							purpose: "any",
+						},
+						{
+							src: "/favicon.svg",
+							sizes: "any",
+							type: "image/svg+xml",
+							purpose: "maskable",
+						},
+					],
+				},
+				workbox: {
+					globPatterns: isDevServer
+						? []
+						: ["**/*.{html,js,css,ico,png,svg,woff2,mjs}"],
+					navigateFallback: "index.html",
+					navigateFallbackDenylist: [/^\/api\//, /^\/health\//],
+					runtimeCaching: [
+						{
+							urlPattern: ({ request, url }) =>
+								url.pathname.startsWith("/assets/") &&
+								(request.destination === "script" ||
+									request.destination === "style"),
+							handler: "StaleWhileRevalidate",
+							options: {
+								cacheName: "asset-chunks",
+								expiration: {
+									maxEntries: 128,
+									maxAgeSeconds: 60 * 60 * 24 * 30,
+								},
 							},
 						},
-					},
-				],
+					],
+				},
+			}),
+		],
+		base: "/",
+		resolve: {
+			alias: {
+				"@": path.resolve(__dirname, "./src"),
 			},
-		}),
-	],
-	base: "/",
-	resolve: {
-		alias: {
-			"@": path.resolve(__dirname, "./src"),
 		},
-	},
-	server: {
-		proxy: {
-			"/api": "http://127.0.0.1:3000",
-			"/health": "http://127.0.0.1:3000",
+		server: {
+			proxy: {
+				"/api": "http://127.0.0.1:3000",
+				"/health": "http://127.0.0.1:3000",
+			},
 		},
-	},
 		build: {
 			target: "esnext",
 			outDir: "dist",

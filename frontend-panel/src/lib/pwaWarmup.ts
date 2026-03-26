@@ -1,9 +1,9 @@
 import {
 	adminRouteWarmupLoaders,
 	filePreviewWarmupLoaders,
-	type WarmupLoaderEntry,
 	userFeatureWarmupLoaders,
 	userRouteWarmupLoaders,
+	type WarmupLoaderEntry,
 } from "@/lib/pwaWarmupLoaders";
 
 const IDLE_TIMEOUT_MS = 3000;
@@ -41,12 +41,16 @@ function readResourceEntries() {
 
 	return performance
 		.getEntriesByType("resource")
-		.filter((entry): entry is PerformanceResourceTiming =>
-			entry instanceof PerformanceResourceTiming,
+		.filter(
+			(entry): entry is PerformanceResourceTiming =>
+				entry instanceof PerformanceResourceTiming,
 		);
 }
 
-async function logCacheHit(entry: WarmupLoaderEntry, resourceCountBefore: number) {
+async function logCacheHit(
+	entry: WarmupLoaderEntry,
+	resourceCountBefore: number,
+) {
 	if (!IS_DEV || typeof caches === "undefined") return;
 
 	const resources = readResourceEntries();
@@ -54,7 +58,9 @@ async function logCacheHit(entry: WarmupLoaderEntry, resourceCountBefore: number
 	const scriptResource = [...newResources].reverse().find((resource) => {
 		try {
 			const url = new URL(resource.name);
-			return url.pathname.startsWith("/src/") || url.pathname.startsWith("/assets/");
+			return (
+				url.pathname.startsWith("/src/") || url.pathname.startsWith("/assets/")
+			);
 		} catch {
 			return false;
 		}
@@ -63,10 +69,17 @@ async function logCacheHit(entry: WarmupLoaderEntry, resourceCountBefore: number
 	const scriptUrl = scriptResource?.name;
 	const transferSize = scriptResource?.transferSize ?? null;
 	const delivery =
-		transferSize === 0 ? "cache-or-memory" : transferSize != null ? "network" : "unknown";
+		transferSize === 0
+			? "cache-or-memory"
+			: transferSize != null
+				? "network"
+				: "unknown";
 
 	if (!scriptUrl) {
-		logWarmup(`cache probe missed ${entry.label}`, { key: entry.key, delivery });
+		logWarmup(`cache probe missed ${entry.label}`, {
+			key: entry.key,
+			delivery,
+		});
 		return;
 	}
 
@@ -82,7 +95,11 @@ async function logCacheHit(entry: WarmupLoaderEntry, resourceCountBefore: number
 		});
 		return;
 	} catch (error) {
-		logWarmup(`cache probe error ${entry.label}`, { key: entry.key, url: scriptUrl, error });
+		logWarmup(`cache probe error ${entry.label}`, {
+			key: entry.key,
+			url: scriptUrl,
+			error,
+		});
 		return;
 	}
 }
@@ -99,18 +116,25 @@ function warmSequentially(loaders: WarmupLoaderEntry[]) {
 
 		index += 1;
 		const resourceCountBefore = readResourceEntries().length;
-		logWarmup(`loading ${loader.label}`, { key: loader.key, index, total: loaders.length });
-		void loader.load().then(
-			async () => {
-				logWarmup(`loaded ${loader.label}`, { key: loader.key });
-				await logCacheHit(loader, resourceCountBefore);
-			},
-			(error: unknown) => {
-				logWarmup(`failed ${loader.label}`, { key: loader.key, error });
-			},
-		).finally(() => {
-			scheduleIdle(runNext);
+		logWarmup(`loading ${loader.label}`, {
+			key: loader.key,
+			index,
+			total: loaders.length,
 		});
+		void loader
+			.load()
+			.then(
+				async () => {
+					logWarmup(`loaded ${loader.label}`, { key: loader.key });
+					await logCacheHit(loader, resourceCountBefore);
+				},
+				(error: unknown) => {
+					logWarmup(`failed ${loader.label}`, { key: loader.key, error });
+				},
+			)
+			.finally(() => {
+				scheduleIdle(runNext);
+			});
 	};
 
 	scheduleIdle(runNext);
@@ -136,9 +160,15 @@ export function warmupRouteChunks(role: "user" | "admin") {
 			? [...userRouteWarmupLoaders, ...adminRouteWarmupLoaders]
 			: userRouteWarmupLoaders;
 
-	const featureLoaders = [...userFeatureWarmupLoaders, ...filePreviewWarmupLoaders];
+	const featureLoaders = [
+		...userFeatureWarmupLoaders,
+		...filePreviewWarmupLoaders,
+	];
 	const loaders = [...routeLoaders, ...featureLoaders];
 
-	logWarmup(`start ${role} warmup`, loaders.map((loader) => loader.key));
+	logWarmup(
+		`start ${role} warmup`,
+		loaders.map((loader) => loader.key),
+	);
 	warmSequentially(loaders);
 }

@@ -56,6 +56,7 @@ import {
 	PiPresentation,
 	PiScroll,
 	PiShield,
+	PiSignIn,
 	PiSignOut,
 	PiSortAscending,
 	PiSortDescending,
@@ -69,7 +70,6 @@ import {
 	PiWifiHigh,
 	PiWifiX,
 	PiX,
-	PiSignIn,
 } from "react-icons/pi";
 
 export type IconName =

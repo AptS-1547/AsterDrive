@@ -122,7 +122,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 		try {
 			const user = await authService.me();
 			setCachedUser(user);
-			set({ user, isAuthenticated: true, isAuthStale: false, bootOffline: false });
+			set({
+				user,
+				isAuthenticated: true,
+				isAuthStale: false,
+				bootOffline: false,
+			});
 		} catch {
 			// ignore refresh failure; auth interceptors may recover separately
 		}
