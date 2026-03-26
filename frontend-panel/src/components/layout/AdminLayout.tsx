@@ -5,7 +5,11 @@ import { NavLink } from "react-router-dom";
 import { AdminTopBar } from "@/components/layout/AdminTopBar";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
+import {
+	ADMIN_SIDEBAR_WIDTH_CLASS,
+	ADMIN_TOPBAR_OFFSET_CLASS,
+} from "@/lib/constants";
+import { cn, sidebarNavItemClass } from "@/lib/utils";
 
 export function AdminLayout({ children }: { children: ReactNode }) {
 	const { t } = useTranslation("admin");
@@ -41,14 +45,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 							key={item.to}
 							to={item.to}
 							onClick={handleMobileClose}
-							className={({ isActive }) =>
-								cn(
-									"flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-									isActive
-										? "bg-accent text-accent-foreground font-medium"
-										: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-								)
-							}
+							className={({ isActive }) => sidebarNavItemClass(isActive)}
 						>
 							<Icon name={item.icon} className="h-4 w-4 shrink-0" />
 							{item.label}
@@ -66,7 +63,10 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 				{mobileOpen && (
 					<button
 						type="button"
-						className="fixed inset-0 z-40 bg-black/50 md:hidden"
+						className={cn(
+							"fixed inset-x-0 z-40 bg-black/50 md:hidden",
+							ADMIN_TOPBAR_OFFSET_CLASS,
+						)}
 						onClick={handleMobileClose}
 						aria-label="Close admin sidebar"
 					/>
@@ -74,9 +74,14 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 				<aside
 					className={cn(
 						"border-r bg-background transition-all duration-200",
-						"hidden w-64 shrink-0 md:flex md:flex-col",
+						"hidden shrink-0 md:flex md:flex-col",
+						ADMIN_SIDEBAR_WIDTH_CLASS,
 						mobileOpen &&
-							"fixed inset-y-16 left-0 z-50 flex w-64 flex-col shadow-lg md:relative md:inset-y-0 md:left-auto md:z-auto",
+							cn(
+								"fixed left-0 z-50 flex flex-col shadow-lg md:relative md:inset-y-0 md:left-auto md:z-auto",
+								ADMIN_SIDEBAR_WIDTH_CLASS,
+								ADMIN_TOPBAR_OFFSET_CLASS,
+							),
 					)}
 				>
 					{sidebarContent}

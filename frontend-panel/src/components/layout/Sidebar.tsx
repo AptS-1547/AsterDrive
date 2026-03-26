@@ -7,12 +7,16 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
+	USER_SIDEBAR_WIDTH_CLASS,
+	USER_TOPBAR_OFFSET_CLASS,
+} from "@/lib/constants";
+import {
 	hasInternalDragData,
 	type InternalDragData,
 	readInternalDragData,
 } from "@/lib/dragDrop";
 import { formatBytes } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, sidebarNavItemClass } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 
 interface SidebarProps {
@@ -82,11 +86,8 @@ export function Sidebar({
 							link.to === "/trash" ? handleTrashDragLeave : undefined
 						}
 						onDrop={link.to === "/trash" ? handleTrashDrop : undefined}
-						className={cn(
-							"flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors",
-							location.pathname === link.to
-								? "bg-accent text-accent-foreground"
-								: "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+						className={sidebarNavItemClass(
+							location.pathname === link.to,
 							link.to === "/trash" &&
 								trashDragOver &&
 								"bg-destructive/10 text-destructive ring-1 ring-destructive/30",
@@ -139,7 +140,10 @@ export function Sidebar({
 			{mobileOpen && (
 				<button
 					type="button"
-					className="fixed inset-0 bg-black/50 z-40 md:hidden cursor-default"
+					className={cn(
+						"fixed inset-x-0 bg-black/50 z-40 md:hidden cursor-default",
+						USER_TOPBAR_OFFSET_CLASS,
+					)}
 					onClick={onMobileClose}
 					aria-label="Close sidebar"
 				/>
@@ -151,10 +155,14 @@ export function Sidebar({
 					"border-r flex flex-col bg-background transition-all duration-200",
 					// Desktop
 					"hidden md:flex",
-					"w-60",
+					USER_SIDEBAR_WIDTH_CLASS,
 					// Mobile override when open
 					mobileOpen &&
-						"fixed inset-y-0 left-0 z-50 flex w-60 md:relative md:z-auto",
+						cn(
+							"fixed left-0 z-50 flex md:relative md:inset-y-auto md:z-auto",
+							USER_SIDEBAR_WIDTH_CLASS,
+							USER_TOPBAR_OFFSET_CLASS,
+						),
 				)}
 			>
 				{sidebarContent}

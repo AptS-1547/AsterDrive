@@ -7,6 +7,7 @@ import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
+import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -103,72 +104,80 @@ export default function AdminLocksPage() {
 						description={t("no_active_locks_desc")}
 					/>
 				) : (
-					<ScrollArea className="min-h-0 flex-1 rounded-xl border bg-background px-3 md:px-4">
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead className="w-16">{t("id")}</TableHead>
-									<TableHead>{t("path")}</TableHead>
-									<TableHead>{t("principal")}</TableHead>
-									<TableHead>{t("common:type")}</TableHead>
-									<TableHead>{t("common:status")}</TableHead>
-									<TableHead>{t("common:created_at")}</TableHead>
-									<TableHead className="w-20">{t("common:actions")}</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{locks.map((l) => (
-									<TableRow key={l.id}>
-										<TableCell className="font-mono text-xs">{l.id}</TableCell>
-										<TableCell className="font-mono text-xs max-w-[200px] truncate">
-											{l.path}
-										</TableCell>
-										<TableCell className="text-xs">
-											{l.principal ?? "-"}
-										</TableCell>
-										<TableCell>
-											<div className="flex gap-1">
-												<Badge variant="outline">
-													{l.shared ? t("shared_lock") : t("exclusive")}
-												</Badge>
-												{l.deep && <Badge variant="outline">{t("deep")}</Badge>}
-											</div>
-										</TableCell>
-										<TableCell>
-											{isExpired(l) ? (
-												<Badge
-													variant="outline"
-													className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400"
-												>
-													{t("common:expired")}
-												</Badge>
-											) : (
-												<Badge
-													variant="outline"
-													className="text-green-600 dark:text-green-400 border-green-600 dark:border-green-400"
-												>
-													{t("common:active")}
-												</Badge>
-											)}
-										</TableCell>
-										<TableCell className="text-muted-foreground text-xs">
-											{new Date(l.created_at).toLocaleDateString()}
-										</TableCell>
-										<TableCell>
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-8 w-8 text-destructive"
-												onClick={() => setUnlockId(l.id)}
-											>
-												<Icon name="Trash" className="h-3.5 w-3.5" />
-											</Button>
-										</TableCell>
+					<AdminSurface>
+						<ScrollArea className="min-h-0 flex-1">
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead className="w-16">{t("id")}</TableHead>
+										<TableHead>{t("path")}</TableHead>
+										<TableHead>{t("principal")}</TableHead>
+										<TableHead>{t("common:type")}</TableHead>
+										<TableHead>{t("common:status")}</TableHead>
+										<TableHead>{t("common:created_at")}</TableHead>
+										<TableHead className="w-20">
+											{t("common:actions")}
+										</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					</ScrollArea>
+								</TableHeader>
+								<TableBody>
+									{locks.map((l) => (
+										<TableRow key={l.id}>
+											<TableCell className="font-mono text-xs">
+												{l.id}
+											</TableCell>
+											<TableCell className="font-mono text-xs max-w-[200px] truncate">
+												{l.path}
+											</TableCell>
+											<TableCell className="text-xs">
+												{l.principal ?? "-"}
+											</TableCell>
+											<TableCell>
+												<div className="flex gap-1">
+													<Badge variant="outline">
+														{l.shared ? t("shared_lock") : t("exclusive")}
+													</Badge>
+													{l.deep && (
+														<Badge variant="outline">{t("deep")}</Badge>
+													)}
+												</div>
+											</TableCell>
+											<TableCell>
+												{isExpired(l) ? (
+													<Badge
+														variant="outline"
+														className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400"
+													>
+														{t("common:expired")}
+													</Badge>
+												) : (
+													<Badge
+														variant="outline"
+														className="text-green-600 dark:text-green-400 border-green-600 dark:border-green-400"
+													>
+														{t("common:active")}
+													</Badge>
+												)}
+											</TableCell>
+											<TableCell className="text-muted-foreground text-xs">
+												{new Date(l.created_at).toLocaleDateString()}
+											</TableCell>
+											<TableCell>
+												<Button
+													variant="ghost"
+													size="icon"
+													className="h-8 w-8 text-destructive"
+													onClick={() => setUnlockId(l.id)}
+												>
+													<Icon name="Trash" className="h-3.5 w-3.5" />
+												</Button>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</ScrollArea>
+					</AdminSurface>
 				)}
 			</AdminPageShell>
 

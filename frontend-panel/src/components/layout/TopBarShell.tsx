@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { USER_TOPBAR_HEIGHT_CLASS } from "@/lib/constants";
 
 interface TopBarShellProps {
 	onSidebarToggle: () => void;
@@ -15,7 +16,7 @@ export function TopBarShell({
 	left,
 	center,
 	right,
-	heightClassName = "h-14",
+	heightClassName = USER_TOPBAR_HEIGHT_CLASS,
 }: TopBarShellProps) {
 	return (
 		<div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">

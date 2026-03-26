@@ -8,6 +8,7 @@ import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
+import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -336,9 +337,9 @@ export default function AdminSettingsPage() {
 				) : categories.length === 0 ? (
 					<EmptyState title={t("no_config")} />
 				) : categories.length === 1 ? (
-					<div className="min-h-0 flex-1 overflow-auto rounded-xl border bg-background px-3 md:px-4">
+					<AdminSurface className="overflow-auto">
 						{renderCategory(categories[0])}
-					</div>
+					</AdminSurface>
 				) : (
 					<Tabs
 						defaultValue={categories[0]}
@@ -355,12 +356,10 @@ export default function AdminSettingsPage() {
 							))}
 						</TabsList>
 						{categories.map((cat) => (
-							<TabsContent
-								key={cat}
-								value={cat}
-								className="min-h-0 flex-1 overflow-auto rounded-xl border bg-background px-3 md:px-4"
-							>
-								{renderCategory(cat)}
+							<TabsContent key={cat} value={cat} className="min-h-0 flex-1">
+								<AdminSurface className="overflow-auto">
+									{renderCategory(cat)}
+								</AdminSurface>
 							</TabsContent>
 						))}
 					</Tabs>

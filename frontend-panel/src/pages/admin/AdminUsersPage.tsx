@@ -6,6 +6,7 @@ import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
+import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -391,100 +392,102 @@ export default function AdminUsersPage() {
 				) : users.length === 0 ? (
 					<EmptyState title={t("no_users")} />
 				) : (
-					<ScrollArea className="min-h-0 flex-1 rounded-xl border bg-background px-3 md:px-4">
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead className="w-16">{t("id")}</TableHead>
-									<TableHead>{t("username")}</TableHead>
-									<TableHead>{t("email")}</TableHead>
-									<TableHead className="w-32">{t("role")}</TableHead>
-									<TableHead className="w-32">{t("common:status")}</TableHead>
-									<TableHead className="w-40">{t("storage")}</TableHead>
-									<TableHead className="w-24">{t("policies")}</TableHead>
-									<TableHead>{t("common:created_at")}</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{users.map((user) => (
-									<TableRow key={user.id}>
-										<TableCell className="font-mono text-xs">
-											{user.id}
-										</TableCell>
-										<TableCell className="font-medium">
-											{user.username}
-										</TableCell>
-										<TableCell className="text-muted-foreground">
-											{user.email}
-										</TableCell>
-										<TableCell>
-											<Select
-												value={user.role}
-												onValueChange={(v) =>
-													updateRole(user.id, v as UserRole)
-												}
-											>
-												<SelectTrigger className="h-8 w-24">
-													<SelectValue />
-												</SelectTrigger>
-												<SelectContent>
-													<SelectItem value="admin">Admin</SelectItem>
-													<SelectItem value="user">User</SelectItem>
-												</SelectContent>
-											</Select>
-										</TableCell>
-										<TableCell>
-											<Select
-												value={user.status}
-												onValueChange={(v) =>
-													updateStatus(user.id, v as UserStatus)
-												}
-											>
-												<SelectTrigger className="h-8 w-28">
-													<SelectValue />
-												</SelectTrigger>
-												<SelectContent>
-													<SelectItem value="active">
-														<Badge
-															variant="outline"
-															className="border-green-600 text-green-600 dark:border-green-400 dark:text-green-400"
-														>
-															{t("common:active")}
-														</Badge>
-													</SelectItem>
-													<SelectItem value="disabled">
-														<Badge
-															variant="outline"
-															className="border-red-600 text-red-600 dark:border-red-400 dark:text-red-400"
-														>
-															{t("common:disabled_status")}
-														</Badge>
-													</SelectItem>
-												</SelectContent>
-											</Select>
-										</TableCell>
-										<TableCell>
-											<QuotaCell user={user} onUpdate={updateQuota} />
-										</TableCell>
-										<TableCell>
-											<Button
-												variant="ghost"
-												size="sm"
-												className="h-8"
-												onClick={() => setPolicyDialogUserId(user.id)}
-											>
-												<Icon name="HardDrive" className="mr-1 h-3.5 w-3.5" />
-												{t("common:manage")}
-											</Button>
-										</TableCell>
-										<TableCell className="text-muted-foreground text-xs">
-											{new Date(user.created_at).toLocaleDateString()}
-										</TableCell>
+					<AdminSurface>
+						<ScrollArea className="min-h-0 flex-1">
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead className="w-16">{t("id")}</TableHead>
+										<TableHead>{t("username")}</TableHead>
+										<TableHead>{t("email")}</TableHead>
+										<TableHead className="w-32">{t("role")}</TableHead>
+										<TableHead className="w-32">{t("common:status")}</TableHead>
+										<TableHead className="w-40">{t("storage")}</TableHead>
+										<TableHead className="w-24">{t("policies")}</TableHead>
+										<TableHead>{t("common:created_at")}</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					</ScrollArea>
+								</TableHeader>
+								<TableBody>
+									{users.map((user) => (
+										<TableRow key={user.id}>
+											<TableCell className="font-mono text-xs">
+												{user.id}
+											</TableCell>
+											<TableCell className="font-medium">
+												{user.username}
+											</TableCell>
+											<TableCell className="text-muted-foreground">
+												{user.email}
+											</TableCell>
+											<TableCell>
+												<Select
+													value={user.role}
+													onValueChange={(v) =>
+														updateRole(user.id, v as UserRole)
+													}
+												>
+													<SelectTrigger className="h-8 w-24">
+														<SelectValue />
+													</SelectTrigger>
+													<SelectContent>
+														<SelectItem value="admin">Admin</SelectItem>
+														<SelectItem value="user">User</SelectItem>
+													</SelectContent>
+												</Select>
+											</TableCell>
+											<TableCell>
+												<Select
+													value={user.status}
+													onValueChange={(v) =>
+														updateStatus(user.id, v as UserStatus)
+													}
+												>
+													<SelectTrigger className="h-8 w-28">
+														<SelectValue />
+													</SelectTrigger>
+													<SelectContent>
+														<SelectItem value="active">
+															<Badge
+																variant="outline"
+																className="border-green-600 text-green-600 dark:border-green-400 dark:text-green-400"
+															>
+																{t("common:active")}
+															</Badge>
+														</SelectItem>
+														<SelectItem value="disabled">
+															<Badge
+																variant="outline"
+																className="border-red-600 text-red-600 dark:border-red-400 dark:text-red-400"
+															>
+																{t("common:disabled_status")}
+															</Badge>
+														</SelectItem>
+													</SelectContent>
+												</Select>
+											</TableCell>
+											<TableCell>
+												<QuotaCell user={user} onUpdate={updateQuota} />
+											</TableCell>
+											<TableCell>
+												<Button
+													variant="ghost"
+													size="sm"
+													className="h-8"
+													onClick={() => setPolicyDialogUserId(user.id)}
+												>
+													<Icon name="HardDrive" className="mr-1 h-3.5 w-3.5" />
+													{t("common:manage")}
+												</Button>
+											</TableCell>
+											<TableCell className="text-muted-foreground text-xs">
+												{new Date(user.created_at).toLocaleDateString()}
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</ScrollArea>
+					</AdminSurface>
 				)}
 			</AdminPageShell>
 			{policyDialogUserId !== null && (

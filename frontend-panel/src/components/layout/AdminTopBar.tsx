@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { HeaderControls } from "@/components/layout/HeaderControls";
 import { TopBarShell } from "@/components/layout/TopBarShell";
+import { ADMIN_TOPBAR_HEIGHT_CLASS } from "@/lib/constants";
 
 interface AdminTopBarProps {
 	onSidebarToggle: () => void;
@@ -25,7 +26,7 @@ export function AdminTopBar({ onSidebarToggle }: AdminTopBarProps) {
 				</div>
 			}
 			right={<HeaderControls showHomeButton />}
-			heightClassName="h-16"
+			heightClassName={ADMIN_TOPBAR_HEIGHT_CLASS}
 		/>
 	);
 }

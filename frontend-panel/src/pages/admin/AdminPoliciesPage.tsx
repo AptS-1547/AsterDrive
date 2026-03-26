@@ -8,6 +8,7 @@ import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
+import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -283,69 +284,75 @@ export default function AdminPoliciesPage() {
 						description={t("no_policies_desc")}
 					/>
 				) : (
-					<ScrollArea className="min-h-0 flex-1 rounded-xl border bg-background px-3 md:px-4">
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead className="w-16">{t("id")}</TableHead>
-									<TableHead>{t("common:name")}</TableHead>
-									<TableHead>{t("driver_type")}</TableHead>
-									<TableHead>{t("endpoint_path")}</TableHead>
-									<TableHead>{t("bucket")}</TableHead>
-									<TableHead className="w-20">{t("is_default")}</TableHead>
-									<TableHead className="w-24">{t("common:actions")}</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{policies.map((p) => (
-									<TableRow key={p.id}>
-										<TableCell className="font-mono text-xs">{p.id}</TableCell>
-										<TableCell className="font-medium">{p.name}</TableCell>
-										<TableCell>
-											<Badge variant="outline">
-												{p.driver_type === "local" ? "Local" : "S3"}
-											</Badge>
-										</TableCell>
-										<TableCell className="text-muted-foreground text-xs font-mono">
-											{p.driver_type === "local"
-												? p.base_path || "./data"
-												: p.endpoint}
-										</TableCell>
-										<TableCell className="text-muted-foreground text-xs">
-											{p.bucket || "-"}
-										</TableCell>
-										<TableCell>
-											{p.is_default && (
-												<Badge className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
-													{t("is_default")}
-												</Badge>
-											)}
-										</TableCell>
-										<TableCell>
-											<div className="flex items-center gap-1">
-												<Button
-													variant="ghost"
-													size="icon"
-													className="h-8 w-8"
-													onClick={() => openEdit(p)}
-												>
-													<Icon name="PencilSimple" className="h-3.5 w-3.5" />
-												</Button>
-												<Button
-													variant="ghost"
-													size="icon"
-													className="h-8 w-8 text-destructive"
-													onClick={() => setDeleteId(p.id)}
-												>
-													<Icon name="Trash" className="h-3.5 w-3.5" />
-												</Button>
-											</div>
-										</TableCell>
+					<AdminSurface>
+						<ScrollArea className="min-h-0 flex-1">
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead className="w-16">{t("id")}</TableHead>
+										<TableHead>{t("common:name")}</TableHead>
+										<TableHead>{t("driver_type")}</TableHead>
+										<TableHead>{t("endpoint_path")}</TableHead>
+										<TableHead>{t("bucket")}</TableHead>
+										<TableHead className="w-20">{t("is_default")}</TableHead>
+										<TableHead className="w-24">
+											{t("common:actions")}
+										</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					</ScrollArea>
+								</TableHeader>
+								<TableBody>
+									{policies.map((p) => (
+										<TableRow key={p.id}>
+											<TableCell className="font-mono text-xs">
+												{p.id}
+											</TableCell>
+											<TableCell className="font-medium">{p.name}</TableCell>
+											<TableCell>
+												<Badge variant="outline">
+													{p.driver_type === "local" ? "Local" : "S3"}
+												</Badge>
+											</TableCell>
+											<TableCell className="text-muted-foreground text-xs font-mono">
+												{p.driver_type === "local"
+													? p.base_path || "./data"
+													: p.endpoint}
+											</TableCell>
+											<TableCell className="text-muted-foreground text-xs">
+												{p.bucket || "-"}
+											</TableCell>
+											<TableCell>
+												{p.is_default && (
+													<Badge className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
+														{t("is_default")}
+													</Badge>
+												)}
+											</TableCell>
+											<TableCell>
+												<div className="flex items-center gap-1">
+													<Button
+														variant="ghost"
+														size="icon"
+														className="h-8 w-8"
+														onClick={() => openEdit(p)}
+													>
+														<Icon name="PencilSimple" className="h-3.5 w-3.5" />
+													</Button>
+													<Button
+														variant="ghost"
+														size="icon"
+														className="h-8 w-8 text-destructive"
+														onClick={() => setDeleteId(p.id)}
+													>
+														<Icon name="Trash" className="h-3.5 w-3.5" />
+													</Button>
+												</div>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</ScrollArea>
+					</AdminSurface>
 				)}
 
 				<ConfirmDialog

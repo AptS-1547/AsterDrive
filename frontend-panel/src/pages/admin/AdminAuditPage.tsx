@@ -5,6 +5,7 @@ import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
+import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -111,42 +112,44 @@ export default function AdminAuditPage() {
 						title={t("no_audit_logs")}
 					/>
 				) : (
-					<ScrollArea className="min-h-0 flex-1 rounded-xl border bg-background px-3 md:px-4">
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>{t("audit_time")}</TableHead>
-									<TableHead>{t("audit_user")}</TableHead>
-									<TableHead>{t("audit_action")}</TableHead>
-									<TableHead>{t("audit_entity")}</TableHead>
-									<TableHead>{t("common:name")}</TableHead>
-									<TableHead>{t("audit_ip")}</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{items.map((item) => (
-									<TableRow key={item.id}>
-										<TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-											{formatDateAbsolute(item.created_at)}
-										</TableCell>
-										<TableCell>{item.user_id}</TableCell>
-										<TableCell>
-											<span className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-950 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-												{item.action}
-											</span>
-										</TableCell>
-										<TableCell className="text-muted-foreground">
-											{item.entity_type ?? "---"}
-										</TableCell>
-										<TableCell>{item.entity_name ?? "---"}</TableCell>
-										<TableCell className="text-xs text-muted-foreground">
-											{item.ip_address ?? "---"}
-										</TableCell>
+					<AdminSurface>
+						<ScrollArea className="min-h-0 flex-1">
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>{t("audit_time")}</TableHead>
+										<TableHead>{t("audit_user")}</TableHead>
+										<TableHead>{t("audit_action")}</TableHead>
+										<TableHead>{t("audit_entity")}</TableHead>
+										<TableHead>{t("common:name")}</TableHead>
+										<TableHead>{t("audit_ip")}</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					</ScrollArea>
+								</TableHeader>
+								<TableBody>
+									{items.map((item) => (
+										<TableRow key={item.id}>
+											<TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+												{formatDateAbsolute(item.created_at)}
+											</TableCell>
+											<TableCell>{item.user_id}</TableCell>
+											<TableCell>
+												<span className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-950 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+													{item.action}
+												</span>
+											</TableCell>
+											<TableCell className="text-muted-foreground">
+												{item.entity_type ?? "---"}
+											</TableCell>
+											<TableCell>{item.entity_name ?? "---"}</TableCell>
+											<TableCell className="text-xs text-muted-foreground">
+												{item.ip_address ?? "---"}
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</ScrollArea>
+					</AdminSurface>
 				)}
 
 				{totalPages > 1 && (
