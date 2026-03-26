@@ -26,6 +26,7 @@ interface AuthState {
 	isAuthenticated: boolean;
 	isChecking: boolean;
 	isAuthStale: boolean;
+	bootOffline: boolean;
 	user: UserInfo | null;
 	login: (identifier: string, password: string) => Promise<void>;
 	logout: () => Promise<void>;
@@ -39,13 +40,20 @@ export const useAuthStore = create<AuthState>((set) => ({
 	isAuthenticated: initialCachedUser !== null,
 	isChecking: true,
 	isAuthStale: initialCachedUser !== null,
+	bootOffline: false,
 	user: initialCachedUser,
 
 	login: async (identifier, password) => {
 		await authService.login(identifier, password);
 		const user = await authService.me();
 		setCachedUser(user);
-		set({ isAuthenticated: true, isChecking: false, isAuthStale: false, user });
+		set({
+			isAuthenticated: true,
+			isChecking: false,
+			isAuthStale: false,
+			bootOffline: false,
+			user,
+		});
 	},
 
 	logout: async () => {
@@ -59,12 +67,13 @@ export const useAuthStore = create<AuthState>((set) => ({
 			isAuthenticated: false,
 			isChecking: false,
 			isAuthStale: false,
+			bootOffline: false,
 			user: null,
 		});
 	},
 
 	checkAuth: async () => {
-		set({ isChecking: true });
+		set({ isChecking: true, bootOffline: false });
 		try {
 			const user = await authService.me();
 			setCachedUser(user);
@@ -72,6 +81,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 				isAuthenticated: true,
 				isChecking: false,
 				isAuthStale: false,
+				bootOffline: false,
 				user,
 			});
 		} catch (error) {
@@ -83,10 +93,17 @@ export const useAuthStore = create<AuthState>((set) => ({
 						isAuthenticated: true,
 						isChecking: false,
 						isAuthStale: true,
+						bootOffline: false,
 						user: cached,
 					});
 				} else {
-					set({ isChecking: false, isAuthStale: false });
+					set({
+						isAuthenticated: false,
+						isChecking: false,
+						isAuthStale: false,
+						bootOffline: true,
+						user: null,
+					});
 				}
 				return;
 			}
@@ -95,6 +112,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 				isAuthenticated: false,
 				isChecking: false,
 				isAuthStale: false,
+				bootOffline: false,
 				user: null,
 			});
 		}
@@ -104,7 +122,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 		try {
 			const user = await authService.me();
 			setCachedUser(user);
-			set({ user, isAuthenticated: true, isAuthStale: false });
+			set({ user, isAuthenticated: true, isAuthStale: false, bootOffline: false });
 		} catch {
 			// ignore refresh failure; auth interceptors may recover separately
 		}

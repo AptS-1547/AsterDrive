@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
+import { OfflineBootFallback } from "@/components/layout/OfflineBootFallback";
 import { usePwaUpdate } from "@/hooks/usePwaUpdate";
+import { warmupRouteChunks } from "@/lib/pwaWarmup";
 import { router } from "@/router";
 import { useAuthStore } from "@/stores/authStore";
 import { useThemeStore } from "@/stores/themeStore";
@@ -12,6 +14,10 @@ function shouldSkipInitialAuthCheck(pathname: string) {
 
 function App() {
 	const checkAuth = useAuthStore((s) => s.checkAuth);
+	const isChecking = useAuthStore((s) => s.isChecking);
+	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+	const bootOffline = useAuthStore((s) => s.bootOffline);
+	const userRole = useAuthStore((s) => s.user?.role);
 	usePwaUpdate();
 
 	useEffect(() => {
@@ -23,9 +29,14 @@ function App() {
 		useThemeStore.getState().init();
 	}, [checkAuth]);
 
+	useEffect(() => {
+		if (isChecking || !isAuthenticated) return;
+		warmupRouteChunks(userRole === "admin" ? "admin" : "user");
+	}, [isAuthenticated, isChecking, userRole]);
+
 	return (
 		<>
-			<RouterProvider router={router} />
+			{bootOffline ? <OfflineBootFallback /> : <RouterProvider router={router} />}
 			<Toaster position="bottom-right" richColors swipeDirections={["right"]} />
 		</>
 	);

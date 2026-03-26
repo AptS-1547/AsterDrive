@@ -67,7 +67,9 @@ import {
 	PiWarning,
 	PiWarningCircle,
 	PiWifiHigh,
+	PiWifiX,
 	PiX,
+	PiSignIn,
 } from "react-icons/pi";
 
 export type IconName =
@@ -127,6 +129,7 @@ export type IconName =
 	| "Presentation"
 	| "Scroll"
 	| "Shield"
+	| "SignIn"
 	| "SignOut"
 	| "SortAscending"
 	| "SortDescending"
@@ -138,6 +141,7 @@ export type IconName =
 	| "Upload"
 	| "Warning"
 	| "WifiHigh"
+	| "WifiX"
 	| "X";
 
 const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
@@ -197,6 +201,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Presentation: PiPresentation,
 	Scroll: PiScroll,
 	Shield: PiShield,
+	SignIn: PiSignIn,
 	SignOut: PiSignOut,
 	SortAscending: PiSortAscending,
 	SortDescending: PiSortDescending,
@@ -208,6 +213,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Upload: PiUploadSimple,
 	Warning: PiWarning,
 	WifiHigh: PiWifiHigh,
+	WifiX: PiWifiX,
 	X: PiX,
 };
 

@@ -143,5 +143,10 @@
 	"offline_mode": "离线模式",
 	"auth_stale": "登录状态待校验",
 	"offline_status_short": "离线",
-	"auth_stale_detail": "恢复连接后将重新连接服务器"
+	"auth_stale_detail": "恢复连接后将重新连接服务器",
+	"offline_boot_title": "AsterDrive 当前无法连接服务器",
+	"offline_boot_description": "这次启动没拿到可用会话，也暂时连不上后端。应用壳已经起来了，但现在只能先停在这里，等网络或服务恢复后再继续。",
+	"offline_boot_retry": "重新尝试",
+	"offline_boot_login": "前往登录页",
+	"offline_boot_hint": "如果你之前已经登录过，等服务恢复后刷新即可恢复到正常界面。"
 }

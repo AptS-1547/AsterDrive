@@ -4,13 +4,20 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-export default defineConfig({
+export default defineConfig(({ command }) => {
+	const isDevServer = command === "serve";
+
+	return {
 	plugins: [
 		react(),
 		tailwindcss(),
 		VitePWA({
 			registerType: "prompt",
 			includeAssets: ["favicon.svg"],
+			devOptions: {
+				enabled: true,
+				navigateFallbackAllowlist: [/^\/$/],
+			},
 			manifest: {
 				name: "AsterDrive",
 				short_name: "AsterDrive",
@@ -34,7 +41,11 @@ export default defineConfig({
 				],
 			},
 			workbox: {
-				globPatterns: ["**/*.{html,ico,png,svg,woff2}"],
+				globPatterns: isDevServer
+					? []
+					: ["**/*.{html,js,css,ico,png,svg,woff2,mjs}"],
+				skipWaiting: true,
+				clientsClaim: true,
 				navigateFallback: "index.html",
 				navigateFallbackDenylist: [/^\/api\//, /^\/health\//],
 				runtimeCaching: [
@@ -68,27 +79,28 @@ export default defineConfig({
 			"/health": "http://127.0.0.1:3000",
 		},
 	},
-	build: {
-		target: "esnext",
-		outDir: "dist",
-		emptyOutDir: true,
-		rollupOptions: {
-			output: {
-				manualChunks(id) {
-					if (!id.includes("node_modules")) return;
-					if (
-						id.includes("/react-dom/") ||
-						id.includes("/react/") ||
-						id.includes("/scheduler/")
-					)
-						return "vendor-react";
-					if (id.includes("/react-router")) return "vendor-router";
-					if (id.includes("/@base-ui/")) return "vendor-ui";
-					if (id.includes("/i18next") || id.includes("/react-i18next/"))
-						return "vendor-i18n";
-					if (id.includes("/react-icons/")) return "vendor-icons";
+		build: {
+			target: "esnext",
+			outDir: "dist",
+			emptyOutDir: true,
+			rollupOptions: {
+				output: {
+					manualChunks(id) {
+						if (!id.includes("node_modules")) return;
+						if (
+							id.includes("/react-dom/") ||
+							id.includes("/react/") ||
+							id.includes("/scheduler/")
+						)
+							return "vendor-react";
+						if (id.includes("/react-router")) return "vendor-router";
+						if (id.includes("/@base-ui/")) return "vendor-ui";
+						if (id.includes("/i18next") || id.includes("/react-i18next/"))
+							return "vendor-i18n";
+						if (id.includes("/react-icons/")) return "vendor-icons";
+					},
 				},
 			},
 		},
-	},
+	};
 });
