@@ -58,7 +58,7 @@ pub async fn store_from_temp(
             }
             hasher.update(&buf[..n]);
         }
-        format!("{:x}", hasher.finalize())
+        crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
     };
 
     // ── [事务外] 策略解析 ──

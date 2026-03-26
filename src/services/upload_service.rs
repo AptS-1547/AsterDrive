@@ -435,7 +435,7 @@ pub async fn complete_upload(
             .map_aster_err_ctx("flush assembled", AsterError::upload_assembly_failed)?;
         drop(out_file);
 
-        let file_hash = format!("{:x}", hasher.finalize());
+        let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
         let now = Utc::now();
 
         // ── [事务外] 获取策略 + driver + put_file ──

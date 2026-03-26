@@ -300,7 +300,7 @@ fn sign_share_cookie(token: &str, secret: &str) -> String {
 
     let mut hasher = Sha256::new();
     hasher.update(format!("share_verified:{secret}:{token}").as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
 }
 
 /// 验证分享密码 cookie 签名（常量时间比较）
