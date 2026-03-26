@@ -39,6 +39,8 @@ pub async fn find_children_paginated<C: ConnectionTrait>(
     parent_id: Option<i64>,
     limit: u64,
     offset: u64,
+    sort_by: crate::api::pagination::SortBy,
+    sort_order: crate::api::pagination::SortOrder,
 ) -> Result<(Vec<folder::Model>, u64)> {
     let mut cond = Condition::all()
         .add(folder::Column::UserId.eq(user_id))
@@ -55,13 +57,43 @@ pub async fn find_children_paginated<C: ConnectionTrait>(
         return Ok((vec![], total));
     }
 
-    let items = base
-        .order_by_asc(folder::Column::Name)
-        .offset(offset)
-        .limit(limit)
-        .all(db)
-        .await
-        .map_err(AsterError::from)?;
+    use crate::api::pagination::{SortBy, SortOrder};
+    let is_asc = sort_order == SortOrder::Asc;
+    let items = match sort_by {
+        SortBy::CreatedAt => {
+            if is_asc {
+                base.order_by_asc(folder::Column::CreatedAt)
+                    .order_by_asc(folder::Column::Id)
+            } else {
+                base.order_by_desc(folder::Column::CreatedAt)
+                    .order_by_desc(folder::Column::Id)
+            }
+        }
+        SortBy::UpdatedAt => {
+            if is_asc {
+                base.order_by_asc(folder::Column::UpdatedAt)
+                    .order_by_asc(folder::Column::Id)
+            } else {
+                base.order_by_desc(folder::Column::UpdatedAt)
+                    .order_by_desc(folder::Column::Id)
+            }
+        }
+        // name, size, type — all fall back to name for folders
+        _ => {
+            if is_asc {
+                base.order_by_asc(folder::Column::Name)
+                    .order_by_asc(folder::Column::Id)
+            } else {
+                base.order_by_desc(folder::Column::Name)
+                    .order_by_desc(folder::Column::Id)
+            }
+        }
+    }
+    .offset(offset)
+    .limit(limit)
+    .all(db)
+    .await
+    .map_err(AsterError::from)?;
 
     Ok((items, total))
 }

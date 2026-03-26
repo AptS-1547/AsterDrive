@@ -175,9 +175,11 @@ pub async fn list(
     let (folders, folders_total) = if folder_limit == 0 {
         (
             vec![],
-            folder_repo::find_children_paginated(&state.db, user_id, parent_id, 0, 0)
-                .await?
-                .1,
+            folder_repo::find_children_paginated(
+                &state.db, user_id, parent_id, 0, 0, sort_by, sort_order,
+            )
+            .await?
+            .1,
         )
     } else {
         let (folders, total) = folder_repo::find_children_paginated(
@@ -186,6 +188,8 @@ pub async fn list(
             parent_id,
             folder_limit,
             folder_offset,
+            sort_by,
+            sort_order,
         )
         .await?;
         (folders, total)
@@ -412,6 +416,8 @@ pub async fn list_shared(
         Some(folder_id),
         folder_limit,
         folder_offset,
+        sort_by,
+        sort_order,
     )
     .await?;
     let (files, files_total) = file_repo::find_by_folder_cursor(
