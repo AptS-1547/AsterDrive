@@ -16,15 +16,15 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface ReadOnlyFileTableProps {
-	folders: FolderInfo[];
-	files: FileInfo[];
-	onFolderClick?: (folder: FolderInfo) => void;
-	onFileClick?: (file: FileInfo) => void;
-	onFileDownload?: (file: FileInfo) => void;
-	getThumbnailPath?: (file: FileInfo) => string;
+	folders: FolderListItem[];
+	files: FileListItem[];
+	onFolderClick?: (folder: FolderListItem) => void;
+	onFileClick?: (file: FileListItem) => void;
+	onFileDownload?: (file: FileListItem) => void;
+	getThumbnailPath?: (file: FileListItem) => string;
 }
 
 export function ReadOnlyFileTable({

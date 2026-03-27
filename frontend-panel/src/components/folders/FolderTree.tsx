@@ -2,18 +2,23 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 import { SkeletonTree } from "@/components/common/SkeletonTree";
 import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
 import {
-	DRAG_MIME,
+	DRAG_SOURCE_MIME,
 	FOLDER_TREE_DRAG_EXPAND_DELAY_MS,
 	FOLDER_TREE_INDENT_PX,
 	FOLDER_TREE_ROW_OFFSET_PX,
 	SIDEBAR_SECTION_PADDING_CLASS,
 } from "@/lib/constants";
-import { formatBatchToast } from "@/lib/formatBatchToast";
+import {
+	getInvalidInternalDropReason,
+	hasInternalDragData,
+	readInternalDragData,
+	setInternalDragPreview,
+	writeInternalDragData,
+} from "@/lib/dragDrop";
 import { folderTreeRowClass } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
@@ -48,6 +53,7 @@ interface TreeNodeProps {
 		fileIds: number[],
 		folderIds: number[],
 		targetFolderId: number,
+		targetPathIds: number[],
 	) => void;
 	onNavigate: (id: number, name: string) => void;
 	onToggle: (id: number) => void;
@@ -129,8 +135,17 @@ function TreeNode({
 	const isLoaded = loadedIds.has(node.folder.id);
 	const showToggle = isLoading || !isLoaded || node.childIds.length > 0;
 
+	const handleDragStart = (e: React.DragEvent) => {
+		writeInternalDragData(e.dataTransfer, {
+			fileIds: [],
+			folderIds: [node.folder.id],
+		});
+		e.dataTransfer.setData(DRAG_SOURCE_MIME, "tree");
+		setInternalDragPreview(e, { itemCount: 1 });
+	};
+
 	const handleDragOver = (e: React.DragEvent) => {
-		if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
+		if (!hasInternalDragData(e.dataTransfer)) return;
 		e.preventDefault();
 		e.dataTransfer.dropEffect = "move";
 		setDragOver(true);
@@ -150,11 +165,25 @@ function TreeNode({
 		setDragOver(false);
 		onDragHoverEnd(node.folder.id);
 		e.preventDefault();
-		const raw = e.dataTransfer.getData(DRAG_MIME);
-		if (!raw) return;
-		const data = JSON.parse(raw) as { fileIds: number[]; folderIds: number[] };
-		if (data.folderIds.includes(node.folder.id)) return;
-		onDrop(data.fileIds, data.folderIds, node.folder.id);
+		const data = readInternalDragData(e.dataTransfer);
+		if (!data) return;
+		const targetPathIds = (() => {
+			const pathIds: number[] = [];
+			let cursor: number | null = node.folder.id;
+
+			while (cursor !== null) {
+				pathIds.unshift(cursor);
+				cursor = nodeMap.get(cursor)?.parentId ?? null;
+			}
+
+			return pathIds;
+		})();
+		if (
+			getInvalidInternalDropReason(data, node.folder.id, targetPathIds) !== null
+		) {
+			return;
+		}
+		onDrop(data.fileIds, data.folderIds, node.folder.id, targetPathIds);
 	};
 
 	return (
@@ -164,6 +193,7 @@ function TreeNode({
 				ref={rowRef}
 				role="button"
 				tabIndex={0}
+				draggable
 				className={folderTreeRowClass(
 					isActive,
 					dragOver && "ring-2 ring-primary bg-accent/30",
@@ -178,6 +208,7 @@ function TreeNode({
 						onNavigate(node.folder.id, node.folder.name);
 					}
 				}}
+				onDragStart={handleDragStart}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}
@@ -232,7 +263,15 @@ function TreeNode({
 	);
 }
 
-export function FolderTree() {
+interface FolderTreeProps {
+	onMoveToFolder?: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number | null,
+	) => Promise<void> | void;
+}
+
+export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 	const { t } = useTranslation("files");
 	const userId = useAuthStore((s) => s.user?.id ?? null);
 	const location = useLocation();
@@ -380,6 +419,33 @@ export function FolderTree() {
 		[loadedIds, rootLoaded, syncFolderChildren],
 	);
 
+	const refreshFolderChildren = useCallback(
+		async (parentId: number | null) => {
+			childrenCacheRef.current.delete(parentId);
+			inflightLoadsRef.current.delete(parentId);
+			if (parentId === null) {
+				setRootLoaded(false);
+				const contents = await fileService.listRoot({
+					file_limit: 0,
+					folder_limit: 1000,
+				});
+				syncFolderChildren(null, contents.folders);
+				return;
+			}
+			setLoadedIds((prev) => {
+				const next = new Set(prev);
+				next.delete(parentId);
+				return next;
+			});
+			const contents = await fileService.listFolder(parentId, {
+				file_limit: 0,
+				folder_limit: 1000,
+			});
+			syncFolderChildren(parentId, contents.folders);
+		},
+		[syncFolderChildren],
+	);
+
 	useEffect(() => {
 		if (rootLoaded) return;
 		let cancelled = false;
@@ -456,6 +522,39 @@ export function FolderTree() {
 
 	useEffect(() => () => clearHoverExpandTimer(), [clearHoverExpandTimer]);
 
+	useEffect(() => {
+		function onFolderTreeMove(event: Event) {
+			const detail = (
+				event as CustomEvent<{
+					folderIds: number[];
+					targetFolderId: number | null;
+				}>
+			).detail;
+			if (!detail || detail.folderIds.length === 0) return;
+
+			const sourceParentIds = detail.folderIds.map(
+				(folderId) => nodeMap.get(folderId)?.parentId ?? null,
+			);
+			const parentsToRefresh = Array.from(
+				new Set<number | null>([
+					null,
+					...expandedIds,
+					...sourceParentIds,
+					detail.targetFolderId,
+				]),
+			);
+
+			void Promise.all(
+				parentsToRefresh.map((parentId) => refreshFolderChildren(parentId)),
+			).catch(handleApiError);
+		}
+
+		document.addEventListener("folder-tree-move", onFolderTreeMove);
+		return () => {
+			document.removeEventListener("folder-tree-move", onFolderTreeMove);
+		};
+	}, [expandedIds, nodeMap, refreshFolderChildren]);
+
 	const ensureFolderExpanded = useCallback(
 		async (folderId: number) => {
 			if (expandedIds.has(folderId)) return;
@@ -492,24 +591,25 @@ export function FolderTree() {
 	);
 
 	const handleDrop = useCallback(
-		(fileIds: number[], folderIds: number[], targetFolderId: number) => {
+		(
+			fileIds: number[],
+			folderIds: number[],
+			targetFolderId: number,
+			_targetPathIds: number[],
+		) => {
 			clearHoverExpandTimer();
-			moveToFolder(fileIds, folderIds, targetFolderId)
-				.then((result) => {
-					const batchToast = formatBatchToast(t, "move", result);
-					if (batchToast.variant === "error") {
-						toast.error(batchToast.title, {
-							description: batchToast.description,
-						});
-					} else {
-						toast.success(batchToast.title, {
-							description: batchToast.description,
-						});
-					}
-				})
-				.catch(handleApiError);
+			if (onMoveToFolder) {
+				void Promise.resolve(
+					onMoveToFolder(fileIds, folderIds, targetFolderId),
+				).catch(handleApiError);
+				return;
+			}
+
+			void moveToFolder(fileIds, folderIds, targetFolderId).catch(
+				handleApiError,
+			);
 		},
-		[clearHoverExpandTimer, moveToFolder, t],
+		[clearHoverExpandTimer, moveToFolder, onMoveToFolder],
 	);
 
 	const scheduleHoverExpand = useCallback(
@@ -542,7 +642,7 @@ export function FolderTree() {
 	);
 
 	const handleRootDragOver = (e: React.DragEvent) => {
-		if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
+		if (!hasInternalDragData(e.dataTransfer)) return;
 		e.preventDefault();
 		e.dataTransfer.dropEffect = "move";
 		clearHoverExpandTimer();
@@ -553,23 +653,16 @@ export function FolderTree() {
 		clearHoverExpandTimer();
 		setRootDragOver(false);
 		e.preventDefault();
-		const raw = e.dataTransfer.getData(DRAG_MIME);
-		if (!raw) return;
-		const data = JSON.parse(raw) as { fileIds: number[]; folderIds: number[] };
-		moveToFolder(data.fileIds, data.folderIds, null)
-			.then((result) => {
-				const batchToast = formatBatchToast(t, "move", result);
-				if (batchToast.variant === "error") {
-					toast.error(batchToast.title, {
-						description: batchToast.description,
-					});
-				} else {
-					toast.success(batchToast.title, {
-						description: batchToast.description,
-					});
-				}
-			})
-			.catch(handleApiError);
+		const data = readInternalDragData(e.dataTransfer);
+		if (!data) return;
+		if (getInvalidInternalDropReason(data, null, []) !== null) return;
+		if (onMoveToFolder) {
+			void Promise.resolve(
+				onMoveToFolder(data.fileIds, data.folderIds, null),
+			).catch(handleApiError);
+			return;
+		}
+		void moveToFolder(data.fileIds, data.folderIds, null).catch(handleApiError);
 	};
 
 	const handleDragHoverStart = useCallback(

@@ -50,7 +50,7 @@ pub struct BatchCopyReq {
     pub file_ids: Vec<i64>,
     #[serde(default)]
     pub folder_ids: Vec<i64>,
-    /// 目标文件夹 ID（null = 复制到与源相同位置）
+    /// 目标文件夹 ID（null = 根目录）
     pub target_folder_id: Option<i64>,
 }
 

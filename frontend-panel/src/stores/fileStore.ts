@@ -8,9 +8,9 @@ import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { useAuthStore } from "@/stores/authStore";
 import type {
 	BatchResult,
-	FileInfo,
+	FileListItem,
 	FolderContents,
-	FolderInfo,
+	FolderListItem,
 } from "@/types/api";
 
 interface BreadcrumbItem {
@@ -42,8 +42,8 @@ interface FileState {
 	breadcrumb: BreadcrumbItem[];
 
 	// Data
-	folders: FolderInfo[];
-	files: FileInfo[];
+	folders: FolderListItem[];
+	files: FileListItem[];
 	loading: boolean;
 	error: string | null;
 
@@ -55,8 +55,8 @@ interface FileState {
 
 	// Search
 	searchQuery: string | null;
-	searchFolders: FolderInfo[];
-	searchFiles: FileInfo[];
+	searchFolders: FolderListItem[];
+	searchFiles: FileListItem[];
 
 	// View preferences (persisted)
 	viewMode: ViewMode;
@@ -393,7 +393,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 		try {
 			const results = await searchService.search({ q: query, limit: 100 });
 			set({
-				searchFiles: results.files as FileInfo[],
+				searchFiles: results.files,
 				searchFolders: results.folders,
 				loading: false,
 				selectedFileIds: new Set(),
@@ -523,15 +523,19 @@ export const useFileStore = create<FileState>((set, get) => ({
 		get().clearSelection();
 		// Silent refresh — don't set loading to avoid flash
 		const { currentFolderId } = get();
-		const contents = await fetchFolder(
-			currentFolderId,
-			getInitialPageParams(get().sortBy, get().sortOrder),
-		);
+		const [contents, breadcrumb] = await Promise.all([
+			fetchFolder(
+				currentFolderId,
+				getInitialPageParams(get().sortBy, get().sortOrder),
+			),
+			resolveBreadcrumb(currentFolderId),
+		]);
 		set({
 			folders: contents.folders,
 			files: contents.files,
 			foldersTotalCount: contents.folders_total,
 			filesTotalCount: contents.files_total,
+			breadcrumb,
 		});
 		return result;
 	},

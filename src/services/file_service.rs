@@ -653,6 +653,8 @@ pub async fn move_file(
 }
 
 /// 复制文件（REST API 入口，带权限检查 + 副本命名）
+///
+/// `dest_folder_id = None` 表示复制到根目录。
 pub async fn copy_file(
     state: &AppState,
     src_id: i64,
@@ -663,15 +665,19 @@ pub async fn copy_file(
     let src = file_repo::find_by_id(db, src_id).await?;
     crate::utils::verify_owner(src.user_id, user_id, "file")?;
 
+    if let Some(folder_id) = dest_folder_id {
+        crate::services::folder_service::verify_folder_access(state, user_id, folder_id).await?;
+    }
+
     // 配额检查
     let blob = file_repo::find_blob_by_id(db, src.blob_id).await?;
     user_repo::check_quota(db, user_id, blob.size).await?;
 
     // 副本命名：目标无冲突保留原名，有冲突则递增
-    let dest = dest_folder_id.or(src.folder_id);
-    let copy_name = file_repo::resolve_unique_filename(db, user_id, dest, &src.name).await?;
+    let copy_name =
+        file_repo::resolve_unique_filename(db, user_id, dest_folder_id, &src.name).await?;
 
-    duplicate_file_record(state, &src, dest, &copy_name).await
+    duplicate_file_record(state, &src, dest_folder_id, &copy_name).await
 }
 
 /// 复制文件记录的核心逻辑（blob ref_count++ + 新文件记录 + 配额更新）

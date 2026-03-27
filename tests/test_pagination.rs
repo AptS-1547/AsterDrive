@@ -31,6 +31,74 @@ macro_rules! create_folder {
 }
 
 #[actix_web::test]
+async fn test_folder_list_includes_share_and_lock_status() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let folder_req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Shared Folder" }))
+        .to_request();
+    let folder_resp = test::call_service(&app, folder_req).await;
+    assert_eq!(folder_resp.status(), 201);
+    let folder_body: Value = test::read_body_json(folder_resp).await;
+    let folder_id = folder_body["data"]["id"].as_i64().unwrap();
+
+    let file_id = upload_test_file!(app, token);
+
+    let lock_file_req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/{file_id}/lock"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "locked": true }))
+        .to_request();
+    let lock_file_resp = test::call_service(&app, lock_file_req).await;
+    assert_eq!(lock_file_resp.status(), 200);
+
+    let lock_folder_req = test::TestRequest::post()
+        .uri(&format!("/api/v1/folders/{folder_id}/lock"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "locked": true }))
+        .to_request();
+    let lock_folder_resp = test::call_service(&app, lock_folder_req).await;
+    assert_eq!(lock_folder_resp.status(), 200);
+
+    let share_file_req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": file_id }))
+        .to_request();
+    let share_file_resp = test::call_service(&app, share_file_req).await;
+    assert_eq!(share_file_resp.status(), 201);
+
+    let share_folder_req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "folder_id": folder_id }))
+        .to_request();
+    let share_folder_resp = test::call_service(&app, share_folder_req).await;
+    assert_eq!(share_folder_resp.status(), 201);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+
+    let folders = body["data"]["folders"].as_array().unwrap();
+    let files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(folders.len(), 1);
+    assert_eq!(files.len(), 1);
+    assert_eq!(folders[0]["is_locked"], true);
+    assert_eq!(folders[0]["is_shared"], true);
+    assert_eq!(files[0]["is_locked"], true);
+    assert_eq!(files[0]["is_shared"], true);
+}
+
+#[actix_web::test]
 async fn test_folder_list_pagination_defaults() {
     let state = common::setup().await;
     let app = create_test_app!(state);

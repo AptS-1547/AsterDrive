@@ -11,7 +11,10 @@ import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { SkeletonCard } from "@/components/common/SkeletonCard";
+import { ToolbarBar } from "@/components/common/ToolbarBar";
+import { ViewToggle } from "@/components/common/ViewToggle";
 import { ReadOnlyFileCollection } from "@/components/files/ReadOnlyFileCollection";
+import { ShareTopBar } from "@/components/layout/ShareTopBar";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -41,6 +44,12 @@ interface ShareBreadcrumbItem {
 	name: string;
 }
 
+const SHARE_PAGE_SIZE = 100;
+const sharePageParams = {
+	folder_limit: 1000,
+	file_limit: SHARE_PAGE_SIZE,
+};
+
 const FilePreview = lazy(async () => {
 	const module = await import("@/components/files/FilePreview");
 	return { default: module.FilePreview };
@@ -65,7 +74,6 @@ export default function ShareViewPage() {
 	const [loadingMore, setLoadingMore] = useState(false);
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-	const SHARE_PAGE_SIZE = 100;
 	const hasMoreFiles = folderContents?.next_file_cursor != null;
 
 	const loadInfo = useCallback(async () => {
@@ -103,11 +111,6 @@ export default function ShareViewPage() {
 	useEffect(() => {
 		loadInfo();
 	}, [loadInfo]);
-
-	const sharePageParams = {
-		folder_limit: 1000,
-		file_limit: SHARE_PAGE_SIZE,
-	};
 
 	const navigateToFolder = useCallback(
 		async (folderId: number | null, folderName?: string) => {
@@ -153,7 +156,6 @@ export default function ShareViewPage() {
 			return;
 		setLoadingMore(true);
 		try {
-			// Current folder = last breadcrumb item
 			const currentId = breadcrumb[breadcrumb.length - 1]?.id ?? null;
 			const cursor = folderContents.next_file_cursor;
 			const contents =
@@ -186,7 +188,6 @@ export default function ShareViewPage() {
 		}
 	}, [token, folderContents, loadingMore, breadcrumb]);
 
-	// Infinite scroll for share page
 	useEffect(() => {
 		if (!hasMoreFiles || loadingMore) return;
 		const el = sentinelRef.current;
@@ -232,68 +233,123 @@ export default function ShareViewPage() {
 		window.open(url, "_blank");
 	};
 
+	// Breadcrumb renderer for folder share
+	const breadcrumbElement =
+		breadcrumb.length > 1 ? (
+			<Breadcrumb>
+				<BreadcrumbList className="gap-2">
+					{breadcrumb.map((item, i) => (
+						<Fragment key={item.id ?? "root"}>
+							{i > 0 && (
+								<BreadcrumbSeparator className="mx-0.5 text-muted-foreground/45" />
+							)}
+							<BreadcrumbItem>
+								{i < breadcrumb.length - 1 ? (
+									<BreadcrumbLink
+										className="cursor-pointer rounded-md px-1.5 py-0.5 text-muted-foreground"
+										onClick={() => navigateToFolder(item.id, item.name)}
+									>
+										{item.name}
+									</BreadcrumbLink>
+								) : (
+									<BreadcrumbPage className="text-base font-semibold text-foreground">
+										{item.name}
+									</BreadcrumbPage>
+								)}
+							</BreadcrumbItem>
+						</Fragment>
+					))}
+				</BreadcrumbList>
+			</Breadcrumb>
+		) : null;
+
+	const previewElement =
+		previewFile && token ? (
+			<Suspense fallback={null}>
+				<FilePreview
+					file={previewFile}
+					onClose={() => setPreviewFile(null)}
+					downloadPath={
+						info?.share_type === "file"
+							? shareService.downloadUrl(token)
+							: shareService.downloadFolderFileUrl(token, previewFile.id)
+					}
+					editable={false}
+				/>
+			</Suspense>
+		) : null;
+
+	// ── Centered states (loading, error, password) ──
 	if (loading) {
 		return (
-			<div className="flex min-h-screen items-center justify-center bg-background px-6 py-8">
-				<div className="w-full max-w-6xl">
-					<SkeletonCard />
-				</div>
+			<div className="h-screen flex flex-col">
+				<ShareTopBar />
+				<main className="flex min-h-0 flex-1 items-center justify-center p-6">
+					<div className="w-full max-w-6xl">
+						<SkeletonCard />
+					</div>
+				</main>
 			</div>
 		);
 	}
 
 	if (error) {
 		return (
-			<div className="flex min-h-screen items-center justify-center bg-background px-6 py-8">
-				<Card className="w-full max-w-md">
-					<CardHeader className="text-center">
-						<Icon
-							name="Warning"
-							className="mx-auto mb-2 h-10 w-10 text-destructive"
-						/>
-						<CardTitle>{t("unavailable")}</CardTitle>
-						<CardDescription>{error}</CardDescription>
-					</CardHeader>
-				</Card>
+			<div className="h-screen flex flex-col">
+				<ShareTopBar />
+				<main className="flex min-h-0 flex-1 items-center justify-center p-6">
+					<Card className="w-full max-w-md">
+						<CardHeader className="text-center">
+							<Icon
+								name="Warning"
+								className="mx-auto mb-2 h-10 w-10 text-destructive"
+							/>
+							<CardTitle>{t("unavailable")}</CardTitle>
+							<CardDescription>{error}</CardDescription>
+						</CardHeader>
+					</Card>
+				</main>
 			</div>
 		);
 	}
 
 	if (!info) return null;
 
-	// Password gate
 	if (needsPassword && !passwordVerified) {
 		return (
-			<div className="flex min-h-screen items-center justify-center bg-background px-6 py-8">
-				<Card className="w-full max-w-md shadow-sm">
-					<CardHeader className="text-center">
-						<Icon
-							name="Lock"
-							className="mx-auto mb-2 h-10 w-10 text-muted-foreground"
-						/>
-						<CardTitle>{info.name}</CardTitle>
-						<CardDescription>{t("password_protected")}</CardDescription>
-					</CardHeader>
-					<CardContent>
-						<form onSubmit={handleVerifyPassword} className="space-y-4">
-							<Input
-								type="password"
-								placeholder={t("auth:password")}
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-								autoFocus
+			<div className="h-screen flex flex-col">
+				<ShareTopBar />
+				<main className="flex min-h-0 flex-1 items-center justify-center p-6">
+					<Card className="w-full max-w-md shadow-sm">
+						<CardHeader className="text-center">
+							<Icon
+								name="Lock"
+								className="mx-auto mb-2 h-10 w-10 text-muted-foreground"
 							/>
-							<Button type="submit" className="w-full">
-								{t("verify")}
-							</Button>
-						</form>
-					</CardContent>
-				</Card>
+							<CardTitle>{info.name}</CardTitle>
+							<CardDescription>{t("password_protected")}</CardDescription>
+						</CardHeader>
+						<CardContent>
+							<form onSubmit={handleVerifyPassword} className="space-y-4">
+								<Input
+									type="password"
+									placeholder={t("auth:password")}
+									value={password}
+									onChange={(e) => setPassword(e.target.value)}
+									autoFocus
+								/>
+								<Button type="submit" className="w-full">
+									{t("verify")}
+								</Button>
+							</form>
+						</CardContent>
+					</Card>
+				</main>
 			</div>
 		);
 	}
 
-	// File share
+	// ── File share ──
 	if (info.share_type === "file") {
 		const singleShareFile =
 			info.mime_type && typeof info.size === "number"
@@ -313,9 +369,10 @@ export default function ShareViewPage() {
 				: null;
 
 		return (
-			<div className="min-h-screen bg-background px-6 py-8">
-				<div className="mx-auto flex max-w-4xl flex-col gap-6">
-					<Card className="shadow-sm">
+			<div className="h-screen flex flex-col">
+				<ShareTopBar />
+				<main className="flex min-h-0 flex-1 items-center justify-center p-6">
+					<Card className="w-full max-w-4xl shadow-sm">
 						<CardHeader>
 							<div className="flex items-start gap-3">
 								<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
@@ -356,76 +413,42 @@ export default function ShareViewPage() {
 							</div>
 						</CardHeader>
 					</Card>
-				</div>
-				{previewFile && token && (
-					<Suspense fallback={null}>
-						<FilePreview
-							file={previewFile}
-							onClose={() => setPreviewFile(null)}
-							downloadPath={shareService.downloadUrl(token)}
-							editable={false}
-						/>
-					</Suspense>
-				)}
+				</main>
+				{previewElement}
 			</div>
 		);
 	}
 
-	// Folder share
+	// ── Folder share ──
 	return (
-		<div className="min-h-screen bg-background px-6 py-8">
-			<div className="mx-auto flex max-w-6xl flex-col gap-6">
-				<Card className="shadow-sm">
-					<CardHeader>
-						<div className="flex items-start gap-3">
-							<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-amber-500">
-								<Icon name="Folder" className="h-5 w-5" />
-							</div>
-							<div className="min-w-0 flex-1">
-								<CardTitle>{info.name}</CardTitle>
-								<CardDescription className="mt-1">
-									{t("shared_folder")}
-									{info.expires_at &&
-										` \u00b7 ${t("expires_date", { date: new Date(info.expires_at).toLocaleDateString() })}`}
-								</CardDescription>
-							</div>
+		<div className="h-screen flex flex-col">
+			<ShareTopBar />
+			<ToolbarBar
+				left={
+					<>
+						<Icon name="Folder" className="h-4 w-4 shrink-0 text-amber-500" />
+						<div className="min-w-0 flex-1">
+							{breadcrumbElement ?? (
+								<span className="text-base font-semibold text-foreground">
+									{info.name}
+								</span>
+							)}
 						</div>
-					</CardHeader>
-				</Card>
-
-				{breadcrumb.length > 1 && (
-					<Breadcrumb>
-						<BreadcrumbList>
-							{breadcrumb.map((item, i) => (
-								<Fragment key={item.id ?? "root"}>
-									{i > 0 && <BreadcrumbSeparator />}
-									<BreadcrumbItem>
-										{i < breadcrumb.length - 1 ? (
-											<BreadcrumbLink
-												className="cursor-pointer"
-												onClick={() => navigateToFolder(item.id, item.name)}
-											>
-												{item.name}
-											</BreadcrumbLink>
-										) : (
-											<BreadcrumbPage>{item.name}</BreadcrumbPage>
-										)}
-									</BreadcrumbItem>
-								</Fragment>
-							))}
-						</BreadcrumbList>
-					</Breadcrumb>
-				)}
-
+					</>
+				}
+				right={<ViewToggle value={viewMode} onChange={setViewMode} />}
+			/>
+			<div className="min-h-0 flex-1 overflow-auto">
 				{navigating ? (
-					<SkeletonCard />
+					<div className="p-6">
+						<SkeletonCard />
+					</div>
 				) : folderContents ? (
 					<>
 						<ReadOnlyFileCollection
 							folders={folderContents.folders}
 							files={folderContents.files}
 							viewMode={viewMode}
-							onViewModeChange={setViewMode}
 							onFileClick={setPreviewFile}
 							onFileDownload={handleFolderFileDownload}
 							onFolderClick={(folder) =>
@@ -446,26 +469,12 @@ export default function ShareViewPage() {
 						)}
 					</>
 				) : (
-					<Card className="shadow-sm">
-						<CardContent className="py-8 text-sm text-muted-foreground">
-							{t("loading_contents")}
-						</CardContent>
-					</Card>
+					<div className="p-6 text-sm text-muted-foreground">
+						{t("loading_contents")}
+					</div>
 				)}
 			</div>
-			{previewFile && token && (
-				<Suspense fallback={null}>
-					<FilePreview
-						file={previewFile}
-						onClose={() => setPreviewFile(null)}
-						downloadPath={shareService.downloadFolderFileUrl(
-							token,
-							previewFile.id,
-						)}
-						editable={false}
-					/>
-				</Suspense>
-			)}
+			{previewElement}
 		</div>
 	);
 }

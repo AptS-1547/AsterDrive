@@ -1,3 +1,4 @@
+import { config } from "@/config/app";
 import type {
 	ErrorCode,
 	FileInfo,
@@ -44,6 +45,8 @@ export const fileService = {
 		api.patch<FileInfo>(`/files/${id}`, { name }),
 
 	downloadPath: (id: number) => `/files/${id}/download`,
+
+	downloadUrl: (id: number) => `${config.apiBaseUrl}/files/${id}/download`,
 
 	thumbnailPath: (id: number) => `/files/${id}/thumbnail`,
 

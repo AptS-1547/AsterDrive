@@ -1,10 +1,10 @@
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { fileService } from "@/services/fileService";
-import type { FileInfo } from "@/types/api";
+import type { FileInfo, FileListItem } from "@/types/api";
 import { FileTypeIcon } from "./FileTypeIcon";
 
 interface FileThumbnailProps {
-	file: FileInfo;
+	file: FileInfo | FileListItem;
 	size?: "sm" | "lg";
 	thumbnailPath?: string;
 }

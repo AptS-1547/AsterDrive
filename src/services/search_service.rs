@@ -2,10 +2,10 @@ use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use crate::db::repository::search_repo::{self, FileSearchItem};
-use crate::entities::folder;
+use crate::db::repository::{search_repo, share_repo};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
+use crate::services::folder_service::{FileListItem, FolderListItem, build_folder_list_items};
 
 #[derive(Deserialize, IntoParams, ToSchema)]
 pub struct SearchParams {
@@ -34,8 +34,8 @@ pub struct SearchParams {
 
 #[derive(Serialize, ToSchema)]
 pub struct SearchResults {
-    pub files: Vec<FileSearchItem>,
-    pub folders: Vec<folder::Model>,
+    pub files: Vec<FileListItem>,
+    pub folders: Vec<FolderListItem>,
     pub total_files: u64,
     pub total_folders: u64,
 }
@@ -113,9 +113,30 @@ pub async fn search(
         .await?
     };
 
+    let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
+    let folder_ids: Vec<i64> = folders.iter().map(|folder| folder.id).collect();
+    let shared_file_ids = share_repo::find_active_file_ids(&state.db, user_id, &file_ids).await?;
+    let shared_folder_ids =
+        share_repo::find_active_folder_ids(&state.db, user_id, &folder_ids).await?;
+
     Ok(SearchResults {
-        files,
-        folders,
+        files: files
+            .into_iter()
+            .map(|file| FileListItem {
+                id: file.id,
+                name: file.name,
+                folder_id: file.folder_id,
+                blob_id: file.blob_id,
+                size: file.size,
+                user_id: file.user_id,
+                mime_type: file.mime_type,
+                created_at: file.created_at,
+                updated_at: file.updated_at,
+                is_locked: file.is_locked,
+                is_shared: shared_file_ids.contains(&file.id),
+            })
+            .collect(),
+        folders: build_folder_list_items(folders, &shared_folder_ids),
         total_files,
         total_folders,
     })

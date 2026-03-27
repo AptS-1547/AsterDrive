@@ -4,7 +4,7 @@ import { Icon } from "@/components/ui/icon";
 import { USER_TOPBAR_HEIGHT_CLASS } from "@/lib/constants";
 
 interface TopBarShellProps {
-	onSidebarToggle: () => void;
+	onSidebarToggle?: () => void;
 	left: ReactNode;
 	center?: ReactNode;
 	right: ReactNode;
@@ -23,14 +23,16 @@ export function TopBarShell({
 			<div
 				className={`flex items-center gap-3 px-4 shrink-0 ${heightClassName}`}
 			>
-				<Button
-					variant="ghost"
-					size="icon"
-					className="h-8 w-8 shrink-0 md:hidden"
-					onClick={onSidebarToggle}
-				>
-					<Icon name="List" className="h-4 w-4" />
-				</Button>
+				{onSidebarToggle && (
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-8 w-8 shrink-0 md:hidden"
+						onClick={onSidebarToggle}
+					>
+						<Icon name="List" className="h-4 w-4" />
+					</Button>
+				)}
 				<div className="min-w-0 shrink-0">{left}</div>
 				{center ? (
 					<div className="hidden min-w-0 flex-1 sm:flex">{center}</div>

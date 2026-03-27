@@ -1,4 +1,10 @@
-import type { FolderContents, ShareInfo, SharePublicInfo } from "@/types/api";
+import { config } from "@/config/app";
+import type {
+	FolderContents,
+	ShareInfo,
+	SharePage,
+	SharePublicInfo,
+} from "@/types/api";
 import type { FolderListParams } from "./fileService";
 import { api } from "./http";
 
@@ -11,7 +17,8 @@ export const shareService = {
 		max_downloads?: number;
 	}) => api.post<ShareInfo>("/shares", data),
 
-	listMine: () => api.get<ShareInfo[]>("/shares"),
+	listMine: (params?: { limit?: number; offset?: number }) =>
+		api.get<SharePage>("/shares", { params }),
 
 	delete: (id: number) => api.delete<void>(`/shares/${id}`),
 
@@ -20,10 +27,10 @@ export const shareService = {
 	verifyPassword: (token: string, password: string) =>
 		api.post<null>(`/s/${token}/verify`, { password }),
 
-	downloadUrl: (token: string) => `/s/${token}/download`,
+	downloadUrl: (token: string) => `${config.apiBaseUrl}/s/${token}/download`,
 
 	downloadFolderFileUrl: (token: string, fileId: number) =>
-		`/s/${token}/files/${fileId}/download`,
+		`${config.apiBaseUrl}/s/${token}/files/${fileId}/download`,
 
 	listContent: (token: string, params?: FolderListParams) =>
 		api.get<FolderContents>(`/s/${token}/content`, { params }),

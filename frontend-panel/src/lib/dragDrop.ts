@@ -6,6 +6,8 @@ export interface InternalDragData {
 	folderIds: number[];
 }
 
+export type InternalDropInvalidReason = "self" | "descendant";
+
 interface DragPreviewOptions {
 	itemCount?: number;
 	variant?: "default" | "grid-card" | "list-row";
@@ -102,8 +104,8 @@ function createDragPreview(source: HTMLElement, options: DragPreviewOptions) {
 			const badge = document.createElement("div");
 			badge.textContent = `${options.itemCount} 项`;
 			badge.style.position = "absolute";
-			badge.style.top = "0.5rem";
-			badge.style.right = "0.5rem";
+			badge.style.right = "0.75rem";
+			badge.style.bottom = "0.75rem";
 			badge.style.padding = "0.125rem 0.5rem";
 			badge.style.borderRadius = "9999px";
 			badge.style.background = themeColor("--card", 0.94);
@@ -240,6 +242,22 @@ export function writeInternalDragData(
 ) {
 	dataTransfer.setData(DRAG_MIME, JSON.stringify(data));
 	dataTransfer.effectAllowed = "move";
+}
+
+export function getInvalidInternalDropReason(
+	dragData: InternalDragData,
+	targetFolderId: number | null,
+	targetPathIds: number[] = [],
+): InternalDropInvalidReason | null {
+	if (targetFolderId !== null && dragData.folderIds.includes(targetFolderId)) {
+		return "self";
+	}
+
+	if (dragData.folderIds.some((folderId) => targetPathIds.includes(folderId))) {
+		return "descendant";
+	}
+
+	return null;
 }
 
 export function setInternalDragPreview(

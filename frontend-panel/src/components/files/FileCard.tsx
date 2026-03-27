@@ -1,18 +1,21 @@
 import { useState } from "react";
+import { FileItemStatusIndicators } from "@/components/files/FileItemStatusIndicators";
 import { FileThumbnail } from "@/components/files/FileThumbnail";
 import { Icon } from "@/components/ui/icon";
 import { ItemCheckbox } from "@/components/ui/item-checkbox";
+import { DRAG_SOURCE_MIME } from "@/lib/constants";
 import {
+	getInvalidInternalDropReason,
 	hasInternalDragData,
 	readInternalDragData,
 	setInternalDragPreview,
 	writeInternalDragData,
 } from "@/lib/dragDrop";
 import { cn } from "@/lib/utils";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface FileCardProps {
-	item: FileInfo | FolderInfo;
+	item: FileListItem | FolderListItem;
 	isFolder: boolean;
 	selected: boolean;
 	onSelect: () => void;
@@ -23,7 +26,9 @@ interface FileCardProps {
 		fileIds: number[],
 		folderIds: number[],
 		targetFolderId: number,
+		targetPathIds: number[],
 	) => void;
+	targetPathIds?: number[];
 	fading?: boolean;
 	draggable?: boolean;
 	thumbnailPath?: string;
@@ -38,6 +43,7 @@ export function FileCard({
 	onClick,
 	dragData,
 	onDrop,
+	targetPathIds = [],
 	fading,
 	draggable = true,
 	thumbnailPath,
@@ -60,8 +66,15 @@ export function FileCard({
 	};
 
 	const handleDragOver = (e: React.DragEvent) => {
-		if (!isFolder || !hasInternalDragData(e.dataTransfer)) return;
+		if (
+			!isFolder ||
+			!hasInternalDragData(e.dataTransfer) ||
+			e.dataTransfer.types.includes(DRAG_SOURCE_MIME)
+		) {
+			return;
+		}
 		e.preventDefault();
+		e.stopPropagation();
 		e.dataTransfer.dropEffect = "move";
 		setDragOver(true);
 	};
@@ -70,24 +83,30 @@ export function FileCard({
 
 	const handleDrop = (e: React.DragEvent) => {
 		setDragOver(false);
+		if (isFolder && e.dataTransfer.types.includes(DRAG_SOURCE_MIME)) {
+			return;
+		}
 		if (!isFolder) return;
 		e.preventDefault();
+		e.stopPropagation();
 		const data = readInternalDragData(e.dataTransfer);
 		if (!data) return;
-		// Don't drop a folder into itself
-		if (data.folderIds.includes(item.id)) return;
-		onDrop?.(data.fileIds, data.folderIds, item.id);
+		if (getInvalidInternalDropReason(data, item.id, targetPathIds) !== null) {
+			return;
+		}
+		onDrop?.(data.fileIds, data.folderIds, item.id, targetPathIds);
 	};
 
 	return (
 		// biome-ignore lint/a11y/useSemanticElements: card with nested interactive checkbox cannot be a button
 		<div
 			data-drag-preview-root
+			data-folder-drop-target={isFolder ? "true" : undefined}
 			className={cn(
-				"group relative flex flex-col items-center p-3 rounded-lg border cursor-pointer transition-all duration-300 hover:bg-accent/50",
-				selected && "bg-accent border-primary",
-				draggable && dragOver && "ring-2 ring-primary bg-accent/30",
-				fading && "opacity-0 scale-95",
+				"group relative flex flex-col items-center rounded-lg border p-3 transition-all duration-300 hover:bg-accent/50",
+				selected && "border-primary bg-accent",
+				draggable && dragOver && "bg-accent/30 ring-2 ring-primary",
+				fading && "scale-95 opacity-0",
 			)}
 			draggable={draggable}
 			onDragStart={draggable ? handleDragStart : undefined}
@@ -109,7 +128,13 @@ export function FileCard({
 				)}
 			/>
 
-			{/* Icon / Thumbnail */}
+			<FileItemStatusIndicators
+				isShared={item.is_shared}
+				isLocked={item.is_locked}
+				compact
+				className="absolute top-2 right-2 flex-col items-end gap-1"
+			/>
+
 			<div
 				data-drag-preview-media
 				className="relative h-20 w-full flex items-center justify-center mb-2 rounded-lg bg-muted/40"
@@ -118,7 +143,7 @@ export function FileCard({
 					<Icon name="Folder" className="h-12 w-12 text-amber-500" />
 				) : (
 					<FileThumbnail
-						file={item as FileInfo}
+						file={item as FileListItem}
 						size="lg"
 						thumbnailPath={thumbnailPath}
 					/>
@@ -130,10 +155,9 @@ export function FileCard({
 				)}
 			</div>
 
-			{/* Name */}
 			<span
 				data-drag-preview-name
-				className="text-sm text-center w-full line-clamp-2 leading-tight"
+				className="w-full line-clamp-2 text-center text-sm leading-tight"
 				title={item.name}
 			>
 				{item.name}

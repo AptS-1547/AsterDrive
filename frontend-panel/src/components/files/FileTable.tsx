@@ -19,7 +19,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { DRAG_SOURCE_MIME } from "@/lib/constants";
 import {
+	getInvalidInternalDropReason,
 	hasInternalDragData,
 	readInternalDragData,
 	setInternalDragPreview,
@@ -28,13 +30,14 @@ import {
 import { cn } from "@/lib/utils";
 import type { SortBy } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface FileTableProps {
-	folders: FolderInfo[];
-	files: FileInfo[];
+	folders: FolderListItem[];
+	files: FileListItem[];
+	breadcrumbPathIds?: number[];
 	onFolderOpen: (id: number, name: string) => void;
-	onFileClick: (file: FileInfo) => void;
+	onFileClick: (file: FileListItem) => void;
 	onShare: (target: {
 		fileId?: number;
 		folderId?: number;
@@ -77,6 +80,7 @@ function SortIcon({
 export function FileTable({
 	folders,
 	files,
+	breadcrumbPathIds = [],
 	onFolderOpen,
 	onFileClick,
 	onShare,
@@ -152,19 +156,37 @@ export function FileTable({
 		});
 	};
 
+	const getTargetPathIds = (folderId: number) => [
+		...breadcrumbPathIds,
+		folderId,
+	];
+
 	const handleFolderDragOver = (e: React.DragEvent, folderId: number) => {
-		if (!hasInternalDragData(e.dataTransfer)) return;
+		if (
+			!hasInternalDragData(e.dataTransfer) ||
+			e.dataTransfer.types.includes(DRAG_SOURCE_MIME)
+		) {
+			return;
+		}
 		e.preventDefault();
+		e.stopPropagation();
 		e.dataTransfer.dropEffect = "move";
 		setDragOverId(folderId);
 	};
 
 	const handleFolderDrop = (e: React.DragEvent, folderId: number) => {
 		setDragOverId(null);
+		if (e.dataTransfer.types.includes(DRAG_SOURCE_MIME)) {
+			return;
+		}
 		e.preventDefault();
+		e.stopPropagation();
 		const data = readInternalDragData(e.dataTransfer);
 		if (!data) return;
-		if (data.folderIds.includes(folderId)) return;
+		const targetPathIds = getTargetPathIds(folderId);
+		if (getInvalidInternalDropReason(data, folderId, targetPathIds) !== null) {
+			return;
+		}
 		onMoveToFolder?.(data.fileIds, data.folderIds, folderId);
 	};
 
@@ -237,6 +259,7 @@ export function FileTable({
 						onInfo={() => onInfo?.("folder", folder.id)}
 					>
 						<TableRow
+							data-folder-drop-target="true"
 							className={cn(
 								"cursor-pointer transition-all duration-300",
 								dragOverId === folder.id && "ring-2 ring-primary bg-accent/30",

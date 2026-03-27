@@ -1,15 +1,15 @@
 import { useTranslation } from "react-i18next";
 import { FileCard } from "@/components/files/FileCard";
 import { Icon } from "@/components/ui/icon";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface ReadOnlyFileGridProps {
-	folders: FolderInfo[];
-	files: FileInfo[];
-	onFolderClick?: (folder: FolderInfo) => void;
-	onFileClick?: (file: FileInfo) => void;
-	onFileDownload?: (file: FileInfo) => void;
-	getThumbnailPath?: (file: FileInfo) => string;
+	folders: FolderListItem[];
+	files: FileListItem[];
+	onFolderClick?: (folder: FolderListItem) => void;
+	onFileClick?: (file: FileListItem) => void;
+	onFileDownload?: (file: FileListItem) => void;
+	getThumbnailPath?: (file: FileListItem) => string;
 }
 
 const GRID_CLASSES =

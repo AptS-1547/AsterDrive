@@ -23,12 +23,18 @@ interface SidebarProps {
 	mobileOpen: boolean;
 	onMobileClose: () => void;
 	onTrashDrop?: (data: InternalDragData) => void | Promise<void>;
+	onMoveToFolder?: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number | null,
+	) => Promise<void> | void;
 }
 
 export function Sidebar({
 	mobileOpen,
 	onMobileClose,
 	onTrashDrop,
+	onMoveToFolder,
 }: SidebarProps) {
 	const { t } = useTranslation();
 	const location = useLocation();
@@ -36,6 +42,7 @@ export function Sidebar({
 	const [trashDragOver, setTrashDragOver] = useState(false);
 
 	const navLinks: { to: string; icon: IconName; label: string }[] = [
+		{ to: "/shares", icon: "Link", label: t("files:my_shares_title") },
 		{ to: "/trash", icon: "Trash", label: t("trash") },
 		{ to: "/settings/webdav", icon: "HardDrive", label: t("webdav") },
 		{ to: "/settings", icon: "Gear", label: t("settings") },
@@ -69,7 +76,7 @@ export function Sidebar({
 		<div className="flex flex-col h-full">
 			{/* Folder tree */}
 			<ScrollArea className="flex-1">
-				<FolderTree />
+				<FolderTree onMoveToFolder={onMoveToFolder} />
 			</ScrollArea>
 
 			<Separator />

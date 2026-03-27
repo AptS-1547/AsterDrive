@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
 
-use crate::db::repository::{file_repo, folder_repo};
+use crate::db::repository::{file_repo, folder_repo, share_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
@@ -13,6 +13,38 @@ use crate::runtime::AppState;
 pub struct FolderAncestorItem {
     pub id: i64,
     pub name: String,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
+pub struct FileListItem {
+    pub id: i64,
+    pub name: String,
+    pub folder_id: Option<i64>,
+    pub blob_id: i64,
+    pub size: i64,
+    pub user_id: i64,
+    pub mime_type: String,
+    #[schema(value_type = String)]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String)]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub is_locked: bool,
+    pub is_shared: bool,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
+pub struct FolderListItem {
+    pub id: i64,
+    pub name: String,
+    pub parent_id: Option<i64>,
+    pub user_id: i64,
+    pub policy_id: Option<i64>,
+    #[schema(value_type = String)]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String)]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub is_locked: bool,
+    pub is_shared: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -24,12 +56,88 @@ pub struct FileCursor {
 
 #[derive(Serialize, ToSchema)]
 pub struct FolderContents {
-    pub folders: Vec<folder::Model>,
-    pub files: Vec<file::Model>,
+    pub folders: Vec<FolderListItem>,
+    pub files: Vec<FileListItem>,
     pub folders_total: u64,
     pub files_total: u64,
     /// 下一页 cursor，None 表示已到最后一页
     pub next_file_cursor: Option<FileCursor>,
+}
+
+pub fn build_file_list_items(
+    files: Vec<file::Model>,
+    shared_file_ids: &HashSet<i64>,
+) -> Vec<FileListItem> {
+    files
+        .into_iter()
+        .map(|file| FileListItem {
+            id: file.id,
+            name: file.name,
+            folder_id: file.folder_id,
+            blob_id: file.blob_id,
+            size: file.size,
+            user_id: file.user_id,
+            mime_type: file.mime_type,
+            created_at: file.created_at,
+            updated_at: file.updated_at,
+            is_locked: file.is_locked,
+            is_shared: shared_file_ids.contains(&file.id),
+        })
+        .collect()
+}
+
+pub fn build_folder_list_items(
+    folders: Vec<folder::Model>,
+    shared_folder_ids: &HashSet<i64>,
+) -> Vec<FolderListItem> {
+    folders
+        .into_iter()
+        .map(|folder| FolderListItem {
+            id: folder.id,
+            name: folder.name,
+            parent_id: folder.parent_id,
+            user_id: folder.user_id,
+            policy_id: folder.policy_id,
+            created_at: folder.created_at,
+            updated_at: folder.updated_at,
+            is_locked: folder.is_locked,
+            is_shared: shared_folder_ids.contains(&folder.id),
+        })
+        .collect()
+}
+
+async fn build_folder_contents(
+    state: &AppState,
+    user_id: i64,
+    folders: Vec<folder::Model>,
+    folders_total: u64,
+    files: Vec<file::Model>,
+    files_total: u64,
+    sort_by: crate::api::pagination::SortBy,
+    file_limit: u64,
+) -> Result<FolderContents> {
+    let next_file_cursor = if files.len() as u64 == file_limit && file_limit > 0 {
+        files.last().map(|f| FileCursor {
+            value: crate::api::pagination::SortBy::cursor_value(f, sort_by),
+            id: f.id,
+        })
+    } else {
+        None
+    };
+
+    let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
+    let folder_ids: Vec<i64> = folders.iter().map(|folder| folder.id).collect();
+    let shared_file_ids = share_repo::find_active_file_ids(&state.db, user_id, &file_ids).await?;
+    let shared_folder_ids =
+        share_repo::find_active_folder_ids(&state.db, user_id, &folder_ids).await?;
+
+    Ok(FolderContents {
+        folders: build_folder_list_items(folders, &shared_folder_ids),
+        files: build_file_list_items(files, &shared_file_ids),
+        folders_total,
+        files_total,
+        next_file_cursor,
+    })
 }
 
 pub async fn create(
@@ -220,22 +328,10 @@ pub async fn resolve_upload_path(
         verify_folder_access(state, user_id, fid).await?;
     }
 
-    let normalized = relative_path.replace('\\', "/");
-    let trimmed = normalized.trim_matches('/');
-
-    if trimmed.is_empty() {
-        return Err(AsterError::validation_error(
-            "relative_path cannot be empty",
-        ));
-    }
-
-    let segments: Vec<&str> = trimmed.split('/').collect();
-    if segments.iter().any(|segment| segment.is_empty()) {
-        return Err(AsterError::validation_error(
-            "relative_path contains empty path segment",
-        ));
-    }
-
+    let segments: Vec<&str> = relative_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
     let filename = segments
         .last()
         .ok_or_else(|| AsterError::validation_error("relative_path cannot be empty"))?;
@@ -313,22 +409,17 @@ pub async fn list(
         .await?
     };
 
-    let next_file_cursor = if files.len() as u64 == file_limit && file_limit > 0 {
-        files.last().map(|f| FileCursor {
-            value: crate::api::pagination::SortBy::cursor_value(f, sort_by),
-            id: f.id,
-        })
-    } else {
-        None
-    };
-
-    Ok(FolderContents {
+    build_folder_contents(
+        state,
+        user_id,
         folders,
-        files,
         folders_total,
+        files,
         files_total,
-        next_file_cursor,
-    })
+        sort_by,
+        file_limit,
+    )
+    .await
 }
 
 /// 删除文件夹（软删除 → 回收站，递归标记子项）
@@ -470,6 +561,8 @@ pub async fn move_folder(
 }
 
 /// 复制文件夹（递归复制所有文件和子文件夹）
+///
+/// `dest_parent_id = None` 表示复制到根目录。
 pub async fn copy_folder(
     state: &AppState,
     src_id: i64,
@@ -480,18 +573,27 @@ pub async fn copy_folder(
     let f = folder_repo::find_by_id(db, src_id).await?;
     crate::utils::verify_owner(f.user_id, user_id, "folder")?;
 
+    if let Some(parent_id) = dest_parent_id {
+        verify_folder_access(state, user_id, parent_id).await?;
+    }
+
     // 副本命名：目标无冲突保留原名，有冲突则递增
-    let dest = dest_parent_id.or(f.parent_id);
     let mut dest_name = f.name.clone();
-    while folder_repo::find_by_name_in_parent(db, user_id, dest, &dest_name)
+    while folder_repo::find_by_name_in_parent(db, user_id, dest_parent_id, &dest_name)
         .await?
         .is_some()
     {
         dest_name = crate::utils::next_copy_name(&dest_name);
     }
 
-    crate::services::webdav_service::recursive_copy_folder(state, user_id, src_id, dest, &dest_name)
-        .await
+    crate::services::webdav_service::recursive_copy_folder(
+        state,
+        user_id,
+        src_id,
+        dest_parent_id,
+        &dest_name,
+    )
+    .await
 }
 
 /// 列出文件夹内容（无用户校验，用于分享链接）
@@ -526,21 +628,18 @@ pub async fn list_shared(
         sort_order,
     )
     .await?;
-    let next_file_cursor = if files.len() as u64 == file_limit && file_limit > 0 {
-        files.last().map(|f| FileCursor {
-            value: crate::api::pagination::SortBy::cursor_value(f, sort_by),
-            id: f.id,
-        })
-    } else {
-        None
-    };
-    Ok(FolderContents {
+
+    build_folder_contents(
+        state,
+        folder.user_id,
         folders,
-        files,
         folders_total,
+        files,
         files_total,
-        next_file_cursor,
-    })
+        sort_by,
+        file_limit,
+    )
+    .await
 }
 
 /// 获取文件夹的祖先链（从根下第一层到当前文件夹）

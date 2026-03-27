@@ -452,12 +452,14 @@ pub struct PatchUserReq {
 pub async fn update_user(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: actix_web::HttpRequest,
     path: web::Path<i64>,
     body: web::Json<PatchUserReq>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
     let target_id = *path;
     let body = body.into_inner();
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let user = user_service::update(
         &state,
         target_id,
@@ -466,6 +468,20 @@ pub async fn update_user(
         body.storage_quota,
     )
     .await?;
+    audit_service::log(
+        &state,
+        &ctx,
+        "admin_update_user",
+        Some("user"),
+        Some(user.id),
+        Some(&user.username),
+        Some(serde_json::json!({
+            "role": user.role,
+            "status": user.status,
+            "storage_quota": user.storage_quota,
+        })),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
 

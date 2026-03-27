@@ -1155,7 +1155,7 @@ export interface components {
             folder_ids?: number[];
             /**
              * Format: int64
-             * @description 目标文件夹 ID（null = 复制到与源相同位置）
+             * @description 目标文件夹 ID（null = 根目录）
              */
             target_folder_id?: number | null;
         };
@@ -1207,11 +1207,17 @@ export interface components {
             part_number: number;
         };
         CopyFileReq: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description 目标文件夹 ID（null = 根目录）
+             */
             folder_id?: number | null;
         };
         CopyFolderReq: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description 目标父文件夹 ID（null = 根目录）
+             */
             parent_id?: number | null;
         };
         CreateEmptyRequest: {
@@ -1309,6 +1315,24 @@ export interface components {
             /** Format: int64 */
             user_id: number;
         };
+        FileListItem: {
+            /** Format: int64 */
+            blob_id: number;
+            created_at: string;
+            /** Format: int64 */
+            folder_id?: number | null;
+            /** Format: int64 */
+            id: number;
+            is_locked: boolean;
+            is_shared: boolean;
+            mime_type: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+            updated_at: string;
+            /** Format: int64 */
+            user_id: number;
+        };
         FileQuery: {
             /** Format: int64 */
             folder_id?: number | null;
@@ -1351,10 +1375,10 @@ export interface components {
             name: string;
         };
         FolderContents: {
-            files: components["schemas"]["FileInfo"][];
+            files: components["schemas"]["FileListItem"][];
             /** Format: int64 */
             files_total: number;
-            folders: components["schemas"]["FolderInfo"][];
+            folders: components["schemas"]["FolderListItem"][];
             /** Format: int64 */
             folders_total: number;
             next_file_cursor?: null | components["schemas"]["FileCursor"];
@@ -1365,6 +1389,21 @@ export interface components {
             /** Format: int64 */
             id: number;
             is_locked?: boolean;
+            name: string;
+            /** Format: int64 */
+            parent_id?: number | null;
+            /** Format: int64 */
+            policy_id?: number | null;
+            updated_at: string;
+            /** Format: int64 */
+            user_id: number;
+        };
+        FolderListItem: {
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            is_locked: boolean;
+            is_shared: boolean;
             name: string;
             /** Format: int64 */
             parent_id?: number | null;
@@ -1407,6 +1446,29 @@ export interface components {
             identifier: string;
             password: string;
         };
+        MyShareInfo: {
+            created_at: string;
+            /** Format: int64 */
+            download_count: number;
+            expires_at?: string | null;
+            has_password: boolean;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            max_downloads: number;
+            /** Format: int64 */
+            remaining_downloads?: number | null;
+            resource_deleted: boolean;
+            /** Format: int64 */
+            resource_id: number;
+            resource_name: string;
+            resource_type: components["schemas"]["EntityType"];
+            status: components["schemas"]["ShareStatus"];
+            token: string;
+            updated_at: string;
+            /** Format: int64 */
+            view_count: number;
+        };
         OffsetPage_AuditLogEntry: {
             items: {
                 action: string;
@@ -1422,6 +1484,37 @@ export interface components {
                 user_agent?: string | null;
                 /** Format: int64 */
                 user_id: number;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
+        OffsetPage_MyShareInfo: {
+            items: {
+                created_at: string;
+                /** Format: int64 */
+                download_count: number;
+                expires_at?: string | null;
+                has_password: boolean;
+                /** Format: int64 */
+                id: number;
+                /** Format: int64 */
+                max_downloads: number;
+                /** Format: int64 */
+                remaining_downloads?: number | null;
+                resource_deleted: boolean;
+                /** Format: int64 */
+                resource_id: number;
+                resource_name: string;
+                resource_type: components["schemas"]["EntityType"];
+                status: components["schemas"]["ShareStatus"];
+                token: string;
+                updated_at: string;
+                /** Format: int64 */
+                view_count: number;
             }[];
             /** Format: int64 */
             limit: number;
@@ -1700,8 +1793,8 @@ export interface components {
             type?: string | null;
         };
         SearchResults: {
-            files: components["schemas"]["FileSearchItem"][];
-            folders: components["schemas"]["FolderInfo"][];
+            files: components["schemas"]["FileListItem"][];
+            folders: components["schemas"]["FolderListItem"][];
             /** Format: int64 */
             total_files: number;
             /** Format: int64 */
@@ -1761,6 +1854,8 @@ export interface components {
             /** Format: int64 */
             view_count: number;
         };
+        /** @enum {string} */
+        ShareStatus: "active" | "expired" | "exhausted" | "deleted";
         /** @enum {string} */
         SortBy: "name" | "size" | "created_at" | "updated_at" | "type";
         /** @enum {string} */
@@ -4886,10 +4981,10 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            files: components["schemas"]["FileInfo"][];
+                            files: components["schemas"]["FileListItem"][];
                             /** Format: int64 */
                             files_total: number;
-                            folders: components["schemas"]["FolderInfo"][];
+                            folders: components["schemas"]["FolderListItem"][];
                             /** Format: int64 */
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["FileCursor"];
@@ -4992,10 +5087,10 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            files: components["schemas"]["FileInfo"][];
+                            files: components["schemas"]["FileListItem"][];
                             /** Format: int64 */
                             files_total: number;
-                            folders: components["schemas"]["FolderInfo"][];
+                            folders: components["schemas"]["FolderListItem"][];
                             /** Format: int64 */
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["FileCursor"];
@@ -5534,10 +5629,10 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            files: components["schemas"]["FileInfo"][];
+                            files: components["schemas"]["FileListItem"][];
                             /** Format: int64 */
                             files_total: number;
-                            folders: components["schemas"]["FolderInfo"][];
+                            folders: components["schemas"]["FolderListItem"][];
                             /** Format: int64 */
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["FileCursor"];
@@ -5709,10 +5804,10 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            files: components["schemas"]["FileInfo"][];
+                            files: components["schemas"]["FileListItem"][];
                             /** Format: int64 */
                             files_total: number;
-                            folders: components["schemas"]["FolderInfo"][];
+                            folders: components["schemas"]["FolderListItem"][];
                             /** Format: int64 */
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["FileCursor"];
@@ -5850,8 +5945,8 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            files: components["schemas"]["FileSearchItem"][];
-                            folders: components["schemas"]["FolderInfo"][];
+                            files: components["schemas"]["FileListItem"][];
+                            folders: components["schemas"]["FolderListItem"][];
                             /** Format: int64 */
                             total_files: number;
                             /** Format: int64 */
@@ -5896,18 +5991,21 @@ export interface operations {
                                 /** Format: int64 */
                                 download_count: number;
                                 expires_at?: string | null;
-                                /** Format: int64 */
-                                file_id?: number | null;
-                                /** Format: int64 */
-                                folder_id?: number | null;
+                                has_password: boolean;
                                 /** Format: int64 */
                                 id: number;
                                 /** Format: int64 */
                                 max_downloads: number;
+                                /** Format: int64 */
+                                remaining_downloads?: number | null;
+                                resource_deleted: boolean;
+                                /** Format: int64 */
+                                resource_id: number;
+                                resource_name: string;
+                                resource_type: components["schemas"]["EntityType"];
+                                status: components["schemas"]["ShareStatus"];
                                 token: string;
                                 updated_at: string;
-                                /** Format: int64 */
-                                user_id: number;
                                 /** Format: int64 */
                                 view_count: number;
                             }[];

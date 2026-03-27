@@ -200,6 +200,41 @@ async fn test_file_rename_move() {
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
+
+    // 再移动回根目录（patch 接口里 null 表示不变，所以这里要用 batch move 语义）
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/move")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_ids": [file_id],
+            "folder_ids": [],
+            "target_folder_id": null
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["succeeded"], 1);
+
+    // 文件已回到根目录
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let root_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(root_files.len(), 1);
+    assert_eq!(root_files[0]["name"], "renamed.txt");
+
+    // 目标文件夹重新为空
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{folder_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
 }
 
 #[actix_web::test]
@@ -207,9 +242,53 @@ async fn test_file_copy() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
-    let file_id = upload_test_file!(app, token);
 
-    // 复制到同文件夹（应生成 "test (1).txt"）
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Source" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let source_folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let boundary = "----TestBoundary123";
+    let payload = "------TestBoundary123\r\n\
+         Content-Disposition: form-data; name=\"file\"; filename=\"test.txt\"\r\n\
+         Content-Type: text/plain\r\n\r\n\
+         copy content\r\n\
+         ------TestBoundary123--\r\n";
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/files/upload?folder_id={source_folder_id}"
+        ))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    // 复制到根目录（null = root）
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/{file_id}/copy"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "folder_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "test.txt");
+    assert!(body["data"]["folder_id"].is_null());
+    let copy_id = body["data"]["id"].as_i64().unwrap();
+    assert_ne!(copy_id, file_id);
+
+    // 再复制一次到根目录（应生成冲突递增名）
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/copy"))
         .insert_header(("Cookie", format!("aster_access={token}")))
@@ -219,19 +298,30 @@ async fn test_file_copy() {
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["name"], "test (1).txt");
-    let copy_id = body["data"]["id"].as_i64().unwrap();
-    assert_ne!(copy_id, file_id);
+    assert!(body["data"]["folder_id"].is_null());
 
-    // 再复制一次（应生成 "test (2).txt"）
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/files/{file_id}/copy"))
+    // 源目录仍只保留原文件
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{source_folder_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({ "folder_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
+    assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["name"], "test (2).txt");
+    let source_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(source_files.len(), 1);
+    assert_eq!(source_files[0]["id"].as_i64().unwrap(), file_id);
+
+    // 根目录应出现两个副本
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let root_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(root_files.len(), 2);
 
     // 复制到新文件夹（应保留原名）
     let req = test::TestRequest::post()
@@ -251,7 +341,8 @@ async fn test_file_copy() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["name"], "test.txt"); // 无冲突保留原名
+    assert_eq!(body["data"]["name"], "test.txt");
+    assert_eq!(body["data"]["folder_id"].as_i64().unwrap(), dest_folder);
 }
 
 #[actix_web::test]

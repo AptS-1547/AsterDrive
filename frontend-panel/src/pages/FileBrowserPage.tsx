@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonFileGrid } from "@/components/common/SkeletonFileGrid";
 import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
 import { SortMenu } from "@/components/common/SortMenu";
+import { ToolbarBar } from "@/components/common/ToolbarBar";
 import { ViewToggle } from "@/components/common/ViewToggle";
 import { FileGrid } from "@/components/files/FileGrid";
 import { FileTable } from "@/components/files/FileTable";
@@ -38,14 +39,25 @@ import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import type { InternalDragData } from "@/lib/dragDrop";
+import { DRAG_SOURCE_MIME } from "@/lib/constants";
+import {
+	getInvalidInternalDropReason,
+	hasInternalDragData,
+	type InternalDragData,
+	readInternalDragData,
+} from "@/lib/dragDrop";
 import { formatBatchToast } from "@/lib/formatBatchToast";
+import { cn } from "@/lib/utils";
 import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
-import { api } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type {
+	FileInfo,
+	FileListItem,
+	FolderInfo,
+	FolderListItem,
+} from "@/types/api";
 
 const BatchTargetFolderDialog = lazy(async () => {
 	const module = await import("@/components/files/BatchTargetFolderDialog");
@@ -149,7 +161,9 @@ export default function FileBrowserPage() {
 	const [fadingFolderIds, setFadingFolderIds] = useState<Set<number>>(
 		new Set(),
 	);
-	const [previewFile, setPreviewFile] = useState<FileInfo | null>(null);
+	const [previewFile, setPreviewFile] = useState<
+		FileInfo | FileListItem | null
+	>(null);
 	const [shareTarget, setShareTarget] = useState<{
 		fileId?: number;
 		folderId?: number;
@@ -169,14 +183,18 @@ export default function FileBrowserPage() {
 		mimeType: string;
 		size: number;
 	} | null>(null);
+	const [dragOverBreadcrumbIndex, setDragOverBreadcrumbIndex] = useState<
+		number | null
+	>(null);
+	const [contentDragOver, setContentDragOver] = useState(false);
 	const [renameTarget, setRenameTarget] = useState<{
 		type: "file" | "folder";
 		id: number;
 		name: string;
 	} | null>(null);
 	const [infoTarget, setInfoTarget] = useState<{
-		file?: FileInfo;
-		folder?: FolderInfo;
+		file?: FileInfo | FileListItem;
+		folder?: FolderInfo | FolderListItem;
 	} | null>(null);
 
 	useEffect(() => {
@@ -197,24 +215,12 @@ export default function FileBrowserPage() {
 			document.removeEventListener("rename-request", onRenameRequest);
 	}, []);
 
-	const handleDownload = useCallback(
-		async (fileId: number, fileName: string) => {
-			try {
-				const res = await api.client.get(fileService.downloadPath(fileId), {
-					responseType: "blob",
-				});
-				const objectUrl = URL.createObjectURL(res.data);
-				const a = document.createElement("a");
-				a.href = objectUrl;
-				a.download = fileName;
-				a.click();
-				URL.revokeObjectURL(objectUrl);
-			} catch (err) {
-				handleApiError(err);
-			}
-		},
-		[],
-	);
+	const handleDownload = useCallback((fileId: number, _fileName: string) => {
+		const a = document.createElement("a");
+		a.href = fileService.downloadUrl(fileId);
+		a.download = "";
+		a.click();
+	}, []);
 
 	const handleCopy = useCallback((type: "file" | "folder", id: number) => {
 		setCopyTarget({ type, id });
@@ -285,6 +291,11 @@ export default function FileBrowserPage() {
 				setFadingFileIds(new Set(fileIds));
 				setFadingFolderIds(new Set(folderIds));
 				const result = await moveToFolder(fileIds, folderIds, targetFolderId);
+				document.dispatchEvent(
+					new CustomEvent("folder-tree-move", {
+						detail: { folderIds, targetFolderId },
+					}),
+				);
 				// Wait for fade-out animation to finish, then clear
 				await new Promise((r) => setTimeout(r, 300));
 				setFadingFileIds(new Set());
@@ -321,6 +332,97 @@ export default function FileBrowserPage() {
 		[handleMoveToFolder, moveTarget],
 	);
 
+	const handleBreadcrumbDragOver = useCallback(
+		(e: React.DragEvent, index: number) => {
+			if (!hasInternalDragData(e.dataTransfer)) return;
+			e.preventDefault();
+			e.dataTransfer.dropEffect = "move";
+			setDragOverBreadcrumbIndex(index);
+		},
+		[],
+	);
+
+	const handleBreadcrumbDragLeave = useCallback((e: React.DragEvent) => {
+		const nextTarget = e.relatedTarget;
+		if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+			return;
+		}
+		setDragOverBreadcrumbIndex(null);
+	}, []);
+
+	const handleBreadcrumbDrop = useCallback(
+		async (
+			e: React.DragEvent,
+			index: number,
+			targetFolderId: number | null,
+		) => {
+			setDragOverBreadcrumbIndex(null);
+			e.preventDefault();
+			const data = readInternalDragData(e.dataTransfer);
+			if (!data) return;
+
+			const targetPathIds = breadcrumb
+				.slice(0, index + 1)
+				.map((item) => item.id)
+				.filter((id): id is number => id !== null);
+			if (
+				getInvalidInternalDropReason(data, targetFolderId, targetPathIds) !==
+				null
+			) {
+				return;
+			}
+
+			await handleMoveToFolder(data.fileIds, data.folderIds, targetFolderId);
+		},
+		[breadcrumb, handleMoveToFolder],
+	);
+
+	const handleContentDragOver = useCallback(
+		(e: React.DragEvent<HTMLDivElement>) => {
+			const isTreeDrag = e.dataTransfer.types.includes(DRAG_SOURCE_MIME);
+			if (!hasInternalDragData(e.dataTransfer) || isSearching || !isTreeDrag) {
+				setContentDragOver(false);
+				return;
+			}
+			e.preventDefault();
+			e.dataTransfer.dropEffect = "move";
+			setContentDragOver(true);
+		},
+		[isSearching],
+	);
+
+	const handleContentDragLeave = useCallback(
+		(e: React.DragEvent<HTMLDivElement>) => {
+			const nextTarget = e.relatedTarget;
+			if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+				return;
+			}
+			setContentDragOver(false);
+		},
+		[],
+	);
+
+	const handleContentDrop = useCallback(
+		async (e: React.DragEvent<HTMLDivElement>) => {
+			setContentDragOver(false);
+			if (isSearching || !e.dataTransfer.types.includes(DRAG_SOURCE_MIME))
+				return;
+			e.preventDefault();
+			const data = readInternalDragData(e.dataTransfer);
+			if (!data) return;
+			const currentPathIds = breadcrumb
+				.map((item) => item.id)
+				.filter((id): id is number => id !== null);
+			if (
+				getInvalidInternalDropReason(data, folderId, currentPathIds) !== null
+			) {
+				return;
+			}
+			await handleMoveToFolder(data.fileIds, data.folderIds, folderId);
+		},
+		[breadcrumb, folderId, handleMoveToFolder, isSearching],
+	);
+
 	const handleTrashDrop = useCallback(
 		async ({ fileIds, folderIds }: InternalDragData) => {
 			if (fileIds.length === 0 && folderIds.length === 0) return;
@@ -355,12 +457,17 @@ export default function FileBrowserPage() {
 		[clearSelection, refresh, search, searchQuery, t],
 	);
 
+	const breadcrumbPathIds = breadcrumb
+		.map((item) => item.id)
+		.filter((id): id is number => id !== null);
+
 	const sharedProps = {
 		folders: displayFolders,
 		files: displayFiles,
+		breadcrumbPathIds,
 		onFolderOpen: (id: number, name: string) =>
 			navigate(`/folder/${id}?name=${encodeURIComponent(name)}`),
-		onFileClick: (file: FileInfo) => setPreviewFile(file),
+		onFileClick: (file: FileListItem) => setPreviewFile(file),
 		onShare: setShareTarget,
 		onDownload: handleDownload,
 		onCopy: handleCopy,
@@ -405,9 +512,9 @@ export default function FileBrowserPage() {
 	const pageCore = (
 		<>
 			{/* Breadcrumb / local controls */}
-			<div className="border-b border-border/70 bg-background px-4 py-2.5">
-				<div className="flex flex-wrap items-center justify-between gap-3">
-					<div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3">
+			<ToolbarBar
+				left={
+					<>
 						<Icon
 							name="FolderOpen"
 							className="h-4 w-4 shrink-0 text-muted-foreground/70"
@@ -428,7 +535,18 @@ export default function FileBrowserPage() {
 												<BreadcrumbItem>
 													{i < breadcrumb.length - 1 ? (
 														<BreadcrumbLink
-															className="cursor-pointer text-muted-foreground"
+															className={[
+																"cursor-pointer rounded-md px-1.5 py-0.5 text-muted-foreground",
+																dragOverBreadcrumbIndex === i &&
+																	"ring-2 ring-primary bg-accent/30 text-foreground",
+															]
+																.filter(Boolean)
+																.join(" ")}
+															onDragOver={(e) => handleBreadcrumbDragOver(e, i)}
+															onDragLeave={handleBreadcrumbDragLeave}
+															onDrop={(e) =>
+																handleBreadcrumbDrop(e, i, item.id)
+															}
 															onClick={() =>
 																navigate(
 																	item.id === null
@@ -460,8 +578,10 @@ export default function FileBrowserPage() {
 						>
 							<Icon name="ArrowsClockwise" className="h-4 w-4" />
 						</button>
-					</div>
-					<div className="flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-2">
+					</>
+				}
+				right={
+					<>
 						<SortMenu
 							sortBy={sortBy}
 							sortOrder={sortOrder}
@@ -469,74 +589,104 @@ export default function FileBrowserPage() {
 							onSortOrder={setSortOrder}
 						/>
 						<ViewToggle value={viewMode} onChange={setViewMode} />
-					</div>
-				</div>
-			</div>
-			<ContextMenu>
-				<ContextMenuTrigger className="flex min-h-0 flex-1 flex-col">
-					<ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
-						{loading ? (
-							viewMode === "grid" ? (
-								<SkeletonFileGrid />
-							) : (
-								<SkeletonFileTable />
-							)
-						) : error ? (
-							<EmptyState
-								icon={<Icon name="Warning" className="h-12 w-12" />}
-								title={t("common:error")}
-								description={error}
-							/>
-						) : isEmpty ? (
-							<EmptyState
-								icon={<Icon name="FolderOpen" className="h-12 w-12" />}
-								title={t("folder_empty")}
-								description={t("folder_empty_desc")}
-							/>
-						) : viewMode === "grid" ? (
-							<FileGrid {...sharedProps} />
-						) : (
-							<FileTable {...sharedProps} />
-						)}
-						{!isSearching && hasMoreFiles() && (
-							<div ref={sentinelRef} className="flex justify-center py-4">
-								{loadingMore && (
-									<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-								)}
+					</>
+				}
+			/>
+			<div
+				className={cn(
+					"relative min-h-0 flex-1 transition-colors",
+					contentDragOver && "bg-accent/10",
+				)}
+				onDragOver={handleContentDragOver}
+				onDragLeave={handleContentDragLeave}
+				onDrop={handleContentDrop}
+			>
+				{contentDragOver && (
+					<div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/35 backdrop-blur-[2px]">
+						<div className="flex items-center gap-3 rounded-2xl bg-background/80 px-4 py-3 shadow-lg shadow-black/5 ring-1 ring-border/50 backdrop-blur-md">
+							<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+								<Icon name="FolderOpen" className="h-5 w-5" />
 							</div>
-						)}
-					</ScrollArea>
-				</ContextMenuTrigger>
-				<ContextMenuContent>
-					<ContextMenuItem
-						disabled={!uploadReady}
-						onClick={() => uploadAreaRef.current?.triggerFileUpload()}
-					>
-						<Icon name="Upload" className="h-4 w-4 mr-2" />
-						{t("upload_file")}
-					</ContextMenuItem>
-					<ContextMenuItem
-						disabled={!uploadReady}
-						onClick={() => uploadAreaRef.current?.triggerFolderUpload()}
-					>
-						<Icon name="FolderOpen" className="h-4 w-4 mr-2" />
-						{t("upload_folder")}
-					</ContextMenuItem>
-					<ContextMenuItem onClick={() => setCreateFolderOpen(true)}>
-						<Icon name="FolderPlus" className="h-4 w-4 mr-2" />
-						{t("new_folder")}
-					</ContextMenuItem>
-					<ContextMenuItem onClick={() => setCreateFileOpen(true)}>
-						<Icon name="FilePlus" className="h-4 w-4 mr-2" />
-						{t("new_file")}
-					</ContextMenuItem>
-				</ContextMenuContent>
-			</ContextMenu>
+							<div className="space-y-0.5">
+								<div className="text-sm font-semibold text-foreground">
+									{t("move_to_current_folder")}
+								</div>
+								<div className="max-w-56 truncate text-xs text-muted-foreground">
+									{breadcrumb[breadcrumb.length - 1]?.name ?? t("root")}
+								</div>
+							</div>
+						</div>
+					</div>
+				)}
+				<ContextMenu>
+					<ContextMenuTrigger className="flex min-h-0 flex-1 flex-col">
+						<ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
+							{loading ? (
+								viewMode === "grid" ? (
+									<SkeletonFileGrid />
+								) : (
+									<SkeletonFileTable />
+								)
+							) : error ? (
+								<EmptyState
+									icon={<Icon name="Warning" className="h-12 w-12" />}
+									title={t("common:error")}
+									description={error}
+								/>
+							) : isEmpty ? (
+								<EmptyState
+									icon={<Icon name="FolderOpen" className="h-12 w-12" />}
+									title={t("folder_empty")}
+									description={t("folder_empty_desc")}
+								/>
+							) : viewMode === "grid" ? (
+								<FileGrid {...sharedProps} />
+							) : (
+								<FileTable {...sharedProps} />
+							)}
+							{!isSearching && hasMoreFiles() && (
+								<div ref={sentinelRef} className="flex justify-center py-4">
+									{loadingMore && (
+										<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+									)}
+								</div>
+							)}
+						</ScrollArea>
+					</ContextMenuTrigger>
+					<ContextMenuContent>
+						<ContextMenuItem
+							disabled={!uploadReady}
+							onClick={() => uploadAreaRef.current?.triggerFileUpload()}
+						>
+							<Icon name="Upload" className="mr-2 h-4 w-4" />
+							{t("upload_file")}
+						</ContextMenuItem>
+						<ContextMenuItem
+							disabled={!uploadReady}
+							onClick={() => uploadAreaRef.current?.triggerFolderUpload()}
+						>
+							<Icon name="FolderOpen" className="mr-2 h-4 w-4" />
+							{t("upload_folder")}
+						</ContextMenuItem>
+						<ContextMenuItem onClick={() => setCreateFolderOpen(true)}>
+							<Icon name="FolderPlus" className="mr-2 h-4 w-4" />
+							{t("new_folder")}
+						</ContextMenuItem>
+						<ContextMenuItem onClick={() => setCreateFileOpen(true)}>
+							<Icon name="FilePlus" className="mr-2 h-4 w-4" />
+							{t("new_file")}
+						</ContextMenuItem>
+					</ContextMenuContent>
+				</ContextMenu>
+			</div>
 		</>
 	);
 
 	return (
-		<AppLayout onTrashDrop={handleTrashDrop}>
+		<AppLayout
+			onTrashDrop={handleTrashDrop}
+			onMoveToFolder={handleMoveToFolder}
+		>
 			<Suspense fallback={pageCore}>
 				<UploadArea ref={handleUploadAreaReady}>{pageCore}</UploadArea>
 			</Suspense>

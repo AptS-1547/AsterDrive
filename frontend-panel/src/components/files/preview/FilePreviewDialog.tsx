@@ -12,7 +12,7 @@ import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatBytes } from "@/lib/format";
 import { fileService } from "@/services/fileService";
-import type { FileInfo } from "@/types/api";
+import type { FileInfo, FileListItem } from "@/types/api";
 import { BlobMediaPreview } from "./BlobMediaPreview";
 import { detectFilePreviewProfile } from "./file-capabilities";
 import {
@@ -55,7 +55,7 @@ const TextCodePreview = lazy(async () => {
 });
 
 interface FilePreviewDialogProps {
-	file: FileInfo;
+	file: FileInfo | FileListItem;
 	onClose: () => void;
 	onFileUpdated?: () => void;
 	downloadPath?: string;

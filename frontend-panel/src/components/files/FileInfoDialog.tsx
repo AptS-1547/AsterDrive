@@ -9,13 +9,18 @@ import {
 } from "@/components/ui/dialog";
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
 import { fileService } from "@/services/fileService";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type {
+	FileInfo,
+	FileListItem,
+	FolderInfo,
+	FolderListItem,
+} from "@/types/api";
 
 interface FileInfoDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	file?: FileInfo;
-	folder?: FolderInfo;
+	file?: FileInfo | FileListItem;
+	folder?: FolderInfo | FolderListItem;
 }
 
 interface InfoRow {

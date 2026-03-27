@@ -1059,11 +1059,13 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			const modeLabel =
 				task.mode === "chunked"
 					? "Chunked"
-					: task.mode === "presigned" || task.mode === "presigned_multipart"
+					: task.mode === "presigned"
 						? "S3"
-						: task.mode === "direct"
-							? "Direct"
-							: "Pending";
+						: task.mode === "presigned_multipart"
+							? "S3 Chunked"
+							: task.mode === "direct"
+								? "Direct"
+								: "Pending";
 
 			const statusLabel = isPendingFile
 				? t("files:upload_pending_file")

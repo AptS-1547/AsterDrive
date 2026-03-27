@@ -400,3 +400,58 @@ async fn test_admin_force_unlock() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 }
+
+#[actix_web::test]
+async fn test_admin_batch_update_user() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 创建普通用户
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "batchuser",
+            "email": "batchuser@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+    assert_eq!(body["data"]["role"], "user");
+    assert_eq!(body["data"]["status"], "active");
+    assert_eq!(body["data"]["storage_quota"], 0);
+
+    // 单次 PATCH 同时更新 role + status + storage_quota
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "role": "admin",
+            "status": "disabled",
+            "storage_quota": 1073741824
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let user = &body["data"];
+    assert_eq!(user["role"], "admin");
+    assert_eq!(user["status"], "disabled");
+    assert_eq!(user["storage_quota"], 1073741824);
+
+    // 验证 GET 也返回更新后的值
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["role"], "admin");
+    assert_eq!(body["data"]["status"], "disabled");
+    assert_eq!(body["data"]["storage_quota"], 1073741824);
+}

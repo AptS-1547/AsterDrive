@@ -2,13 +2,14 @@ import { useTranslation } from "react-i18next";
 import { FileCard } from "@/components/files/FileCard";
 import { FileContextMenu } from "@/components/files/FileContextMenu";
 import { useFileStore } from "@/stores/fileStore";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface FileGridProps {
-	folders: FolderInfo[];
-	files: FileInfo[];
+	folders: FolderListItem[];
+	files: FileListItem[];
+	breadcrumbPathIds?: number[];
 	onFolderOpen: (id: number, name: string) => void;
-	onFileClick: (file: FileInfo) => void;
+	onFileClick: (file: FileListItem) => void;
 	onShare: (target: {
 		fileId?: number;
 		folderId?: number;
@@ -37,6 +38,7 @@ const GRID_CLASSES =
 export function FileGrid({
 	folders,
 	files,
+	breadcrumbPathIds = [],
 	onFolderOpen,
 	onFileClick,
 	onShare,
@@ -74,6 +76,11 @@ export function FileGrid({
 			? { fileIds: [], folderIds: [itemId] }
 			: { fileIds: [itemId], folderIds: [] };
 	};
+
+	const getTargetPathIds = (folderId: number) => [
+		...breadcrumbPathIds,
+		folderId,
+	];
 
 	return (
 		<div className="p-4 space-y-4">
@@ -114,6 +121,7 @@ export function FileGrid({
 									onClick={() => onFolderOpen(folder.id, folder.name)}
 									dragData={getDragData(folder.id, true)}
 									onDrop={onMoveToFolder}
+									targetPathIds={getTargetPathIds(folder.id)}
 									fading={fadingFolderIds?.has(folder.id)}
 									isLocked={folder.is_locked ?? false}
 								/>

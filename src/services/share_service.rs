@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 use sea_orm::{DatabaseConnection, Set};
 use serde::Serialize;
@@ -9,7 +11,39 @@ use crate::entities::share;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{file_service, folder_service};
+use crate::types::EntityType;
 use crate::utils::{hash, id};
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShareStatus {
+    Active,
+    Expired,
+    Exhausted,
+    Deleted,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct MyShareInfo {
+    pub id: i64,
+    pub token: String,
+    pub resource_id: i64,
+    pub resource_name: String,
+    pub resource_type: EntityType,
+    pub resource_deleted: bool,
+    pub has_password: bool,
+    pub status: ShareStatus,
+    #[schema(value_type = Option<String>)]
+    pub expires_at: Option<chrono::DateTime<Utc>>,
+    pub max_downloads: i64,
+    pub download_count: i64,
+    pub view_count: i64,
+    pub remaining_downloads: Option<i64>,
+    #[schema(value_type = String)]
+    pub created_at: chrono::DateTime<Utc>,
+    #[schema(value_type = String)]
+    pub updated_at: chrono::DateTime<Utc>,
+}
 
 /// 公开返回给前端的分享信息（不含密码哈希和内部 ID）
 #[derive(Serialize, ToSchema)]
@@ -199,8 +233,9 @@ pub async fn list_shared_folder(
     .await
 }
 
-pub async fn list_my_shares(state: &AppState, user_id: i64) -> Result<Vec<share::Model>> {
-    share_repo::find_by_user(&state.db, user_id).await
+pub async fn list_my_shares(state: &AppState, user_id: i64) -> Result<Vec<MyShareInfo>> {
+    let shares = share_repo::find_by_user(&state.db, user_id).await?;
+    build_my_share_infos(&state.db, shares).await
 }
 
 pub async fn list_my_shares_paginated(
@@ -208,9 +243,12 @@ pub async fn list_my_shares_paginated(
     user_id: i64,
     limit: u64,
     offset: u64,
-) -> Result<OffsetPage<share::Model>> {
+) -> Result<OffsetPage<MyShareInfo>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
-        share_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await
+        let (shares, total) =
+            share_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await?;
+        let items = build_my_share_infos(&state.db, shares).await?;
+        Ok((items, total))
     })
     .await
 }
@@ -239,6 +277,52 @@ pub async fn list_paginated(
 pub async fn admin_delete_share(state: &AppState, share_id: i64) -> Result<()> {
     share_repo::find_by_id(&state.db, share_id).await?; // 校验存在
     share_repo::delete(&state.db, share_id).await
+}
+
+async fn build_my_share_infos(
+    db: &DatabaseConnection,
+    shares: Vec<share::Model>,
+) -> Result<Vec<MyShareInfo>> {
+    let file_ids: Vec<i64> = shares.iter().filter_map(|share| share.file_id).collect();
+    let folder_ids: Vec<i64> = shares.iter().filter_map(|share| share.folder_id).collect();
+
+    let files = file_repo::find_by_ids(db, &file_ids).await?;
+    let folders = folder_repo::find_by_ids(db, &folder_ids).await?;
+
+    let file_map: HashMap<i64, crate::entities::file::Model> =
+        files.into_iter().map(|file| (file.id, file)).collect();
+    let folder_map: HashMap<i64, crate::entities::folder::Model> = folders
+        .into_iter()
+        .map(|folder| (folder.id, folder))
+        .collect();
+
+    let mut items = Vec::with_capacity(shares.len());
+    for share in shares {
+        let (resource_id, resource_name, resource_type, resource_deleted) =
+            resolve_share_resource(&share, &file_map, &folder_map);
+        let status = resolve_share_status(&share, resource_deleted);
+        let remaining_downloads = remaining_downloads(share.max_downloads, share.download_count);
+
+        items.push(MyShareInfo {
+            id: share.id,
+            token: share.token,
+            resource_id,
+            resource_name,
+            resource_type,
+            resource_deleted,
+            has_password: share.password.is_some(),
+            status,
+            expires_at: share.expires_at,
+            max_downloads: share.max_downloads,
+            download_count: share.download_count,
+            view_count: share.view_count,
+            remaining_downloads,
+            created_at: share.created_at,
+            updated_at: share.updated_at,
+        });
+    }
+
+    Ok(items)
 }
 
 /// 获取公开分享文件的缩略图（公开访问，无需认证）
@@ -372,6 +456,63 @@ fn validate_share(share: &share::Model) -> Result<()> {
         return Err(AsterError::share_download_limit("download limit reached"));
     }
     Ok(())
+}
+
+fn resolve_share_resource(
+    share: &share::Model,
+    file_map: &HashMap<i64, crate::entities::file::Model>,
+    folder_map: &HashMap<i64, crate::entities::folder::Model>,
+) -> (i64, String, EntityType, bool) {
+    if let Some(file_id) = share.file_id {
+        if let Some(file) = file_map.get(&file_id) {
+            return (
+                file_id,
+                file.name.clone(),
+                EntityType::File,
+                file.deleted_at.is_some(),
+            );
+        }
+        return (file_id, "Unknown file".to_string(), EntityType::File, true);
+    }
+
+    if let Some(folder_id) = share.folder_id {
+        if let Some(folder) = folder_map.get(&folder_id) {
+            return (
+                folder_id,
+                folder.name.clone(),
+                EntityType::Folder,
+                folder.deleted_at.is_some(),
+            );
+        }
+        return (
+            folder_id,
+            "Unknown folder".to_string(),
+            EntityType::Folder,
+            true,
+        );
+    }
+
+    (0, "Unknown resource".to_string(), EntityType::File, true)
+}
+
+fn resolve_share_status(share: &share::Model, resource_deleted: bool) -> ShareStatus {
+    if resource_deleted {
+        return ShareStatus::Deleted;
+    }
+    if share
+        .expires_at
+        .is_some_and(|expires_at| expires_at < Utc::now())
+    {
+        return ShareStatus::Expired;
+    }
+    if share.max_downloads > 0 && share.download_count >= share.max_downloads {
+        return ShareStatus::Exhausted;
+    }
+    ShareStatus::Active
+}
+
+fn remaining_downloads(max_downloads: i64, download_count: i64) -> Option<i64> {
+    (max_downloads > 0).then_some((max_downloads - download_count).max(0))
 }
 
 async fn resolve_share_name(

@@ -36,6 +36,11 @@ async fn test_shares_crud() {
     assert_eq!(body["data"]["limit"], 1);
     assert_eq!(body["data"]["offset"], 0);
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["items"][0]["resource_name"], "test.txt");
+    assert_eq!(body["data"]["items"][0]["resource_type"], "file");
+    assert_eq!(body["data"]["items"][0]["status"], "active");
+    assert_eq!(body["data"]["items"][0]["resource_deleted"], false);
+    assert_eq!(body["data"]["items"][0]["remaining_downloads"], Value::Null);
 
     // 公开访问分享信息
     let req = test::TestRequest::get()
@@ -100,6 +105,16 @@ async fn test_share_password() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["has_password"], true);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["items"][0]["has_password"], true);
+    assert_eq!(body["data"]["items"][0].get("password"), None);
 
     // 无密码下载 — 应被拦截（403）
     let req = test::TestRequest::get()
@@ -187,6 +202,16 @@ async fn test_share_download_limit() {
         "download limit should block, got {}",
         resp.status()
     );
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["items"][0]["status"], "exhausted");
+    assert_eq!(body["data"]["items"][0]["remaining_downloads"], 0);
 }
 
 #[actix_web::test]
@@ -456,6 +481,85 @@ async fn test_share_forged_cookie_rejected() {
         "signed cookie should allow download, got {}",
         resp.status()
     );
+}
+
+#[actix_web::test]
+async fn test_my_shares_list_deleted_and_expired_status() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let active_file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": active_file_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Shared Deleted Folder" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let deleted_folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "folder_id": deleted_folder_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/folders/{deleted_folder_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let expired_file_id = upload_test_file!(app, token);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_id": expired_file_id,
+            "expires_at": "2000-01-01T00:00:00Z"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let expired_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/shares?limit=10&offset=0")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let items = body["data"]["items"].as_array().unwrap();
+
+    let deleted_item = items
+        .iter()
+        .find(|item| item["resource_name"] == "Shared Deleted Folder")
+        .expect("deleted folder item");
+    assert_eq!(deleted_item["resource_type"], "folder");
+    assert_eq!(deleted_item["resource_deleted"], true);
+    assert_eq!(deleted_item["status"], "deleted");
+
+    let expired_item = items.iter().find(|item| item["token"] == expired_token);
+    let expired_item = expired_item.expect("expired item should be present");
+    assert_eq!(expired_item["resource_type"], "file");
+    assert_eq!(expired_item["status"], "expired");
+    assert_eq!(expired_item["resource_deleted"], false);
 }
 
 #[actix_web::test]

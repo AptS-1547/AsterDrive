@@ -15,6 +15,97 @@ fn upload_named_file(name: &str, content: &str, mime: &str, boundary: &str) -> S
 }
 
 #[actix_web::test]
+async fn test_search_includes_share_and_lock_status() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let folder_req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Status Docs", "parent_id": null }))
+        .to_request();
+    let folder_resp = test::call_service(&app, folder_req).await;
+    assert_eq!(folder_resp.status(), 201);
+    let folder_body: Value = test::read_body_json(folder_resp).await;
+    let folder_id = folder_body["data"]["id"].as_i64().unwrap();
+
+    let boundary = "----TestBoundary123";
+    let payload = upload_named_file("status-report.txt", "status", "text/plain", boundary);
+    let upload_req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let upload_resp = test::call_service(&app, upload_req).await;
+    assert_eq!(upload_resp.status(), 201);
+    let upload_body: Value = test::read_body_json(upload_resp).await;
+    let file_id = upload_body["data"]["id"].as_i64().unwrap();
+
+    let lock_file_req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/{file_id}/lock"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "locked": true }))
+        .to_request();
+    assert_eq!(test::call_service(&app, lock_file_req).await.status(), 200);
+
+    let lock_folder_req = test::TestRequest::post()
+        .uri(&format!("/api/v1/folders/{folder_id}/lock"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "locked": true }))
+        .to_request();
+    assert_eq!(
+        test::call_service(&app, lock_folder_req).await.status(),
+        200
+    );
+
+    let share_file_req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": file_id }))
+        .to_request();
+    assert_eq!(test::call_service(&app, share_file_req).await.status(), 201);
+
+    let share_folder_req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "folder_id": folder_id }))
+        .to_request();
+    assert_eq!(
+        test::call_service(&app, share_folder_req).await.status(),
+        201
+    );
+
+    let file_search_req = test::TestRequest::get()
+        .uri("/api/v1/search?q=status-report")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let file_search_resp = test::call_service(&app, file_search_req).await;
+    assert_eq!(file_search_resp.status(), 200);
+    let file_search_body: Value = test::read_body_json(file_search_resp).await;
+    let files = file_search_body["data"]["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0]["is_locked"], true);
+    assert_eq!(files[0]["is_shared"], true);
+
+    let folder_search_req = test::TestRequest::get()
+        .uri("/api/v1/search?type=folder&q=status")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let folder_search_resp = test::call_service(&app, folder_search_req).await;
+    assert_eq!(folder_search_resp.status(), 200);
+    let folder_search_body: Value = test::read_body_json(folder_search_resp).await;
+    let folders = folder_search_body["data"]["folders"].as_array().unwrap();
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0]["is_locked"], true);
+    assert_eq!(folders[0]["is_shared"], true);
+}
+
+#[actix_web::test]
 async fn test_search_by_name() {
     let state = common::setup().await;
     let app = create_test_app!(state);

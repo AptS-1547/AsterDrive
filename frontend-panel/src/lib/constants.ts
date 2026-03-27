@@ -1,5 +1,6 @@
 /** 拖拽操作的自定义 MIME 类型 */
 export const DRAG_MIME = "application/x-asterdrive-move";
+export const DRAG_SOURCE_MIME = "application/x-asterdrive-drag-source";
 
 /** 顶栏高度（Tailwind spacing token） */
 export const USER_TOPBAR_HEIGHT_CLASS = "h-16";

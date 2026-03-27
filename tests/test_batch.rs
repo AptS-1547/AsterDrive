@@ -125,15 +125,25 @@ async fn test_batch_move_files() {
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .set_json(serde_json::json!({ "name": "Source", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let source_id = body["data"]["id"].as_i64().unwrap();
+
     let boundary = "----TestBoundary123";
 
-    // Upload 2 files in root
+    // Upload 2 files in source folder
     let mut file_ids = Vec::new();
     for name in ["move1.txt", "move2.txt"] {
         let payload =
             upload_named_file(name, &format!("content of {name}"), "text/plain", boundary);
         let req = test::TestRequest::post()
-            .uri("/api/v1/files/upload")
+            .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
             .insert_header(("Cookie", format!("aster_access={}", token)))
             .insert_header((
                 "Content-Type",
@@ -184,9 +194,43 @@ async fn test_batch_move_files() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 2);
 
-    // Root should have no files (only the folder remains)
+    // Source folder should have no files now
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{source_id}"))
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
+
+    // Batch move both files back to root (null = root)
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/move")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .set_json(serde_json::json!({
+            "file_ids": file_ids,
+            "folder_ids": [],
+            "target_folder_id": null
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["succeeded"], 2);
+
+    // Root should have the files again
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 2);
+
+    // Target folder should be empty again
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{target_id}"))
         .insert_header(("Cookie", format!("aster_access={}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -200,15 +244,25 @@ async fn test_batch_copy_files() {
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .set_json(serde_json::json!({ "name": "Source", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let source_id = body["data"]["id"].as_i64().unwrap();
+
     let boundary = "----TestBoundary123";
 
-    // Upload 2 files in root
+    // Upload 2 files in source folder
     let mut file_ids = Vec::new();
     for name in ["copy1.txt", "copy2.txt"] {
         let payload =
             upload_named_file(name, &format!("content of {name}"), "text/plain", boundary);
         let req = test::TestRequest::post()
-            .uri("/api/v1/files/upload")
+            .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
             .insert_header(("Cookie", format!("aster_access={}", token)))
             .insert_header((
                 "Content-Type",
@@ -222,25 +276,14 @@ async fn test_batch_copy_files() {
         file_ids.push(body["data"]["id"].as_i64().unwrap());
     }
 
-    // Create destination folder
-    let req = test::TestRequest::post()
-        .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
-        .set_json(serde_json::json!({ "name": "CopyDest", "parent_id": null }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let dest_id = body["data"]["id"].as_i64().unwrap();
-
-    // Batch copy both files to destination folder
+    // Batch copy both files to root (null = root)
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/copy")
         .insert_header(("Cookie", format!("aster_access={}", token)))
         .set_json(serde_json::json!({
             "file_ids": file_ids,
             "folder_ids": [],
-            "target_folder_id": dest_id
+            "target_folder_id": null
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -249,19 +292,20 @@ async fn test_batch_copy_files() {
     assert_eq!(body["code"], 0);
     assert_eq!(body["data"]["succeeded"], 2);
 
-    // Verify copies exist in destination folder
+    // Verify copies exist in root
     let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/folders/{dest_id}"))
+        .uri("/api/v1/folders")
         .insert_header(("Cookie", format!("aster_access={}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 2);
+    let root_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(root_files.len(), 2);
 
-    // Originals should still be in root
+    // Originals should still be in source folder
     let req = test::TestRequest::get()
-        .uri("/api/v1/folders")
+        .uri(&format!("/api/v1/folders/{source_id}"))
         .insert_header(("Cookie", format!("aster_access={}", token)))
         .to_request();
     let resp = test::call_service(&app, req).await;

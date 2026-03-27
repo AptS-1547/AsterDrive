@@ -628,6 +628,7 @@ pub async fn set_lock(
 
 #[derive(Deserialize, ToSchema)]
 pub struct CopyFileReq {
+    /// 目标文件夹 ID（null = 根目录）
     pub folder_id: Option<i64>,
 }
 

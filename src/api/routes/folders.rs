@@ -301,6 +301,7 @@ pub async fn set_lock(
 
 #[derive(Deserialize, ToSchema)]
 pub struct CopyFolderReq {
+    /// 目标父文件夹 ID（null = 根目录）
     pub parent_id: Option<i64>,
 }
 

@@ -1,9 +1,12 @@
+use chrono::Utc;
+use std::collections::HashSet;
+
 use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::share::{self, Entity as Share};
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
-    sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<share::Model> {
@@ -88,6 +91,66 @@ pub async fn find_active_by_resource<C: ConnectionTrait>(
         q = q.filter(share::Column::FolderId.eq(fid));
     }
     q.one(db).await.map_err(AsterError::from)
+}
+
+fn active_share_condition() -> Condition {
+    Condition::all()
+        .add(
+            Condition::any()
+                .add(share::Column::ExpiresAt.is_null())
+                .add(share::Column::ExpiresAt.gte(Utc::now())),
+        )
+        .add(Expr::cust(
+            "max_downloads = 0 OR download_count < max_downloads",
+        ))
+}
+
+pub async fn find_active_file_ids<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    file_ids: &[i64],
+) -> Result<HashSet<i64>> {
+    if file_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let rows = Share::find()
+        .select_only()
+        .column(share::Column::FileId)
+        .filter(share::Column::UserId.eq(user_id))
+        .filter(share::Column::FileId.is_in(file_ids.iter().copied()))
+        .filter(share::Column::FileId.is_not_null())
+        .filter(active_share_condition())
+        .into_tuple::<Option<i64>>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    Ok(rows.into_iter().flatten().collect())
+}
+
+pub async fn find_active_folder_ids<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    folder_ids: &[i64],
+) -> Result<HashSet<i64>> {
+    if folder_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let rows = Share::find()
+        .select_only()
+        .column(share::Column::FolderId)
+        .filter(share::Column::UserId.eq(user_id))
+        .filter(share::Column::FolderId.is_in(folder_ids.iter().copied()))
+        .filter(share::Column::FolderId.is_not_null())
+        .filter(active_share_condition())
+        .into_tuple::<Option<i64>>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    Ok(rows.into_iter().flatten().collect())
 }
 
 pub async fn create<C: ConnectionTrait>(db: &C, model: share::ActiveModel) -> Result<share::Model> {

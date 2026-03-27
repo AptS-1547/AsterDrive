@@ -158,7 +158,7 @@ async fn test_folder_copy() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
-    // 复制文件夹（同级 → "Source (1)"）
+    // 复制文件夹到根目录（null = root，与根目录同名冲突时应递增）
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/folders/{src_id}/copy"))
         .insert_header(("Cookie", format!("aster_access={token}")))
@@ -168,6 +168,7 @@ async fn test_folder_copy() {
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["name"], "Source (1)");
+    assert!(body["data"]["parent_id"].is_null());
     let copy_id = body["data"]["id"].as_i64().unwrap();
 
     // 副本文件夹里应该有文件
@@ -188,11 +189,20 @@ async fn test_nested_folder_copy() {
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
-    // 创建 A/B 两层嵌套，每层各一个文件
+    // 创建 Source/A/B 三层嵌套，每层各一个文件
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
         .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({ "name": "A" }))
+        .set_json(serde_json::json!({ "name": "Source" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let source_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "A", "parent_id": source_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -210,15 +220,17 @@ async fn test_nested_folder_copy() {
     upload_test_file_to_folder!(app, token, a_id);
     upload_test_file_to_folder!(app, token, b_id);
 
-    // 复制顶层文件夹 A → 根目录（A-copy）
+    // 复制顶层文件夹 A → 根目录（null = root，应保留原名）
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/folders/{a_id}/copy"))
         .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({ "name": "A-copy" }))
+        .set_json(serde_json::json!({ "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "A");
+    assert!(body["data"]["parent_id"].is_null());
     let a_copy_id = body["data"]["id"].as_i64().unwrap();
 
     // A-copy 里应有 1 个文件 + 1 个子文件夹
@@ -231,7 +243,7 @@ async fn test_nested_folder_copy() {
     assert_eq!(
         body["data"]["files"].as_array().unwrap().len(),
         1,
-        "A-copy should have 1 file"
+        "A copy in root should have 1 file"
     );
     assert_eq!(
         body["data"]["folders"].as_array().unwrap().len(),

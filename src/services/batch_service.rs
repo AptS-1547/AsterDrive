@@ -95,7 +95,7 @@ pub async fn batch_move(
     Ok(result)
 }
 
-/// 批量复制（target_folder_id = None 表示复制到与源文件相同的位置）
+/// 批量复制（target_folder_id = None 表示复制到根目录）
 ///
 /// 使用 `copy_file` / `copy_folder` 高层函数，自动处理：
 /// - 权限检查

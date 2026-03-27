@@ -1,8 +1,8 @@
 import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog";
-import type { FileInfo } from "@/types/api";
+import type { FileInfo, FileListItem } from "@/types/api";
 
 interface FilePreviewProps {
-	file: FileInfo;
+	file: FileInfo | FileListItem;
 	onClose: () => void;
 	onFileUpdated?: () => void;
 	downloadPath?: string;
