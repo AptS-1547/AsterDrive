@@ -4,6 +4,7 @@ import { batchService } from "@/services/batchService";
 import type { FolderListParams } from "@/services/fileService";
 import { fileService } from "@/services/fileService";
 import { searchService } from "@/services/searchService";
+import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { useAuthStore } from "@/stores/authStore";
 import type {
 	BatchResult,
@@ -85,6 +86,7 @@ interface FileState {
 	setViewMode: (mode: ViewMode) => void;
 	setSortBy: (sortBy: SortBy) => void;
 	setSortOrder: (sortOrder: SortOrder) => void;
+	_applyFromServer: (prefs: { viewMode: ViewMode; sortBy: SortBy; sortOrder: SortOrder }) => void;
 
 	// Selection actions
 	toggleFileSelection: (id: number) => void;
@@ -287,10 +289,12 @@ export const useFileStore = create<FileState>((set, get) => ({
 	setViewMode: (mode) => {
 		localStorage.setItem(STORAGE_KEYS.viewMode, mode);
 		set({ viewMode: mode });
+		queuePreferenceSync({ view_mode: mode });
 	},
 
 	setSortBy: (sortBy) => {
 		localStorage.setItem(STORAGE_KEYS.sortBy, sortBy);
+		queuePreferenceSync({ sort_by: sortBy });
 		set({
 			sortBy,
 			files: [],
@@ -316,6 +320,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 
 	setSortOrder: (sortOrder) => {
 		localStorage.setItem(STORAGE_KEYS.sortOrder, sortOrder);
+		queuePreferenceSync({ sort_order: sortOrder });
 		set({
 			sortOrder,
 			files: [],
@@ -337,6 +342,13 @@ export const useFileStore = create<FileState>((set, get) => ({
 				nextFileCursor: contents.next_file_cursor ?? null,
 			}),
 		);
+	},
+
+	_applyFromServer: ({ viewMode, sortBy, sortOrder }) => {
+		localStorage.setItem(STORAGE_KEYS.viewMode, viewMode);
+		localStorage.setItem(STORAGE_KEYS.sortBy, sortBy);
+		localStorage.setItem(STORAGE_KEYS.sortOrder, sortOrder);
+		set({ viewMode, sortBy, sortOrder });
 	},
 
 	toggleFileSelection: (id) => {

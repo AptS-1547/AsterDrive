@@ -20,6 +20,7 @@ mod m20260323_000001_add_file_size;
 mod m20260324_000001_s3_multipart_upload;
 mod m20260325_000001_upload_session_file_id;
 mod m20260327_000001_add_share_lookup_indexes;
+mod m20260327_000002_add_user_preferences;
 
 pub struct Migrator;
 
@@ -47,6 +48,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260324_000001_s3_multipart_upload::Migration),
             Box::new(m20260325_000001_upload_session_file_id::Migration),
             Box::new(m20260327_000001_add_share_lookup_indexes::Migration),
+            Box::new(m20260327_000002_add_user_preferences::Migration),
         ]
     }
 }

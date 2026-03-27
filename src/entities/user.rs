@@ -24,6 +24,7 @@ pub struct Model {
     pub created_at: DateTimeUtc,
     #[schema(value_type = String)]
     pub updated_at: DateTimeUtc,
+    pub config: Option<String>, // JSON blob, nullable
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
