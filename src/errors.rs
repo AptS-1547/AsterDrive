@@ -160,6 +160,36 @@ impl From<sea_orm::DbErr> for AsterError {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResponseLogLevel {
+    Skip,
+    Warn,
+    Error,
+}
+
+impl AsterError {
+    fn response_log_level(&self) -> ResponseLogLevel {
+        match self {
+            // 507 在这里表示用户配额耗尽，属于可预期业务限制，不按服务故障记录。
+            Self::StorageQuotaExceeded(_) => ResponseLogLevel::Warn,
+            _ => {
+                let status = self.http_status();
+                if status.is_server_error() {
+                    ResponseLogLevel::Error
+                } else if status.is_client_error()
+                    && status != StatusCode::UNAUTHORIZED
+                    && status != StatusCode::FORBIDDEN
+                    && status != StatusCode::NOT_FOUND
+                {
+                    ResponseLogLevel::Warn
+                } else {
+                    ResponseLogLevel::Skip
+                }
+            }
+        }
+    }
+}
+
 impl actix_web::ResponseError for AsterError {
     fn status_code(&self) -> StatusCode {
         self.http_status()
@@ -169,16 +199,14 @@ impl actix_web::ResponseError for AsterError {
         use crate::api::response::ApiResponse;
         let status = self.http_status();
 
-        // 5xx 服务端错误 → error 级别，含调试信息
-        // 4xx 客户端错误 → 跳过常见的 401/403/404 避免刷屏，其余 warn
-        if status.is_server_error() {
-            tracing::error!(status = %status, error = %self, "server error");
-        } else if status.is_client_error()
-            && status != StatusCode::UNAUTHORIZED
-            && status != StatusCode::FORBIDDEN
-            && status != StatusCode::NOT_FOUND
-        {
-            tracing::warn!(status = %status, error = %self, "client error");
+        match self.response_log_level() {
+            ResponseLogLevel::Error => {
+                tracing::error!(status = %status, error = %self, "server error");
+            }
+            ResponseLogLevel::Warn => {
+                tracing::warn!(status = %status, error = %self, "request error");
+            }
+            ResponseLogLevel::Skip => {}
         }
 
         let error_code: crate::api::error_code::ErrorCode = self.into();
@@ -213,5 +241,36 @@ impl<T, E: std::fmt::Display> MapAsterErr<T> for std::result::Result<T, E> {
 
     fn map_aster_err_ctx(self, ctx: &str, f: impl FnOnce(String) -> AsterError) -> Result<T> {
         self.map_err(|e| f(format!("{ctx}: {e}")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AsterError, ResponseLogLevel};
+    use actix_web::http::StatusCode;
+
+    #[test]
+    fn quota_exceeded_507_logs_as_warn() {
+        let err = AsterError::storage_quota_exceeded("quota 1024, used 1000, need 100");
+        assert_eq!(err.http_status(), StatusCode::INSUFFICIENT_STORAGE);
+        assert_eq!(err.response_log_level(), ResponseLogLevel::Warn);
+    }
+
+    #[test]
+    fn validation_error_logs_as_warn() {
+        let err = AsterError::validation_error("invalid filename");
+        assert_eq!(err.response_log_level(), ResponseLogLevel::Warn);
+    }
+
+    #[test]
+    fn auth_error_is_skipped() {
+        let err = AsterError::auth_token_invalid("invalid token");
+        assert_eq!(err.response_log_level(), ResponseLogLevel::Skip);
+    }
+
+    #[test]
+    fn internal_error_logs_as_error() {
+        let err = AsterError::internal_error("db pool poisoned");
+        assert_eq!(err.response_log_level(), ResponseLogLevel::Error);
     }
 }

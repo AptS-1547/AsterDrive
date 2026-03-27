@@ -234,7 +234,10 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
         )
         .await
         {
-            tracing::warn!(lock_id = lock.id, "failed to unlock during user cleanup: {e}");
+            tracing::warn!(
+                lock_id = lock.id,
+                "failed to unlock during user cleanup: {e}"
+            );
         }
     }
     lock_repo::delete_all_by_owner(db, target_user_id).await?;

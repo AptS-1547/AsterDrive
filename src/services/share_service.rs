@@ -185,10 +185,13 @@ pub async fn download_shared_file(
     let response = file_service::download_raw(state, file_id, if_none_match).await?;
 
     // only count actual downloads, not 304 cache hits
-    if response.status() != actix_web::http::StatusCode::NOT_MODIFIED {
-        if let Err(e) = share_repo::increment_download_count(&state.db, share.id).await {
-            tracing::warn!(share_id = share.id, "failed to increment download count: {e}");
-        }
+    if response.status() != actix_web::http::StatusCode::NOT_MODIFIED
+        && let Err(e) = share_repo::increment_download_count(&state.db, share.id).await
+    {
+        tracing::warn!(
+            share_id = share.id,
+            "failed to increment download count: {e}"
+        );
     }
 
     Ok(response)
@@ -204,10 +207,13 @@ pub async fn download_shared_folder_file(
 
     let response = file_service::download_raw(state, file.id, if_none_match).await?;
 
-    if response.status() != actix_web::http::StatusCode::NOT_MODIFIED {
-        if let Err(e) = share_repo::increment_download_count(&state.db, share.id).await {
-            tracing::warn!(share_id = share.id, "failed to increment download count: {e}");
-        }
+    if response.status() != actix_web::http::StatusCode::NOT_MODIFIED
+        && let Err(e) = share_repo::increment_download_count(&state.db, share.id).await
+    {
+        tracing::warn!(
+            share_id = share.id,
+            "failed to increment download count: {e}"
+        );
     }
 
     Ok(response)
