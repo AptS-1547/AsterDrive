@@ -3,11 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { z } from "zod/v4";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import {
+	getRoleBadgeClass,
+	getStatusBadgeClass,
+} from "@/components/common/UserStatusBadge";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
@@ -54,6 +57,7 @@ import {
 	ADMIN_ICON_BUTTON_CLASS,
 } from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
+import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { adminUserService } from "@/services/adminService";
 import type {
 	CreateUserReq,
@@ -63,32 +67,6 @@ import type {
 } from "@/types/api";
 
 const USER_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
-
-const createUserUsernameSchema = z
-	.string()
-	.min(4, "Username must be 4-16 characters")
-	.max(16, "Username must be 4-16 characters")
-	.regex(/^[a-zA-Z0-9_-]+$/, "Only letters, numbers, _ and -");
-const createUserEmailSchema = z
-	.string()
-	.max(254, "Email is too long")
-	.regex(/^[^@]+@[^@]+\.[^@]+$/, "Invalid email format");
-const createUserPasswordSchema = z
-	.string()
-	.min(6, "Password must be at least 6 characters")
-	.max(128, "Password must be at most 128 characters");
-
-function getRoleBadgeClass(role: UserRole) {
-	return role === "admin"
-		? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
-		: "border-border bg-muted/40 text-muted-foreground";
-}
-
-function getStatusBadgeClass(status: UserStatus) {
-	return status === "active"
-		? "border-green-500/60 bg-green-500/10 text-green-600 dark:text-green-300"
-		: "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300";
-}
 
 function QuotaCell({ user }: { user: UserInfo }) {
 	const { t } = useTranslation("admin");
@@ -256,10 +234,10 @@ export default function AdminUsersPage() {
 	const validateCreateField = (field: keyof CreateUserReq, value: string) => {
 		const schema =
 			field === "username"
-				? createUserUsernameSchema
+				? usernameSchema
 				: field === "email"
-					? createUserEmailSchema
-					: createUserPasswordSchema;
+					? emailSchema
+					: passwordSchema;
 		const result = schema.safeParse(value);
 		setCreateErrors((prev) => {
 			if (result.success) {
@@ -273,21 +251,15 @@ export default function AdminUsersPage() {
 
 	const validateCreateForm = () => {
 		const nextErrors: Partial<CreateUserReq> = {};
-		const usernameResult = createUserUsernameSchema.safeParse(
-			createForm.username.trim(),
-		);
+		const usernameResult = usernameSchema.safeParse(createForm.username.trim());
 		if (!usernameResult.success) {
 			nextErrors.username = usernameResult.error.issues[0]?.message ?? "";
 		}
-		const emailResult = createUserEmailSchema.safeParse(
-			createForm.email.trim(),
-		);
+		const emailResult = emailSchema.safeParse(createForm.email.trim());
 		if (!emailResult.success) {
 			nextErrors.email = emailResult.error.issues[0]?.message ?? "";
 		}
-		const passwordResult = createUserPasswordSchema.safeParse(
-			createForm.password,
-		);
+		const passwordResult = passwordSchema.safeParse(createForm.password);
 		if (!passwordResult.success) {
 			nextErrors.password = passwordResult.error.issues[0]?.message ?? "";
 		}

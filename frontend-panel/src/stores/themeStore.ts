@@ -33,7 +33,7 @@ interface ThemeState {
 
 function getStoredValue<T extends string>(key: string, fallback: T): T {
 	if (typeof window === "undefined") return fallback;
-	return (localStorage.getItem(key) as T) || fallback;
+	return (localStorage.getItem(key) as T) ?? fallback;
 }
 
 function applyTheme(mode: ThemeMode, preset: ColorPreset): "light" | "dark" {

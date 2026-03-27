@@ -2,31 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { z } from "zod/v4";
+import type { z } from "zod/v4";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/hooks/useApiError";
 import { cn } from "@/lib/utils";
+import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { authService } from "@/services/authService";
 import { useAuthStore } from "@/stores/authStore";
-
-// ── Zod schemas ─────────────────────────────────────────────
-
-const usernameSchema = z
-	.string()
-	.min(4, "Username must be 4-16 characters")
-	.max(16, "Username must be 4-16 characters")
-	.regex(/^[a-zA-Z0-9_-]+$/, "Only letters, numbers, _ and -");
-const emailSchema = z
-	.string()
-	.max(254, "Email is too long")
-	.regex(/^[^@]+@[^@]+\.[^@]+$/, "Invalid email format");
-const passwordSchema = z
-	.string()
-	.min(6, "Password must be at least 6 characters")
-	.max(128, "Password must be at most 128 characters");
 
 // ── Animated height ─────────────────────────────────────────
 

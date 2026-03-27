@@ -228,7 +228,13 @@ pub async fn get_thumbnail(
     match thumbnail_service::get_or_enqueue(&state, &blob).await? {
         Some(data) => Ok(HttpResponse::Ok()
             .content_type("image/webp")
-            .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
+            .insert_header((
+                "Cache-Control",
+                format!(
+                    "public, max-age={}, immutable",
+                    crate::api::constants::YEAR_SECS
+                ),
+            ))
             .body(data)),
         None => {
             // 缩略图正在后台生成，返回 202 让前端稍后重试

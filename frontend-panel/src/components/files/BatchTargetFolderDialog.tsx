@@ -22,6 +22,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
+import { FOLDER_LIMIT } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import type { BreadcrumbItem as FileBreadcrumbItem } from "@/stores/fileStore";
@@ -74,7 +75,7 @@ export function BatchTargetFolderDialog({
 	const loadFolder = useCallback(async (folderId: number | null) => {
 		setLoading(true);
 		try {
-			const folderOnlyParams = { file_limit: 0, folder_limit: 1000 };
+			const folderOnlyParams = { file_limit: 0, folder_limit: FOLDER_LIMIT };
 			const contents =
 				folderId === null
 					? await fileService.listRoot(folderOnlyParams)

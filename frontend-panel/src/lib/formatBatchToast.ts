@@ -1,7 +1,7 @@
 import type { TFunction } from "i18next";
 import type { BatchItemError, BatchResult } from "@/types/api";
 
-export type BatchOperation = "move" | "copy" | "delete";
+export type BatchOperation = "move" | "copy" | "delete" | "restore" | "purge";
 
 export interface BatchToastContent {
 	variant: "success" | "error";

@@ -3,6 +3,7 @@ use sea_orm::{Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::api::constants::HOUR_SECS;
 use crate::db::repository::{file_repo, policy_repo, upload_session_repo, user_repo};
 use crate::entities::{file, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
@@ -118,7 +119,7 @@ pub async fn init_upload(
             // chunk_size == 0 → 禁用分片；文件 ≤ chunk_size → 单次 presigned PUT
             if policy.chunk_size == 0 || total_size <= policy.chunk_size {
                 let presigned_url = driver
-                    .presigned_put_url(&temp_key, std::time::Duration::from_secs(3600))
+                    .presigned_put_url(&temp_key, std::time::Duration::from_secs(HOUR_SECS))
                     .await?
                     .ok_or_else(|| {
                         AsterError::storage_driver_error("presigned PUT not supported by driver")
@@ -815,7 +816,7 @@ pub async fn presign_parts(
     let policy = policy_repo::find_by_id(db, session.policy_id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
 
-    let expires = std::time::Duration::from_secs(3600);
+    let expires = std::time::Duration::from_secs(HOUR_SECS);
     let mut urls = std::collections::HashMap::new();
     for part_num in part_numbers {
         let url = driver

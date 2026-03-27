@@ -1,14 +1,12 @@
 import type { FormEvent } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { AdminTableList } from "@/components/common/AdminTableList";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { EmptyState } from "@/components/common/EmptyState";
-import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
-import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +18,6 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Select,
 	SelectContent,
@@ -30,14 +27,14 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
-	Table,
-	TableBody,
 	TableCell,
 	TableHead,
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
+import { useApiList } from "@/hooks/useApiList";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { ADMIN_ICON_BUTTON_CLASS } from "@/lib/constants";
 import { adminPolicyService } from "@/services/adminService";
 import type { DriverType, StoragePolicy } from "@/types/api";
@@ -143,28 +140,30 @@ function TestConnectionButton({
 
 export default function AdminPoliciesPage() {
 	const { t } = useTranslation("admin");
-	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
-	const [loading, setLoading] = useState(true);
+	const {
+		items: policies,
+		setItems: setPolicies,
+		loading,
+	} = useApiList(() => adminPolicyService.list({ limit: 100, offset: 0 }));
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editingId, setEditingId] = useState<number | null>(null);
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
-	const [deleteId, setDeleteId] = useState<number | null>(null);
 
-	const load = useCallback(async () => {
+	const handleDelete = async (id: number) => {
 		try {
-			setLoading(true);
-			const data = await adminPolicyService.list({ limit: 100, offset: 0 });
-			setPolicies(data.items);
+			await adminPolicyService.delete(id);
+			setPolicies((prev) => prev.filter((p) => p.id !== id));
+			toast.success(t("policy_deleted"));
 		} catch (e) {
 			handleApiError(e);
-		} finally {
-			setLoading(false);
 		}
-	}, []);
+	};
 
-	useEffect(() => {
-		load();
-	}, [load]);
+	const {
+		confirmId: deleteId,
+		requestConfirm,
+		dialogProps,
+	} = useConfirmDialog(handleDelete);
 
 	const openCreate = () => {
 		setEditingId(null);
@@ -243,16 +242,6 @@ export default function AdminPoliciesPage() {
 		}
 	};
 
-	const handleDelete = async (id: number) => {
-		try {
-			await adminPolicyService.delete(id);
-			setPolicies((prev) => prev.filter((p) => p.id !== id));
-			toast.success(t("policy_deleted"));
-		} catch (e) {
-			handleApiError(e);
-		}
-	};
-
 	const setField = <K extends keyof PolicyFormData>(
 		key: K,
 		value: PolicyFormData[K],
@@ -277,98 +266,79 @@ export default function AdminPoliciesPage() {
 					}
 				/>
 
-				{loading ? (
-					<SkeletonTable columns={7} rows={6} />
-				) : policies.length === 0 ? (
-					<EmptyState
-						title={t("no_policies")}
-						description={t("no_policies_desc")}
-					/>
-				) : (
-					<AdminSurface>
-						<ScrollArea className="min-h-0 flex-1">
-							<Table>
-								<TableHeader>
-									<TableRow>
-										<TableHead className="w-16">{t("id")}</TableHead>
-										<TableHead>{t("common:name")}</TableHead>
-										<TableHead>{t("driver_type")}</TableHead>
-										<TableHead>{t("endpoint_path")}</TableHead>
-										<TableHead>{t("bucket")}</TableHead>
-										<TableHead className="w-20">{t("is_default")}</TableHead>
-										<TableHead className="w-24">
-											{t("common:actions")}
-										</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{policies.map((p) => (
-										<TableRow key={p.id}>
-											<TableCell className="font-mono text-xs">
-												{p.id}
-											</TableCell>
-											<TableCell className="font-medium">{p.name}</TableCell>
-											<TableCell>
-												<Badge variant="outline">
-													{p.driver_type === "local" ? "Local" : "S3"}
-												</Badge>
-											</TableCell>
-											<TableCell className="text-muted-foreground text-xs font-mono">
-												{p.driver_type === "local"
-													? p.base_path || "./data"
-													: p.endpoint}
-											</TableCell>
-											<TableCell className="text-muted-foreground text-xs">
-												{p.bucket || "-"}
-											</TableCell>
-											<TableCell>
-												{p.is_default && (
-													<Badge className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
-														{t("is_default")}
-													</Badge>
-												)}
-											</TableCell>
-											<TableCell>
-												<div className="flex items-center gap-1">
-													<Button
-														variant="ghost"
-														size="icon"
-														className={ADMIN_ICON_BUTTON_CLASS}
-														onClick={() => openEdit(p)}
-													>
-														<Icon name="PencilSimple" className="h-3.5 w-3.5" />
-													</Button>
-													<Button
-														variant="ghost"
-														size="icon"
-														className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-														onClick={() => setDeleteId(p.id)}
-													>
-														<Icon name="Trash" className="h-3.5 w-3.5" />
-													</Button>
-												</div>
-											</TableCell>
-										</TableRow>
-									))}
-								</TableBody>
-							</Table>
-						</ScrollArea>
-					</AdminSurface>
-				)}
+				<AdminTableList
+					loading={loading}
+					items={policies}
+					columns={7}
+					rows={6}
+					emptyTitle={t("no_policies")}
+					emptyDescription={t("no_policies_desc")}
+					headerRow={
+						<TableHeader>
+							<TableRow>
+								<TableHead className="w-16">{t("id")}</TableHead>
+								<TableHead>{t("common:name")}</TableHead>
+								<TableHead>{t("driver_type")}</TableHead>
+								<TableHead>{t("endpoint_path")}</TableHead>
+								<TableHead>{t("bucket")}</TableHead>
+								<TableHead className="w-20">{t("is_default")}</TableHead>
+								<TableHead className="w-24">{t("common:actions")}</TableHead>
+							</TableRow>
+						</TableHeader>
+					}
+					renderRow={(p) => (
+						<TableRow key={p.id}>
+							<TableCell className="font-mono text-xs">{p.id}</TableCell>
+							<TableCell className="font-medium">{p.name}</TableCell>
+							<TableCell>
+								<Badge variant="outline">
+									{p.driver_type === "local" ? "Local" : "S3"}
+								</Badge>
+							</TableCell>
+							<TableCell className="text-muted-foreground text-xs font-mono">
+								{p.driver_type === "local"
+									? p.base_path || "./data"
+									: p.endpoint}
+							</TableCell>
+							<TableCell className="text-muted-foreground text-xs">
+								{p.bucket || "-"}
+							</TableCell>
+							<TableCell>
+								{p.is_default && (
+									<Badge className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
+										{t("is_default")}
+									</Badge>
+								)}
+							</TableCell>
+							<TableCell>
+								<div className="flex items-center gap-1">
+									<Button
+										variant="ghost"
+										size="icon"
+										className={ADMIN_ICON_BUTTON_CLASS}
+										onClick={() => openEdit(p)}
+									>
+										<Icon name="PencilSimple" className="h-3.5 w-3.5" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+										onClick={() => requestConfirm(p.id)}
+									>
+										<Icon name="Trash" className="h-3.5 w-3.5" />
+									</Button>
+								</div>
+							</TableCell>
+						</TableRow>
+					)}
+				/>
 
 				<ConfirmDialog
-					open={deleteId !== null}
-					onOpenChange={(open) => {
-						if (!open) setDeleteId(null);
-					}}
+					{...dialogProps}
 					title={`${t("delete_policy")} "${deletePolicyName}"?`}
 					description={t("delete_policy_desc")}
 					confirmLabel={t("common:delete")}
-					onConfirm={() => {
-						const id = deleteId;
-						setDeleteId(null);
-						if (id !== null) void handleDelete(id);
-					}}
 					variant="destructive"
 				/>
 

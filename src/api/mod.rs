@@ -1,3 +1,4 @@
+pub mod constants;
 pub mod error_code;
 pub mod middleware;
 pub mod openapi;

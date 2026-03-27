@@ -1,0 +1,8 @@
+{
+	"username_length": "用户名长度需为 4-16 个字符",
+	"username_chars": "只能包含字母、数字、下划线和连字符",
+	"email_too_long": "邮箱地址过长",
+	"email_format": "邮箱格式不正确",
+	"password_min": "密码至少需要 6 个字符",
+	"password_max": "密码不能超过 128 个字符"
+}

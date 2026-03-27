@@ -1,6 +1,8 @@
 use actix_cors::Cors;
 use actix_web::http;
 
+use crate::api::constants::HOUR_SECS;
+
 /// 返回 CORS 配置，包含标准 HTTP 和 WebDAV 方法/头部
 pub fn configure_cors() -> Cors {
     Cors::default()
@@ -37,5 +39,5 @@ pub fn configure_cors() -> Cors {
             http::header::HeaderName::from_static("dav"),
             http::header::HeaderName::from_static("lock-token"),
         ])
-        .max_age(3600)
+        .max_age(HOUR_SECS as usize)
 }

@@ -34,6 +34,8 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
+import { FOLDER_LIMIT } from "@/lib/constants";
+import { formatDateShort } from "@/lib/format";
 import { ApiError } from "@/services/http";
 import { shareService } from "@/services/shareService";
 import type { FileInfo, FolderContents, SharePublicInfo } from "@/types/api";
@@ -46,7 +48,7 @@ interface ShareBreadcrumbItem {
 
 const SHARE_PAGE_SIZE = 100;
 const sharePageParams = {
-	folder_limit: 1000,
+	folder_limit: FOLDER_LIMIT,
 	file_limit: SHARE_PAGE_SIZE,
 };
 
@@ -109,7 +111,7 @@ export default function ShareViewPage() {
 	}, [token, t]);
 
 	useEffect(() => {
-		loadInfo();
+		void loadInfo().catch(() => {});
 	}, [loadInfo]);
 
 	const navigateToFolder = useCallback(
@@ -194,7 +196,8 @@ export default function ShareViewPage() {
 		if (!el) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
-				if (entries[0].isIntersecting) void loadMoreShareFiles();
+				if (entries[0].isIntersecting)
+					void loadMoreShareFiles().catch(() => {});
 			},
 			{ rootMargin: "200px" },
 		);
@@ -391,7 +394,7 @@ export default function ShareViewPage() {
 												})}
 										{info.expires_at &&
 											` · ${t("expires_date", {
-												date: new Date(info.expires_at).toLocaleDateString(),
+												date: formatDateShort(info.expires_at),
 											})}`}
 									</CardDescription>
 								</div>

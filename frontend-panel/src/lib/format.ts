@@ -23,3 +23,11 @@ export function formatDate(dateStr: string): string {
 export function formatDateAbsolute(dateStr: string): string {
 	return new Date(dateStr).toLocaleString();
 }
+
+export function formatDateShort(dateStr: string): string {
+	return new Date(dateStr).toLocaleDateString();
+}
+
+export function formatDateTime(dateStr: string): string {
+	return new Date(dateStr).toLocaleString();
+}

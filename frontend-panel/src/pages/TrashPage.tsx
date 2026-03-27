@@ -17,6 +17,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { STORAGE_KEYS } from "@/config/app";
 import { handleApiError } from "@/hooks/useApiError";
 import { useSelectionShortcuts } from "@/hooks/useSelectionShortcuts";
+import { FOLDER_LIMIT } from "@/lib/constants";
+import { formatBatchToast } from "@/lib/formatBatchToast";
 import { trashService } from "@/services/trashService";
 import { useAuthStore } from "@/stores/authStore";
 import type { TrashContents, TrashItem } from "@/types/api";
@@ -90,7 +92,7 @@ export default function TrashPage() {
 		setLoading(true);
 		try {
 			const data = await trashService.list({
-				folder_limit: 1000,
+				folder_limit: FOLDER_LIMIT,
 				file_limit: TRASH_PAGE_SIZE,
 			});
 			setContents(data);
@@ -180,32 +182,6 @@ export default function TrashPage() {
 		enabled: purgeTargets === null && !purgeAllOpen,
 	});
 
-	const showBatchToast = useCallback(
-		(operation: TrashOperation, succeeded: number, failed: number) => {
-			if (failed === 0) {
-				toast.success(
-					t(`files:trash_${operation}_success`, {
-						count: succeeded,
-					}),
-				);
-				return;
-			}
-
-			if (succeeded === 0) {
-				toast.error(t(`files:trash_${operation}_failed`));
-				return;
-			}
-
-			toast.success(
-				t(`files:trash_${operation}_partial`, {
-					succeeded,
-					failed,
-				}),
-			);
-		},
-		[t],
-	);
-
 	const runOperation = useCallback(
 		async (targets: TrashItem[], operation: TrashOperation) => {
 			if (targets.length === 0) return;
@@ -234,13 +210,22 @@ export default function TrashPage() {
 			).length;
 			const failed = results.length - succeeded;
 
-			showBatchToast(operation, succeeded, failed);
+			const toastContent = formatBatchToast(t, operation, {
+				succeeded,
+				failed,
+				errors: [],
+			});
+			if (toastContent.variant === "success") {
+				toast.success(toastContent.title);
+			} else {
+				toast.error(toastContent.title);
+			}
 
 			if (succeeded > 0) {
 				await Promise.all([load(), refreshUser()]);
 			}
 		},
-		[load, refreshUser, showBatchToast],
+		[load, refreshUser, t],
 	);
 
 	const handleRestore = useCallback(

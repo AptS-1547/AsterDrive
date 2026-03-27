@@ -47,7 +47,7 @@ export default function MySharesPage() {
 	}, [page]);
 
 	useEffect(() => {
-		void loadShares();
+		void loadShares().catch(() => {});
 	}, [loadShares]);
 
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));

@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
 import {
 	DRAG_SOURCE_MIME,
+	FOLDER_LIMIT,
 	FOLDER_TREE_DRAG_EXPAND_DELAY_MS,
 	FOLDER_TREE_INDENT_PX,
 	FOLDER_TREE_ROW_OFFSET_PX,
@@ -394,11 +395,11 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 						parentId === null
 							? await fileService.listRoot({
 									file_limit: 0,
-									folder_limit: 1000,
+									folder_limit: FOLDER_LIMIT,
 								})
 							: await fileService.listFolder(parentId, {
 									file_limit: 0,
-									folder_limit: 1000,
+									folder_limit: FOLDER_LIMIT,
 								});
 					syncFolderChildren(parentId, contents.folders);
 				} finally {
@@ -427,7 +428,7 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 				setRootLoaded(false);
 				const contents = await fileService.listRoot({
 					file_limit: 0,
-					folder_limit: 1000,
+					folder_limit: FOLDER_LIMIT,
 				});
 				syncFolderChildren(null, contents.folders);
 				return;
@@ -439,7 +440,7 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 			});
 			const contents = await fileService.listFolder(parentId, {
 				file_limit: 0,
-				folder_limit: 1000,
+				folder_limit: FOLDER_LIMIT,
 			});
 			syncFolderChildren(parentId, contents.folders);
 		},

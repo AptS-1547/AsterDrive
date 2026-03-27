@@ -22,7 +22,7 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { invalidateBlobUrl } from "@/hooks/useBlobUrl";
 import { invalidateTextContent } from "@/hooks/useTextContent";
-import { formatBytes } from "@/lib/format";
+import { formatBytes, formatDateTime } from "@/lib/format";
 import { fileService } from "@/services/fileService";
 import type { FileVersion } from "@/types/api";
 
@@ -196,7 +196,7 @@ export function VersionHistoryDialog({
 											{formatBytes(v.size)}
 										</TableCell>
 										<TableCell className="text-muted-foreground text-xs">
-											{new Date(v.created_at).toLocaleString()}
+											{formatDateTime(v.created_at)}
 										</TableCell>
 										<TableCell>
 											<div className="flex gap-1">

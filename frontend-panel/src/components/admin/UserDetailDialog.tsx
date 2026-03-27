@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import {
+	getRoleBadgeClass,
+	getStatusBadgeClass,
+} from "@/components/common/UserStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,18 +49,6 @@ import type {
 } from "@/types/api";
 
 const POLICY_PAGE_SIZE = 100;
-
-function getRoleBadgeClass(role: UserRole) {
-	return role === "admin"
-		? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
-		: "border-border bg-muted/40 text-muted-foreground";
-}
-
-function getStatusBadgeClass(status: UserStatus) {
-	return status === "active"
-		? "border-green-500/60 bg-green-500/10 text-green-600 dark:text-green-300"
-		: "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300";
-}
 
 interface UserDetailDialogProps {
 	user: UserInfo | null;

@@ -1,3 +1,4 @@
+use crate::api::constants::YEAR_SECS;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
@@ -259,7 +260,10 @@ pub async fn shared_thumbnail(
 
     Ok(HttpResponse::Ok()
         .content_type("image/webp")
-        .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
+        .insert_header((
+            "Cache-Control",
+            format!("public, max-age={YEAR_SECS}, immutable"),
+        ))
         .body(data))
 }
 
@@ -290,7 +294,10 @@ pub async fn shared_folder_file_thumbnail(
 
     Ok(HttpResponse::Ok()
         .content_type("image/webp")
-        .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
+        .insert_header((
+            "Cache-Control",
+            format!("public, max-age={YEAR_SECS}, immutable"),
+        ))
         .body(data))
 }
 

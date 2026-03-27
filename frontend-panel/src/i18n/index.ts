@@ -11,9 +11,16 @@ function detectLanguage(): "en" | "zh" {
 	return navigator.language?.startsWith("zh") ? "zh" : "en";
 }
 
-const ALL_NAMESPACES = ["common", "files", "auth", "admin", "search"] as const;
+const ALL_NAMESPACES = [
+	"common",
+	"files",
+	"auth",
+	"admin",
+	"search",
+	"validation",
+] as const;
 const INITIAL_NAMESPACES = ["common", "files", "auth"] as const;
-const DEFERRED_NAMESPACES = ["admin", "search"] as const;
+const DEFERRED_NAMESPACES = ["admin", "search", "validation"] as const;
 
 type LocaleNamespace = (typeof ALL_NAMESPACES)[number];
 

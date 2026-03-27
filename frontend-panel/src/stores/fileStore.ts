@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { STORAGE_KEYS } from "@/config/app";
+import { FILE_PAGE_SIZE, FOLDER_LIMIT } from "@/lib/constants";
 import { logger } from "@/lib/logger";
 import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { batchService } from "@/services/batchService";
@@ -29,12 +30,9 @@ export type ViewMode = "grid" | "list";
 export type SortBy = "name" | "size" | "created_at" | "updated_at" | "type";
 export type SortOrder = "asc" | "desc";
 
-const FILE_PAGE_SIZE = 100;
-const FOLDER_LIMIT = 1000;
-
 function getStored<T extends string>(key: string, fallback: T): T {
 	if (typeof window === "undefined") return fallback;
-	return (localStorage.getItem(key) as T) || fallback;
+	return (localStorage.getItem(key) as T) ?? fallback;
 }
 
 interface FileState {
