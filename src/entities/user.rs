@@ -24,6 +24,7 @@ pub struct Model {
     pub created_at: DateTimeUtc,
     #[schema(value_type = String)]
     pub updated_at: DateTimeUtc,
+    #[serde(skip_serializing)]
     pub config: Option<String>, // JSON blob, nullable
 }
 

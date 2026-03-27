@@ -283,7 +283,7 @@ export function FileTable({
 									/>
 								</div>
 							</TableCell>
-							<FolderNameCell folder={folder} isLocked={folder.is_locked ?? false} />
+							<FolderNameCell folder={folder} />
 							<FolderSizeCell />
 							<UpdatedAtCell updatedAt={folder.updated_at} />
 						</TableRow>
@@ -329,7 +329,7 @@ export function FileTable({
 									/>
 								</div>
 							</TableCell>
-							<FileNameCell file={file} isLocked={file.is_locked ?? false} />
+							<FileNameCell file={file} />
 							<FileSizeCell size={file.size} />
 							<UpdatedAtCell updatedAt={file.updated_at} />
 						</TableRow>

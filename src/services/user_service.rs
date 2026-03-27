@@ -1,7 +1,9 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-use crate::api::pagination::{OffsetPage, load_offset_page};
+use crate::api::pagination::{OffsetPage, SortBy, SortOrder, load_offset_page};
 use crate::db::repository::{
     file_repo, folder_repo, lock_repo, policy_repo, share_repo, upload_session_repo, user_repo,
     webdav_account_repo,
@@ -11,6 +13,75 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::auth_service;
 use crate::types::{UserRole, UserStatus};
+
+/// Theme mode for the UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+/// Color preset for the UI accent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ColorPreset {
+    #[default]
+    Blue,
+    Green,
+    Purple,
+    Orange,
+}
+
+/// File browser view mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PrefViewMode {
+    #[default]
+    List,
+    Grid,
+}
+
+/// Interface display language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Language {
+    #[default]
+    En,
+    Zh,
+}
+
+/// Stored user preferences (serialized as JSON in `users.config`).
+/// Empty struct (all fields None) is treated as null by `get_preferences`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct UserPreferences {
+    pub theme_mode: Option<ThemeMode>,
+    pub color_preset: Option<ColorPreset>,
+    pub view_mode: Option<PrefViewMode>,
+    pub sort_by: Option<SortBy>,
+    pub sort_order: Option<SortOrder>,
+    pub language: Option<Language>,
+}
+
+impl UserPreferences {
+    /// True if no preference fields are set (empty config).
+    fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// PATCH request — only non-null fields are merged into existing preferences.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdatePreferencesReq {
+    pub theme_mode: Option<ThemeMode>,
+    pub color_preset: Option<ColorPreset>,
+    pub view_mode: Option<PrefViewMode>,
+    pub sort_by: Option<SortBy>,
+    pub sort_order: Option<SortOrder>,
+    pub language: Option<Language>,
+}
 
 pub async fn list_all(state: &AppState) -> Result<Vec<user::Model>> {
     user_repo::find_all(&state.db).await
@@ -186,4 +257,68 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     );
 
     Ok(())
+}
+
+/// 从 user Model 的 config 字段解析偏好设置。
+/// 空配置或解析失败返回 None，解析失败时记录日志。
+pub fn parse_preferences(user: &user::Model) -> Option<UserPreferences> {
+    let raw = user.config.as_deref()?;
+    match serde_json::from_str::<UserPreferences>(raw) {
+        Ok(prefs) if !prefs.is_empty() => Some(prefs),
+        Ok(_) => None,
+        Err(e) => {
+            tracing::warn!("failed to parse preferences for user #{}: {e}", user.id);
+            None
+        }
+    }
+}
+
+/// 读取用户的偏好设置（按 ID 查询后解析）。
+pub async fn get_preferences(state: &AppState, user_id: i64) -> Result<Option<UserPreferences>> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    Ok(parse_preferences(&user))
+}
+
+/// 将偏好设置写入 DB。空偏好不写 DB（视为清除）。
+async fn save_preferences(
+    state: &AppState,
+    user: user::Model,
+    prefs: &UserPreferences,
+) -> Result<()> {
+    if prefs.is_empty() {
+        return Ok(());
+    }
+    let json_str =
+        serde_json::to_string(&prefs).map_err(|e| AsterError::internal_error(e.to_string()))?;
+    let mut active = user.into_active_model();
+    active.config = Set(Some(json_str));
+    active.updated_at = Set(Utc::now());
+    active.save(&state.db).await?;
+    Ok(())
+}
+
+/// 合并更新偏好设置（只更新非 None 字段），返回完整 UserPreferences。
+pub async fn update_preferences(
+    state: &AppState,
+    user_id: i64,
+    patch: UpdatePreferencesReq,
+) -> Result<UserPreferences> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+
+    let mut prefs: UserPreferences = user
+        .config
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+
+    // 合并更新（只覆盖非 None 的字段）
+    prefs.theme_mode = patch.theme_mode.or(prefs.theme_mode);
+    prefs.color_preset = patch.color_preset.or(prefs.color_preset);
+    prefs.view_mode = patch.view_mode.or(prefs.view_mode);
+    prefs.sort_by = patch.sort_by.or(prefs.sort_by);
+    prefs.sort_order = patch.sort_order.or(prefs.sort_order);
+    prefs.language = patch.language.or(prefs.language);
+
+    save_preferences(state, user, &prefs).await?;
+    Ok(prefs)
 }

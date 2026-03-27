@@ -1,16 +1,17 @@
 import axios from "axios";
 import { create } from "zustand";
 import i18n from "@/i18n";
+import { cancelPreferenceSync } from "@/lib/preferenceSync";
 import { authService } from "@/services/authService";
-import { useFileStore } from "@/stores/fileStore";
-import { useThemeStore } from "@/stores/themeStore";
-import type { ColorPreset, ThemeMode } from "@/stores/themeStore";
-import type { UserInfo, UserPreferences } from "@/types/api";
 import type { SortBy, SortOrder, ViewMode } from "@/stores/fileStore";
+import { useFileStore } from "@/stores/fileStore";
+import type { ColorPreset, ThemeMode } from "@/stores/themeStore";
+import { useThemeStore } from "@/stores/themeStore";
+import type { MeResponse, UserPreferences } from "@/types/api";
 
 const CACHED_USER_KEY = "aster-cached-user";
 
-function getCachedUser(): UserInfo | null {
+function getCachedUser(): MeResponse | null {
 	try {
 		const raw = localStorage.getItem(CACHED_USER_KEY);
 		return raw ? JSON.parse(raw) : null;
@@ -19,7 +20,7 @@ function getCachedUser(): UserInfo | null {
 	}
 }
 
-function setCachedUser(user: UserInfo | null) {
+function setCachedUser(user: MeResponse | null) {
 	if (user) {
 		localStorage.setItem(CACHED_USER_KEY, JSON.stringify(user));
 	} else {
@@ -32,7 +33,7 @@ interface AuthState {
 	isChecking: boolean;
 	isAuthStale: boolean;
 	bootOffline: boolean;
-	user: UserInfo | null;
+	user: MeResponse | null;
 	login: (identifier: string, password: string) => Promise<void>;
 	logout: () => Promise<void>;
 	checkAuth: () => Promise<void>;
@@ -79,6 +80,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 	},
 
 	logout: async () => {
+		cancelPreferenceSync();
 		try {
 			await authService.logout();
 		} catch {

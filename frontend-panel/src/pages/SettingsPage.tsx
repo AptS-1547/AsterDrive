@@ -31,9 +31,13 @@ export default function SettingsPage() {
 		{ value: "system", label: t("theme_system"), icon: "Monitor" },
 	];
 
-	const languageOptions = [
-		{ value: "en", label: t("language_en"), icon: "Globe" as const },
-		{ value: "zh", label: t("language_zh"), icon: "Globe" as const },
+	const languageOptions: Array<{
+		value: "en" | "zh";
+		label: string;
+		icon: IconName;
+	}> = [
+		{ value: "en", label: t("language_en"), icon: "Globe" },
+		{ value: "zh", label: t("language_zh"), icon: "Globe" },
 	];
 
 	const browserOptions: Array<{

@@ -25,7 +25,10 @@ interface ThemeState {
 	setMode: (mode: ThemeMode) => void;
 	setColorPreset: (preset: ColorPreset) => void;
 	init: () => void;
-	_applyFromServer: (prefs: { mode: ThemeMode; colorPreset: ColorPreset }) => void;
+	_applyFromServer: (prefs: {
+		mode: ThemeMode;
+		colorPreset: ColorPreset;
+	}) => void;
 }
 
 function getStoredValue<T extends string>(key: string, fallback: T): T {

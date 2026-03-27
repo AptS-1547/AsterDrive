@@ -1,27 +1,9 @@
 // Re-export generated types for convenience
 import type { components } from "@/services/api.generated";
 
-// User preferences (manually maintained — not yet in OpenAPI spec)
-export interface UserPreferences {
-  theme_mode?:   string;
-  color_preset?: string;
-  view_mode?:    string;
-  sort_by?:      string;
-  sort_order?:   string;
-  language?:     string;
-}
-
-export interface UpdatePreferencesRequest {
-  theme_mode?:   string;
-  color_preset?: string;
-  view_mode?:    string;
-  sort_by?:      string;
-  sort_order?:   string;
-  language?:     string;
-}
-
 // Schema types
-export type UserInfo = components["schemas"]["UserInfo"] & { preferences?: UserPreferences };
+export type UserInfo = components["schemas"]["UserInfo"];
+export type MeResponse = components["schemas"]["MeResponse"];
 export type FileInfo = components["schemas"]["FileInfo"];
 export type FolderInfo = components["schemas"]["FolderInfo"];
 export type FileListItem = components["schemas"]["FileListItem"];
@@ -47,6 +29,11 @@ export type WebdavAccountInfo = components["schemas"]["WebdavAccountInfo"];
 export type TrashFileItem = components["schemas"]["TrashFileItem"];
 export type TrashFolderItem = components["schemas"]["TrashFolderItem"];
 export type TrashContents = components["schemas"]["TrashContents"];
+
+// User preferences
+export type UserPreferences = components["schemas"]["UserPreferences"];
+export type UpdatePreferencesRequest =
+	components["schemas"]["UpdatePreferencesReq"];
 
 export type TrashItem =
 	| (TrashFileItem & { entity_type: "file" })

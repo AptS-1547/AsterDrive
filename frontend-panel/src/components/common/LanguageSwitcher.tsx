@@ -7,6 +7,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
+import { queuePreferenceSync } from "@/lib/preferenceSync";
 
 export function LanguageSwitcher() {
 	const { i18n, t } = useTranslation();
@@ -18,10 +19,20 @@ export function LanguageSwitcher() {
 				<Icon name="Globe" className="h-4.5 w-4.5" />
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
-				<DropdownMenuItem onClick={() => i18n.changeLanguage("en")}>
+				<DropdownMenuItem
+					onClick={() => {
+						void i18n.changeLanguage("en");
+						queuePreferenceSync({ language: "en" });
+					}}
+				>
 					{t("language_en")}
 				</DropdownMenuItem>
-				<DropdownMenuItem onClick={() => i18n.changeLanguage("zh")}>
+				<DropdownMenuItem
+					onClick={() => {
+						void i18n.changeLanguage("zh");
+						queuePreferenceSync({ language: "zh" });
+					}}
+				>
 					{t("language_zh")}
 				</DropdownMenuItem>
 			</DropdownMenuContent>

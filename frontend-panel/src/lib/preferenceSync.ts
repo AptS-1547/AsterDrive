@@ -1,5 +1,6 @@
-import { authService } from '@/services/authService';
-import type { UpdatePreferencesRequest } from '@/types/api';
+import { logger } from "@/lib/logger";
+import { authService } from "@/services/authService";
+import type { UpdatePreferencesRequest } from "@/types/api";
 
 let pending: UpdatePreferencesRequest = {};
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -13,8 +14,16 @@ export function queuePreferenceSync(patch: UpdatePreferencesRequest): void {
 		timer = null;
 		try {
 			await authService.updatePreferences(payload);
-		} catch {
-			// silent fail — localStorage is the fallback
+		} catch (e) {
+			logger.warn("preference sync failed, localStorage as fallback", e);
 		}
 	}, 500);
+}
+
+export function cancelPreferenceSync(): void {
+	pending = {};
+	if (timer) {
+		clearTimeout(timer);
+		timer = null;
+	}
 }

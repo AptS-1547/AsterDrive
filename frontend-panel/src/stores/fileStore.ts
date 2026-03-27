@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { STORAGE_KEYS } from "@/config/app";
+import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { batchService } from "@/services/batchService";
 import type { FolderListParams } from "@/services/fileService";
 import { fileService } from "@/services/fileService";
 import { searchService } from "@/services/searchService";
-import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { useAuthStore } from "@/stores/authStore";
 import type {
 	BatchResult,
@@ -86,7 +86,11 @@ interface FileState {
 	setViewMode: (mode: ViewMode) => void;
 	setSortBy: (sortBy: SortBy) => void;
 	setSortOrder: (sortOrder: SortOrder) => void;
-	_applyFromServer: (prefs: { viewMode: ViewMode; sortBy: SortBy; sortOrder: SortOrder }) => void;
+	_applyFromServer: (prefs: {
+		viewMode: ViewMode;
+		sortBy: SortBy;
+		sortOrder: SortOrder;
+	}) => void;
 
 	// Selection actions
 	toggleFileSelection: (id: number) => void;

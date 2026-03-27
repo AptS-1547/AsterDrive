@@ -340,6 +340,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update the current user's preferences.
+         * @description Only non-null fields in the request body are merged into the existing
+         *     preferences. Returns the full updated preferences object.
+         */
+        patch: operations["update_preferences"];
+        trace?: never;
+    };
     "/api/v1/auth/refresh": {
         parameters: {
             query?: never;
@@ -1198,6 +1219,11 @@ export interface components {
             /** Format: int32 */
             total_chunks: number;
         };
+        /**
+         * @description Color preset for the UI accent.
+         * @enum {string}
+         */
+        ColorPreset: "blue" | "green" | "purple" | "orange";
         CompleteUploadReq: {
             parts?: components["schemas"]["CompletedPartReq"][] | null;
         };
@@ -1436,6 +1462,11 @@ export interface components {
             total_chunks?: number | null;
             upload_id?: string | null;
         };
+        /**
+         * @description Interface display language.
+         * @enum {string}
+         */
+        Language: "en" | "zh";
         LimitOffsetQuery: {
             /** Format: int64 */
             limit?: number | null;
@@ -1445,6 +1476,10 @@ export interface components {
         LoginReq: {
             identifier: string;
             password: string;
+        };
+        /** @description /auth/me 响应：用户信息 + 偏好设置。 */
+        MeResponse: components["schemas"]["UserCore"] & {
+            preferences?: null | components["schemas"]["UserPreferences"];
         };
         MyShareInfo: {
             created_at: string;
@@ -1634,6 +1669,7 @@ export interface components {
         };
         OffsetPage_UserInfo: {
             items: {
+                config?: string | null;
                 created_at: string;
                 email: string;
                 /** Format: int64 */
@@ -1731,6 +1767,11 @@ export interface components {
             /** Format: int64 */
             storage_quota?: number | null;
         };
+        /**
+         * @description File browser view mode.
+         * @enum {string}
+         */
+        PrefViewMode: "list" | "grid";
         PresignPartsReq: {
             part_numbers: number[];
         };
@@ -1913,6 +1954,11 @@ export interface components {
             endpoint?: string | null;
             secret_key?: string | null;
         };
+        /**
+         * @description Theme mode for the UI.
+         * @enum {string}
+         */
+        ThemeMode: "system" | "light" | "dark";
         TrashContents: {
             files: components["schemas"]["TrashFileItem"][];
             /** Format: int64 */
@@ -1955,6 +2001,15 @@ export interface components {
             entity_type: components["schemas"]["EntityType"];
             /** Format: int64 */
             id: number;
+        };
+        /** @description PATCH request — only non-null fields are merged into existing preferences. */
+        UpdatePreferencesReq: {
+            color_preset?: null | components["schemas"]["ColorPreset"];
+            language?: null | components["schemas"]["Language"];
+            sort_by?: null | components["schemas"]["SortBy"];
+            sort_order?: null | components["schemas"]["SortOrder"];
+            theme_mode?: null | components["schemas"]["ThemeMode"];
+            view_mode?: null | components["schemas"]["PrefViewMode"];
         };
         /**
          * @description 上传模式（不存 DB，仅 API 响应用）
@@ -2005,7 +2060,8 @@ export interface components {
          * @enum {string}
          */
         UploadSessionStatus: "uploading" | "assembling" | "completed" | "failed" | "presigned";
-        UserInfo: {
+        /** @description 用户信息核心字段（不含 password_hash），用于 API 响应。 */
+        UserCore: {
             created_at: string;
             email: string;
             /** Format: int64 */
@@ -2018,6 +2074,30 @@ export interface components {
             storage_used: number;
             updated_at: string;
             username: string;
+        };
+        UserInfo: {
+            config?: string | null;
+            created_at: string;
+            email: string;
+            /** Format: int64 */
+            id: number;
+            role: components["schemas"]["UserRole"];
+            status: components["schemas"]["UserStatus"];
+            /** Format: int64 */
+            storage_quota: number;
+            /** Format: int64 */
+            storage_used: number;
+            updated_at: string;
+            username: string;
+        };
+        /** @description Stored user preferences (serialized as JSON in `users.config`). */
+        UserPreferences: {
+            color_preset?: null | components["schemas"]["ColorPreset"];
+            language?: null | components["schemas"]["Language"];
+            sort_by?: null | components["schemas"]["SortBy"];
+            sort_order?: null | components["schemas"]["SortOrder"];
+            theme_mode?: null | components["schemas"]["ThemeMode"];
+            view_mode?: null | components["schemas"]["PrefViewMode"];
         };
         /**
          * @description 用户角色
@@ -3075,6 +3155,7 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             items: {
+                                config?: string | null;
                                 created_at: string;
                                 email: string;
                                 /** Format: int64 */
@@ -3137,6 +3218,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            config?: string | null;
                             created_at: string;
                             email: string;
                             /** Format: int64 */
@@ -3198,6 +3280,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            config?: string | null;
                             created_at: string;
                             email: string;
                             /** Format: int64 */
@@ -3312,6 +3395,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            config?: string | null;
                             created_at: string;
                             email: string;
                             /** Format: int64 */
@@ -3682,19 +3766,52 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description /auth/me 响应：用户信息 + 偏好设置。 */
+                        data?: components["schemas"]["UserCore"] & {
+                            preferences?: null | components["schemas"]["UserPreferences"];
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePreferencesReq"];
+            };
+        };
+        responses: {
+            /** @description Preferences updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        /** @description Stored user preferences (serialized as JSON in `users.config`). */
                         data?: {
-                            created_at: string;
-                            email: string;
-                            /** Format: int64 */
-                            id: number;
-                            role: components["schemas"]["UserRole"];
-                            status: components["schemas"]["UserStatus"];
-                            /** Format: int64 */
-                            storage_quota: number;
-                            /** Format: int64 */
-                            storage_used: number;
-                            updated_at: string;
-                            username: string;
+                            color_preset?: null | components["schemas"]["ColorPreset"];
+                            language?: null | components["schemas"]["Language"];
+                            sort_by?: null | components["schemas"]["SortBy"];
+                            sort_order?: null | components["schemas"]["SortOrder"];
+                            theme_mode?: null | components["schemas"]["ThemeMode"];
+                            view_mode?: null | components["schemas"]["PrefViewMode"];
                         };
                         msg: string;
                     };
@@ -3756,6 +3873,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            config?: string | null;
                             created_at: string;
                             email: string;
                             /** Format: int64 */
@@ -3804,6 +3922,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            config?: string | null;
                             created_at: string;
                             email: string;
                             /** Format: int64 */
