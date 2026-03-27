@@ -7,9 +7,11 @@ import type { FileInfo, FolderInfo } from "@/types/api";
 export function FileNameCell({
 	file,
 	thumbnailPath,
+	isLocked,
 }: {
 	file: FileInfo;
 	thumbnailPath?: string;
+	isLocked?: boolean;
 }) {
 	return (
 		<TableCell className="pl-1 pr-2">
@@ -18,12 +20,21 @@ export function FileNameCell({
 				<span className="min-w-0 truncate" title={file.name}>
 					{file.name}
 				</span>
+				{isLocked && (
+					<Icon name="Lock" className="h-3 w-3 shrink-0 text-muted-foreground" />
+				)}
 			</div>
 		</TableCell>
 	);
 }
 
-export function FolderNameCell({ folder }: { folder: FolderInfo }) {
+export function FolderNameCell({
+	folder,
+	isLocked,
+}: {
+	folder: FolderInfo;
+	isLocked?: boolean;
+}) {
 	return (
 		<TableCell className="pl-1 pr-2">
 			<div className="flex min-w-0 items-center gap-2.5">
@@ -31,6 +42,9 @@ export function FolderNameCell({ folder }: { folder: FolderInfo }) {
 				<span className="min-w-0 truncate" title={folder.name}>
 					{folder.name}
 				</span>
+				{isLocked && (
+					<Icon name="Lock" className="h-3 w-3 shrink-0 text-muted-foreground" />
+				)}
 			</div>
 		</TableCell>
 	);

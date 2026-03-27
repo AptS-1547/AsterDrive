@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { STORAGE_KEYS } from "@/config/app";
+import { queuePreferenceSync } from "@/lib/preferenceSync";
 
 const THEME_MODES = {
 	light: "light",
@@ -24,6 +25,7 @@ interface ThemeState {
 	setMode: (mode: ThemeMode) => void;
 	setColorPreset: (preset: ColorPreset) => void;
 	init: () => void;
+	_applyFromServer: (prefs: { mode: ThemeMode; colorPreset: ColorPreset }) => void;
 }
 
 function getStoredValue<T extends string>(key: string, fallback: T): T {
@@ -60,12 +62,14 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 		localStorage.setItem(STORAGE_KEYS.themeMode, mode);
 		const resolved = applyTheme(mode, get().colorPreset);
 		set({ mode, resolvedTheme: resolved });
+		queuePreferenceSync({ theme_mode: mode });
 	},
 
 	setColorPreset: (preset) => {
 		localStorage.setItem(STORAGE_KEYS.colorPreset, preset);
 		applyTheme(get().mode, preset);
 		set({ colorPreset: preset });
+		queuePreferenceSync({ color_preset: preset });
 	},
 
 	init: () => {
@@ -81,5 +85,12 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 			}
 		};
 		mq.addEventListener("change", handler);
+	},
+
+	_applyFromServer: ({ mode, colorPreset }) => {
+		localStorage.setItem(STORAGE_KEYS.themeMode, mode);
+		localStorage.setItem(STORAGE_KEYS.colorPreset, colorPreset);
+		const resolved = applyTheme(mode, colorPreset);
+		set({ mode, colorPreset, resolvedTheme: resolved });
 	},
 }));

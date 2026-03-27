@@ -27,6 +27,7 @@ interface FileCardProps {
 	fading?: boolean;
 	draggable?: boolean;
 	thumbnailPath?: string;
+	isLocked?: boolean;
 }
 
 export function FileCard({
@@ -40,6 +41,7 @@ export function FileCard({
 	fading,
 	draggable = true,
 	thumbnailPath,
+	isLocked,
 }: FileCardProps) {
 	const [dragOver, setDragOver] = useState(false);
 
@@ -110,7 +112,7 @@ export function FileCard({
 			{/* Icon / Thumbnail */}
 			<div
 				data-drag-preview-media
-				className="h-20 w-full flex items-center justify-center mb-2 rounded-lg bg-muted/40"
+				className="relative h-20 w-full flex items-center justify-center mb-2 rounded-lg bg-muted/40"
 			>
 				{isFolder ? (
 					<Icon name="Folder" className="h-12 w-12 text-amber-500" />
@@ -120,6 +122,11 @@ export function FileCard({
 						size="lg"
 						thumbnailPath={thumbnailPath}
 					/>
+				)}
+				{isLocked && (
+					<div className="absolute bottom-1 right-1 rounded-full bg-background/80 p-0.5 shadow-sm">
+						<Icon name="Lock" className="h-3 w-3 text-muted-foreground" />
+					</div>
 				)}
 			</div>
 

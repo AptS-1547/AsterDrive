@@ -115,6 +115,7 @@ export function FileGrid({
 									dragData={getDragData(folder.id, true)}
 									onDrop={onMoveToFolder}
 									fading={fadingFolderIds?.has(folder.id)}
+									isLocked={folder.is_locked ?? false}
 								/>
 							</FileContextMenu>
 						))}
@@ -159,6 +160,7 @@ export function FileGrid({
 									onClick={() => onFileClick(file)}
 									dragData={getDragData(file.id, false)}
 									fading={fadingFileIds?.has(file.id)}
+									isLocked={file.is_locked ?? false}
 								/>
 							</FileContextMenu>
 						))}

@@ -8,6 +8,7 @@ import {
 } from "@/components/common/SettingsScaffold";
 import { AppLayout } from "@/components/layout/AppLayout";
 import type { IconName } from "@/components/ui/icon";
+import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { useFileStore } from "@/stores/fileStore";
 import { useThemeStore } from "@/stores/themeStore";
 
@@ -97,7 +98,10 @@ export default function SettingsPage() {
 								<SettingsChoiceGroup
 									options={languageOptions}
 									value={currentLanguage}
-									onChange={(value) => i18n.changeLanguage(value)}
+									onChange={(value) => {
+										void i18n.changeLanguage(value);
+										queuePreferenceSync({ language: value });
+									}}
 								/>
 							</SettingsRow>
 						</SettingsSection>
