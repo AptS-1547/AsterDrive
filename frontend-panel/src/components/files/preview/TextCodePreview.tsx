@@ -164,7 +164,7 @@ export function TextCodePreview({
 					onMount={handleEditorMount}
 					options={{
 						readOnly: !editing,
-						minimap: { enabled: false },
+						minimap: { enabled: true },
 						wordWrap: "on",
 						fontSize: 13,
 						lineNumbers: "on",
