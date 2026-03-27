@@ -292,3 +292,184 @@ async fn test_disable_user_invalidates_status_cache() {
         }
     }
 }
+
+// ── Preferences endpoint tests ──
+
+/// Set preferences via PATCH, then verify they are returned by GET /me.
+#[actix_web::test]
+async fn test_patch_preferences_set_and_get() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // Patch all fields
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "theme_mode": "dark",
+            "color_preset": "green",
+            "view_mode": "grid",
+            "sort_by": "size",
+            "sort_order": "desc",
+            "language": "zh"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["theme_mode"], "dark");
+    assert_eq!(body["data"]["color_preset"], "green");
+    assert_eq!(body["data"]["view_mode"], "grid");
+    assert_eq!(body["data"]["sort_by"], "size");
+    assert_eq!(body["data"]["sort_order"], "desc");
+    assert_eq!(body["data"]["language"], "zh");
+
+    // Verify via GET /me
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["preferences"]["theme_mode"], "dark");
+    assert_eq!(body["data"]["preferences"]["view_mode"], "grid");
+    assert_eq!(body["data"]["preferences"]["language"], "zh");
+}
+
+/// Partial PATCH only updates specified fields; others remain unchanged.
+#[actix_web::test]
+async fn test_patch_preferences_partial_update() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // Set initial preferences
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "theme_mode": "dark",
+            "view_mode": "grid"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // Partial update: only change sort_by
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "sort_by": "size"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    // Previously set fields should be preserved
+    assert_eq!(body["data"]["theme_mode"], "dark");
+    assert_eq!(body["data"]["view_mode"], "grid");
+    // Newly set field
+    assert_eq!(body["data"]["sort_by"], "size");
+}
+
+/// Invalid enum values should be rejected with a 400 error.
+#[actix_web::test]
+async fn test_patch_preferences_invalid_enum_value() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "theme_mode": "invalid_value"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400, "invalid enum value should return 400");
+
+    // sort_order with invalid value
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "sort_order": "sideways"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400, "invalid sort_order should return 400");
+}
+
+/// PATCH with empty body should succeed (no-op, returns current prefs).
+#[actix_web::test]
+async fn test_patch_preferences_empty_body() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // Empty body — should succeed with no changes
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    // All fields should be null for a fresh user
+    assert!(body["data"]["theme_mode"].is_null());
+    assert!(body["data"]["color_preset"].is_null());
+    assert!(body["data"]["language"].is_null());
+
+    // Verify via GET /me — fresh user has no stored config so preferences is null
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"]["preferences"].is_null());
+}
+
+/// sort_by = "type" uses a special snake_case rename; verify it round-trips correctly.
+#[actix_web::test]
+async fn test_patch_preferences_sort_by_type() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "sort_by": "type" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["sort_by"], "type");
+}
+
+/// Unauthenticated requests to PATCH /preferences should be rejected.
+#[actix_web::test]
+async fn test_patch_preferences_unauthenticated() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .set_json(serde_json::json!({
+            "theme_mode": "dark"
+        }))
+        .to_request();
+    let result = test::try_call_service(&app, req).await;
+    match result {
+        Ok(resp) => assert_eq!(resp.status(), 401),
+        Err(err) => assert_eq!(err.error_response().status(), 401),
+    }
+}

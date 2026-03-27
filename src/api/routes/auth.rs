@@ -8,11 +8,19 @@ use actix_web::cookie::time::Duration as CookieDuration;
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::middleware::rate_limit;
 use crate::config::RateLimitConfig;
+
+// Re-export preference types from user_service for OpenAPI schema registration.
+pub use crate::services::user_service::{
+    ColorPreset, Language, PrefViewMode, ThemeMode, UpdatePreferencesReq, UserPreferences,
+};
+
+use crate::services::auth_service::Claims;
+use crate::services::user_service::{parse_preferences, update_preferences};
 
 const ACCESS_COOKIE: &str = "aster_access";
 const REFRESH_COOKIE: &str = "aster_refresh";
@@ -20,6 +28,7 @@ const REFRESH_COOKIE: &str = "aster_refresh";
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.auth);
 
+    // 公开路由 + 认证路由分别注册到 /auth 路径下
     web::scope("/auth")
         .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
         .route("/check", web::post().to(check))
@@ -28,7 +37,38 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/login", web::post().to(login))
         .route("/refresh", web::post().to(refresh))
         .route("/logout", web::post().to(logout))
-        .route("/me", web::get().to(me))
+        // 需要认证的端点使用嵌套 scope，注意路径前缀不能重复
+        .service(
+            web::scope("")
+                .wrap(crate::api::middleware::auth::JwtAuth)
+                .route("/me", web::get().to(me))
+                .route("/preferences", web::patch().to(patch_preferences)),
+        )
+}
+
+/// 用户信息核心字段（不含 password_hash），用于 API 响应。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UserCore {
+    pub id: i64,
+    pub username: String,
+    pub email: String,
+    pub role: crate::types::UserRole,
+    pub status: crate::types::UserStatus,
+    pub storage_used: i64,
+    pub storage_quota: i64,
+    #[schema(value_type = String)]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String)]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// /auth/me 响应：用户信息 + 偏好设置。
+#[derive(Debug, Serialize, ToSchema)]
+#[schema(as = MeResponse)]
+pub struct MeResponse {
+    #[serde(flatten)]
+    pub user: UserCore,
+    pub preferences: Option<UserPreferences>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -299,26 +339,52 @@ pub async fn logout(state: web::Data<AppState>) -> HttpResponse {
     tag = "auth",
     operation_id = "me",
     responses(
-        (status = 200, description = "Current user info", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 200, description = "Current user info", body = inline(ApiResponse<MeResponse>)),
         (status = 401, description = "Not authenticated"),
     ),
     security(("bearer" = [])),
 )]
-pub async fn me(state: web::Data<AppState>, req: actix_web::HttpRequest) -> Result<HttpResponse> {
-    // 从 cookie 或 header 取 token
-    let token = req
-        .cookie(ACCESS_COOKIE)
-        .map(|c| c.value().to_string())
-        .or_else(|| {
-            req.headers()
-                .get("Authorization")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
-                .map(|s| s.to_string())
-        })
-        .ok_or_else(|| crate::errors::AsterError::auth_token_invalid("not authenticated"))?;
-
-    let claims = auth_service::verify_token(&token, &state.config.auth.jwt_secret)?;
+pub async fn me(state: web::Data<AppState>, claims: web::ReqData<Claims>) -> Result<HttpResponse> {
     let user = user_repo::find_by_id(&state.db, claims.user_id).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
+    let prefs = parse_preferences(&user);
+    let resp = MeResponse {
+        user: UserCore {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            role: user.role,
+            status: user.status,
+            storage_used: user.storage_used,
+            storage_quota: user.storage_quota,
+            created_at: user.created_at,
+            updated_at: user.updated_at,
+        },
+        preferences: prefs,
+    };
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
+}
+
+/// Update the current user's preferences.
+///
+/// Only non-null fields in the request body are merged into the existing
+/// preferences. Returns the full updated preferences object.
+#[utoipa::path(
+    patch,
+    path = "/api/v1/auth/preferences",
+    tag = "auth",
+    operation_id = "update_preferences",
+    request_body = UpdatePreferencesReq,
+    responses(
+        (status = 200, description = "Preferences updated", body = inline(ApiResponse<UserPreferences>)),
+        (status = 401, description = "Not authenticated"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn patch_preferences(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    body: web::Json<UpdatePreferencesReq>,
+) -> Result<HttpResponse> {
+    let prefs = update_preferences(&state, claims.user_id, body.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(prefs)))
 }

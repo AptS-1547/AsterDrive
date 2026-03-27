@@ -328,10 +328,13 @@ pub async fn resolve_upload_path(
         verify_folder_access(state, user_id, fid).await?;
     }
 
-    let segments: Vec<&str> = relative_path
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
+    // Reject paths with empty segments (e.g. "docs//bad.txt")
+    if relative_path.split('/').any(|s| s.is_empty()) {
+        return Err(AsterError::validation_error(
+            "relative_path contains empty path segments",
+        ));
+    }
+    let segments: Vec<&str> = relative_path.split('/').collect();
     let filename = segments
         .last()
         .ok_or_else(|| AsterError::validation_error("relative_path cannot be empty"))?;

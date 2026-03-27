@@ -64,6 +64,11 @@ void ensureNamespaces(lang, DEFERRED_NAMESPACES);
 const _changeLanguage = i18n.changeLanguage.bind(i18n);
 i18n.changeLanguage = async (newLang?: string, ...args) => {
 	if (newLang) {
+		try {
+			localStorage.setItem("aster-language", newLang);
+		} catch {
+			// ignore storage errors (private browsing, quota)
+		}
 		await ensureNamespaces(newLang, INITIAL_NAMESPACES);
 		void ensureNamespaces(newLang, DEFERRED_NAMESPACES);
 	}

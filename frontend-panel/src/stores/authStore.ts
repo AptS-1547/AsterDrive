@@ -1,11 +1,18 @@
 import axios from "axios";
 import { create } from "zustand";
+import i18n from "@/i18n";
+import { logger } from "@/lib/logger";
+import { cancelPreferenceSync } from "@/lib/preferenceSync";
 import { authService } from "@/services/authService";
-import type { UserInfo } from "@/types/api";
+import type { SortBy, SortOrder, ViewMode } from "@/stores/fileStore";
+import { useFileStore } from "@/stores/fileStore";
+import type { ColorPreset, ThemeMode } from "@/stores/themeStore";
+import { useThemeStore } from "@/stores/themeStore";
+import type { MeResponse, UserPreferences } from "@/types/api";
 
 const CACHED_USER_KEY = "aster-cached-user";
 
-function getCachedUser(): UserInfo | null {
+function getCachedUser(): MeResponse | null {
 	try {
 		const raw = localStorage.getItem(CACHED_USER_KEY);
 		return raw ? JSON.parse(raw) : null;
@@ -14,7 +21,7 @@ function getCachedUser(): UserInfo | null {
 	}
 }
 
-function setCachedUser(user: UserInfo | null) {
+function setCachedUser(user: MeResponse | null) {
 	if (user) {
 		localStorage.setItem(CACHED_USER_KEY, JSON.stringify(user));
 	} else {
@@ -27,7 +34,7 @@ interface AuthState {
 	isChecking: boolean;
 	isAuthStale: boolean;
 	bootOffline: boolean;
-	user: UserInfo | null;
+	user: MeResponse | null;
 	login: (identifier: string, password: string) => Promise<void>;
 	logout: () => Promise<void>;
 	checkAuth: () => Promise<void>;
@@ -35,6 +42,22 @@ interface AuthState {
 }
 
 const initialCachedUser = getCachedUser();
+
+function applyServerPreferences(prefs: UserPreferences): void {
+	const themeStore = useThemeStore.getState();
+	const fileStore = useFileStore.getState();
+
+	themeStore._applyFromServer({
+		mode: (prefs.theme_mode as ThemeMode) ?? themeStore.mode,
+		colorPreset: (prefs.color_preset as ColorPreset) ?? themeStore.colorPreset,
+	});
+	fileStore._applyFromServer({
+		viewMode: (prefs.view_mode as ViewMode) ?? fileStore.viewMode,
+		sortBy: (prefs.sort_by as SortBy) ?? fileStore.sortBy,
+		sortOrder: (prefs.sort_order as SortOrder) ?? fileStore.sortOrder,
+	});
+	if (prefs.language) void i18n.changeLanguage(prefs.language);
+}
 
 export const useAuthStore = create<AuthState>((set) => ({
 	isAuthenticated: initialCachedUser !== null,
@@ -46,6 +69,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 	login: async (identifier, password) => {
 		await authService.login(identifier, password);
 		const user = await authService.me();
+		if (user.preferences) applyServerPreferences(user.preferences);
 		setCachedUser(user);
 		set({
 			isAuthenticated: true,
@@ -57,6 +81,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 	},
 
 	logout: async () => {
+		cancelPreferenceSync();
 		try {
 			await authService.logout();
 		} catch {
@@ -76,6 +101,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 		set({ isChecking: true, bootOffline: false });
 		try {
 			const user = await authService.me();
+			if (user.preferences) applyServerPreferences(user.preferences);
 			setCachedUser(user);
 			set({
 				isAuthenticated: true,
@@ -121,6 +147,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 	refreshUser: async () => {
 		try {
 			const user = await authService.me();
+			if (user.preferences) applyServerPreferences(user.preferences);
 			setCachedUser(user);
 			set({
 				user,
@@ -128,8 +155,8 @@ export const useAuthStore = create<AuthState>((set) => ({
 				isAuthStale: false,
 				bootOffline: false,
 			});
-		} catch {
-			// ignore refresh failure; auth interceptors may recover separately
+		} catch (e) {
+			logger.warn("refreshUser failed", e);
 		}
 	},
 }));

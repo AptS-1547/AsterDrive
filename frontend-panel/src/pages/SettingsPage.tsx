@@ -8,6 +8,7 @@ import {
 } from "@/components/common/SettingsScaffold";
 import { AppLayout } from "@/components/layout/AppLayout";
 import type { IconName } from "@/components/ui/icon";
+import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { useFileStore } from "@/stores/fileStore";
 import { useThemeStore } from "@/stores/themeStore";
 
@@ -30,9 +31,13 @@ export default function SettingsPage() {
 		{ value: "system", label: t("theme_system"), icon: "Monitor" },
 	];
 
-	const languageOptions = [
-		{ value: "en", label: t("language_en"), icon: "Globe" as const },
-		{ value: "zh", label: t("language_zh"), icon: "Globe" as const },
+	const languageOptions: Array<{
+		value: "en" | "zh";
+		label: string;
+		icon: IconName;
+	}> = [
+		{ value: "en", label: t("language_en"), icon: "Globe" },
+		{ value: "zh", label: t("language_zh"), icon: "Globe" },
 	];
 
 	const browserOptions: Array<{
@@ -97,7 +102,10 @@ export default function SettingsPage() {
 								<SettingsChoiceGroup
 									options={languageOptions}
 									value={currentLanguage}
-									onChange={(value) => i18n.changeLanguage(value)}
+									onChange={(value) => {
+										void i18n.changeLanguage(value);
+										queuePreferenceSync({ language: value });
+									}}
 								/>
 							</SettingsRow>
 						</SettingsSection>

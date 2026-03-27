@@ -3,6 +3,7 @@ import type { components } from "@/services/api.generated";
 
 // Schema types
 export type UserInfo = components["schemas"]["UserInfo"];
+export type MeResponse = components["schemas"]["MeResponse"];
 export type FileInfo = components["schemas"]["FileInfo"];
 export type FolderInfo = components["schemas"]["FolderInfo"];
 export type FileListItem = components["schemas"]["FileListItem"];
@@ -28,6 +29,11 @@ export type WebdavAccountInfo = components["schemas"]["WebdavAccountInfo"];
 export type TrashFileItem = components["schemas"]["TrashFileItem"];
 export type TrashFolderItem = components["schemas"]["TrashFolderItem"];
 export type TrashContents = components["schemas"]["TrashContents"];
+
+// User preferences
+export type UserPreferences = components["schemas"]["UserPreferences"];
+export type UpdatePreferencesRequest =
+	components["schemas"]["UpdatePreferencesReq"];
 
 export type TrashItem =
 	| (TrashFileItem & { entity_type: "file" })

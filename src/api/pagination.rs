@@ -59,7 +59,7 @@ where
     Ok(OffsetPage::new(items, total, limit, offset))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum SortBy {
@@ -85,7 +85,7 @@ impl SortBy {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum SortOrder {
