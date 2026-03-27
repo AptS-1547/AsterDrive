@@ -62,18 +62,17 @@ interface UserDetailDialogProps {
 	user: UserInfo | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	onUpdateRole: (id: number, role: UserRole) => Promise<void>;
-	onUpdateStatus: (id: number, status: UserStatus) => Promise<void>;
-	onUpdateQuota: (id: number, quota: number) => Promise<void>;
+	onUpdate: (
+		id: number,
+		data: { role?: UserRole; status?: UserStatus; storage_quota?: number },
+	) => Promise<void>;
 }
 
 export function UserDetailDialog({
 	user,
 	open,
 	onOpenChange,
-	onUpdateRole,
-	onUpdateStatus,
-	onUpdateQuota,
+	onUpdate,
 }: UserDetailDialogProps) {
 	const { t } = useTranslation("admin");
 	const [quotaValue, setQuotaValue] = useState("");
@@ -149,27 +148,21 @@ export function UserDetailDialog({
 	const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
 	const isInitialAdmin = user.id === 1;
 
-	// TODO: 后端应提供批量更新用户设置端点（一次提交 role/status/storage_quota），
-	// 替代当前前端保存时按字段拆成多次请求的 N+1 更新模式。
 	const handleProfileSave = async () => {
 		const mb = Number.parseInt(quotaValue, 10);
 		const newQuota = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
-		const actions: Array<() => Promise<void>> = [];
-		if (draftRole !== user.role) {
-			actions.push(() => onUpdateRole(user.id, draftRole));
-		}
-		if (draftStatus !== user.status) {
-			actions.push(() => onUpdateStatus(user.id, draftStatus));
-		}
-		if (newQuota !== (user.storage_quota ?? 0)) {
-			actions.push(() => onUpdateQuota(user.id, newQuota));
-		}
-		if (actions.length === 0) return;
+		const data: {
+			role?: UserRole;
+			status?: UserStatus;
+			storage_quota?: number;
+		} = {};
+		if (draftRole !== user.role) data.role = draftRole;
+		if (draftStatus !== user.status) data.status = draftStatus;
+		if (newQuota !== (user.storage_quota ?? 0)) data.storage_quota = newQuota;
+		if (Object.keys(data).length === 0) return;
 		try {
 			setSavingProfile(true);
-			for (const action of actions) {
-				await action();
-			}
+			await onUpdate(user.id, data);
 		} finally {
 			setSavingProfile(false);
 		}

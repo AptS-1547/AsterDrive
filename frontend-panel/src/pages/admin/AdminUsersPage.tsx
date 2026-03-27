@@ -320,34 +320,18 @@ export default function AdminUsersPage() {
 		}
 	};
 
-	// TODO: 等后端提供批量更新用户设置端点后，这三个单字段更新函数可以收敛成一次保存调用。
-	const updateRole = async (id: number, role: UserRole) => {
+	const updateUser = async (
+		id: number,
+		data: {
+			role?: UserRole;
+			status?: UserStatus;
+			storage_quota?: number;
+		},
+	) => {
 		try {
-			const updated = await adminUserService.update(id, { role });
+			const updated = await adminUserService.update(id, data);
 			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
-			toast.success(t("role_updated"));
-		} catch (e) {
-			handleApiError(e);
-		}
-	};
-
-	const updateStatus = async (id: number, status: UserStatus) => {
-		try {
-			const updated = await adminUserService.update(id, { status });
-			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
-			toast.success(t("status_updated"));
-		} catch (e) {
-			handleApiError(e);
-		}
-	};
-
-	const updateQuota = async (id: number, storage_quota: number) => {
-		try {
-			const updated = await adminUserService.update(id, {
-				storage_quota,
-			});
-			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
-			toast.success(t("quota_updated"));
+			toast.success(t("user_updated"));
 		} catch (e) {
 			handleApiError(e);
 		}
@@ -798,9 +782,7 @@ export default function AdminUsersPage() {
 				onOpenChange={(open) => {
 					if (!open) setDetailDialogUserId(null);
 				}}
-				onUpdateRole={updateRole}
-				onUpdateStatus={updateStatus}
-				onUpdateQuota={updateQuota}
+				onUpdate={updateUser}
 			/>
 			<ConfirmDialog
 				open={deleteUserId !== null}

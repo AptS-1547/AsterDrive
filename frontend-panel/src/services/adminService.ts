@@ -43,8 +43,6 @@ export const adminUserService = {
 	create: (data: { username: string; email: string; password: string }) =>
 		api.post<UserInfo>("/admin/users", data),
 
-	// TODO: 后端后续应补一个批量更新用户设置端点（如单次 PATCH 同时提交 role/status/storage_quota），
-	// 避免前端在用户详情保存时拆成多次 update 请求。
 	update: (
 		id: number,
 		data: { role?: UserRole; status?: UserStatus; storage_quota?: number },
