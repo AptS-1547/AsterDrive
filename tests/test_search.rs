@@ -58,7 +58,10 @@ async fn test_search_includes_share_and_lock_status() {
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
-    assert_eq!(test::call_service(&app, lock_folder_req).await.status(), 200);
+    assert_eq!(
+        test::call_service(&app, lock_folder_req).await.status(),
+        200
+    );
 
     let share_file_req = test::TestRequest::post()
         .uri("/api/v1/shares")
@@ -72,7 +75,10 @@ async fn test_search_includes_share_and_lock_status() {
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({ "folder_id": folder_id }))
         .to_request();
-    assert_eq!(test::call_service(&app, share_folder_req).await.status(), 201);
+    assert_eq!(
+        test::call_service(&app, share_folder_req).await.status(),
+        201
+    );
 
     let file_search_req = test::TestRequest::get()
         .uri("/api/v1/search?q=status-report")

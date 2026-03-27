@@ -16,6 +16,8 @@ export type UserRole = components["schemas"]["UserRole"];
 export type UserStatus = components["schemas"]["UserStatus"];
 export type DriverType = components["schemas"]["DriverType"];
 export type ShareInfo = components["schemas"]["ShareInfo"];
+export type MyShareInfo = components["schemas"]["MyShareInfo"];
+export type ShareStatus = components["schemas"]["ShareStatus"];
 export type SharePublicInfo = components["schemas"]["SharePublicInfo"];
 export type UserStoragePolicy = components["schemas"]["UserStoragePolicy"];
 export type WebdavAccount = components["schemas"]["WebdavAccount"];
@@ -61,7 +63,8 @@ export type StoragePolicyPage =
 	components["schemas"]["OffsetPage_StoragePolicy"];
 export type UserStoragePolicyPage =
 	components["schemas"]["OffsetPage_UserStoragePolicy"];
-export type SharePage = components["schemas"]["OffsetPage_ShareInfo"];
+export type SharePage = components["schemas"]["OffsetPage_MyShareInfo"];
+export type AdminSharePage = components["schemas"]["OffsetPage_ShareInfo"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
 export type SystemConfigPage = components["schemas"]["OffsetPage_SystemConfig"];
 export type WebdavAccountPage =

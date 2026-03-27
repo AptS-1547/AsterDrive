@@ -161,7 +161,9 @@ export default function FileBrowserPage() {
 	const [fadingFolderIds, setFadingFolderIds] = useState<Set<number>>(
 		new Set(),
 	);
-	const [previewFile, setPreviewFile] = useState<FileInfo | FileListItem | null>(null);
+	const [previewFile, setPreviewFile] = useState<
+		FileInfo | FileListItem | null
+	>(null);
 	const [shareTarget, setShareTarget] = useState<{
 		fileId?: number;
 		folderId?: number;

@@ -1,8 +1,8 @@
 import type {
+	AdminSharePage,
 	DriverType,
 	LockPage,
 	ShareInfo,
-	SharePage,
 	StoragePolicy,
 	StoragePolicyPage,
 	SystemConfig,
@@ -150,7 +150,7 @@ export const adminShareService = {
 		if (params?.limit != null) query.set("limit", String(params.limit));
 		if (params?.offset != null) query.set("offset", String(params.offset));
 		const suffix = query.toString();
-		return api.get<SharePage>(
+		return api.get<AdminSharePage>(
 			suffix ? `/admin/shares?${suffix}` : "/admin/shares",
 		);
 	},

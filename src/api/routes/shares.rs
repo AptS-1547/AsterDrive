@@ -87,7 +87,7 @@ pub async fn create_share(
     operation_id = "list_my_shares",
     params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "My shares", body = inline(ApiResponse<OffsetPage<crate::entities::share::Model>>)),
+        (status = 200, description = "My shares", body = inline(ApiResponse<OffsetPage<crate::services::share_service::MyShareInfo>>)),
         (status = 401, description = "Unauthorized"),
     ),
     security(("bearer" = [])),

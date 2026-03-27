@@ -674,7 +674,8 @@ pub async fn copy_file(
     user_repo::check_quota(db, user_id, blob.size).await?;
 
     // 副本命名：目标无冲突保留原名，有冲突则递增
-    let copy_name = file_repo::resolve_unique_filename(db, user_id, dest_folder_id, &src.name).await?;
+    let copy_name =
+        file_repo::resolve_unique_filename(db, user_id, dest_folder_id, &src.name).await?;
 
     duplicate_file_record(state, &src, dest_folder_id, &copy_name).await
 }

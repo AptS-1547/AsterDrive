@@ -68,7 +68,8 @@ pub fn build_file_list_items(
     files: Vec<file::Model>,
     shared_file_ids: &HashSet<i64>,
 ) -> Vec<FileListItem> {
-    files.into_iter()
+    files
+        .into_iter()
         .map(|file| FileListItem {
             id: file.id,
             name: file.name,

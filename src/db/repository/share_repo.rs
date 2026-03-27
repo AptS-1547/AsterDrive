@@ -100,7 +100,9 @@ fn active_share_condition() -> Condition {
                 .add(share::Column::ExpiresAt.is_null())
                 .add(share::Column::ExpiresAt.gte(Utc::now())),
         )
-        .add(Expr::cust("max_downloads = 0 OR download_count < max_downloads"))
+        .add(Expr::cust(
+            "max_downloads = 0 OR download_count < max_downloads",
+        ))
 }
 
 pub async fn find_active_file_ids<C: ConnectionTrait>(

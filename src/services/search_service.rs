@@ -5,9 +5,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::db::repository::{search_repo, share_repo};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::folder_service::{
-    FileListItem, FolderListItem, build_folder_list_items,
-};
+use crate::services::folder_service::{FileListItem, FolderListItem, build_folder_list_items};
 
 #[derive(Deserialize, IntoParams, ToSchema)]
 pub struct SearchParams {

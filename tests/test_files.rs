@@ -259,7 +259,9 @@ async fn test_file_copy() {
          copy content\r\n\
          ------TestBoundary123--\r\n";
     let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/files/upload?folder_id={source_folder_id}"))
+        .uri(&format!(
+            "/api/v1/files/upload?folder_id={source_folder_id}"
+        ))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .insert_header((
             "Content-Type",

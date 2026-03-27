@@ -1446,6 +1446,29 @@ export interface components {
             identifier: string;
             password: string;
         };
+        MyShareInfo: {
+            created_at: string;
+            /** Format: int64 */
+            download_count: number;
+            expires_at?: string | null;
+            has_password: boolean;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            max_downloads: number;
+            /** Format: int64 */
+            remaining_downloads?: number | null;
+            resource_deleted: boolean;
+            /** Format: int64 */
+            resource_id: number;
+            resource_name: string;
+            resource_type: components["schemas"]["EntityType"];
+            status: components["schemas"]["ShareStatus"];
+            token: string;
+            updated_at: string;
+            /** Format: int64 */
+            view_count: number;
+        };
         OffsetPage_AuditLogEntry: {
             items: {
                 action: string;
@@ -1461,6 +1484,37 @@ export interface components {
                 user_agent?: string | null;
                 /** Format: int64 */
                 user_id: number;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
+        OffsetPage_MyShareInfo: {
+            items: {
+                created_at: string;
+                /** Format: int64 */
+                download_count: number;
+                expires_at?: string | null;
+                has_password: boolean;
+                /** Format: int64 */
+                id: number;
+                /** Format: int64 */
+                max_downloads: number;
+                /** Format: int64 */
+                remaining_downloads?: number | null;
+                resource_deleted: boolean;
+                /** Format: int64 */
+                resource_id: number;
+                resource_name: string;
+                resource_type: components["schemas"]["EntityType"];
+                status: components["schemas"]["ShareStatus"];
+                token: string;
+                updated_at: string;
+                /** Format: int64 */
+                view_count: number;
             }[];
             /** Format: int64 */
             limit: number;
@@ -1800,6 +1854,8 @@ export interface components {
             /** Format: int64 */
             view_count: number;
         };
+        /** @enum {string} */
+        ShareStatus: "active" | "expired" | "exhausted" | "deleted";
         /** @enum {string} */
         SortBy: "name" | "size" | "created_at" | "updated_at" | "type";
         /** @enum {string} */
@@ -5935,18 +5991,21 @@ export interface operations {
                                 /** Format: int64 */
                                 download_count: number;
                                 expires_at?: string | null;
-                                /** Format: int64 */
-                                file_id?: number | null;
-                                /** Format: int64 */
-                                folder_id?: number | null;
+                                has_password: boolean;
                                 /** Format: int64 */
                                 id: number;
                                 /** Format: int64 */
                                 max_downloads: number;
+                                /** Format: int64 */
+                                remaining_downloads?: number | null;
+                                resource_deleted: boolean;
+                                /** Format: int64 */
+                                resource_id: number;
+                                resource_name: string;
+                                resource_type: components["schemas"]["EntityType"];
+                                status: components["schemas"]["ShareStatus"];
                                 token: string;
                                 updated_at: string;
-                                /** Format: int64 */
-                                user_id: number;
                                 /** Format: int64 */
                                 view_count: number;
                             }[];

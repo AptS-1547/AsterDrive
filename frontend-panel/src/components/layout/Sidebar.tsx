@@ -42,6 +42,7 @@ export function Sidebar({
 	const [trashDragOver, setTrashDragOver] = useState(false);
 
 	const navLinks: { to: string; icon: IconName; label: string }[] = [
+		{ to: "/shares", icon: "Link", label: t("files:my_shares_title") },
 		{ to: "/trash", icon: "Trash", label: t("trash") },
 		{ to: "/settings/webdav", icon: "HardDrive", label: t("webdav") },
 		{ to: "/settings", icon: "Gear", label: t("settings") },
