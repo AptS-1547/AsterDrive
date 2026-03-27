@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { STORAGE_KEYS } from "@/config/app";
+import { logger } from "@/lib/logger";
 import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { batchService } from "@/services/batchService";
 import type { FolderListParams } from "@/services/fileService";
@@ -280,8 +281,9 @@ export const useFileStore = create<FileState>((set, get) => ({
 				nextFileCursor: contents.next_file_cursor ?? null,
 				loadingMore: false,
 			}));
-		} catch {
+		} catch (e) {
 			set({ loadingMore: false });
+			logger.warn("loadMoreFiles failed", e);
 		}
 	},
 

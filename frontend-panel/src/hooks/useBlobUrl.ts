@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { logger } from "@/lib/logger";
 import { api } from "@/services/http";
 
 interface BlobCacheEntry {
@@ -91,6 +92,7 @@ async function acquireBlobUrl(path: string): Promise<string> {
 	};
 
 	const promise = fetchWithRetry(0).catch((error: unknown) => {
+		logger.warn("blob fetch failed", path, error);
 		const current = blobUrlCache.get(path);
 		if (current) {
 			current.promise = undefined;

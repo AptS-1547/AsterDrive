@@ -1,6 +1,7 @@
 import axios from "axios";
 import { create } from "zustand";
 import i18n from "@/i18n";
+import { logger } from "@/lib/logger";
 import { cancelPreferenceSync } from "@/lib/preferenceSync";
 import { authService } from "@/services/authService";
 import type { SortBy, SortOrder, ViewMode } from "@/stores/fileStore";
@@ -154,8 +155,8 @@ export const useAuthStore = create<AuthState>((set) => ({
 				isAuthStale: false,
 				bootOffline: false,
 			});
-		} catch {
-			// ignore refresh failure; auth interceptors may recover separately
+		} catch (e) {
+			logger.warn("refreshUser failed", e);
 		}
 	},
 }));
