@@ -8,9 +8,19 @@ interface AppLayoutProps {
 	children: ReactNode;
 	actions?: ReactNode;
 	onTrashDrop?: (data: InternalDragData) => void | Promise<void>;
+	onMoveToFolder?: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number | null,
+	) => Promise<void> | void;
 }
 
-export function AppLayout({ children, actions, onTrashDrop }: AppLayoutProps) {
+export function AppLayout({
+	children,
+	actions,
+	onTrashDrop,
+	onMoveToFolder,
+}: AppLayoutProps) {
 	const [mobileOpen, setMobileOpen] = useState(false);
 
 	const handleMobileToggle = useCallback(() => {
@@ -29,6 +39,7 @@ export function AppLayout({ children, actions, onTrashDrop }: AppLayoutProps) {
 					mobileOpen={mobileOpen}
 					onMobileClose={handleMobileClose}
 					onTrashDrop={onTrashDrop}
+					onMoveToFolder={onMoveToFolder}
 				/>
 				<main className="min-h-0 min-w-0 flex-1 flex flex-col overflow-hidden">
 					{children}

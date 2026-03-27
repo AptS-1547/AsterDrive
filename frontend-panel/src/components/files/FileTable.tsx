@@ -20,6 +20,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import {
+	getInvalidInternalDropReason,
 	hasInternalDragData,
 	readInternalDragData,
 	setInternalDragPreview,
@@ -33,6 +34,7 @@ import type { FileInfo, FolderInfo } from "@/types/api";
 interface FileTableProps {
 	folders: FolderInfo[];
 	files: FileInfo[];
+	breadcrumbPathIds?: number[];
 	onFolderOpen: (id: number, name: string) => void;
 	onFileClick: (file: FileInfo) => void;
 	onShare: (target: {
@@ -77,6 +79,7 @@ function SortIcon({
 export function FileTable({
 	folders,
 	files,
+	breadcrumbPathIds = [],
 	onFolderOpen,
 	onFileClick,
 	onShare,
@@ -152,6 +155,11 @@ export function FileTable({
 		});
 	};
 
+	const getTargetPathIds = (folderId: number) => [
+		...breadcrumbPathIds,
+		folderId,
+	];
+
 	const handleFolderDragOver = (e: React.DragEvent, folderId: number) => {
 		if (!hasInternalDragData(e.dataTransfer)) return;
 		e.preventDefault();
@@ -164,7 +172,10 @@ export function FileTable({
 		e.preventDefault();
 		const data = readInternalDragData(e.dataTransfer);
 		if (!data) return;
-		if (data.folderIds.includes(folderId)) return;
+		const targetPathIds = getTargetPathIds(folderId);
+		if (getInvalidInternalDropReason(data, folderId, targetPathIds) !== null) {
+			return;
+		}
 		onMoveToFolder?.(data.fileIds, data.folderIds, folderId);
 	};
 

@@ -23,12 +23,18 @@ interface SidebarProps {
 	mobileOpen: boolean;
 	onMobileClose: () => void;
 	onTrashDrop?: (data: InternalDragData) => void | Promise<void>;
+	onMoveToFolder?: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number | null,
+	) => Promise<void> | void;
 }
 
 export function Sidebar({
 	mobileOpen,
 	onMobileClose,
 	onTrashDrop,
+	onMoveToFolder,
 }: SidebarProps) {
 	const { t } = useTranslation();
 	const location = useLocation();
@@ -69,7 +75,7 @@ export function Sidebar({
 		<div className="flex flex-col h-full">
 			{/* Folder tree */}
 			<ScrollArea className="flex-1">
-				<FolderTree />
+				<FolderTree onMoveToFolder={onMoveToFolder} />
 			</ScrollArea>
 
 			<Separator />

@@ -3,6 +3,7 @@ import { FileThumbnail } from "@/components/files/FileThumbnail";
 import { Icon } from "@/components/ui/icon";
 import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import {
+	getInvalidInternalDropReason,
 	hasInternalDragData,
 	readInternalDragData,
 	setInternalDragPreview,
@@ -23,7 +24,9 @@ interface FileCardProps {
 		fileIds: number[],
 		folderIds: number[],
 		targetFolderId: number,
+		targetPathIds: number[],
 	) => void;
+	targetPathIds?: number[];
 	fading?: boolean;
 	draggable?: boolean;
 	thumbnailPath?: string;
@@ -37,6 +40,7 @@ export function FileCard({
 	onClick,
 	dragData,
 	onDrop,
+	targetPathIds = [],
 	fading,
 	draggable = true,
 	thumbnailPath,
@@ -72,9 +76,10 @@ export function FileCard({
 		e.preventDefault();
 		const data = readInternalDragData(e.dataTransfer);
 		if (!data) return;
-		// Don't drop a folder into itself
-		if (data.folderIds.includes(item.id)) return;
-		onDrop?.(data.fileIds, data.folderIds, item.id);
+		if (getInvalidInternalDropReason(data, item.id, targetPathIds) !== null) {
+			return;
+		}
+		onDrop?.(data.fileIds, data.folderIds, item.id, targetPathIds);
 	};
 
 	return (

@@ -511,15 +511,19 @@ export const useFileStore = create<FileState>((set, get) => ({
 		get().clearSelection();
 		// Silent refresh — don't set loading to avoid flash
 		const { currentFolderId } = get();
-		const contents = await fetchFolder(
-			currentFolderId,
-			getInitialPageParams(get().sortBy, get().sortOrder),
-		);
+		const [contents, breadcrumb] = await Promise.all([
+			fetchFolder(
+				currentFolderId,
+				getInitialPageParams(get().sortBy, get().sortOrder),
+			),
+			resolveBreadcrumb(currentFolderId),
+		]);
 		set({
 			folders: contents.folders,
 			files: contents.files,
 			foldersTotalCount: contents.folders_total,
 			filesTotalCount: contents.files_total,
+			breadcrumb,
 		});
 		return result;
 	},

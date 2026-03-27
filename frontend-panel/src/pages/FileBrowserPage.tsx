@@ -38,7 +38,12 @@ import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import type { InternalDragData } from "@/lib/dragDrop";
+import {
+	getInvalidInternalDropReason,
+	hasInternalDragData,
+	type InternalDragData,
+	readInternalDragData,
+} from "@/lib/dragDrop";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
@@ -169,6 +174,9 @@ export default function FileBrowserPage() {
 		mimeType: string;
 		size: number;
 	} | null>(null);
+	const [dragOverBreadcrumbIndex, setDragOverBreadcrumbIndex] = useState<
+		number | null
+	>(null);
 	const [renameTarget, setRenameTarget] = useState<{
 		type: "file" | "folder";
 		id: number;
@@ -285,6 +293,11 @@ export default function FileBrowserPage() {
 				setFadingFileIds(new Set(fileIds));
 				setFadingFolderIds(new Set(folderIds));
 				const result = await moveToFolder(fileIds, folderIds, targetFolderId);
+				document.dispatchEvent(
+					new CustomEvent("folder-tree-move", {
+						detail: { folderIds, targetFolderId },
+					}),
+				);
 				// Wait for fade-out animation to finish, then clear
 				await new Promise((r) => setTimeout(r, 300));
 				setFadingFileIds(new Set());
@@ -321,6 +334,51 @@ export default function FileBrowserPage() {
 		[handleMoveToFolder, moveTarget],
 	);
 
+	const handleBreadcrumbDragOver = useCallback(
+		(e: React.DragEvent, index: number) => {
+			if (!hasInternalDragData(e.dataTransfer)) return;
+			e.preventDefault();
+			e.dataTransfer.dropEffect = "move";
+			setDragOverBreadcrumbIndex(index);
+		},
+		[],
+	);
+
+	const handleBreadcrumbDragLeave = useCallback((e: React.DragEvent) => {
+		const nextTarget = e.relatedTarget;
+		if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+			return;
+		}
+		setDragOverBreadcrumbIndex(null);
+	}, []);
+
+	const handleBreadcrumbDrop = useCallback(
+		async (
+			e: React.DragEvent,
+			index: number,
+			targetFolderId: number | null,
+		) => {
+			setDragOverBreadcrumbIndex(null);
+			e.preventDefault();
+			const data = readInternalDragData(e.dataTransfer);
+			if (!data) return;
+
+			const targetPathIds = breadcrumb
+				.slice(0, index + 1)
+				.map((item) => item.id)
+				.filter((id): id is number => id !== null);
+			if (
+				getInvalidInternalDropReason(data, targetFolderId, targetPathIds) !==
+				null
+			) {
+				return;
+			}
+
+			await handleMoveToFolder(data.fileIds, data.folderIds, targetFolderId);
+		},
+		[breadcrumb, handleMoveToFolder],
+	);
+
 	const handleTrashDrop = useCallback(
 		async ({ fileIds, folderIds }: InternalDragData) => {
 			if (fileIds.length === 0 && folderIds.length === 0) return;
@@ -355,9 +413,14 @@ export default function FileBrowserPage() {
 		[clearSelection, refresh, search, searchQuery, t],
 	);
 
+	const breadcrumbPathIds = breadcrumb
+		.map((item) => item.id)
+		.filter((id): id is number => id !== null);
+
 	const sharedProps = {
 		folders: displayFolders,
 		files: displayFiles,
+		breadcrumbPathIds,
 		onFolderOpen: (id: number, name: string) =>
 			navigate(`/folder/${id}?name=${encodeURIComponent(name)}`),
 		onFileClick: (file: FileInfo) => setPreviewFile(file),
@@ -428,7 +491,18 @@ export default function FileBrowserPage() {
 												<BreadcrumbItem>
 													{i < breadcrumb.length - 1 ? (
 														<BreadcrumbLink
-															className="cursor-pointer text-muted-foreground"
+															className={[
+																"cursor-pointer rounded-md px-1.5 py-0.5 text-muted-foreground",
+																dragOverBreadcrumbIndex === i &&
+																	"ring-2 ring-primary bg-accent/30 text-foreground",
+															]
+																.filter(Boolean)
+																.join(" ")}
+															onDragOver={(e) => handleBreadcrumbDragOver(e, i)}
+															onDragLeave={handleBreadcrumbDragLeave}
+															onDrop={(e) =>
+																handleBreadcrumbDrop(e, i, item.id)
+															}
 															onClick={() =>
 																navigate(
 																	item.id === null
@@ -536,7 +610,10 @@ export default function FileBrowserPage() {
 	);
 
 	return (
-		<AppLayout onTrashDrop={handleTrashDrop}>
+		<AppLayout
+			onTrashDrop={handleTrashDrop}
+			onMoveToFolder={handleMoveToFolder}
+		>
 			<Suspense fallback={pageCore}>
 				<UploadArea ref={handleUploadAreaReady}>{pageCore}</UploadArea>
 			</Suspense>

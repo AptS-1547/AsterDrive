@@ -6,6 +6,8 @@ export interface InternalDragData {
 	folderIds: number[];
 }
 
+export type InternalDropInvalidReason = "self" | "descendant";
+
 interface DragPreviewOptions {
 	itemCount?: number;
 	variant?: "default" | "grid-card" | "list-row";
@@ -240,6 +242,22 @@ export function writeInternalDragData(
 ) {
 	dataTransfer.setData(DRAG_MIME, JSON.stringify(data));
 	dataTransfer.effectAllowed = "move";
+}
+
+export function getInvalidInternalDropReason(
+	dragData: InternalDragData,
+	targetFolderId: number | null,
+	targetPathIds: number[] = [],
+): InternalDropInvalidReason | null {
+	if (targetFolderId !== null && dragData.folderIds.includes(targetFolderId)) {
+		return "self";
+	}
+
+	if (dragData.folderIds.some((folderId) => targetPathIds.includes(folderId))) {
+		return "descendant";
+	}
+
+	return null;
 }
 
 export function setInternalDragPreview(
