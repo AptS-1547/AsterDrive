@@ -132,7 +132,9 @@ pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublic
     let share = load_valid_share(state, token).await?;
 
     // increment view count (fire and forget)
-    let _ = share_repo::increment_view_count(db, share.id).await;
+    if let Err(e) = share_repo::increment_view_count(db, share.id).await {
+        tracing::warn!(share_id = share.id, "failed to increment view count: {e}");
+    }
 
     let (name, share_type, mime_type, size) = resolve_share_name(db, &share).await?;
 
@@ -184,7 +186,9 @@ pub async fn download_shared_file(
 
     // only count actual downloads, not 304 cache hits
     if response.status() != actix_web::http::StatusCode::NOT_MODIFIED {
-        let _ = share_repo::increment_download_count(&state.db, share.id).await;
+        if let Err(e) = share_repo::increment_download_count(&state.db, share.id).await {
+            tracing::warn!(share_id = share.id, "failed to increment download count: {e}");
+        }
     }
 
     Ok(response)
@@ -201,7 +205,9 @@ pub async fn download_shared_folder_file(
     let response = file_service::download_raw(state, file.id, if_none_match).await?;
 
     if response.status() != actix_web::http::StatusCode::NOT_MODIFIED {
-        let _ = share_repo::increment_download_count(&state.db, share.id).await;
+        if let Err(e) = share_repo::increment_download_count(&state.db, share.id).await {
+            tracing::warn!(share_id = share.id, "failed to increment download count: {e}");
+        }
     }
 
     Ok(response)

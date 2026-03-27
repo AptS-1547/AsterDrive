@@ -49,7 +49,9 @@ pub async fn get_or_enqueue(state: &AppState, blob: &file_blob::Model) -> Result
     }
 
     // 入队后台生成（非阻塞，队列满时 drop）
-    let _ = state.thumbnail_tx.try_send(blob.id);
+    if let Err(e) = state.thumbnail_tx.try_send(blob.id) {
+        tracing::warn!(blob_id = blob.id, "thumbnail queue full, dropping request: {e}");
+    }
 
     Ok(None)
 }

@@ -199,7 +199,9 @@ pub async fn test_connection(state: &AppState, id: i64) -> Result<()> {
         .put(test_path, b"ok")
         .await
         .map_aster_err_ctx("write test failed", AsterError::storage_driver_error)?;
-    let _ = driver.delete(test_path).await;
+    if let Err(e) = driver.delete(test_path).await {
+        tracing::warn!("failed to clean up connection test file: {e}");
+    }
 
     Ok(())
 }
@@ -246,7 +248,9 @@ pub async fn test_connection_params(
         .put(test_path, b"ok")
         .await
         .map_aster_err_ctx("connection test failed", AsterError::storage_driver_error)?;
-    let _ = driver.delete(test_path).await;
+    if let Err(e) = driver.delete(test_path).await {
+        tracing::warn!("failed to clean up connection test file: {e}");
+    }
 
     Ok(())
 }

@@ -226,13 +226,16 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     // 7. 清理用户持有的资源锁
     let locks = lock_repo::find_by_owner(db, target_user_id).await?;
     for lock in &locks {
-        let _ = crate::services::lock_service::set_entity_locked(
+        if let Err(e) = crate::services::lock_service::set_entity_locked(
             db,
             lock.entity_type,
             lock.entity_id,
             false,
         )
-        .await;
+        .await
+        {
+            tracing::warn!(lock_id = lock.id, "failed to unlock during user cleanup: {e}");
+        }
     }
     lock_repo::delete_all_by_owner(db, target_user_id).await?;
 

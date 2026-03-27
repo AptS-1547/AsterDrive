@@ -131,7 +131,9 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
 
     // 批量重置 is_locked
     for lock in &expired {
-        let _ = set_entity_locked(db, lock.entity_type, lock.entity_id, false).await;
+        if let Err(e) = set_entity_locked(db, lock.entity_type, lock.entity_id, false).await {
+            tracing::warn!(lock_id = lock.id, "failed to unlock expired lock: {e}");
+        }
     }
 
     // 批量删除
