@@ -1,7 +1,12 @@
 import axios from "axios";
 import { create } from "zustand";
+import i18n from "@/i18n";
 import { authService } from "@/services/authService";
-import type { UserInfo } from "@/types/api";
+import { useFileStore } from "@/stores/fileStore";
+import { useThemeStore } from "@/stores/themeStore";
+import type { ColorPreset, ThemeMode } from "@/stores/themeStore";
+import type { UserInfo, UserPreferences } from "@/types/api";
+import type { SortBy, SortOrder, ViewMode } from "@/stores/fileStore";
 
 const CACHED_USER_KEY = "aster-cached-user";
 
@@ -36,6 +41,22 @@ interface AuthState {
 
 const initialCachedUser = getCachedUser();
 
+function applyServerPreferences(prefs: UserPreferences): void {
+	const themeStore = useThemeStore.getState();
+	const fileStore = useFileStore.getState();
+
+	themeStore._applyFromServer({
+		mode: (prefs.theme_mode as ThemeMode) ?? themeStore.mode,
+		colorPreset: (prefs.color_preset as ColorPreset) ?? themeStore.colorPreset,
+	});
+	fileStore._applyFromServer({
+		viewMode: (prefs.view_mode as ViewMode) ?? fileStore.viewMode,
+		sortBy: (prefs.sort_by as SortBy) ?? fileStore.sortBy,
+		sortOrder: (prefs.sort_order as SortOrder) ?? fileStore.sortOrder,
+	});
+	if (prefs.language) void i18n.changeLanguage(prefs.language);
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
 	isAuthenticated: initialCachedUser !== null,
 	isChecking: true,
@@ -46,6 +67,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 	login: async (identifier, password) => {
 		await authService.login(identifier, password);
 		const user = await authService.me();
+		if (user.preferences) applyServerPreferences(user.preferences);
 		setCachedUser(user);
 		set({
 			isAuthenticated: true,
@@ -76,6 +98,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 		set({ isChecking: true, bootOffline: false });
 		try {
 			const user = await authService.me();
+			if (user.preferences) applyServerPreferences(user.preferences);
 			setCachedUser(user);
 			set({
 				isAuthenticated: true,
@@ -121,6 +144,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 	refreshUser: async () => {
 		try {
 			const user = await authService.me();
+			if (user.preferences) applyServerPreferences(user.preferences);
 			setCachedUser(user);
 			set({
 				user,

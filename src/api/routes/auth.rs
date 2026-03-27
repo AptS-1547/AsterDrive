@@ -8,7 +8,8 @@ use actix_web::cookie::time::Duration as CookieDuration;
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
-use serde::Deserialize;
+use sea_orm::{ActiveModelTrait, ActiveValue, IntoActiveModel};
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::middleware::rate_limit;
@@ -29,6 +30,27 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/refresh", web::post().to(refresh))
         .route("/logout", web::post().to(logout))
         .route("/me", web::get().to(me))
+        .route("/preferences", web::patch().to(patch_preferences))
+}
+
+#[derive(Deserialize, Serialize, ToSchema, Default, Clone)]
+pub struct UserPreferences {
+    pub theme_mode: Option<String>,
+    pub color_preset: Option<String>,
+    pub view_mode: Option<String>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
+    pub language: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdatePreferencesReq {
+    pub theme_mode: Option<String>,
+    pub color_preset: Option<String>,
+    pub view_mode: Option<String>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
+    pub language: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -293,6 +315,26 @@ pub async fn logout(state: web::Data<AppState>) -> HttpResponse {
         .json(ApiResponse::<()>::ok_empty())
 }
 
+/// Extract and verify bearer/cookie token, returning user_id
+fn extract_user_id(
+    req: &actix_web::HttpRequest,
+    jwt_secret: &str,
+) -> crate::errors::Result<i64> {
+    let token = req
+        .cookie(ACCESS_COOKIE)
+        .map(|c| c.value().to_string())
+        .or_else(|| {
+            req.headers()
+                .get("Authorization")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("Bearer "))
+                .map(|s| s.to_string())
+        })
+        .ok_or_else(|| crate::errors::AsterError::auth_token_invalid("not authenticated"))?;
+    let claims = auth_service::verify_token(&token, jwt_secret)?;
+    Ok(claims.user_id)
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/auth/me",
@@ -305,20 +347,59 @@ pub async fn logout(state: web::Data<AppState>) -> HttpResponse {
     security(("bearer" = [])),
 )]
 pub async fn me(state: web::Data<AppState>, req: actix_web::HttpRequest) -> Result<HttpResponse> {
-    // 从 cookie 或 header 取 token
-    let token = req
-        .cookie(ACCESS_COOKIE)
-        .map(|c| c.value().to_string())
-        .or_else(|| {
-            req.headers()
-                .get("Authorization")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
-                .map(|s| s.to_string())
-        })
-        .ok_or_else(|| crate::errors::AsterError::auth_token_invalid("not authenticated"))?;
+    let user_id = extract_user_id(&req, &state.config.auth.jwt_secret)?;
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let prefs: Option<UserPreferences> = user
+        .config
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+    // Build a combined response: all user fields + parsed preferences
+    let resp = serde_json::json!({
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "status": user.status,
+        "storage_used": user.storage_used,
+        "storage_quota": user.storage_quota,
+        "created_at": user.created_at,
+        "updated_at": user.updated_at,
+        "preferences": prefs,
+    });
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
+}
 
-    let claims = auth_service::verify_token(&token, &state.config.auth.jwt_secret)?;
-    let user = user_repo::find_by_id(&state.db, claims.user_id).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
+pub async fn patch_preferences(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    body: web::Json<UpdatePreferencesReq>,
+) -> Result<HttpResponse> {
+    let user_id = extract_user_id(&req, &state.config.auth.jwt_secret)?;
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+
+    // Deserialize existing prefs or start from default
+    let mut prefs: UserPreferences = user
+        .config
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+
+    // Merge incoming fields
+    if body.theme_mode.is_some() { prefs.theme_mode = body.theme_mode.clone(); }
+    if body.color_preset.is_some() { prefs.color_preset = body.color_preset.clone(); }
+    if body.view_mode.is_some() { prefs.view_mode = body.view_mode.clone(); }
+    if body.sort_by.is_some() { prefs.sort_by = body.sort_by.clone(); }
+    if body.sort_order.is_some() { prefs.sort_order = body.sort_order.clone(); }
+    if body.language.is_some() { prefs.language = body.language.clone(); }
+
+    let json_str = serde_json::to_string(&prefs)
+        .map_err(|e| crate::errors::AsterError::internal_error(e.to_string()))?;
+
+    let now = chrono::Utc::now();
+    let mut active = user.into_active_model();
+    active.config = ActiveValue::Set(Some(json_str));
+    active.updated_at = ActiveValue::Set(now);
+    active.save(&state.db).await?;
+
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(prefs)))
 }

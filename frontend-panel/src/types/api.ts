@@ -1,8 +1,27 @@
 // Re-export generated types for convenience
 import type { components } from "@/services/api.generated";
 
+// User preferences (manually maintained — not yet in OpenAPI spec)
+export interface UserPreferences {
+  theme_mode?:   string;
+  color_preset?: string;
+  view_mode?:    string;
+  sort_by?:      string;
+  sort_order?:   string;
+  language?:     string;
+}
+
+export interface UpdatePreferencesRequest {
+  theme_mode?:   string;
+  color_preset?: string;
+  view_mode?:    string;
+  sort_by?:      string;
+  sort_order?:   string;
+  language?:     string;
+}
+
 // Schema types
-export type UserInfo = components["schemas"]["UserInfo"];
+export type UserInfo = components["schemas"]["UserInfo"] & { preferences?: UserPreferences };
 export type FileInfo = components["schemas"]["FileInfo"];
 export type FolderInfo = components["schemas"]["FolderInfo"];
 export type FileListItem = components["schemas"]["FileListItem"];

@@ -1,0 +1,55 @@
+# AsterDrive 配置文件
+# 由首次启动自动生成，请根据需要修改
+# 文档: https://asterdrive.docs.esap.cc/config/
+
+[server]
+host = "127.0.0.1"
+port = 3000
+workers = 0
+
+[database]
+url = "sqlite://asterdrive.db?mode=rwc"
+pool_size = 10
+retry_count = 3
+
+[auth]
+jwt_secret = "683334ca104c0c7540c999430f9e71257daa5d519312897fad964eb79ee78b2c"
+access_token_ttl_secs = 900
+refresh_token_ttl_secs = 604800
+cookie_secure = true
+
+[cache]
+enabled = true
+backend = "memory"
+redis_url = ""
+default_ttl = 3600
+
+[logging]
+level = "info"
+format = "text"
+file = ""
+enable_rotation = true
+max_backups = 5
+
+[webdav]
+prefix = "/webdav"
+payload_limit = 10737418240
+
+[rate_limit]
+enabled = false
+
+[rate_limit.auth]
+seconds_per_request = 2
+burst_size = 5
+
+[rate_limit.public]
+seconds_per_request = 1
+burst_size = 30
+
+[rate_limit.api]
+seconds_per_request = 1
+burst_size = 120
+
+[rate_limit.write]
+seconds_per_request = 2
+burst_size = 10

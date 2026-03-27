@@ -1,4 +1,4 @@
-import type { CheckResp, UserInfo } from "@/types/api";
+import type { CheckResp, UpdatePreferencesRequest, UserInfo, UserPreferences } from "@/types/api";
 import { api } from "./http";
 
 export const authService = {
@@ -17,4 +17,7 @@ export const authService = {
 	logout: () => api.post<null>("/auth/logout"),
 
 	me: () => api.get<UserInfo>("/auth/me"),
+
+	updatePreferences: (prefs: UpdatePreferencesRequest) =>
+		api.patch<UserPreferences>("/auth/preferences", prefs),
 };
