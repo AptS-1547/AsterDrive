@@ -5,6 +5,98 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.10] - 2026-03-29
+
+### Release Highlights
+
+- 新增**用户个人资料系统**：支持自定义展示名称、头像上传、Gravatar 及来源切换，并支持自定义 Gravatar 镜像地址
+- 文件列表引入**虚拟滚动**，网格视图和表格视图均使用 `@tanstack/react-virtual`，大数据量下渲染性能显著提升
+- 新增**视频预览增强**：集成 Artplayer 播放器，支持动态宽高比计算与自定义视频浏览器
+- 代码编辑器从 `@monaco-editor/react` 迁移至原生 `monaco-editor`，按需懒加载语言支持，构建产物体积大幅优化
+- 设置页拆分为**个人资料**与**界面偏好**两个独立路由分区，导航更清晰
+- 错误页面重构：区分生产/开发环境，生产环境隐藏调试信息
+- 图标库从 `@devicon/react` 迁移至 `react-devicons`，统一使用 original 变体
+- 新增路由过渡动画（View Transitions API），页面切换体验更流畅
+- 禁止删除内置系统存储策略，新增 S3 参数变更检测与强制保存确认
+
+### Added
+
+- **用户个人资料系统**
+  - 新增 `user_profiles` 数据库表及两次 migration
+  - `profile_service` 完整实现：展示名称编辑（最大 64 字符）、头像上传（自动裁剪为正方形 + WebP 编码，512px/1024px 两档）、Gravatar 及来源切换
+  - 新增 API 端点：`PATCH /auth/profile`、`POST /auth/profile/avatar/upload`、`PUT /auth/profile/avatar/source`、`GET /auth/profile/avatar/{size}`
+  - 前端 `UserAvatarImage` 组件，支持 sm/md/lg/xl 四种尺寸
+  - 新增 `ProfileSettingsView` 个人资料设置页：展示名称编辑、头像管理、只读用户名/邮箱展示
+  - 新增 `gravatar_base_url` 运行时配置，支持自定义 Gravatar 镜像（如 Cravatar）
+- **文件列表虚拟滚动**
+  - `FileGrid` 和 `FileTable` 引入 `@tanstack/react-virtual` 虚拟滚动
+  - 网格视图响应式列数（2-6 列），overscan 优化滚动流畅度
+- **视频预览增强**
+  - 新增 `VideoPreview` 组件，基于 Artplayer 播放器，支持动态宽高比计算
+  - 新增 `CustomVideoBrowserPreview`，支持外部视频源的自定义浏览器
+  - 视频浏览器配置模块 `video-browser-config.ts`
+- **界面设置页**
+  - 新增 `InterfaceSettingsView`：主题模式、色板、语言、视图模式统一管理
+- **路由过渡动画**
+  - 导航链接集成 View Transitions API，页面切换更流畅
+- **运行时配置模块**
+  - 新增 `frontend-panel/src/config/runtime.ts`，统一管理环境变量与开发模式标识
+- **策略保护与变更检测**
+  - 内置系统存储策略（ID=1）禁止删除
+  - Admin 策略编辑新增 S3 参数变更检测与强制保存确认对话框
+
+### Changed
+
+- **Monaco 编辑器迁移**
+  - 从 `@monaco-editor/react` 迁移至原生 `monaco-editor`
+  - 新增 `monaco-environment.ts` 按需懒加载语言支持
+  - `MonacoCodeEditor` 替代旧的编辑器组件
+- **设置页路由重构**
+  - 设置页拆分为 `/settings/profile` 和 `/settings/interface` 两个路由分区
+  - 原 `ThemeSwitcher` / `LanguageSwitcher` 独立组件移入设置页内
+- **错误页面重构**
+  - 全面重写 `ErrorPage`，卡片式布局 + 状态码徽章 + 恢复建议
+  - 生产环境隐藏堆栈跟踪等调试信息
+- **动画性能优化**
+  - 文件卡片/表格过渡动画从 300ms 缩短至 150ms，移除 scale 变换
+  - Tooltip 动画时长调整为 100ms
+- **图标库迁移**
+  - 从 `@devicon/react` 迁移至 `react-devicons`
+  - 语言图标统一使用 original 变体
+- **Vite 构建拆分优化**
+  - `manualChunks` 策略增强：vendor-react / vendor-router / vendor-i18n / vendor-react-icons / vendor-devicons 等
+  - Base UI 拆分为 vendor-ui-forms / vendor-ui-overlays / vendor-ui-controls
+  - 预览专属 chunks：preview-data / preview-xml
+  - PWA workbox 排除未使用的 Monaco worker 文件
+- **分享页面体验优化**
+  - 新增所有者信息展示（名称/邮箱）与拖拽预览支持
+  - 文件分享卡片新增预览按钮
+- **文件预览统一加载状态**
+  - 新增 `PreviewLoadingState` 组件，统一各预览器的加载态展示
+  - 文件预览对话框优化高度自适应与视频尺寸计算
+- **HeaderControls 增强**
+  - 顶栏控件集成用户头像与展示名称
+
+### Fixed
+
+- 修复存储策略零值字段处理及用户列表头像显示问题
+- 修复策略连接测试逻辑
+- 修复网络错误后无法重新发起身份校验请求的问题
+- 修复 Vue 图标显示及配额单元格样式问题
+
+### Breaking Changes
+
+- **API**：`GET /api/v1/auth/me` 响应体新增 `profile` 字段，含 `display_name`、`avatar`（source / url_512 / url_1024 / version）
+- **API**：Admin 用户相关端点响应体新增用户资料信息
+- **Frontend**：设置页路由从 `/settings` 拆分为 `/settings/profile` 和 `/settings/interface`
+- **Frontend**：`ThemeSwitcher` / `LanguageSwitcher` 独立组件已移除，功能整合至 `InterfaceSettingsView`
+
+---
+
+**统计数据**：
+- 147 files changed, 7,340 insertions(+), 1,484 deletions(-)
+- 21 commits
+
 ## [v0.0.1-alpha.9] - 2026-03-28
 
 ### Release Highlights
@@ -670,7 +762,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.9...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.10...HEAD
+[v0.0.1-alpha.10]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.9...v0.0.1-alpha.10
 [v0.0.1-alpha.9]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.8...v0.0.1-alpha.9
 [v0.0.1-alpha.8]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.7...v0.0.1-alpha.8
 [v0.0.1-alpha.7]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.6...v0.0.1-alpha.7
