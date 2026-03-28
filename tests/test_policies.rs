@@ -261,6 +261,52 @@ async fn test_cannot_delete_only_default_policy() {
     );
 }
 
+#[actix_web::test]
+async fn test_cannot_delete_builtin_system_policy_even_after_switching_default() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Replacement Default",
+            "driver_type": "local",
+            "base_path": format!("/tmp/test-replacement-default-{}", uuid::Uuid::new_v4()),
+            "max_file_size": 0,
+            "is_default": true
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::delete()
+        .uri("/api/v1/admin/policies/1")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "should reject deleting built-in policy #1, got {}",
+        resp.status()
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let policies = body["data"]["items"].as_array().unwrap();
+    assert!(
+        policies.iter().any(|policy| policy["id"] == 1),
+        "built-in policy #1 should still exist after failed delete"
+    );
+}
+
 // ── 不能取消唯一的默认系统策略 ──────────────────────────────
 
 #[actix_web::test]

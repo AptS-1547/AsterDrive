@@ -8,6 +8,8 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::types::DriverType;
 
+const SYSTEM_STORAGE_POLICY_ID: i64 = 1;
+
 pub async fn list_all(state: &AppState) -> Result<Vec<storage_policy::Model>> {
     policy_repo::find_all(&state.db).await
 }
@@ -71,6 +73,12 @@ pub async fn create(
 
 pub async fn delete(state: &AppState, id: i64) -> Result<()> {
     let policy = policy_repo::find_by_id(&state.db, id).await?;
+
+    if policy.id == SYSTEM_STORAGE_POLICY_ID {
+        return Err(AsterError::validation_error(
+            "cannot delete the built-in system storage policy",
+        ));
+    }
 
     // 不允许删除唯一的默认策略
     if policy.is_default {
