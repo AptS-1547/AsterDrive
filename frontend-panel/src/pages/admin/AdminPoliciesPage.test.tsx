@@ -452,7 +452,7 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_created");
 	});
 
-	it("tests an existing policy connection and updates it without sending blank secrets", async () => {
+	it("tests changed s3 params and updates without sending blank secrets", async () => {
 		mockState.items = [
 			createPolicy({
 				id: 7,
@@ -487,14 +487,23 @@ describe("AdminPoliciesPage", () => {
 		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
 
 		await waitFor(() => {
-			expect(mockState.testConnection).toHaveBeenCalledWith(7);
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: "NEWKEY",
+				base_path: "tenant-a",
+				bucket: "archive",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				secret_key: undefined,
+			});
 		});
+		expect(mockState.testConnection).not.toHaveBeenCalled();
 
 		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
 
 		await waitFor(() => {
 			expect(mockState.update).toHaveBeenCalledTimes(1);
 		});
+		expect(mockState.testParams).toHaveBeenCalledTimes(1);
 
 		const [, payload] = mockState.update.mock.calls[0] as [
 			number,
@@ -516,6 +525,64 @@ describe("AdminPoliciesPage", () => {
 		expect(payload).toHaveProperty("access_key", "NEWKEY");
 		expect(payload).not.toHaveProperty("secret_key");
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
+	it("asks for confirmation before force-saving a failing s3 create", async () => {
+		mockState.testParams.mockRejectedValueOnce(new Error("bad s3 config"));
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
+		fireEvent.click(screen.getByRole("button", { name: "select-item:s3" }));
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Broken S3" },
+		});
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "https://s3.example.com" },
+		});
+		fireEvent.change(screen.getByLabelText("bucket"), {
+			target: { value: "broken-bucket" },
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: undefined,
+				base_path: undefined,
+				bucket: "broken-bucket",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				secret_key: undefined,
+			});
+		});
+		expect(mockState.create).not.toHaveBeenCalled();
+		expect(mockState.handleApiError).not.toHaveBeenCalled();
+		expect(screen.getByText("connection_test_failed")).toBeInTheDocument();
+		expect(
+			screen.getByText("policy_test_failed_confirm_desc"),
+		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "save_anyway" }));
+
+		await waitFor(() => {
+			expect(mockState.create).toHaveBeenCalledWith({
+				access_key: "",
+				base_path: "",
+				bucket: "broken-bucket",
+				chunk_size: 5 * 1024 * 1024,
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				is_default: false,
+				max_file_size: undefined,
+				name: "Broken S3",
+				options: JSON.stringify({ presigned_upload: false }),
+				presigned_upload: false,
+				secret_key: "",
+			});
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_created");
 	});
 
 	it("confirms deletion and removes the policy row", async () => {

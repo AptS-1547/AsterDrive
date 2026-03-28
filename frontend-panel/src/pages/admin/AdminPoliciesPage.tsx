@@ -65,6 +65,49 @@ function parsePolicyOptions(options: string): PolicyOptions {
 	}
 }
 
+function buildPolicyTestPayload(form: PolicyFormData) {
+	return {
+		driver_type: form.driver_type,
+		endpoint: form.endpoint || undefined,
+		bucket: form.bucket || undefined,
+		access_key: form.access_key || undefined,
+		secret_key: form.secret_key || undefined,
+		base_path: form.base_path || undefined,
+	};
+}
+
+function hasConnectionFieldChanges(
+	form: PolicyFormData,
+	editingPolicy: StoragePolicy | null,
+) {
+	if (!editingPolicy) {
+		return true;
+	}
+
+	if (form.driver_type === "s3") {
+		return (
+			form.endpoint !== editingPolicy.endpoint ||
+			form.bucket !== editingPolicy.bucket ||
+			form.base_path !== editingPolicy.base_path ||
+			form.access_key !== "" ||
+			form.secret_key !== ""
+		);
+	}
+
+	return form.base_path !== editingPolicy.base_path;
+}
+
+function getS3ConnectionTestKey(form: PolicyFormData) {
+	return JSON.stringify({
+		driver_type: form.driver_type,
+		endpoint: form.endpoint,
+		bucket: form.bucket,
+		access_key: form.access_key,
+		secret_key: form.secret_key,
+		base_path: form.base_path,
+	});
+}
+
 const emptyForm: PolicyFormData = {
 	name: "",
 	driver_type: "local",
@@ -80,11 +123,11 @@ const emptyForm: PolicyFormData = {
 };
 
 function TestConnectionButton({
-	form,
-	editingId,
+	onTest,
+	disabled = false,
 }: {
-	form: PolicyFormData;
-	editingId: number | null;
+	onTest: () => Promise<boolean>;
+	disabled?: boolean;
 }) {
 	const { t } = useTranslation("admin");
 	const [testing, setTesting] = useState(false);
@@ -93,34 +136,16 @@ function TestConnectionButton({
 	const handleTest = async () => {
 		setTesting(true);
 		setResult(null);
-		try {
-			if (editingId) {
-				await adminPolicyService.testConnection(editingId);
-			} else {
-				await adminPolicyService.testParams({
-					driver_type: form.driver_type,
-					endpoint: form.endpoint || undefined,
-					bucket: form.bucket || undefined,
-					access_key: form.access_key || undefined,
-					secret_key: form.secret_key || undefined,
-					base_path: form.base_path || undefined,
-				});
-			}
-			setResult(true);
-			toast.success(t("connection_success"));
-		} catch (e) {
-			setResult(false);
-			handleApiError(e);
-		} finally {
-			setTesting(false);
-		}
+		const passed = await onTest();
+		setResult(passed);
+		setTesting(false);
 	};
 
 	return (
 		<Button
 			type="button"
 			variant="outline"
-			disabled={testing}
+			disabled={testing || disabled}
 			onClick={handleTest}
 		>
 			{testing ? (
@@ -147,7 +172,13 @@ export default function AdminPoliciesPage() {
 	} = useApiList(() => adminPolicyService.list({ limit: 100, offset: 0 }));
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editingId, setEditingId] = useState<number | null>(null);
+	const [editingPolicy, setEditingPolicy] = useState<StoragePolicy | null>(
+		null,
+	);
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
+	const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
+	const [submitting, setSubmitting] = useState(false);
+	const [validatedS3Key, setValidatedS3Key] = useState<string | null>(null);
 
 	const handleDelete = async (id: number) => {
 		try {
@@ -167,12 +198,18 @@ export default function AdminPoliciesPage() {
 
 	const openCreate = () => {
 		setEditingId(null);
+		setEditingPolicy(null);
+		setValidatedS3Key(null);
+		setSaveConfirmOpen(false);
 		setForm(emptyForm);
 		setDialogOpen(true);
 	};
 
 	const openEdit = (p: StoragePolicy) => {
 		setEditingId(p.id);
+		setEditingPolicy(p);
+		setValidatedS3Key(null);
+		setSaveConfirmOpen(false);
 		const opts = parsePolicyOptions(p.options);
 		setForm({
 			name: p.name,
@@ -192,8 +229,48 @@ export default function AdminPoliciesPage() {
 		setDialogOpen(true);
 	};
 
-	const handleSubmit = async (e: FormEvent) => {
-		e.preventDefault();
+	const handleDialogOpenChange = (open: boolean) => {
+		setDialogOpen(open);
+		if (!open) {
+			setSaveConfirmOpen(false);
+			setValidatedS3Key(null);
+		}
+	};
+
+	const runConnectionTest = async ({
+		showSuccessToast = true,
+		showFailureError = true,
+	}: {
+		showSuccessToast?: boolean;
+		showFailureError?: boolean;
+	} = {}) => {
+		const shouldUseParamTest =
+			editingId === null || hasConnectionFieldChanges(form, editingPolicy);
+
+		try {
+			if (shouldUseParamTest) {
+				await adminPolicyService.testParams(buildPolicyTestPayload(form));
+			} else {
+				await adminPolicyService.testConnection(editingId);
+			}
+
+			if (form.driver_type === "s3") {
+				setValidatedS3Key(getS3ConnectionTestKey(form));
+			}
+			if (showSuccessToast) {
+				toast.success(t("connection_success"));
+			}
+			return true;
+		} catch (e) {
+			setValidatedS3Key(null);
+			if (showFailureError) {
+				handleApiError(e);
+			}
+			return false;
+		}
+	};
+
+	const persistPolicy = async () => {
 		try {
 			const options = JSON.stringify({
 				presigned_upload: form.presigned_upload,
@@ -236,10 +313,51 @@ export default function AdminPoliciesPage() {
 				setPolicies((prev) => [...prev, created]);
 				toast.success(t("policy_created"));
 			}
-			setDialogOpen(false);
+			handleDialogOpenChange(false);
 		} catch (e) {
 			handleApiError(e);
 		}
+	};
+
+	const shouldRunS3SaveTest = () => {
+		if (form.driver_type !== "s3") {
+			return false;
+		}
+
+		if (editingId !== null && !hasConnectionFieldChanges(form, editingPolicy)) {
+			return false;
+		}
+
+		return validatedS3Key !== getS3ConnectionTestKey(form);
+	};
+
+	const submitPolicy = async (forceSave = false) => {
+		if (submitting) {
+			return;
+		}
+
+		setSubmitting(true);
+		try {
+			if (!forceSave && shouldRunS3SaveTest()) {
+				const testPassed = await runConnectionTest({
+					showSuccessToast: false,
+					showFailureError: false,
+				});
+				if (!testPassed) {
+					setSaveConfirmOpen(true);
+					return;
+				}
+			}
+
+			await persistPolicy();
+		} finally {
+			setSubmitting(false);
+		}
+	};
+
+	const handleSubmit = (e: FormEvent) => {
+		e.preventDefault();
+		void submitPolicy();
 	};
 
 	const setField = <K extends keyof PolicyFormData>(
@@ -342,7 +460,19 @@ export default function AdminPoliciesPage() {
 					variant="destructive"
 				/>
 
-				<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+				<ConfirmDialog
+					open={saveConfirmOpen}
+					onOpenChange={setSaveConfirmOpen}
+					title={t("connection_test_failed")}
+					description={t("policy_test_failed_confirm_desc")}
+					confirmLabel={t("save_anyway")}
+					onConfirm={() => {
+						setSaveConfirmOpen(false);
+						void submitPolicy(true);
+					}}
+				/>
+
+				<Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
 					<DialogContent className="max-w-lg">
 						<DialogHeader>
 							<DialogTitle>
@@ -486,8 +616,11 @@ export default function AdminPoliciesPage() {
 							</div>
 
 							<div className="flex gap-2">
-								<TestConnectionButton form={form} editingId={editingId} />
-								<Button type="submit" className="flex-1">
+								<TestConnectionButton
+									onTest={() => runConnectionTest()}
+									disabled={submitting}
+								/>
+								<Button type="submit" className="flex-1" disabled={submitting}>
 									{editingId ? t("save_changes") : t("core:create")}
 								</Button>
 							</div>
