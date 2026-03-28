@@ -1,156 +1,156 @@
 import type { ComponentType } from "react";
-import AngularPlainIcon from "react-devicons/angular/plain";
-import AstroPlainIcon from "react-devicons/astro/plain";
-import BashPlainIcon from "react-devicons/bash/plain";
-import CPlainIcon from "react-devicons/c/plain";
+import AngularOriginalIcon from "react-devicons/angular/original";
+import AstroOriginalIcon from "react-devicons/astro/original";
+import BashOriginalIcon from "react-devicons/bash/original";
+import COriginalIcon from "react-devicons/c/original";
 import ClojureOriginalIcon from "react-devicons/clojure/original";
 import CoffeescriptOriginalIcon from "react-devicons/coffeescript/original";
-import CplusplusPlainIcon from "react-devicons/cplusplus/plain";
-import CsharpPlainIcon from "react-devicons/csharp/plain";
-import Css3PlainIcon from "react-devicons/css3/plain";
-import DartPlainIcon from "react-devicons/dart/plain";
-import DockerPlainIcon from "react-devicons/docker/plain";
-import ElixirPlainIcon from "react-devicons/elixir/plain";
-import ErlangPlainIcon from "react-devicons/erlang/plain";
-import GoPlainIcon from "react-devicons/go/plain";
+import CplusplusOriginalIcon from "react-devicons/cplusplus/original";
+import CsharpOriginalIcon from "react-devicons/csharp/original";
+import Css3OriginalIcon from "react-devicons/css3/original";
+import DartOriginalIcon from "react-devicons/dart/original";
+import DockerOriginalIcon from "react-devicons/docker/original";
+import ElixirOriginalIcon from "react-devicons/elixir/original";
+import ErlangOriginalIcon from "react-devicons/erlang/original";
+import GoOriginalIcon from "react-devicons/go/original";
 import GradleOriginalIcon from "react-devicons/gradle/original";
 import GraphqlPlainIcon from "react-devicons/graphql/plain";
-import GroovyPlainIcon from "react-devicons/groovy/plain";
-import GrpcPlainIcon from "react-devicons/grpc/plain";
-import HaskellPlainIcon from "react-devicons/haskell/plain";
-import Html5PlainIcon from "react-devicons/html5/plain";
-import JavaPlainIcon from "react-devicons/java/plain";
-import JavascriptPlainIcon from "react-devicons/javascript/plain";
-import JsonPlainIcon from "react-devicons/json/plain";
-import JuliaPlainIcon from "react-devicons/julia/plain";
-import KotlinPlainIcon from "react-devicons/kotlin/plain";
+import GroovyOriginalIcon from "react-devicons/groovy/original";
+import GrpcOriginalIcon from "react-devicons/grpc/original";
+import HaskellOriginalIcon from "react-devicons/haskell/original";
+import Html5OriginalIcon from "react-devicons/html5/original";
+import JavaOriginalIcon from "react-devicons/java/original";
+import JavascriptOriginalIcon from "react-devicons/javascript/original";
+import JsonOriginalIcon from "react-devicons/json/original";
+import JuliaOriginalIcon from "react-devicons/julia/original";
+import KotlinOriginalIcon from "react-devicons/kotlin/original";
 import LatexOriginalIcon from "react-devicons/latex/original";
-import LuaPlainIcon from "react-devicons/lua/plain";
+import LuaOriginalIcon from "react-devicons/lua/original";
 import MarkdownOriginalIcon from "react-devicons/markdown/original";
 import NginxOriginalIcon from "react-devicons/nginx/original";
-import NimPlainIcon from "react-devicons/nim/plain";
-import NodejsPlainIcon from "react-devicons/nodejs/plain";
-import PerlPlainIcon from "react-devicons/perl/plain";
-import PhpPlainIcon from "react-devicons/php/plain";
-import PowershellPlainIcon from "react-devicons/powershell/plain";
-import PythonPlainIcon from "react-devicons/python/plain";
-import RPlainIcon from "react-devicons/r/plain";
+import NimOriginalIcon from "react-devicons/nim/original";
+import NodejsOriginalIcon from "react-devicons/nodejs/original";
+import PerlOriginalIcon from "react-devicons/perl/original";
+import PhpOriginalIcon from "react-devicons/php/original";
+import PowershellOriginalIcon from "react-devicons/powershell/original";
+import PythonOriginalIcon from "react-devicons/python/original";
+import ROriginalIcon from "react-devicons/r/original";
 import ReactOriginalIcon from "react-devicons/react/original";
-import RubyPlainIcon from "react-devicons/ruby/plain";
+import RubyOriginalIcon from "react-devicons/ruby/original";
 import RustOriginalIcon from "react-devicons/rust/original";
 import SassOriginalIcon from "react-devicons/sass/original";
-import ScalaPlainIcon from "react-devicons/scala/plain";
-import SolidityPlainIcon from "react-devicons/solidity/plain";
-import SqlitePlainIcon from "react-devicons/sqlite/plain";
-import SveltePlainIcon from "react-devicons/svelte/plain";
-import SwiftPlainIcon from "react-devicons/swift/plain";
-import TerraformPlainIcon from "react-devicons/terraform/plain";
-import TypescriptPlainIcon from "react-devicons/typescript/plain";
+import ScalaOriginalIcon from "react-devicons/scala/original";
+import SolidityOriginalIcon from "react-devicons/solidity/original";
+import SqliteOriginalIcon from "react-devicons/sqlite/original";
+import SvelteOriginalIcon from "react-devicons/svelte/original";
+import SwiftOriginalIcon from "react-devicons/swift/original";
+import TerraformOriginalIcon from "react-devicons/terraform/original";
+import TypescriptOriginalIcon from "react-devicons/typescript/original";
 import VuejsOriginalIcon from "react-devicons/vuejs/original";
-import XmlPlainIcon from "react-devicons/xml/plain";
-import YamlPlainIcon from "react-devicons/yaml/plain";
-import ZigOriginalIcon from "react-devicons/zig/plain-wordmark";
+import XmlOriginalIcon from "react-devicons/xml/original";
+import YamlOriginalIcon from "react-devicons/yaml/original";
+import ZigOriginalIcon from "react-devicons/zig/original-wordmark";
 
 export type DevIconComponent = ComponentType<{ size?: string | number }>;
 
 const LANGUAGE_ICON_MAP: Record<string, DevIconComponent> = {
 	// Web
-	js: JavascriptPlainIcon,
-	jsx: JavascriptPlainIcon,
-	mjs: JavascriptPlainIcon,
-	cjs: JavascriptPlainIcon,
-	ts: TypescriptPlainIcon,
-	tsx: TypescriptPlainIcon,
+	js: JavascriptOriginalIcon,
+	jsx: JavascriptOriginalIcon,
+	mjs: JavascriptOriginalIcon,
+	cjs: JavascriptOriginalIcon,
+	ts: TypescriptOriginalIcon,
+	tsx: TypescriptOriginalIcon,
 	vue: VuejsOriginalIcon,
-	svelte: SveltePlainIcon,
-	astro: AstroPlainIcon,
-	html: Html5PlainIcon,
-	htm: Html5PlainIcon,
-	css: Css3PlainIcon,
+	svelte: SvelteOriginalIcon,
+	astro: AstroOriginalIcon,
+	html: Html5OriginalIcon,
+	htm: Html5OriginalIcon,
+	css: Css3OriginalIcon,
 	scss: SassOriginalIcon,
 	less: SassOriginalIcon,
-	svg: XmlPlainIcon,
+	svg: XmlOriginalIcon,
 	// Data / markup
-	json: JsonPlainIcon,
-	xml: XmlPlainIcon,
-	yaml: YamlPlainIcon,
-	yml: YamlPlainIcon,
+	json: JsonOriginalIcon,
+	xml: XmlOriginalIcon,
+	yaml: YamlOriginalIcon,
+	yml: YamlOriginalIcon,
 	md: MarkdownOriginalIcon,
 	markdown: MarkdownOriginalIcon,
 	rst: MarkdownOriginalIcon,
 	tex: LatexOriginalIcon,
 	bib: LatexOriginalIcon,
-	sql: SqlitePlainIcon,
+	sql: SqliteOriginalIcon,
 	// Systems
-	c: CPlainIcon,
-	h: CPlainIcon,
-	cpp: CplusplusPlainIcon,
-	hpp: CplusplusPlainIcon,
-	cs: CsharpPlainIcon,
+	c: COriginalIcon,
+	h: COriginalIcon,
+	cpp: CplusplusOriginalIcon,
+	hpp: CplusplusOriginalIcon,
+	cs: CsharpOriginalIcon,
 	rs: RustOriginalIcon,
-	go: GoPlainIcon,
-	dart: DartPlainIcon,
+	go: GoOriginalIcon,
+	dart: DartOriginalIcon,
 	zig: ZigOriginalIcon,
-	nim: NimPlainIcon,
-	swift: SwiftPlainIcon,
+	nim: NimOriginalIcon,
+	swift: SwiftOriginalIcon,
 	// JVM
-	java: JavaPlainIcon,
-	kt: KotlinPlainIcon,
-	kts: KotlinPlainIcon,
-	scala: ScalaPlainIcon,
-	groovy: GroovyPlainIcon,
+	java: JavaOriginalIcon,
+	kt: KotlinOriginalIcon,
+	kts: KotlinOriginalIcon,
+	scala: ScalaOriginalIcon,
+	groovy: GroovyOriginalIcon,
 	clj: ClojureOriginalIcon,
 	cljs: ClojureOriginalIcon,
 	// Scripting
-	py: PythonPlainIcon,
-	rb: RubyPlainIcon,
-	php: PhpPlainIcon,
-	pl: PerlPlainIcon,
-	pm: PerlPlainIcon,
-	lua: LuaPlainIcon,
-	r: RPlainIcon,
-	jl: JuliaPlainIcon,
+	py: PythonOriginalIcon,
+	rb: RubyOriginalIcon,
+	php: PhpOriginalIcon,
+	pl: PerlOriginalIcon,
+	pm: PerlOriginalIcon,
+	lua: LuaOriginalIcon,
+	r: ROriginalIcon,
+	jl: JuliaOriginalIcon,
 	coffee: CoffeescriptOriginalIcon,
 	// Shell
-	sh: BashPlainIcon,
-	bash: BashPlainIcon,
-	zsh: BashPlainIcon,
-	fish: BashPlainIcon,
-	ps1: PowershellPlainIcon,
-	psm1: PowershellPlainIcon,
-	bat: BashPlainIcon,
-	cmd: BashPlainIcon,
+	sh: BashOriginalIcon,
+	bash: BashOriginalIcon,
+	zsh: BashOriginalIcon,
+	fish: BashOriginalIcon,
+	ps1: PowershellOriginalIcon,
+	psm1: PowershellOriginalIcon,
+	bat: BashOriginalIcon,
+	cmd: BashOriginalIcon,
 	// Functional
-	hs: HaskellPlainIcon,
-	ex: ElixirPlainIcon,
-	exs: ElixirPlainIcon,
-	erl: ErlangPlainIcon,
+	hs: HaskellOriginalIcon,
+	ex: ElixirOriginalIcon,
+	exs: ElixirOriginalIcon,
+	erl: ErlangOriginalIcon,
 	// Schema / query
 	graphql: GraphqlPlainIcon,
 	gql: GraphqlPlainIcon,
-	proto: GrpcPlainIcon,
+	proto: GrpcOriginalIcon,
 	// IaC / config
-	tf: TerraformPlainIcon,
-	tfvars: TerraformPlainIcon,
-	hcl: TerraformPlainIcon,
+	tf: TerraformOriginalIcon,
+	tfvars: TerraformOriginalIcon,
+	hcl: TerraformOriginalIcon,
 	gradle: GradleOriginalIcon,
 	// Web3
-	sol: SolidityPlainIcon,
+	sol: SolidityOriginalIcon,
 	// Infrastructure
 	nginx: NginxOriginalIcon,
 	// Frameworks
 	react: ReactOriginalIcon,
-	angular: AngularPlainIcon,
-	nodejs: NodejsPlainIcon,
+	angular: AngularOriginalIcon,
+	nodejs: NodejsOriginalIcon,
 };
 
 const SPECIAL_FILENAME_MAP: Record<string, DevIconComponent> = {
-	dockerfile: DockerPlainIcon,
-	".dockerignore": DockerPlainIcon,
-	jenkinsfile: GroovyPlainIcon,
-	vagrantfile: RubyPlainIcon,
-	gemfile: RubyPlainIcon,
-	rakefile: RubyPlainIcon,
+	dockerfile: DockerOriginalIcon,
+	".dockerignore": DockerOriginalIcon,
+	jenkinsfile: GroovyOriginalIcon,
+	vagrantfile: RubyOriginalIcon,
+	gemfile: RubyOriginalIcon,
+	rakefile: RubyOriginalIcon,
 	".npmrc": NginxOriginalIcon,
 	".editorconfig": NginxOriginalIcon,
 };
