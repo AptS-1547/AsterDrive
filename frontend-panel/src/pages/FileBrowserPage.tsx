@@ -39,7 +39,10 @@ import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { DRAG_SOURCE_MIME } from "@/lib/constants";
+import {
+	DRAG_SOURCE_MIME,
+	FILE_BROWSER_FEEDBACK_DURATION_MS,
+} from "@/lib/constants";
 import {
 	getInvalidInternalDropReason,
 	hasInternalDragData,
@@ -297,8 +300,10 @@ export default function FileBrowserPage() {
 						detail: { folderIds, targetFolderId },
 					}),
 				);
-				// Wait for fade-out animation to finish, then clear
-				await new Promise((r) => setTimeout(r, 300));
+				// Keep local feedback brief, closer to desktop file managers.
+				await new Promise((r) =>
+					setTimeout(r, FILE_BROWSER_FEEDBACK_DURATION_MS),
+				);
 				setFadingFileIds(new Set());
 				setFadingFolderIds(new Set());
 				const batchToast = formatBatchToast(t, "move", result);
@@ -431,7 +436,9 @@ export default function FileBrowserPage() {
 				setFadingFileIds(new Set(fileIds));
 				setFadingFolderIds(new Set(folderIds));
 				const result = await batchService.batchDelete(fileIds, folderIds);
-				await new Promise((resolve) => setTimeout(resolve, 300));
+				await new Promise((resolve) =>
+					setTimeout(resolve, FILE_BROWSER_FEEDBACK_DURATION_MS),
+				);
 				setFadingFileIds(new Set());
 				setFadingFolderIds(new Set());
 				const batchToast = formatBatchToast(t, "delete", result);

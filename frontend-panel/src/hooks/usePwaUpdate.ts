@@ -2,11 +2,10 @@ import { useRegisterSW } from "virtual:pwa-register/react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-
-const IS_DEV = import.meta.env.DEV;
+import { runtimeFlags } from "@/config/runtime";
 
 function logPwaUpdate(message: string, extra?: unknown) {
-	if (!IS_DEV) return;
+	if (!runtimeFlags.isDev) return;
 	if (extra === undefined) {
 		console.debug(`[pwa-update] ${message}`);
 		return;

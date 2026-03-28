@@ -298,7 +298,9 @@ describe("SettingsPage", () => {
 			screen.getByRole("button", { name: "settings:settings_interface" }),
 		);
 
-		expect(mockState.navigate).toHaveBeenCalledWith("/settings/interface");
+		expect(mockState.navigate).toHaveBeenCalledWith("/settings/interface", {
+			viewTransition: true,
+		});
 	});
 
 	it("saves the display name through the profile endpoint", async () => {

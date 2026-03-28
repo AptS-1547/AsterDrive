@@ -101,10 +101,10 @@ export function FileCard({
 			data-drag-preview-root
 			data-folder-drop-target={isFolder ? "true" : undefined}
 			className={cn(
-				"group relative flex flex-col items-center rounded-lg border p-3 transition-all duration-300 hover:bg-accent/50",
+				"group relative flex flex-col items-center rounded-lg border p-3 transition-[background-color,border-color,box-shadow,opacity] duration-150 ease-out hover:bg-accent/50",
 				selected && "border-primary bg-accent",
 				draggable && dragOver && "bg-accent/30 ring-2 ring-primary",
-				fading && "scale-95 opacity-0",
+				fading && "opacity-0",
 			)}
 			draggable={draggable}
 			onDragStart={draggable ? handleDragStart : undefined}

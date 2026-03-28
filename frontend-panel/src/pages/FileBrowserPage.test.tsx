@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { forwardRef, useImperativeHandle } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FILE_BROWSER_FEEDBACK_DURATION_MS } from "@/lib/constants";
 import FileBrowserPage from "@/pages/FileBrowserPage";
 
 const mockState = vi.hoisted(() => ({
@@ -705,7 +706,7 @@ describe("FileBrowserPage", () => {
 		await Promise.resolve();
 		await Promise.resolve();
 		expect(mockState.store.moveToFolder).toHaveBeenCalledWith([7], [8], 20);
-		await vi.advanceTimersByTimeAsync(300);
+		await vi.advanceTimersByTimeAsync(FILE_BROWSER_FEEDBACK_DURATION_MS);
 		await Promise.resolve();
 		await Promise.resolve();
 		vi.useRealTimers();
@@ -730,7 +731,7 @@ describe("FileBrowserPage", () => {
 		await Promise.resolve();
 		await Promise.resolve();
 		expect(mockState.batchDelete).toHaveBeenCalledWith([1], [2]);
-		await vi.advanceTimersByTimeAsync(300);
+		await vi.advanceTimersByTimeAsync(FILE_BROWSER_FEEDBACK_DURATION_MS);
 		await Promise.resolve();
 		await Promise.resolve();
 		vi.useRealTimers();

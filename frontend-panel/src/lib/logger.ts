@@ -1,3 +1,5 @@
+import { runtimeFlags } from "@/config/runtime";
+
 const PREFIX = "[AsterDrive]";
 
 function warn(msg: string, ...args: unknown[]) {
@@ -9,7 +11,7 @@ function error(msg: string, ...args: unknown[]) {
 }
 
 function debug(msg: string, ...args: unknown[]) {
-	if (import.meta.env.DEV) {
+	if (runtimeFlags.isDev) {
 		console.log(PREFIX, msg, ...args);
 	}
 }

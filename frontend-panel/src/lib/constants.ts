@@ -29,6 +29,9 @@ export const FOLDER_TREE_ROW_OFFSET_PX = 4;
 export const FOLDER_TREE_SKELETON_OFFSET_PX = 8;
 export const FOLDER_TREE_DRAG_EXPAND_DELAY_MS = 600;
 
+/** 文件浏览页的局部反馈应当足够快，避免拖沓 */
+export const FILE_BROWSER_FEEDBACK_DURATION_MS = 150;
+
 /** 分页默认限制 */
 export const FILE_PAGE_SIZE = 100;
 export const FOLDER_LIMIT = 1000;

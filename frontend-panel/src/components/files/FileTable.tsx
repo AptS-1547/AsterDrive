@@ -226,9 +226,9 @@ export function FileTable({
 			<TableRow
 				data-folder-drop-target="true"
 				className={cn(
-					"cursor-pointer transition-all duration-300",
+					"cursor-pointer transition-[background-color,box-shadow,opacity] duration-150 ease-out",
 					dragOverId === folder.id && "ring-2 ring-primary bg-accent/30",
-					fadingFolderIds?.has(folder.id) && "opacity-0 scale-95",
+					fadingFolderIds?.has(folder.id) && "opacity-0",
 				)}
 				draggable
 				onDragStart={(e) => handleDragStart(e, folder.id, true)}
@@ -277,8 +277,8 @@ export function FileTable({
 		>
 			<TableRow
 				className={cn(
-					"cursor-pointer transition-all duration-300",
-					fadingFileIds?.has(file.id) && "opacity-0 scale-95",
+					"cursor-pointer transition-[background-color,box-shadow,opacity] duration-150 ease-out",
+					fadingFileIds?.has(file.id) && "opacity-0",
 				)}
 				draggable
 				onDragStart={(e) => handleDragStart(e, file.id, false)}

@@ -16,12 +16,19 @@ import {
 	CardTitle,
 } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
+import { runtimeFlags } from "@/config/runtime";
 
 type ErrorTone = {
 	label: string;
 	title: string;
 	description: string;
 	suggestion: string;
+};
+
+type DeveloperDetails = {
+	name: string | null;
+	payload: string | null;
+	stack: string | null;
 };
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
@@ -92,6 +99,49 @@ function getErrorContent(
 	};
 }
 
+function serializeDeveloperValue(value: unknown) {
+	if (value == null) return null;
+	if (typeof value === "string") return value;
+
+	try {
+		return JSON.stringify(value, null, 2);
+	} catch {
+		return String(value);
+	}
+}
+
+function getDeveloperDetails(error: unknown): DeveloperDetails {
+	if (isRouteErrorResponse(error)) {
+		return {
+			name: "RouteErrorResponse",
+			payload: serializeDeveloperValue(error.data),
+			stack: null,
+		};
+	}
+
+	if (error instanceof Error) {
+		return {
+			name: error.name || null,
+			payload: null,
+			stack: error.stack ?? null,
+		};
+	}
+
+	if (error == null) {
+		return {
+			name: null,
+			payload: null,
+			stack: null,
+		};
+	}
+
+	return {
+		name: typeof error,
+		payload: serializeDeveloperValue(error),
+		stack: null,
+	};
+}
+
 export default function ErrorPage() {
 	const { t } = useTranslation("errors");
 	const error = useRouteError();
@@ -104,6 +154,8 @@ export default function ErrorPage() {
 		defaultTone,
 		statusTones,
 	);
+	const developerDetails = getDeveloperDetails(error);
+	const isDeveloperMode = runtimeFlags.showDeveloperErrorDetails;
 
 	const routeLabel =
 		location.pathname === "/"
@@ -145,9 +197,11 @@ export default function ErrorPage() {
 										<Badge variant={badgeVariant} className="font-medium">
 											{tone.label}
 										</Badge>
-										<span className="text-sm text-muted-foreground">
-											{responseLabel}
-										</span>
+										{isDeveloperMode ? (
+											<span className="text-sm text-muted-foreground">
+												{responseLabel}
+											</span>
+										) : null}
 									</div>
 
 									<div className="space-y-1">
@@ -161,55 +215,101 @@ export default function ErrorPage() {
 								</div>
 							</div>
 
-							<div className="w-full rounded-xl border bg-muted/30 px-4 py-3 md:w-auto md:min-w-28 md:text-right">
-								<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-									{t("error_page_status_heading")}
-								</p>
-								<p className="mt-1 text-3xl font-semibold tracking-tight">
-									{statusDisplay}
-								</p>
-							</div>
+							{isDeveloperMode ? (
+								<div className="w-full rounded-xl border bg-muted/30 px-4 py-3 md:w-auto md:min-w-28 md:text-right">
+									<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+										{t("error_page_status_heading")}
+									</p>
+									<p className="mt-1 text-3xl font-semibold tracking-tight">
+										{statusDisplay}
+									</p>
+								</div>
+							) : null}
 						</div>
 					</CardHeader>
 
-					<CardContent className="grid gap-4 py-6 md:grid-cols-[minmax(0,1fr)_280px]">
-						<div className="space-y-4">
+					{isDeveloperMode ? (
+						<CardContent className="grid gap-4 py-6 md:grid-cols-[minmax(0,1fr)_280px]">
+							<div className="space-y-4">
+								<div className="rounded-xl border bg-muted/25 p-4">
+									<p className="text-sm font-medium">
+										{t("error_page_developer_detail")}
+									</p>
+
+									<div className="mt-3 space-y-3">
+										{developerDetails.name ? (
+											<div>
+												<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+													{t("error_page_error_name")}
+												</p>
+												<p className="mt-2 font-mono text-sm">
+													{developerDetails.name}
+												</p>
+											</div>
+										) : null}
+
+										<div>
+											<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+												{t("error_page_message")}
+											</p>
+											<p className="mt-2 break-all font-mono text-sm">
+												{message}
+											</p>
+										</div>
+
+										{developerDetails.payload &&
+										developerDetails.payload !== message ? (
+											<div>
+												<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+													{t("error_page_payload")}
+												</p>
+												<pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-background p-3 font-mono text-xs">
+													{developerDetails.payload}
+												</pre>
+											</div>
+										) : null}
+
+										{developerDetails.stack ? (
+											<div>
+												<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+													{t("error_page_stack")}
+												</p>
+												<pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-background p-3 font-mono text-xs">
+													{developerDetails.stack}
+												</pre>
+											</div>
+										) : null}
+									</div>
+								</div>
+
+								<div className="grid gap-3 sm:grid-cols-2">
+									<div className="rounded-xl border p-4">
+										<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+											{t("error_page_path")}
+										</p>
+										<p className="mt-2 break-all font-mono text-sm">
+											{routeLabel}
+										</p>
+									</div>
+									<div className="rounded-xl border p-4">
+										<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+											{t("error_page_response")}
+										</p>
+										<p className="mt-2 font-mono text-sm">{responseLabel}</p>
+									</div>
+								</div>
+							</div>
+
 							<div className="rounded-xl border bg-muted/25 p-4">
 								<p className="text-sm font-medium">
-									{t("error_page_error_detail")}
+									{t("error_page_recovery_title")}
 								</p>
 								<p className="mt-2 text-sm leading-6 text-muted-foreground">
-									{message}
+									{tone.suggestion}
 								</p>
 							</div>
-
-							<div className="grid gap-3 sm:grid-cols-2">
-								<div className="rounded-xl border p-4">
-									<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-										{t("error_page_path")}
-									</p>
-									<p className="mt-2 break-all font-mono text-sm">
-										{routeLabel}
-									</p>
-								</div>
-								<div className="rounded-xl border p-4">
-									<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-										{t("error_page_response")}
-									</p>
-									<p className="mt-2 font-mono text-sm">{responseLabel}</p>
-								</div>
-							</div>
-						</div>
-
-						<div className="rounded-xl border bg-muted/25 p-4">
-							<p className="text-sm font-medium">
-								{t("error_page_recovery_title")}
-							</p>
-							<p className="mt-2 text-sm leading-6 text-muted-foreground">
-								{tone.suggestion}
-							</p>
-						</div>
-					</CardContent>
+						</CardContent>
+					) : null}
 
 					<CardFooter className="justify-end">
 						<div className="flex flex-col gap-3 sm:flex-row">

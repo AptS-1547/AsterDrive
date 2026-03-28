@@ -7,6 +7,13 @@ const mockState = vi.hoisted(() => ({
 	navigate: vi.fn(),
 }));
 
+const mockRuntime = vi.hoisted(() => ({
+	appMode: "development",
+	isDev: true,
+	isProd: false,
+	showDeveloperErrorDetails: true,
+}));
+
 const translations = vi.hoisted(
 	() =>
 		({
@@ -49,16 +56,22 @@ const translations = vi.hoisted(
 			error_page_root_workspace: "Root workspace",
 			error_page_runtime_exception: "Runtime exception",
 			error_page_status_heading: "Status",
-			error_page_error_detail: "Error detail",
+			error_page_developer_detail: "Developer detail",
+			error_page_error_name: "Error name",
+			error_page_message: "Message",
+			error_page_payload: "Payload",
+			error_page_stack: "Stack",
 			error_page_path: "Path",
 			error_page_response: "Response",
 			error_page_recovery_title: "Recommended recovery path",
-			error_page_footer_hint:
-				"Use the previous page if you want to keep context, or return home to restart from a stable location.",
 			error_page_go_back: "Go Back",
 			error_page_go_home: "Go Home",
 		}) satisfies Record<string, string>,
 );
+
+vi.mock("@/config/runtime", () => ({
+	runtimeFlags: mockRuntime,
+}));
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
@@ -104,6 +117,7 @@ describe("ErrorPage", () => {
 	beforeEach(() => {
 		mockState.error = null;
 		mockState.navigate.mockReset();
+		mockRuntime.showDeveloperErrorDetails = true;
 	});
 
 	it("renders route response errors with status and status text", () => {
@@ -133,6 +147,21 @@ describe("ErrorPage", () => {
 		fireEvent.click(screen.getByRole("button", { name: /Go Home/i }));
 
 		expect(mockState.navigate).toHaveBeenCalledWith("/");
+	});
+
+	it("hides raw error details in release mode", () => {
+		mockState.error = new Error("Boom");
+		mockRuntime.showDeveloperErrorDetails = false;
+
+		render(<ErrorPage />);
+
+		expect(screen.queryByText("Boom")).not.toBeInTheDocument();
+		expect(screen.queryByText("Developer detail")).not.toBeInTheDocument();
+		expect(screen.queryByText("Path")).not.toBeInTheDocument();
+		expect(screen.queryByText("Response")).not.toBeInTheDocument();
+		expect(
+			screen.queryByText("Recommended recovery path"),
+		).not.toBeInTheDocument();
 	});
 
 	it("treats missing route errors as a 404 state", () => {

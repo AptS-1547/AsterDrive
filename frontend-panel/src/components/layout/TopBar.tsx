@@ -29,7 +29,9 @@ export function TopBar({ onSidebarToggle, actions }: TopBarProps) {
 	const handleSearch = (e: React.KeyboardEvent) => {
 		if (e.key === "Enter" && searchInput.trim()) {
 			// Navigate to file browser if not already there
-			if (window.location.pathname !== "/") navigate("/");
+			if (window.location.pathname !== "/") {
+				navigate("/");
+			}
 			search(searchInput.trim());
 		}
 		if (e.key === "Escape" && activeQuery) {

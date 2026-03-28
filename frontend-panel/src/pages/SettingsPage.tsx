@@ -19,7 +19,7 @@ export default function SettingsPage({
 
 	const handleSectionChange = (value: string) => {
 		if ((value === "profile" || value === "interface") && value !== section) {
-			navigate(`/settings/${value}`);
+			navigate(`/settings/${value}`, { viewTransition: true });
 		}
 	};
 

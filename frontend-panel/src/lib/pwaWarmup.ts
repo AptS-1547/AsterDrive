@@ -1,3 +1,4 @@
+import { runtimeFlags } from "@/config/runtime";
 import {
 	adminRouteWarmupLoaders,
 	filePreviewWarmupLoaders,
@@ -8,11 +9,10 @@ import {
 
 const IDLE_TIMEOUT_MS = 3000;
 const CHUNK_DELAY_MS = 1200;
-const IS_DEV = import.meta.env.DEV;
 const RUNTIME_CHUNK_CACHE_NAME = "asset-chunks";
 
 function logWarmup(message: string, extra?: unknown) {
-	if (!IS_DEV) return;
+	if (!runtimeFlags.isDev) return;
 	if (extra === undefined) {
 		console.debug(`[pwa-warmup] ${message}`);
 		return;
@@ -51,7 +51,7 @@ async function logCacheHit(
 	entry: WarmupLoaderEntry,
 	resourceCountBefore: number,
 ) {
-	if (!IS_DEV || typeof caches === "undefined") return;
+	if (!runtimeFlags.isDev || typeof caches === "undefined") return;
 
 	const resources = readResourceEntries();
 	const newResources = resources.slice(resourceCountBefore);
