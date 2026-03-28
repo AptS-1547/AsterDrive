@@ -81,9 +81,6 @@ function QuotaCell({ user }: { user: UserInfo }) {
 					{formatBytes(used)}
 					{quota > 0 ? ` / ${formatBytes(quota)}` : ` / ${t("core:unlimited")}`}
 				</span>
-				<span className="text-[11px] text-muted-foreground">
-					{quota > 0 ? `${Math.round(pct)}%` : t("quota_unlimited_short")}
-				</span>
 			</div>
 			{quota > 0 ? <Progress value={pct} className="h-1.5" /> : null}
 		</div>

@@ -45,7 +45,7 @@ import SveltePlainIcon from "@devicon/react/svelte/plain";
 import SwiftPlainIcon from "@devicon/react/swift/plain";
 import TerraformPlainIcon from "@devicon/react/terraform/plain";
 import TypescriptPlainIcon from "@devicon/react/typescript/plain";
-import VuejsPlainIcon from "@devicon/react/vuejs/plain";
+import VuejsOriginalIcon from "@devicon/react/vuejs/original";
 import XmlPlainIcon from "@devicon/react/xml/plain";
 import YamlPlainIcon from "@devicon/react/yaml/plain";
 import ZigOriginalIcon from "@devicon/react/zig/plain-wordmark";
@@ -61,7 +61,7 @@ const LANGUAGE_ICON_MAP: Record<string, DevIconComponent> = {
 	cjs: JavascriptPlainIcon,
 	ts: TypescriptPlainIcon,
 	tsx: TypescriptPlainIcon,
-	vue: VuejsPlainIcon,
+	vue: VuejsOriginalIcon,
 	svelte: SveltePlainIcon,
 	astro: AstroPlainIcon,
 	html: Html5PlainIcon,
