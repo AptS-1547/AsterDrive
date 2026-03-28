@@ -65,7 +65,10 @@ export default defineConfig(({ command }) => {
 				workbox: {
 					globPatterns: isDevServer
 						? []
-						: ["**/*.{html,js,css,ico,png,svg,woff2,mjs,bcmap}"],
+						: ["**/*.{html,js,css,ico,png,svg,woff2,ttf,mjs,bcmap}"],
+					globIgnores: isDevServer
+						? []
+						: ["assets/vendor-editor-*.js", "assets/ts.worker-*.js"],
 					navigateFallback: "index.html",
 					navigateFallbackDenylist: [/^\/api\//, /^\/health\//],
 					runtimeCaching: [
@@ -73,7 +76,9 @@ export default defineConfig(({ command }) => {
 							urlPattern: ({ request, url }) =>
 								url.pathname.startsWith("/assets/") &&
 								(request.destination === "script" ||
-									request.destination === "style"),
+									request.destination === "style" ||
+									request.destination === "font" ||
+									request.destination === "worker"),
 							handler: "StaleWhileRevalidate",
 							options: {
 								cacheName: "asset-chunks",
@@ -151,10 +156,7 @@ export default defineConfig(({ command }) => {
 							return "vendor-icons";
 						}
 
-						if (
-							packageName === "@monaco-editor/react" ||
-							packageName === "monaco-editor"
-						) {
+						if (packageName === "monaco-editor") {
 							return "vendor-editor";
 						}
 

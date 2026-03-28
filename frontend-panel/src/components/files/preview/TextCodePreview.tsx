@@ -1,10 +1,13 @@
-import Editor from "@monaco-editor/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { useFileEditorSession } from "@/hooks/useFileEditorSession";
 import { useTextContent } from "@/hooks/useTextContent";
+import {
+	MonacoCodeEditor,
+	type MonacoCodeEditorMountHandler,
+} from "./MonacoCodeEditor";
 import { getEditorLanguage } from "./file-capabilities";
 import { PreviewError } from "./PreviewError";
 import type { PreviewableFileLike } from "./types";
@@ -79,11 +82,9 @@ export function TextCodePreview({
 		onDirtyChange?.(dirty);
 	}, [dirty, onDirtyChange]);
 
-	const handleEditorMount = useCallback(
-		(editor: {
-			addCommand: (keybinding: number, handler: () => void) => void;
-		}) => {
-			editor.addCommand(2048 + 49, () => {
+	const handleEditorMount = useCallback<MonacoCodeEditorMountHandler>(
+		(editor, monaco) => {
+			editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
 				saveRef.current();
 			});
 		},
@@ -152,11 +153,10 @@ export function TextCodePreview({
 				) : null}
 			</div>
 			<div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden bg-background">
-				<Editor
-					width="100%"
-					height="100%"
+				<MonacoCodeEditor
+					key={path}
 					language={language}
-					theme={isDark ? "vs-dark" : "light"}
+					theme={isDark ? "vs-dark" : "vs"}
 					value={editing ? editContent : content}
 					onChange={(value) => setEditContent(value ?? "")}
 					onMount={handleEditorMount}

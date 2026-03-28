@@ -38,13 +38,19 @@ describe("file preview capabilities", () => {
 		).toBe("graphql");
 		expect(
 			getEditorLanguage({ name: "main.tf", mime_type: "text/plain" }),
-		).toBe("terraform");
+		).toBe("hcl");
+		expect(
+			getEditorLanguage({ name: "build.sbt", mime_type: "text/plain" }),
+		).toBe("scala");
+		expect(
+			getEditorLanguage({ name: "app.ex", mime_type: "text/plain" }),
+		).toBe("elixir");
 		expect(
 			getEditorLanguage({ name: "build.gradle", mime_type: "text/plain" }),
 		).toBe("java");
 		expect(
 			getEditorLanguage({ name: "intro.tex", mime_type: "text/plain" }),
-		).toBe("tex");
+		).toBe("plaintext");
 		expect(
 			getEditorLanguage({ name: "deploy.ps1", mime_type: "text/plain" }),
 		).toBe("powershell");

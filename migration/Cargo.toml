@@ -8,13 +8,11 @@ publish = false
 [lib]
 name = "migration"
 path = "src/lib.rs"
+test = false
+doctest = false
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
-
-[dependencies.sea-orm]
-version = "~2.0.0-rc.37"
-features = ["sqlx-mysql", "sqlx-postgres", "sqlx-sqlite", "macros", "runtime-tokio-rustls"]
 
 [dependencies.sea-orm-migration]
 version = "~2.0.0-rc.37"

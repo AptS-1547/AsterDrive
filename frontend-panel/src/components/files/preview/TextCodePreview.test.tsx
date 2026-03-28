@@ -21,12 +21,15 @@ vi.mock("react-i18next", () => ({
 	}),
 }));
 
-vi.mock("@monaco-editor/react", () => ({
-	default: (props: {
+vi.mock("@/components/files/preview/MonacoCodeEditor", () => ({
+	MonacoCodeEditor: (props: {
 		language: string;
-		onChange?: (value?: string) => void;
+		onChange?: (value: string) => void;
 		onMount?: (editor: {
 			addCommand: (keybinding: number, handler: () => void) => void;
+		}, monaco: {
+			KeyCode: { KeyS: number };
+			KeyMod: { CtrlCmd: number };
 		}) => void;
 		options: { readOnly: boolean };
 		theme: string;
@@ -38,6 +41,9 @@ vi.mock("@monaco-editor/react", () => ({
 				mockState.registeredShortcut = handler;
 				mockState.save.mockName(`shortcut:${keybinding}`);
 			},
+		}, {
+			KeyCode: { KeyS: 49 },
+			KeyMod: { CtrlCmd: 2048 },
 		});
 
 		return (
@@ -197,7 +203,7 @@ describe("TextCodePreview", () => {
 		expect(screen.getByText("open_with_code")).toBeInTheDocument();
 		expect(screen.getByText("active")).toBeInTheDocument();
 		expect(screen.getByTestId("editor")).toHaveTextContent(
-			"editor:typescript:light:true:const value = 1;",
+			"editor:typescript:vs:true:const value = 1;",
 		);
 
 		fireEvent.click(screen.getByText("edit"));
