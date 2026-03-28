@@ -14,7 +14,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::constants::YEAR_SECS;
-use crate::db::repository::{policy_repo, user_profile_repo, user_repo};
+use crate::db::repository::{config_repo, policy_repo, user_profile_repo, user_repo};
 use crate::entities::{user, user_profile};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -46,6 +46,15 @@ pub struct UserProfileInfo {
     pub avatar: AvatarInfo,
 }
 
+const DEFAULT_GRAVATAR_BASE_URL: &str = "https://www.gravatar.com/avatar";
+
+pub async fn resolve_gravatar_base_url(db: &sea_orm::DatabaseConnection) -> String {
+    match config_repo::find_by_key(db, "gravatar_base_url").await {
+        Ok(Some(cfg)) if !cfg.value.trim().is_empty() => cfg.value,
+        _ => DEFAULT_GRAVATAR_BASE_URL.to_string(),
+    }
+}
+
 fn gravatar_hash(email: &str) -> String {
     let normalized = email.trim().to_lowercase();
     let mut hasher = Md5::new();
@@ -53,10 +62,10 @@ fn gravatar_hash(email: &str) -> String {
     crate::utils::hash::bytes_to_hex(&hasher.finalize())
 }
 
-// TODO: 允许用户自定义 Gravatar 代理 URL
-fn gravatar_url(email: &str, size: u32) -> String {
+fn gravatar_url(email: &str, size: u32, base_url: &str) -> String {
     let hash = gravatar_hash(email);
-    format!("https://www.gravatar.com/avatar/{hash}?d=identicon&s={size}&r=g")
+    let base = base_url.trim_end_matches('/');
+    format!("{base}/{hash}?d=identicon&s={size}&r=g")
 }
 
 fn avatar_api_path(user_id: i64, version: i32, size: u32, audience: AvatarAudience) -> String {
@@ -207,6 +216,7 @@ fn build_avatar_info(
     user: &user::Model,
     profile: Option<&user_profile::Model>,
     audience: AvatarAudience,
+    gravatar_base_url: &str,
 ) -> AvatarInfo {
     let source = profile
         .map(|p| p.avatar_source)
@@ -222,8 +232,8 @@ fn build_avatar_info(
         },
         AvatarSource::Gravatar => AvatarInfo {
             source,
-            url_512: Some(gravatar_url(&user.email, AVATAR_SIZE_SM)),
-            url_1024: Some(gravatar_url(&user.email, AVATAR_SIZE_LG)),
+            url_512: Some(gravatar_url(&user.email, AVATAR_SIZE_SM, gravatar_base_url)),
+            url_1024: Some(gravatar_url(&user.email, AVATAR_SIZE_LG, gravatar_base_url)),
             version,
         },
         AvatarSource::Upload => {
@@ -247,10 +257,11 @@ pub fn build_profile_info(
     user: &user::Model,
     profile: Option<&user_profile::Model>,
     audience: AvatarAudience,
+    gravatar_base_url: &str,
 ) -> UserProfileInfo {
     UserProfileInfo {
         display_name: profile.and_then(|p| p.display_name.clone()),
-        avatar: build_avatar_info(user, profile, audience),
+        avatar: build_avatar_info(user, profile, audience, gravatar_base_url),
     }
 }
 
@@ -260,7 +271,13 @@ pub async fn get_profile_info(
     audience: AvatarAudience,
 ) -> Result<UserProfileInfo> {
     let profile = user_profile_repo::find_by_user_id(&state.db, user.id).await?;
-    Ok(build_profile_info(user, profile.as_ref(), audience))
+    let gravatar_base_url = resolve_gravatar_base_url(&state.db).await;
+    Ok(build_profile_info(
+        user,
+        profile.as_ref(),
+        audience,
+        &gravatar_base_url,
+    ))
 }
 
 pub async fn get_profile_info_map(
@@ -270,13 +287,14 @@ pub async fn get_profile_info_map(
 ) -> Result<HashMap<i64, UserProfileInfo>> {
     let user_ids: Vec<i64> = users.iter().map(|user| user.id).collect();
     let profiles = user_profile_repo::find_by_user_ids(&state.db, &user_ids).await?;
+    let gravatar_base_url = resolve_gravatar_base_url(&state.db).await;
 
     Ok(users
         .iter()
         .map(|user| {
             (
                 user.id,
-                build_profile_info(user, profiles.get(&user.id), audience),
+                build_profile_info(user, profiles.get(&user.id), audience, &gravatar_base_url),
             )
         })
         .collect())
@@ -349,10 +367,12 @@ pub async fn upload_avatar(
         delete_upload_objects(state, previous).await;
     }
 
+    let gravatar_base_url = resolve_gravatar_base_url(&state.db).await;
     Ok(build_profile_info(
         &user,
         Some(&saved),
         AvatarAudience::SelfUser,
+        &gravatar_base_url,
     ))
 }
 
@@ -369,9 +389,15 @@ pub async fn set_avatar_source(
 
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+    let gravatar_base_url = resolve_gravatar_base_url(&state.db).await;
 
     if existing.is_none() && source == AvatarSource::None {
-        return Ok(build_profile_info(&user, None, AvatarAudience::SelfUser));
+        return Ok(build_profile_info(
+            &user,
+            None,
+            AvatarAudience::SelfUser,
+            &gravatar_base_url,
+        ));
     }
 
     let now = Utc::now();
@@ -412,6 +438,7 @@ pub async fn set_avatar_source(
         &user,
         Some(&saved),
         AvatarAudience::SelfUser,
+        &gravatar_base_url,
     ))
 }
 
@@ -422,12 +449,14 @@ pub async fn update_profile(
 ) -> Result<UserProfileInfo> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+    let gravatar_base_url = resolve_gravatar_base_url(&state.db).await;
 
     let Some(display_name) = display_name else {
         return Ok(build_profile_info(
             &user,
             existing.as_ref(),
             AvatarAudience::SelfUser,
+            &gravatar_base_url,
         ));
     };
 
@@ -447,7 +476,12 @@ pub async fn update_profile(
         }
         None => {
             if normalized.is_none() {
-                return Ok(build_profile_info(&user, None, AvatarAudience::SelfUser));
+                return Ok(build_profile_info(
+                    &user,
+                    None,
+                    AvatarAudience::SelfUser,
+                    &gravatar_base_url,
+                ));
             }
 
             user_profile_repo::create(
@@ -471,6 +505,7 @@ pub async fn update_profile(
         &user,
         Some(&saved),
         AvatarAudience::SelfUser,
+        &gravatar_base_url,
     ))
 }
 

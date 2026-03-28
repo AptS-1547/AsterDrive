@@ -176,6 +176,7 @@ pub async fn to_user_infos(
     audience: profile_service::AvatarAudience,
 ) -> Result<Vec<UserInfo>> {
     let profile_map = profile_service::get_profile_info_map(state, &users, audience).await?;
+    let gravatar_base_url = profile_service::resolve_gravatar_base_url(&state.db).await;
 
     Ok(users
         .into_iter()
@@ -189,10 +190,9 @@ pub async fn to_user_infos(
             storage_quota: user.storage_quota,
             created_at: user.created_at,
             updated_at: user.updated_at,
-            profile: profile_map
-                .get(&user.id)
-                .cloned()
-                .unwrap_or_else(|| profile_service::build_profile_info(&user, None, audience)),
+            profile: profile_map.get(&user.id).cloned().unwrap_or_else(|| {
+                profile_service::build_profile_info(&user, None, audience, &gravatar_base_url)
+            }),
         })
         .collect())
 }

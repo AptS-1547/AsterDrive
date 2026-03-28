@@ -80,4 +80,14 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         category: "audit",
         description: "Days before audit log entries are permanently deleted",
     },
+    // ── General ─────────────────────────────────────────────
+    ConfigDef {
+        key: "gravatar_base_url",
+        value_type: "string",
+        default_fn: || "https://www.gravatar.com/avatar".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "general",
+        description: "Gravatar avatar base URL (change to proxy/mirror if needed)",
+    },
 ];
