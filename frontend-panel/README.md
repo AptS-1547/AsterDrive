@@ -14,6 +14,11 @@ bun run dev
 - 前端地址：Vite 默认端口
 - API 基地址：`/api/v1`
 - 可通过 `VITE_API_BASE_URL` 覆盖
+- 视频自定义浏览器可通过以下环境变量启用：
+  - `VITE_VIDEO_BROWSER_URL_TEMPLATE`
+  - `VITE_VIDEO_BROWSER_LABEL`
+  - `VITE_VIDEO_BROWSER_MODE=iframe|new_tab`
+  - `VITE_VIDEO_BROWSER_ALLOWED_ORIGINS`
 
 ## 构建
 

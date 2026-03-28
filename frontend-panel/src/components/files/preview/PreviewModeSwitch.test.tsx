@@ -81,4 +81,25 @@ describe("PreviewModeSwitch", () => {
 
 		expect(onChange).toHaveBeenCalledWith("code");
 	});
+
+	it("renders a custom label without translation when provided", () => {
+		render(
+			<PreviewModeSwitch
+				options={[
+					{
+						icon: "Globe",
+						label: "Jellyfin",
+						labelKey: "ignored",
+						mode: "video",
+					},
+					{ icon: "Monitor", labelKey: "mode_native", mode: "videoBrowser" },
+				]}
+				value="video"
+				onChange={vi.fn()}
+			/>,
+		);
+
+		expect(screen.getByText("Jellyfin")).toBeInTheDocument();
+		expect(screen.queryByText("translated:ignored")).not.toBeInTheDocument();
+	});
 });

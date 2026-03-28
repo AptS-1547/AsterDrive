@@ -14,6 +14,7 @@ import { formatBytes } from "@/lib/format";
 import { fileService } from "@/services/fileService";
 import type { FileInfo, FileListItem } from "@/types/api";
 import { BlobMediaPreview } from "./BlobMediaPreview";
+import { CustomVideoBrowserPreview } from "./CustomVideoBrowserPreview";
 import { detectFilePreviewProfile } from "./file-capabilities";
 import {
 	getStoredOpenWithPreference,
@@ -23,6 +24,11 @@ import { PreviewModeSwitch } from "./PreviewModeSwitch";
 import { PreviewUnavailable } from "./PreviewUnavailable";
 import type { OpenWithMode } from "./types";
 import { UnsavedChangesGuard } from "./UnsavedChangesGuard";
+import { VideoPreview } from "./VideoPreview";
+import {
+	getVideoBrowserOpenWithOption,
+	resolveVideoBrowserTarget,
+} from "./video-browser-config";
 
 const PdfPreview = lazy(async () => {
 	const module = await import("./PdfPreview");
@@ -70,7 +76,31 @@ export function FilePreviewDialog({
 	editable = true,
 }: FilePreviewDialogProps) {
 	const { t } = useTranslation(["core", "files"]);
-	const profile = useMemo(() => detectFilePreviewProfile(file), [file]);
+	const baseProfile = useMemo(() => detectFilePreviewProfile(file), [file]);
+	const resolvedDownloadPath =
+		downloadPath ?? fileService.downloadPath(file.id);
+	const customVideoBrowserOption = useMemo(
+		() => getVideoBrowserOpenWithOption(),
+		[],
+	);
+	const resolvedVideoBrowser = useMemo(() => {
+		if (baseProfile.category !== "video") return null;
+		return resolveVideoBrowserTarget(file, resolvedDownloadPath);
+	}, [baseProfile.category, file, resolvedDownloadPath]);
+	const profile = useMemo(() => {
+		if (
+			baseProfile.category !== "video" ||
+			!customVideoBrowserOption ||
+			!resolvedVideoBrowser
+		) {
+			return baseProfile;
+		}
+
+		return {
+			...baseProfile,
+			options: [...baseProfile.options, customVideoBrowserOption],
+		};
+	}, [baseProfile, customVideoBrowserOption, resolvedVideoBrowser]);
 	const preferredMode = useMemo(() => {
 		const stored = getStoredOpenWithPreference(profile.category);
 		if (stored && profile.options.some((option) => option.mode === stored)) {
@@ -83,9 +113,9 @@ export function FilePreviewDialog({
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const [pendingMode, setPendingMode] = useState<OpenWithMode | null>(null);
 	const activeMode = mode ?? preferredMode;
-	const usesInnerScroll = activeMode === "pdf";
-	const resolvedDownloadPath =
-		downloadPath ?? fileService.downloadPath(file.id);
+	const usesInnerScroll =
+		activeMode === "pdf" ||
+		(activeMode === "videoBrowser" && resolvedVideoBrowser?.mode === "iframe");
 	const previewLoadingState = (
 		<div className="p-6 text-sm text-muted-foreground">
 			{t("files:loading_preview")}
@@ -147,7 +177,7 @@ export function FilePreviewDialog({
 									}}
 								>
 									<Icon name={option.icon} className="mr-2 h-4 w-4" />
-									{t(`files:${option.labelKey}`)}
+									{option.label ?? t(`files:${option.labelKey}`)}
 								</Button>
 							))}
 						</div>
@@ -163,11 +193,7 @@ export function FilePreviewDialog({
 				</Suspense>
 			);
 		}
-		if (
-			activeMode === "image" ||
-			activeMode === "video" ||
-			activeMode === "audio"
-		) {
+		if (activeMode === "image" || activeMode === "audio") {
 			return (
 				<BlobMediaPreview
 					file={file}
@@ -175,6 +201,12 @@ export function FilePreviewDialog({
 					path={resolvedDownloadPath}
 				/>
 			);
+		}
+		if (activeMode === "video") {
+			return <VideoPreview file={file} path={resolvedDownloadPath} />;
+		}
+		if (activeMode === "videoBrowser") {
+			return <CustomVideoBrowserPreview target={resolvedVideoBrowser} />;
 		}
 		if (activeMode === "markdown") {
 			return (

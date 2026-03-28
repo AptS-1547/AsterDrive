@@ -17,6 +17,17 @@ const mockState = vi.hoisted(() => ({
 		],
 	},
 	setStoredPreference: vi.fn(),
+	videoBrowserOption: null as {
+		icon: string;
+		label?: string;
+		labelKey: string;
+		mode: string;
+	} | null,
+	videoBrowserTarget: null as {
+		label: string;
+		mode: "iframe" | "new_tab";
+		url: string;
+	} | null,
 }));
 
 vi.mock("react-i18next", () => ({
@@ -113,6 +124,14 @@ vi.mock("@/components/files/preview/BlobMediaPreview", () => ({
 	),
 }));
 
+vi.mock("@/components/files/preview/CustomVideoBrowserPreview", () => ({
+	CustomVideoBrowserPreview: ({
+		target,
+	}: {
+		target: { url: string } | null;
+	}) => <div>{`video-browser:${target?.url ?? "null"}`}</div>,
+}));
+
 vi.mock("@/components/files/preview/file-capabilities", () => ({
 	detectFilePreviewProfile: () => mockState.profile,
 }));
@@ -122,6 +141,11 @@ vi.mock("@/components/files/preview/open-with-preferences", () => ({
 		mockState.getStoredPreference(...args),
 	setStoredOpenWithPreference: (...args: unknown[]) =>
 		mockState.setStoredPreference(...args),
+}));
+
+vi.mock("@/components/files/preview/video-browser-config", () => ({
+	getVideoBrowserOpenWithOption: () => mockState.videoBrowserOption,
+	resolveVideoBrowserTarget: () => mockState.videoBrowserTarget,
 }));
 
 vi.mock("@/components/files/preview/PreviewModeSwitch", () => ({
@@ -142,7 +166,7 @@ vi.mock("@/components/files/preview/PreviewModeSwitch", () => ({
 					type="button"
 					onClick={() => onChange(option.mode)}
 				>
-					{option.labelKey}
+					{option.label ?? option.labelKey}
 				</button>
 			))}
 		</div>
@@ -151,6 +175,10 @@ vi.mock("@/components/files/preview/PreviewModeSwitch", () => ({
 
 vi.mock("@/components/files/preview/PreviewUnavailable", () => ({
 	PreviewUnavailable: () => <div>preview-unavailable</div>,
+}));
+
+vi.mock("@/components/files/preview/VideoPreview", () => ({
+	VideoPreview: ({ path }: { path: string }) => <div>{`video:${path}`}</div>,
 }));
 
 vi.mock("@/components/files/preview/UnsavedChangesGuard", () => ({
@@ -270,6 +298,8 @@ describe("FilePreviewDialog", () => {
 			],
 		};
 		mockState.getStoredPreference.mockReturnValue(null);
+		mockState.videoBrowserOption = null;
+		mockState.videoBrowserTarget = null;
 	});
 
 	it("uses a valid stored preference and the default download path", async () => {
@@ -352,5 +382,54 @@ describe("FilePreviewDialog", () => {
 
 		expect(await screen.findByText("preview-unavailable")).toBeInTheDocument();
 		expect(screen.getByText("modes:0")).toBeInTheDocument();
+	});
+
+	it("adds the configured custom video browser as an extra video open mode", async () => {
+		mockState.profile = {
+			category: "video",
+			defaultMode: "video",
+			isBlobPreview: true,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{ icon: "Monitor", labelKey: "open_with_video", mode: "video" },
+			],
+		};
+		mockState.videoBrowserOption = {
+			icon: "Globe",
+			label: "Jellyfin",
+			labelKey: "open_with_custom_video_browser",
+			mode: "videoBrowser",
+		};
+		mockState.videoBrowserTarget = {
+			label: "Jellyfin",
+			mode: "iframe",
+			url: "https://videos.example.com/watch?id=7",
+		};
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type: "video/mp4",
+				name: "clip.mp4",
+				size: 2048,
+			} as never,
+		});
+
+		expect(
+			await screen.findByText("video:/files/7/download"),
+		).toBeInTheDocument();
+		expect(screen.getByText("modes:2")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "Jellyfin" }));
+
+		await screen.findByText(
+			"video-browser:https://videos.example.com/watch?id=7",
+		);
+		expect(mockState.setStoredPreference).toHaveBeenCalledWith(
+			"video",
+			"videoBrowser",
+		);
+		expect(screen.getByText("active:videoBrowser")).toBeInTheDocument();
 	});
 });

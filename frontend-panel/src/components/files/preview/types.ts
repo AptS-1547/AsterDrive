@@ -20,6 +20,7 @@ export type FileCategory =
 export type OpenWithMode =
 	| "image"
 	| "video"
+	| "videoBrowser"
 	| "audio"
 	| "pdf"
 	| "markdown"
@@ -31,6 +32,7 @@ export type OpenWithMode =
 export interface OpenWithOption {
 	mode: OpenWithMode;
 	labelKey: string;
+	label?: string;
 	icon: IconName;
 }
 

@@ -2,6 +2,7 @@ import { STORAGE_KEYS } from "@/config/app";
 import type { FileCategory, OpenWithMode } from "./types";
 
 const OPEN_WITH_PREFERENCE_CATEGORIES: FileCategory[] = [
+	"video",
 	"markdown",
 	"csv",
 	"tsv",

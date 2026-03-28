@@ -31,7 +31,7 @@ export function OpenWithChooser({
 		<DropdownMenu>
 			<DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
 				<Icon name={current.icon} className="mr-1 h-3.5 w-3.5" />
-				{t(current.labelKey)}
+				{current.label ?? t(current.labelKey)}
 				<Icon name="CaretDown" className="ml-1 h-3.5 w-3.5" />
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" className="w-48 min-w-48">
@@ -41,7 +41,7 @@ export function OpenWithChooser({
 						onClick={() => onChange(option.mode)}
 					>
 						<Icon name={option.icon} className="mr-2 h-4 w-4" />
-						{t(option.labelKey)}
+						{option.label ?? t(option.labelKey)}
 						{option.mode === value && (
 							<Icon name="Check" className="ml-auto h-4 w-4" />
 						)}

@@ -33,7 +33,7 @@ export function PreviewModeSwitch({
 					onClick={() => onChange(option.mode)}
 				>
 					<Icon name={option.icon} className="mr-1 h-3.5 w-3.5" />
-					{t(option.labelKey)}
+					{option.label ?? t(option.labelKey)}
 				</Button>
 			))}
 		</div>

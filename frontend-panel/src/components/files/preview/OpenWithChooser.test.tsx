@@ -112,4 +112,25 @@ describe("OpenWithChooser", () => {
 		);
 		expect(screen.getAllByText("translated:mode_code")).toHaveLength(2);
 	});
+
+	it("prefers a custom option label when provided", () => {
+		render(
+			<OpenWithChooser
+				options={[
+					{
+						icon: "Globe",
+						label: "Jellyfin",
+						labelKey: "ignored",
+						mode: "video",
+					},
+					{ icon: "Monitor", labelKey: "mode_native", mode: "videoBrowser" },
+				]}
+				value="video"
+				onChange={vi.fn()}
+			/>,
+		);
+
+		expect(screen.getAllByText("Jellyfin")).toHaveLength(2);
+		expect(screen.queryByText("translated:ignored")).not.toBeInTheDocument();
+	});
 });
