@@ -25,26 +25,32 @@ vi.mock("@/components/files/preview/MonacoCodeEditor", () => ({
 	MonacoCodeEditor: (props: {
 		language: string;
 		onChange?: (value: string) => void;
-		onMount?: (editor: {
-			addCommand: (keybinding: number, handler: () => void) => void;
-		}, monaco: {
-			KeyCode: { KeyS: number };
-			KeyMod: { CtrlCmd: number };
-		}) => void;
+		onMount?: (
+			editor: {
+				addCommand: (keybinding: number, handler: () => void) => void;
+			},
+			monaco: {
+				KeyCode: { KeyS: number };
+				KeyMod: { CtrlCmd: number };
+			},
+		) => void;
 		options: { readOnly: boolean };
 		theme: string;
 		value: string;
 	}) => {
 		mockState.editorProps = props;
-		props.onMount?.({
-			addCommand: (keybinding, handler) => {
-				mockState.registeredShortcut = handler;
-				mockState.save.mockName(`shortcut:${keybinding}`);
+		props.onMount?.(
+			{
+				addCommand: (keybinding, handler) => {
+					mockState.registeredShortcut = handler;
+					mockState.save.mockName(`shortcut:${keybinding}`);
+				},
 			},
-		}, {
-			KeyCode: { KeyS: 49 },
-			KeyMod: { CtrlCmd: 2048 },
-		});
+			{
+				KeyCode: { KeyS: 49 },
+				KeyMod: { CtrlCmd: 2048 },
+			},
+		);
 
 		return (
 			<div>

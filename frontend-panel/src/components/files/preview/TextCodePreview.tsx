@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { useFileEditorSession } from "@/hooks/useFileEditorSession";
 import { useTextContent } from "@/hooks/useTextContent";
+import { getEditorLanguage } from "./file-capabilities";
 import {
 	MonacoCodeEditor,
 	type MonacoCodeEditorMountHandler,
 } from "./MonacoCodeEditor";
-import { getEditorLanguage } from "./file-capabilities";
 import { PreviewError } from "./PreviewError";
 import type { PreviewableFileLike } from "./types";
 

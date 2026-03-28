@@ -68,7 +68,18 @@ export default defineConfig(({ command }) => {
 						: ["**/*.{html,js,css,ico,png,svg,woff2,ttf,mjs,bcmap}"],
 					globIgnores: isDevServer
 						? []
-						: ["assets/vendor-editor-*.js", "assets/ts.worker-*.js"],
+						: [
+								"assets/*contribution-*.js",
+								"assets/editor*.js",
+								"assets/editor*.css",
+								"assets/toggleHighContrast-*.js",
+								"assets/toggleHighContrast-*.css",
+								"assets/json.worker-*.js",
+								"assets/jsonMode-*.js",
+								"assets/PdfPreview-*.js",
+								"assets/PdfPreview-*.css",
+								"assets/pdf.worker.min-*.mjs",
+							],
 					navigateFallback: "index.html",
 					navigateFallbackDenylist: [/^\/api\//, /^\/health\//],
 					runtimeCaching: [
@@ -154,14 +165,6 @@ export default defineConfig(({ command }) => {
 							packageName === "react-devicons"
 						) {
 							return "vendor-icons";
-						}
-
-						if (packageName === "monaco-editor") {
-							return "vendor-editor";
-						}
-
-						if (packageName === "react-pdf" || packageName === "pdfjs-dist") {
-							return "vendor-pdf";
 						}
 
 						if (

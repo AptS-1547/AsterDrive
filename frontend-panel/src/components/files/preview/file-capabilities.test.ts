@@ -42,9 +42,9 @@ describe("file preview capabilities", () => {
 		expect(
 			getEditorLanguage({ name: "build.sbt", mime_type: "text/plain" }),
 		).toBe("scala");
-		expect(
-			getEditorLanguage({ name: "app.ex", mime_type: "text/plain" }),
-		).toBe("elixir");
+		expect(getEditorLanguage({ name: "app.ex", mime_type: "text/plain" })).toBe(
+			"elixir",
+		);
 		expect(
 			getEditorLanguage({ name: "build.gradle", mime_type: "text/plain" }),
 		).toBe("java");

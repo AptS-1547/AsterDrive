@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
-import { configureMonacoEnvironment, monaco } from "./monaco-environment";
+import {
+	configureMonacoEnvironment,
+	ensureMonacoLanguage,
+	monaco,
+} from "./monaco-environment";
 
 configureMonacoEnvironment();
 
@@ -30,6 +34,10 @@ export function MonacoCodeEditor({
 	const modelRef = useRef<monaco.editor.ITextModel | null>(null);
 	const onChangeRef = useRef(onChange);
 	const onMountRef = useRef(onMount);
+	const languageRef = useRef(language);
+	const themeRef = useRef(theme);
+	const valueRef = useRef(value);
+	const optionsRef = useRef(options);
 
 	useEffect(() => {
 		onChangeRef.current = onChange;
@@ -40,31 +48,64 @@ export function MonacoCodeEditor({
 	}, [onMount]);
 
 	useEffect(() => {
+		languageRef.current = language;
+	}, [language]);
+
+	useEffect(() => {
+		themeRef.current = theme;
+	}, [theme]);
+
+	useEffect(() => {
+		valueRef.current = value;
+	}, [value]);
+
+	useEffect(() => {
+		optionsRef.current = options;
+	}, [options]);
+
+	useEffect(() => {
 		const container = containerRef.current;
 		if (!container) {
 			return;
 		}
 
-		monaco.editor.setTheme(theme);
+		let cancelled = false;
+		let subscription: monaco.IDisposable | null = null;
 
-		const model = monaco.editor.createModel(value, language);
-		const editor = monaco.editor.create(container, {
-			...options,
-			automaticLayout: true,
-			model,
-		});
-		const subscription = editor.onDidChangeModelContent(() => {
-			onChangeRef.current?.(model.getValue());
-		});
+		void (async () => {
+			const normalizedLanguage = await ensureMonacoLanguage(
+				languageRef.current,
+			);
+			if (cancelled) {
+				return;
+			}
 
-		editorRef.current = editor;
-		modelRef.current = model;
-		onMountRef.current?.(editor, monaco);
+			monaco.editor.setTheme(themeRef.current);
+
+			const model = monaco.editor.createModel(
+				valueRef.current,
+				normalizedLanguage,
+			);
+			const editor = monaco.editor.create(container, {
+				...optionsRef.current,
+				automaticLayout: true,
+				model,
+			});
+
+			subscription = editor.onDidChangeModelContent(() => {
+				onChangeRef.current?.(model.getValue());
+			});
+
+			editorRef.current = editor;
+			modelRef.current = model;
+			onMountRef.current?.(editor, monaco);
+		})();
 
 		return () => {
-			subscription.dispose();
-			editor.dispose();
-			model.dispose();
+			cancelled = true;
+			subscription?.dispose();
+			editorRef.current?.dispose();
+			modelRef.current?.dispose();
 			editorRef.current = null;
 			modelRef.current = null;
 		};
@@ -92,9 +133,14 @@ export function MonacoCodeEditor({
 			return;
 		}
 
-		if (model.getLanguageId() !== language) {
-			monaco.editor.setModelLanguage(model, language);
-		}
+		void (async () => {
+			const normalizedLanguage = await ensureMonacoLanguage(language);
+			if (model.isDisposed() || model.getLanguageId() === normalizedLanguage) {
+				return;
+			}
+
+			monaco.editor.setModelLanguage(model, normalizedLanguage);
+		})();
 	}, [language]);
 
 	useEffect(() => {
