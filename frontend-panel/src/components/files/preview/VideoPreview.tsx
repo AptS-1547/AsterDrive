@@ -6,6 +6,9 @@ import { logger } from "@/lib/logger";
 import { PreviewError } from "./PreviewError";
 import type { PreviewableFileLike } from "./types";
 
+const DEFAULT_ASPECT_RATIO = 16 / 9;
+const DIALOG_CHROME_HEIGHT_REM = 11;
+
 interface VideoPreviewProps {
 	file: PreviewableFileLike;
 	path: string;
@@ -20,11 +23,44 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const { blobUrl, error, loading, retry } = useBlobUrl(path);
 	const [playerFailed, setPlayerFailed] = useState(false);
+	const [aspectRatio, setAspectRatio] = useState(DEFAULT_ASPECT_RATIO);
 
 	const playerLanguage = useMemo(
 		() => getPlayerLanguage(i18n.language),
 		[i18n.language],
 	);
+	const previewFrameStyle = useMemo(
+		() => ({
+			aspectRatio: String(aspectRatio),
+			maxWidth: `min(100%, calc((90vh - ${DIALOG_CHROME_HEIGHT_REM}rem) * ${aspectRatio}))`,
+		}),
+		[aspectRatio],
+	);
+
+	useEffect(() => {
+		setPlayerFailed(false);
+		setAspectRatio(DEFAULT_ASPECT_RATIO);
+		if (!blobUrl) return;
+
+		const metadataVideo = document.createElement("video");
+
+		const handleLoadedMetadata = () => {
+			if (metadataVideo.videoWidth <= 0 || metadataVideo.videoHeight <= 0)
+				return;
+			setAspectRatio(metadataVideo.videoWidth / metadataVideo.videoHeight);
+		};
+
+		metadataVideo.preload = "metadata";
+		metadataVideo.src = blobUrl;
+		metadataVideo.addEventListener("loadedmetadata", handleLoadedMetadata);
+		metadataVideo.load();
+
+		return () => {
+			metadataVideo.removeEventListener("loadedmetadata", handleLoadedMetadata);
+			metadataVideo.removeAttribute("src");
+			metadataVideo.load();
+		};
+	}, [blobUrl]);
 
 	useEffect(() => {
 		if (!blobUrl || !containerRef.current || playerFailed) return;
@@ -36,7 +72,6 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 				container: containerRef.current,
 				url: blobUrl,
 				lang: playerLanguage,
-				autoSize: true,
 				fullscreen: true,
 				fullscreenWeb: true,
 				pip: true,
@@ -48,6 +83,7 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 				playsInline: true,
 				airplay: true,
 			});
+			art.template.$video.style.objectFit = "contain";
 		} catch (playerError) {
 			logger.warn("artplayer init failed", file.name, playerError);
 			setPlayerFailed(true);
@@ -72,19 +108,25 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 
 	if (playerFailed) {
 		return (
-			<div className="mx-auto flex min-h-[60vh] w-full max-w-5xl items-center justify-center">
+			<div
+				className="mx-auto w-full overflow-hidden rounded-xl bg-black"
+				style={previewFrameStyle}
+			>
 				{/* biome-ignore lint/a11y/useMediaCaption: user-uploaded media may not have captions available */}
 				<video
 					src={blobUrl}
 					controls
-					className="max-h-full max-w-full rounded-xl"
+					className="block h-full w-full object-contain"
 				/>
 			</div>
 		);
 	}
 
 	return (
-		<div className="mx-auto h-full min-h-[60vh] w-full max-w-5xl overflow-hidden rounded-xl bg-black">
+		<div
+			className="mx-auto w-full overflow-hidden rounded-xl bg-black"
+			style={previewFrameStyle}
+		>
 			<div ref={containerRef} className="h-full w-full" />
 		</div>
 	);

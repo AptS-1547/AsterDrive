@@ -77,7 +77,11 @@ vi.mock("@/components/ui/dialog", () => ({
 	}: {
 		children: React.ReactNode;
 		className?: string;
-	}) => <div className={className}>{children}</div>,
+	}) => (
+		<div data-testid="dialog-content" className={className}>
+			{children}
+		</div>
+	),
 	DialogHeader: ({
 		children,
 		className,
@@ -316,6 +320,15 @@ describe("FilePreviewDialog", () => {
 		expect(screen.getByText("active:markdown")).toBeInTheDocument();
 	});
 
+	it("keeps a fixed work area for editor-style previews", async () => {
+		renderDialog();
+
+		await screen.findByText("code:/files/7/download:true");
+		expect(
+			screen.getByTestId("dialog-content").className.split(/\s+/),
+		).toContain("h-[90vh]");
+	});
+
 	it("switches modes immediately when the editor is clean and persists the choice", async () => {
 		renderDialog();
 
@@ -431,5 +444,32 @@ describe("FilePreviewDialog", () => {
 			"videoBrowser",
 		);
 		expect(screen.getByText("active:videoBrowser")).toBeInTheDocument();
+	});
+
+	it("lets plain video previews size the dialog from their content", async () => {
+		mockState.profile = {
+			category: "video",
+			defaultMode: "video",
+			isBlobPreview: true,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{ icon: "Monitor", labelKey: "open_with_video", mode: "video" },
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type: "video/mp4",
+				name: "clip.mp4",
+				size: 2048,
+			} as never,
+		});
+
+		await screen.findByText("video:/files/7/download");
+		const classes = screen.getByTestId("dialog-content").className.split(/\s+/);
+		expect(classes).toContain("max-h-[90vh]");
+		expect(classes).not.toContain("h-[90vh]");
 	});
 });

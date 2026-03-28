@@ -11,6 +11,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatBytes } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import type { FileInfo, FileListItem } from "@/types/api";
 import { BlobMediaPreview } from "./BlobMediaPreview";
@@ -115,6 +116,13 @@ export function FilePreviewDialog({
 	const activeMode = mode ?? preferredMode;
 	const usesInnerScroll =
 		activeMode === "pdf" ||
+		(activeMode === "videoBrowser" && resolvedVideoBrowser?.mode === "iframe");
+	const fillsViewportHeight =
+		activeMode === "code" ||
+		activeMode === "formatted" ||
+		activeMode === "markdown" ||
+		activeMode === "pdf" ||
+		activeMode === "table" ||
 		(activeMode === "videoBrowser" && resolvedVideoBrowser?.mode === "iframe");
 	const previewLoadingState = (
 		<div className="p-6 text-sm text-muted-foreground">
@@ -260,7 +268,10 @@ export function FilePreviewDialog({
 			<Dialog open onOpenChange={(open) => !open && closeWithGuard()}>
 				<DialogContent
 					showCloseButton={false}
-					className="flex h-[90vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1200px)]"
+					className={cn(
+						"flex max-h-[90vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1200px)]",
+						fillsViewportHeight && "h-[90vh]",
+					)}
 				>
 					<DialogHeader className="gap-0 border-b px-4 py-3">
 						<div className="flex items-center gap-3">
@@ -302,10 +313,29 @@ export function FilePreviewDialog({
 						</div>
 					</div>
 					{usesInnerScroll ? (
-						<div className="min-h-0 flex-1 bg-muted/20 p-3">{body}</div>
+						<div
+							className={cn(
+								"bg-muted/20 p-3",
+								fillsViewportHeight && "min-h-0 flex-1",
+							)}
+						>
+							{body}
+						</div>
 					) : (
-						<ScrollArea className="min-h-0 flex-1 bg-muted/20">
-							<div className="h-full min-h-full w-full p-3">{body}</div>
+						<ScrollArea
+							className={cn(
+								"bg-muted/20",
+								fillsViewportHeight && "min-h-0 flex-1",
+							)}
+						>
+							<div
+								className={cn(
+									"w-full p-3",
+									fillsViewportHeight && "h-full min-h-full",
+								)}
+							>
+								{body}
+							</div>
 						</ScrollArea>
 					)}
 				</DialogContent>
