@@ -30,7 +30,7 @@ export function ReadOnlyFileCollection({
 	const isEmpty = folders.length === 0 && files.length === 0;
 
 	return (
-		<div className="min-h-0 flex-1 overflow-auto">
+		<div className="flex min-h-0 flex-1 flex-col">
 			{isEmpty ? (
 				<EmptyState
 					icon={<Icon name="FolderOpen" className="h-12 w-12" />}

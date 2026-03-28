@@ -35,6 +35,7 @@ export function FileThumbnail({
 						alt=""
 						loading="lazy"
 						decoding="async"
+						draggable={false}
 						className="h-full w-full object-cover"
 					/>
 				)}
@@ -58,6 +59,7 @@ export function FileThumbnail({
 			alt=""
 			loading="lazy"
 			decoding="async"
+			draggable={false}
 			className="h-full w-auto shrink-0 max-w-none"
 		/>
 	);

@@ -8,6 +8,7 @@
 	"n_downloads": "{{count}} downloads",
 	"n_of_m_downloads": "{{count}} / {{max}} downloads",
 	"expires_date": "Expires {{date}}",
+	"shared_by": "Shared by {{name}}",
 	"share_created": "Share link created",
 	"share_dialog_title": "Share \"{{name}}\"",
 	"share_password_optional": "Password (optional)",

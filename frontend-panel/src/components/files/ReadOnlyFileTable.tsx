@@ -16,6 +16,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface ReadOnlyFileTableProps {
@@ -38,57 +39,59 @@ export function ReadOnlyFileTable({
 	const { t } = useTranslation(["core", "files"]);
 
 	return (
-		<Table>
-			<TableHeader>
-				<TableRow>
-					<TableHead>{t("name")}</TableHead>
-					<TableHead className="w-[100px]">{t("size")}</TableHead>
-					<TableHead>{t("date")}</TableHead>
-					<TableHead className="w-[64px]" />
-				</TableRow>
-			</TableHeader>
-			<TableBody>
-				{folders.map((folder) => (
-					<TableRow
-						key={`folder-${folder.id}`}
-						className="cursor-pointer"
-						onClick={() => onFolderClick?.(folder)}
-					>
-						<FolderNameCell folder={folder} />
-						<FolderSizeCell />
-						<UpdatedAtCell updatedAt={folder.updated_at} />
-						<TableCell />
+		<div className={`${PAGE_SECTION_PADDING_CLASS} py-2`}>
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHead>{t("name")}</TableHead>
+						<TableHead className="w-[100px]">{t("size")}</TableHead>
+						<TableHead>{t("date")}</TableHead>
+						<TableHead className="w-[64px]" />
 					</TableRow>
-				))}
-				{files.map((file) => (
-					<TableRow
-						key={`file-${file.id}`}
-						className="cursor-pointer"
-						onClick={() => onFileClick?.(file)}
-					>
-						<FileNameCell
-							file={file}
-							thumbnailPath={getThumbnailPath?.(file)}
-						/>
-						<FileSizeCell size={file.size} />
-						<UpdatedAtCell updatedAt={file.updated_at} />
-						<TableCell className="pr-2 text-right">
-							{onFileDownload ? (
-								<Button
-									variant="ghost"
-									size="icon-sm"
-									onClick={(e) => {
-										e.stopPropagation();
-										onFileDownload(file);
-									}}
-								>
-									<Icon name="Download" className="h-4 w-4" />
-								</Button>
-							) : null}
-						</TableCell>
-					</TableRow>
-				))}
-			</TableBody>
-		</Table>
+				</TableHeader>
+				<TableBody>
+					{folders.map((folder) => (
+						<TableRow
+							key={`folder-${folder.id}`}
+							className="cursor-pointer"
+							onClick={() => onFolderClick?.(folder)}
+						>
+							<FolderNameCell folder={folder} />
+							<FolderSizeCell />
+							<UpdatedAtCell updatedAt={folder.updated_at} />
+							<TableCell />
+						</TableRow>
+					))}
+					{files.map((file) => (
+						<TableRow
+							key={`file-${file.id}`}
+							className="cursor-pointer"
+							onClick={() => onFileClick?.(file)}
+						>
+							<FileNameCell
+								file={file}
+								thumbnailPath={getThumbnailPath?.(file)}
+							/>
+							<FileSizeCell size={file.size} />
+							<UpdatedAtCell updatedAt={file.updated_at} />
+							<TableCell className="pr-2 text-right">
+								{onFileDownload ? (
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										onClick={(e) => {
+											e.stopPropagation();
+											onFileDownload(file);
+										}}
+									>
+										<Icon name="Download" className="h-4 w-4" />
+									</Button>
+								) : null}
+							</TableCell>
+						</TableRow>
+					))}
+				</TableBody>
+			</Table>
+		</div>
 	);
 }

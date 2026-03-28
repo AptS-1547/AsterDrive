@@ -26,6 +26,7 @@ const mockState = vi.hoisted(() => ({
 			return `downloads:${opts?.count}/${opts?.max}`;
 		}
 		if (key === "share:n_downloads") return `downloads:${opts?.count}`;
+		if (key === "share:shared_by") return `shared-by:${opts?.name}`;
 		if (key === "share:password_verified") return "password-verified";
 		return key;
 	},
@@ -361,6 +362,7 @@ describe("ShareViewPage", () => {
 			max_downloads: 5,
 			mime_type: "application/pdf",
 			name: "Manual.pdf",
+			owner_info: "Alice Example",
 			share_type: "file",
 			size: 256,
 		} as never);
@@ -371,6 +373,7 @@ describe("ShareViewPage", () => {
 		const metadata = screen.getByText("Manual.pdf").parentElement;
 		expect(metadata).toHaveTextContent("downloads:3/5");
 		expect(metadata).toHaveTextContent("expires:fmt:2026-04-01T00:00:00Z");
+		expect(screen.getByText("shared-by:Alice Example")).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: /files:preview/i }));
 
@@ -396,6 +399,7 @@ describe("ShareViewPage", () => {
 		mockState.getInfo.mockResolvedValueOnce({
 			has_password: false,
 			name: "Shared Root",
+			owner_info: "Alice Example",
 			share_type: "folder",
 		} as never);
 		mockState.listContent.mockResolvedValueOnce({
@@ -411,6 +415,9 @@ describe("ShareViewPage", () => {
 
 		render(<ShareViewPage />);
 
+		expect(
+			await screen.findByText("shared-by:Alice Example"),
+		).toBeInTheDocument();
 		fireEvent.click(await screen.findByRole("button", { name: "folder:Docs" }));
 
 		await waitFor(() => {

@@ -123,5 +123,5 @@ export const router = createBrowserRouter([
 			{ path: "/admin/audit", element: <AdminAuditPage /> },
 		],
 	},
-	{ path: "*", element: <ErrorPage /> },
+	{ path: "*", element: <Navigate to="/" replace /> },
 ]);

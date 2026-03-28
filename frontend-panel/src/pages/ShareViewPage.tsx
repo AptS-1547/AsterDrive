@@ -34,8 +34,9 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
-import { FOLDER_LIMIT } from "@/lib/constants";
+import { FOLDER_LIMIT, PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateShort } from "@/lib/format";
+import { getNormalizedDisplayName } from "@/lib/user";
 import { ApiError } from "@/services/http";
 import { shareService } from "@/services/shareService";
 import type { FileInfo, FolderContents, SharePublicInfo } from "@/types/api";
@@ -51,6 +52,65 @@ const sharePageParams = {
 	folder_limit: FOLDER_LIMIT,
 	file_limit: SHARE_PAGE_SIZE,
 };
+
+interface ShareOwnerUserLike {
+	display_name?: string | null;
+	email?: string | null;
+	profile?: {
+		display_name?: string | null;
+	} | null;
+	username?: string | null;
+}
+
+interface ShareOwnerSource {
+	display_name?: string | null;
+	email?: string | null;
+	owner?: ShareOwnerUserLike | null;
+	owner_info?: string | null;
+	shared_by?: string | null;
+	user?: ShareOwnerUserLike | null;
+	username?: string | null;
+}
+
+function getFirstNonEmpty(
+	values: Array<string | null | undefined>,
+): string | null {
+	for (const value of values) {
+		const normalized = getNormalizedDisplayName(value);
+		if (normalized) return normalized;
+	}
+
+	return null;
+}
+
+function getShareOwnerLabel(info: SharePublicInfo): string | null {
+	const source = info as SharePublicInfo & ShareOwnerSource;
+
+	return getFirstNonEmpty([
+		source.shared_by,
+		source.owner_info,
+		source.display_name,
+		source.username,
+		source.email,
+		source.owner?.profile?.display_name,
+		source.owner?.display_name,
+		source.owner?.username,
+		source.owner?.email,
+		source.user?.profile?.display_name,
+		source.user?.display_name,
+		source.user?.username,
+		source.user?.email,
+	]);
+}
+
+function ShareOwnerBanner({ text }: { text: string }) {
+	return (
+		<div className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+			<Icon name="Info" className="h-4 w-4 shrink-0" />
+			<span className="min-w-0 truncate">{text}</span>
+		</div>
+	);
+}
 
 const FilePreview = lazy(async () => {
 	const module = await import("@/components/files/FilePreview");
@@ -318,6 +378,11 @@ export default function ShareViewPage() {
 
 	if (!info) return null;
 
+	const shareOwnerLabel = getShareOwnerLabel(info);
+	const shareOwnerText = shareOwnerLabel
+		? t("share:shared_by", { name: shareOwnerLabel })
+		: null;
+
 	if (needsPassword && !passwordVerified) {
 		return (
 			<div className="h-screen flex flex-col">
@@ -377,42 +442,49 @@ export default function ShareViewPage() {
 				<main className="flex min-h-0 flex-1 items-center justify-center p-6">
 					<Card className="w-full max-w-4xl shadow-sm">
 						<CardHeader>
-							<div className="flex items-start gap-3">
-								<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-									<Icon name="File" className="h-5 w-5" />
-								</div>
-								<div className="min-w-0 flex-1">
-									<CardTitle className="truncate">{info.name}</CardTitle>
-									<CardDescription className="mt-1">
-										{info.max_downloads > 0
-											? t("share:n_of_m_downloads", {
-													count: info.download_count,
-													max: info.max_downloads,
-												})
-											: t("share:n_downloads", {
-													count: info.download_count,
-												})}
-										{info.expires_at &&
-											` · ${t("share:expires_date", {
-												date: formatDateShort(info.expires_at),
-											})}`}
-									</CardDescription>
-								</div>
-								<div className="flex shrink-0 items-center gap-2">
-									{singleShareFile ? (
-										<Button
-											variant="outline"
-											onClick={() => setPreviewFile(singleShareFile)}
-										>
-											<Icon name="Eye" className="mr-2 h-4 w-4" />
-											{t("files:preview")}
+							<div className="space-y-4">
+								<div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+									<div className="flex min-w-0 flex-1 items-start gap-3">
+										<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+											<Icon name="File" className="h-5 w-5" />
+										</div>
+										<div className="min-w-0 flex-1">
+											<CardTitle className="truncate">{info.name}</CardTitle>
+											<CardDescription className="mt-1">
+												{info.max_downloads > 0
+													? t("share:n_of_m_downloads", {
+															count: info.download_count,
+															max: info.max_downloads,
+														})
+													: t("share:n_downloads", {
+															count: info.download_count,
+														})}
+												{info.expires_at &&
+													` · ${t("share:expires_date", {
+														date: formatDateShort(info.expires_at),
+													})}`}
+											</CardDescription>
+										</div>
+									</div>
+									<div className="flex shrink-0 items-center gap-2">
+										{singleShareFile ? (
+											<Button
+												variant="outline"
+												onClick={() => setPreviewFile(singleShareFile)}
+											>
+												<Icon name="Eye" className="mr-2 h-4 w-4" />
+												{t("files:preview")}
+											</Button>
+										) : null}
+										<Button onClick={handleDownload}>
+											<Icon name="Download" className="mr-2 h-4 w-4" />
+											{t("files:download")}
 										</Button>
-									) : null}
-									<Button onClick={handleDownload}>
-										<Icon name="Download" className="mr-2 h-4 w-4" />
-										{t("files:download")}
-									</Button>
+									</div>
 								</div>
+								{shareOwnerText ? (
+									<ShareOwnerBanner text={shareOwnerText} />
+								) : null}
 							</div>
 						</CardHeader>
 					</Card>
@@ -441,6 +513,13 @@ export default function ShareViewPage() {
 				}
 				right={<ViewToggle value={viewMode} onChange={setViewMode} />}
 			/>
+			{shareOwnerText ? (
+				<div className="border-b border-border/70 bg-background/80">
+					<div className={`${PAGE_SECTION_PADDING_CLASS} py-3`}>
+						<ShareOwnerBanner text={shareOwnerText} />
+					</div>
+				</div>
+			) : null}
 			<div className="min-h-0 flex-1 overflow-auto">
 				{navigating ? (
 					<div className="p-6">

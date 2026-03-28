@@ -13,6 +13,58 @@ interface DragPreviewOptions {
 	variant?: "default" | "grid-card" | "list-row";
 }
 
+function stabilizePreviewImages(source: HTMLElement, preview: HTMLElement) {
+	const sourceImages = Array.from(source.querySelectorAll("img"));
+	const previewImages = Array.from(preview.querySelectorAll("img"));
+	const imageCount = Math.min(sourceImages.length, previewImages.length);
+
+	for (let index = 0; index < imageCount; index += 1) {
+		const sourceImage = sourceImages[index];
+		const previewImage = previewImages[index];
+		const resolvedSrc =
+			sourceImage.currentSrc || sourceImage.getAttribute("src");
+
+		previewImage.loading = "eager";
+		previewImage.decoding = "sync";
+		previewImage.draggable = false;
+		if (resolvedSrc) {
+			previewImage.src = resolvedSrc;
+		}
+
+		if (!sourceImage.complete || sourceImage.naturalWidth <= 0) {
+			continue;
+		}
+
+		const imageRect = sourceImage.getBoundingClientRect();
+		const width = Math.max(
+			1,
+			Math.round(imageRect.width || sourceImage.naturalWidth),
+		);
+		const height = Math.max(
+			1,
+			Math.round(imageRect.height || sourceImage.naturalHeight),
+		);
+		const canvas = document.createElement("canvas");
+		canvas.width = width;
+		canvas.height = height;
+		canvas.className = previewImage.className;
+		canvas.style.cssText = previewImage.style.cssText;
+		canvas.setAttribute("aria-hidden", "true");
+
+		const context = canvas.getContext("2d");
+		if (!context) {
+			continue;
+		}
+
+		try {
+			context.drawImage(sourceImage, 0, 0, width, height);
+			previewImage.replaceWith(canvas);
+		} catch {
+			// Fall back to the eager image clone if the bitmap cannot be copied.
+		}
+	}
+}
+
 function themeColor(token: string, alpha: number) {
 	const value = getComputedStyle(document.documentElement)
 		.getPropertyValue(token)
@@ -48,6 +100,8 @@ function createDragPreview(source: HTMLElement, options: DragPreviewOptions) {
 	preview.style.transformOrigin = "top left";
 	preview.style.opacity = "0.96";
 	preview.style.boxShadow = "none";
+
+	stabilizePreviewImages(source, preview);
 
 	if (options.variant === "grid-card") {
 		preview.style.background = themeColor("--card", 0.86);

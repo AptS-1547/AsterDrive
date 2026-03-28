@@ -8,6 +8,7 @@
 	"n_downloads": "{{count}} 次下载",
 	"n_of_m_downloads": "{{count}} / {{max}} 次下载",
 	"expires_date": "{{date}} 过期",
+	"shared_by": "分享者：{{name}}",
 	"share_created": "分享链接已创建",
 	"share_dialog_title": "分享 \"{{name}}\"",
 	"share_password_optional": "访问密码（可选）",
