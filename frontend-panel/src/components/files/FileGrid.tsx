@@ -244,7 +244,7 @@ export function FileGrid({
 	useEffect(() => {
 		if (!scrollElement) return;
 		virtualizer.measure();
-	}, [columnCount, gridRows.length, scrollElement, virtualizer]);
+	}, [scrollElement, virtualizer]);
 
 	if (scrollElement) {
 		const virtualRows = virtualizer.getVirtualItems();

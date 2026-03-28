@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table";
 import { useTextContent } from "@/hooks/useTextContent";
 import { PreviewError } from "./PreviewError";
+import { PreviewLoadingState } from "./PreviewLoadingState";
 
 interface CsvTablePreviewProps {
 	path: string;
@@ -32,11 +33,7 @@ export function CsvTablePreview({ path, delimiter }: CsvTablePreviewProps) {
 	}, [content, delimiter]);
 
 	if (loading) {
-		return (
-			<div className="p-6 text-sm text-muted-foreground">
-				{t("files:loading_preview")}
-			</div>
-		);
+		return <PreviewLoadingState text={t("files:loading_preview")} />;
 	}
 
 	if (error || content === null) {

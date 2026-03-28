@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { logger } from "@/lib/logger";
 import { PreviewError } from "./PreviewError";
+import { PreviewLoadingState } from "./PreviewLoadingState";
 import type { PreviewableFileLike } from "./types";
 
 const DEFAULT_ASPECT_RATIO = 16 / 9;
@@ -96,9 +97,7 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 
 	if (loading) {
 		return (
-			<div className="p-6 text-sm text-muted-foreground">
-				{t("loading_preview")}
-			</div>
+			<PreviewLoadingState text={t("loading_preview")} className="h-full" />
 		);
 	}
 

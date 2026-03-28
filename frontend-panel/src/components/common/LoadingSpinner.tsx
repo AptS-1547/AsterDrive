@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/icon";
+import { cn } from "@/lib/utils";
 
 interface LoadingSpinnerProps {
 	text?: string;
@@ -8,7 +9,12 @@ interface LoadingSpinnerProps {
 export function LoadingSpinner({ text, className }: LoadingSpinnerProps) {
 	return (
 		<div
-			className={`flex flex-col items-center justify-center py-16 ${className ?? ""}`}
+			role="status"
+			aria-live="polite"
+			className={cn(
+				"flex flex-col items-center justify-center py-16",
+				className,
+			)}
 		>
 			<Icon
 				name="Spinner"

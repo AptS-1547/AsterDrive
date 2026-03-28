@@ -77,10 +77,16 @@ describe("BlobMediaPreview", () => {
 	it("renders an image preview with the file name as alt text", () => {
 		render(<BlobMediaPreview file={file} mode="image" path="/files/1" />);
 
-		expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
-			"src",
-			"blob:image",
+		const image = screen.getByRole("img", { name: "preview.png" });
+
+		expect(image).toHaveAttribute("src", "blob:image");
+		expect(image).toHaveClass(
+			"block",
+			"max-h-[min(70vh,48rem)]",
+			"max-w-full",
+			"object-contain",
 		);
+		expect(image.parentElement).toHaveClass("mx-auto", "w-fit", "p-4");
 	});
 
 	it("renders video and audio previews for their media modes", () => {

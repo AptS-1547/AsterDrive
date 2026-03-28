@@ -16,6 +16,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { PreviewError } from "./PreviewError";
+import { PreviewLoadingState } from "./PreviewLoadingState";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 	"pdfjs-dist/build/pdf.worker.min.mjs",
@@ -318,9 +319,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 
 	if (blobLoading) {
 		return (
-			<div className="p-6 text-sm text-muted-foreground">
-				{t("loading_preview")}
-			</div>
+			<PreviewLoadingState text={t("loading_preview")} className="h-full" />
 		);
 	}
 

@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTextContent } from "@/hooks/useTextContent";
 import { PreviewError } from "./PreviewError";
+import { PreviewLoadingState } from "./PreviewLoadingState";
 
 interface MarkdownPreviewProps {
 	path: string;
@@ -16,9 +17,7 @@ export function MarkdownPreview({ path }: MarkdownPreviewProps) {
 
 	if (loading) {
 		return (
-			<div className="p-6 text-sm text-muted-foreground">
-				{t("loading_preview")}
-			</div>
+			<PreviewLoadingState text={t("loading_preview")} className="h-full" />
 		);
 	}
 

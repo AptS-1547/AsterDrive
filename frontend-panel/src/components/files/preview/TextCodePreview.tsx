@@ -10,6 +10,7 @@ import {
 	type MonacoCodeEditorMountHandler,
 } from "./MonacoCodeEditor";
 import { PreviewError } from "./PreviewError";
+import { PreviewLoadingState } from "./PreviewLoadingState";
 import type { PreviewableFileLike } from "./types";
 
 interface TextCodePreviewProps {
@@ -93,9 +94,10 @@ export function TextCodePreview({
 
 	if (loading) {
 		return (
-			<div className="p-6 text-sm text-muted-foreground">
-				{t("files:loading_preview")}
-			</div>
+			<PreviewLoadingState
+				text={t("files:loading_preview")}
+				className="h-full"
+			/>
 		);
 	}
 

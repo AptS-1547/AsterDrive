@@ -320,7 +320,7 @@ export function FileTable({
 	useEffect(() => {
 		if (!scrollElement) return;
 		virtualizer.measure();
-	}, [scrollElement, tableRows.length, virtualizer]);
+	}, [scrollElement, virtualizer]);
 
 	const renderSpacerRow = (key: string, height: number) => (
 		<TableRow key={key} aria-hidden className="border-0 hover:bg-transparent">

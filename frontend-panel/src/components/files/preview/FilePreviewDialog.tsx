@@ -21,6 +21,7 @@ import {
 	getStoredOpenWithPreference,
 	setStoredOpenWithPreference,
 } from "./open-with-preferences";
+import { PreviewLoadingState } from "./PreviewLoadingState";
 import { PreviewModeSwitch } from "./PreviewModeSwitch";
 import { PreviewUnavailable } from "./PreviewUnavailable";
 import type { OpenWithMode } from "./types";
@@ -125,9 +126,10 @@ export function FilePreviewDialog({
 		activeMode === "table" ||
 		(activeMode === "videoBrowser" && resolvedVideoBrowser?.mode === "iframe");
 	const previewLoadingState = (
-		<div className="p-6 text-sm text-muted-foreground">
-			{t("files:loading_preview")}
-		</div>
+		<PreviewLoadingState
+			text={t("files:loading_preview")}
+			className="h-full min-h-[16rem]"
+		/>
 	);
 
 	const closeWithGuard = useCallback(() => {

@@ -472,4 +472,29 @@ describe("FilePreviewDialog", () => {
 		expect(classes).toContain("max-h-[90vh]");
 		expect(classes).not.toContain("h-[90vh]");
 	});
+
+	it("lets image previews size to content without forcing a fixed-height work area", async () => {
+		mockState.profile = {
+			category: "image",
+			defaultMode: "image",
+			isBlobPreview: true,
+			isEditableText: false,
+			isTextBased: false,
+			options: [{ icon: "Eye", labelKey: "open_with_image", mode: "image" }],
+		};
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type: "image/png",
+				name: "tall-image.png",
+				size: 2048,
+			} as never,
+		});
+
+		await screen.findByText("blob:image:/files/7/download");
+		expect(
+			screen.getByTestId("dialog-content").className.split(/\s+/),
+		).not.toContain("h-[90vh]");
+	});
 });

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTextContent } from "@/hooks/useTextContent";
 import { PreviewError } from "./PreviewError";
+import { PreviewLoadingState } from "./PreviewLoadingState";
 
 interface JsonPreviewProps {
 	path: string;
@@ -24,9 +25,7 @@ export function JsonPreview({ path }: JsonPreviewProps) {
 
 	if (loading) {
 		return (
-			<div className="p-6 text-sm text-muted-foreground">
-				{t("loading_preview")}
-			</div>
+			<PreviewLoadingState text={t("loading_preview")} className="h-full" />
 		);
 	}
 

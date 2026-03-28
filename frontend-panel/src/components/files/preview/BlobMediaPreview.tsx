@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { PreviewError } from "./PreviewError";
+import { PreviewLoadingState } from "./PreviewLoadingState";
 import type { PreviewableFileLike } from "./types";
 
 interface BlobMediaPreviewProps {
@@ -15,9 +16,7 @@ export function BlobMediaPreview({ file, mode, path }: BlobMediaPreviewProps) {
 
 	if (loading) {
 		return (
-			<div className="p-6 text-sm text-muted-foreground">
-				{t("loading_preview")}
-			</div>
+			<PreviewLoadingState text={t("loading_preview")} className="h-full" />
 		);
 	}
 
@@ -27,11 +26,13 @@ export function BlobMediaPreview({ file, mode, path }: BlobMediaPreviewProps) {
 
 	if (mode === "image") {
 		return (
-			<img
-				src={blobUrl}
-				alt={file.name}
-				className="max-w-full max-h-full object-contain mx-auto"
-			/>
+			<div className="mx-auto flex w-fit max-w-full min-w-0 items-center justify-center p-4">
+				<img
+					src={blobUrl}
+					alt={file.name}
+					className="block max-h-[min(70vh,48rem)] max-w-full min-w-0 object-contain"
+				/>
+			</div>
 		);
 	}
 
