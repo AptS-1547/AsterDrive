@@ -117,6 +117,8 @@ export default function LoginPage() {
 
 	const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const lastChecked = useRef("");
+	const latestCheckId = useRef(0);
+	const latestIdentifier = useRef("");
 
 	// Is the identifier an email address?
 	const isEmail = identifier.includes("@");
@@ -126,6 +128,21 @@ export default function LoginPage() {
 	const identifierLabel = isEmail ? t("email") : t("username");
 	const extraLabel = isEmail ? t("username") : t("email");
 	const extraPlaceholder = isEmail ? t("choose_username") : "you@example.com";
+	const requiresExtraField = mode === "register" || mode === "setup";
+	const modeActionText =
+		mode === "login"
+			? t("sign_in")
+			: mode === "register"
+				? t("sign_up")
+				: mode === "setup"
+					? t("create_admin")
+					: "";
+	const isSubmitDisabled =
+		submitting ||
+		checking ||
+		identifier.trim().length === 0 ||
+		password.length === 0 ||
+		(requiresExtraField && extraField.trim().length === 0);
 
 	// ── Auto check ──
 
@@ -133,10 +150,17 @@ export default function LoginPage() {
 		const trimmed = value.trim();
 		if (trimmed.length < 2 || trimmed === lastChecked.current) return;
 
-		lastChecked.current = trimmed;
+		const checkId = ++latestCheckId.current;
 		setChecking(true);
 		try {
 			const result = await authService.check(trimmed);
+			if (
+				checkId !== latestCheckId.current ||
+				latestIdentifier.current !== trimmed
+			) {
+				return;
+			}
+			lastChecked.current = trimmed;
 			if (!result.has_users) {
 				setMode("setup");
 			} else if (result.exists) {
@@ -147,11 +171,14 @@ export default function LoginPage() {
 		} catch {
 			// Silently fail
 		} finally {
-			setChecking(false);
+			if (checkId === latestCheckId.current) {
+				setChecking(false);
+			}
 		}
 	}, []);
 
 	useEffect(() => {
+		latestIdentifier.current = identifier.trim();
 		if (checkTimer.current) clearTimeout(checkTimer.current);
 		if (identifier.trim().length >= 2) {
 			checkTimer.current = setTimeout(() => runCheck(identifier), 500);
@@ -336,20 +363,20 @@ export default function LoginPage() {
 									/>
 								</Label>
 								<div className="flex items-center gap-2">
+									{mode !== "idle" && (
+										<AnimateText
+											text={modeActionText}
+											className={cn(
+												"text-xs text-muted-foreground/70",
+												checking && "opacity-0",
+											)}
+										/>
+									)}
 									{checking && (
 										<Icon
 											name="Spinner"
 											className="h-3 w-3 animate-spin text-muted-foreground"
 										/>
-									)}
-									{mode !== "idle" && !checking && (
-										<span className="text-xs text-muted-foreground/70">
-											{mode === "login"
-												? t("sign_in")
-												: mode === "register"
-													? t("sign_up")
-													: t("create_admin")}
-										</span>
 									)}
 								</div>
 							</div>
@@ -472,7 +499,7 @@ export default function LoginPage() {
 						<Button
 							type="submit"
 							className="w-full h-10 mt-4"
-							disabled={submitting || checking}
+							disabled={isSubmitDisabled}
 						>
 							{submitting && (
 								<Icon name="Spinner" className="h-4 w-4 animate-spin mr-2" />

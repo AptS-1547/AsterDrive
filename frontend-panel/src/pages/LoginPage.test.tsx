@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "@/pages/LoginPage";
 
 const mockState = vi.hoisted(() => ({
@@ -142,6 +142,10 @@ describe("LoginPage", () => {
 		mockState.check.mockResolvedValue({ exists: true, has_users: true });
 	});
 
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it("auto-detects login mode and signs existing users in", async () => {
 		render(<LoginPage />);
 
@@ -248,5 +252,79 @@ describe("LoginPage", () => {
 			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
 		});
 		expect(mockState.navigate).not.toHaveBeenCalled();
+	});
+
+	it("keeps submit disabled until login fields are filled", async () => {
+		render(<LoginPage />);
+
+		const submitButton = screen.getByRole("button", { name: "continue" });
+		expect(submitButton).toBeDisabled();
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "user@example.com" },
+		});
+		expect(submitButton).toBeDisabled();
+
+		fireEvent.change(screen.getByLabelText("password"), {
+			target: { value: "secret123" },
+		});
+
+		await waitFor(() => {
+			expect(screen.getByRole("button", { name: "sign_in" })).toBeEnabled();
+		});
+	});
+
+	it("keeps submit disabled until register fields are filled", async () => {
+		mockState.check.mockResolvedValueOnce({ exists: false, has_users: true });
+
+		render(<LoginPage />);
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "new@example.com" },
+		});
+		fireEvent.change(screen.getByLabelText("password"), {
+			target: { value: "secret123" },
+		});
+
+		await waitFor(() => {
+			expect(screen.getByRole("button", { name: "sign_up" })).toBeDisabled();
+		});
+
+		fireEvent.change(screen.getByLabelText("username"), {
+			target: { value: "newuser" },
+		});
+
+		await waitFor(() => {
+			expect(screen.getByRole("button", { name: "sign_up" })).toBeEnabled();
+		});
+	});
+
+	it("retries auth checks for the same identifier after a failed precheck", async () => {
+		vi.useFakeTimers();
+		mockState.check
+			.mockRejectedValueOnce(new Error("network error"))
+			.mockResolvedValueOnce({ exists: true, has_users: true });
+
+		render(<LoginPage />);
+
+		const identifierInput = screen.getByLabelText("email_or_username");
+
+		fireEvent.change(identifierInput, {
+			target: { value: "user@example.com" },
+		});
+		await vi.advanceTimersByTimeAsync(500);
+		expect(mockState.check).toHaveBeenCalledTimes(1);
+		expect(mockState.check).toHaveBeenNthCalledWith(1, "user@example.com");
+
+		fireEvent.change(identifierInput, {
+			target: { value: "user@example.co" },
+		});
+		fireEvent.change(identifierInput, {
+			target: { value: "user@example.com" },
+		});
+		await vi.advanceTimersByTimeAsync(500);
+
+		expect(mockState.check).toHaveBeenCalledTimes(2);
+		expect(mockState.check).toHaveBeenNthCalledWith(2, "user@example.com");
 	});
 });
