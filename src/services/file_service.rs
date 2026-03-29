@@ -545,6 +545,84 @@ pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     file_repo::soft_delete(&state.db, id).await
 }
 
+pub(crate) async fn cleanup_unreferenced_blob(state: &AppState, blob: &file_blob::Model) -> bool {
+    if let Err(e) = thumbnail_service::delete_thumbnail(state, blob).await {
+        tracing::warn!(
+            blob_id = blob.id,
+            "failed to delete thumbnail during blob cleanup: {e}"
+        );
+    }
+
+    let policy = match policy_repo::find_by_id(&state.db, blob.policy_id).await {
+        Ok(policy) => policy,
+        Err(e) => {
+            tracing::warn!(
+                blob_id = blob.id,
+                policy_id = blob.policy_id,
+                "failed to load storage policy during blob cleanup: {e}"
+            );
+            return false;
+        }
+    };
+
+    let driver = match state.driver_registry.get_driver(&policy) {
+        Ok(driver) => driver,
+        Err(e) => {
+            tracing::warn!(
+                blob_id = blob.id,
+                policy_id = blob.policy_id,
+                "failed to resolve storage driver during blob cleanup: {e}"
+            );
+            return false;
+        }
+    };
+
+    let object_deleted = match driver.delete(&blob.storage_path).await {
+        Ok(()) => true,
+        Err(e) => match driver.exists(&blob.storage_path).await {
+            Ok(false) => {
+                tracing::warn!(
+                    blob_id = blob.id,
+                    path = %blob.storage_path,
+                    "blob delete returned error but object is already absent: {e}"
+                );
+                true
+            }
+            Ok(true) => {
+                tracing::warn!(
+                    blob_id = blob.id,
+                    path = %blob.storage_path,
+                    "failed to delete blob object, keeping blob row for retry: {e}"
+                );
+                false
+            }
+            Err(exists_err) => {
+                tracing::warn!(
+                    blob_id = blob.id,
+                    path = %blob.storage_path,
+                    "failed to delete blob object and verify existence, keeping blob row for retry: delete_error={e}, exists_error={exists_err}"
+                );
+                false
+            }
+        },
+    };
+
+    if !object_deleted {
+        return false;
+    }
+
+    match file_repo::delete_blob(&state.db, blob.id).await {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::warn!(
+                blob_id = blob.id,
+                "blob object is gone but failed to delete blob row: {e}"
+            );
+            false
+        }
+    }
+}
+
 /// 永久删除文件（回收站清理用，处理 blob ref_count + 物理文件 + 缩略图 + 配额）
 pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let db = &state.db;
@@ -554,7 +632,6 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
 
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
     let blob_size = blob.size;
-    let blob_id = blob.id;
 
     // ── [事务内] 版本清理 → 属性删除 → 文件删除 → blob ref_count-- → 配额更新 ──
     // 注意：文件删除必须在 blob 删除之前（files.blob_id → file_blobs.id FK 约束）
@@ -575,26 +652,25 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     // 文件删除（先于 blob 删除，解除 FK 引用）
     file_repo::delete(&txn, id).await?;
 
-    // 版本 blob 引用处理（文件和版本记录已删除，可安全操作 blob）
-    let mut blobs_to_cleanup: Vec<file_blob::Model> = Vec::new();
+    // 版本 blob / 主 blob 引用处理（文件和版本记录已删除，可安全操作 blob）
+    let mut blob_decrements = std::collections::HashMap::<i64, i32>::new();
     for vblob_id in version_blob_ids {
-        let vblob = file_repo::find_blob_by_id(&txn, vblob_id).await?;
-        if vblob.ref_count <= 1 {
-            let vblob_saved = vblob.clone();
-            file_repo::delete_blob(&txn, vblob.id).await?;
-            blobs_to_cleanup.push(vblob_saved);
-        } else {
-            file_repo::decrement_blob_ref_count(&txn, vblob.id).await?;
-        }
+        *blob_decrements.entry(vblob_id).or_default() += 1;
     }
+    *blob_decrements.entry(blob.id).or_default() += 1;
 
-    // 主 blob: 事务内重新读取当前 ref_count（防止事务外预读的 TOCTOU）
-    let current_blob = file_repo::find_blob_by_id(&txn, blob_id).await?;
-    if current_blob.ref_count <= 1 {
-        file_repo::delete_blob(&txn, blob_id).await?;
-        blobs_to_cleanup.push(current_blob);
-    } else {
-        file_repo::decrement_blob_ref_count(&txn, blob_id).await?;
+    let blob_ids: Vec<i64> = blob_decrements.keys().copied().collect();
+    let blobs_by_id = file_repo::find_blobs_by_ids(&txn, &blob_ids).await?;
+    let mut blobs_to_cleanup: Vec<file_blob::Model> = Vec::new();
+    for (blob_id, decrement) in blob_decrements {
+        let Some(current_blob) = blobs_by_id.get(&blob_id) else {
+            continue;
+        };
+
+        file_repo::decrement_blob_ref_count_by(&txn, blob_id, decrement).await?;
+        if current_blob.ref_count <= decrement {
+            blobs_to_cleanup.push(current_blob.clone());
+        }
     }
 
     // 配额更新
@@ -602,21 +678,13 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
 
     txn.commit().await.map_err(AsterError::from)?;
 
-    // ── [事务后] 物理文件/缩略图清理（best-effort） ──
+    // ── [事务后] 物理文件清理成功后再删 blob 元数据 ──
     for blob_to_clean in blobs_to_cleanup {
-        if let Err(e) =
-            crate::services::thumbnail_service::delete_thumbnail(state, &blob_to_clean).await
-        {
+        if !cleanup_unreferenced_blob(state, &blob_to_clean).await {
             tracing::warn!(
-                "failed to delete thumbnail for blob {}: {e}",
-                blob_to_clean.id
+                blob_id = blob_to_clean.id,
+                "blob cleanup incomplete after purge; blob row retained for retry"
             );
-        }
-        if let Ok(policy) = policy_repo::find_by_id(db, blob_to_clean.policy_id).await
-            && let Ok(driver) = state.driver_registry.get_driver(&policy)
-            && let Err(e) = driver.delete(&blob_to_clean.storage_path).await
-        {
-            tracing::warn!("failed to delete blob file {}: {e}", blob_to_clean.id);
         }
     }
 
@@ -664,45 +732,17 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
         *blob_decrements.entry(vbid).or_default() += 1;
     }
 
-    // 分两类：需要删除的（ref_count <= decrement）和需要递减的
-    let mut blobs_to_delete_ids: Vec<i64> = Vec::new();
-    let mut blobs_to_decrement_ids: Vec<i64> = Vec::new();
+    let blob_ids: Vec<i64> = blob_decrements.keys().copied().collect();
+    let blobs_by_id = file_repo::find_blobs_by_ids(&txn, &blob_ids).await?;
     let mut blobs_to_cleanup: Vec<file_blob::Model> = Vec::new();
 
     for (&blob_id, &decrement) in &blob_decrements {
-        // 事务内重读 ref_count（防 TOCTOU）
-        if let Ok(blob) = file_repo::find_blob_by_id(&txn, blob_id).await {
+        if let Some(blob) = blobs_by_id.get(&blob_id) {
+            file_repo::decrement_blob_ref_count_by(&txn, blob_id, decrement as i32).await?;
             if i64::from(blob.ref_count) <= decrement {
-                blobs_to_delete_ids.push(blob_id);
-                blobs_to_cleanup.push(blob);
-            } else {
-                blobs_to_decrement_ids.push(blob_id);
+                blobs_to_cleanup.push(blob.clone());
             }
         }
-        // blob 已被删除（其他并发操作）→ 跳过
-    }
-
-    file_repo::delete_blobs(&txn, &blobs_to_delete_ids).await?;
-    // 对需要递减的 blob，逐个处理（因为 decrement 数量不同）
-    for &bid in &blobs_to_decrement_ids {
-        let dec = blob_decrements[&bid];
-        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
-        crate::entities::file_blob::Entity::update_many()
-            .col_expr(
-                crate::entities::file_blob::Column::RefCount,
-                Expr::cust_with_values(
-                    "CASE WHEN ref_count < ? THEN 0 ELSE ref_count - ? END",
-                    [dec as i32, dec as i32],
-                ),
-            )
-            .col_expr(
-                crate::entities::file_blob::Column::UpdatedAt,
-                Expr::value(Utc::now()),
-            )
-            .filter(crate::entities::file_blob::Column::Id.eq(bid))
-            .exec(&txn)
-            .await
-            .map_err(AsterError::from)?;
     }
 
     // 5. 配额一次性更新
@@ -710,26 +750,15 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
 
     txn.commit().await.map_err(AsterError::from)?;
 
-    // ── 事务后：并行物理清理（best-effort） ──
+    // ── 事务后：并行物理清理，清理成功后再删 blob 元数据 ──
     let state_ref = &state;
     let cleanup_futures: Vec<_> = blobs_to_cleanup
         .iter()
         .map(|blob| async move {
-            if let Err(e) =
-                crate::services::thumbnail_service::delete_thumbnail(state_ref, blob).await
-            {
+            if !cleanup_unreferenced_blob(state_ref, blob).await {
                 tracing::warn!(
-                    "batch purge: thumbnail delete failed for blob {}: {e}",
-                    blob.id
-                );
-            }
-            if let Ok(policy) = policy_repo::find_by_id(&state_ref.db, blob.policy_id).await
-                && let Ok(driver) = state_ref.driver_registry.get_driver(&policy)
-                && let Err(e) = driver.delete(&blob.storage_path).await
-            {
-                tracing::warn!(
-                    "batch purge: blob file delete failed for blob {}: {e}",
-                    blob.id
+                    blob_id = blob.id,
+                    "batch purge left blob row for retry because object cleanup was incomplete"
                 );
             }
         })

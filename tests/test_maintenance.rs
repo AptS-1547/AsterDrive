@@ -2,6 +2,38 @@ mod common;
 
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
+#[cfg(unix)]
+struct DirModeGuard {
+    path: std::path::PathBuf,
+    mode: u32,
+}
+
+#[cfg(unix)]
+impl DirModeGuard {
+    fn set_read_only(path: impl Into<std::path::PathBuf>) -> Self {
+        let path = path.into();
+        let metadata = std::fs::metadata(&path).unwrap();
+        let mode = metadata.permissions().mode();
+        let mut perms = metadata.permissions();
+        perms.set_mode(0o555);
+        std::fs::set_permissions(&path, perms).unwrap();
+        Self { path, mode }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for DirModeGuard {
+    fn drop(&mut self) {
+        if let Ok(metadata) = std::fs::metadata(&self.path) {
+            let mut perms = metadata.permissions();
+            perms.set_mode(self.mode);
+            let _ = std::fs::set_permissions(&self.path, perms);
+        }
+    }
+}
 
 async fn default_policy(
     state: &aster_drive::runtime::AppState,
@@ -337,4 +369,53 @@ async fn test_reconcile_blob_state_processes_all_batches_without_skipping() {
     assert_eq!(FileBlob::find().count(&state.db).await.unwrap(), 0);
     assert!(!driver.exists("paging/blob-0000.bin").await.unwrap());
     assert!(!driver.exists("paging/blob-1000.bin").await.unwrap());
+}
+
+#[cfg(unix)]
+#[actix_web::test]
+async fn test_purge_keeps_blob_row_when_storage_delete_fails_then_maintenance_retries() {
+    use aster_drive::db::repository::file_repo;
+    use aster_drive::services::{auth_service, file_service, maintenance_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "maintuser4", "maint4@test.com", "password123")
+        .await
+        .unwrap();
+    let policy = default_policy(&state).await;
+    let driver = state.driver_registry.get_driver(&policy).unwrap();
+
+    let file = store_test_file(&state, user.id, "retry.txt", b"retry blob").await;
+    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+        .await
+        .unwrap();
+
+    let object_parent = std::path::Path::new(&policy.base_path)
+        .join(&blob.storage_path)
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let _guard = DirModeGuard::set_read_only(object_parent);
+
+    file_service::purge(&state, file.id, user.id).await.unwrap();
+
+    assert!(file_repo::find_by_id(&state.db, file.id).await.is_err());
+    let blob_after_purge = file_repo::find_blob_by_id(&state.db, blob.id)
+        .await
+        .unwrap();
+    assert_eq!(blob_after_purge.ref_count, 0);
+    assert!(driver.exists(&blob.storage_path).await.unwrap());
+
+    drop(_guard);
+
+    let stats = maintenance_service::reconcile_blob_state(&state)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.orphan_blobs_deleted, 1);
+    assert!(
+        file_repo::find_blob_by_id(&state.db, blob.id)
+            .await
+            .is_err()
+    );
+    assert!(!driver.exists(&blob.storage_path).await.unwrap());
 }

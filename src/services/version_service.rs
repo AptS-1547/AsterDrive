@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
 
-use crate::db::repository::{config_repo, file_repo, policy_repo, version_repo};
+use crate::db::repository::{config_repo, file_repo, version_repo};
 use crate::entities::file_version;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
@@ -152,16 +152,13 @@ async fn cleanup_blob_if_unused(state: &AppState, blob_id: i64) -> Result<()> {
     let blob = file_repo::find_blob_by_id(db, blob_id).await?;
 
     if blob.ref_count <= 1 {
-        // 删除物理文件 + 缩略图
-        if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, &blob).await {
-            tracing::warn!("failed to delete thumbnail for blob {}: {e}", blob.id);
+        file_repo::decrement_blob_ref_count(db, blob.id).await?;
+        if !crate::services::file_service::cleanup_unreferenced_blob(state, &blob).await {
+            tracing::warn!(
+                blob_id = blob.id,
+                "blob cleanup incomplete after version cleanup; blob row retained for retry"
+            );
         }
-        let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
-        let driver = state.driver_registry.get_driver(&policy)?;
-        if let Err(e) = driver.delete(&blob.storage_path).await {
-            tracing::warn!("failed to delete blob file {}: {e}", blob.id);
-        }
-        file_repo::delete_blob(db, blob.id).await?;
     } else {
         file_repo::decrement_blob_ref_count(db, blob.id).await?;
     }

@@ -410,6 +410,31 @@ pub async fn decrement_blob_ref_count<C: ConnectionTrait>(db: &C, id: i64) -> Re
     Ok(())
 }
 
+/// 原子递减 blob ref_count（可变减量，floor 0）
+pub async fn decrement_blob_ref_count_by<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    delta: i32,
+) -> Result<()> {
+    if delta == 0 {
+        return Ok(());
+    }
+    FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::RefCount,
+            Expr::cust_with_values(
+                "CASE WHEN ref_count < ? THEN 0 ELSE ref_count - ? END",
+                [delta, delta],
+            ),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
 /// 统计某存储策略下的 blob 数量（策略删除保护用）
 pub async fn count_blobs_by_policy<C: ConnectionTrait>(db: &C, policy_id: i64) -> Result<u64> {
     FileBlob::find()

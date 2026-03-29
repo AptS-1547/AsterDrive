@@ -125,9 +125,13 @@ pub async fn reconcile_blob_state(state: &AppState) -> Result<BlobMaintenanceSta
             };
 
             if actual_refs == 0 {
-                file_repo::delete_blob(&state.db, blob.id).await?;
-                cleanup_blob_assets(state, &blob).await;
-                stats.orphan_blobs_deleted += 1;
+                if blob.ref_count != 0 {
+                    file_repo::decrement_blob_ref_count_by(&state.db, blob.id, blob.ref_count)
+                        .await?;
+                }
+                if crate::services::file_service::cleanup_unreferenced_blob(state, &blob).await {
+                    stats.orphan_blobs_deleted += 1;
+                }
                 continue;
             }
 
@@ -245,36 +249,5 @@ async fn cleanup_broken_completed_session_object(
             temp_key = %temp_key,
             "failed to delete stale temp object for completed session: {e}"
         );
-    }
-}
-
-async fn cleanup_blob_assets(state: &AppState, blob: &file_blob::Model) {
-    if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, blob).await {
-        tracing::warn!(
-            "failed to delete thumbnail for orphan blob {}: {e}",
-            blob.id
-        );
-    }
-
-    match policy_repo::find_by_id(&state.db, blob.policy_id).await {
-        Ok(policy) => match state.driver_registry.get_driver(&policy) {
-            Ok(driver) => {
-                if let Err(e) = driver.delete(&blob.storage_path).await {
-                    tracing::warn!("failed to delete orphan blob file {}: {e}", blob.id);
-                }
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "failed to resolve storage driver for orphan blob {}: {e}",
-                    blob.id
-                );
-            }
-        },
-        Err(e) => {
-            tracing::warn!(
-                "failed to load storage policy for orphan blob {}: {e}",
-                blob.id
-            );
-        }
     }
 }
