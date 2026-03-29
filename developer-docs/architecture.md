@@ -20,6 +20,7 @@
 - 配置分两类：
   - 静态配置：`config.toml` + 环境变量，影响进程启动和基础设施
   - 运行时配置：数据库里的 `system_config`，影响 WebDAV 开关、回收站保留期、版本数上限等业务行为
+    也包括默认配额、审计日志保留期和 Gravatar 基础地址这类业务配置
 
 ## 从哪里开始看代码
 
@@ -215,6 +216,7 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 - `audit_log_enabled`
 - `audit_log_retention_days`
 - `default_storage_quota`
+- `gravatar_base_url`
 
 这类配置更接近业务开关，而不是基础设施开关。
 

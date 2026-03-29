@@ -5,6 +5,113 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.11] - 2026-03-30
+
+### Release Highlights
+
+- **管理后台总览面板** — 新增系统概览仪表板，展示用户统计、文件存储、每日活动趋势图表及最近审计事件
+- **流式中继上传策略** — 新增 S3 流式直传中继模式，无需本地临时文件即可直接转发到 S3 Multipart
+- **密码管理增强** — 支持用户自助修改密码，管理员可直接重置用户密码
+- **分享管理升级** — 支持编辑已有分享设置（密码/过期时间/下载次数），新增批量删除分享功能
+- **存储策略向导重构** — 分步创建向导优化体验，新增 S3/R2 端点自动归一化与验证
+- **搜索 API 正式启用** — 完整文件/文件夹搜索能力，支持多维度过滤与分页
+- **API 响应类型安全化** — 全面替换内联 JSON，使用强类型响应结构  
+
+
+### Added
+
+- **管理后台总览面板**
+  - 新增 `GET /api/v1/admin/overview` 端点，支持 `days`/`timezone`/`event_limit` 参数
+  - 用户统计：总数、活跃、禁用数量
+  - 文件统计：总文件数、存储字节数、blob 数量
+  - 每日活动报表：登录、上传、分享、删除趋势
+  - 前端 `AdminOverviewPage` 集成 Recharts 图表展示
+- **流式中继上传策略**
+  - 新增 `S3UploadStrategy` 枚举：`ProxyTempfile` / `RelayStream` / `Presigned`
+  - 新增 `upload_session_parts` 表持久化记录 part 与 ETag
+  - `RelayStream` 模式直接流式转发至 S3，无需本地缓冲
+  - 上传进度查询支持 relay multipart 模式
+- **密码管理**
+  - 新增 `PUT /api/v1/auth/password` — 用户自助密码修改（需验证当前密码）
+  - 新增 `PUT /api/v1/admin/users/{id}/password` — 管理员重置密码
+  - 前端 `SecuritySettingsView` 安全设置页
+  - 审计动作：`UserChangePassword`、`AdminResetUserPassword`
+- **分享管理增强**
+  - 新增 `PATCH /api/v1/shares/{id}` — 编辑分享设置
+  - 新增 `POST /api/v1/shares/batch-delete` — 批量删除分享（最多 1000 个）
+  - 分享密码语义：`null` = 保留，`""` = 移除，`"value"` = 替换
+  - 前端 `EditShareDialog` 编辑对话框
+- **S3/R2 端点归一化**
+  - 自动从 R2 端点路径提取 bucket 名称
+  - 拒绝不安全的 `.r2.dev` 公网 URL
+  - 校验端点与 bucket 字段一致性
+  - 强制要求 `http://` 或 `https://` 协议头
+- **搜索 API**
+  - `GET /api/v1/search` 正式启用，支持文件名模糊搜索
+  - 过滤条件：类型、MIME、大小、日期、目录范围
+  - 分页返回 `FileSearchItem` / `FolderSearchItem`
+- **分享页面增强**
+  - 分享页面显示所有者头像和展示名称
+  - 单文件分享新增缩略图展示
+  - 文件图标与颜色优化
+- **数据库维护索引**
+  - `upload_sessions_status_expires_at` — 清理查询优化
+  - `files_blob_id` / `file_versions_blob_id` — 引用计数优化
+  - `file_blobs_storage_path` — 孤儿 blob 检测
+- **后台维护服务**
+  - `maintenance_service` 定时任务：过期上传清理（每小时）、blob 对账（每 6 小时）
+  - 原子 `claim_blob_cleanup` 机制防止并发竞争
+- **数据库查询指标**
+  - `db_queries_total` 计数器（按后端/类型/状态）
+  - `db_query_duration_seconds` 延迟直方图  
+
+
+### Changed
+
+- **存储策略对话框重构**
+  - 分步创建向导：选择类型 → 配置连接 → 确认规则
+  - 编辑模式保留单页布局
+  - 内置系统策略禁止删除
+  - S3 参数变更检测与强制保存确认
+- **API 响应强类型化**
+  - 替换内联 `serde_json::json!()` 为结构化响应类型
+  - 审计详情结构化：`AdminCreateUserDetails`、`BatchDeleteDetails` 等
+  - 前端类型按模块分组重组织
+- **PATCH 语义修复**
+  - 引入 `NullablePatch<T>` 三态类型：`Absent` / `Null` / `Value`
+  - `PATCH /files/{id}` 支持 `folder_id: null` 移动到根目录
+  - `PATCH /folders/{id}` 支持 `parent_id: null` 移动到根目录
+- **分享过期状态码**
+  - `ShareExpired` 错误 HTTP 状态码从 410 改为 404
+  - 错误响应新增 `Cache-Control: no-store` 防止 CDN 缓存
+- **数字类型转换工具化**
+  - 新增 `utils::numbers` 模块：`bytes_to_usize`、`i32_to_usize`、`calc_total_chunks`
+  - 消除跨层裸 `as` 强转，统一 checked conversion  
+
+
+### Fixed
+
+- 修复 relay multipart 进度查询未读取数据库 parts 表的问题
+- 修复 blob 清理并发竞争条件
+- 修复分享下载链接缓存控制头缺失  
+
+
+### Breaking Changes
+
+- **API**: `ShareExpired` 错误 HTTP 状态码从 410 改为 404
+- **API**: `presigned_upload` 布尔配置已迁移为 `s3_upload_strategy` 枚举（自动兼容）
+- **API**: `PATCH` 端点现在正确处理 `null` 语义（显式清空 vs 忽略字段）
+- **Frontend**: 存储策略配置项结构变更，自定义前端需适配新策略向导  
+
+
+---
+
+**统计数据**：
+
+- 179 files changed, 13,838 insertions(+), 1,756 deletions(-)
+- 14 commits
+
+
 ## [v0.0.1-alpha.10] - 2026-03-29
 
 ### Release Highlights
@@ -762,7 +869,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.10...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.11...HEAD
+[v0.0.1-alpha.11]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.10...v0.0.1-alpha.11
 [v0.0.1-alpha.10]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.9...v0.0.1-alpha.10
 [v0.0.1-alpha.9]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.8...v0.0.1-alpha.9
 [v0.0.1-alpha.8]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.7...v0.0.1-alpha.8

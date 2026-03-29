@@ -1,7 +1,7 @@
 # systemd 部署
 
-systemd 适合长期稳定运行的 Linux 主机。  
-先把工作目录定下来，再决定配置文件、数据库和本地上传目录放在哪。
+systemd 适合长期稳定运行的 Linux 服务器。  
+这类部署最重要的是先定好工作目录，再决定配置文件、数据库、上传目录和临时目录放在哪里。
 
 ## 1. 准备运行目录
 
@@ -13,7 +13,7 @@ sudo chown -R asterdrive:asterdrive /var/lib/asterdrive
 
 ## 2. 放置可执行文件
 
-把 `aster_drive` 可执行文件放到一个固定路径，例如：
+把 `aster_drive` 可执行文件放到固定路径，例如:
 
 ```bash
 sudo install -m 0755 ./aster_drive /usr/local/bin/aster_drive
@@ -21,23 +21,25 @@ sudo install -m 0755 ./aster_drive /usr/local/bin/aster_drive
 
 ## 3. 准备配置文件
 
-把 `config.toml` 放进工作目录：
+把 `config.toml` 放进工作目录:
 
 ```bash
 sudo cp config.toml /var/lib/asterdrive/config.toml
 sudo chown asterdrive:asterdrive /var/lib/asterdrive/config.toml
 ```
 
-如果继续使用默认 SQLite 和默认本地存储，工作目录下会自动出现：
+如果你继续使用默认相对路径，工作目录下通常会出现:
 
 - `asterdrive.db`
 - `data/uploads`
+- `data/.tmp`
+- `data/.uploads`
 
-如果你打算长期运行，建议数据库路径和本地存储路径尽量使用绝对路径，避免以后修改 `WorkingDirectory` 时找错数据。
+长期部署时，建议数据库路径、本地存储路径和临时目录都尽量使用绝对路径。
 
 ## 4. 写入 Service 文件
 
-创建 `/etc/systemd/system/asterdrive.service`：
+创建 `/etc/systemd/system/asterdrive.service`:
 
 ```ini
 [Unit]
@@ -81,7 +83,7 @@ journalctl -u asterdrive -f
 - 首次启动日志里已完成数据库更新和默认策略初始化
 - 浏览器可以正常登录
 - 如果启用了 WebDAV，实际挂载路径与 `[webdav].prefix` 一致
-- 如果你把数据库或上传目录放到其他磁盘，确认路径和权限没有写错
+- 如果你把数据库、上传目录或临时目录放到其他磁盘，确认路径和权限没有写错
 
 ## 8. 常见环境变量写法
 
@@ -100,9 +102,10 @@ Environment=ASTER__SERVER__HOST=0.0.0.0
 ### 固定 JWT 密钥
 
 ```ini
-Environment=ASTER__AUTH__JWT_SECRET=your-fixed-secret
+Environment=ASTER__AUTH__JWT_SECRET=replace-with-your-own-secret
 ```
 
 ## 9. HTTPS 与域名
 
-systemd 只负责拉起服务。要提供 HTTPS、域名和 WebDAV 客户端访问，还需要在前面加一层反向代理，见 [反向代理部署](/deployment/proxy)。
+systemd 只负责把服务拉起来。  
+如果你要提供 HTTPS、域名和 WebDAV 客户端访问，还需要在前面加一层反向代理，见 [反向代理部署](/deployment/proxy)。

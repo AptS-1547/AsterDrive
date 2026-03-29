@@ -13,13 +13,29 @@
 
 其中 `entity_type` 只能是 `file` 或 `folder`。
 
+`GET /trash` 当前支持这些分页参数：
+
+- `folder_limit` / `folder_offset`
+- `file_limit`
+- `file_after_deleted_at` / `file_after_id`
+
+返回体会带：
+
+- `folders`
+- `files`
+- `folders_total`
+- `files_total`
+- `next_file_cursor`
+
+也就是说，回收站和普通目录列表一样，文件夹用 offset 分页，文件用 cursor 分页。
+
 ## 恢复与清理规则
 
 - `GET /trash` 会返回当前用户回收站里的 `folders` 和 `files`
 - 恢复时，如果原父目录已经不存在，资源会回到根目录
 - 如果恢复的是文件夹，会递归恢复其已删除子项
 - `DELETE /trash/{entity_type}/{id}` 是永久删除
-- `DELETE /trash` 会清空整个回收站，并返回清理数量
+- `DELETE /trash` 会清空整个回收站，并返回 `{ "purged": <count> }`
 
 永久删除时，文件会处理 Blob 引用计数、缩略图、版本与配额回收；文件夹则会递归清掉整棵目录树。
 

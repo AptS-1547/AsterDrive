@@ -4,6 +4,16 @@
 
 这页只保留管理端最值得记住的接口分组；更偏使用体验的内容见 [管理面板](/guide/admin-console)。
 
+当前大多数“列表类”管理员接口都已经是 offset 分页：
+
+- `/admin/policies`
+- `/admin/users`
+- `/admin/users/{user_id}/policies`
+- `/admin/shares`
+- `/admin/config`
+- `/admin/locks`
+- `/admin/audit-logs`
+
 ## 存储策略
 
 | 方法 | 路径 | 说明 |
@@ -35,8 +45,10 @@
 
 当前实现注意点：
 
-- 创建逻辑目前不会采用请求里的 `chunk_size`，而是先写固定 `5 MiB`
-- 若要精确调整分片大小，需要创建后再 `PATCH`
+- 创建和更新都会采用请求里的 `chunk_size`
+- `options` 当前主要承载 S3 上传策略，例如 `{"s3_upload_strategy":"proxy_tempfile"}`、`{"s3_upload_strategy":"relay_stream"}`、`{"s3_upload_strategy":"presigned"}`
+- 旧配置 `{"presigned_upload":true}` 仍兼容
+- REST 仍然不能管理 `allowed_types`
 - 当前 `PATCH` 不能修改 `driver_type`
 
 ## 总览面板
@@ -69,8 +81,9 @@
 | `POST` | `/admin/users` | 管理员直接创建用户 |
 | `GET` | `/admin/users/{id}` | 获取用户详情 |
 | `PATCH` | `/admin/users/{id}` | 更新角色、状态、总配额 |
+| `PUT` | `/admin/users/{id}/password` | 管理员直接重置用户密码 |
 | `DELETE` | `/admin/users/{id}` | 永久删除用户及其全部数据 |
-| `GET` | `/admin/users/{id}/avatar/{size}` | 读取指定用户头像 |
+| `GET` | `/admin/users/{id}/avatar/{size}` | 读取指定用户已上传头像 |
 | `GET` | `/admin/users/{user_id}/policies` | 列出用户绑定的策略 |
 | `POST` | `/admin/users/{user_id}/policies` | 给用户分配策略 |
 | `PATCH` | `/admin/users/{user_id}/policies/{id}` | 更新用户策略项 |
@@ -83,6 +96,11 @@
 - `keyword`
 - `role`
 - `status`
+
+`GET /admin/users/{user_id}/policies` 也支持：
+
+- `limit`
+- `offset`
 
 `POST /admin/users` 的请求体与普通注册类似：
 
@@ -109,6 +127,8 @@
 - `storage_quota = 0` 表示不限
 - 当前实现禁止禁用初始管理员 `id = 1`
 - 当前实现也禁止把初始管理员 `id = 1` 降级为非管理员
+- `PUT /admin/users/{id}/password` 使用 `{ "password": "new-secret" }`
+- `GET /admin/users/{id}/avatar/{size}` 只会返回“已上传头像”的二进制资源；Gravatar 应看用户详情里的 `profile.avatar.url_*`
 - `DELETE /admin/users/{id}` 是物理删除，不是软删除；当前也不允许删除管理员用户
 
 ### 分配用户策略示例
@@ -141,6 +161,12 @@
 - `max_versions_per_file`
 - `audit_log_enabled`
 - `audit_log_retention_days`
+- `gravatar_base_url`
+
+`GET /admin/config` 当前也支持：
+
+- `limit`
+- `offset`
 
 ### 读取 schema
 
@@ -170,6 +196,11 @@
 | `GET` | `/admin/shares` | 查看全站分享 |
 | `DELETE` | `/admin/shares/{id}` | 管理员删除任意分享 |
 
+`GET /admin/shares` 支持：
+
+- `limit`
+- `offset`
+
 ## 审计日志
 
 | 方法 | 路径 | 说明 |
@@ -197,6 +228,11 @@
 | `GET` | `/admin/locks` | 查看全部资源锁 |
 | `DELETE` | `/admin/locks/{id}` | 强制解锁 |
 | `DELETE` | `/admin/locks/expired` | 清理全部过期锁 |
+
+`GET /admin/locks` 支持：
+
+- `limit`
+- `offset`
 
 `DELETE /admin/locks/expired` 会返回：
 

@@ -2,6 +2,8 @@
 host = "127.0.0.1"
 port = 3000
 workers = 0  # 0 = auto (num_cpus)
+temp_dir = "data/.tmp"
+upload_temp_dir = "data/.uploads"
 
 [database]
 url = "sqlite://asterdrive.db?mode=rwc"  # 或 postgres://user:pass@localhost/asterdrive
@@ -12,7 +14,7 @@ retry_count = 3
 jwt_secret = "change-me-in-production"
 access_token_ttl_secs = 900       # 15 分钟
 refresh_token_ttl_secs = 604800   # 7 天
-cookie_secure = false             # 本地 HTTP 测试可设为 false；HTTPS 正式环境建议改为 true
+cookie_secure = true              # 自动生成的默认配置为 true；纯 HTTP 测试时可临时改为 false
 
 [cache]
 enabled = true

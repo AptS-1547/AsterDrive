@@ -33,6 +33,13 @@
 - `POST /files/upload/init`：先协商模式
 - `POST /files/upload`：直接走普通 multipart 上传
 
+这两条入口都支持目录上传语义：
+
+- `POST /files/upload` 可通过 query 传 `relative_path`
+- `POST /files/upload/init` 可在请求体里传 `relative_path`
+- 服务端会按相对路径自动创建缺失目录、复用已存在目录
+- `relative_path` 中的空 segment 会被拒绝，例如 `docs//bad.txt`
+
 协商接口会返回四种模式之一：
 
 - `direct`：小文件直接上传
@@ -55,7 +62,7 @@
 - `POST /files/new`：创建一个 0 字节空文件，适合“新建文本文件”这类前端动作
 - `PUT /files/upload/{upload_id}/{chunk_number}`：上传单个分片，`chunk_number` 从 `0` 开始
 - `POST /files/upload/{upload_id}/presign-parts`：只用于 `presigned_multipart`，请求体里传 `part_numbers`
-- `GET /files/upload/{upload_id}`：查询分片进度，也是前端断点续传依赖的接口
+- `GET /files/upload/{upload_id}`：查询上传进度，也是前端断点续传依赖的接口；返回会带 `status`、`received_count`、`chunks_on_disk`、`chunk_size`、`total_chunks`、`filename`
 - `POST /files/upload/{upload_id}/complete`：完成 `chunked`、`presigned` 或 `presigned_multipart` 上传
 
 完成阶段的服务端行为分两类：
@@ -70,7 +77,7 @@
 ## 文件操作
 
 - `GET /files/{id}`：读取文件元信息；已进回收站的文件会按“找不到”处理
-- `GET /files/{id}/download`：流式下载文件
+- `GET /files/{id}/download`：流式下载文件；支持 `If-None-Match`，命中时返回 `304`
 - `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
 - `PATCH /files/{id}`：改名或移动

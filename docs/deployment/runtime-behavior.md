@@ -1,41 +1,60 @@
 # 首次启动检查
 
 AsterDrive 第一次成功启动后，会自动完成一批基础准备工作。
-如果你刚部署完，最实用的做法就是用下面这份清单确认服务已经真的准备好了。
+如果你刚部署完，最实用的做法就是按下面这份清单确认服务已经真的准备好了。
 
 ## 首次成功启动后会自动完成什么
 
 - 如果当前工作目录没有 `config.toml`，自动生成一份默认配置
 - 连接数据库并自动更新数据库结构
-- 如果系统里还没有存储策略，自动创建默认本地策略：
+- 如果系统里还没有存储策略，自动创建默认本地策略 `Local Default`
+- 初始化内置系统设置
+- 启动后台任务
 
-- 名称：`Local Default`
-- 驱动：`local`
-- 路径：`data/uploads`
-- 默认分片大小：`5 MiB`
+默认本地策略内容:
 
-- 初始化内置系统设置，例如：
-  - `webdav_enabled`
-  - `max_versions_per_file`
-  - `trash_retention_days`
-  - `default_storage_quota`
-  - `audit_log_enabled`
-  - `audit_log_retention_days`
-  - `gravatar_base_url`
-- 启动每小时执行一次的后台清理任务，用来清理过期上传、回收站条目、锁和审计日志
+- 名称: `Local Default`
+- 驱动: `local`
+- 路径: `data/uploads`
+- 默认分片大小: `5 MiB`
+
+首次写入的内置系统设置:
+
+- `webdav_enabled`
+- `max_versions_per_file`
+- `trash_retention_days`
+- `default_storage_quota`
+- `audit_log_enabled`
+- `audit_log_retention_days`
+- `gravatar_base_url`
+
+后台任务默认频率:
+
+- 每小时清理过期上传、回收站条目、锁和审计日志
+- 每 6 小时做一次 Blob 状态整理
 
 ## 新部署实例的默认状态
 
-对新部署实例来说，通常还会有这些默认结果：
+新部署实例通常还会有这些默认结果:
 
 - 默认监听地址是 `127.0.0.1:3000`
 - 默认 WebDAV 前缀是 `/webdav`
 - 第一个创建的用户会自动成为管理员
 - 新注册用户会自动分配当前默认存储策略
 
-## 启动后马上检查这些项
+## 默认目录通常会出现哪些内容
 
-建议启动后马上检查：
+如果你使用默认相对路径，首次启动后通常会看到:
+
+- `config.toml`
+- `asterdrive.db`
+- `data/uploads`
+- `data/.tmp`
+- `data/.uploads`
+
+其中 `data/.tmp` 和 `data/.uploads` 是运行时临时目录，不是长期数据目录。
+
+## 启动后马上检查这些项
 
 1. `/health` 是否返回 200
 2. `/health/ready` 是否返回 200
@@ -45,8 +64,8 @@ AsterDrive 第一次成功启动后，会自动完成一批基础准备工作。
 6. 管理后台是否能正常打开
 7. 如果打算用 WebDAV，挂载路径是否与配置一致
 
-如果这些检查里有任何一项不对，优先先回头看：
+## 如果检查结果不对，优先回头看这几处
 
 - 当前工作目录是不是你以为的那个目录
 - `config.toml` 是否真的被服务读到了
-- 数据库和上传目录是否有写权限
+- 数据库、上传目录和临时目录是否有写权限

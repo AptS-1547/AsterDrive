@@ -7,7 +7,7 @@
 <p align="center">
   基于 Rust 和 React 构建的自托管云存储系统。
   <br />
-  支持单二进制交付、Alpine 容器部署、存储策略、WebDAV、分享、版本历史、回收站，以及四种上传模式。
+  支持单二进制交付、Alpine 容器部署、存储策略、WebDAV、分享、版本历史、回收站、缩略图，以及四种上传模式。
 </p>
 
 <p align="center">
@@ -25,10 +25,10 @@
 - **多数据库支持** - 默认 SQLite，也支持 MySQL 和 PostgreSQL，统一通过 SeaORM 接入
 - **可插拔存储策略** - 支持本地文件系统和 S3 兼容对象存储，并支持用户级、文件夹级覆盖
 - **四种上传模式** - `direct`、`chunked`、`presigned`、`presigned_multipart`，由存储策略和文件大小协商决定
-- **分享能力** - 支持文件和文件夹分享，支持密码、过期时间、下载次数限制、公开分享页，以及分享目录下子文件下载
-- **WebDAV 支持** - 独立 WebDAV 账号、访问根目录限制、数据库锁、自定义属性
-- **生命周期管理** - 内置回收站、版本历史、缩略图、资源锁、周期清理任务和运行时配置管理
-- **管理后台** - 可在前端面板中管理用户、存储策略、运行时配置、WebDAV 账号和审计日志
+- **分享能力** - 支持文件和文件夹分享，支持密码、过期时间、下载次数限制、公开分享页、分享目录继续浏览、子文件下载和分享缩略图
+- **WebDAV 支持** - 独立 WebDAV 账号、访问根目录限制、数据库锁、自定义属性，以及最小 DeltaV 版本树支持
+- **生命周期管理** - 内置回收站、版本历史、缩略图、资源锁、周期清理任务、Blob 对账和运行时配置管理
+- **管理后台** - 前端面板内置总览页，可管理用户、存储策略、运行时配置、分享、锁、WebDAV 账号和审计日志
 
 ## 快速开始
 
@@ -91,15 +91,17 @@ docker compose up -d
 
 - 层级文件夹
 - 文件上传、下载、重命名、移动、复制、删除
+- 支持通过 `relative_path` 的目录上传与自动建目录
 - 内联搜索与批量操作
 - 缩略图与文件预览
-- 基于 Monaco 的文本编辑与锁感知
+- 版本历史、版本恢复与基于 Monaco 的文本编辑、锁感知
 
 ### 存储与传输
 
 - 基于 SHA-256 + 引用计数的 Blob 去重
 - 本地存储与 S3 兼容存储策略
 - 用户默认策略与文件夹策略覆盖
+- S3 上传策略：`proxy_tempfile`、`relay_stream`、`presigned`
 - 流式上传 / 下载，避免全量缓冲
 
 ### 协作与访问
@@ -107,22 +109,27 @@ docker compose up -d
 - HttpOnly Cookie 认证与 Bearer JWT 支持
 - 公开分享页 `/s/:token`
 - 支持密码保护和过期控制的分享链接
-- 独立密码和根目录限制的 WebDAV 账号
+- 支持在分享目录树内继续浏览、下载子文件和读取子文件缩略图
+- 用户资料、头像上传 / Gravatar 与偏好设置接口
+- 独立密码、根目录限制和 DeltaV 子集支持的 WebDAV 账号
 
 ### 运维能力
 
-- 健康检查接口：`/health`、`/health/ready`
+- 健康检查接口：`/health`、`/health/ready`，可选 `/health/memory`、`/health/metrics`
 - 存储在 `system_config` 中的运行时配置
+- 管理总览、配置 schema 和存储策略连通性测试接口
 - 关键操作审计日志
-- 每小时自动清理上传残留、回收站、锁和过期审计日志
+- `debug` 构建下提供 Swagger UI，并可通过 `cargo test --test generate_openapi` 导出静态 OpenAPI
+- 每小时自动清理上传残留、已完成上传会话、回收站、锁和过期审计日志，并每 6 小时做一次 Blob 对账
 
 ## 文档导航
 
 - [快速开始](docs/guide/getting-started.md)
 - [安装与部署](docs/guide/installation.md)
-- [架构文档](docs/architecture.md)
+- [开发者文档](developer-docs/README.md)
+- [架构文档](developer-docs/architecture.md)
 - [Docker 部署](docs/deployment/docker.md)
-- [API 概览](docs/api/index.md)
+- [API 概览](developer-docs/api/index.md)
 - [用户指南](docs/guide/user-guide.md)
 
 ## 开发
@@ -182,7 +189,8 @@ ASTER__WEBDAV__PREFIX="/webdav"
 src/                    Rust 后端
 migration/              Sea-ORM 迁移
 frontend-panel/         React 管理 / 文件前端
-docs/                   架构、部署、API 和用户文档
+docs/                   部署与面向最终用户的文档
+developer-docs/         面向开发者的 API 与架构文档
 tests/                  集成测试
 ```
 

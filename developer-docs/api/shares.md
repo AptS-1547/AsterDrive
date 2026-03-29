@@ -78,7 +78,7 @@
 | `GET` | `/s/{token}/files/{file_id}/download` | 下载分享文件夹中的子文件 |
 | `GET` | `/s/{token}/thumbnail` | 获取分享文件缩略图 |
 | `GET` | `/s/{token}/files/{file_id}/thumbnail` | 获取分享目录树中子文件的缩略图 |
-| `GET` | `/s/{token}/avatar/{size}` | 获取分享拥有者头像 |
+| `GET` | `/s/{token}/avatar/{size}` | 获取分享拥有者已上传头像 |
 
 其中：
 
@@ -89,13 +89,23 @@
 - `/files/{file_id}/download` 用于下载分享文件夹树中的子文件
 - `/thumbnail` 只适用于图片文件分享
 - `/files/{file_id}/thumbnail` 只适用于分享目录树中的图片文件
-- `/avatar/{size}` 返回分享拥有者头像，当前支持 `512` 和 `1024`
+- `/avatar/{size}` 只返回分享拥有者“已上传头像”的二进制资源，当前支持 `512` 和 `1024`
+
+文件夹分享的两个内容接口还支持和普通目录列表一致的参数：
+
+- `folder_limit` / `folder_offset`
+- `file_limit`
+- `sort_by` / `sort_order`
+- `file_after_value` / `file_after_id`
+
+返回体同样会带 `next_file_cursor`。
 
 当前边界直接记一句就够：
 
 - 公开页已经支持在分享目录树内继续进入子文件夹浏览
 - 子目录访问、子文件下载和子文件缩略图都会校验是否仍处在分享根目录范围内
 - 越过分享范围访问其他目录或文件会返回 `403`
+- 如果拥有者当前头像来源是 `gravatar` 或 `none`，前端应直接使用 `GET /s/{token}` 返回的 `shared_by.avatar.url_*`
 
 前端公开页路径是：
 

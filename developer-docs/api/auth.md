@@ -13,11 +13,12 @@
 | `POST` | `/auth/refresh` | 使用 refresh Cookie 换新的 access token |
 | `POST` | `/auth/logout` | 清除认证 Cookie |
 | `GET` | `/auth/me` | 读取当前登录用户信息 |
+| `PUT` | `/auth/password` | 修改当前用户密码 |
 | `PATCH` | `/auth/preferences` | 更新当前用户偏好设置 |
 | `PATCH` | `/auth/profile` | 更新当前用户资料 |
 | `POST` | `/auth/profile/avatar/upload` | 上传头像图片 |
 | `PUT` | `/auth/profile/avatar/source` | 切换头像来源 |
-| `GET` | `/auth/profile/avatar/{size}` | 读取当前用户头像 |
+| `GET` | `/auth/profile/avatar/{size}` | 读取当前用户已上传头像 |
 
 ## 初始化与注册
 
@@ -59,7 +60,18 @@
 
 如果用户状态是 `disabled`，登录会直接失败。
 
-## 当前用户资料与偏好
+## 当前用户资料、密码与偏好
+
+- `PUT /auth/password`：修改当前用户密码，请求体如下：
+
+```json
+{
+  "current_password": "old-password",
+  "new_password": "new-password"
+}
+```
+
+这个接口会校验当前密码；新密码仍然走和注册相同的长度校验。
 
 - `PATCH /auth/preferences`：只会合并请求体里非 `null` 的字段，并返回完整的最新偏好对象
 - `PATCH /auth/profile`：当前只支持修改 `display_name`
@@ -69,15 +81,23 @@
 头像相关接口都需要登录：
 
 - `POST /auth/profile/avatar/upload`：`multipart/form-data` 上传图片，后端会生成 WebP 头像资源
-- `PUT /auth/profile/avatar/source`：在 `none`、`gravatar`、`upload` 之间切换来源
-- `GET /auth/profile/avatar/{size}`：读取当前用户头像，当前支持 `512` 和 `1024`
+- `PUT /auth/profile/avatar/source`：只能在 `none` 和 `gravatar` 之间切换；`upload` 来源必须通过上传接口设置
+- `GET /auth/profile/avatar/{size}`：只读取“已上传头像”的 WebP 资源，当前支持 `512` 和 `1024`
+
+也就是说：
+
+- 如果你要把头像来源切到上传图，应该调用 `/auth/profile/avatar/upload`
+- 如果当前来源是 `gravatar` 或 `none`，应优先使用 `/auth/me` 或资料更新接口返回的 `profile.avatar.url_*`
 
 公开分享页和管理员接口会复用同一套头像资源，但读取路径不同。
 
 ## 限流
 
-认证相关接口带轻量限流：
+`/auth` 整个 scope 共用同一档认证限流配置，不再按单个接口分别硬编码。
 
-- `/auth/login`：每秒 1 次，突发 5
-- `/auth/register`：每秒 1 次，突发 3
-- `/auth/setup`：每秒 1 次，突发 3
+默认配置来自 `[rate_limit].auth`：
+
+- `seconds_per_request = 2`
+- `burst_size = 5`
+
+如果全局 `rate_limit.enabled = false`，则不会启用这层限流。

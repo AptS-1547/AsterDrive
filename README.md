@@ -7,7 +7,7 @@
 <p align="center">
   Self-hosted cloud storage built with Rust and React.
   <br />
-  Single-binary delivery, Alpine container support, storage policies, WebDAV, sharing, version history, trash, and four upload modes.
+  Single-binary delivery, Alpine container support, storage policies, WebDAV, sharing, version history, trash, thumbnails, and four upload modes.
 </p>
 
 <p align="center">
@@ -25,10 +25,10 @@
 - **Multi-database** - SQLite by default, with MySQL and PostgreSQL support through SeaORM
 - **Pluggable storage policies** - local filesystem and S3-compatible object storage, with user-level and folder-level overrides
 - **Four upload modes** - `direct`, `chunked`, `presigned`, and `presigned_multipart`, negotiated by policy and file size
-- **Sharing** - file and folder sharing with password, expiration time, download limits, public share page, and shared child-file download support
-- **WebDAV** - dedicated WebDAV accounts, scoped root folder access, database-backed locks, and custom properties
-- **Lifecycle management** - trash, version history, thumbnails, locks, periodic cleanup jobs, and runtime config management
-- **Admin console** - manage users, storage policies, runtime settings, WebDAV accounts, and audit logs from the frontend panel
+- **Sharing** - file and folder sharing with password, expiration time, download limits, public share page, nested shared-folder browsing, child-file download, and shared thumbnails
+- **WebDAV** - dedicated WebDAV accounts, scoped root folder access, database-backed locks, custom properties, and minimal DeltaV version-tree support
+- **Lifecycle management** - trash, version history, thumbnails, locks, periodic cleanup jobs, blob reconciliation, and runtime config management
+- **Admin console** - overview dashboard plus users, storage policies, runtime settings, shares, locks, WebDAV accounts, and audit logs from the frontend panel
 
 ## Quick start
 
@@ -91,15 +91,17 @@ See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`]
 
 - hierarchical folders
 - file upload, download, rename, move, copy, delete
+- directory upload with `relative_path` auto-folder creation
 - inline search and batch operations
 - thumbnails and file previews
-- Monaco-based text editing with lock awareness
+- version history, restore, and Monaco-based text editing with lock awareness
 
 ### Storage and delivery
 
 - blob deduplication with SHA-256 + reference counting
 - local storage and S3-compatible storage policies
 - user default policy + folder override
+- S3 transport strategies: `proxy_tempfile`, `relay_stream`, and `presigned`
 - streaming upload/download paths to avoid full-buffer transfers
 
 ### Collaboration and access
@@ -107,22 +109,27 @@ See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`]
 - HttpOnly cookie auth and Bearer JWT support
 - public share pages at `/s/:token`
 - password-protected and expiring shares
-- WebDAV accounts with independent passwords and root-folder restriction
+- shared folder browsing with child-file download and thumbnail access inside the shared tree
+- profile, avatar upload / Gravatar, and user preference APIs
+- WebDAV accounts with independent passwords, root-folder restriction, and DeltaV subset support
 
 ### Operations
 
-- health endpoints: `/health`, `/health/ready`
+- health endpoints: `/health`, `/health/ready`, optional `/health/memory`, `/health/metrics`
 - runtime config stored in `system_config`
+- admin overview, config schema, and policy connection testing endpoints
 - audit logs for key actions
-- hourly cleanup tasks for uploads, trash, locks, and audit log retention
+- Swagger UI in debug builds and static OpenAPI export via `cargo test --test generate_openapi`
+- hourly cleanup tasks for uploads, completed upload sessions, trash, locks, and audit log retention, plus 6-hour blob reconciliation
 
 ## Documentation map
 
 - [Getting started](docs/guide/getting-started.md)
 - [Installation and deployment](docs/guide/installation.md)
-- [Architecture](docs/architecture.md)
+- [Developer docs](developer-docs/README.md)
+- [Architecture](developer-docs/architecture.md)
 - [Docker deployment](docs/deployment/docker.md)
-- [API overview](docs/api/index.md)
+- [API overview](developer-docs/api/index.md)
 - [User guide](docs/guide/user-guide.md)
 
 ## Development
@@ -182,7 +189,8 @@ Runtime configuration is stored in the database and can be updated from the admi
 src/                    Rust backend
 migration/              Sea-ORM migrations
 frontend-panel/         React admin/file panel
-docs/                   Architecture, deployment, API, and user docs
+docs/                   Deployment and end-user documentation
+developer-docs/         API and architecture docs for contributors
 tests/                  Integration tests
 ```
 

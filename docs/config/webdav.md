@@ -1,11 +1,11 @@
 # WebDAV 配置
 
-WebDAV 相关配置分成两部分：
+WebDAV 相关配置分成两部分:
 
-- `config.toml` 中的 `[webdav]`
-- 管理后台里的 `webdav_enabled`
+- `config.toml` 里的 `[webdav]`
+- `管理 -> 系统设置` 里的 `webdav_enabled`
 
-## 静态配置
+## `config.toml` 里的静态配置
 
 ```toml
 [webdav]
@@ -13,7 +13,7 @@ prefix = "/webdav"
 payload_limit = 10737418240
 ```
 
-这两项都在 `config.toml` 里修改，改完需要重启服务。
+这两项都要在 `config.toml` 里改，改完后需要重启服务。
 
 ## 字段说明
 
@@ -22,15 +22,15 @@ payload_limit = 10737418240
 | `prefix` | `"/webdav"` | WebDAV 路径前缀，修改后客户端地址也要一起修改 |
 | `payload_limit` | `10737418240` | WebDAV 上传体积硬上限，默认 10 GiB |
 
-## 运行时开关
+## 后台里的运行时开关
 
-管理员在系统设置里关闭 `webdav_enabled` 后，WebDAV 会停止对外提供服务。
+管理员在系统设置里关闭 `webdav_enabled` 后，WebDAV 会立刻停止对外提供服务。
 
-## 用户一般怎么用
+## 普通用户一般怎么用
 
-最常见的做法是：
+最常见的做法是:
 
-1. 在 `WebDAV` 页面创建一个专用账号
+1. 在左侧 `WebDAV` 页面创建一个专用账号
 2. 给它指定用户名和密码
 3. 需要时限制到根目录下某个文件夹
 4. 把地址、用户名和密码填进 Finder、Windows 或 rclone
@@ -43,28 +43,33 @@ payload_limit = 10737418240
 https://你的域名/webdav/
 ```
 
-如果你把 `prefix` 改成了 `/dav`，那客户端地址也要改成：
+如果你把 `prefix` 改成了 `/dav`，那客户端地址也要改成:
 
 ```text
 https://你的域名/dav/
 ```
 
-## 反向代理注意事项
+## 上传大小要看三处
 
-如果 WebDAV 放在反向代理后面，请确保代理层不会丢失：
-
-- `Authorization`
-- WebDAV 方法
-- 常见 WebDAV 请求头，如 `Depth`、`Destination`、`Overwrite`、`If`、`Lock-Token`、`Timeout`
-
-完整示例见 [反向代理部署](/deployment/proxy)。
-
-## 上传大小
-
-如果你预计通过 WebDAV 上传大文件，请同步检查：
+如果你预计通过 WebDAV 上传大文件，要同时检查:
 
 - `webdav.payload_limit`
 - 反向代理的上传大小限制
 - 存储策略里的单文件大小限制
 
-三者里只要有一个限制更小，最终就会按更小的那个为准。
+三者里只要有一个更小，最终就按更小的那个为准。
+
+## 反向代理时不要丢这些内容
+
+如果 WebDAV 放在反向代理后面，请确保代理层不会丢失:
+
+- `Authorization`
+- `Depth`
+- `Destination`
+- `Overwrite`
+- `If`
+- `Lock-Token`
+- `Timeout`
+- `PROPFIND`、`MOVE`、`COPY`、`LOCK`、`UNLOCK` 等 WebDAV 方法
+
+完整示例见 [反向代理部署](/deployment/proxy)。
