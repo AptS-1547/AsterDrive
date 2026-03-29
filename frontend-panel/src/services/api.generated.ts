@@ -1603,6 +1603,10 @@ export interface components {
             updated_at: string;
             username: string;
         };
+        MemoryStatsResponse: {
+            heap_allocated_mb: string;
+            heap_peak_mb: string;
+        };
         MyShareInfo: {
             created_at: string;
             /** Format: int64 */
@@ -1897,10 +1901,18 @@ export interface components {
         PresignPartsReq: {
             part_numbers: number[];
         };
+        PurgedCountResponse: {
+            /** Format: int32 */
+            purged: number;
+        };
         RegisterReq: {
             email: string;
             password: string;
             username: string;
+        };
+        RemovedCountResponse: {
+            /** Format: int64 */
+            removed: number;
         };
         ResourceLock: {
             created_at: string;
@@ -2741,7 +2753,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            removed: number;
+                        };
+                        msg: string;
+                    };
+                };
             };
             /** @description Admin required */
             403: {
@@ -6676,7 +6697,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            purged: number;
+                        };
+                        msg: string;
+                    };
+                };
             };
             /** @description Unauthorized */
             401: {

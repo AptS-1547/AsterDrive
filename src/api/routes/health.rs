@@ -1,4 +1,4 @@
-use crate::api::response::ApiResponse;
+use crate::api::response::{ApiResponse, HealthResponse, MemoryStatsResponse};
 use crate::runtime::AppState;
 use actix_web::{HttpResponse, web};
 
@@ -28,11 +28,7 @@ pub fn routes() -> actix_web::Scope {
     ),
 )]
 pub async fn health() -> HttpResponse {
-    HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
-        "status": "ok",
-        "version": env!("CARGO_PKG_VERSION"),
-        "build_time": compile_time(),
-    })))
+    HttpResponse::Ok().json(ApiResponse::ok(status_response("ok")))
 }
 
 #[utoipa::path(
@@ -47,11 +43,7 @@ pub async fn health() -> HttpResponse {
 )]
 pub async fn ready(state: web::Data<AppState>) -> HttpResponse {
     match state.db.ping().await {
-        Ok(_) => HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
-            "status": "ready",
-            "version": env!("CARGO_PKG_VERSION"),
-            "build_time": compile_time(),
-        }))),
+        Ok(_) => HttpResponse::Ok().json(ApiResponse::ok(status_response("ready"))),
         Err(e) => HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error(
             crate::api::error_code::ErrorCode::DatabaseError,
             &e.to_string(),
@@ -61,10 +53,10 @@ pub async fn ready(state: web::Data<AppState>) -> HttpResponse {
 
 pub async fn memory() -> HttpResponse {
     let (allocated, peak) = crate::alloc::stats();
-    HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
-        "heap_allocated_mb": format!("{allocated:.2}"),
-        "heap_peak_mb": format!("{peak:.2}"),
-    })))
+    HttpResponse::Ok().json(ApiResponse::ok(MemoryStatsResponse {
+        heap_allocated_mb: format!("{allocated:.2}"),
+        heap_peak_mb: format!("{peak:.2}"),
+    }))
 }
 
 #[cfg(feature = "metrics")]
@@ -91,6 +83,15 @@ pub async fn metrics_endpoint() -> HttpResponse {
     }
 }
 
+#[inline]
 fn compile_time() -> &'static str {
     option_env!("ASTER_BUILD_TIME").unwrap_or("unknown")
+}
+
+fn status_response(status: &str) -> HealthResponse {
+    HealthResponse {
+        status: status.to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        build_time: compile_time().to_string(),
+    }
 }

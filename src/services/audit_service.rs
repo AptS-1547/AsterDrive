@@ -1,7 +1,7 @@
 use actix_web::HttpRequest;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::Set;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use utoipa::IntoParams;
 
@@ -11,6 +11,7 @@ use crate::entities::audit_log;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::auth_service::Claims;
+use crate::types::{UserRole, UserStatus};
 
 const DEFAULT_RETENTION_DAYS: i64 = 90;
 
@@ -123,6 +124,53 @@ impl AuditLogFilters {
                 .as_deref()
                 .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&Utc)),
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct ConfigUpdateDetails<'a> {
+    pub value: &'a str,
+}
+
+#[derive(Serialize)]
+pub struct AdminCreateUserDetails<'a> {
+    pub email: &'a str,
+    pub role: UserRole,
+    pub status: UserStatus,
+    pub storage_quota: i64,
+}
+
+#[derive(Serialize)]
+pub struct AdminUpdateUserDetails {
+    pub role: UserRole,
+    pub status: UserStatus,
+    pub storage_quota: i64,
+}
+
+#[derive(Serialize)]
+pub struct BatchDeleteDetails<'a> {
+    pub file_ids: &'a [i64],
+    pub folder_ids: &'a [i64],
+    pub succeeded: u32,
+    pub failed: u32,
+}
+
+#[derive(Serialize)]
+pub struct BatchTransferDetails<'a> {
+    pub file_ids: &'a [i64],
+    pub folder_ids: &'a [i64],
+    pub target_folder_id: Option<i64>,
+    pub succeeded: u32,
+    pub failed: u32,
+}
+
+pub fn details<T: Serialize>(value: T) -> Option<serde_json::Value> {
+    match serde_json::to_value(value) {
+        Ok(value) => Some(value),
+        Err(e) => {
+            tracing::warn!("failed to serialize audit details: {e}");
+            None
         }
     }
 }

@@ -1,4 +1,4 @@
-import type { TrashContents } from "@/types/api";
+import type { PurgedCountResponse, TrashContents } from "@/types/api";
 import { api } from "./http";
 
 export interface TrashListParams {
@@ -21,5 +21,5 @@ export const trashService = {
 
 	purgeFolder: (id: number) => api.delete<void>(`/trash/folder/${id}`),
 
-	purgeAll: () => api.delete<void>("/trash"),
+	purgeAll: () => api.delete<PurgedCountResponse>("/trash"),
 };

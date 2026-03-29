@@ -1,7 +1,7 @@
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::TrashListQuery;
-use crate::api::response::ApiResponse;
+use crate::api::response::{ApiResponse, PurgedCountResponse};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -124,7 +124,7 @@ pub async fn purge_one(
     tag = "trash",
     operation_id = "purge_all_trash",
     responses(
-        (status = 200, description = "Trash emptied"),
+        (status = 200, description = "Trash emptied", body = inline(ApiResponse<crate::api::response::PurgedCountResponse>)),
         (status = 401, description = "Unauthorized"),
     ),
     security(("bearer" = [])),
@@ -134,5 +134,5 @@ pub async fn purge_all(
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     let count = trash_service::purge_all(&state, claims.user_id).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({ "purged": count }))))
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(PurgedCountResponse { purged: count })))
 }

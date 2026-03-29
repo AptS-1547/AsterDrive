@@ -52,3 +52,19 @@ pub struct HealthResponse {
     pub version: String,
     pub build_time: String,
 }
+
+#[derive(Serialize, ToSchema)]
+pub struct MemoryStatsResponse {
+    pub heap_allocated_mb: String,
+    pub heap_peak_mb: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PurgedCountResponse {
+    pub purged: u32,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RemovedCountResponse {
+    pub removed: u64,
+}

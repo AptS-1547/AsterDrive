@@ -1,7 +1,7 @@
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::{LimitOffsetQuery, OffsetPage};
-use crate::api::response::ApiResponse;
+use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -364,12 +364,12 @@ pub async fn create_user(
         Some("user"),
         Some(user.id),
         Some(&user.username),
-        Some(serde_json::json!({
-            "email": user.email,
-            "role": user.role,
-            "status": user.status,
-            "storage_quota": user.storage_quota,
-        })),
+        audit_service::details(audit_service::AdminCreateUserDetails {
+            email: &user.email,
+            role: user.role,
+            status: user.status,
+            storage_quota: user.storage_quota,
+        }),
     )
     .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
@@ -479,11 +479,11 @@ pub async fn update_user(
         Some("user"),
         Some(user.id),
         Some(&user.username),
-        Some(serde_json::json!({
-            "role": user.role,
-            "status": user.status,
-            "storage_quota": user.storage_quota,
-        })),
+        audit_service::details(audit_service::AdminUpdateUserDetails {
+            role: user.role,
+            status: user.status,
+            storage_quota: user.storage_quota,
+        }),
     )
     .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
@@ -926,7 +926,7 @@ pub async fn force_unlock(
     tag = "admin",
     operation_id = "cleanup_expired_locks",
     responses(
-        (status = 200, description = "Expired locks cleaned up"),
+        (status = 200, description = "Expired locks cleaned up", body = inline(ApiResponse<crate::api::response::RemovedCountResponse>)),
         (status = 403, description = "Admin required"),
     ),
     security(("bearer" = [])),
@@ -937,7 +937,7 @@ pub async fn cleanup_expired_locks(
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
     let count = crate::services::lock_service::cleanup_expired(&state).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({ "removed": count }))))
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(RemovedCountResponse { removed: count })))
 }
 
 // ── Audit Logs ─────────────────────────────────────────────────────

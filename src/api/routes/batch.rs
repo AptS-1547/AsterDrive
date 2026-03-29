@@ -73,6 +73,7 @@ pub async fn batch_delete(
     req: HttpRequest,
     body: web::Json<BatchDeleteReq>,
 ) -> Result<HttpResponse> {
+    let body = body.into_inner();
     batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
     let result =
         batch_service::batch_delete(&state, claims.user_id, &body.file_ids, &body.folder_ids)
@@ -85,7 +86,12 @@ pub async fn batch_delete(
         None,
         None,
         None,
-        Some(serde_json::json!({ "file_ids": body.file_ids, "folder_ids": body.folder_ids, "succeeded": result.succeeded, "failed": result.failed })),
+        audit_service::details(audit_service::BatchDeleteDetails {
+            file_ids: &body.file_ids,
+            folder_ids: &body.folder_ids,
+            succeeded: result.succeeded,
+            failed: result.failed,
+        }),
     )
     .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
@@ -110,6 +116,7 @@ pub async fn batch_move(
     req: HttpRequest,
     body: web::Json<BatchMoveReq>,
 ) -> Result<HttpResponse> {
+    let body = body.into_inner();
     batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
     let result = batch_service::batch_move(
         &state,
@@ -127,7 +134,13 @@ pub async fn batch_move(
         None,
         None,
         None,
-        Some(serde_json::json!({ "file_ids": body.file_ids, "folder_ids": body.folder_ids, "target_folder_id": body.target_folder_id, "succeeded": result.succeeded, "failed": result.failed })),
+        audit_service::details(audit_service::BatchTransferDetails {
+            file_ids: &body.file_ids,
+            folder_ids: &body.folder_ids,
+            target_folder_id: body.target_folder_id,
+            succeeded: result.succeeded,
+            failed: result.failed,
+        }),
     )
     .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
@@ -152,6 +165,7 @@ pub async fn batch_copy(
     req: HttpRequest,
     body: web::Json<BatchCopyReq>,
 ) -> Result<HttpResponse> {
+    let body = body.into_inner();
     batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
     let result = batch_service::batch_copy(
         &state,
@@ -169,7 +183,13 @@ pub async fn batch_copy(
         None,
         None,
         None,
-        Some(serde_json::json!({ "file_ids": body.file_ids, "folder_ids": body.folder_ids, "target_folder_id": body.target_folder_id, "succeeded": result.succeeded, "failed": result.failed })),
+        audit_service::details(audit_service::BatchTransferDetails {
+            file_ids: &body.file_ids,
+            folder_ids: &body.folder_ids,
+            target_folder_id: body.target_folder_id,
+            succeeded: result.succeeded,
+            failed: result.failed,
+        }),
     )
     .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))

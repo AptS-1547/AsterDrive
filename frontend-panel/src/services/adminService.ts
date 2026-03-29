@@ -2,6 +2,7 @@ import type {
 	AdminSharePage,
 	DriverType,
 	LockPage,
+	RemovedCountResponse,
 	ShareInfo,
 	StoragePolicy,
 	StoragePolicyPage,
@@ -173,7 +174,8 @@ export const adminLockService = {
 
 	forceUnlock: (id: number) => api.delete<void>(`/admin/locks/${id}`),
 
-	cleanupExpired: () => api.delete<{ removed: number }>("/admin/locks/expired"),
+	cleanupExpired: () =>
+		api.delete<RemovedCountResponse>("/admin/locks/expired"),
 };
 
 // --- System Config ---

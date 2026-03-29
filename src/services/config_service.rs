@@ -62,7 +62,7 @@ pub async fn set_with_audit(
         None,
         None,
         Some(key),
-        Some(serde_json::json!({ "value": value })),
+        audit_service::details(audit_service::ConfigUpdateDetails { value }),
     )
     .await;
     Ok(config)
