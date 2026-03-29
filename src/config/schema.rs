@@ -53,10 +53,10 @@ impl ServerConfig {
         3000
     }
     fn default_temp_dir() -> String {
-        "data/.tmp".to_string()
+        crate::utils::paths::DEFAULT_TEMP_DIR.to_string()
     }
     fn default_upload_temp_dir() -> String {
-        "data/.uploads".to_string()
+        crate::utils::paths::DEFAULT_UPLOAD_TEMP_DIR.to_string()
     }
 }
 

@@ -8,6 +8,7 @@ use serde_json::Value;
 use tokio::task::JoinSet;
 
 const TEST_CHUNK_SIZE: usize = 5_242_880;
+const RUSTFS_TEST_IMAGE_TAG: &str = "1.0.0-alpha.90";
 
 async fn create_upload_session(
     state: &aster_drive::runtime::AppState,
@@ -1036,7 +1037,7 @@ async fn test_presigned_upload_s3_e2e() {
     use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
     // 启动 rustfs 容器
-    let container = GenericImage::new("rustfs/rustfs", "latest")
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
         .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
         .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
         .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
@@ -1188,7 +1189,7 @@ async fn test_presigned_multipart_upload_s3_e2e() {
     use aster_drive::services::{auth_service, upload_service};
     use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
-    let container = GenericImage::new("rustfs/rustfs", "latest")
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
         .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
         .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
         .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
@@ -1347,7 +1348,7 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
     use aster_drive::services::{auth_service, upload_service};
     use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
-    let container = GenericImage::new("rustfs/rustfs", "latest")
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
         .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
         .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
         .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
@@ -1460,7 +1461,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     use aster_drive::services::{auth_service, upload_service};
     use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
-    let container = GenericImage::new("rustfs/rustfs", "latest")
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
         .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
         .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
         .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
@@ -1551,7 +1552,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     use aster_drive::services::{auth_service, upload_service};
     use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
-    let container = GenericImage::new("rustfs/rustfs", "latest")
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
         .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
         .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
         .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")

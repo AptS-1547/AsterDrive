@@ -139,6 +139,7 @@ async fn test_chunked_upload_with_relative_path_and_auto_rename() {
     let (token, _) = register_and_login!(app);
 
     let relative_path = "docs/chunked.txt";
+    let total_size = 10_485_760i64;
 
     for expected_name in ["chunked.txt", "chunked (1).txt"] {
         let req = test::TestRequest::post()
@@ -146,7 +147,7 @@ async fn test_chunked_upload_with_relative_path_and_auto_rename() {
             .insert_header(("Cookie", format!("aster_access={token}")))
             .set_json(serde_json::json!({
                 "filename": "chunked.txt",
-                "total_size": 10_485_760,
+                "total_size": total_size,
                 "relative_path": relative_path
             }))
             .to_request();
@@ -155,10 +156,16 @@ async fn test_chunked_upload_with_relative_path_and_auto_rename() {
         let body: Value = test::read_body_json(resp).await;
         assert_eq!(body["data"]["mode"], "chunked");
         let upload_id = body["data"]["upload_id"].as_str().unwrap();
+        let chunk_size = body["data"]["chunk_size"].as_i64().unwrap();
         let total_chunks = body["data"]["total_chunks"].as_i64().unwrap();
 
         for i in 0..total_chunks {
-            let chunk_data = vec![b'A' + i as u8; 1024];
+            let expected_chunk_size = if i == total_chunks - 1 {
+                (total_size - chunk_size * (total_chunks - 1)) as usize
+            } else {
+                chunk_size as usize
+            };
+            let chunk_data = vec![b'A' + i as u8; expected_chunk_size];
             let req = test::TestRequest::put()
                 .uri(&format!("/api/v1/files/upload/{upload_id}/{i}"))
                 .insert_header(("Cookie", format!("aster_access={token}")))

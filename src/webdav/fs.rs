@@ -144,10 +144,10 @@ impl DavFileSystem for AsterDavFs {
 
                         // 流式复制到临时文件
                         let temp_path = crate::utils::paths::temp_file_path(
-                            crate::utils::TEMP_DIR,
+                            &self.config.server.temp_dir,
                             &uuid::Uuid::new_v4().to_string(),
                         );
-                        tokio::fs::create_dir_all(crate::utils::TEMP_DIR)
+                        tokio::fs::create_dir_all(&self.config.server.temp_dir)
                             .await
                             .map_err(|_| FsError::GeneralFailure)?;
 

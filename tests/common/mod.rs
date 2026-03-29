@@ -105,6 +105,8 @@ macro_rules! create_test_app {
         let db = state.db.clone();
         test::init_service(
             App::new()
+                .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+                .app_data(web::JsonConfig::default().limit(1024 * 1024))
                 .app_data(web::Data::new(state))
                 .configure(move |cfg| aster_drive::api::configure(cfg, &db)),
         )
@@ -254,12 +256,16 @@ macro_rules! setup_with_webdav {
         let db1 = state.db.clone();
         let db2 = state.db.clone();
         let webdav_config = aster_drive::config::WebDavConfig::default();
-        let app = test::init_service(App::new().app_data(web::Data::new(state)).configure(
-            move |cfg| {
-                aster_drive::webdav::configure(cfg, &webdav_config, &db2);
-                aster_drive::api::configure(cfg, &db1);
-            },
-        ))
+        let app = test::init_service(
+            App::new()
+                .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+                .app_data(web::JsonConfig::default().limit(1024 * 1024))
+                .app_data(web::Data::new(state))
+                .configure(move |cfg| {
+                    aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                    aster_drive::api::configure(cfg, &db1);
+                }),
+        )
         .await;
         app
     }};

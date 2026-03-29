@@ -40,7 +40,7 @@ async fn main() -> std::io::Result<()> {
     }
 
     // 清理 WebDAV 临时文件（上次启动的孤儿文件）
-    let _ = tokio::fs::remove_dir_all(aster_drive::utils::TEMP_DIR).await;
+    let _ = tokio::fs::remove_dir_all(&cfg.server.temp_dir).await;
 
     let host = state.config.server.host.clone();
     let port = state.config.server.port;
