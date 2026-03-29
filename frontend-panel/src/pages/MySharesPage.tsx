@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { FileTypeIcon } from "@/components/files/FileTypeIcon";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
 import { formatDateAbsolute } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { shareService } from "@/services/shareService";
 import type { MyShareInfo, ShareStatus } from "@/types/api";
 
@@ -137,86 +139,101 @@ export default function MySharesPage() {
 					) : (
 						<>
 							<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-								{shares.map((share) => (
-									<ContextMenu key={share.id}>
-										<ContextMenuTrigger className="w-full">
-											<Card
-												className="cursor-pointer px-4 py-3 shadow-sm transition-colors duration-150 hover:bg-muted/5"
-												onClick={() =>
-													window.open(
-														`/s/${share.token}`,
-														"_blank",
-														"noopener,noreferrer",
-													)
-												}
-											>
-												<div className="flex items-center gap-2.5">
-													<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-														<Icon
-															name={
-																share.resource_type === "folder"
-																	? "Folder"
-																	: "File"
-															}
-															className="h-4 w-4"
-														/>
+								{shares.map((share) => {
+									const isFolder = share.resource_type === "folder";
+
+									return (
+										<ContextMenu key={share.id}>
+											<ContextMenuTrigger className="w-full">
+												<Card
+													className={cn(
+														"cursor-pointer border bg-background px-4 py-3 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:bg-muted/5 hover:shadow-md",
+													)}
+													onClick={() =>
+														window.open(
+															`/s/${share.token}`,
+															"_blank",
+															"noopener,noreferrer",
+														)
+													}
+												>
+													<div className="flex items-center gap-3">
+														<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted/45">
+															{isFolder ? (
+																<Icon
+																	name="Folder"
+																	className="h-5 w-5 text-amber-500"
+																/>
+															) : (
+																<FileTypeIcon
+																	mimeType=""
+																	fileName={share.resource_name}
+																	className="h-5 w-5"
+																/>
+															)}
+														</div>
+														<div className="min-w-0 flex-1">
+															<span className="block truncate text-sm font-semibold">
+																{share.resource_name}
+															</span>
+														</div>
+														<div className="shrink-0">
+															{statusBadge(share.status)}
+														</div>
 													</div>
-													<span className="min-w-0 flex-1 truncate text-sm font-medium">
-														{share.resource_name}
-													</span>
-													{statusBadge(share.status)}
-												</div>
-												<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-[42px] text-xs text-muted-foreground">
-													<span>
-														{t("share:my_shares_created_label", {
-															date: formatDateAbsolute(share.created_at),
-														})}
-													</span>
-													{share.expires_at ? (
+
+													<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-[52px] text-xs text-muted-foreground">
 														<span>
-															{t("share:my_shares_expire_label", {
-																date: formatDateAbsolute(share.expires_at),
+															{t("share:my_shares_created_label", {
+																date: formatDateAbsolute(share.created_at),
 															})}
 														</span>
-													) : (
-														<span>{t("share:my_shares_never")}</span>
-													)}
-													{share.has_password && (
-														<Icon name="Lock" className="h-3 w-3" />
-													)}
-												</div>
-											</Card>
-										</ContextMenuTrigger>
-										<ContextMenuContent>
-											<ContextMenuItem
-												onClick={() => void copyShareLink(share)}
-											>
-												<Icon name="Copy" />
-												{t("share:my_shares_card_copy")}
-											</ContextMenuItem>
-											<ContextMenuItem
-												onClick={() =>
-													window.open(
-														`/s/${share.token}`,
-														"_blank",
-														"noopener,noreferrer",
-													)
-												}
-											>
-												<Icon name="ArrowSquareOut" />
-												{t("share:my_shares_card_open")}
-											</ContextMenuItem>
-											<ContextMenuSeparator />
-											<ContextMenuItem
-												variant="destructive"
-												onClick={() => setDeleteTarget(share)}
-											>
-												<Icon name="Trash" />
-												{t("share:my_shares_card_delete")}
-											</ContextMenuItem>
-										</ContextMenuContent>
-									</ContextMenu>
-								))}
+														{share.expires_at ? (
+															<span>
+																{t("share:my_shares_expire_label", {
+																	date: formatDateAbsolute(share.expires_at),
+																})}
+															</span>
+														) : (
+															<span>{t("share:my_shares_never")}</span>
+														)}
+														{share.has_password && (
+															<Icon name="Lock" className="h-3 w-3" />
+														)}
+													</div>
+												</Card>
+											</ContextMenuTrigger>
+											<ContextMenuContent>
+												<ContextMenuItem
+													onClick={() => void copyShareLink(share)}
+												>
+													<Icon name="Copy" />
+													{t("share:my_shares_card_copy")}
+												</ContextMenuItem>
+												<ContextMenuItem
+													onClick={() =>
+														window.open(
+															`/s/${share.token}`,
+															"_blank",
+															"noopener,noreferrer",
+														)
+													}
+												>
+													<Icon name="ArrowSquareOut" />
+													{t("share:my_shares_card_open")}
+												</ContextMenuItem>
+												<ContextMenuSeparator />
+												<ContextMenuItem
+													variant="destructive"
+													onClick={() => setDeleteTarget(share)}
+												>
+													<Icon name="Trash" />
+													{t("share:my_shares_card_delete")}
+												</ContextMenuItem>
+											</ContextMenuContent>
+										</ContextMenu>
+									);
+								})}
 							</div>
 
 							<div className="flex items-center justify-between rounded-xl border bg-muted/15 px-4 py-3">

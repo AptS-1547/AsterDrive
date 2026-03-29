@@ -12,6 +12,7 @@ const mockState = vi.hoisted(() => ({
 		(token: string, fileId: number) => `/s/${token}/files/${fileId}/download`,
 	),
 	downloadPath: vi.fn((token: string) => `/s/${token}/download`),
+	thumbnailPath: vi.fn((token: string) => `/s/${token}/thumbnail`),
 	downloadUrl: vi.fn((token: string) => `https://download/${token}`),
 	getInfo: vi.fn(),
 	handleApiError: vi.fn(),
@@ -117,6 +118,25 @@ vi.mock("@/components/files/FilePreview", () => ({
 			data-name={file.name}
 			data-download-path={downloadPath ?? ""}
 			data-editable={String(Boolean(editable))}
+		/>
+	),
+}));
+
+vi.mock("@/components/files/FileThumbnail", () => ({
+	FileThumbnail: ({
+		file,
+		size,
+		thumbnailPath,
+	}: {
+		file: { name: string };
+		size?: "sm" | "lg";
+		thumbnailPath?: string;
+	}) => (
+		<div
+			data-testid="file-thumbnail"
+			data-name={file.name}
+			data-size={size ?? ""}
+			data-thumbnail-path={thumbnailPath ?? ""}
 		/>
 	),
 }));
@@ -291,6 +311,7 @@ vi.mock("@/services/shareService", () => ({
 		downloadFolderPath: (...args: unknown[]) =>
 			mockState.downloadFolderPath(...args),
 		downloadPath: (...args: unknown[]) => mockState.downloadPath(...args),
+		thumbnailPath: (...args: unknown[]) => mockState.thumbnailPath(...args),
 		downloadUrl: (...args: unknown[]) => mockState.downloadUrl(...args),
 		getInfo: (...args: unknown[]) => mockState.getInfo(...args),
 		listContent: (...args: unknown[]) => mockState.listContent(...args),
@@ -305,6 +326,7 @@ describe("ShareViewPage", () => {
 		mockState.downloadFolderFileUrl.mockClear();
 		mockState.downloadFolderPath.mockClear();
 		mockState.downloadPath.mockClear();
+		mockState.thumbnailPath.mockClear();
 		mockState.downloadUrl.mockClear();
 		mockState.getInfo.mockReset();
 		mockState.handleApiError.mockReset();
@@ -413,6 +435,19 @@ describe("ShareViewPage", () => {
 		expect(
 			screen.getByText("avatar:Alice Example:/s/share-token/avatar/512?v=1"),
 		).toBeInTheDocument();
+		expect(screen.getByTestId("file-thumbnail")).toHaveAttribute(
+			"data-name",
+			"Manual.pdf",
+		);
+		expect(screen.getByTestId("file-thumbnail")).toHaveAttribute(
+			"data-size",
+			"lg",
+		);
+		expect(screen.getByTestId("file-thumbnail")).toHaveAttribute(
+			"data-thumbnail-path",
+			"/s/share-token/thumbnail",
+		);
+		expect(mockState.thumbnailPath).toHaveBeenCalledWith("share-token");
 
 		fireEvent.click(screen.getByRole("button", { name: /files:preview/i }));
 

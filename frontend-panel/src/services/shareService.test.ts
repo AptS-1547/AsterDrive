@@ -63,6 +63,7 @@ describe("shareService", () => {
 			params,
 		});
 		expect(shareService.downloadPath("token-1")).toBe("/s/token-1/download");
+		expect(shareService.thumbnailPath("token-1")).toBe("/s/token-1/thumbnail");
 		expect(shareService.downloadFolderPath("token-1", 42)).toBe(
 			"/s/token-1/files/42/download",
 		);

@@ -29,6 +29,8 @@ export const shareService = {
 
 	downloadPath: (token: string) => `/s/${token}/download`,
 
+	thumbnailPath: (token: string) => `/s/${token}/thumbnail`,
+
 	downloadFolderPath: (token: string, fileId: number) =>
 		`/s/${token}/files/${fileId}/download`,
 

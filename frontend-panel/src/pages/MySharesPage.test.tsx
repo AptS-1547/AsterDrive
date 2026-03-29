@@ -74,6 +74,12 @@ vi.mock("@/components/ui/badge", () => ({
 	),
 }));
 
+vi.mock("@/components/files/FileTypeIcon", () => ({
+	FileTypeIcon: (props: { fileName?: string; mimeType: string }) => (
+		<span>{`file-icon:${props.fileName ?? ""}:${props.mimeType}`}</span>
+	),
+}));
+
 vi.mock("@/components/ui/button", () => ({
 	Button: (props: {
 		children: React.ReactNode;
@@ -120,7 +126,7 @@ vi.mock("@/components/ui/context-menu", () => ({
 }));
 
 vi.mock("@/components/ui/icon", () => ({
-	Icon: () => <span>icon</span>,
+	Icon: (props: { name: string }) => <span>{`icon:${props.name}`}</span>,
 }));
 
 vi.mock("@/hooks/useApiError", () => ({
@@ -264,5 +270,29 @@ describe("MySharesPage", () => {
 			"_blank",
 			"noopener,noreferrer",
 		);
+	});
+
+	it("uses file-browser style icons for file and folder shares", async () => {
+		mockState.listMine.mockResolvedValue({
+			items: [
+				createShare({
+					id: 8,
+					resource_name: "Document.pdf",
+					resource_type: "file",
+				}),
+				createShare({
+					id: 9,
+					resource_name: "Projects",
+					resource_type: "folder",
+				}),
+			],
+			total: 2,
+		});
+
+		render(<MySharesPage />);
+
+		await screen.findByText("Document.pdf");
+		expect(screen.getByText("file-icon:Document.pdf:")).toBeInTheDocument();
+		expect(screen.getByText("icon:Folder")).toBeInTheDocument();
 	});
 });

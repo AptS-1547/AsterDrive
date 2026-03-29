@@ -14,6 +14,7 @@ import { SkeletonCard } from "@/components/common/SkeletonCard";
 import { ToolbarBar } from "@/components/common/ToolbarBar";
 import { UserAvatarImage } from "@/components/common/UserAvatarImage";
 import { ViewToggle } from "@/components/common/ViewToggle";
+import { FileThumbnail } from "@/components/files/FileThumbnail";
 import { ReadOnlyFileCollection } from "@/components/files/ReadOnlyFileCollection";
 import { ShareTopBar } from "@/components/layout/ShareTopBar";
 import {
@@ -338,6 +339,7 @@ export default function ShareViewPage() {
 	}
 
 	if (!info) return null;
+	if (!token) return null;
 
 	const shareOwnerText = t("share:shared_with_you", {
 		name: info.shared_by.name,
@@ -406,8 +408,21 @@ export default function ShareViewPage() {
 							<div className="space-y-4">
 								<div className="flex flex-col gap-4 sm:flex-row sm:items-start">
 									<div className="flex min-w-0 flex-1 items-start gap-3">
-										<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-											<Icon name="File" className="h-5 w-5" />
+										<div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/40">
+											{singleShareFile ? (
+												<div className="flex h-full w-full items-center justify-center">
+													<FileThumbnail
+														file={singleShareFile}
+														size="lg"
+														thumbnailPath={shareService.thumbnailPath(token)}
+													/>
+												</div>
+											) : (
+												<Icon
+													name="File"
+													className="h-6 w-6 text-muted-foreground"
+												/>
+											)}
 										</div>
 										<div className="min-w-0 flex-1">
 											<CardTitle className="truncate">{info.name}</CardTitle>
