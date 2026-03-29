@@ -157,6 +157,10 @@ pub async fn create<C: ConnectionTrait>(db: &C, model: share::ActiveModel) -> Re
     model.insert(db).await.map_err(AsterError::from)
 }
 
+pub async fn update<C: ConnectionTrait>(db: &C, model: share::ActiveModel) -> Result<share::Model> {
+    model.update(db).await.map_err(AsterError::from)
+}
+
 pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Share::delete_by_id(id)
         .exec(db)

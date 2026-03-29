@@ -8,7 +8,7 @@ use crate::runtime::AppState;
 use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
-    share_service,
+    batch_service, share_service,
 };
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
@@ -24,6 +24,8 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
         .route("", web::post().to(create_share))
         .route("", web::get().to(list_shares))
+        .route("/batch-delete", web::post().to(batch_delete_shares))
+        .route("/{id}", web::patch().to(update_share))
         .route("/{id}", web::delete().to(delete_share))
 }
 
@@ -36,6 +38,21 @@ pub struct CreateShareReq {
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
     pub max_downloads: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateShareReq {
+    /// `None` = keep existing password, `Some(\"\")` = remove password, non-empty = replace password
+    pub password: Option<String>,
+    #[schema(value_type = Option<String>)]
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub max_downloads: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct BatchDeleteSharesReq {
+    #[serde(default)]
+    pub share_ids: Vec<i64>,
 }
 
 #[utoipa::path(
@@ -108,6 +125,56 @@ pub async fn list_shares(
 }
 
 #[utoipa::path(
+    patch,
+    path = "/api/v1/shares/{id}",
+    tag = "shares",
+    operation_id = "update_share",
+    params(("id" = i64, Path, description = "Share ID")),
+    request_body = UpdateShareReq,
+    responses(
+        (status = 200, description = "Share updated", body = inline(ApiResponse<crate::entities::share::Model>)),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Share not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn update_share(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+    body: web::Json<UpdateShareReq>,
+) -> Result<HttpResponse> {
+    let body = body.into_inner();
+    let share = share_service::update_share(
+        &state,
+        *path,
+        claims.user_id,
+        body.password,
+        body.expires_at,
+        body.max_downloads,
+    )
+    .await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::ShareUpdate,
+        Some("share"),
+        Some(share.id),
+        Some(&share.token),
+        audit_service::details(audit_service::ShareUpdateDetails {
+            has_password: share.password.is_some(),
+            expires_at: share.expires_at,
+            max_downloads: share.max_downloads,
+        }),
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(share)))
+}
+
+#[utoipa::path(
     delete,
     path = "/api/v1/shares/{id}",
     tag = "shares",
@@ -140,4 +207,45 @@ pub async fn delete_share(
     )
     .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/shares/batch-delete",
+    tag = "shares",
+    operation_id = "batch_delete_shares",
+    request_body = BatchDeleteSharesReq,
+    responses(
+        (status = 200, description = "Batch delete result", body = inline(ApiResponse<batch_service::BatchResult>)),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn batch_delete_shares(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    body: web::Json<BatchDeleteSharesReq>,
+) -> Result<HttpResponse> {
+    let body = body.into_inner();
+    share_service::validate_batch_share_ids(&body.share_ids)?;
+    let result =
+        share_service::batch_delete_shares(&state, claims.user_id, &body.share_ids).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::ShareBatchDelete,
+        None,
+        None,
+        None,
+        audit_service::details(audit_service::ShareBatchDeleteDetails {
+            share_ids: &body.share_ids,
+            succeeded: result.succeeded,
+            failed: result.failed,
+        }),
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }

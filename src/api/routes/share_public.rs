@@ -50,8 +50,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     params(("token" = String, Path, description = "Share token")),
     responses(
         (status = 200, description = "Share info", body = inline(ApiResponse<share_service::SharePublicInfo>)),
-        (status = 404, description = "Share not found"),
-        (status = 410, description = "Share expired"),
+        (status = 404, description = "Share not found or expired"),
     ),
 )]
 pub async fn get_share_info(

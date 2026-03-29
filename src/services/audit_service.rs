@@ -42,8 +42,10 @@ pub enum AuditAction {
     FolderDelete,
     FolderMove,
     FolderRename,
+    ShareBatchDelete,
     ShareCreate,
     ShareDelete,
+    ShareUpdate,
     SystemSetup,
     UserLogin,
     UserRegister,
@@ -70,8 +72,10 @@ impl AuditAction {
             Self::FolderDelete => "folder_delete",
             Self::FolderMove => "folder_move",
             Self::FolderRename => "folder_rename",
+            Self::ShareBatchDelete => "share_batch_delete",
             Self::ShareCreate => "share_create",
             Self::ShareDelete => "share_delete",
+            Self::ShareUpdate => "share_update",
             Self::SystemSetup => "system_setup",
             Self::UserLogin => "user_login",
             Self::UserRegister => "user_register",
@@ -163,6 +167,20 @@ pub struct BatchTransferDetails<'a> {
     pub target_folder_id: Option<i64>,
     pub succeeded: u32,
     pub failed: u32,
+}
+
+#[derive(Serialize)]
+pub struct ShareBatchDeleteDetails<'a> {
+    pub share_ids: &'a [i64],
+    pub succeeded: u32,
+    pub failed: u32,
+}
+
+#[derive(Serialize)]
+pub struct ShareUpdateDetails {
+    pub has_password: bool,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub max_downloads: i64,
 }
 
 pub fn details<T: Serialize>(value: T) -> Option<serde_json::Value> {
@@ -301,8 +319,10 @@ mod tests {
             (AuditAction::FolderDelete, "folder_delete"),
             (AuditAction::FolderMove, "folder_move"),
             (AuditAction::FolderRename, "folder_rename"),
+            (AuditAction::ShareBatchDelete, "share_batch_delete"),
             (AuditAction::ShareCreate, "share_create"),
             (AuditAction::ShareDelete, "share_delete"),
+            (AuditAction::ShareUpdate, "share_update"),
             (AuditAction::SystemSetup, "system_setup"),
             (AuditAction::UserLogin, "user_login"),
             (AuditAction::UserRegister, "user_register"),

@@ -10,7 +10,9 @@
 | --- | --- | --- |
 | `POST` | `/shares` | 创建分享 |
 | `GET` | `/shares` | 列出当前用户创建的分享 |
+| `PATCH` | `/shares/{id}` | 编辑已有分享 |
 | `DELETE` | `/shares/{id}` | 删除分享 |
+| `POST` | `/shares/batch-delete` | 批量删除分享 |
 
 创建请求示例：
 
@@ -31,6 +33,38 @@
 - `max_downloads = 0` 表示不限次数
 - 空密码等价于不设密码
 - `GET /shares` 现在是分页接口，支持 `limit` 和 `offset`
+
+编辑请求示例：
+
+```json
+{
+  "password": "new-secret",
+  "expires_at": "2026-04-02T12:00:00Z",
+  "max_downloads": 5
+}
+```
+
+编辑语义：
+
+- `password` 不传：保留现有密码
+- `password = ""`：移除密码
+- `password = "xxx"`：替换为新密码
+- `expires_at = null`：改为永不过期
+- `max_downloads = 0`：改为不限次数
+
+批量删除请求示例：
+
+```json
+{
+  "share_ids": [1, 2, 3]
+}
+```
+
+批量删除行为：
+
+- 单次总项目数上限是 1000
+- 每个 share 独立执行，不会因为一个失败而整批回滚
+- 返回结果使用和其他 batch 接口一致的 `BatchResult` 结构
 
 ## 公开访问
 

@@ -400,6 +400,17 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
     let body: Value = test::read_body_json(resp).await;
     let share_id = body["data"]["id"].as_i64().unwrap();
 
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/shares/{share_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "expires_at": "2026-04-02T12:00:00Z",
+            "max_downloads": 3
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/shares/{share_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
@@ -443,6 +454,7 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
     let items = fetch_audit_items!(app, token);
 
     assert_action_present(&items, "share_create");
+    assert_action_present(&items, "share_update");
     assert_action_present(&items, "share_delete");
 
     let config_entry = assert_action_present(&items, "config_update");

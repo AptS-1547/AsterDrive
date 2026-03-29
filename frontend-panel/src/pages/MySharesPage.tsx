@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { EditShareDialog } from "@/components/files/EditShareDialog";
 import { FileTypeIcon } from "@/components/files/FileTypeIcon";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
@@ -16,11 +17,13 @@ import {
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Icon } from "@/components/ui/icon";
+import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import { handleApiError } from "@/hooks/useApiError";
+import { useSelectionShortcuts } from "@/hooks/useSelectionShortcuts";
 import { formatDateAbsolute } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { shareService } from "@/services/shareService";
-import type { MyShareInfo, ShareStatus } from "@/types/api";
+import type { BatchResult, MyShareInfo, ShareStatus } from "@/types/api";
 
 const PAGE_SIZE = 50;
 
@@ -30,29 +33,86 @@ export default function MySharesPage() {
 	const [loading, setLoading] = useState(true);
 	const [shares, setShares] = useState<MyShareInfo[]>([]);
 	const [total, setTotal] = useState(0);
-	const [deleteTarget, setDeleteTarget] = useState<MyShareInfo | null>(null);
+	const [selectedShareIds, setSelectedShareIds] = useState<Set<number>>(
+		new Set(),
+	);
+	const [deleteTargets, setDeleteTargets] = useState<MyShareInfo[] | null>(
+		null,
+	);
+	const [editTarget, setEditTarget] = useState<MyShareInfo | null>(null);
 
-	const loadShares = useCallback(async () => {
+	const loadPage = useCallback(async (targetPage: number) => {
 		try {
 			setLoading(true);
 			const data = await shareService.listMine({
 				limit: PAGE_SIZE,
-				offset: page * PAGE_SIZE,
+				offset: targetPage * PAGE_SIZE,
 			});
 			setShares(data.items);
 			setTotal(data.total);
+			setSelectedShareIds(new Set());
+			return data;
 		} catch (error) {
 			handleApiError(error);
+			return null;
 		} finally {
 			setLoading(false);
 		}
-	}, [page]);
+	}, []);
 
 	useEffect(() => {
-		void loadShares().catch(() => {});
-	}, [loadShares]);
+		void loadPage(page);
+	}, [loadPage, page]);
+
+	const reloadCurrentPage = useCallback(async () => {
+		const data = await loadPage(page);
+		if (data && data.items.length === 0 && page > 0 && data.total > 0) {
+			setPage((current) => Math.max(0, current - 1));
+		}
+	}, [loadPage, page]);
 
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+	const selectedShares = shares.filter((share) =>
+		selectedShareIds.has(share.id),
+	);
+	const selectedCount = selectedShares.length;
+	const allSelected = shares.length > 0 && selectedCount === shares.length;
+	const singleDeleteTarget =
+		deleteTargets && deleteTargets.length === 1 ? deleteTargets[0] : null;
+
+	const clearSelection = useCallback(() => {
+		setSelectedShareIds(new Set());
+	}, []);
+
+	const selectAll = useCallback(() => {
+		setSelectedShareIds(new Set(shares.map((share) => share.id)));
+	}, [shares]);
+
+	const toggleSelectAll = useCallback(() => {
+		if (allSelected) {
+			clearSelection();
+			return;
+		}
+		selectAll();
+	}, [allSelected, clearSelection, selectAll]);
+
+	useSelectionShortcuts({
+		selectAll,
+		clearSelection,
+		enabled: deleteTargets === null && editTarget === null,
+	});
+
+	const toggleSelectShare = (shareId: number) => {
+		setSelectedShareIds((current) => {
+			const next = new Set(current);
+			if (next.has(shareId)) {
+				next.delete(shareId);
+			} else {
+				next.add(shareId);
+			}
+			return next;
+		});
+	};
 
 	const copyShareLink = async (share: MyShareInfo) => {
 		const url = `${window.location.origin}/s/${share.token}`;
@@ -60,17 +120,52 @@ export default function MySharesPage() {
 		toast.success(t("copied_to_clipboard"));
 	};
 
+	const openShareLink = (share: MyShareInfo) => {
+		window.open(`/s/${share.token}`, "_blank", "noopener,noreferrer");
+	};
+
+	const showBatchDeleteToast = (result: BatchResult) => {
+		if (result.failed === 0) {
+			toast.success(
+				t("share:my_shares_batch_delete_success", {
+					count: result.succeeded,
+				}),
+			);
+			return;
+		}
+
+		if (result.succeeded === 0) {
+			toast.error(t("share:my_shares_batch_delete_failed"));
+			return;
+		}
+
+		toast.success(
+			t("share:my_shares_batch_delete_partial", {
+				succeeded: result.succeeded,
+				failed: result.failed,
+			}),
+		);
+	};
+
 	const handleDelete = async () => {
-		if (!deleteTarget) return;
+		const targets = deleteTargets;
+		if (!targets || targets.length === 0) return;
+
+		setDeleteTargets(null);
+
 		try {
-			await shareService.delete(deleteTarget.id);
-			toast.success(t("share:my_shares_delete_success"));
-			setDeleteTarget(null);
-			if (shares.length === 1 && page > 0) {
-				setPage((current) => current - 1);
-				return;
+			if (targets.length === 1) {
+				await shareService.delete(targets[0].id);
+				toast.success(t("share:my_shares_delete_success"));
+			} else {
+				const result = await shareService.batchDelete(
+					targets.map((target) => target.id),
+				);
+				showBatchDeleteToast(result);
 			}
-			await loadShares();
+
+			clearSelection();
+			await reloadCurrentPage();
 		} catch (error) {
 			handleApiError(error);
 		}
@@ -101,14 +196,14 @@ export default function MySharesPage() {
 		<AppLayout>
 			<div className="min-h-0 flex-1 overflow-auto">
 				<div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 md:p-6">
-					<div className="flex items-center gap-3">
+					<div className="flex flex-wrap items-center gap-3">
 						<h1 className="text-2xl font-semibold tracking-tight">
 							{t("share:my_shares_title")}
 						</h1>
 						<Button
 							variant="ghost"
 							size="icon-sm"
-							onClick={() => void loadShares()}
+							onClick={() => void loadPage(page)}
 							disabled={loading}
 							aria-label={t("refresh")}
 							title={t("refresh")}
@@ -118,6 +213,18 @@ export default function MySharesPage() {
 								className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
 							/>
 						</Button>
+						{shares.length > 0 && (
+							<Button variant="outline" size="sm" onClick={toggleSelectAll}>
+								{allSelected
+									? t("share:my_shares_clear_selection")
+									: t("share:my_shares_select_all")}
+							</Button>
+						)}
+						{selectedCount > 0 && (
+							<span className="text-sm text-muted-foreground">
+								{t("core:selected_count", { count: selectedCount })}
+							</span>
+						)}
 					</div>
 
 					{loading ? (
@@ -141,6 +248,7 @@ export default function MySharesPage() {
 							<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 								{shares.map((share) => {
 									const isFolder = share.resource_type === "folder";
+									const selected = selectedShareIds.has(share.id);
 
 									return (
 										<ContextMenu key={share.id}>
@@ -148,16 +256,23 @@ export default function MySharesPage() {
 												<Card
 													className={cn(
 														"cursor-pointer border bg-background px-4 py-3 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:bg-muted/5 hover:shadow-md",
+														selected && "border-primary bg-accent/35",
 													)}
-													onClick={() =>
-														window.open(
-															`/s/${share.token}`,
-															"_blank",
-															"noopener,noreferrer",
-														)
-													}
+													onClick={() => openShareLink(share)}
+													role="button"
+													tabIndex={0}
+													onKeyDown={(event) => {
+														if (event.key === "Enter") {
+															openShareLink(share);
+														}
+													}}
 												>
 													<div className="flex items-center gap-3">
+														<ItemCheckbox
+															checked={selected}
+															onChange={() => toggleSelectShare(share.id)}
+															className="mt-0.5"
+														/>
 														<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted/45">
 															{isFolder ? (
 																<Icon
@@ -182,7 +297,7 @@ export default function MySharesPage() {
 														</div>
 													</div>
 
-													<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-[52px] text-xs text-muted-foreground">
+													<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-8 text-xs text-muted-foreground">
 														<span>
 															{t("share:my_shares_created_label", {
 																date: formatDateAbsolute(share.created_at),
@@ -204,28 +319,24 @@ export default function MySharesPage() {
 												</Card>
 											</ContextMenuTrigger>
 											<ContextMenuContent>
+												<ContextMenuItem onClick={() => setEditTarget(share)}>
+													<Icon name="PencilSimple" />
+													{t("core:edit")}
+												</ContextMenuItem>
 												<ContextMenuItem
 													onClick={() => void copyShareLink(share)}
 												>
 													<Icon name="Copy" />
 													{t("share:my_shares_card_copy")}
 												</ContextMenuItem>
-												<ContextMenuItem
-													onClick={() =>
-														window.open(
-															`/s/${share.token}`,
-															"_blank",
-															"noopener,noreferrer",
-														)
-													}
-												>
+												<ContextMenuItem onClick={() => openShareLink(share)}>
 													<Icon name="ArrowSquareOut" />
 													{t("share:my_shares_card_open")}
 												</ContextMenuItem>
 												<ContextMenuSeparator />
 												<ContextMenuItem
 													variant="destructive"
-													onClick={() => setDeleteTarget(share)}
+													onClick={() => setDeleteTargets([share])}
 												>
 													<Icon name="Trash" />
 													{t("share:my_shares_card_delete")}
@@ -274,18 +385,68 @@ export default function MySharesPage() {
 				</div>
 			</div>
 
+			{selectedCount > 0 && (
+				<div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg border bg-background px-4 py-2 shadow-lg">
+					<span className="text-sm font-medium">
+						{t("core:selected_count", { count: selectedCount })}
+					</span>
+					<div className="flex items-center gap-1">
+						{selectedCount === 1 && (
+							<Button
+								size="sm"
+								variant="outline"
+								onClick={() => setEditTarget(selectedShares[0])}
+							>
+								<Icon name="PencilSimple" className="mr-1 h-3.5 w-3.5" />
+								{t("core:edit")}
+							</Button>
+						)}
+						<Button
+							size="sm"
+							variant="destructive"
+							onClick={() => setDeleteTargets(selectedShares)}
+						>
+							<Icon name="Trash" className="mr-1 h-3.5 w-3.5" />
+							{t("share:my_shares_batch_delete")}
+						</Button>
+					</div>
+					<Button size="sm" variant="ghost" onClick={clearSelection}>
+						<Icon name="X" className="h-3.5 w-3.5" />
+					</Button>
+				</div>
+			)}
+
 			<ConfirmDialog
-				open={deleteTarget !== null}
+				open={deleteTargets !== null}
 				onOpenChange={(open) => {
-					if (!open) setDeleteTarget(null);
+					if (!open) setDeleteTargets(null);
 				}}
-				title={t("share:my_shares_delete_title", {
-					name: deleteTarget?.resource_name ?? "",
-				})}
-				description={t("share:my_shares_delete_desc")}
+				title={
+					singleDeleteTarget
+						? t("share:my_shares_delete_title", {
+								name: singleDeleteTarget.resource_name,
+							})
+						: t("share:my_shares_batch_delete_title", {
+								count: deleteTargets?.length ?? 0,
+							})
+				}
+				description={
+					singleDeleteTarget
+						? t("share:my_shares_delete_desc")
+						: t("share:my_shares_batch_delete_desc")
+				}
 				confirmLabel={t("delete")}
 				onConfirm={() => void handleDelete()}
 				variant="destructive"
+			/>
+
+			<EditShareDialog
+				open={editTarget !== null}
+				onOpenChange={(open) => {
+					if (!open) setEditTarget(null);
+				}}
+				share={editTarget}
+				onSaved={() => reloadCurrentPage()}
 			/>
 		</AppLayout>
 	);

@@ -90,7 +90,9 @@ use utoipa::{Modify, OpenApi};
         // shares (authenticated)
         crate::api::routes::shares::create_share,
         crate::api::routes::shares::list_shares,
+        crate::api::routes::shares::update_share,
         crate::api::routes::shares::delete_share,
+        crate::api::routes::shares::batch_delete_shares,
         // trash
         crate::api::routes::trash::list_trash,
         crate::api::routes::trash::restore,
@@ -192,6 +194,8 @@ use utoipa::{Modify, OpenApi};
             crate::services::share_service::SharePublicOwnerInfo,
             crate::services::share_service::SharePublicInfo,
             crate::api::routes::shares::CreateShareReq,
+            crate::api::routes::shares::UpdateShareReq,
+            crate::api::routes::shares::BatchDeleteSharesReq,
             crate::api::routes::share_public::VerifyPasswordReq,
             crate::api::routes::files::InitUploadReq,
             crate::api::routes::files::CompleteUploadReq,

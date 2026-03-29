@@ -138,7 +138,9 @@ impl AsterError {
             | Self::UploadSessionNotFound(_)
             | Self::ThumbnailGenerationFailed(_) => StatusCode::NOT_FOUND,
 
-            Self::ShareExpired(_) | Self::UploadSessionExpired(_) => StatusCode::GONE,
+            Self::ShareExpired(_) => StatusCode::NOT_FOUND,
+
+            Self::UploadSessionExpired(_) => StatusCode::GONE,
 
             Self::SharePasswordRequired(_) | Self::ShareDownloadLimit(_) => StatusCode::FORBIDDEN,
 
@@ -210,8 +212,23 @@ impl actix_web::ResponseError for AsterError {
         }
 
         let error_code: crate::api::error_code::ErrorCode = self.into();
-        actix_web::HttpResponse::build(status)
-            .json(ApiResponse::<()>::error(error_code, self.message()))
+        let mut response = actix_web::HttpResponse::build(status);
+        if self.share_error_should_disable_cache() {
+            response.insert_header(("Cache-Control", "no-store, max-age=0"));
+        }
+        response.json(ApiResponse::<()>::error(error_code, self.message()))
+    }
+}
+
+impl AsterError {
+    fn share_error_should_disable_cache(&self) -> bool {
+        matches!(
+            self,
+            Self::ShareNotFound(_)
+                | Self::ShareExpired(_)
+                | Self::SharePasswordRequired(_)
+                | Self::ShareDownloadLimit(_)
+        )
     }
 }
 
@@ -272,5 +289,20 @@ mod tests {
     fn internal_error_logs_as_error() {
         let err = AsterError::internal_error("db pool poisoned");
         assert_eq!(err.response_log_level(), ResponseLogLevel::Error);
+    }
+
+    #[test]
+    fn share_expired_maps_to_not_found_and_disables_cache() {
+        let err = AsterError::share_expired("expired");
+        assert_eq!(err.http_status(), StatusCode::NOT_FOUND);
+
+        let response = actix_web::ResponseError::error_response(&err);
+        assert_eq!(
+            response
+                .headers()
+                .get("Cache-Control")
+                .and_then(|value| value.to_str().ok()),
+            Some("no-store, max-age=0")
+        );
     }
 }

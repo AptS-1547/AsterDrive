@@ -1097,6 +1097,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/shares/batch-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batch_delete_shares"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/shares/{id}": {
         parameters: {
             query?: never;
@@ -1110,7 +1126,7 @@ export interface paths {
         delete: operations["delete_share"];
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["update_share"];
         trace?: never;
     };
     "/api/v1/trash": {
@@ -1373,6 +1389,9 @@ export interface components {
         BatchDeleteReq: {
             file_ids?: number[];
             folder_ids?: number[];
+        };
+        BatchDeleteSharesReq: {
+            share_ids?: number[];
         };
         BatchItemError: {
             /** Format: int64 */
@@ -2238,6 +2257,13 @@ export interface components {
         };
         UpdateProfileReq: {
             display_name?: string | null;
+        };
+        UpdateShareReq: {
+            expires_at?: string | null;
+            /** Format: int64 */
+            max_downloads: number;
+            /** @description `None` = keep existing password, `Some(\"\")` = remove password, non-empty = replace password */
+            password?: string | null;
         };
         /**
          * @description 上传模式（不存 DB，仅 API 响应用）
@@ -6231,15 +6257,8 @@ export interface operations {
                     };
                 };
             };
-            /** @description Share not found */
+            /** @description Share not found or expired */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Share expired */
-            410: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6774,6 +6793,54 @@ export interface operations {
             };
         };
     };
+    batch_delete_shares: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchDeleteSharesReq"];
+            };
+        };
+        responses: {
+            /** @description Batch delete result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            errors: components["schemas"]["BatchItemError"][];
+                            /** Format: int32 */
+                            failed: number;
+                            /** Format: int32 */
+                            succeeded: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     delete_share: {
         parameters: {
             query?: never;
@@ -6788,6 +6855,77 @@ export interface operations {
         responses: {
             /** @description Share deleted */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_share: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateShareReq"];
+            };
+        };
+        responses: {
+            /** @description Share updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            /** Format: int64 */
+                            download_count: number;
+                            expires_at?: string | null;
+                            /** Format: int64 */
+                            file_id?: number | null;
+                            /** Format: int64 */
+                            folder_id?: number | null;
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: int64 */
+                            max_downloads: number;
+                            token: string;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                            /** Format: int64 */
+                            view_count: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

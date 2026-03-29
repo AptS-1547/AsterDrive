@@ -10,7 +10,7 @@ use crate::db::repository::{file_repo, folder_repo, share_repo, user_profile_rep
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::{file_service, folder_service, profile_service};
+use crate::services::{batch_service, file_service, folder_service, profile_service};
 use crate::types::EntityType;
 use crate::utils::{hash, id};
 
@@ -69,6 +69,15 @@ pub struct SharePublicInfo {
     pub shared_by: SharePublicOwnerInfo,
 }
 
+fn validate_max_downloads(max_downloads: i64) -> Result<()> {
+    if max_downloads < 0 {
+        return Err(AsterError::validation_error(
+            "max_downloads cannot be negative",
+        ));
+    }
+    Ok(())
+}
+
 pub async fn create_share(
     state: &AppState,
     user_id: i64,
@@ -79,6 +88,8 @@ pub async fn create_share(
     max_downloads: i64,
 ) -> Result<share::Model> {
     let db = &state.db;
+
+    validate_max_downloads(max_downloads)?;
 
     // 至少一个不为空
     if file_id.is_none() && folder_id.is_none() {
@@ -379,6 +390,79 @@ pub async fn delete_share(state: &AppState, share_id: i64, user_id: i64) -> Resu
     let share = share_repo::find_by_id(&state.db, share_id).await?;
     crate::utils::verify_owner(share.user_id, user_id, "share")?;
     share_repo::delete(&state.db, share_id).await
+}
+
+pub async fn update_share(
+    state: &AppState,
+    share_id: i64,
+    user_id: i64,
+    password: Option<String>,
+    expires_at: Option<chrono::DateTime<Utc>>,
+    max_downloads: i64,
+) -> Result<share::Model> {
+    validate_max_downloads(max_downloads)?;
+
+    let existing = share_repo::find_by_id(&state.db, share_id).await?;
+    crate::utils::verify_owner(existing.user_id, user_id, "share")?;
+
+    let mut active: share::ActiveModel = existing.into();
+
+    if let Some(password) = password {
+        active.password = if password.is_empty() {
+            Set(None)
+        } else {
+            Set(Some(hash::hash_password(&password)?))
+        };
+    }
+
+    active.expires_at = Set(expires_at);
+    active.max_downloads = Set(max_downloads);
+    active.updated_at = Set(Utc::now());
+
+    share_repo::update(&state.db, active).await
+}
+
+pub fn validate_batch_share_ids(share_ids: &[i64]) -> Result<()> {
+    if share_ids.is_empty() {
+        return Err(AsterError::validation_error(
+            "at least one share ID is required",
+        ));
+    }
+    if share_ids.len() > batch_service::MAX_BATCH_ITEMS {
+        return Err(AsterError::validation_error(format!(
+            "batch size cannot exceed {} items",
+            batch_service::MAX_BATCH_ITEMS
+        )));
+    }
+    Ok(())
+}
+
+pub async fn batch_delete_shares(
+    state: &AppState,
+    user_id: i64,
+    share_ids: &[i64],
+) -> Result<batch_service::BatchResult> {
+    let mut result = batch_service::BatchResult {
+        succeeded: 0,
+        failed: 0,
+        errors: vec![],
+    };
+
+    for &id in share_ids {
+        match delete_share(state, id, user_id).await {
+            Ok(()) => result.succeeded += 1,
+            Err(e) => {
+                result.failed += 1;
+                result.errors.push(batch_service::BatchItemError {
+                    entity_type: "share".to_string(),
+                    entity_id: id,
+                    error: e.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 pub async fn list_all(state: &AppState) -> Result<Vec<share::Model>> {

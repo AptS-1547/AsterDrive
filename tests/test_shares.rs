@@ -102,7 +102,99 @@ async fn test_shares_crud() {
         .uri(&format!("/api/v1/s/{share_token}"))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status() == 404 || resp.status() == 410);
+    assert_eq!(resp.status(), 404);
+}
+
+#[actix_web::test]
+async fn test_share_update_replaces_password_and_limits_without_changing_token() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_id": file_id,
+            "password": "secret123",
+            "max_downloads": 5
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_id = body["data"]["id"].as_i64().unwrap();
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/shares/{share_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "password": "new-secret",
+            "expires_at": "2026-04-02T12:00:00Z",
+            "max_downloads": 2
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["id"], share_id);
+    assert_eq!(body["data"]["token"], share_token);
+    assert!(body["data"].get("password").is_none());
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["items"][0]["token"], share_token);
+    assert_eq!(body["data"]["items"][0]["has_password"], true);
+    assert_eq!(body["data"]["items"][0]["max_downloads"], 2);
+    assert_eq!(
+        body["data"]["items"][0]["expires_at"],
+        "2026-04-02T12:00:00Z"
+    );
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/verify"))
+        .set_json(serde_json::json!({ "password": "secret123" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 401 || resp.status() == 403);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/verify"))
+        .set_json(serde_json::json!({ "password": "new-secret" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/shares/{share_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "password": "",
+            "expires_at": null,
+            "max_downloads": 0
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["items"][0]["has_password"], false);
+    assert_eq!(body["data"]["items"][0]["expires_at"], Value::Null);
+    assert_eq!(body["data"]["items"][0]["max_downloads"], 0);
 }
 
 #[actix_web::test]
@@ -194,6 +286,68 @@ async fn test_duplicate_active_share_rejected() {
 }
 
 #[actix_web::test]
+async fn test_share_batch_delete_removes_multiple_shares() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let file_one = upload_test_file_named!(app, token, "share-one.txt");
+    let file_two = upload_test_file_named!(app, token, "share-two.txt");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": file_one }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_one_id = body["data"]["id"].as_i64().unwrap();
+    let share_one_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": file_two }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_two_id = body["data"]["id"].as_i64().unwrap();
+    let share_two_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares/batch-delete")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "share_ids": [share_one_id, share_two_id]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["succeeded"], 2);
+    assert_eq!(body["data"]["failed"], 0);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 0);
+
+    for share_token in [share_one_token, share_two_token] {
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/s/{share_token}"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+    }
+}
+
+#[actix_web::test]
 async fn test_share_download_limit() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -221,16 +375,12 @@ async fn test_share_download_limit() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    // 第二次下载应被拒绝（403 或 410）
+    // 第二次下载应被拒绝（403）
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/s/{share_token}/download"))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert!(
-        resp.status() == 403 || resp.status() == 410,
-        "download limit should block, got {}",
-        resp.status()
-    );
+    assert_eq!(resp.status(), 403, "download limit should block");
 
     let req = test::TestRequest::get()
         .uri("/api/v1/shares")
@@ -454,7 +604,17 @@ async fn test_expired_share_public_endpoints_rejected() {
     ] {
         let req = test::TestRequest::get().uri(&path).to_request();
         let resp = test::call_service(&app, req).await;
-        assert!(resp.status() == 403 || resp.status() == 410 || resp.status() == 404);
+        assert!(
+            resp.status() == 403 || resp.status() == 404,
+            "expired share path {path} should be rejected without 410, got {}",
+            resp.status()
+        );
+        assert_eq!(
+            resp.headers()
+                .get("Cache-Control")
+                .and_then(|value| value.to_str().ok()),
+            Some("no-store, max-age=0")
+        );
     }
 
     let req = test::TestRequest::post()
@@ -462,7 +622,17 @@ async fn test_expired_share_public_endpoints_rejected() {
         .set_json(serde_json::json!({ "password": "secret123" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status() == 403 || resp.status() == 410 || resp.status() == 404);
+    assert!(
+        resp.status() == 403 || resp.status() == 404,
+        "expired share verify should be rejected without 410, got {}",
+        resp.status()
+    );
+    assert_eq!(
+        resp.headers()
+            .get("Cache-Control")
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store, max-age=0")
+    );
 }
 
 #[actix_web::test]

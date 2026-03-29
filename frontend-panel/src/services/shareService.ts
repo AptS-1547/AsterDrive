@@ -1,5 +1,6 @@
 import { config } from "@/config/app";
 import type {
+	BatchResult,
 	FolderContents,
 	ShareInfo,
 	SharePage,
@@ -20,7 +21,21 @@ export const shareService = {
 	listMine: (params?: { limit?: number; offset?: number }) =>
 		api.get<SharePage>("/shares", { params }),
 
+	update: (
+		id: number,
+		data: {
+			password?: string;
+			expires_at: string | null;
+			max_downloads: number;
+		},
+	) => api.patch<ShareInfo>(`/shares/${id}`, data),
+
 	delete: (id: number) => api.delete<void>(`/shares/${id}`),
+
+	batchDelete: (shareIds: number[]) =>
+		api.post<BatchResult>("/shares/batch-delete", {
+			share_ids: shareIds,
+		}),
 
 	getInfo: (token: string) => api.get<SharePublicInfo>(`/s/${token}`),
 
