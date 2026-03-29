@@ -3,6 +3,19 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { StoragePolicyDialog } from "@/components/admin/StoragePolicyDialog";
+import {
+	buildPolicyOptions,
+	buildPolicyTestPayload,
+	emptyForm,
+	getEffectiveS3UploadStrategy,
+	getEndpointValidationMessage,
+	getS3ConnectionTestKey,
+	hasConnectionFieldChanges,
+	normalizePolicyForm,
+	type PolicyFormData,
+	parsePolicyOptions,
+} from "@/components/admin/storagePolicyDialogShared";
 import { AdminTableList } from "@/components/common/AdminTableList";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -10,17 +23,7 @@ import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
 	Select,
 	SelectContent,
@@ -28,7 +31,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import {
 	TableCell,
 	TableHead,
@@ -49,206 +51,11 @@ import {
 	ADMIN_ICON_BUTTON_CLASS,
 	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
 } from "@/lib/constants";
-import {
-	isPublicR2DevUrl,
-	normalizeS3ConnectionFields,
-} from "@/lib/s3Endpoint";
 import { adminPolicyService } from "@/services/adminService";
 import type { DriverType, StoragePolicy } from "@/types/api";
 
-type S3UploadStrategy = "proxy_tempfile" | "relay_stream" | "presigned";
 const POLICY_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
-
-interface PolicyFormData {
-	name: string;
-	driver_type: DriverType;
-	endpoint: string;
-	bucket: string;
-	access_key: string;
-	secret_key: string;
-	base_path: string;
-	max_file_size: string;
-	chunk_size: string;
-	is_default: boolean;
-	s3_upload_strategy: S3UploadStrategy;
-}
-
-interface PolicyOptions {
-	presigned_upload?: boolean;
-	s3_upload_strategy?: S3UploadStrategy;
-}
-
-function isS3UploadStrategy(value: unknown): value is S3UploadStrategy {
-	return (
-		value === "proxy_tempfile" ||
-		value === "relay_stream" ||
-		value === "presigned"
-	);
-}
-
-function parsePolicyOptions(options: string): PolicyOptions {
-	try {
-		const parsed = JSON.parse(options) as {
-			presigned_upload?: unknown;
-			s3_upload_strategy?: unknown;
-		};
-		return {
-			presigned_upload:
-				typeof parsed.presigned_upload === "boolean"
-					? parsed.presigned_upload
-					: undefined,
-			s3_upload_strategy: isS3UploadStrategy(parsed.s3_upload_strategy)
-				? parsed.s3_upload_strategy
-				: undefined,
-		};
-	} catch {
-		return {};
-	}
-}
-
-function getEffectiveS3UploadStrategy(
-	options: PolicyOptions,
-): S3UploadStrategy {
-	if (options.s3_upload_strategy) {
-		return options.s3_upload_strategy;
-	}
-	return options.presigned_upload ? "presigned" : "proxy_tempfile";
-}
-
-function buildPolicyOptions(form: PolicyFormData): string {
-	if (form.driver_type !== "s3") {
-		return JSON.stringify({});
-	}
-
-	return JSON.stringify({
-		s3_upload_strategy: form.s3_upload_strategy,
-	});
-}
-
-function normalizePolicyForm(form: PolicyFormData): PolicyFormData {
-	if (form.driver_type !== "s3") {
-		return form;
-	}
-
-	const normalized = normalizeS3ConnectionFields(form.endpoint, form.bucket);
-	if (
-		normalized.endpoint === form.endpoint &&
-		normalized.bucket === form.bucket
-	) {
-		return form;
-	}
-
-	return {
-		...form,
-		endpoint: normalized.endpoint,
-		bucket: normalized.bucket,
-	};
-}
-
-function buildPolicyTestPayload(form: PolicyFormData) {
-	const normalizedForm = normalizePolicyForm(form);
-
-	return {
-		driver_type: normalizedForm.driver_type,
-		endpoint: normalizedForm.endpoint || undefined,
-		bucket: normalizedForm.bucket || undefined,
-		access_key: normalizedForm.access_key || undefined,
-		secret_key: normalizedForm.secret_key || undefined,
-		base_path: normalizedForm.base_path || undefined,
-	};
-}
-
-function hasConnectionFieldChanges(
-	form: PolicyFormData,
-	editingPolicy: StoragePolicy | null,
-) {
-	const normalizedForm = normalizePolicyForm(form);
-
-	if (!editingPolicy) {
-		return true;
-	}
-
-	if (normalizedForm.driver_type === "s3") {
-		return (
-			normalizedForm.endpoint !== editingPolicy.endpoint ||
-			normalizedForm.bucket !== editingPolicy.bucket ||
-			normalizedForm.base_path !== editingPolicy.base_path ||
-			normalizedForm.access_key !== "" ||
-			normalizedForm.secret_key !== ""
-		);
-	}
-
-	return normalizedForm.base_path !== editingPolicy.base_path;
-}
-
-function getS3ConnectionTestKey(form: PolicyFormData) {
-	const normalizedForm = normalizePolicyForm(form);
-
-	return JSON.stringify({
-		driver_type: normalizedForm.driver_type,
-		endpoint: normalizedForm.endpoint,
-		bucket: normalizedForm.bucket,
-		access_key: normalizedForm.access_key,
-		secret_key: normalizedForm.secret_key,
-		base_path: normalizedForm.base_path,
-	});
-}
-
-const emptyForm: PolicyFormData = {
-	name: "",
-	driver_type: "local",
-	endpoint: "",
-	bucket: "",
-	access_key: "",
-	secret_key: "",
-	base_path: "",
-	max_file_size: "",
-	chunk_size: "5",
-	is_default: false,
-	s3_upload_strategy: "proxy_tempfile",
-};
-
-function TestConnectionButton({
-	onTest,
-	disabled = false,
-}: {
-	onTest: () => Promise<boolean>;
-	disabled?: boolean;
-}) {
-	const { t } = useTranslation("admin");
-	const [testing, setTesting] = useState(false);
-	const [result, setResult] = useState<boolean | null>(null);
-
-	const handleTest = async () => {
-		setTesting(true);
-		setResult(null);
-		const passed = await onTest();
-		setResult(passed);
-		setTesting(false);
-	};
-
-	return (
-		<Button
-			type="button"
-			variant="outline"
-			className={ADMIN_CONTROL_HEIGHT_CLASS}
-			disabled={testing || disabled}
-			onClick={handleTest}
-		>
-			{testing ? (
-				<Icon name="Spinner" className="h-4 w-4 mr-1 animate-spin" />
-			) : result === true ? (
-				<Icon
-					name="Check"
-					className="h-4 w-4 mr-1 text-green-600 dark:text-green-400"
-				/>
-			) : (
-				<Icon name="WifiHigh" className="h-4 w-4 mr-1" />
-			)}
-			{t("test_connection")}
-		</Button>
-	);
-}
+const CREATE_LAST_STEP = 2;
 
 export default function AdminPoliciesPage() {
 	const { t } = useTranslation("admin");
@@ -286,10 +93,9 @@ export default function AdminPoliciesPage() {
 	const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [validatedS3Key, setValidatedS3Key] = useState<string | null>(null);
-	const endpointValidationMessage =
-		form.driver_type === "s3" && isPublicR2DevUrl(form.endpoint)
-			? t("s3_endpoint_public_r2_dev_error")
-			: null;
+	const [createStep, setCreateStep] = useState(0);
+	const [createStepTouched, setCreateStepTouched] = useState(false);
+	const endpointValidationMessage = getEndpointValidationMessage(form, t);
 	const totalPages = Math.max(1, Math.ceil(total / pageSize));
 	const currentPage = Math.floor(offset / pageSize) + 1;
 	const prevPageDisabled = offset === 0;
@@ -329,36 +135,42 @@ export default function AdminPoliciesPage() {
 		dialogProps,
 	} = useConfirmDialog(handleDelete);
 
+	const resetDialogState = () => {
+		setSaveConfirmOpen(false);
+		setValidatedS3Key(null);
+		setCreateStep(0);
+		setCreateStepTouched(false);
+	};
+
 	const openCreate = () => {
 		setEditingId(null);
 		setEditingPolicy(null);
-		setValidatedS3Key(null);
-		setSaveConfirmOpen(false);
+		resetDialogState();
 		setForm(emptyForm);
 		setDialogOpen(true);
 	};
 
-	const openEdit = (p: StoragePolicy) => {
-		setEditingId(p.id);
-		setEditingPolicy(p);
-		setValidatedS3Key(null);
-		setSaveConfirmOpen(false);
-		const opts = parsePolicyOptions(p.options);
+	const openEdit = (policy: StoragePolicy) => {
+		setEditingId(policy.id);
+		setEditingPolicy(policy);
+		resetDialogState();
+		const options = parsePolicyOptions(policy.options);
 		setForm({
-			name: p.name,
-			driver_type: p.driver_type,
-			endpoint: p.endpoint,
-			bucket: p.bucket,
+			name: policy.name,
+			driver_type: policy.driver_type,
+			endpoint: policy.endpoint,
+			bucket: policy.bucket,
 			access_key: "",
 			secret_key: "",
-			base_path: p.base_path,
-			max_file_size: p.max_file_size != null ? String(p.max_file_size) : "",
+			base_path: policy.base_path,
+			max_file_size:
+				policy.max_file_size != null ? String(policy.max_file_size) : "",
 			chunk_size:
-				p.chunk_size != null
-					? String(Math.round(p.chunk_size / 1024 / 1024))
+				policy.chunk_size != null
+					? String(Math.round(policy.chunk_size / 1024 / 1024))
 					: "5",
-			is_default: p.is_default,
-			s3_upload_strategy: getEffectiveS3UploadStrategy(opts),
+			is_default: policy.is_default,
+			s3_upload_strategy: getEffectiveS3UploadStrategy(options),
 		});
 		setDialogOpen(true);
 	};
@@ -366,9 +178,39 @@ export default function AdminPoliciesPage() {
 	const handleDialogOpenChange = (open: boolean) => {
 		setDialogOpen(open);
 		if (!open) {
-			setSaveConfirmOpen(false);
-			setValidatedS3Key(null);
+			resetDialogState();
 		}
+	};
+
+	const setField = <K extends keyof PolicyFormData>(
+		key: K,
+		value: PolicyFormData[K],
+	) => setForm((prev) => ({ ...prev, [key]: value }));
+
+	const setDriverType = (driverType: DriverType) => {
+		setValidatedS3Key(null);
+		setCreateStepTouched(false);
+		setForm((prev) =>
+			driverType === "s3"
+				? { ...prev, driver_type: driverType }
+				: {
+						...prev,
+						driver_type: driverType,
+						endpoint: "",
+						bucket: "",
+						access_key: "",
+						secret_key: "",
+						s3_upload_strategy: "proxy_tempfile",
+					},
+		);
+	};
+
+	const syncNormalizedS3Form = () => {
+		const normalizedForm = normalizePolicyForm(form);
+		if (normalizedForm !== form) {
+			setForm(normalizedForm);
+		}
+		return normalizedForm;
 	};
 
 	const runConnectionTest = async ({
@@ -427,16 +269,15 @@ export default function AdminPoliciesPage() {
 					is_default: currentForm.is_default,
 					options,
 				};
-				// Only send credentials if user typed new values
 				if (currentForm.access_key) payload.access_key = currentForm.access_key;
 				if (currentForm.secret_key) payload.secret_key = currentForm.secret_key;
 				const updated = await adminPolicyService.update(editingId, payload);
 				setPolicies((prev) =>
-					prev.map((p) => (p.id === editingId ? updated : p)),
+					prev.map((policy) => (policy.id === editingId ? updated : policy)),
 				);
 				toast.success(t("policy_updated"));
 			} else {
-				const payload = {
+				await adminPolicyService.create({
 					name: currentForm.name,
 					driver_type: currentForm.driver_type,
 					endpoint: currentForm.endpoint,
@@ -452,8 +293,7 @@ export default function AdminPoliciesPage() {
 						: 0,
 					is_default: currentForm.is_default,
 					options,
-				};
-				await adminPolicyService.create(payload);
+				});
 				const nextTotal = total + 1;
 				const nextLastOffset = Math.max(
 					0,
@@ -508,27 +348,57 @@ export default function AdminPoliciesPage() {
 		}
 	};
 
-	const handleSubmit = (e: FormEvent) => {
-		e.preventDefault();
-		void submitPolicy();
+	const handleCreateBack = () => {
+		setCreateStepTouched(false);
+		setCreateStep((prev) => Math.max(0, prev - 1));
 	};
 
-	const setField = <K extends keyof PolicyFormData>(
-		key: K,
-		value: PolicyFormData[K],
-	) => setForm((prev) => ({ ...prev, [key]: value }));
+	const handleCreateStepChange = (step: number) => {
+		setCreateStepTouched(false);
+		setCreateStep(Math.max(0, Math.min(CREATE_LAST_STEP, step)));
+	};
 
-	const syncNormalizedS3Form = () => {
-		const normalizedForm = normalizePolicyForm(form);
-		if (normalizedForm !== form) {
-			setForm(normalizedForm);
+	const handleCreateNext = () => {
+		if (createStep >= CREATE_LAST_STEP) {
+			return;
 		}
-		return normalizedForm;
+
+		if (createStep === 0) {
+			setCreateStep(1);
+			return;
+		}
+
+		setCreateStepTouched(true);
+
+		if (!form.name.trim()) {
+			return;
+		}
+
+		if (form.driver_type === "s3" && !form.bucket.trim()) {
+			return;
+		}
+
+		if (endpointValidationMessage) {
+			return;
+		}
+
+		syncNormalizedS3Form();
+		setCreateStepTouched(false);
+		setCreateStep(CREATE_LAST_STEP);
+	};
+
+	const handleSubmit = (e: FormEvent) => {
+		e.preventDefault();
+		if (editingId === null && createStep < CREATE_LAST_STEP) {
+			handleCreateNext();
+			return;
+		}
+		void submitPolicy();
 	};
 
 	const deletePolicyName =
 		deleteId !== null
-			? (policies.find((p) => p.id === deleteId)?.name ?? "")
+			? (policies.find((policy) => policy.id === deleteId)?.name ?? "")
 			: "";
 
 	return (
@@ -586,29 +456,29 @@ export default function AdminPoliciesPage() {
 							</TableRow>
 						</TableHeader>
 					}
-					renderRow={(p) => (
-						<TableRow key={p.id}>
-							<TableCell className="font-mono text-xs">{p.id}</TableCell>
-							<TableCell className="font-medium">{p.name}</TableCell>
+					renderRow={(policy) => (
+						<TableRow key={policy.id}>
+							<TableCell className="font-mono text-xs">{policy.id}</TableCell>
+							<TableCell className="font-medium">{policy.name}</TableCell>
 							<TableCell>
 								<Badge variant="outline">
-									{p.driver_type === "local" ? "Local" : "S3"}
+									{policy.driver_type === "local" ? "Local" : "S3"}
 								</Badge>
 							</TableCell>
 							<TableCell className="text-muted-foreground text-xs font-mono">
-								{p.driver_type === "local"
-									? p.base_path || "./data"
-									: p.endpoint}
+								{policy.driver_type === "local"
+									? policy.base_path || "./data"
+									: policy.endpoint}
 							</TableCell>
 							<TableCell className="text-muted-foreground text-xs">
-								{p.bucket || "-"}
+								{policy.bucket || "-"}
 							</TableCell>
 							<TableCell>
-								{p.is_default && (
+								{policy.is_default ? (
 									<Badge className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
 										{t("is_default")}
 									</Badge>
-								)}
+								) : null}
 							</TableCell>
 							<TableCell>
 								<div className="flex items-center gap-1">
@@ -616,7 +486,7 @@ export default function AdminPoliciesPage() {
 										variant="ghost"
 										size="icon"
 										className={ADMIN_ICON_BUTTON_CLASS}
-										onClick={() => openEdit(p)}
+										onClick={() => openEdit(policy)}
 									>
 										<Icon name="PencilSimple" className="h-3.5 w-3.5" />
 									</Button>
@@ -624,7 +494,7 @@ export default function AdminPoliciesPage() {
 										variant="ghost"
 										size="icon"
 										className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-										onClick={() => requestConfirm(p.id)}
+										onClick={() => requestConfirm(policy.id)}
 									>
 										<Icon name="Trash" className="h-3.5 w-3.5" />
 									</Button>
@@ -729,225 +599,24 @@ export default function AdminPoliciesPage() {
 					}}
 				/>
 
-				<Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-					<DialogContent className="sm:max-w-lg">
-						<DialogHeader>
-							<DialogTitle>
-								{editingId ? t("edit_policy") : t("create_policy")}
-							</DialogTitle>
-							<DialogDescription>{t("policies_intro")}</DialogDescription>
-						</DialogHeader>
-						<form onSubmit={handleSubmit} className="space-y-4">
-							<div className="space-y-2">
-								<Label htmlFor="name">{t("core:name")}</Label>
-								<Input
-									id="name"
-									value={form.name}
-									onChange={(e) => setField("name", e.target.value)}
-									className={ADMIN_CONTROL_HEIGHT_CLASS}
-									required
-								/>
-							</div>
-
-							{!editingId && (
-								<div className="space-y-2">
-									<Label>{t("driver_type")}</Label>
-									<Select
-										value={form.driver_type}
-										onValueChange={(v) =>
-											setField("driver_type", v as DriverType)
-										}
-									>
-										<SelectTrigger className={ADMIN_CONTROL_HEIGHT_CLASS}>
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="local">
-												{t("driver_type_local")}
-											</SelectItem>
-											<SelectItem value="s3">{t("driver_type_s3")}</SelectItem>
-										</SelectContent>
-									</Select>
-								</div>
-							)}
-
-							<div className="space-y-2">
-								<Label htmlFor="base_path">{t("base_path")}</Label>
-								<Input
-									id="base_path"
-									value={form.base_path}
-									onChange={(e) => setField("base_path", e.target.value)}
-									className={ADMIN_CONTROL_HEIGHT_CLASS}
-									placeholder={
-										form.driver_type === "local" ? "./data" : "prefix/path"
-									}
-								/>
-							</div>
-
-							{form.driver_type === "s3" && (
-								<>
-									<div className="space-y-2">
-										<Label htmlFor="endpoint">{t("endpoint")}</Label>
-										<Input
-											id="endpoint"
-											value={form.endpoint}
-											onChange={(e) => setField("endpoint", e.target.value)}
-											onBlur={syncNormalizedS3Form}
-											aria-invalid={
-												endpointValidationMessage ? true : undefined
-											}
-											className={ADMIN_CONTROL_HEIGHT_CLASS}
-											placeholder="https://s3.amazonaws.com"
-										/>
-										{endpointValidationMessage && (
-											<p className="text-xs text-destructive">
-												{endpointValidationMessage}
-											</p>
-										)}
-										<p className="text-xs text-muted-foreground">
-											{t("s3_endpoint_hint")}
-										</p>
-									</div>
-									<div className="space-y-2">
-										<Label htmlFor="bucket">{t("bucket")}</Label>
-										<Input
-											id="bucket"
-											value={form.bucket}
-											onChange={(e) => setField("bucket", e.target.value)}
-											className={ADMIN_CONTROL_HEIGHT_CLASS}
-											required
-										/>
-									</div>
-									<div className="grid grid-cols-2 gap-4">
-										<div className="space-y-2">
-											<Label htmlFor="access_key">{t("access_key")}</Label>
-											<Input
-												id="access_key"
-												value={form.access_key}
-												onChange={(e) => setField("access_key", e.target.value)}
-												className={ADMIN_CONTROL_HEIGHT_CLASS}
-											/>
-										</div>
-										<div className="space-y-2">
-											<Label htmlFor="secret_key">{t("secret_key")}</Label>
-											<Input
-												id="secret_key"
-												type="password"
-												value={form.secret_key}
-												onChange={(e) => setField("secret_key", e.target.value)}
-												className={ADMIN_CONTROL_HEIGHT_CLASS}
-											/>
-										</div>
-									</div>
-									<div className="space-y-2 pt-1">
-										<Label htmlFor="s3_upload_strategy">
-											{t("s3_upload_strategy")}
-										</Label>
-										<Select
-											value={form.s3_upload_strategy}
-											onValueChange={(value) =>
-												setField(
-													"s3_upload_strategy",
-													value as S3UploadStrategy,
-												)
-											}
-										>
-											<SelectTrigger
-												id="s3_upload_strategy"
-												className={ADMIN_CONTROL_HEIGHT_CLASS}
-											>
-												<SelectValue />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="proxy_tempfile">
-													{t("s3_upload_strategy_proxy_tempfile")}
-												</SelectItem>
-												<SelectItem value="relay_stream">
-													{t("s3_upload_strategy_relay_stream")}
-												</SelectItem>
-												<SelectItem value="presigned">
-													{t("s3_upload_strategy_presigned")}
-												</SelectItem>
-											</SelectContent>
-										</Select>
-										<p className="text-xs text-muted-foreground">
-											{t(
-												`${
-													form.s3_upload_strategy === "proxy_tempfile"
-														? "s3_upload_strategy_proxy_tempfile_desc"
-														: form.s3_upload_strategy === "relay_stream"
-															? "s3_upload_strategy_relay_stream_desc"
-															: "s3_upload_strategy_presigned_desc"
-												}`,
-											)}
-										</p>
-									</div>
-								</>
-							)}
-
-							<div className="space-y-2">
-								<Label htmlFor="max_file_size">
-									{t("max_file_size")} (bytes)
-								</Label>
-								<Input
-									id="max_file_size"
-									type="number"
-									value={form.max_file_size}
-									onChange={(e) => setField("max_file_size", e.target.value)}
-									className={ADMIN_CONTROL_HEIGHT_CLASS}
-									placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
-								/>
-							</div>
-
-							<div className="space-y-2">
-								<Label htmlFor="chunk_size">{t("chunk_size")}</Label>
-								<Input
-									id="chunk_size"
-									type="number"
-									value={form.chunk_size}
-									onChange={(e) => setField("chunk_size", e.target.value)}
-									className={ADMIN_CONTROL_HEIGHT_CLASS}
-									placeholder="5 = 5MB, 0 = single upload only"
-								/>
-								<p className="text-xs text-muted-foreground">
-									{t("chunk_size_desc")}
-								</p>
-							</div>
-
-							<div className="flex items-center gap-2">
-								<Switch
-									id="is_default"
-									checked={form.is_default}
-									onCheckedChange={(v) => setField("is_default", v)}
-								/>
-								<Label htmlFor="is_default">{t("set_as_default")}</Label>
-							</div>
-
-							<DialogFooter>
-								<Button
-									type="button"
-									variant="outline"
-									className={ADMIN_CONTROL_HEIGHT_CLASS}
-									onClick={() => handleDialogOpenChange(false)}
-									disabled={submitting}
-								>
-									{t("core:cancel")}
-								</Button>
-								<TestConnectionButton
-									onTest={() => runConnectionTest()}
-									disabled={submitting}
-								/>
-								<Button
-									type="submit"
-									className={ADMIN_CONTROL_HEIGHT_CLASS}
-									disabled={submitting}
-								>
-									{editingId ? t("save_changes") : t("core:create")}
-								</Button>
-							</DialogFooter>
-						</form>
-					</DialogContent>
-				</Dialog>
+				<StoragePolicyDialog
+					open={dialogOpen}
+					mode={editingId === null ? "create" : "edit"}
+					form={form}
+					submitting={submitting}
+					createStep={createStep}
+					createStepTouched={createStepTouched}
+					endpointValidationMessage={endpointValidationMessage}
+					onOpenChange={handleDialogOpenChange}
+					onSubmit={handleSubmit}
+					onRunConnectionTest={() => runConnectionTest()}
+					onFieldChange={setField}
+					onDriverTypeChange={setDriverType}
+					onCreateBack={handleCreateBack}
+					onCreateStepChange={handleCreateStepChange}
+					onCreateNext={handleCreateNext}
+					onSyncNormalizedS3Form={syncNormalizedS3Form}
+				/>
 			</AdminPageShell>
 		</AdminLayout>
 	);
