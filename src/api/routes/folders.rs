@@ -10,6 +10,7 @@ use crate::services::{
     auth_service::Claims,
     folder_service,
 };
+use crate::types::NullablePatch;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -197,8 +198,12 @@ pub async fn delete_folder(
 #[derive(Deserialize, ToSchema)]
 pub struct PatchFolderReq {
     pub name: Option<String>,
-    pub parent_id: Option<i64>,
-    pub policy_id: Option<i64>,
+    #[serde(default)]
+    #[schema(value_type = Option<i64>)]
+    pub parent_id: NullablePatch<i64>,
+    #[serde(default)]
+    #[schema(value_type = Option<i64>)]
+    pub policy_id: NullablePatch<i64>,
 }
 
 #[utoipa::path(
@@ -232,7 +237,7 @@ pub async fn patch_folder(
     )
     .await?;
     let ctx = AuditContext::from_request(&req, &claims);
-    let action = if body.parent_id.is_some() {
+    let action = if body.parent_id.is_present() {
         audit_service::AuditAction::FolderMove
     } else {
         audit_service::AuditAction::FolderRename

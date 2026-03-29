@@ -646,8 +646,8 @@ async fn test_folder_service_cycle_detection() {
         a.id,
         user.id,
         None,
-        Some(b.id),
-        None,
+        aster_drive::types::NullablePatch::Value(b.id),
+        aster_drive::types::NullablePatch::Absent,
     )
     .await;
     assert!(err.is_err());
@@ -661,8 +661,8 @@ async fn test_folder_service_cycle_detection() {
         b.id,
         user.id,
         None,
-        Some(c.id),
-        None,
+        aster_drive::types::NullablePatch::Value(c.id),
+        aster_drive::types::NullablePatch::Absent,
     )
     .await;
     assert!(result.is_ok());

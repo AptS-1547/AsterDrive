@@ -13,6 +13,11 @@
 | `POST` | `/auth/refresh` | 使用 refresh Cookie 换新的 access token |
 | `POST` | `/auth/logout` | 清除认证 Cookie |
 | `GET` | `/auth/me` | 读取当前登录用户信息 |
+| `PATCH` | `/auth/preferences` | 更新当前用户偏好设置 |
+| `PATCH` | `/auth/profile` | 更新当前用户资料 |
+| `POST` | `/auth/profile/avatar/upload` | 上传头像图片 |
+| `PUT` | `/auth/profile/avatar/source` | 切换头像来源 |
+| `GET` | `/auth/profile/avatar/{size}` | 读取当前用户头像 |
 
 ## 初始化与注册
 
@@ -53,6 +58,21 @@
 - `GET /auth/me`：既支持 Cookie，也支持 `Authorization: Bearer <jwt>`
 
 如果用户状态是 `disabled`，登录会直接失败。
+
+## 当前用户资料与偏好
+
+- `PATCH /auth/preferences`：只会合并请求体里非 `null` 的字段，并返回完整的最新偏好对象
+- `PATCH /auth/profile`：当前只支持修改 `display_name`
+
+## 头像
+
+头像相关接口都需要登录：
+
+- `POST /auth/profile/avatar/upload`：`multipart/form-data` 上传图片，后端会生成 WebP 头像资源
+- `PUT /auth/profile/avatar/source`：在 `none`、`gravatar`、`upload` 之间切换来源
+- `GET /auth/profile/avatar/{size}`：读取当前用户头像，当前支持 `512` 和 `1024`
+
+公开分享页和管理员接口会复用同一套头像资源，但读取路径不同。
 
 ## 限流
 

@@ -16,7 +16,7 @@ use crate::config::Config;
 use crate::db::repository::{file_repo, folder_repo, policy_repo, property_repo, user_repo};
 use crate::services::{file_service, folder_service, webdav_service};
 use crate::storage::DriverRegistry;
-use crate::types::EntityType;
+use crate::types::{EntityType, NullablePatch};
 use crate::webdav::dir_entry::AsterDavDirEntry;
 use crate::webdav::file::AsterDavFile;
 use crate::webdav::metadata::AsterDavMeta;
@@ -356,7 +356,7 @@ impl DavFileSystem for AsterDavFs {
                         f.id,
                         self.user_id,
                         Some(dest_name),
-                        dest_parent_id,
+                        dest_parent_id.into(),
                     )
                     .await
                     .map_err(to_fs_error)?;
@@ -367,8 +367,8 @@ impl DavFileSystem for AsterDavFs {
                         f.id,
                         self.user_id,
                         Some(dest_name),
-                        dest_parent_id,
-                        None,
+                        dest_parent_id.into(),
+                        NullablePatch::Absent,
                     )
                     .await
                     .map_err(to_fs_error)?;

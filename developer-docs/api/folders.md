@@ -9,6 +9,7 @@
 | `GET` | `/folders` | 列出根目录内容 |
 | `POST` | `/folders` | 创建文件夹 |
 | `GET` | `/folders/{id}` | 列出指定文件夹内容 |
+| `GET` | `/folders/{id}/ancestors` | 读取面包屑祖先链 |
 | `PATCH` | `/folders/{id}` | 重命名、移动、设置策略 |
 | `DELETE` | `/folders/{id}` | 软删除文件夹 |
 | `POST` | `/folders/{id}/lock` | 简化锁定 / 解锁 |
@@ -18,8 +19,18 @@
 
 - `GET /folders`：读取根目录内容
 - `GET /folders/{id}`：读取指定目录内容
+- `GET /folders/{id}/ancestors`：返回当前目录的祖先链，供前端面包屑使用
 
 目录列表会过滤一批常见系统垃圾文件名，例如 `._*`、`~$*`、`.DS_Store`。
+
+`GET /folders` 和 `GET /folders/{id}` 还支持当前实现的分页 / 排序参数：
+
+- `folder_limit` / `folder_offset`
+- `file_limit`
+- `sort_by` / `sort_order`
+- `file_after_value` / `file_after_id`
+
+也就是说，文件夹列表是 offset 分页，文件列表是 cursor 分页。
 
 ## 创建与修改
 
@@ -39,6 +50,8 @@
 - 重命名
 - 移动到其他父目录
 - 设置目录级存储策略覆盖
+- `parent_id = null` 时移回根目录
+- `policy_id = null` 时清除目录级策略覆盖
 
 同时会做这些校验：
 
@@ -46,20 +59,10 @@
 - 目标位置同名会报错
 - 被锁定文件夹不能修改
 
-当前限制：
-
-- `parent_id = null` 还不能表达“移回根目录”
-- `policy_id = null` 也不能表达“清除策略覆盖”
-
 ## 删除、锁和复制
 
 - `DELETE /folders/{id}`：软删除，会递归进入回收站
 - `POST /folders/{id}/lock`：`locked = true` 加锁，`locked = false` 解锁
 - `POST /folders/{id}/copy`：递归复制目录树，成功返回 `201`
 
-复制时底层文件内容不会物理复制，只增加 Blob 引用计数；目标位置同名会自动生成副本名。
-
-当前复制限制：
-
-- `parent_id = null` 不能表达“复制到根目录”
-- 新目录树不会继承源目录上的 `policy_id`
+复制时底层文件内容不会物理复制，只增加 Blob 引用计数；目标位置同名会自动生成副本名。`parent_id = null` 表示复制到根目录，新目录树会保留源目录上的 `policy_id`。

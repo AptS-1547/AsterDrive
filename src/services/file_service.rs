@@ -11,6 +11,7 @@ use crate::entities::{file, file_blob, user_storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::thumbnail_service;
+use crate::types::NullablePatch;
 
 const HASH_BUF_SIZE: usize = 65536; // 64KB
 
@@ -569,7 +570,7 @@ pub async fn update(
     id: i64,
     user_id: i64,
     name: Option<String>,
-    folder_id: Option<i64>,
+    folder_id: NullablePatch<i64>,
 ) -> Result<file::Model> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
@@ -579,8 +580,12 @@ pub async fn update(
     }
 
     // 目标文件夹校验
-    let target_folder = folder_id.or(f.folder_id);
-    if let Some(fid) = folder_id {
+    let target_folder = match folder_id {
+        NullablePatch::Absent => f.folder_id,
+        NullablePatch::Null => None,
+        NullablePatch::Value(fid) => Some(fid),
+    };
+    if let NullablePatch::Value(fid) = folder_id {
         let target = crate::db::repository::folder_repo::find_by_id(db, fid).await?;
         crate::utils::verify_owner(target.user_id, user_id, "folder")?;
     }
@@ -606,8 +611,10 @@ pub async fn update(
     if let Some(n) = name {
         active.name = Set(n);
     }
-    if let Some(fid) = folder_id {
-        active.folder_id = Set(Some(fid));
+    match folder_id {
+        NullablePatch::Absent => {}
+        NullablePatch::Null => active.folder_id = Set(None),
+        NullablePatch::Value(fid) => active.folder_id = Set(Some(fid)),
     }
     active.updated_at = Set(Utc::now());
     active.update(db).await.map_err(AsterError::from)
@@ -615,8 +622,9 @@ pub async fn update(
 
 /// 移动文件到指定文件夹（None = 根目录）
 ///
-/// 与 `update()` 的区别：`update()` 的 `folder_id: Option<i64>` 中 `None` 表示"不变"，
-/// 而本函数的 `target_folder_id: None` 明确表示"移到根目录"。
+/// 与 `update()` 的区别：`update()` 用 `NullablePatch<i64>` 区分
+/// “未传字段”和“显式传 null”，而本函数的 `target_folder_id: None`
+/// 明确表示“移到根目录”。
 pub async fn move_file(
     state: &AppState,
     id: i64,

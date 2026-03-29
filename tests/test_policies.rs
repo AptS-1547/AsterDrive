@@ -734,6 +734,66 @@ async fn test_policy_delete_clears_folder_policy_reference() {
 }
 
 #[actix_web::test]
+async fn test_folder_patch_can_clear_policy_with_null() {
+    use aster_drive::db::repository::folder_repo;
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Nullable Folder Override Policy",
+            "driver_type": "local",
+            "base_path": "/tmp/test-nullable-folder-override-policy",
+            "max_file_size": 0,
+            "is_default": false
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "nullable-override-folder" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/folders/{folder_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "policy_id": policy_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let folder = folder_repo::find_by_id(&db, folder_id).await.unwrap();
+    assert_eq!(folder.policy_id, Some(policy_id));
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/folders/{folder_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "policy_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"]["policy_id"].is_null());
+
+    let folder = folder_repo::find_by_id(&db, folder_id).await.unwrap();
+    assert_eq!(folder.policy_id, None);
+}
+
+#[actix_web::test]
 async fn test_policy_connection_endpoints_for_local_driver() {
     let state = common::setup().await;
     let app = create_test_app!(state);

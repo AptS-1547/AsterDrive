@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `GET` / `HEAD` | `/health` | 存活检查 |
 | `GET` / `HEAD` | `/health/ready` | 就绪检查，包含数据库连通性 |
-| `GET` | `/health/memory` | 堆内存统计 |
+| `GET` | `/health/memory` | 堆内存统计，仅 `debug` 构建注册 |
 | `GET` | `/health/metrics` | Prometheus 指标，仅 `metrics` feature 启用时存在 |
 
 ## `GET /health`
@@ -42,6 +42,8 @@
 - 用 `/health/ready` 做 readiness / 上线前探针
 
 ## `GET /health/memory`
+
+只有 `debug_assertions` 构建会注册这个接口。
 
 返回当前堆分配量与峰值，单位是 MB 字符串。
 

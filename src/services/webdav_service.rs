@@ -122,6 +122,7 @@ pub fn recursive_copy_folder<'a>(
     Box::pin(async move {
         let db = &state.db;
         let now = Utc::now();
+        let src_folder = folder_repo::find_by_id(db, src_folder_id).await?;
 
         // 创建目标文件夹
         let new_folder = folder_repo::create(
@@ -130,7 +131,7 @@ pub fn recursive_copy_folder<'a>(
                 name: Set(dest_name.to_string()),
                 parent_id: Set(dest_parent_id),
                 user_id: Set(user_id),
-                policy_id: Set(None),
+                policy_id: Set(src_folder.policy_id),
                 created_at: Set(now),
                 updated_at: Set(now),
                 ..Default::default()

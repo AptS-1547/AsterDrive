@@ -8,6 +8,7 @@ use crate::db::repository::{file_repo, folder_repo, share_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
+use crate::types::NullablePatch;
 
 #[derive(Serialize, ToSchema)]
 pub struct FolderAncestorItem {
@@ -440,8 +441,8 @@ pub async fn update(
     id: i64,
     user_id: i64,
     name: Option<String>,
-    parent_id: Option<i64>,
-    policy_id: Option<i64>,
+    parent_id: NullablePatch<i64>,
+    policy_id: NullablePatch<i64>,
 ) -> Result<folder::Model> {
     let db = &state.db;
     let f = folder_repo::find_by_id(db, id).await?;
@@ -451,7 +452,7 @@ pub async fn update(
     }
 
     // 目标父文件夹校验
-    if let Some(pid) = parent_id {
+    if let NullablePatch::Value(pid) = parent_id {
         // 不能移到自己
         if pid == id {
             return Err(AsterError::validation_error(
@@ -479,7 +480,11 @@ pub async fn update(
     }
 
     // 同名冲突检查
-    let target_parent = parent_id.or(f.parent_id);
+    let target_parent = match parent_id {
+        NullablePatch::Absent => f.parent_id,
+        NullablePatch::Null => None,
+        NullablePatch::Value(pid) => Some(pid),
+    };
     let final_name = name.as_deref().unwrap_or(&f.name);
     if let Some(existing) =
         folder_repo::find_by_name_in_parent(db, user_id, target_parent, final_name).await?
@@ -495,11 +500,15 @@ pub async fn update(
     if let Some(n) = name {
         active.name = Set(n);
     }
-    if let Some(pid) = parent_id {
-        active.parent_id = Set(Some(pid));
+    match parent_id {
+        NullablePatch::Absent => {}
+        NullablePatch::Null => active.parent_id = Set(None),
+        NullablePatch::Value(pid) => active.parent_id = Set(Some(pid)),
     }
-    if let Some(pid) = policy_id {
-        active.policy_id = Set(Some(pid));
+    match policy_id {
+        NullablePatch::Absent => {}
+        NullablePatch::Null => active.policy_id = Set(None),
+        NullablePatch::Value(pid) => active.policy_id = Set(Some(pid)),
     }
     active.updated_at = Set(Utc::now());
     use sea_orm::ActiveModelTrait;
@@ -508,8 +517,9 @@ pub async fn update(
 
 /// 移动文件夹到指定父文件夹（None = 根目录）
 ///
-/// 与 `update()` 的区别：`update()` 的 `parent_id: Option<i64>` 中 `None` 表示"不变"，
-/// 而本函数的 `target_parent_id: None` 明确表示"移到根目录"。
+/// 与 `update()` 的区别：`update()` 用 `NullablePatch<i64>` 区分
+/// “未传字段”和“显式传 null”，而本函数的 `target_parent_id: None`
+/// 明确表示“移到根目录”。
 pub async fn move_folder(
     state: &AppState,
     id: i64,

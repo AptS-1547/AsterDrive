@@ -69,6 +69,7 @@
 - [批量操作](/api/batch)
 - [分享](/api/shares)
 - [回收站](/api/trash)
+- [搜索](/api/search)
 - [WebDAV](/api/webdav)
 - [属性](/api/properties)
 - [管理](/api/admin)
@@ -79,6 +80,7 @@
 - 上传与版本：见 [文件](/api/files)
 - 批量删除 / 移动 / 复制：见 [批量操作](/api/batch)
 - 回收站恢复与清理：见 [回收站](/api/trash)
+- 搜索与筛选：见 [搜索](/api/search)
 - 公开分享：见 [分享](/api/shares)
 - WebDAV 协议、账号与 DeltaV：见 [WebDAV](/api/webdav)
 - 后台策略、锁、运行时配置与审计：见 [管理](/api/admin)
@@ -94,5 +96,6 @@
 
 - [认证](/api/auth)
 - [文件](/api/files)
+- [搜索](/api/search)
 - [分享](/api/shares)
 - [管理](/api/admin)

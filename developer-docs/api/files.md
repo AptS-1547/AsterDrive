@@ -7,8 +7,10 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `POST` | `/files/upload` | 普通 multipart 直传 |
+| `POST` | `/files/new` | 创建空文件 |
 | `POST` | `/files/upload/init` | 协商上传模式 |
 | `PUT` | `/files/upload/{upload_id}/{chunk_number}` | 上传单个分片 |
+| `POST` | `/files/upload/{upload_id}/presign-parts` | 为 S3 multipart 上传批量申请分片 URL |
 | `POST` | `/files/upload/{upload_id}/complete` | 组装分片或确认预签名上传 |
 | `GET` | `/files/upload/{upload_id}` | 查询上传进度 |
 | `DELETE` | `/files/upload/{upload_id}` | 取消上传 |
@@ -31,28 +33,33 @@
 - `POST /files/upload/init`：先协商模式
 - `POST /files/upload`：直接走普通 multipart 上传
 
-协商接口会返回三种模式之一：
+协商接口会返回四种模式之一：
 
 - `direct`：小文件直接上传
 - `chunked`：大文件分片上传，可断点续传
-- `presigned`：S3 直传到对象存储
+- `presigned`：S3 单次预签名 `PUT`
+- `presigned_multipart`：S3 multipart 直传，客户端需要再申请每个 part 的 URL
 
-其中 `presigned` 只会在 S3 策略且开启 `options.presigned_upload` 时出现；对象存储侧还必须配置好 CORS。
+其中两种预签名模式只会在 S3 策略且开启 `options.presigned_upload` 时出现；对象存储侧还必须配置好 CORS。
 
 ### 直传、分片和完成阶段
 
 - `POST /files/upload`：普通 multipart 上传；空文件会报错，同目录同名文件不会覆盖
+- `POST /files/new`：创建一个 0 字节空文件，适合“新建文本文件”这类前端动作
 - `PUT /files/upload/{upload_id}/{chunk_number}`：上传单个分片，`chunk_number` 从 `0` 开始
+- `POST /files/upload/{upload_id}/presign-parts`：只用于 `presigned_multipart`，请求体里传 `part_numbers`
 - `GET /files/upload/{upload_id}`：查询分片进度，也是前端断点续传依赖的接口
-- `POST /files/upload/{upload_id}/complete`：完成 `chunked` 或 `presigned` 上传
+- `POST /files/upload/{upload_id}/complete`：完成 `chunked`、`presigned` 或 `presigned_multipart` 上传
 
 无论是分片合并还是 S3 直传完成，服务端最后都会做同样几件事：校验大小和配额、计算 SHA-256、Blob 去重、创建最终文件记录。
+
+对 `presigned_multipart` 来说，`complete` 请求体需要带对象存储返回的 `parts` 列表；其他模式可以不带请求体。
 
 ## 文件操作
 
 - `GET /files/{id}`：读取文件元信息；已进回收站的文件会按“找不到”处理
 - `GET /files/{id}/download`：流式下载文件
-- `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）
+- `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
 - `PATCH /files/{id}`：改名或移动
 - `DELETE /files/{id}`：软删除到回收站
@@ -74,10 +81,10 @@
 
 - 改名
 - 移动到其他文件夹
+- `folder_id = null` 时移回根目录
 
 当前限制：
 
-- `folder_id` 传 `null` 与“不传”在后端等价，因此现有接口无法把文件移动回根目录
 - 目标位置同名冲突会报错
 - 被锁定文件不能修改
 
@@ -97,7 +104,7 @@
 
 ### `POST /files/{id}/copy`
 
-复制文件不会物理复制 Blob，只增加引用计数；目标目录同名时会自动生成副本名。当前 `folder_id = null` 仍不能表达“复制到根目录”。
+复制文件不会物理复制 Blob，只增加引用计数；目标目录同名时会自动生成副本名。`folder_id = null` 表示复制到根目录。
 
 ## 版本历史
 

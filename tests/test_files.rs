@@ -201,20 +201,18 @@ async fn test_file_rename_move() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
 
-    // 再移动回根目录（patch 接口里 null 表示不变，所以这里要用 batch move 语义）
-    let req = test::TestRequest::post()
-        .uri("/api/v1/batch/move")
+    // 再通过 patch + null 移回根目录
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/files/{file_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
-            "file_ids": [file_id],
-            "folder_ids": [],
-            "target_folder_id": null
+            "folder_id": null
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["succeeded"], 1);
+    assert!(body["data"]["folder_id"].is_null());
 
     // 文件已回到根目录
     let req = test::TestRequest::get()

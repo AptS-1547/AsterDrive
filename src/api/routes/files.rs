@@ -9,6 +9,7 @@ use crate::services::{
     auth_service::Claims,
     file_service, upload_service,
 };
+use crate::types::NullablePatch;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -273,7 +274,9 @@ pub async fn delete_file(
 #[derive(Deserialize, ToSchema)]
 pub struct PatchFileReq {
     pub name: Option<String>,
-    pub folder_id: Option<i64>,
+    #[serde(default)]
+    #[schema(value_type = Option<i64>)]
+    pub folder_id: NullablePatch<i64>,
 }
 
 #[utoipa::path(
@@ -306,7 +309,7 @@ pub async fn patch_file(
     )
     .await?;
     let ctx = AuditContext::from_request(&req, &claims);
-    let action = if body.folder_id.is_some() {
+    let action = if body.folder_id.is_present() {
         audit_service::AuditAction::FileMove
     } else {
         audit_service::AuditAction::FileRename

@@ -66,12 +66,33 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/admin/users` | 列出用户 |
+| `POST` | `/admin/users` | 管理员直接创建用户 |
 | `GET` | `/admin/users/{id}` | 获取用户详情 |
 | `PATCH` | `/admin/users/{id}` | 更新角色、状态、总配额 |
+| `DELETE` | `/admin/users/{id}` | 永久删除用户及其全部数据 |
+| `GET` | `/admin/users/{id}/avatar/{size}` | 读取指定用户头像 |
 | `GET` | `/admin/users/{user_id}/policies` | 列出用户绑定的策略 |
 | `POST` | `/admin/users/{user_id}/policies` | 给用户分配策略 |
 | `PATCH` | `/admin/users/{user_id}/policies/{id}` | 更新用户策略项 |
 | `DELETE` | `/admin/users/{user_id}/policies/{id}` | 删除用户策略项 |
+
+`GET /admin/users` 现在支持：
+
+- `limit`
+- `offset`
+- `keyword`
+- `role`
+- `status`
+
+`POST /admin/users` 的请求体与普通注册类似：
+
+```json
+{
+  "username": "alice",
+  "email": "alice@example.com",
+  "password": "password"
+}
+```
 
 ### 更新用户示例
 
@@ -88,6 +109,7 @@
 - `storage_quota = 0` 表示不限
 - 当前实现禁止禁用初始管理员 `id = 1`
 - 当前实现也禁止把初始管理员 `id = 1` 降级为非管理员
+- `DELETE /admin/users/{id}` 是物理删除，不是软删除；当前也不允许删除管理员用户
 
 ### 分配用户策略示例
 
