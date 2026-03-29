@@ -8,6 +8,7 @@ mod inner {
         Encoder, Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, Opts, Registry,
         TextEncoder,
     };
+    use sea_orm::DbBackend;
     use std::sync::OnceLock;
 
     static METRICS: OnceLock<Metrics> = OnceLock::new();
@@ -18,6 +19,10 @@ mod inner {
         // HTTP 请求
         pub http_requests_total: IntCounterVec,
         pub http_request_duration_seconds: HistogramVec,
+
+        // 数据库
+        pub db_queries_total: IntCounterVec,
+        pub db_query_duration_seconds: HistogramVec,
 
         // 业务
         pub file_uploads_total: IntCounter,
@@ -45,6 +50,23 @@ mod inner {
                 .buckets(vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0]),
                 &["method"],
             )?;
+            let db_queries_total = IntCounterVec::new(
+                Opts::new(
+                    "db_queries_total",
+                    "Total database queries observed through SeaORM",
+                ),
+                &["backend", "kind", "status"],
+            )?;
+            let db_query_duration_seconds = HistogramVec::new(
+                HistogramOpts::new(
+                    "db_query_duration_seconds",
+                    "Database query duration in seconds",
+                )
+                .buckets(vec![
+                    0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0,
+                ]),
+                &["backend", "kind", "status"],
+            )?;
 
             let file_uploads_total = IntCounter::new("file_uploads_total", "Total file uploads")?;
             let file_downloads_total =
@@ -58,6 +80,8 @@ mod inner {
 
             registry.register(Box::new(http_requests_total.clone()))?;
             registry.register(Box::new(http_request_duration_seconds.clone()))?;
+            registry.register(Box::new(db_queries_total.clone()))?;
+            registry.register(Box::new(db_query_duration_seconds.clone()))?;
             registry.register(Box::new(file_uploads_total.clone()))?;
             registry.register(Box::new(file_downloads_total.clone()))?;
             registry.register(Box::new(process_memory_rss_bytes.clone()))?;
@@ -68,6 +92,8 @@ mod inner {
                 registry,
                 http_requests_total,
                 http_request_duration_seconds,
+                db_queries_total,
+                db_query_duration_seconds,
                 file_uploads_total,
                 file_downloads_total,
                 process_memory_rss_bytes,
@@ -98,6 +124,55 @@ mod inner {
         METRICS.get()
     }
 
+    fn query_kind_from_sql(sql: &str) -> &'static str {
+        let token = sql
+            .trim_start()
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_ascii_uppercase();
+
+        match token.as_str() {
+            "SELECT" => "select",
+            "INSERT" => "insert",
+            "UPDATE" => "update",
+            "DELETE" => "delete",
+            "WITH" => "with",
+            "BEGIN" | "COMMIT" | "ROLLBACK" | "SAVEPOINT" | "RELEASE" => "transaction",
+            "CREATE" | "ALTER" | "DROP" | "TRUNCATE" => "ddl",
+            "PRAGMA" => "pragma",
+            _ => "other",
+        }
+    }
+
+    fn backend_label(backend: DbBackend) -> &'static str {
+        match backend {
+            DbBackend::MySql => "mysql",
+            DbBackend::Postgres => "postgres",
+            DbBackend::Sqlite => "sqlite",
+            _ => "other",
+        }
+    }
+
+    pub fn record_db_query(info: &sea_orm::metric::Info<'_>) {
+        let Some(metrics) = get_metrics() else {
+            return;
+        };
+
+        let backend = backend_label(info.statement.db_backend);
+        let kind = query_kind_from_sql(&info.statement.sql);
+        let status = if info.failed { "error" } else { "ok" };
+
+        metrics
+            .db_queries_total
+            .with_label_values(&[backend, kind, status])
+            .inc();
+        metrics
+            .db_query_duration_seconds
+            .with_label_values(&[backend, kind, status])
+            .observe(info.elapsed.as_secs_f64());
+    }
+
     /// 后台任务：定期更新系统指标（RSS、CPU）
     pub fn spawn_system_metrics_updater() {
         use std::sync::Mutex;
@@ -125,6 +200,33 @@ mod inner {
                 }
             }
         });
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::query_kind_from_sql;
+
+        #[test]
+        fn query_kind_from_sql_classifies_common_statements() {
+            assert_eq!(query_kind_from_sql("select * from users"), "select");
+            assert_eq!(
+                query_kind_from_sql(" INSERT INTO users VALUES (?) "),
+                "insert"
+            );
+            assert_eq!(query_kind_from_sql("update users set name = ?"), "update");
+            assert_eq!(
+                query_kind_from_sql("delete from users where id = ?"),
+                "delete"
+            );
+            assert_eq!(
+                query_kind_from_sql("with cte as (select 1) select * from cte"),
+                "with"
+            );
+            assert_eq!(query_kind_from_sql("begin"), "transaction");
+            assert_eq!(query_kind_from_sql("create table x(id int)"), "ddl");
+            assert_eq!(query_kind_from_sql("pragma foreign_keys=ON"), "pragma");
+            assert_eq!(query_kind_from_sql("vacuum"), "other");
+        }
     }
 }
 

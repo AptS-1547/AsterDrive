@@ -311,7 +311,7 @@ export default function LoginPage() {
 				</div>
 				<div className="relative text-center px-12 max-w-md">
 					<img
-						src="/static/logo.svg"
+						src="/static/asterdrive/logo.svg"
 						alt="AsterDrive"
 						className="mx-auto h-20 w-auto"
 					/>
@@ -327,7 +327,7 @@ export default function LoginPage() {
 					{/* Mobile logo */}
 					<div className="lg:hidden text-center mb-8">
 						<img
-							src="/static/logo.svg"
+							src="/static/asterdrive/logo.svg"
 							alt="AsterDrive"
 							className="mx-auto h-14 w-auto"
 						/>

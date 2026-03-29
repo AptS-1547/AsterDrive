@@ -85,6 +85,7 @@ const MAX_FILE_CONCURRENT = 2;
 const CHUNK_CONCURRENT = 3;
 const CHUNK_MAX_RETRIES = 3;
 const PROGRESS_FLUSH_INTERVAL = 500;
+const RESTORE_PROGRESS_CONCURRENCY = 4;
 
 function shouldRemovePersistedSession(error: unknown): boolean {
 	return (
@@ -92,6 +93,22 @@ function shouldRemovePersistedSession(error: unknown): boolean {
 		(error.code === ErrorCode.UploadSessionNotFound ||
 			error.code === ErrorCode.UploadSessionExpired)
 	);
+}
+
+async function mapAllSettledWithConcurrency<T, R>(
+	items: readonly T[],
+	concurrency: number,
+	mapper: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+	const batchSize = Math.max(1, concurrency);
+	const results: PromiseSettledResult<R>[] = [];
+
+	for (let start = 0; start < items.length; start += batchSize) {
+		const batch = items.slice(start, start + batchSize);
+		results.push(...(await Promise.allSettled(batch.map(mapper))));
+	}
+
+	return results;
 }
 
 /** completeUpload with polling retry when backend is still assembling (3011) */
@@ -283,15 +300,17 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				parts?: CompletedPart[];
 			}> = [];
 
-			const progressResults = await Promise.allSettled(
-				sessions.map(async (session) => {
+			const progressResults = await mapAllSettledWithConcurrency(
+				sessions,
+				RESTORE_PROGRESS_CONCURRENCY,
+				async (session) => {
 					try {
 						const progress = await uploadService.getProgress(session.uploadId);
 						return { session, progress };
 					} catch (error) {
 						throw { session, error };
 					}
-				}),
+				},
 			);
 
 			for (const result of progressResults) {

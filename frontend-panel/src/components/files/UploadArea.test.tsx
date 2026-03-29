@@ -36,6 +36,16 @@ class MockApiError extends Error {
 	}
 }
 
+function createDeferred<T>() {
+	let resolve!: (value: T | PromiseLike<T>) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string) => key,
@@ -416,6 +426,89 @@ describe("UploadArea", () => {
 		expect(
 			screen.queryByText("transient.txt:Chunked:files:upload_pending_file"),
 		).not.toBeInTheDocument();
+	});
+
+	it("limits persisted session progress preflight concurrency during restore", async () => {
+		const sessions = Array.from({ length: 6 }, (_, index) => ({
+			uploadId: `upload-restore-${index + 1}`,
+			filename: `restore-${index + 1}.txt`,
+			totalSize: 11,
+			totalChunks: 3,
+			chunkSize: 5,
+			baseFolderId: 42,
+			baseFolderName: "Projects",
+			relativePath: null,
+			savedAt: Date.now() + index,
+			mode: "chunked" as const,
+		}));
+		const deferreds = sessions.map(() =>
+			createDeferred<{
+				upload_id: string;
+				status: string;
+				received_count: number;
+				chunks_on_disk: number[];
+				total_chunks: number;
+				filename: string;
+			}>(),
+		);
+
+		loadSessions.mockReturnValue(sessions);
+		getProgress.mockImplementation((uploadId: string) => {
+			const sessionIndex = sessions.findIndex(
+				(session) => session.uploadId === uploadId,
+			);
+			if (sessionIndex < 0) {
+				throw new Error(`unexpected uploadId ${uploadId}`);
+			}
+			return deferreds[sessionIndex].promise;
+		});
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await waitFor(() => {
+			expect(getProgress).toHaveBeenCalledTimes(4);
+		});
+		expect(getProgress.mock.calls.map((call) => call[0])).toEqual(
+			sessions.slice(0, 4).map((session) => session.uploadId),
+		);
+
+		for (const [index, deferred] of deferreds.slice(0, 4).entries()) {
+			const session = sessions[index];
+			deferred.resolve({
+				upload_id: session.uploadId,
+				status: "uploading",
+				received_count: 1,
+				chunks_on_disk: [0],
+				total_chunks: session.totalChunks,
+				filename: session.filename,
+			});
+		}
+
+		await waitFor(() => {
+			expect(getProgress).toHaveBeenCalledTimes(6);
+		});
+		expect(getProgress.mock.calls.map((call) => call[0])).toEqual(
+			sessions.map((session) => session.uploadId),
+		);
+
+		for (const [index, deferred] of deferreds.slice(4).entries()) {
+			const session = sessions[index + 4];
+			deferred.resolve({
+				upload_id: session.uploadId,
+				status: "uploading",
+				received_count: 1,
+				chunks_on_disk: [0],
+				total_chunks: session.totalChunks,
+				filename: session.filename,
+			});
+		}
+
+		await screen.findByText("restore-6.txt:Chunked:files:upload_pending_file");
 	});
 
 	it("does not reinitialize a new upload when resume preflight fails transiently", async () => {

@@ -16,7 +16,7 @@ export function AdminTopBar({ onSidebarToggle }: AdminTopBarProps) {
 			left={
 				<div className="flex min-w-0 items-center gap-3">
 					<img
-						src="/static/logo.svg"
+						src="/static/asterdrive/logo.svg"
 						alt={t("app_name")}
 						className="hidden h-10 w-auto shrink-0 md:block"
 					/>

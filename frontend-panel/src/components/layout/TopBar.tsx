@@ -45,7 +45,7 @@ export function TopBar({ onSidebarToggle, actions }: TopBarProps) {
 			onSidebarToggle={onSidebarToggle}
 			left={
 				<img
-					src="/static/logo.svg"
+					src="/static/asterdrive/logo.svg"
 					alt={t("app_name")}
 					className="hidden h-10 w-auto shrink-0 md:block"
 				/>

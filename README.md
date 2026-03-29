@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="frontend-panel/public/static/logo.svg" alt="AsterDrive" width="320" />
+  <img src="frontend-panel/public/static/asterdrive/logo.svg" alt="AsterDrive" width="320" />
 </p>
 
 <h1 align="center">AsterDrive</h1>

@@ -8,7 +8,7 @@ export function ShareTopBar() {
 		<TopBarShell
 			left={
 				<img
-					src="/static/logo.svg"
+					src="/static/asterdrive/logo.svg"
 					alt={t("app_name")}
 					className="h-10 w-auto shrink-0"
 				/>

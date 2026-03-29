@@ -35,5 +35,15 @@ pub async fn connect(cfg: &DatabaseConfig) -> Result<DatabaseConnection> {
             .map_aster_err(AsterError::database_operation)?;
     }
 
+    #[cfg(feature = "metrics")]
+    let mut db = db;
+    #[cfg(feature = "metrics")]
+    install_db_metrics(&mut db);
+
     Ok(db)
+}
+
+#[cfg(feature = "metrics")]
+fn install_db_metrics(db: &mut DatabaseConnection) {
+    db.set_metric_callback(crate::metrics::record_db_query);
 }
