@@ -24,6 +24,7 @@ import { formatBytes } from "@/lib/format";
 import {
 	appendCompletedPart,
 	loadSessions,
+	type ResumableSession,
 	removeSession,
 	saveSession,
 } from "@/lib/uploadPersistence";
@@ -282,63 +283,79 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				parts?: CompletedPart[];
 			}> = [];
 
-			for (const session of sessions) {
-				try {
-					const progress = await uploadService.getProgress(session.uploadId);
-					const mode = (session.mode ?? "chunked") as UploadMode;
-					const plan = getResumePlan(mode, progress.status);
-					if (plan === "restart") {
-						removeSession(session.uploadId);
-						if (progress.status === "failed") {
-							ghostTasks.push({
-								id: createTaskId(),
-								file: null,
-								filename: session.filename,
-								relativePath: session.relativePath,
-								baseFolderId: session.baseFolderId,
-								baseFolderName: session.baseFolderName,
-								mode,
-								status: "pending_file",
-								progress: 0,
-								error: t("files:upload_failed"),
-								uploadId: null,
-								totalChunks: session.totalChunks,
-								completedChunks: progress.received_count,
-							});
-						}
-						continue;
+			const progressResults = await Promise.allSettled(
+				sessions.map(async (session) => {
+					try {
+						const progress = await uploadService.getProgress(session.uploadId);
+						return { session, progress };
+					} catch (error) {
+						throw { session, error };
 					}
+				}),
+			);
 
-					const task: UploadTask = {
-						id: createTaskId(),
-						file: null,
-						filename: session.filename,
-						relativePath: session.relativePath,
-						baseFolderId: session.baseFolderId,
-						baseFolderName: session.baseFolderName,
-						mode,
-						status: plan === "upload" ? "pending_file" : "processing",
-						progress: plan === "upload" ? 0 : getProcessingProgress(mode),
-						error: null,
-						uploadId: session.uploadId,
-						totalChunks: session.totalChunks,
-						completedChunks:
-							plan === "upload" ? progress.received_count : session.totalChunks,
+			for (const result of progressResults) {
+				if (result.status === "rejected") {
+					const { session, error } = result.reason as {
+						session: ResumableSession;
+						error: unknown;
 					};
-					ghostTasks.push(task);
-					if (plan === "complete") {
-						completionTasks.push({
-							task,
-							parts:
-								mode === "presigned_multipart"
-									? (session.completedParts ?? [])
-									: undefined,
-						});
-					}
-				} catch (error) {
 					if (shouldRemovePersistedSession(error)) {
 						removeSession(session.uploadId);
 					}
+					continue;
+				}
+
+				const { session, progress } = result.value;
+				const mode = (session.mode ?? "chunked") as UploadMode;
+				const plan = getResumePlan(mode, progress.status);
+				if (plan === "restart") {
+					removeSession(session.uploadId);
+					if (progress.status === "failed") {
+						ghostTasks.push({
+							id: createTaskId(),
+							file: null,
+							filename: session.filename,
+							relativePath: session.relativePath,
+							baseFolderId: session.baseFolderId,
+							baseFolderName: session.baseFolderName,
+							mode,
+							status: "pending_file",
+							progress: 0,
+							error: t("files:upload_failed"),
+							uploadId: null,
+							totalChunks: session.totalChunks,
+							completedChunks: progress.received_count,
+						});
+					}
+					continue;
+				}
+
+				const task: UploadTask = {
+					id: createTaskId(),
+					file: null,
+					filename: session.filename,
+					relativePath: session.relativePath,
+					baseFolderId: session.baseFolderId,
+					baseFolderName: session.baseFolderName,
+					mode,
+					status: plan === "upload" ? "pending_file" : "processing",
+					progress: plan === "upload" ? 0 : getProcessingProgress(mode),
+					error: null,
+					uploadId: session.uploadId,
+					totalChunks: session.totalChunks,
+					completedChunks:
+						plan === "upload" ? progress.received_count : session.totalChunks,
+				};
+				ghostTasks.push(task);
+				if (plan === "complete") {
+					completionTasks.push({
+						task,
+						parts:
+							mode === "presigned_multipart"
+								? (session.completedParts ?? [])
+								: undefined,
+					});
 				}
 			}
 
@@ -1111,7 +1128,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				});
 				setUploadPanelOpen(true);
 			},
-			[patchTask],
+			[patchTask, resumeCompletionTask],
 		);
 
 		const retryFailedTasks = useCallback(() => {

@@ -480,8 +480,10 @@ pub async fn upload(
 
     // 流式写入临时文件（不在内存中缓冲整个文件）
     let mut filename = String::from("unnamed");
-    let temp_path = format!("{}/{}", crate::utils::TEMP_DIR, uuid::Uuid::new_v4());
-    tokio::fs::create_dir_all(crate::utils::TEMP_DIR)
+    let temp_dir = &state.config.server.temp_dir;
+    let temp_path =
+        crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
+    tokio::fs::create_dir_all(temp_dir)
         .await
         .map_aster_err_ctx("create temp dir", AsterError::file_upload_failed)?;
 
@@ -1235,8 +1237,10 @@ pub async fn update_content(
     }
 
     // 写入临时文件
-    let temp_path = format!("{}/{}", crate::utils::TEMP_DIR, uuid::Uuid::new_v4());
-    tokio::fs::create_dir_all(crate::utils::TEMP_DIR)
+    let temp_dir = &state.config.server.temp_dir;
+    let temp_path =
+        crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
+    tokio::fs::create_dir_all(temp_dir)
         .await
         .map_aster_err(AsterError::storage_driver_error)?;
     tokio::fs::write(&temp_path, &body)

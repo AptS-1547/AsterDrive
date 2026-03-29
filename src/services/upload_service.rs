@@ -15,7 +15,7 @@ use crate::types::{
     DriverType, S3UploadStrategy, UploadMode, UploadSessionStatus,
     effective_s3_multipart_chunk_size, parse_storage_policy_options,
 };
-use crate::utils::id;
+use crate::utils::{id, paths};
 
 #[derive(Serialize, ToSchema)]
 pub struct InitUploadResponse {
@@ -306,7 +306,7 @@ pub async fn init_upload(
     let expires_at = now + chrono::Duration::hours(24);
 
     // 创建临时目录
-    let temp_dir = format!("data/.uploads/{upload_id}");
+    let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, &upload_id);
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_aster_err_ctx("create temp dir", AsterError::chunk_upload_failed)?;
@@ -452,7 +452,11 @@ pub async fn upload_chunk(
         });
     }
 
-    let chunk_path = format!("data/.uploads/{upload_id}/chunk_{chunk_number}");
+    let chunk_path = paths::upload_chunk_path(
+        &state.config.server.upload_temp_dir,
+        upload_id,
+        chunk_number,
+    );
 
     // 用 create_new (O_EXCL) 原子创建文件，已存在则幂等返回
     use tokio::fs::OpenOptions;
@@ -569,7 +573,8 @@ pub async fn complete_upload(
 
         const ASSEMBLY_BUFFER_SIZE: usize = 64 * 1024;
 
-        let assembled_path = format!("data/.uploads/{upload_id}/_assembled");
+        let assembled_path =
+            paths::upload_assembled_path(&state.config.server.upload_temp_dir, upload_id);
         let mut out_file = tokio::fs::File::create(&assembled_path)
             .await
             .map_aster_err_ctx("create assembled file", AsterError::upload_assembly_failed)?;
@@ -578,7 +583,8 @@ pub async fn complete_upload(
         let mut buffer = vec![0u8; ASSEMBLY_BUFFER_SIZE];
 
         for i in 0..session.total_chunks {
-            let chunk_path = format!("data/.uploads/{upload_id}/chunk_{i}");
+            let chunk_path =
+                paths::upload_chunk_path(&state.config.server.upload_temp_dir, upload_id, i);
             let mut chunk_file = tokio::fs::File::open(&chunk_path)
                 .await
                 .map_err(|e| AsterError::upload_assembly_failed(format!("open chunk {i}: {e}")))?;
@@ -669,7 +675,7 @@ pub async fn complete_upload(
     match result {
         Ok(created) => {
             // ── [事务外] 清理临时文件 ──
-            let temp_dir = format!("data/.uploads/{upload_id}");
+            let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
             crate::utils::cleanup_temp_dir(&temp_dir).await;
             Ok(created)
         }
@@ -1060,7 +1066,7 @@ pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> R
         }
     }
 
-    let temp_dir = format!("data/.uploads/{upload_id}");
+    let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
     crate::utils::cleanup_temp_dir(&temp_dir).await;
     upload_session_repo::delete(&state.db, upload_id).await
 }
@@ -1090,7 +1096,7 @@ pub async fn get_progress(
             let driver = state.driver_registry.get_driver(&policy)?;
             driver.list_uploaded_parts(temp_key, multipart_id).await?
         } else {
-            scan_received_chunks(&session.id).await
+            scan_received_chunks(state, &session.id).await
         };
 
     Ok(UploadProgressResponse {
@@ -1146,8 +1152,8 @@ pub async fn presign_parts(
 }
 
 /// 扫描临时目录中实际存在的 chunk 文件，返回排序后的 chunk 编号列表
-async fn scan_received_chunks(upload_id: &str) -> Vec<i32> {
-    let dir = format!("data/.uploads/{upload_id}");
+async fn scan_received_chunks(state: &AppState, upload_id: &str) -> Vec<i32> {
+    let dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
     let mut received = Vec::new();
     let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
         return received;
@@ -1183,7 +1189,7 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
                 tracing::warn!("failed to delete S3 temp object: {e}");
             }
         }
-        let temp_dir = format!("data/.uploads/{}", session.id);
+        let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, &session.id);
         crate::utils::cleanup_temp_dir(&temp_dir).await;
         if let Err(e) = upload_session_repo::delete(&state.db, &session.id).await {
             tracing::warn!(

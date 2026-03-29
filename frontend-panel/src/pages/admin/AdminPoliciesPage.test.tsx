@@ -478,7 +478,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "archive",
 				base_path: "tenant-a",
 				max_file_size: 4096,
-				options: '{"s3_upload_strategy":"presigned"}',
+				options: JSON.stringify({ s3_upload_strategy: "presigned" }),
 			}),
 		];
 
@@ -553,7 +553,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "relay-bucket",
 				base_path: "tenant-relay",
 				max_file_size: 4096,
-				options: '{"s3_upload_strategy":"proxy_tempfile"}',
+				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
 			}),
 		];
 
@@ -621,7 +621,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "direct-put",
 				max_file_size: 0,
 				chunk_size: 0,
-				options: '{"s3_upload_strategy":"presigned"}',
+				options: JSON.stringify({ s3_upload_strategy: "presigned" }),
 			}),
 		];
 

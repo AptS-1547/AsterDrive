@@ -93,7 +93,8 @@ impl AsterDavFile {
         filename: String,
         existing_file_id: Option<i64>,
     ) -> Result<Self, FsError> {
-        let temp_path = format!("{}/{}", TEMP_DIR, uuid::Uuid::new_v4());
+        let temp_path =
+            crate::utils::paths::temp_file_path(TEMP_DIR, &uuid::Uuid::new_v4().to_string());
         tokio::fs::create_dir_all(TEMP_DIR)
             .await
             .map_err(|_| FsError::GeneralFailure)?;

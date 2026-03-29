@@ -1,10 +1,11 @@
 pub mod hash;
 pub mod id;
+pub mod paths;
 
 use crate::errors::{AsterError, Result};
 
 /// 临时文件目录（上传流式处理用）
-pub const TEMP_DIR: &str = "data/.tmp";
+pub use paths::DEFAULT_TEMP_DIR as TEMP_DIR;
 
 /// 校验资源归属权，不匹配则返回 403
 pub fn verify_owner(entity_user_id: i64, user_id: i64, entity_name: &str) -> Result<()> {

@@ -54,9 +54,7 @@ async fn create_upload_session(
     .unwrap();
 }
 
-async fn create_s3_bucket(endpoint: &str, bucket: &str) {
-    use aws_sdk_s3::error::ProvideErrorMetadata;
-
+fn s3_test_client(endpoint: &str) -> aws_sdk_s3::Client {
     let credentials =
         aws_credential_types::Credentials::new("rustfsadmin", "rustfsadmin123", None, None, "test");
     let config = aws_sdk_s3::Config::builder()
@@ -66,7 +64,13 @@ async fn create_s3_bucket(endpoint: &str, bucket: &str) {
         .endpoint_url(endpoint)
         .force_path_style(true)
         .build();
-    let client = aws_sdk_s3::Client::from_conf(config);
+    aws_sdk_s3::Client::from_conf(config)
+}
+
+async fn try_create_s3_bucket(endpoint: &str, bucket: &str) -> std::result::Result<(), String> {
+    use aws_sdk_s3::error::ProvideErrorMetadata;
+
+    let client = s3_test_client(endpoint);
     if let Err(err) = client.create_bucket().bucket(bucket).send().await {
         let code = err
             .as_service_error()
@@ -75,11 +79,94 @@ async fn create_s3_bucket(endpoint: &str, bucket: &str) {
             code,
             Some("BucketAlreadyOwnedByYou") | Some("BucketAlreadyExists")
         ) {
-            return;
+            return Ok(());
         }
-
-        panic!("failed to create S3 bucket {bucket} at {endpoint}: {err}");
+        return Err(err.to_string());
     }
+    Ok(())
+}
+
+async fn wait_for_s3_bucket(endpoint: &str, bucket: &str) {
+    let mut last_err: Option<String> = None;
+    let ready = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            match try_create_s3_bucket(endpoint, bucket).await {
+                Ok(()) => break,
+                Err(err) => {
+                    last_err = Some(err);
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                }
+            }
+        }
+    })
+    .await;
+
+    if ready.is_err() {
+        panic!(
+            "timed out waiting for S3 bucket {bucket} at {endpoint}: {}",
+            last_err.unwrap_or_else(|| "unknown error".to_string())
+        );
+    }
+}
+
+async fn head_s3_object_etag(endpoint: &str, bucket: &str, key: &str) -> String {
+    s3_test_client(endpoint)
+        .head_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .unwrap()
+        .e_tag
+        .unwrap_or_default()
+}
+
+fn snapshot_dir_tree(
+    path: &std::path::Path,
+) -> std::io::Result<std::collections::BTreeSet<String>> {
+    fn walk(
+        root: &std::path::Path,
+        current: &std::path::Path,
+        entries: &mut std::collections::BTreeSet<String>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(current)? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                entries.insert(format!("{relative}/"));
+                walk(root, &path, entries)?;
+            } else {
+                entries.insert(relative);
+            }
+        }
+        Ok(())
+    }
+
+    let mut entries = std::collections::BTreeSet::new();
+    if !path.exists() {
+        return Ok(entries);
+    }
+    walk(path, path, &mut entries)?;
+    Ok(entries)
+}
+
+fn snapshot_temp_roots(
+    roots: &[String],
+) -> std::io::Result<std::collections::BTreeMap<String, std::collections::BTreeSet<String>>> {
+    let mut snapshots = std::collections::BTreeMap::new();
+    for root in roots {
+        snapshots.insert(
+            root.clone(),
+            snapshot_dir_tree(std::path::Path::new(&root))?,
+        );
+    }
+    Ok(snapshots)
 }
 
 async fn create_s3_default_policy(
@@ -316,8 +403,11 @@ async fn test_direct_and_chunked_upload_produce_same_blob_for_same_content() {
     let pattern = b"same content across direct and chunked upload paths\n";
     let content = pattern.repeat((10_485_760 / pattern.len()) + 1);
     let content = &content[..10_485_760];
-    let temp_path = format!("{}/{}", aster_drive::utils::TEMP_DIR, uuid::Uuid::new_v4());
-    tokio::fs::create_dir_all(aster_drive::utils::TEMP_DIR)
+    let temp_path = aster_drive::utils::paths::temp_file_path(
+        &state.config.server.temp_dir,
+        &uuid::Uuid::new_v4().to_string(),
+    );
+    tokio::fs::create_dir_all(&state.config.server.temp_dir)
         .await
         .unwrap();
     tokio::fs::write(&temp_path, content).await.unwrap();
@@ -465,9 +555,12 @@ async fn test_concurrent_chunk_upload_idempotent() {
         None,
     )
     .await;
-    tokio::fs::create_dir_all(format!("data/.uploads/{upload_id}"))
-        .await
-        .unwrap();
+    tokio::fs::create_dir_all(aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+    ))
+    .await
+    .unwrap();
 
     let chunk_data = b"12345".to_vec();
     let state1 = Arc::clone(&state);
@@ -662,9 +755,13 @@ async fn test_complete_upload_marks_session_failed_after_assembly_error() {
         .await
         .unwrap();
 
-    tokio::fs::remove_file(format!("data/.uploads/{upload_id}/chunk_1"))
-        .await
-        .unwrap();
+    tokio::fs::remove_file(aster_drive::utils::paths::upload_chunk_path(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+        1,
+    ))
+    .await
+    .unwrap();
 
     let err = upload_service::complete_upload(&state, &upload_id, user.id, None)
         .await
@@ -809,7 +906,10 @@ async fn test_upload_service_get_progress_scans_and_sorts_local_chunks() {
     )
     .await;
 
-    let temp_dir = format!("data/.uploads/{upload_id}");
+    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+    );
     tokio::fs::create_dir_all(&temp_dir).await.unwrap();
     tokio::fs::write(format!("{temp_dir}/chunk_2"), b"two")
         .await
@@ -902,7 +1002,10 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
     )
     .await;
 
-    let expired_dir = format!("data/.uploads/{expired_id}");
+    let expired_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &expired_id,
+    );
     tokio::fs::create_dir_all(&expired_dir).await.unwrap();
     tokio::fs::write(format!("{expired_dir}/chunk_0"), b"temp")
         .await
@@ -945,27 +1048,7 @@ async fn test_presigned_upload_s3_e2e() {
     let endpoint = format!("http://127.0.0.1:{port}");
     let bucket = "test-presigned";
 
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-    // 创建 bucket
-    {
-        let credentials = aws_credential_types::Credentials::new(
-            "rustfsadmin",
-            "rustfsadmin123",
-            None,
-            None,
-            "test",
-        );
-        let config = aws_sdk_s3::Config::builder()
-            .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
-            .region(aws_sdk_s3::config::Region::new("us-east-1"))
-            .credentials_provider(credentials)
-            .endpoint_url(&endpoint)
-            .force_path_style(true)
-            .build();
-        let client = aws_sdk_s3::Client::from_conf(config);
-        let _ = client.create_bucket().bucket(bucket).send().await;
-    }
+    wait_for_s3_bucket(&endpoint, bucket).await;
 
     // 创建 state（内存 SQLite）
     let state = common::setup().await;
@@ -1117,26 +1200,7 @@ async fn test_presigned_multipart_upload_s3_e2e() {
     let endpoint = format!("http://127.0.0.1:{port}");
     let bucket = "test-presigned-multipart";
 
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-    {
-        let credentials = aws_credential_types::Credentials::new(
-            "rustfsadmin",
-            "rustfsadmin123",
-            None,
-            None,
-            "test",
-        );
-        let config = aws_sdk_s3::Config::builder()
-            .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
-            .region(aws_sdk_s3::config::Region::new("us-east-1"))
-            .credentials_provider(credentials)
-            .endpoint_url(&endpoint)
-            .force_path_style(true)
-            .build();
-        let client = aws_sdk_s3::Client::from_conf(config);
-        let _ = client.create_bucket().bucket(bucket).send().await;
-    }
+    wait_for_s3_bucket(&endpoint, bucket).await;
 
     let state = common::setup().await;
 
@@ -1295,8 +1359,7 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
     let endpoint = format!("http://127.0.0.1:{port}");
     let bucket = "test-relay-direct";
 
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    create_s3_bucket(&endpoint, bucket).await;
+    wait_for_s3_bucket(&endpoint, bucket).await;
 
     let state = common::setup().await;
     let user = auth_service::register(&state, "relaydirect", "relay-direct@test.com", "pass123")
@@ -1325,6 +1388,11 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
 
     let db = state.db.clone();
     let driver_registry = state.driver_registry.clone();
+    let temp_roots = vec![
+        state.config.server.temp_dir.clone(),
+        state.config.server.upload_temp_dir.clone(),
+    ];
+    let temp_snapshot_before = snapshot_temp_roots(&temp_roots).unwrap();
     let app = create_test_app!(state);
 
     let (boundary, payload) = build_multipart_payload("relay.txt", data);
@@ -1356,6 +1424,12 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
     let file_id2 = body["data"]["id"].as_i64().unwrap();
+    let temp_snapshot_after = snapshot_temp_roots(&temp_roots).unwrap();
+
+    assert_eq!(
+        temp_snapshot_after, temp_snapshot_before,
+        "relay_stream direct upload should not create local temp files or upload temp dirs"
+    );
 
     let file = file_repo::find_by_id(&db, file_id).await.unwrap();
     let file2 = file_repo::find_by_id(&db, file_id2).await.unwrap();
@@ -1398,8 +1472,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     let endpoint = format!("http://127.0.0.1:{port}");
     let bucket = "test-relay-direct-exact-part";
 
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    create_s3_bucket(&endpoint, bucket).await;
+    wait_for_s3_bucket(&endpoint, bucket).await;
 
     let state = common::setup().await;
     let user = auth_service::register(&state, "relayexact", "relay-exact@test.com", "pass123")
@@ -1455,6 +1528,20 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     let blob = file_repo::find_blob_by_id(&db, file.blob_id).await.unwrap();
     let stored = driver.get(&blob.storage_path).await.unwrap();
     assert_eq!(stored, data);
+    let object_key = if policy.base_path.is_empty() {
+        blob.storage_path.clone()
+    } else {
+        format!(
+            "{}/{}",
+            policy.base_path.trim_end_matches('/'),
+            blob.storage_path.trim_start_matches('/')
+        )
+    };
+    let etag = head_s3_object_etag(&endpoint, bucket, &object_key).await;
+    assert!(
+        etag.ends_with("-1\"") || etag.ends_with("-1"),
+        "exact-part relay upload should complete with one multipart part, got etag {etag}"
+    );
 }
 
 /// S3 relay_stream 大文件分片：服务端直接把 chunk 作为 S3 part，中途不落 data/.uploads
@@ -1476,8 +1563,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     let endpoint = format!("http://127.0.0.1:{port}");
     let bucket = "test-relay-chunked";
 
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    create_s3_bucket(&endpoint, bucket).await;
+    wait_for_s3_bucket(&endpoint, bucket).await;
 
     let state = common::setup().await;
     let user = auth_service::register(&state, "relaychunked", "relay-chunked@test.com", "pass123")
@@ -1514,7 +1600,10 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     assert_eq!(init.total_chunks, Some(2));
 
     let upload_id = init.upload_id.unwrap();
-    let relay_temp_dir = format!("data/.uploads/{upload_id}");
+    let relay_temp_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+    );
     assert!(
         !std::path::Path::new(&relay_temp_dir).exists(),
         "relay_stream should not create local upload temp dir"

@@ -71,7 +71,10 @@ pub async fn cleanup_expired_completed_upload_sessions(
                 cleanup_broken_completed_session_object(state, &session, &tracked_blob_paths).await;
             }
 
-            let temp_dir = format!("data/.uploads/{}", session.id);
+            let temp_dir = crate::utils::paths::upload_temp_dir(
+                &state.config.server.upload_temp_dir,
+                &session.id,
+            );
             crate::utils::cleanup_temp_dir(&temp_dir).await;
 
             match upload_session_repo::delete(&state.db, &session.id).await {

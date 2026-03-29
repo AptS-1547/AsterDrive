@@ -16,7 +16,11 @@ pub async fn setup() -> AppState {
 
     // 每个测试用独立临时目录避免并行竞争
     let test_dir = format!("/tmp/asterdrive-test-{}", uuid::Uuid::new_v4());
+    let temp_dir = format!("{test_dir}/temp");
+    let upload_temp_dir = format!("{test_dir}/uploads");
     std::fs::create_dir_all(&test_dir).unwrap();
+    std::fs::create_dir_all(&temp_dir).unwrap();
+    std::fs::create_dir_all(&upload_temp_dir).unwrap();
 
     // 创建默认本地存储策略
     use chrono::Utc;
@@ -53,6 +57,11 @@ pub async fn setup() -> AppState {
     let cache = aster_drive::cache::create_cache(&cache_config).await;
 
     let config = std::sync::Arc::new(aster_drive::config::Config {
+        server: aster_drive::config::ServerConfig {
+            temp_dir,
+            upload_temp_dir,
+            ..Default::default()
+        },
         auth: aster_drive::config::AuthConfig {
             jwt_secret: "test-secret-key-for-integration-tests".to_string(),
             access_token_ttl_secs: 900,

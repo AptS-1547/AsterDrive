@@ -27,6 +27,10 @@ pub struct ServerConfig {
     /// 0 = num_cpus
     #[serde(default)]
     pub workers: usize,
+    #[serde(default = "ServerConfig::default_temp_dir")]
+    pub temp_dir: String,
+    #[serde(default = "ServerConfig::default_upload_temp_dir")]
+    pub upload_temp_dir: String,
 }
 
 impl Default for ServerConfig {
@@ -35,6 +39,8 @@ impl Default for ServerConfig {
             host: Self::default_host(),
             port: Self::default_port(),
             workers: 0,
+            temp_dir: Self::default_temp_dir(),
+            upload_temp_dir: Self::default_upload_temp_dir(),
         }
     }
 }
@@ -45,6 +51,12 @@ impl ServerConfig {
     }
     fn default_port() -> u16 {
         3000
+    }
+    fn default_temp_dir() -> String {
+        "data/.tmp".to_string()
+    }
+    fn default_upload_temp_dir() -> String {
+        "data/.uploads".to_string()
     }
 }
 

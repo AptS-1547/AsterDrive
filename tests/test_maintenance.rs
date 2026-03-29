@@ -89,8 +89,11 @@ async fn store_test_file(
     filename: &str,
     bytes: &[u8],
 ) -> aster_drive::entities::file::Model {
-    let temp_path = format!("{}/{}", aster_drive::utils::TEMP_DIR, uuid::Uuid::new_v4());
-    tokio::fs::create_dir_all(aster_drive::utils::TEMP_DIR)
+    let temp_path = aster_drive::utils::paths::temp_file_path(
+        &state.config.server.temp_dir,
+        &uuid::Uuid::new_v4().to_string(),
+    );
+    tokio::fs::create_dir_all(&state.config.server.temp_dir)
         .await
         .unwrap();
     tokio::fs::write(&temp_path, bytes).await.unwrap();
