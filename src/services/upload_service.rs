@@ -371,7 +371,7 @@ pub async fn upload_chunk(
         let etag = driver
             .upload_multipart_part(temp_key, multipart_id, s3_part_number, data)
             .await?;
-        upload_session_part_repo::upsert_part(
+        let upserted = upload_session_part_repo::upsert_part(
             db,
             upload_id,
             s3_part_number,
@@ -380,18 +380,20 @@ pub async fn upload_chunk(
         )
         .await?;
 
-        use crate::entities::upload_session::{Column, Entity as UploadSession};
-        use sea_orm::{ColumnTrait, EntityTrait, ExprTrait, QueryFilter, sea_query::Expr};
-        UploadSession::update_many()
-            .col_expr(
-                Column::ReceivedCount,
-                Expr::col(Column::ReceivedCount).add(1),
-            )
-            .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
-            .filter(Column::Id.eq(upload_id))
-            .exec(db)
-            .await
-            .map_err(AsterError::from)?;
+        if upserted.inserted {
+            use crate::entities::upload_session::{Column, Entity as UploadSession};
+            use sea_orm::{ColumnTrait, EntityTrait, ExprTrait, QueryFilter, sea_query::Expr};
+            UploadSession::update_many()
+                .col_expr(
+                    Column::ReceivedCount,
+                    Expr::col(Column::ReceivedCount).add(1),
+                )
+                .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
+                .filter(Column::Id.eq(upload_id))
+                .exec(db)
+                .await
+                .map_err(AsterError::from)?;
+        }
 
         let updated = upload_session_repo::find_by_id(db, upload_id).await?;
         return Ok(ChunkUploadResponse {

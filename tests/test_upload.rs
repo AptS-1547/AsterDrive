@@ -503,6 +503,59 @@ async fn test_concurrent_chunk_upload_idempotent() {
     );
 }
 
+#[tokio::test]
+async fn test_upload_session_part_upsert_updates_existing_row_without_duplicates() {
+    use aster_drive::db::repository::{upload_session_part_repo, upload_session_repo};
+    use aster_drive::services::auth_service;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "partuser", "part@test.com", "password123")
+        .await
+        .unwrap();
+    let upload_id = format!("parts-{}", uuid::Uuid::new_v4());
+
+    create_upload_session(
+        &state,
+        user.id,
+        &upload_id,
+        aster_drive::types::UploadSessionStatus::Uploading,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+        2,
+        0,
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    let first = upload_session_part_repo::upsert_part(&state.db, &upload_id, 1, "etag-1", 5)
+        .await
+        .unwrap();
+    assert!(first.inserted);
+    assert_eq!(first.model.etag, "etag-1");
+    assert_eq!(first.model.size, 5);
+
+    let second = upload_session_part_repo::upsert_part(&state.db, &upload_id, 1, "etag-2", 7)
+        .await
+        .unwrap();
+    assert!(!second.inserted);
+    assert_eq!(second.model.etag, "etag-2");
+    assert_eq!(second.model.size, 7);
+
+    let parts = upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].part_number, 1);
+    assert_eq!(parts[0].etag, "etag-2");
+    assert_eq!(parts[0].size, 7);
+
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session.received_count, 0);
+}
+
 #[actix_web::test]
 async fn test_upload_chunk_rejects_wrong_chunk_size() {
     use aster_drive::services::{auth_service, upload_service};
