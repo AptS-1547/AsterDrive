@@ -40,6 +40,10 @@ vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string) => key,
 	}),
+	initReactI18next: {
+		type: "3rdParty",
+		init: () => undefined,
+	},
 }));
 
 vi.mock("@/components/files/UploadPanel", () => ({
@@ -97,6 +101,11 @@ vi.mock("@/lib/uploadPersistence", () => ({
 }));
 
 vi.mock("@/services/uploadService", () => ({
+	isRetryableUploadError: (error: unknown) =>
+		typeof error === "object" &&
+		error !== null &&
+		"retryable" in error &&
+		(error as { retryable?: boolean }).retryable === true,
 	uploadService: {
 		cancelUpload,
 		completeUpload,
@@ -381,6 +390,41 @@ describe("UploadArea", () => {
 		await screen.findByText("failed.txt:Chunked:files:upload_pending_file");
 	});
 
+	it("keeps persisted sessions when progress polling fails transiently", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-transient",
+				filename: "transient.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress.mockRejectedValue(
+			new MockApiError(4001, "temporary storage error"),
+		);
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await waitFor(() => {
+			expect(getProgress).toHaveBeenCalledWith("upload-transient");
+		});
+		expect(removeSession).not.toHaveBeenCalled();
+		expect(
+			screen.queryByText("transient.txt:Chunked:files:upload_pending_file"),
+		).not.toBeInTheDocument();
+	});
+
 	it("continues assembling persisted uploads without asking for file selection", async () => {
 		loadSessions.mockReturnValue([
 			{
@@ -416,6 +460,50 @@ describe("UploadArea", () => {
 		await screen.findByText("assembling.txt:Chunked:files:upload_success");
 		expect(completeUpload).toHaveBeenCalledWith("upload-assembling", undefined);
 		expect(removeSession).toHaveBeenCalledWith("upload-assembling");
+	});
+
+	it("keeps completion-only sessions retryable when completion fails", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-complete-retry",
+				filename: "assembling.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress.mockResolvedValue({
+			upload_id: "upload-complete-retry",
+			status: "assembling",
+			received_count: 3,
+			chunks_on_disk: [0, 1, 2],
+			total_chunks: 3,
+			filename: "assembling.txt",
+		});
+		completeUpload
+			.mockRejectedValueOnce(new Error("complete failed"))
+			.mockResolvedValueOnce({ id: 9008 });
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await screen.findByText("assembling.txt:Chunked:files:upload_failed");
+		expect(removeSession).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByText("files:upload_retry"));
+
+		await screen.findByText("assembling.txt:Chunked:files:upload_success");
+		expect(completeUpload).toHaveBeenCalledTimes(2);
+		expect(removeSession).toHaveBeenCalledWith("upload-complete-retry");
 	});
 
 	it("finalizes completed persisted uploads through idempotent completion", async () => {

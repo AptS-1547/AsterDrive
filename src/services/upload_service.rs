@@ -522,7 +522,7 @@ pub async fn complete_upload(
         )));
     }
 
-    // ── [事务外] 流式拼接分片 + sha256 → put_file → finalize ──
+    // ── [事务外] 流式拼接分片 + sha256 → finalize ──
     // 任何失败都将 session 标记为 Failed，避免前端无限轮询 Assembling
     let result = async {
         use sha2::{Digest, Sha256};
@@ -570,32 +570,60 @@ pub async fn complete_upload(
         let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
         let now = Utc::now();
 
-        // ── [事务外] 获取策略 + driver + put_file ──
+        // ── [事务外] 获取策略 + driver ──
         let policy = policy_repo::find_by_id(db, session.policy_id).await?;
         let driver = state.driver_registry.get_driver(&policy)?;
-
         let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-        let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
-            .await?
-            .is_some();
-        if blob_pre_exists {
-            // 已有相同内容，不需要再存
-            crate::utils::cleanup_temp_file(&assembled_path).await;
-        } else {
+        let txn = state.db.begin().await.map_err(AsterError::from)?;
+
+        let blob = file_repo::find_or_create_blob(&txn, &file_hash, size, policy.id, &storage_path)
+            .await?;
+        if blob.inserted {
             // 零拷贝：LocalDriver rename，S3 流式上传，不读进内存
             driver.put_file(&storage_path, &assembled_path).await?;
+        } else {
+            crate::utils::cleanup_temp_file(&assembled_path).await;
         }
 
-        finalize_upload_session(
-            state,
-            &session,
-            &file_hash,
-            size,
-            policy.id,
-            &storage_path,
-            now,
+        let final_name = file_repo::resolve_unique_filename(
+            &txn,
+            session.user_id,
+            session.folder_id,
+            &session.filename,
         )
-        .await
+        .await?;
+
+        let mime = mime_guess::from_path(&final_name)
+            .first_or_octet_stream()
+            .to_string();
+
+        let created = file_repo::create(
+            &txn,
+            file::ActiveModel {
+                name: Set(final_name),
+                folder_id: Set(session.folder_id),
+                blob_id: Set(blob.model.id),
+                size: Set(blob.model.size),
+                user_id: Set(session.user_id),
+                mime_type: Set(mime),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+        user_repo::update_storage_used(&txn, session.user_id, size).await?;
+
+        let session_fresh = upload_session_repo::find_by_id(&txn, &session.id).await?;
+        let mut active: upload_session::ActiveModel = session_fresh.into();
+        active.status = Set(UploadSessionStatus::Completed);
+        active.file_id = Set(Some(created.id));
+        active.updated_at = Set(Utc::now());
+        upload_session_repo::update(&txn, active).await?;
+
+        txn.commit().await.map_err(AsterError::from)?;
+        Ok(created)
     }
     .await;
 
@@ -929,8 +957,8 @@ async fn finalize_upload_session(
         file::ActiveModel {
             name: Set(final_name),
             folder_id: Set(session.folder_id),
-            blob_id: Set(blob.id),
-            size: Set(blob.size),
+            blob_id: Set(blob.model.id),
+            size: Set(blob.model.size),
             user_id: Set(session.user_id),
             mime_type: Set(mime),
             created_at: Set(now),
@@ -1007,8 +1035,9 @@ pub async fn get_progress(
                 .into_iter()
                 .map(|part_number| part_number - 1)
                 .collect()
-        } else if let (Some(temp_key), Some(multipart_id)) =
-            (&session.s3_temp_key, &session.s3_multipart_id)
+        } else if session.status == UploadSessionStatus::Presigned
+            && let (Some(temp_key), Some(multipart_id)) =
+                (&session.s3_temp_key, &session.s3_multipart_id)
         {
             let policy = policy_repo::find_by_id(&state.db, session.policy_id).await?;
             let driver = state.driver_registry.get_driver(&policy)?;

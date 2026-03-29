@@ -60,9 +60,29 @@ interface PolicyOptions {
 	s3_upload_strategy?: S3UploadStrategy;
 }
 
+function isS3UploadStrategy(value: unknown): value is S3UploadStrategy {
+	return (
+		value === "proxy_tempfile" ||
+		value === "relay_stream" ||
+		value === "presigned"
+	);
+}
+
 function parsePolicyOptions(options: string): PolicyOptions {
 	try {
-		return JSON.parse(options);
+		const parsed = JSON.parse(options) as {
+			presigned_upload?: unknown;
+			s3_upload_strategy?: unknown;
+		};
+		return {
+			presigned_upload:
+				typeof parsed.presigned_upload === "boolean"
+					? parsed.presigned_upload
+					: undefined,
+			s3_upload_strategy: isS3UploadStrategy(parsed.s3_upload_strategy)
+				? parsed.s3_upload_strategy
+				: undefined,
+		};
 	} catch {
 		return {};
 	}

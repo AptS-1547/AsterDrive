@@ -85,6 +85,14 @@ const CHUNK_CONCURRENT = 3;
 const CHUNK_MAX_RETRIES = 3;
 const PROGRESS_FLUSH_INTERVAL = 500;
 
+function shouldRemovePersistedSession(error: unknown): boolean {
+	return (
+		error instanceof ApiError &&
+		(error.code === ErrorCode.UploadSessionNotFound ||
+			error.code === ErrorCode.UploadSessionExpired)
+	);
+}
+
 /** completeUpload with polling retry when backend is still assembling (3011) */
 async function completeWithRetry(
 	uploadId: string,
@@ -327,8 +335,10 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 									: undefined,
 						});
 					}
-				} catch {
-					removeSession(session.uploadId);
+				} catch (error) {
+					if (shouldRemovePersistedSession(error)) {
+						removeSession(session.uploadId);
+					}
 				}
 			}
 
@@ -439,16 +449,20 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							? error.message
 							: t("errors:unexpected_error");
 					if (!task.file) {
-						removeSession(uploadId);
-						patchTask(task.id, {
-							status: "pending_file",
-							error: message,
-							progress: 0,
-							uploadId: null,
-							completedChunks: 0,
-							totalChunks: 0,
-							mode: null,
-						});
+						if (shouldRemovePersistedSession(error)) {
+							removeSession(uploadId);
+							patchTask(task.id, {
+								status: "pending_file",
+								error: message,
+								progress: 0,
+								uploadId: null,
+								completedChunks: 0,
+								totalChunks: 0,
+								mode: null,
+							});
+							return;
+						}
+						markTaskFailed(task.id, message);
 						return;
 					}
 					markTaskFailed(task.id, message);
@@ -1052,6 +1066,19 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			(taskId: string) => {
 				const task = tasksRef.current.find((item) => item.id === taskId);
 				if (!task) return;
+				if (!task.file && task.uploadId) {
+					const saved = loadSessions().find(
+						(session) => session.uploadId === task.uploadId,
+					);
+					void resumeCompletionTask(
+						task,
+						task.mode === "presigned_multipart"
+							? (saved?.completedParts ?? [])
+							: undefined,
+					);
+					setUploadPanelOpen(true);
+					return;
+				}
 				if (task.uploadId) {
 					void uploadService.cancelUpload(task.uploadId).catch(() => undefined);
 					removeSession(task.uploadId);

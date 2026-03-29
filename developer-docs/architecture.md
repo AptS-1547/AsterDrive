@@ -319,10 +319,11 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 
 1. 解析生效存储策略
 2. 校验大小限制与用户配额
-3. 计算 SHA-256
-4. 按 `hash + policy_id` 做 Blob 去重
-5. 创建文件记录
-6. 更新用户已用空间
+3. `direct` / `chunked` / 本地组装完成后的上传会计算 SHA-256
+4. 只有拿到 SHA-256 的上传路径才会按 `hash + policy_id` 做 Blob 去重
+5. `relay_stream` / `presigned` / `presigned_multipart` 不会回读对象计算 SHA-256，因此不会做 Blob 去重
+6. 创建文件记录
+7. 更新用户已用空间
 
 如果你在追上传问题，优先看：
 

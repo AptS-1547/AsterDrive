@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set, TryInsertResult,
-    sea_query::Expr,
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    TryInsertResult, sea_query::Expr,
 };
 
 use crate::entities::upload_session_part::{self, Entity as UploadSessionPart};
@@ -108,11 +108,15 @@ pub async fn list_by_upload<C: ConnectionTrait>(
 }
 
 pub async fn list_part_numbers<C: ConnectionTrait>(db: &C, upload_id: &str) -> Result<Vec<i32>> {
-    Ok(list_by_upload(db, upload_id)
-        .await?
-        .into_iter()
-        .map(|part| part.part_number)
-        .collect())
+    UploadSessionPart::find()
+        .select_only()
+        .column(upload_session_part::Column::PartNumber)
+        .filter(upload_session_part::Column::UploadId.eq(upload_id))
+        .order_by_asc(upload_session_part::Column::PartNumber)
+        .into_tuple::<i32>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)
 }
 
 pub async fn delete_by_upload<C: ConnectionTrait>(db: &C, upload_id: &str) -> Result<u64> {

@@ -125,9 +125,14 @@ pub async fn reconcile_blob_state(state: &AppState) -> Result<BlobMaintenanceSta
             };
 
             if actual_refs == 0 {
-                if blob.ref_count != 0 {
+                if blob.ref_count > 0 {
                     file_repo::decrement_blob_ref_count_by(&state.db, blob.id, blob.ref_count)
                         .await?;
+                } else if blob.ref_count < 0 {
+                    let mut active: file_blob::ActiveModel = blob.clone().into();
+                    active.ref_count = Set(0);
+                    active.updated_at = Set(Utc::now());
+                    active.update(&state.db).await.map_err(AsterError::from)?;
                 }
                 if crate::services::file_service::cleanup_unreferenced_blob(state, &blob).await {
                     stats.orphan_blobs_deleted += 1;

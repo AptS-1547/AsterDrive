@@ -45,8 +45,8 @@ async fn create_s3_nondedup_file(
         file::ActiveModel {
             name: Set(final_name),
             folder_id: Set(folder_id),
-            blob_id: Set(blob.id),
-            size: Set(blob.size),
+            blob_id: Set(blob.model.id),
+            size: Set(blob.model.size),
             user_id: Set(user_id),
             mime_type: Set(mime),
             created_at: Set(now),
@@ -110,10 +110,12 @@ async fn relay_field_to_s3(
 
         user_repo::check_quota(&state.db, user_id, total_size).await?;
 
-        let final_part_etag = driver
-            .upload_multipart_part(&storage_path, &multipart_id, part_number, &buffer)
-            .await?;
-        uploaded_parts.push((part_number, final_part_etag));
+        if !buffer.is_empty() || uploaded_parts.is_empty() {
+            let final_part_etag = driver
+                .upload_multipart_part(&storage_path, &multipart_id, part_number, &buffer)
+                .await?;
+            uploaded_parts.push((part_number, final_part_etag));
+        }
 
         driver
             .complete_multipart_upload(&storage_path, &multipart_id, uploaded_parts)
@@ -218,14 +220,7 @@ pub async fn store_from_temp(
     let now = Utc::now();
     let driver = state.driver_registry.get_driver(&policy)?;
 
-    // ── [事务外] driver.put_file（仅新 blob 时需要） ──
     let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-    let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
-        .await?
-        .is_some();
-    if !blob_pre_exists {
-        driver.put_file(&storage_path, temp_path).await?;
-    }
 
     // ── [事务外] 覆盖模式：预读旧文件 + 删除旧缩略图 ──
     let overwrite_ctx = if let Some(existing_id) = existing_file_id {
@@ -257,13 +252,16 @@ pub async fn store_from_temp(
     // Blob 去重（事务内重新检查，防止并发竞争）
     let blob =
         file_repo::find_or_create_blob(&txn, &file_hash, size, policy.id, &storage_path).await?;
+    if blob.inserted {
+        driver.put_file(&storage_path, temp_path).await?;
+    }
 
     let result = if let Some((old_file, old_blob)) = overwrite_ctx {
         // 覆盖现有文件
         let existing_id = old_file.id;
         let mut active: file::ActiveModel = old_file.into();
-        active.blob_id = Set(blob.id);
-        active.size = Set(blob.size);
+        active.blob_id = Set(blob.model.id);
+        active.size = Set(blob.model.size);
         active.mime_type = Set(mime);
         active.updated_at = Set(now);
         let updated = active.update(&txn).await.map_err(AsterError::from)?;
@@ -295,8 +293,8 @@ pub async fn store_from_temp(
         let file_model = file::ActiveModel {
             name: Set(final_name),
             folder_id: Set(folder_id),
-            blob_id: Set(blob.id),
-            size: Set(blob.size),
+            blob_id: Set(blob.model.id),
+            size: Set(blob.model.size),
             user_id: Set(user_id),
             mime_type: Set(mime),
             created_at: Set(now),
@@ -546,21 +544,79 @@ pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
 }
 
 pub(crate) async fn cleanup_unreferenced_blob(state: &AppState, blob: &file_blob::Model) -> bool {
-    if let Err(e) = thumbnail_service::delete_thumbnail(state, blob).await {
+    async fn restore_cleanup_claim(state: &AppState, blob_id: i64, reason: &str) {
+        match file_repo::restore_blob_cleanup_claim(&state.db, blob_id).await {
+            Ok(true) => {}
+            Ok(false) => {
+                tracing::warn!(
+                    blob_id,
+                    "blob cleanup claim was already released while handling {reason}"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    blob_id,
+                    "failed to restore blob cleanup claim after {reason}: {e}"
+                );
+            }
+        }
+    }
+
+    let current_blob = match file_repo::find_blob_by_id(&state.db, blob.id).await {
+        Ok(current_blob) => current_blob,
+        Err(e) if e.code() == "E006" => return true,
+        Err(e) => {
+            tracing::warn!(
+                blob_id = blob.id,
+                "failed to reload blob before cleanup: {e}"
+            );
+            return false;
+        }
+    };
+
+    if current_blob.ref_count != 0 {
         tracing::warn!(
-            blob_id = blob.id,
+            blob_id = current_blob.id,
+            ref_count = current_blob.ref_count,
+            "skipping blob cleanup because blob is referenced again"
+        );
+        return false;
+    }
+
+    match file_repo::claim_blob_cleanup(&state.db, current_blob.id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::warn!(
+                blob_id = current_blob.id,
+                "skipping blob cleanup because another worker already claimed it or it was revived"
+            );
+            return false;
+        }
+        Err(e) => {
+            tracing::warn!(
+                blob_id = current_blob.id,
+                "failed to claim blob cleanup: {e}"
+            );
+            return false;
+        }
+    }
+
+    if let Err(e) = thumbnail_service::delete_thumbnail(state, &current_blob).await {
+        tracing::warn!(
+            blob_id = current_blob.id,
             "failed to delete thumbnail during blob cleanup: {e}"
         );
     }
 
-    let policy = match policy_repo::find_by_id(&state.db, blob.policy_id).await {
+    let policy = match policy_repo::find_by_id(&state.db, current_blob.policy_id).await {
         Ok(policy) => policy,
         Err(e) => {
             tracing::warn!(
-                blob_id = blob.id,
-                policy_id = blob.policy_id,
+                blob_id = current_blob.id,
+                policy_id = current_blob.policy_id,
                 "failed to load storage policy during blob cleanup: {e}"
             );
+            restore_cleanup_claim(state, current_blob.id, "policy lookup failure").await;
             return false;
         }
     };
@@ -569,39 +625,42 @@ pub(crate) async fn cleanup_unreferenced_blob(state: &AppState, blob: &file_blob
         Ok(driver) => driver,
         Err(e) => {
             tracing::warn!(
-                blob_id = blob.id,
-                policy_id = blob.policy_id,
+                blob_id = current_blob.id,
+                policy_id = current_blob.policy_id,
                 "failed to resolve storage driver during blob cleanup: {e}"
             );
+            restore_cleanup_claim(state, current_blob.id, "driver resolution failure").await;
             return false;
         }
     };
 
-    let object_deleted = match driver.delete(&blob.storage_path).await {
+    let object_deleted = match driver.delete(&current_blob.storage_path).await {
         Ok(()) => true,
-        Err(e) => match driver.exists(&blob.storage_path).await {
+        Err(e) => match driver.exists(&current_blob.storage_path).await {
             Ok(false) => {
                 tracing::warn!(
-                    blob_id = blob.id,
-                    path = %blob.storage_path,
+                    blob_id = current_blob.id,
+                    path = %current_blob.storage_path,
                     "blob delete returned error but object is already absent: {e}"
                 );
                 true
             }
             Ok(true) => {
                 tracing::warn!(
-                    blob_id = blob.id,
-                    path = %blob.storage_path,
+                    blob_id = current_blob.id,
+                    path = %current_blob.storage_path,
                     "failed to delete blob object, keeping blob row for retry: {e}"
                 );
+                restore_cleanup_claim(state, current_blob.id, "delete error").await;
                 false
             }
             Err(exists_err) => {
                 tracing::warn!(
-                    blob_id = blob.id,
-                    path = %blob.storage_path,
+                    blob_id = current_blob.id,
+                    path = %current_blob.storage_path,
                     "failed to delete blob object and verify existence, keeping blob row for retry: delete_error={e}, exists_error={exists_err}"
                 );
+                restore_cleanup_claim(state, current_blob.id, "delete verification error").await;
                 false
             }
         },
@@ -611,13 +670,27 @@ pub(crate) async fn cleanup_unreferenced_blob(state: &AppState, blob: &file_blob
         return false;
     }
 
-    match file_repo::delete_blob(&state.db, blob.id).await {
-        Ok(()) => true,
+    match file_repo::delete_blob_if_cleanup_claimed(&state.db, current_blob.id).await {
+        Ok(true) => true,
+        Ok(false) => {
+            tracing::warn!(
+                blob_id = current_blob.id,
+                "blob object is gone but cleanup claim was lost before deleting blob row"
+            );
+            restore_cleanup_claim(
+                state,
+                current_blob.id,
+                "lost cleanup claim before row delete",
+            )
+            .await;
+            false
+        }
         Err(e) => {
             tracing::warn!(
-                blob_id = blob.id,
+                blob_id = current_blob.id,
                 "blob object is gone but failed to delete blob row: {e}"
             );
+            restore_cleanup_claim(state, current_blob.id, "row delete failure").await;
             false
         }
     }
@@ -1167,14 +1240,6 @@ pub async fn create_empty(
 
     let storage_path = crate::utils::storage_path_from_hash(EMPTY_SHA256);
 
-    // blob 去重
-    let blob_pre_exists = file_repo::find_blob_by_hash(db, EMPTY_SHA256, policy.id)
-        .await?
-        .is_some();
-    if !blob_pre_exists {
-        driver.put(&storage_path, &[]).await?;
-    }
-
     let now = chrono::Utc::now();
     let mime = mime_guess::from_path(filename)
         .first_or_octet_stream()
@@ -1185,13 +1250,16 @@ pub async fn create_empty(
     let blob =
         file_repo::find_or_create_blob(&txn, EMPTY_SHA256, EMPTY_SIZE, policy.id, &storage_path)
             .await?;
+    if blob.inserted {
+        driver.put(&storage_path, &[]).await?;
+    }
 
     let final_name = file_repo::resolve_unique_filename(&txn, user_id, folder_id, filename).await?;
 
     let file_model = file::ActiveModel {
         name: Set(final_name),
         folder_id: Set(folder_id),
-        blob_id: Set(blob.id),
+        blob_id: Set(blob.model.id),
         size: Set(EMPTY_SIZE),
         user_id: Set(user_id),
         mime_type: Set(mime),

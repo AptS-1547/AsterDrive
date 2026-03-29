@@ -457,7 +457,7 @@ pub async fn complete_upload(
     operation_id = "get_upload_progress",
     params(("upload_id" = String, Path, description = "Upload session ID")),
     responses(
-        (status = 200, description = "Upload progress", body = inline(ApiResponse<upload_service::UploadProgressResponse>)),
+        (status = 200, description = "Upload progress", body = ApiResponse<upload_service::UploadProgressResponse>),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Session not found"),
     ),

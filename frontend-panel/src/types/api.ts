@@ -98,6 +98,7 @@ export const ErrorCode = {
 	DatabaseError: 1003,
 	ConfigError: 1004,
 	EndpointNotFound: 1005,
+	RateLimited: 1006,
 	AuthFailed: 2000,
 	TokenExpired: 2001,
 	TokenInvalid: 2002,
@@ -106,6 +107,14 @@ export const ErrorCode = {
 	FileTooLarge: 3001,
 	FileTypeNotAllowed: 3002,
 	FileUploadFailed: 3003,
+	UploadSessionNotFound: 3004,
+	UploadSessionExpired: 3005,
+	ChunkUploadFailed: 3006,
+	UploadAssemblyFailed: 3007,
+	ThumbnailFailed: 3008,
+	ResourceLocked: 3009,
+	PreconditionFailed: 3010,
+	UploadAssembling: 3011,
 	StoragePolicyNotFound: 4000,
 	StorageDriverError: 4001,
 	StorageQuotaExceeded: 4002,
@@ -115,9 +124,6 @@ export const ErrorCode = {
 	ShareExpired: 6001,
 	SharePasswordRequired: 6002,
 	ShareDownloadLimitReached: 6003,
-	UploadAssemblyFailed: 3007,
-	ThumbnailFailed: 3008,
-	UploadAssembling: 3011,
 } as const satisfies Record<string, ErrorCode>;
 
 // API response wrapper

@@ -428,11 +428,12 @@ async fn test_init_upload_local_never_presigned() {
 }
 
 /// 并发上传同一分片不会导致 received_count 多算（TOCTOU 修复验证）
-#[actix_web::test]
+#[tokio::test]
 async fn test_concurrent_chunk_upload_idempotent() {
-    use aster_drive::services::auth_service;
+    use aster_drive::services::{auth_service, upload_service};
+    use std::sync::Arc;
 
-    let state = common::setup().await;
+    let state = Arc::new(common::setup().await);
     let user = auth_service::register(&state, "testuser", "test@example.com", "password123")
         .await
         .unwrap();
@@ -453,53 +454,41 @@ async fn test_concurrent_chunk_upload_idempotent() {
     tokio::fs::create_dir_all(format!("data/.uploads/{upload_id}"))
         .await
         .unwrap();
-    let login = auth_service::login(&state, "testuser", "password123")
-        .await
-        .unwrap();
-    let app = create_test_app!(state);
 
     let chunk_data = b"12345".to_vec();
-    let req = test::TestRequest::put()
-        .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
-        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
-        .insert_header(("Content-Type", "application/octet-stream"))
-        .set_payload(chunk_data.clone())
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    let count_after_first = body["data"]["received_count"].as_i64().unwrap();
+    let state1 = Arc::clone(&state);
+    let state2 = Arc::clone(&state);
+    let upload_id1 = upload_id.clone();
+    let upload_id2 = upload_id.clone();
+    let chunk1 = chunk_data.clone();
+    let chunk2 = chunk_data.clone();
 
-    let req = test::TestRequest::put()
-        .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
-        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
-        .insert_header(("Content-Type", "application/octet-stream"))
-        .set_payload(chunk_data.clone())
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    let count_after_second = body["data"]["received_count"].as_i64().unwrap();
+    let (first, second) = tokio::join!(
+        upload_service::upload_chunk(&state1, &upload_id1, 0, user.id, &chunk1),
+        upload_service::upload_chunk(&state2, &upload_id2, 0, user.id, &chunk2),
+    );
 
-    let req = test::TestRequest::put()
-        .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
-        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
-        .insert_header(("Content-Type", "application/octet-stream"))
-        .set_payload(chunk_data)
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    let count_after_third = body["data"]["received_count"].as_i64().unwrap();
+    let first = first.unwrap();
+    let second = second.unwrap();
+    let final_progress = upload_service::get_progress(&state, &upload_id, user.id)
+        .await
+        .unwrap();
 
-    assert_eq!(count_after_first, 1, "first upload should set count to 1");
-    assert_eq!(
-        count_after_second, count_after_first,
-        "duplicate chunk should not increment count: got {count_after_second}"
+    assert!(
+        [first.received_count, second.received_count].contains(&1),
+        "at least one concurrent upload should observe received_count=1"
     );
     assert_eq!(
-        count_after_third, count_after_first,
-        "third duplicate should not increment count: got {count_after_third}"
+        final_progress.received_count, 1,
+        "duplicate concurrent chunk upload should not increment count twice"
+    );
+
+    let third = upload_service::upload_chunk(&state, &upload_id, 0, user.id, &chunk_data)
+        .await
+        .unwrap();
+    assert_eq!(
+        third.received_count, 1,
+        "sequential duplicate should remain idempotent after concurrent uploads"
     );
 }
 
@@ -1374,6 +1363,84 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
     let stored2 = driver.get(&blob2.storage_path).await.unwrap();
     assert_eq!(stored, data);
     assert_eq!(stored2, data);
+}
+
+/// S3 relay_stream 直传：文件大小刚好等于 multipart part_size 时不应追加空 part
+#[tokio::test]
+async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
+    use aster_drive::db::repository::file_repo;
+    use aster_drive::services::{auth_service, upload_service};
+    use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+
+    let container = GenericImage::new("rustfs/rustfs", "latest")
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
+        .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
+        .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
+        .start()
+        .await
+        .expect("failed to start rustfs container");
+
+    let port = container.get_host_port_ipv4(9000).await.unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let bucket = "test-relay-direct-exact-part";
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    create_s3_bucket(&endpoint, bucket).await;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "relayexact", "relay-exact@test.com", "pass123")
+        .await
+        .unwrap();
+    let policy = create_s3_default_policy(
+        &state,
+        user.id,
+        "Test S3 Relay Direct Exact Part",
+        &endpoint,
+        bucket,
+        r#"{"s3_upload_strategy":"relay_stream"}"#,
+        5_242_880,
+    )
+    .await;
+    let login = auth_service::login(&state, "relayexact", "pass123")
+        .await
+        .unwrap();
+
+    let data = vec![b'Z'; 5_242_880];
+    let init = upload_service::init_upload(
+        &state,
+        user.id,
+        "relay-exact.bin",
+        data.len() as i64,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Direct);
+
+    let db = state.db.clone();
+    let driver = state.driver_registry.get_driver(&policy).unwrap();
+    let app = create_test_app!(state);
+
+    let (boundary, payload) = build_multipart_payload("relay-exact.bin", &data);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    let file = file_repo::find_by_id(&db, file_id).await.unwrap();
+    let blob = file_repo::find_blob_by_id(&db, file.blob_id).await.unwrap();
+    let stored = driver.get(&blob.storage_path).await.unwrap();
+    assert_eq!(stored, data);
 }
 
 /// S3 relay_stream 大文件分片：服务端直接把 chunk 作为 S3 part，中途不落 data/.uploads

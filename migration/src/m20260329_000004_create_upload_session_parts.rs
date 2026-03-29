@@ -20,7 +20,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(UploadSessionParts::UploadId)
-                            .text()
+                            .string_len(36)
                             .not_null(),
                     )
                     .col(
