@@ -457,7 +457,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: true,
 				max_file_size: 2048,
 				name: "Primary Local",
-				options: JSON.stringify({ presigned_upload: false }),
+				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
 				secret_key: "",
 			});
 		});
@@ -474,7 +474,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "archive",
 				base_path: "tenant-a",
 				max_file_size: 4096,
-				options: '{"presigned_upload":true}',
+				options: '{"s3_upload_strategy":"presigned"}',
 			}),
 		];
 
@@ -494,7 +494,7 @@ describe("AdminPoliciesPage", () => {
 			target: { value: "NEWKEY" },
 		});
 		fireEvent.click(
-			screen.getByRole("button", { name: "switch:presigned_upload:true" }),
+			screen.getByRole("button", { name: "select-item:proxy_tempfile" }),
 		);
 		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
 
@@ -531,7 +531,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: 4096,
 				name: "Archive S3 Updated",
-				options: JSON.stringify({ presigned_upload: false }),
+				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
 			}),
 		);
 		expect(payload).toHaveProperty("access_key", "NEWKEY");
@@ -549,7 +549,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "direct-put",
 				max_file_size: 0,
 				chunk_size: 0,
-				options: '{"presigned_upload":true}',
+				options: '{"s3_upload_strategy":"presigned"}',
 			}),
 		];
 
@@ -612,7 +612,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: undefined,
 				name: "Broken S3",
-				options: JSON.stringify({ presigned_upload: false }),
+				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
 				secret_key: "",
 			});
 		});

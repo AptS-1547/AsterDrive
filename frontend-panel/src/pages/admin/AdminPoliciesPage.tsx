@@ -39,6 +39,8 @@ import { ADMIN_ICON_BUTTON_CLASS } from "@/lib/constants";
 import { adminPolicyService } from "@/services/adminService";
 import type { DriverType, StoragePolicy } from "@/types/api";
 
+type S3UploadStrategy = "proxy_tempfile" | "relay_stream" | "presigned";
+
 interface PolicyFormData {
 	name: string;
 	driver_type: DriverType;
@@ -50,11 +52,12 @@ interface PolicyFormData {
 	max_file_size: string;
 	chunk_size: string;
 	is_default: boolean;
-	presigned_upload: boolean;
+	s3_upload_strategy: S3UploadStrategy;
 }
 
 interface PolicyOptions {
 	presigned_upload?: boolean;
+	s3_upload_strategy?: S3UploadStrategy;
 }
 
 function parsePolicyOptions(options: string): PolicyOptions {
@@ -63,6 +66,15 @@ function parsePolicyOptions(options: string): PolicyOptions {
 	} catch {
 		return {};
 	}
+}
+
+function getEffectiveS3UploadStrategy(
+	options: PolicyOptions,
+): S3UploadStrategy {
+	if (options.s3_upload_strategy) {
+		return options.s3_upload_strategy;
+	}
+	return options.presigned_upload ? "presigned" : "proxy_tempfile";
 }
 
 function buildPolicyTestPayload(form: PolicyFormData) {
@@ -119,7 +131,7 @@ const emptyForm: PolicyFormData = {
 	max_file_size: "",
 	chunk_size: "5",
 	is_default: false,
-	presigned_upload: false,
+	s3_upload_strategy: "proxy_tempfile",
 };
 
 function TestConnectionButton({
@@ -225,7 +237,7 @@ export default function AdminPoliciesPage() {
 					? String(Math.round(p.chunk_size / 1024 / 1024))
 					: "5",
 			is_default: p.is_default,
-			presigned_upload: opts.presigned_upload ?? false,
+			s3_upload_strategy: getEffectiveS3UploadStrategy(opts),
 		});
 		setDialogOpen(true);
 	};
@@ -274,7 +286,7 @@ export default function AdminPoliciesPage() {
 	const persistPolicy = async () => {
 		try {
 			const options = JSON.stringify({
-				presigned_upload: form.presigned_upload,
+				s3_upload_strategy: form.s3_upload_strategy,
 			});
 			if (editingId) {
 				const payload: Record<string, unknown> = {
@@ -571,20 +583,45 @@ export default function AdminPoliciesPage() {
 											/>
 										</div>
 									</div>
-									<div className="flex items-center gap-2 pt-1">
-										<Switch
-											id="presigned_upload"
-											checked={form.presigned_upload}
-											onCheckedChange={(v) => setField("presigned_upload", v)}
-										/>
-										<div>
-											<Label htmlFor="presigned_upload">
-												{t("presigned_upload")}
-											</Label>
-											<p className="text-xs text-muted-foreground">
-												{t("presigned_upload_desc")}
-											</p>
-										</div>
+									<div className="space-y-2 pt-1">
+										<Label htmlFor="s3_upload_strategy">
+											{t("s3_upload_strategy")}
+										</Label>
+										<Select
+											value={form.s3_upload_strategy}
+											onValueChange={(value) =>
+												setField(
+													"s3_upload_strategy",
+													value as S3UploadStrategy,
+												)
+											}
+										>
+											<SelectTrigger id="s3_upload_strategy">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="proxy_tempfile">
+													{t("s3_upload_strategy_proxy_tempfile")}
+												</SelectItem>
+												<SelectItem value="relay_stream">
+													{t("s3_upload_strategy_relay_stream")}
+												</SelectItem>
+												<SelectItem value="presigned">
+													{t("s3_upload_strategy_presigned")}
+												</SelectItem>
+											</SelectContent>
+										</Select>
+										<p className="text-xs text-muted-foreground">
+											{t(
+												`${
+													form.s3_upload_strategy === "proxy_tempfile"
+														? "s3_upload_strategy_proxy_tempfile_desc"
+														: form.s3_upload_strategy === "relay_stream"
+															? "s3_upload_strategy_relay_stream_desc"
+															: "s3_upload_strategy_presigned_desc"
+												}`,
+											)}
+										</p>
 									</div>
 								</>
 							)}

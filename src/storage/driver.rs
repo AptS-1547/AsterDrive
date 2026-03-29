@@ -92,6 +92,20 @@ pub trait StorageDriver: Send + Sync {
         ))
     }
 
+    /// 服务端直接上传一个 multipart part，返回该 part 的 ETag
+    async fn upload_multipart_part(
+        &self,
+        path: &str,
+        upload_id: &str,
+        part_number: i32,
+        data: &[u8],
+    ) -> Result<String> {
+        let _ = (path, upload_id, part_number, data);
+        Err(crate::errors::AsterError::storage_driver_error(
+            "multipart upload not supported by this driver",
+        ))
+    }
+
     /// 取消 S3 multipart upload（清理已上传的 parts）
     async fn abort_multipart_upload(&self, path: &str, upload_id: &str) -> Result<()> {
         let _ = (path, upload_id);

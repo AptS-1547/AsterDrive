@@ -17,6 +17,47 @@ export type {
 	UploadProgressResponse,
 };
 
+export class UploadRequestError extends Error {
+	retryable: boolean;
+	status?: number;
+
+	constructor(
+		message: string,
+		options?: {
+			retryable?: boolean;
+			status?: number;
+		},
+	) {
+		super(message);
+		this.name = "UploadRequestError";
+		this.retryable = options?.retryable ?? false;
+		this.status = options?.status;
+	}
+}
+
+function isRetryableHttpStatus(status: number): boolean {
+	return status === 408 || status === 429 || status >= 500;
+}
+
+function parseApiMessage(responseText: string): string | null {
+	if (!responseText) return null;
+	try {
+		const parsed = JSON.parse(responseText) as { msg?: string };
+		return typeof parsed.msg === "string" ? parsed.msg : null;
+	} catch {
+		return null;
+	}
+}
+
+export function isRetryableUploadError(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"retryable" in error &&
+		(error as { retryable?: boolean }).retryable === true
+	);
+}
+
 export const uploadService = {
 	initUpload: (data: {
 		filename: string;
@@ -52,13 +93,32 @@ export const uploadService = {
 					if (resp.code === 0) {
 						resolve(resp.data);
 					} else {
-						reject(new Error(resp.msg));
+						reject(
+							new UploadRequestError(resp.msg, {
+								status: xhr.status,
+								retryable: false,
+							}),
+						);
 					}
 				} else {
-					reject(new Error(`chunk upload failed: ${xhr.status}`));
+					reject(
+						new UploadRequestError(
+							parseApiMessage(xhr.responseText) ??
+								`chunk upload failed: ${xhr.status}`,
+							{
+								status: xhr.status,
+								retryable: isRetryableHttpStatus(xhr.status),
+							},
+						),
+					);
 				}
 			};
-			xhr.onerror = () => reject(new Error("network error"));
+			xhr.onerror = () =>
+				reject(
+					new UploadRequestError("network error", {
+						retryable: true,
+					}),
+				);
 			xhr.send(data);
 		});
 	},
@@ -119,18 +179,33 @@ export const uploadService = {
 					const etag = xhr.getResponseHeader("ETag") ?? "";
 					if (!etag) {
 						reject(
-							new Error(
+							new UploadRequestError(
 								"S3 did not return ETag header. Check bucket CORS ExposeHeaders configuration.",
+								{ status: xhr.status, retryable: false },
 							),
 						);
 						return;
 					}
 					resolve(etag);
 				} else {
-					reject(new Error(`S3 upload failed: ${xhr.status}`));
+					reject(
+						new UploadRequestError(
+							parseApiMessage(xhr.responseText) ??
+								`S3 upload failed: ${xhr.status}`,
+							{
+								status: xhr.status,
+								retryable: isRetryableHttpStatus(xhr.status),
+							},
+						),
+					);
 				}
 			};
-			xhr.onerror = () => reject(new Error("network error"));
+			xhr.onerror = () =>
+				reject(
+					new UploadRequestError("network error", {
+						retryable: true,
+					}),
+				);
 			xhr.send(file);
 		});
 	},

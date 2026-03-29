@@ -1,15 +1,20 @@
 use chrono::Utc;
 use sea_orm::{Set, TransactionTrait};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::constants::HOUR_SECS;
-use crate::db::repository::{file_repo, policy_repo, upload_session_repo, user_repo};
+use crate::db::repository::{
+    file_repo, policy_repo, upload_session_part_repo, upload_session_repo, user_repo,
+};
 use crate::entities::{file, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{file_service, folder_service};
-use crate::types::{DriverType, UploadMode, UploadSessionStatus};
+use crate::types::{
+    DriverType, S3UploadStrategy, UploadMode, UploadSessionStatus,
+    effective_s3_multipart_chunk_size, parse_storage_policy_options,
+};
 use crate::utils::id;
 
 #[derive(Serialize, ToSchema)]
@@ -20,22 +25,6 @@ pub struct InitUploadResponse {
     pub total_chunks: Option<i32>,
     /// S3 presigned PUT URL（仅 presigned 模式）
     pub presigned_url: Option<String>,
-}
-
-/// 存储策略 options JSON
-#[derive(Deserialize, Default)]
-struct PolicyOptions {
-    #[serde(default)]
-    presigned_upload: bool,
-}
-
-fn parse_policy_options(options: &str) -> PolicyOptions {
-    serde_json::from_str(options).unwrap_or_else(|e| {
-        if !options.is_empty() && options != "{}" {
-            tracing::warn!("invalid policy options JSON '{options}': {e}");
-        }
-        PolicyOptions::default()
-    })
 }
 
 #[derive(Serialize, ToSchema)]
@@ -50,8 +39,35 @@ pub struct UploadProgressResponse {
     pub status: UploadSessionStatus,
     pub received_count: i32,
     pub chunks_on_disk: Vec<i32>,
+    pub chunk_size: i64,
     pub total_chunks: i32,
     pub filename: String,
+}
+
+fn expected_chunk_size_for_upload(
+    session: &upload_session::Model,
+    chunk_number: i32,
+) -> Result<i64> {
+    if session.total_chunks <= 0 || session.chunk_size <= 0 {
+        return Err(AsterError::chunk_upload_failed(format!(
+            "invalid upload session chunk metadata: total_chunks={}, chunk_size={}",
+            session.total_chunks, session.chunk_size
+        )));
+    }
+
+    if chunk_number < session.total_chunks - 1 {
+        return Ok(session.chunk_size);
+    }
+
+    let preceding = session.chunk_size * i64::from(session.total_chunks - 1);
+    let expected = session.total_size - preceding;
+    if expected <= 0 {
+        return Err(AsterError::chunk_upload_failed(format!(
+            "invalid final chunk size for upload {}: total_size={}, preceding={preceding}",
+            session.id, session.total_size
+        )));
+    }
+    Ok(expected)
 }
 
 /// 生成唯一的 upload_id（UUID v4），最多重试 5 次防止极低概率碰撞
@@ -110,14 +126,16 @@ pub async fn init_upload(
 
     // S3 presigned 直传：策略开启 + S3 驱动
     if policy.driver_type == DriverType::S3 {
-        let opts = parse_policy_options(&policy.options);
-        if opts.presigned_upload {
+        let opts = parse_storage_policy_options(&policy.options);
+        let strategy = opts.effective_s3_upload_strategy();
+        if strategy == S3UploadStrategy::Presigned {
             let driver = state.driver_registry.get_driver(&policy)?;
             let upload_id = generate_upload_id(db).await?;
             let temp_key = format!("files/{upload_id}");
+            let chunk_size = effective_s3_multipart_chunk_size(policy.chunk_size);
 
             // chunk_size == 0 → 禁用分片；文件 ≤ chunk_size → 单次 presigned PUT
-            if policy.chunk_size == 0 || total_size <= policy.chunk_size {
+            if policy.chunk_size == 0 || total_size <= chunk_size {
                 let presigned_url = driver
                     .presigned_put_url(&temp_key, std::time::Duration::from_secs(HOUR_SECS))
                     .await?
@@ -159,7 +177,6 @@ pub async fn init_upload(
 
             // 大文件 → S3 multipart presigned 直传
             let s3_upload_id = driver.create_multipart_upload(&temp_key).await?;
-            let chunk_size = policy.chunk_size;
             let total_chunks = ((total_size + chunk_size - 1) / chunk_size) as i32;
 
             let now = Utc::now();
@@ -187,6 +204,55 @@ pub async fn init_upload(
 
             return Ok(InitUploadResponse {
                 mode: UploadMode::PresignedMultipart,
+                upload_id: Some(upload_id),
+                chunk_size: Some(chunk_size),
+                total_chunks: Some(total_chunks),
+                presigned_url: None,
+            });
+        }
+
+        if strategy == S3UploadStrategy::RelayStream {
+            let chunk_size = effective_s3_multipart_chunk_size(policy.chunk_size);
+            if policy.chunk_size == 0 || total_size <= chunk_size {
+                return Ok(InitUploadResponse {
+                    mode: UploadMode::Direct,
+                    upload_id: None,
+                    chunk_size: None,
+                    total_chunks: None,
+                    presigned_url: None,
+                });
+            }
+
+            let driver = state.driver_registry.get_driver(&policy)?;
+            let upload_id = generate_upload_id(db).await?;
+            let temp_key = format!("files/{upload_id}");
+            let s3_upload_id = driver.create_multipart_upload(&temp_key).await?;
+            let total_chunks = ((total_size + chunk_size - 1) / chunk_size) as i32;
+            let now = Utc::now();
+            let expires_at = now + chrono::Duration::hours(24);
+
+            let session = upload_session::ActiveModel {
+                id: Set(upload_id.clone()),
+                user_id: Set(user_id),
+                filename: Set(resolved_filename.clone()),
+                total_size: Set(total_size),
+                chunk_size: Set(chunk_size),
+                total_chunks: Set(total_chunks),
+                received_count: Set(0),
+                folder_id: Set(resolved_folder_id),
+                policy_id: Set(policy.id),
+                status: Set(UploadSessionStatus::Uploading),
+                s3_temp_key: Set(Some(temp_key)),
+                s3_multipart_id: Set(Some(s3_upload_id)),
+                file_id: Set(None),
+                created_at: Set(now),
+                expires_at: Set(expires_at),
+                updated_at: Set(now),
+            };
+            upload_session_repo::create(db, session).await?;
+
+            return Ok(InitUploadResponse {
+                mode: UploadMode::Chunked,
                 upload_id: Some(upload_id),
                 chunk_size: Some(chunk_size),
                 total_chunks: Some(total_chunks),
@@ -273,6 +339,65 @@ pub async fn upload_chunk(
             "chunk_number {} out of range [0, {})",
             chunk_number, session.total_chunks
         )));
+    }
+
+    let expected_size = expected_chunk_size_for_upload(&session, chunk_number)?;
+    if data.len() as i64 != expected_size {
+        return Err(AsterError::chunk_upload_failed(format!(
+            "chunk {chunk_number} size mismatch: expected {expected_size}, got {}",
+            data.len()
+        )));
+    }
+
+    if let (Some(temp_key), Some(multipart_id)) = (
+        session.s3_temp_key.as_deref(),
+        session.s3_multipart_id.as_deref(),
+    ) {
+        let s3_part_number = chunk_number + 1;
+
+        if upload_session_part_repo::find_by_upload_and_part(db, upload_id, s3_part_number)
+            .await?
+            .is_some()
+        {
+            let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+            return Ok(ChunkUploadResponse {
+                received_count: updated.received_count,
+                total_chunks: updated.total_chunks,
+            });
+        }
+
+        let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+        let driver = state.driver_registry.get_driver(&policy)?;
+        let etag = driver
+            .upload_multipart_part(temp_key, multipart_id, s3_part_number, data)
+            .await?;
+        upload_session_part_repo::upsert_part(
+            db,
+            upload_id,
+            s3_part_number,
+            &etag,
+            data.len() as i64,
+        )
+        .await?;
+
+        use crate::entities::upload_session::{Column, Entity as UploadSession};
+        use sea_orm::{ColumnTrait, EntityTrait, ExprTrait, QueryFilter, sea_query::Expr};
+        UploadSession::update_many()
+            .col_expr(
+                Column::ReceivedCount,
+                Expr::col(Column::ReceivedCount).add(1),
+            )
+            .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
+            .filter(Column::Id.eq(upload_id))
+            .exec(db)
+            .await
+            .map_err(AsterError::from)?;
+
+        let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+        return Ok(ChunkUploadResponse {
+            received_count: updated.received_count,
+            total_chunks: updated.total_chunks,
+        });
     }
 
     let chunk_path = format!("data/.uploads/{upload_id}/chunk_{chunk_number}");
@@ -367,6 +492,10 @@ pub async fn complete_upload(
             return complete_s3_multipart(state, session, parts).await;
         }
         return complete_presigned_upload(state, session).await;
+    }
+
+    if session.status == UploadSessionStatus::Uploading && session.s3_multipart_id.is_some() {
+        return complete_s3_relay_multipart(state, session).await;
     }
 
     if session.received_count != session.total_chunks {
@@ -651,6 +780,109 @@ async fn complete_s3_multipart(
     }
 }
 
+/// 完成 S3 relay multipart 上传：直接使用服务端保存的 parts 完成 multipart。
+async fn complete_s3_relay_multipart(
+    state: &AppState,
+    session: upload_session::Model,
+) -> Result<file::Model> {
+    let db = &state.db;
+    let temp_key = session
+        .s3_temp_key
+        .as_deref()
+        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_temp_key"))?
+        .to_string();
+    let multipart_id = session
+        .s3_multipart_id
+        .as_deref()
+        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_multipart_id"))?
+        .to_string();
+
+    let parts = upload_session_part_repo::list_by_upload(db, &session.id).await?;
+    if parts.len() != session.total_chunks as usize {
+        return Err(AsterError::upload_assembly_failed(format!(
+            "expected {} parts, got {}",
+            session.total_chunks,
+            parts.len()
+        )));
+    }
+
+    for (expected, part) in (1..=session.total_chunks).zip(parts.iter()) {
+        if part.part_number != expected {
+            return Err(AsterError::upload_assembly_failed(format!(
+                "missing uploaded part {}; got {:?}",
+                expected, part.part_number
+            )));
+        }
+    }
+
+    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+
+    let upload_id = &session.id;
+    let transitioned = upload_session_repo::try_transition_status(
+        db,
+        upload_id,
+        UploadSessionStatus::Uploading,
+        UploadSessionStatus::Assembling,
+    )
+    .await?;
+    if !transitioned {
+        return Err(AsterError::upload_assembly_failed(format!(
+            "session status is '{:?}', expected 'uploading'",
+            session.status
+        )));
+    }
+
+    let result = async {
+        let completed_parts = parts
+            .iter()
+            .map(|part| (part.part_number, part.etag.clone()))
+            .collect();
+        driver
+            .complete_multipart_upload(&temp_key, &multipart_id, completed_parts)
+            .await?;
+
+        let meta = driver.metadata(&temp_key).await.map_err(|_| {
+            AsterError::upload_assembly_failed(
+                "S3 object not found after relay multipart complete - assembly may have failed",
+            )
+        })?;
+        let actual_size = meta.size as i64;
+
+        if actual_size != session.total_size {
+            if let Err(e) = driver.delete(&temp_key).await {
+                tracing::warn!("failed to delete S3 temp object: {e}");
+            }
+            return Err(AsterError::upload_assembly_failed(format!(
+                "size mismatch: declared {} but uploaded {}",
+                session.total_size, actual_size
+            )));
+        }
+
+        let file_hash = format!("s3-{}", upload_id);
+        let now = Utc::now();
+        finalize_upload_session(
+            state,
+            &session,
+            &file_hash,
+            actual_size,
+            policy.id,
+            &temp_key,
+            now,
+        )
+        .await
+    }
+    .await;
+
+    match result {
+        Ok(file) => Ok(file),
+        Err(e) => {
+            mark_session_failed(db, upload_id).await;
+            Err(e)
+        }
+    }
+}
+
 /// 将 session 标记为 Failed（best-effort，失败只记录日志）
 async fn mark_session_failed<C: sea_orm::ConnectionTrait>(db: &C, upload_id: &str) {
     if let Ok(s) = upload_session_repo::find_by_id(db, upload_id).await {
@@ -765,22 +997,30 @@ pub async fn get_progress(
     let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
     crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
 
-    // S3 multipart → 从 S3 查询已上传 parts；本地分片 → 扫磁盘
-    let chunks_on_disk = if let (Some(temp_key), Some(multipart_id)) =
-        (&session.s3_temp_key, &session.s3_multipart_id)
-    {
-        let policy = policy_repo::find_by_id(&state.db, session.policy_id).await?;
-        let driver = state.driver_registry.get_driver(&policy)?;
-        driver.list_uploaded_parts(temp_key, multipart_id).await?
-    } else {
-        scan_received_chunks(&session.id).await
-    };
+    // S3 relay multipart → 读服务端 parts；S3 presigned multipart → 从 S3 查询；本地分片 → 扫磁盘
+    let chunks_on_disk =
+        if session.status == UploadSessionStatus::Uploading && session.s3_multipart_id.is_some() {
+            upload_session_part_repo::list_part_numbers(&state.db, &session.id)
+                .await?
+                .into_iter()
+                .map(|part_number| part_number - 1)
+                .collect()
+        } else if let (Some(temp_key), Some(multipart_id)) =
+            (&session.s3_temp_key, &session.s3_multipart_id)
+        {
+            let policy = policy_repo::find_by_id(&state.db, session.policy_id).await?;
+            let driver = state.driver_registry.get_driver(&policy)?;
+            driver.list_uploaded_parts(temp_key, multipart_id).await?
+        } else {
+            scan_received_chunks(&session.id).await
+        };
 
     Ok(UploadProgressResponse {
         upload_id: session.id,
         status: session.status,
         received_count: session.received_count,
         chunks_on_disk,
+        chunk_size: session.chunk_size,
         total_chunks: session.total_chunks,
         filename: session.filename,
     })

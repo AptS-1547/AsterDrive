@@ -9,6 +9,7 @@ pub mod share;
 pub mod storage_policy;
 pub mod system_config;
 pub mod upload_session;
+pub mod upload_session_part;
 pub mod user;
 pub mod user_profile;
 pub mod user_storage_policy;

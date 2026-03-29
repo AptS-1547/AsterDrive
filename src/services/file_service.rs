@@ -11,9 +11,147 @@ use crate::entities::{file, file_blob, user_storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::thumbnail_service;
-use crate::types::NullablePatch;
+use crate::types::{
+    NullablePatch, S3UploadStrategy, effective_s3_multipart_chunk_size,
+    parse_storage_policy_options,
+};
 
 const HASH_BUF_SIZE: usize = 65536; // 64KB
+
+async fn create_s3_nondedup_file(
+    state: &AppState,
+    user_id: i64,
+    folder_id: Option<i64>,
+    filename: &str,
+    size: i64,
+    policy_id: i64,
+    storage_path: &str,
+    file_hash: &str,
+) -> Result<file::Model> {
+    let now = Utc::now();
+    let mime = mime_guess::from_path(filename)
+        .first_or_octet_stream()
+        .to_string();
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    user_repo::check_quota(&txn, user_id, size).await?;
+
+    let blob =
+        file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
+    let final_name = file_repo::resolve_unique_filename(&txn, user_id, folder_id, filename).await?;
+
+    let created = file_repo::create(
+        &txn,
+        file::ActiveModel {
+            name: Set(final_name),
+            folder_id: Set(folder_id),
+            blob_id: Set(blob.id),
+            size: Set(blob.size),
+            user_id: Set(user_id),
+            mime_type: Set(mime),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await?;
+
+    user_repo::update_storage_used(&txn, user_id, size).await?;
+    txn.commit().await.map_err(AsterError::from)?;
+    Ok(created)
+}
+
+async fn relay_field_to_s3(
+    state: &AppState,
+    user_id: i64,
+    folder_id: Option<i64>,
+    filename: &str,
+    mut field: actix_multipart::Field,
+    policy: &crate::entities::storage_policy::Model,
+) -> Result<file::Model> {
+    let driver = state.driver_registry.get_driver(policy)?;
+    let upload_id = crate::utils::id::new_uuid();
+    let storage_path = format!("files/{upload_id}");
+    let multipart_id = driver.create_multipart_upload(&storage_path).await?;
+    let part_size = effective_s3_multipart_chunk_size(policy.chunk_size) as usize;
+
+    let result = async {
+        let mut total_size: i64 = 0;
+        let mut part_number = 1;
+        let mut uploaded_parts = Vec::new();
+        let mut buffer = Vec::with_capacity(part_size);
+
+        while let Some(chunk) = field.next().await {
+            let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
+            total_size += chunk.len() as i64;
+            if policy.max_file_size > 0 && total_size > policy.max_file_size {
+                return Err(AsterError::file_too_large(format!(
+                    "file size {} exceeds limit {}",
+                    total_size, policy.max_file_size
+                )));
+            }
+
+            buffer.extend_from_slice(&chunk);
+
+            while buffer.len() >= part_size {
+                let remainder = buffer.split_off(part_size);
+                let current_part = std::mem::replace(&mut buffer, remainder);
+                let etag = driver
+                    .upload_multipart_part(&storage_path, &multipart_id, part_number, &current_part)
+                    .await?;
+                uploaded_parts.push((part_number, etag));
+                part_number += 1;
+            }
+        }
+
+        if total_size == 0 {
+            return Err(AsterError::validation_error("empty file"));
+        }
+
+        user_repo::check_quota(&state.db, user_id, total_size).await?;
+
+        let final_part_etag = driver
+            .upload_multipart_part(&storage_path, &multipart_id, part_number, &buffer)
+            .await?;
+        uploaded_parts.push((part_number, final_part_etag));
+
+        driver
+            .complete_multipart_upload(&storage_path, &multipart_id, uploaded_parts)
+            .await?;
+
+        let file_hash = format!("s3-{upload_id}");
+        create_s3_nondedup_file(
+            state,
+            user_id,
+            folder_id,
+            filename,
+            total_size,
+            policy.id,
+            &storage_path,
+            &file_hash,
+        )
+        .await
+    }
+    .await;
+
+    match result {
+        Ok(file) => Ok(file),
+        Err(err) => {
+            if let Err(cleanup_err) = driver
+                .abort_multipart_upload(&storage_path, &multipart_id)
+                .await
+            {
+                tracing::warn!("failed to abort relay multipart upload {upload_id}: {cleanup_err}");
+                if let Err(delete_err) = driver.delete(&storage_path).await {
+                    tracing::warn!(
+                        "failed to delete relay object {storage_path} after abort failure: {delete_err}"
+                    );
+                }
+            }
+            Err(err)
+        }
+    }
+}
 
 /// 从临时文件存储 blob 并创建文件记录
 ///
@@ -202,6 +340,48 @@ pub async fn upload(
         }
     };
 
+    let effective_folder_id = if relative_path.is_some() {
+        resolved_folder_id
+    } else {
+        folder_id
+    };
+    let policy = resolve_policy(state, user_id, effective_folder_id).await?;
+    let policy_options = parse_storage_policy_options(&policy.options);
+    let s3_strategy = if policy.driver_type == crate::types::DriverType::S3 {
+        Some(policy_options.effective_s3_upload_strategy())
+    } else {
+        None
+    };
+
+    if s3_strategy == Some(S3UploadStrategy::RelayStream) {
+        while let Some(field) = payload.next().await {
+            let field = field.map_aster_err(AsterError::file_upload_failed)?;
+            let uploaded_name = field
+                .content_disposition()
+                .and_then(|cd| cd.get_filename().map(|n| n.to_string()));
+
+            if let Some(name) = uploaded_name {
+                let filename = if relative_path.is_some() {
+                    resolved_filename.clone()
+                } else {
+                    name
+                };
+                crate::utils::validate_name(&filename)?;
+                return relay_field_to_s3(
+                    state,
+                    user_id,
+                    effective_folder_id,
+                    &filename,
+                    field,
+                    &policy,
+                )
+                .await;
+            }
+        }
+
+        return Err(AsterError::validation_error("empty file"));
+    }
+
     // 流式写入临时文件（不在内存中缓冲整个文件）
     let mut filename = String::from("unnamed");
     let temp_path = format!("{}/{}", crate::utils::TEMP_DIR, uuid::Uuid::new_v4());
@@ -251,11 +431,7 @@ pub async fn upload(
     let result = store_from_temp(
         state,
         user_id,
-        if relative_path.is_some() {
-            resolved_folder_id
-        } else {
-            folder_id
-        },
+        effective_folder_id,
         &filename,
         &temp_path,
         size,

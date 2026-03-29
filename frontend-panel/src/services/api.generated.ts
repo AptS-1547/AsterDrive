@@ -2272,6 +2272,8 @@ export interface components {
         UploadMode: "direct" | "chunked" | "presigned" | "presigned_multipart";
         UploadProgressResponse: {
             chunks_on_disk: number[];
+            /** Format: int64 */
+            chunk_size: number;
             filename: string;
             /** Format: int32 */
             received_count: number;
