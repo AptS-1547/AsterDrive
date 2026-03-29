@@ -15,7 +15,7 @@ use crate::types::{
     DriverType, S3UploadStrategy, UploadMode, UploadSessionStatus,
     effective_s3_multipart_chunk_size, parse_storage_policy_options,
 };
-use crate::utils::{id, paths};
+use crate::utils::{id, numbers, paths};
 
 #[derive(Serialize, ToSchema)]
 pub struct InitUploadResponse {
@@ -204,7 +204,8 @@ pub async fn init_upload(
 
             // 大文件 → S3 multipart presigned 直传
             let s3_upload_id = driver.create_multipart_upload(&temp_key).await?;
-            let total_chunks = ((total_size + chunk_size - 1) / chunk_size) as i32;
+            let total_chunks =
+                numbers::calc_total_chunks(total_size, chunk_size, "presigned multipart upload")?;
 
             let now = Utc::now();
             let expires_at = now + chrono::Duration::hours(24);
@@ -254,7 +255,8 @@ pub async fn init_upload(
             let upload_id = generate_upload_id(db).await?;
             let temp_key = format!("files/{upload_id}");
             let s3_upload_id = driver.create_multipart_upload(&temp_key).await?;
-            let total_chunks = ((total_size + chunk_size - 1) / chunk_size) as i32;
+            let total_chunks =
+                numbers::calc_total_chunks(total_size, chunk_size, "relay multipart upload")?;
             let now = Utc::now();
             let expires_at = now + chrono::Duration::hours(24);
 
@@ -300,7 +302,7 @@ pub async fn init_upload(
     }
 
     let chunk_size = policy.chunk_size;
-    let total_chunks = ((total_size + chunk_size - 1) / chunk_size) as i32;
+    let total_chunks = numbers::calc_total_chunks(total_size, chunk_size, "chunked upload")?;
     let upload_id = generate_upload_id(db).await?;
     let now = Utc::now();
     let expires_at = now + chrono::Duration::hours(24);
@@ -873,7 +875,9 @@ async fn complete_s3_relay_multipart(
         .to_string();
 
     let parts = upload_session_part_repo::list_by_upload(db, &session.id).await?;
-    if parts.len() != session.total_chunks as usize {
+    let expected_parts =
+        numbers::i32_to_usize(session.total_chunks, "upload session total_chunks")?;
+    if parts.len() != expected_parts {
         return Err(AsterError::upload_assembly_failed(format!(
             "expected {} parts, got {}",
             session.total_chunks,

@@ -1,5 +1,6 @@
 pub mod hash;
 pub mod id;
+pub mod numbers;
 pub mod paths;
 
 use crate::errors::{AsterError, Result};

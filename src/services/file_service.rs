@@ -15,6 +15,7 @@ use crate::types::{
     NullablePatch, S3UploadStrategy, UploadSessionStatus, effective_s3_multipart_chunk_size,
     parse_storage_policy_options,
 };
+use crate::utils::numbers;
 
 const HASH_BUF_SIZE: usize = 65536; // 64KB
 const BLOB_CLEANUP_CONCURRENCY: usize = 8;
@@ -75,11 +76,12 @@ async fn create_relay_cleanup_handle(
     storage_path: &str,
     multipart_id: &str,
 ) -> Result<()> {
-    let total_chunks = i32::try_from(uploaded_part_count).map_err(|_| {
-        AsterError::internal_error(format!(
-            "relay multipart part count overflow for upload {upload_id}"
-        ))
-    })?;
+    let total_chunks = numbers::usize_to_i32(uploaded_part_count, "relay multipart part count")
+        .map_err(|_| {
+            AsterError::internal_error(format!(
+                "relay multipart part count overflow for upload {upload_id}"
+            ))
+        })?;
     let now = Utc::now();
 
     upload_session_repo::create(
@@ -153,7 +155,8 @@ async fn relay_field_to_s3(
     let upload_id = crate::utils::id::new_uuid();
     let storage_path = format!("files/{upload_id}");
     let multipart_id = driver.create_multipart_upload(&storage_path).await?;
-    let part_size = effective_s3_multipart_chunk_size(policy.chunk_size) as usize;
+    let part_size_bytes = effective_s3_multipart_chunk_size(policy.chunk_size);
+    let part_size = numbers::bytes_to_usize(part_size_bytes, "effective S3 multipart chunk size")?;
 
     let result = async {
         let mut total_size: i64 = 0;
@@ -204,7 +207,7 @@ async fn relay_field_to_s3(
             folder_id,
             filename,
             total_size,
-            part_size as i64,
+            part_size_bytes,
             uploaded_parts.len(),
             policy.id,
             &storage_path,
