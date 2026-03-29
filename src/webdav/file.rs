@@ -11,8 +11,6 @@ use crate::config::Config;
 use crate::storage::DriverRegistry;
 use crate::webdav::metadata::AsterDavMeta;
 
-use crate::utils::TEMP_DIR;
-
 /// DavFile 实现，使用临时文件避免大文件内存爆炸
 pub struct AsterDavFile {
     mode: FileMode,
@@ -93,8 +91,10 @@ impl AsterDavFile {
         filename: String,
         existing_file_id: Option<i64>,
     ) -> Result<Self, FsError> {
-        let temp_path = format!("{}/{}", TEMP_DIR, uuid::Uuid::new_v4());
-        tokio::fs::create_dir_all(TEMP_DIR)
+        let temp_dir = &config.server.temp_dir;
+        let temp_path =
+            crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
+        tokio::fs::create_dir_all(temp_dir)
             .await
             .map_err(|_| FsError::GeneralFailure)?;
         let file = tokio::fs::File::create(&temp_path)

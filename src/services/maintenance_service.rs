@@ -19,6 +19,8 @@ use crate::types::UploadSessionStatus;
 
 const COMPLETED_SESSION_BATCH_SIZE: u64 = 1_000;
 const BLOB_RECONCILE_BATCH_SIZE: u64 = 1_000;
+const MULTIPART_ABORT_MAX_ATTEMPTS: u32 = 3;
+const MULTIPART_ABORT_INITIAL_BACKOFF_MS: u64 = 200;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct UploadSessionMaintenanceStats {
@@ -71,7 +73,10 @@ pub async fn cleanup_expired_completed_upload_sessions(
                 cleanup_broken_completed_session_object(state, &session, &tracked_blob_paths).await;
             }
 
-            let temp_dir = format!("data/.uploads/{}", session.id);
+            let temp_dir = crate::utils::paths::upload_temp_dir(
+                &state.config.server.upload_temp_dir,
+                &session.id,
+            );
             crate::utils::cleanup_temp_dir(&temp_dir).await;
 
             match upload_session_repo::delete(&state.db, &session.id).await {
@@ -125,9 +130,20 @@ pub async fn reconcile_blob_state(state: &AppState) -> Result<BlobMaintenanceSta
             };
 
             if actual_refs == 0 {
-                file_repo::delete_blob(&state.db, blob.id).await?;
-                cleanup_blob_assets(state, &blob).await;
-                stats.orphan_blobs_deleted += 1;
+                if blob.ref_count > 0 {
+                    file_repo::decrement_blob_ref_count_by(&state.db, blob.id, blob.ref_count)
+                        .await?;
+                    stats.ref_count_fixed += 1;
+                } else if blob.ref_count < 0 {
+                    let mut active: file_blob::ActiveModel = blob.clone().into();
+                    active.ref_count = Set(0);
+                    active.updated_at = Set(Utc::now());
+                    active.update(&state.db).await.map_err(AsterError::from)?;
+                    stats.ref_count_fixed += 1;
+                }
+                if crate::services::file_service::cleanup_unreferenced_blob(state, &blob).await {
+                    stats.orphan_blobs_deleted += 1;
+                }
                 continue;
             }
 
@@ -232,12 +248,51 @@ async fn cleanup_broken_completed_session_object(
     };
 
     if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
-        if let Err(e) = driver.abort_multipart_upload(temp_key, multipart_id).await {
+        let mut abort_error = None;
+
+        for attempt in 1..=MULTIPART_ABORT_MAX_ATTEMPTS {
+            match driver.abort_multipart_upload(temp_key, multipart_id).await {
+                Ok(()) => {
+                    abort_error = None;
+                    break;
+                }
+                Err(err) => {
+                    if attempt == MULTIPART_ABORT_MAX_ATTEMPTS {
+                        abort_error = Some(err);
+                        break;
+                    }
+
+                    let backoff_ms = MULTIPART_ABORT_INITIAL_BACKOFF_MS * (1_u64 << (attempt - 1));
+                    tracing::warn!(
+                        session_id = %session.id,
+                        temp_key = %temp_key,
+                        attempt,
+                        max_attempts = MULTIPART_ABORT_MAX_ATTEMPTS,
+                        backoff_ms,
+                        "failed to abort stale multipart upload for completed session, retrying: {err}"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                }
+            }
+        }
+
+        if let Some(e) = abort_error {
             tracing::warn!(
                 session_id = %session.id,
                 temp_key = %temp_key,
-                "failed to abort stale multipart upload for completed session: {e}"
+                max_attempts = MULTIPART_ABORT_MAX_ATTEMPTS,
+                "failed to abort stale multipart upload for completed session after retries: {e}"
             );
+
+            // 删除对象 key 不能回收仍在进行中的 multipart parts；生产环境仍应配置
+            // S3/MinIO 生命周期规则来清理 incomplete multipart uploads。
+            if let Err(delete_err) = driver.delete(temp_key).await {
+                tracing::warn!(
+                    session_id = %session.id,
+                    temp_key = %temp_key,
+                    "failed to delete stale completed multipart object after abort retries exhausted: {delete_err}"
+                );
+            }
         }
     } else if let Err(e) = driver.delete(temp_key).await {
         tracing::warn!(
@@ -245,36 +300,5 @@ async fn cleanup_broken_completed_session_object(
             temp_key = %temp_key,
             "failed to delete stale temp object for completed session: {e}"
         );
-    }
-}
-
-async fn cleanup_blob_assets(state: &AppState, blob: &file_blob::Model) {
-    if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, blob).await {
-        tracing::warn!(
-            "failed to delete thumbnail for orphan blob {}: {e}",
-            blob.id
-        );
-    }
-
-    match policy_repo::find_by_id(&state.db, blob.policy_id).await {
-        Ok(policy) => match state.driver_registry.get_driver(&policy) {
-            Ok(driver) => {
-                if let Err(e) = driver.delete(&blob.storage_path).await {
-                    tracing::warn!("failed to delete orphan blob file {}: {e}", blob.id);
-                }
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "failed to resolve storage driver for orphan blob {}: {e}",
-                    blob.id
-                );
-            }
-        },
-        Err(e) => {
-            tracing::warn!(
-                "failed to load storage policy for orphan blob {}: {e}",
-                blob.id
-            );
-        }
     }
 }

@@ -40,17 +40,34 @@ vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string) => key,
 	}),
+	initReactI18next: {
+		type: "3rdParty",
+		init: () => undefined,
+	},
 }));
 
 vi.mock("@/components/files/UploadPanel", () => ({
 	UploadPanel: (props: {
-		tasks: Array<{ id: string; mode: string; status: string; title: string }>;
+		tasks: Array<{
+			id: string;
+			mode: string;
+			status: string;
+			title: string;
+			actions?: Array<{ label: string; onClick: () => void }>;
+		}>;
 	}) => {
 		uploadPanelSpy(props);
 		return (
 			<div data-testid="upload-panel">
 				{props.tasks.map((task) => (
-					<div key={task.id}>{`${task.title}:${task.mode}:${task.status}`}</div>
+					<div key={task.id}>
+						<div>{`${task.title}:${task.mode}:${task.status}`}</div>
+						{task.actions?.map((action) => (
+							<button key={action.label} type="button" onClick={action.onClick}>
+								{action.label}
+							</button>
+						))}
+					</div>
 				))}
 			</div>
 		);
@@ -84,6 +101,11 @@ vi.mock("@/lib/uploadPersistence", () => ({
 }));
 
 vi.mock("@/services/uploadService", () => ({
+	isRetryableUploadError: (error: unknown) =>
+		typeof error === "object" &&
+		error !== null &&
+		"retryable" in error &&
+		(error as { retryable?: boolean }).retryable === true,
 	uploadService: {
 		cancelUpload,
 		completeUpload,
@@ -264,5 +286,457 @@ describe("UploadArea", () => {
 			},
 		]);
 		expect(removeSession).toHaveBeenCalledWith("upload-multipart");
+	});
+
+	it("resumes chunked uploads with the persisted chunk size instead of recomputing it", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-resume",
+				filename: "resume.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress.mockResolvedValue({
+			upload_id: "upload-resume",
+			status: "uploading",
+			received_count: 1,
+			chunks_on_disk: [0],
+			total_chunks: 3,
+			filename: "resume.txt",
+		});
+		uploadChunk.mockResolvedValue({});
+		completeUpload.mockResolvedValue({ id: 9004 });
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		const file = new File(["hello world"], "resume.txt", {
+			type: "text/plain",
+		});
+
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
+		fireEvent.click(screen.getByText("files:upload_resume_select"));
+		fireEvent.change(screen.getByTestId("resume-input"), {
+			target: { files: [file] },
+		});
+
+		await waitFor(() => {
+			expect(uploadChunk).toHaveBeenCalledWith(
+				"upload-resume",
+				1,
+				expect.any(Blob),
+			);
+		});
+
+		const resumedChunk = uploadChunk.mock.calls.find(
+			(call) => call[0] === "upload-resume" && call[1] === 1,
+		)?.[2];
+		expect(resumedChunk).toBeInstanceOf(Blob);
+		expect((resumedChunk as Blob).size).toBe(5);
+	});
+
+	it("turns failed persisted sessions into fresh reupload tasks", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-failed",
+				filename: "failed.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress.mockResolvedValue({
+			upload_id: "upload-failed",
+			status: "failed",
+			received_count: 2,
+			chunks_on_disk: [0, 1],
+			total_chunks: 3,
+			filename: "failed.txt",
+		});
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await waitFor(() => {
+			expect(removeSession).toHaveBeenCalledWith("upload-failed");
+		});
+		await screen.findByText("failed.txt:Chunked:files:upload_pending_file");
+	});
+
+	it("keeps persisted sessions when progress polling fails transiently", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-transient",
+				filename: "transient.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress.mockRejectedValue(
+			new MockApiError(4001, "temporary storage error"),
+		);
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await waitFor(() => {
+			expect(getProgress).toHaveBeenCalledWith("upload-transient");
+		});
+		expect(removeSession).not.toHaveBeenCalled();
+		expect(
+			screen.queryByText("transient.txt:Chunked:files:upload_pending_file"),
+		).not.toBeInTheDocument();
+	});
+
+	it("does not reinitialize a new upload when resume preflight fails transiently", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-resume-transient",
+				filename: "resume.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress
+			.mockResolvedValueOnce({
+				upload_id: "upload-resume-transient",
+				status: "uploading",
+				received_count: 1,
+				chunks_on_disk: [0],
+				total_chunks: 3,
+				filename: "resume.txt",
+			})
+			.mockRejectedValueOnce(new Error("temporary progress failure"));
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		const file = new File(["hello world"], "resume.txt", {
+			type: "text/plain",
+		});
+
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
+		fireEvent.click(screen.getByText("files:upload_resume_select"));
+		fireEvent.change(screen.getByTestId("resume-input"), {
+			target: { files: [file] },
+		});
+
+		await screen.findByText("resume.txt:Chunked:files:upload_failed");
+
+		expect(initUpload).not.toHaveBeenCalled();
+		expect(uploadChunk).not.toHaveBeenCalled();
+		expect(removeSession).not.toHaveBeenCalled();
+	});
+
+	it("continues assembling persisted uploads without asking for file selection", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-assembling",
+				filename: "assembling.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress.mockResolvedValue({
+			upload_id: "upload-assembling",
+			status: "assembling",
+			received_count: 3,
+			chunks_on_disk: [0, 1, 2],
+			total_chunks: 3,
+			filename: "assembling.txt",
+		});
+		completeUpload.mockResolvedValue({ id: 9006 });
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await screen.findByText("assembling.txt:Chunked:files:upload_success");
+		expect(completeUpload).toHaveBeenCalledWith("upload-assembling", undefined);
+		expect(removeSession).toHaveBeenCalledWith("upload-assembling");
+	});
+
+	it("keeps completion-only sessions retryable when completion fails", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-complete-retry",
+				filename: "assembling.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress.mockResolvedValue({
+			upload_id: "upload-complete-retry",
+			status: "assembling",
+			received_count: 3,
+			chunks_on_disk: [0, 1, 2],
+			total_chunks: 3,
+			filename: "assembling.txt",
+		});
+		completeUpload
+			.mockRejectedValueOnce(new Error("complete failed"))
+			.mockResolvedValueOnce({ id: 9008 });
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await screen.findByText("assembling.txt:Chunked:files:upload_failed");
+		expect(removeSession).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByText("files:upload_retry"));
+
+		await screen.findByText("assembling.txt:Chunked:files:upload_success");
+		expect(completeUpload).toHaveBeenCalledTimes(2);
+		expect(removeSession).toHaveBeenCalledWith("upload-complete-retry");
+	});
+
+	it("finalizes completed persisted uploads through idempotent completion", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-completed",
+				filename: "completed.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress.mockResolvedValue({
+			upload_id: "upload-completed",
+			status: "completed",
+			received_count: 3,
+			chunks_on_disk: [0, 1, 2],
+			total_chunks: 3,
+			filename: "completed.txt",
+		});
+		completeUpload.mockResolvedValue({ id: 9008 });
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await screen.findByText("completed.txt:Chunked:files:upload_success");
+		expect(completeUpload).toHaveBeenCalledWith("upload-completed", undefined);
+		expect(removeSession).toHaveBeenCalledWith("upload-completed");
+	});
+
+	it("resumes persisted multipart assembly with saved completed parts", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-multipart-assembling",
+				filename: "multipart.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "presigned_multipart",
+				completedParts: [
+					{ part_number: 1, etag: "etag-1" },
+					{ part_number: 2, etag: "etag-2" },
+					{ part_number: 3, etag: "etag-3" },
+				],
+			},
+		]);
+		getProgress.mockResolvedValue({
+			upload_id: "upload-multipart-assembling",
+			status: "assembling",
+			received_count: 3,
+			chunks_on_disk: [0, 1, 2],
+			total_chunks: 3,
+			filename: "multipart.txt",
+		});
+		completeUpload.mockResolvedValue({ id: 9009 });
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await screen.findByText("multipart.txt:S3 Chunked:files:upload_success");
+		expect(completeUpload).toHaveBeenCalledWith("upload-multipart-assembling", [
+			{ part_number: 1, etag: "etag-1" },
+			{ part_number: 2, etag: "etag-2" },
+			{ part_number: 3, etag: "etag-3" },
+		]);
+		expect(removeSession).toHaveBeenCalledWith("upload-multipart-assembling");
+	});
+
+	it("reinitializes instead of reusing an upload that failed before resume starts", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-stale",
+				filename: "resume.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress
+			.mockResolvedValueOnce({
+				upload_id: "upload-stale",
+				status: "uploading",
+				received_count: 1,
+				chunks_on_disk: [0],
+				total_chunks: 3,
+				filename: "resume.txt",
+			})
+			.mockResolvedValueOnce({
+				upload_id: "upload-stale",
+				status: "failed",
+				received_count: 1,
+				chunks_on_disk: [0],
+				total_chunks: 3,
+				filename: "resume.txt",
+			});
+		initUpload.mockResolvedValue({
+			mode: "chunked",
+			upload_id: "upload-new",
+			chunk_size: 5,
+			total_chunks: 3,
+		});
+		uploadChunk.mockResolvedValue({});
+		completeUpload.mockResolvedValue({ id: 9007 });
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		const file = new File(["hello world"], "resume.txt", {
+			type: "text/plain",
+		});
+
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
+		fireEvent.click(screen.getByText("files:upload_resume_select"));
+		fireEvent.change(screen.getByTestId("resume-input"), {
+			target: { files: [file] },
+		});
+
+		await screen.findByText("resume.txt:Chunked:files:upload_success");
+
+		expect(removeSession).toHaveBeenCalledWith("upload-stale");
+		expect(
+			uploadChunk.mock.calls.some((call) => call[0] === "upload-stale"),
+		).toBe(false);
+		expect(
+			uploadChunk.mock.calls.some((call) => call[0] === "upload-new"),
+		).toBe(true);
+	});
+
+	it("retries failed chunked uploads by reinitializing a new upload session", async () => {
+		cancelUpload.mockResolvedValue(undefined);
+		initUpload
+			.mockResolvedValueOnce({
+				mode: "chunked",
+				upload_id: "upload-old",
+				chunk_size: 5,
+				total_chunks: 1,
+			})
+			.mockResolvedValueOnce({
+				mode: "chunked",
+				upload_id: "upload-new",
+				chunk_size: 5,
+				total_chunks: 1,
+			});
+		uploadChunk
+			.mockRejectedValueOnce(
+				Object.assign(new Error("upload failed"), { retryable: false }),
+			)
+			.mockResolvedValueOnce({});
+		completeUpload.mockResolvedValue({ id: 9005 });
+
+		await uploadOneFile();
+
+		await screen.findByText("hello.txt:Chunked:files:upload_failed");
+		fireEvent.click(screen.getByText("files:upload_retry"));
+
+		await screen.findByText("hello.txt:Chunked:files:upload_success");
+
+		expect(initUpload).toHaveBeenCalledTimes(2);
+		expect(cancelUpload).toHaveBeenCalledWith("upload-old");
+		expect(removeSession).toHaveBeenCalledWith("upload-old");
+		expect(uploadChunk.mock.calls.at(-1)?.[0]).toBe("upload-new");
+		expect(
+			uploadChunk.mock.calls.filter((call) => call[0] === "upload-old"),
+		).toHaveLength(1);
+		expect(completeUpload).toHaveBeenCalledWith("upload-new", undefined);
 	});
 });

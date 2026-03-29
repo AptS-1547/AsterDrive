@@ -24,6 +24,7 @@ mod m20260327_000002_add_user_preferences;
 mod m20260329_000001_create_user_profiles;
 mod m20260329_000002_add_user_profile_display_name;
 mod m20260329_000003_add_maintenance_indexes;
+mod m20260329_000004_create_upload_session_parts;
 
 pub struct Migrator;
 
@@ -55,6 +56,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260329_000001_create_user_profiles::Migration),
             Box::new(m20260329_000002_add_user_profile_display_name::Migration),
             Box::new(m20260329_000003_add_maintenance_indexes::Migration),
+            Box::new(m20260329_000004_create_upload_session_parts::Migration),
         ]
     }
 }

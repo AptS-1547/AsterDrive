@@ -151,7 +151,9 @@ describe("uploadService", () => {
 	});
 
 	it("rejects chunk uploads on API or transport failures", async () => {
-		const { uploadService } = await import("@/services/uploadService");
+		const { UploadRequestError, uploadService } = await import(
+			"@/services/uploadService"
+		);
 
 		const apiFailure = uploadService.uploadChunk(
 			"upload-1",
@@ -166,6 +168,7 @@ describe("uploadService", () => {
 		});
 		xhrApi.onload?.();
 		await expect(apiFailure).rejects.toThrow("upload failed");
+		await expect(apiFailure).rejects.toBeInstanceOf(UploadRequestError);
 
 		const statusFailure = uploadService.uploadChunk(
 			"upload-1",
@@ -176,6 +179,7 @@ describe("uploadService", () => {
 		xhrStatus.status = 500;
 		xhrStatus.onload?.();
 		await expect(statusFailure).rejects.toThrow("chunk upload failed: 500");
+		await expect(statusFailure).rejects.toMatchObject({ retryable: true });
 
 		const networkFailure = uploadService.uploadChunk(
 			"upload-1",
@@ -185,6 +189,7 @@ describe("uploadService", () => {
 		const xhrNetwork = MockXMLHttpRequest.instances[2];
 		xhrNetwork.onerror?.();
 		await expect(networkFailure).rejects.toThrow("network error");
+		await expect(networkFailure).rejects.toMatchObject({ retryable: true });
 	});
 
 	it("completes uploads with the expected payload and timeout policy", async () => {

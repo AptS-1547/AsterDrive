@@ -7,6 +7,9 @@ use actix_web::test;
 use serde_json::Value;
 use tokio::task::JoinSet;
 
+const TEST_CHUNK_SIZE: usize = 5_242_880;
+const RUSTFS_TEST_IMAGE_TAG: &str = "1.0.0-alpha.90";
+
 async fn create_upload_session(
     state: &aster_drive::runtime::AppState,
     user_id: i64,
@@ -50,6 +53,192 @@ async fn create_upload_session(
     )
     .await
     .unwrap();
+}
+
+fn s3_test_client(endpoint: &str) -> aws_sdk_s3::Client {
+    let credentials =
+        aws_credential_types::Credentials::new("rustfsadmin", "rustfsadmin123", None, None, "test");
+    let config = aws_sdk_s3::Config::builder()
+        .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
+        .region(aws_sdk_s3::config::Region::new("us-east-1"))
+        .credentials_provider(credentials)
+        .endpoint_url(endpoint)
+        .force_path_style(true)
+        .build();
+    aws_sdk_s3::Client::from_conf(config)
+}
+
+async fn try_create_s3_bucket(endpoint: &str, bucket: &str) -> std::result::Result<(), String> {
+    use aws_sdk_s3::error::ProvideErrorMetadata;
+
+    let client = s3_test_client(endpoint);
+    if let Err(err) = client.create_bucket().bucket(bucket).send().await {
+        let code = err
+            .as_service_error()
+            .and_then(|service_err| service_err.code());
+        if matches!(
+            code,
+            Some("BucketAlreadyOwnedByYou") | Some("BucketAlreadyExists")
+        ) {
+            return Ok(());
+        }
+        return Err(err.to_string());
+    }
+    Ok(())
+}
+
+async fn wait_for_s3_bucket(endpoint: &str, bucket: &str) {
+    let mut last_err: Option<String> = None;
+    let ready = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            match try_create_s3_bucket(endpoint, bucket).await {
+                Ok(()) => break,
+                Err(err) => {
+                    last_err = Some(err);
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                }
+            }
+        }
+    })
+    .await;
+
+    if ready.is_err() {
+        panic!(
+            "timed out waiting for S3 bucket {bucket} at {endpoint}: {}",
+            last_err.unwrap_or_else(|| "unknown error".to_string())
+        );
+    }
+}
+
+async fn head_s3_object_etag(endpoint: &str, bucket: &str, key: &str) -> String {
+    s3_test_client(endpoint)
+        .head_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .unwrap()
+        .e_tag
+        .unwrap_or_default()
+}
+
+fn snapshot_dir_tree(
+    path: &std::path::Path,
+) -> std::io::Result<std::collections::BTreeSet<String>> {
+    fn walk(
+        root: &std::path::Path,
+        current: &std::path::Path,
+        entries: &mut std::collections::BTreeSet<String>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(current)? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                entries.insert(format!("{relative}/"));
+                walk(root, &path, entries)?;
+            } else {
+                entries.insert(relative);
+            }
+        }
+        Ok(())
+    }
+
+    let mut entries = std::collections::BTreeSet::new();
+    if !path.exists() {
+        return Ok(entries);
+    }
+    walk(path, path, &mut entries)?;
+    Ok(entries)
+}
+
+fn snapshot_temp_roots(
+    roots: &[String],
+) -> std::io::Result<std::collections::BTreeMap<String, std::collections::BTreeSet<String>>> {
+    let mut snapshots = std::collections::BTreeMap::new();
+    for root in roots {
+        snapshots.insert(
+            root.clone(),
+            snapshot_dir_tree(std::path::Path::new(&root))?,
+        );
+    }
+    Ok(snapshots)
+}
+
+async fn create_s3_default_policy(
+    state: &aster_drive::runtime::AppState,
+    user_id: i64,
+    name: &str,
+    endpoint: &str,
+    bucket: &str,
+    options: &str,
+    chunk_size: i64,
+) -> aster_drive::entities::storage_policy::Model {
+    use aster_drive::db::repository::policy_repo;
+    use chrono::Utc;
+    use sea_orm::Set;
+
+    let now = Utc::now();
+    let policy = policy_repo::create(
+        &state.db,
+        aster_drive::entities::storage_policy::ActiveModel {
+            name: Set(name.to_string()),
+            driver_type: Set(aster_drive::types::DriverType::S3),
+            endpoint: Set(endpoint.to_string()),
+            bucket: Set(bucket.to_string()),
+            access_key: Set("rustfsadmin".to_string()),
+            secret_key: Set("rustfsadmin123".to_string()),
+            base_path: Set("uploads".to_string()),
+            max_file_size: Set(0),
+            allowed_types: Set("[]".to_string()),
+            options: Set(options.to_string()),
+            is_default: Set(false),
+            chunk_size: Set(chunk_size),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    policy_repo::clear_user_default(&state.db, user_id)
+        .await
+        .unwrap();
+    let _ = policy_repo::create_user_policy(
+        &state.db,
+        aster_drive::entities::user_storage_policy::ActiveModel {
+            user_id: Set(user_id),
+            policy_id: Set(policy.id),
+            is_default: Set(true),
+            quota_bytes: Set(0),
+            created_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    policy
+}
+
+fn build_multipart_payload(filename: &str, data: &[u8]) -> (String, Vec<u8>) {
+    let boundary = format!("----AsterTestBoundary{}", uuid::Uuid::new_v4().simple());
+    let mut payload = Vec::new();
+    payload.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    payload.extend_from_slice(
+        format!("Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n")
+            .as_bytes(),
+    );
+    payload.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    payload.extend_from_slice(data);
+    payload.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary, payload)
 }
 
 #[actix_web::test]
@@ -172,14 +361,14 @@ async fn test_chunked_upload_streaming_assembly_preserves_content() {
     assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
 
     let upload_id = init.upload_id.unwrap();
-    let chunk0 = b"hello ";
-    let chunk1 = b"streamed world";
+    let chunk0 = vec![b'A'; TEST_CHUNK_SIZE];
+    let chunk1 = vec![b'B'; TEST_CHUNK_SIZE];
 
-    let resp0 = upload_service::upload_chunk(&state, &upload_id, 0, user.id, chunk0)
+    let resp0 = upload_service::upload_chunk(&state, &upload_id, 0, user.id, &chunk0)
         .await
         .unwrap();
     assert_eq!(resp0.received_count, 1);
-    let resp1 = upload_service::upload_chunk(&state, &upload_id, 1, user.id, chunk1)
+    let resp1 = upload_service::upload_chunk(&state, &upload_id, 1, user.id, &chunk1)
         .await
         .unwrap();
     assert_eq!(resp1.received_count, 2);
@@ -215,8 +404,11 @@ async fn test_direct_and_chunked_upload_produce_same_blob_for_same_content() {
     let pattern = b"same content across direct and chunked upload paths\n";
     let content = pattern.repeat((10_485_760 / pattern.len()) + 1);
     let content = &content[..10_485_760];
-    let temp_path = format!("{}/{}", aster_drive::utils::TEMP_DIR, uuid::Uuid::new_v4());
-    tokio::fs::create_dir_all(aster_drive::utils::TEMP_DIR)
+    let temp_path = aster_drive::utils::paths::temp_file_path(
+        &state.config.server.temp_dir,
+        &uuid::Uuid::new_v4().to_string(),
+    );
+    tokio::fs::create_dir_all(&state.config.server.temp_dir)
         .await
         .unwrap();
     tokio::fs::write(&temp_path, content).await.unwrap();
@@ -341,77 +533,154 @@ async fn test_init_upload_local_never_presigned() {
 }
 
 /// 并发上传同一分片不会导致 received_count 多算（TOCTOU 修复验证）
-#[actix_web::test]
+#[tokio::test]
 async fn test_concurrent_chunk_upload_idempotent() {
+    use aster_drive::services::{auth_service, upload_service};
+    use std::sync::Arc;
+
+    let state = Arc::new(common::setup().await);
+    let user = auth_service::register(&state, "testuser", "test@example.com", "password123")
+        .await
+        .unwrap();
+    let upload_id = format!("concurrent-{}", uuid::Uuid::new_v4());
+    create_upload_session(
+        &state,
+        user.id,
+        &upload_id,
+        aster_drive::types::UploadSessionStatus::Uploading,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+        2,
+        0,
+        None,
+        None,
+        None,
+    )
+    .await;
+    tokio::fs::create_dir_all(aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+    ))
+    .await
+    .unwrap();
+
+    let chunk_data = b"12345".to_vec();
+    let state1 = Arc::clone(&state);
+    let state2 = Arc::clone(&state);
+    let upload_id1 = upload_id.clone();
+    let upload_id2 = upload_id.clone();
+    let chunk1 = chunk_data.clone();
+    let chunk2 = chunk_data.clone();
+
+    let (first, second) = tokio::join!(
+        upload_service::upload_chunk(&state1, &upload_id1, 0, user.id, &chunk1),
+        upload_service::upload_chunk(&state2, &upload_id2, 0, user.id, &chunk2),
+    );
+
+    let first = first.unwrap();
+    let second = second.unwrap();
+    let final_progress = upload_service::get_progress(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+
+    assert!(
+        [first.received_count, second.received_count].contains(&1),
+        "at least one concurrent upload should observe received_count=1"
+    );
+    assert_eq!(
+        final_progress.received_count, 1,
+        "duplicate concurrent chunk upload should not increment count twice"
+    );
+
+    let third = upload_service::upload_chunk(&state, &upload_id, 0, user.id, &chunk_data)
+        .await
+        .unwrap();
+    assert_eq!(
+        third.received_count, 1,
+        "sequential duplicate should remain idempotent after concurrent uploads"
+    );
+}
+
+#[tokio::test]
+async fn test_upload_session_part_upsert_updates_existing_row_without_duplicates() {
+    use aster_drive::db::repository::{upload_session_part_repo, upload_session_repo};
+    use aster_drive::services::auth_service;
+
     let state = common::setup().await;
-    let app = create_test_app!(state);
-    let (token, _) = register_and_login!(app);
+    let user = auth_service::register(&state, "partuser", "part@test.com", "password123")
+        .await
+        .unwrap();
+    let upload_id = format!("parts-{}", uuid::Uuid::new_v4());
 
-    // 初始化大文件上传（强制 chunked）
-    let req = test::TestRequest::post()
-        .uri("/api/v1/files/upload/init")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({
-            "filename": "concurrent.bin",
-            "total_size": 10_485_760
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let mode = body["data"]["mode"].as_str().unwrap();
+    create_upload_session(
+        &state,
+        user.id,
+        &upload_id,
+        aster_drive::types::UploadSessionStatus::Uploading,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+        2,
+        0,
+        None,
+        None,
+        None,
+    )
+    .await;
 
-    if mode == "chunked" {
-        let upload_id = body["data"]["upload_id"].as_str().unwrap().to_string();
+    let first = upload_session_part_repo::upsert_part(&state.db, &upload_id, 1, "etag-1", 5)
+        .await
+        .unwrap();
+    assert!(first.inserted);
+    assert_eq!(first.model.etag, "etag-1");
+    assert_eq!(first.model.size, 5);
 
-        // 上传 chunk 0（小于默认 payload 限制）
-        let chunk_data = vec![b'X'; 1024];
-        let req = test::TestRequest::put()
-            .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
-            .insert_header(("Content-Type", "application/octet-stream"))
-            .set_payload(chunk_data.clone())
-            .to_request();
-        let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), 200);
-        let body: Value = test::read_body_json(resp).await;
-        let count_after_first = body["data"]["received_count"].as_i64().unwrap();
+    let second = upload_session_part_repo::upsert_part(&state.db, &upload_id, 1, "etag-2", 7)
+        .await
+        .unwrap();
+    assert!(!second.inserted);
+    assert_eq!(second.model.etag, "etag-2");
+    assert_eq!(second.model.size, 7);
 
-        // 重复上传同一 chunk 0（模拟并发/重试）
-        let req = test::TestRequest::put()
-            .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
-            .insert_header(("Content-Type", "application/octet-stream"))
-            .set_payload(chunk_data.clone())
-            .to_request();
-        let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), 200);
-        let body: Value = test::read_body_json(resp).await;
-        let count_after_second = body["data"]["received_count"].as_i64().unwrap();
+    let parts = upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].part_number, 1);
+    assert_eq!(parts[0].etag, "etag-2");
+    assert_eq!(parts[0].size, 7);
 
-        // 第三次重复
-        let req = test::TestRequest::put()
-            .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
-            .insert_header(("Content-Type", "application/octet-stream"))
-            .set_payload(chunk_data)
-            .to_request();
-        let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), 200);
-        let body: Value = test::read_body_json(resp).await;
-        let count_after_third = body["data"]["received_count"].as_i64().unwrap();
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session.received_count, 0);
+}
 
-        // received_count 应该都是 1（幂等，不多算）
-        assert_eq!(count_after_first, 1, "first upload should set count to 1");
-        assert_eq!(
-            count_after_second, count_after_first,
-            "duplicate chunk should not increment count: got {count_after_second}"
-        );
-        assert_eq!(
-            count_after_third, count_after_first,
-            "third duplicate should not increment count: got {count_after_third}"
-        );
-    }
+#[actix_web::test]
+async fn test_upload_chunk_rejects_wrong_chunk_size() {
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "sizeuser", "size@test.com", "password123")
+        .await
+        .unwrap();
+
+    let init =
+        upload_service::init_upload(&state, user.id, "size-check.bin", 10_485_760, None, None)
+            .await
+            .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
+
+    let upload_id = init.upload_id.unwrap();
+    let err = match upload_service::upload_chunk(&state, &upload_id, 0, user.id, b"short").await {
+        Ok(_) => panic!("wrong-sized chunk upload should fail"),
+        Err(err) => err,
+    };
+    assert_eq!(err.code(), "E056");
+    assert!(err.message().contains("size mismatch"));
+
+    let progress = upload_service::get_progress(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(progress.received_count, 0);
+    assert!(progress.chunks_on_disk.is_empty());
 }
 
 #[actix_web::test]
@@ -432,10 +701,12 @@ async fn test_complete_upload_is_idempotent_after_completion() {
     assert_eq!(init.total_chunks, Some(2));
 
     let upload_id = init.upload_id.unwrap();
-    upload_service::upload_chunk(&state, &upload_id, 0, user.id, b"hello ")
+    let chunk0 = vec![b'A'; TEST_CHUNK_SIZE];
+    let chunk1 = vec![b'B'; TEST_CHUNK_SIZE];
+    upload_service::upload_chunk(&state, &upload_id, 0, user.id, &chunk0)
         .await
         .unwrap();
-    upload_service::upload_chunk(&state, &upload_id, 1, user.id, b"idempotent upload")
+    upload_service::upload_chunk(&state, &upload_id, 1, user.id, &chunk1)
         .await
         .unwrap();
 
@@ -476,16 +747,22 @@ async fn test_complete_upload_marks_session_failed_after_assembly_error() {
     assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
 
     let upload_id = init.upload_id.unwrap();
-    upload_service::upload_chunk(&state, &upload_id, 0, user.id, b"first ")
+    let chunk0 = vec![b'A'; TEST_CHUNK_SIZE];
+    let chunk1 = vec![b'B'; TEST_CHUNK_SIZE];
+    upload_service::upload_chunk(&state, &upload_id, 0, user.id, &chunk0)
         .await
         .unwrap();
-    upload_service::upload_chunk(&state, &upload_id, 1, user.id, b"second")
+    upload_service::upload_chunk(&state, &upload_id, 1, user.id, &chunk1)
         .await
         .unwrap();
 
-    tokio::fs::remove_file(format!("data/.uploads/{upload_id}/chunk_1"))
-        .await
-        .unwrap();
+    tokio::fs::remove_file(aster_drive::utils::paths::upload_chunk_path(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+        1,
+    ))
+    .await
+    .unwrap();
 
     let err = upload_service::complete_upload(&state, &upload_id, user.id, None)
         .await
@@ -630,7 +907,10 @@ async fn test_upload_service_get_progress_scans_and_sorts_local_chunks() {
     )
     .await;
 
-    let temp_dir = format!("data/.uploads/{upload_id}");
+    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+    );
     tokio::fs::create_dir_all(&temp_dir).await.unwrap();
     tokio::fs::write(format!("{temp_dir}/chunk_2"), b"two")
         .await
@@ -723,7 +1003,10 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
     )
     .await;
 
-    let expired_dir = format!("data/.uploads/{expired_id}");
+    let expired_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &expired_id,
+    );
     tokio::fs::create_dir_all(&expired_dir).await.unwrap();
     tokio::fs::write(format!("{expired_dir}/chunk_0"), b"temp")
         .await
@@ -754,7 +1037,7 @@ async fn test_presigned_upload_s3_e2e() {
     use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
     // 启动 rustfs 容器
-    let container = GenericImage::new("rustfs/rustfs", "latest")
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
         .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
         .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
         .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
@@ -766,27 +1049,7 @@ async fn test_presigned_upload_s3_e2e() {
     let endpoint = format!("http://127.0.0.1:{port}");
     let bucket = "test-presigned";
 
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-    // 创建 bucket
-    {
-        let credentials = aws_credential_types::Credentials::new(
-            "rustfsadmin",
-            "rustfsadmin123",
-            None,
-            None,
-            "test",
-        );
-        let config = aws_sdk_s3::Config::builder()
-            .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
-            .region(aws_sdk_s3::config::Region::new("us-east-1"))
-            .credentials_provider(credentials)
-            .endpoint_url(&endpoint)
-            .force_path_style(true)
-            .build();
-        let client = aws_sdk_s3::Client::from_conf(config);
-        let _ = client.create_bucket().bucket(bucket).send().await;
-    }
+    wait_for_s3_bucket(&endpoint, bucket).await;
 
     // 创建 state（内存 SQLite）
     let state = common::setup().await;
@@ -926,7 +1189,7 @@ async fn test_presigned_multipart_upload_s3_e2e() {
     use aster_drive::services::{auth_service, upload_service};
     use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
-    let container = GenericImage::new("rustfs/rustfs", "latest")
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
         .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
         .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
         .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
@@ -938,26 +1201,7 @@ async fn test_presigned_multipart_upload_s3_e2e() {
     let endpoint = format!("http://127.0.0.1:{port}");
     let bucket = "test-presigned-multipart";
 
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-    {
-        let credentials = aws_credential_types::Credentials::new(
-            "rustfsadmin",
-            "rustfsadmin123",
-            None,
-            None,
-            "test",
-        );
-        let config = aws_sdk_s3::Config::builder()
-            .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
-            .region(aws_sdk_s3::config::Region::new("us-east-1"))
-            .credentials_provider(credentials)
-            .endpoint_url(&endpoint)
-            .force_path_style(true)
-            .build();
-        let client = aws_sdk_s3::Client::from_conf(config);
-        let _ = client.create_bucket().bucket(bucket).send().await;
-    }
+    wait_for_s3_bucket(&endpoint, bucket).await;
 
     let state = common::setup().await;
 
@@ -1095,4 +1339,385 @@ async fn test_presigned_multipart_upload_s3_e2e() {
         .unwrap();
     let stored = driver.get(&blob.storage_path).await.unwrap();
     assert_eq!(stored, data);
+}
+
+/// S3 relay_stream 小文件直传：走 /files/upload，服务端直接中继到 S3，不做去重
+#[tokio::test]
+async fn test_relay_stream_direct_upload_s3_e2e() {
+    use aster_drive::db::repository::file_repo;
+    use aster_drive::services::{auth_service, upload_service};
+    use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
+        .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
+        .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
+        .start()
+        .await
+        .expect("failed to start rustfs container");
+
+    let port = container.get_host_port_ipv4(9000).await.unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let bucket = "test-relay-direct";
+
+    wait_for_s3_bucket(&endpoint, bucket).await;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "relaydirect", "relay-direct@test.com", "pass123")
+        .await
+        .unwrap();
+    let policy = create_s3_default_policy(
+        &state,
+        user.id,
+        "Test S3 Relay Direct",
+        &endpoint,
+        bucket,
+        r#"{"s3_upload_strategy":"relay_stream"}"#,
+        5_242_880,
+    )
+    .await;
+    let login = auth_service::login(&state, "relaydirect", "pass123")
+        .await
+        .unwrap();
+
+    let data = b"hello relay stream!";
+    let init =
+        upload_service::init_upload(&state, user.id, "relay.txt", data.len() as i64, None, None)
+            .await
+            .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Direct);
+
+    let db = state.db.clone();
+    let driver_registry = state.driver_registry.clone();
+    let temp_roots = vec![
+        state.config.server.temp_dir.clone(),
+        state.config.server.upload_temp_dir.clone(),
+    ];
+    let temp_snapshot_before = snapshot_temp_roots(&temp_roots).unwrap();
+    let app = create_test_app!(state);
+
+    let (boundary, payload) = build_multipart_payload("relay.txt", data);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    let (boundary2, payload2) = build_multipart_payload("relay-copy.txt", data);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary2}"),
+        ))
+        .set_payload(payload2)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id2 = body["data"]["id"].as_i64().unwrap();
+    let temp_snapshot_after = snapshot_temp_roots(&temp_roots).unwrap();
+
+    assert_eq!(
+        temp_snapshot_after, temp_snapshot_before,
+        "relay_stream direct upload should not create local temp files or upload temp dirs"
+    );
+
+    let file = file_repo::find_by_id(&db, file_id).await.unwrap();
+    let file2 = file_repo::find_by_id(&db, file_id2).await.unwrap();
+    let blob = file_repo::find_blob_by_id(&db, file.blob_id).await.unwrap();
+    let blob2 = file_repo::find_blob_by_id(&db, file2.blob_id)
+        .await
+        .unwrap();
+
+    assert!(blob.hash.starts_with("s3-"));
+    assert!(blob2.hash.starts_with("s3-"));
+    assert_eq!(blob.ref_count, 1);
+    assert_eq!(blob2.ref_count, 1);
+    assert_ne!(blob.id, blob2.id);
+    assert_ne!(blob.hash, blob2.hash);
+    assert_ne!(blob.storage_path, blob2.storage_path);
+
+    let driver = driver_registry.get_driver(&policy).unwrap();
+    let stored = driver.get(&blob.storage_path).await.unwrap();
+    let stored2 = driver.get(&blob2.storage_path).await.unwrap();
+    assert_eq!(stored, data);
+    assert_eq!(stored2, data);
+}
+
+/// S3 relay_stream 直传：文件大小刚好等于 multipart part_size 时不应追加空 part
+#[tokio::test]
+async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
+    use aster_drive::db::repository::file_repo;
+    use aster_drive::services::{auth_service, upload_service};
+    use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
+        .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
+        .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
+        .start()
+        .await
+        .expect("failed to start rustfs container");
+
+    let port = container.get_host_port_ipv4(9000).await.unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let bucket = "test-relay-direct-exact-part";
+
+    wait_for_s3_bucket(&endpoint, bucket).await;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "relayexact", "relay-exact@test.com", "pass123")
+        .await
+        .unwrap();
+    let policy = create_s3_default_policy(
+        &state,
+        user.id,
+        "Test S3 Relay Direct Exact Part",
+        &endpoint,
+        bucket,
+        r#"{"s3_upload_strategy":"relay_stream"}"#,
+        5_242_880,
+    )
+    .await;
+    let login = auth_service::login(&state, "relayexact", "pass123")
+        .await
+        .unwrap();
+
+    let data = vec![b'Z'; 5_242_880];
+    let init = upload_service::init_upload(
+        &state,
+        user.id,
+        "relay-exact.bin",
+        data.len() as i64,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Direct);
+
+    let db = state.db.clone();
+    let driver = state.driver_registry.get_driver(&policy).unwrap();
+    let app = create_test_app!(state);
+
+    let (boundary, payload) = build_multipart_payload("relay-exact.bin", &data);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    let file = file_repo::find_by_id(&db, file_id).await.unwrap();
+    let blob = file_repo::find_blob_by_id(&db, file.blob_id).await.unwrap();
+    let stored = driver.get(&blob.storage_path).await.unwrap();
+    assert_eq!(stored, data);
+    let object_key = if policy.base_path.is_empty() {
+        blob.storage_path.clone()
+    } else {
+        format!(
+            "{}/{}",
+            policy.base_path.trim_end_matches('/'),
+            blob.storage_path.trim_start_matches('/')
+        )
+    };
+    let etag = head_s3_object_etag(&endpoint, bucket, &object_key).await;
+    assert!(
+        etag.ends_with("-1\"") || etag.ends_with("-1"),
+        "exact-part relay upload should complete with one multipart part, got etag {etag}"
+    );
+}
+
+/// S3 relay_stream 大文件分片：服务端直接把 chunk 作为 S3 part，中途不落 data/.uploads
+#[tokio::test]
+async fn test_relay_stream_chunked_upload_s3_e2e() {
+    use aster_drive::db::repository::{file_repo, upload_session_part_repo, upload_session_repo};
+    use aster_drive::services::{auth_service, upload_service};
+    use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
+        .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
+        .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
+        .start()
+        .await
+        .expect("failed to start rustfs container");
+
+    let port = container.get_host_port_ipv4(9000).await.unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let bucket = "test-relay-chunked";
+
+    wait_for_s3_bucket(&endpoint, bucket).await;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "relaychunked", "relay-chunked@test.com", "pass123")
+        .await
+        .unwrap();
+    let policy = create_s3_default_policy(
+        &state,
+        user.id,
+        "Test S3 Relay Chunked",
+        &endpoint,
+        bucket,
+        r#"{"s3_upload_strategy":"relay_stream"}"#,
+        1_048_576,
+    )
+    .await;
+
+    let part1 = vec![b'A'; 5_242_880];
+    let part2 = b"relay-stream-tail".to_vec();
+    let mut data = part1.clone();
+    data.extend_from_slice(&part2);
+
+    let init = upload_service::init_upload(
+        &state,
+        user.id,
+        "relay-multipart.bin",
+        data.len() as i64,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
+    assert_eq!(init.chunk_size, Some(5_242_880));
+    assert_eq!(init.total_chunks, Some(2));
+
+    let upload_id = init.upload_id.unwrap();
+    let relay_temp_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+    );
+    assert!(
+        !std::path::Path::new(&relay_temp_dir).exists(),
+        "relay_stream should not create local upload temp dir"
+    );
+    assert!(
+        upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let (first_attempt, second_attempt) = tokio::join!(
+        upload_service::upload_chunk(&state, &upload_id, 0, user.id, &part1),
+        upload_service::upload_chunk(&state, &upload_id, 0, user.id, &part1),
+    );
+    first_attempt.unwrap();
+    second_attempt.unwrap();
+
+    let session_after_race = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        session_after_race.received_count, 1,
+        "concurrent duplicate relay part uploads should only count once"
+    );
+
+    let duplicate = upload_service::upload_chunk(&state, &upload_id, 0, user.id, &part1)
+        .await
+        .unwrap();
+    assert_eq!(
+        duplicate.received_count, 1,
+        "duplicate relay part upload should be idempotent"
+    );
+
+    let progress = upload_service::get_progress(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(progress.chunks_on_disk, vec![0]);
+
+    let parts = upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].part_number, 1);
+    assert_eq!(parts[0].size, part1.len() as i64);
+    assert!(!parts[0].etag.is_empty());
+    assert!(
+        !std::path::Path::new(&relay_temp_dir).exists(),
+        "relay_stream should still avoid local temp dirs after part upload"
+    );
+
+    let second = upload_service::upload_chunk(&state, &upload_id, 1, user.id, &part2)
+        .await
+        .unwrap();
+    assert_eq!(second.received_count, 2);
+
+    let progress = upload_service::get_progress(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(progress.chunks_on_disk, vec![0, 1]);
+
+    let parts = upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(parts.len(), 2);
+    assert_eq!(parts[0].part_number, 1);
+    assert_eq!(parts[1].part_number, 2);
+    assert_eq!(parts[0].size, part1.len() as i64);
+    assert_eq!(parts[1].size, part2.len() as i64);
+    assert!(parts.iter().all(|part| !part.etag.is_empty()));
+
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session.received_count, 2);
+    assert_eq!(
+        session.status,
+        aster_drive::types::UploadSessionStatus::Uploading
+    );
+
+    let file = upload_service::complete_upload(&state, &upload_id, user.id, None)
+        .await
+        .unwrap();
+    assert_eq!(file.name, "relay-multipart.bin");
+
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        session.status,
+        aster_drive::types::UploadSessionStatus::Completed
+    );
+    assert_eq!(session.file_id, Some(file.id));
+
+    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+        .await
+        .unwrap();
+    assert_eq!(blob.hash, format!("s3-{upload_id}"));
+    assert_eq!(blob.storage_path, format!("files/{upload_id}"));
+    assert_eq!(blob.ref_count, 1);
+
+    let driver = state.driver_registry.get_driver(&policy).unwrap();
+    let stored = driver.get(&blob.storage_path).await.unwrap();
+    assert_eq!(stored, data);
+    assert!(
+        upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+            .await
+            .unwrap()
+            .is_empty(),
+        "relay multipart part rows should be deleted after completion"
+    );
+    assert!(
+        !std::path::Path::new(&relay_temp_dir).exists(),
+        "relay_stream multipart should never use local chunk temp dir"
+    );
 }

@@ -1343,6 +1343,28 @@ export interface components {
             /** Format: int64 */
             uploads_today: number;
         };
+        /**
+         * @description 统一 API 响应格式
+         *
+         *     成功: `{ "code": 0, "msg": "", "data": {...} }`
+         *     失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+         */
+        ApiResponse_UploadProgressResponse: {
+            code: components["schemas"]["ErrorCode"];
+            data?: {
+                /** Format: int64 */
+                chunk_size: number;
+                chunks_on_disk: number[];
+                filename: string;
+                /** Format: int32 */
+                received_count: number;
+                status: components["schemas"]["UploadSessionStatus"];
+                /** Format: int32 */
+                total_chunks: number;
+                upload_id: string;
+            };
+            msg: string;
+        };
         AssignUserPolicyReq: {
             is_default?: boolean;
             /** Format: int64 */
@@ -2271,6 +2293,8 @@ export interface components {
          */
         UploadMode: "direct" | "chunked" | "presigned" | "presigned_multipart";
         UploadProgressResponse: {
+            /** Format: int64 */
+            chunk_size: number;
             chunks_on_disk: number[];
             filename: string;
             /** Format: int32 */
@@ -4830,20 +4854,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        code: components["schemas"]["ErrorCode"];
-                        data?: {
-                            chunks_on_disk: number[];
-                            filename: string;
-                            /** Format: int32 */
-                            received_count: number;
-                            status: components["schemas"]["UploadSessionStatus"];
-                            /** Format: int32 */
-                            total_chunks: number;
-                            upload_id: string;
-                        };
-                        msg: string;
-                    };
+                    "application/json": components["schemas"]["ApiResponse_UploadProgressResponse"];
                 };
             };
             /** @description Unauthorized */

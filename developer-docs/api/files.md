@@ -40,18 +40,30 @@
 - `presigned`：S3 单次预签名 `PUT`
 - `presigned_multipart`：S3 multipart 直传，客户端需要再申请每个 part 的 URL
 
-其中两种预签名模式只会在 S3 策略且开启 `options.presigned_upload` 时出现；对象存储侧还必须配置好 CORS。
+前端仍然只会看到这四种模式，不会额外出现一个 `relay_stream` 模式。S3 传输策略由存储策略
+`options.s3_upload_strategy` 控制：
+
+- `proxy_tempfile`：`init` 仍返回 `direct` / `chunked`，但服务端会先写本地临时文件或分片目录，再写入 S3
+- `relay_stream`：`init` 仍返回 `direct` / `chunked`，但服务端直接把字节流中继到 S3，不落本地临时文件
+- `presigned`：`init` 才会返回 `presigned` / `presigned_multipart`
+
+旧配置 `{"presigned_upload":true}` 仍兼容，等价于 `{"s3_upload_strategy":"presigned"}`；`{"presigned_upload":false}` 或缺省时，默认等价于 `{"s3_upload_strategy":"proxy_tempfile"}`。使用预签名模式时，对象存储侧还必须配置好 CORS。
 
 ### 直传、分片和完成阶段
 
-- `POST /files/upload`：普通 multipart 上传；空文件会报错，同目录同名文件不会覆盖
+- `POST /files/upload`：普通 multipart 上传；空文件会报错，同目录同名文件不会覆盖。若命中的 S3 策略是 `relay_stream`，这里会直接把请求体中继到 S3
 - `POST /files/new`：创建一个 0 字节空文件，适合“新建文本文件”这类前端动作
 - `PUT /files/upload/{upload_id}/{chunk_number}`：上传单个分片，`chunk_number` 从 `0` 开始
 - `POST /files/upload/{upload_id}/presign-parts`：只用于 `presigned_multipart`，请求体里传 `part_numbers`
 - `GET /files/upload/{upload_id}`：查询分片进度，也是前端断点续传依赖的接口
 - `POST /files/upload/{upload_id}/complete`：完成 `chunked`、`presigned` 或 `presigned_multipart` 上传
 
-无论是分片合并还是 S3 直传完成，服务端最后都会做同样几件事：校验大小和配额、计算 SHA-256、Blob 去重、创建最终文件记录。
+完成阶段的服务端行为分两类：
+
+- 本地 / `proxy_tempfile` 路径：会校验大小和配额，计算 SHA-256，做 Blob 去重，再创建最终文件记录
+- `relay_stream` / `presigned` / `presigned_multipart` 路径：会校验大小和配额，但不会回读对象计算 SHA-256，也不会做 Blob 去重；最终会使用类似 `s3-{upload_id}` 的占位 hash 创建独立 Blob
+
+`relay_stream` 的 multipart 场景下，服务端会把每个 part 的 `part_number + etag` 持久化到数据库；`complete` 时直接使用这些服务端记录完成 S3 multipart，不依赖客户端再回传 `parts`。
 
 对 `presigned_multipart` 来说，`complete` 请求体需要带对象存储返回的 `parts` 列表；其他模式可以不带请求体。
 

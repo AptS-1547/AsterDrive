@@ -32,6 +32,10 @@ vi.mock("react-i18next", () => ({
 			}
 		},
 	}),
+	initReactI18next: {
+		type: "3rdParty",
+		init: () => undefined,
+	},
 }));
 
 vi.mock("sonner", () => ({
@@ -457,7 +461,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: true,
 				max_file_size: 2048,
 				name: "Primary Local",
-				options: JSON.stringify({ presigned_upload: false }),
+				options: JSON.stringify({}),
 				secret_key: "",
 			});
 		});
@@ -474,7 +478,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "archive",
 				base_path: "tenant-a",
 				max_file_size: 4096,
-				options: '{"presigned_upload":true}',
+				options: JSON.stringify({ s3_upload_strategy: "presigned" }),
 			}),
 		];
 
@@ -494,7 +498,7 @@ describe("AdminPoliciesPage", () => {
 			target: { value: "NEWKEY" },
 		});
 		fireEvent.click(
-			screen.getByRole("button", { name: "switch:presigned_upload:true" }),
+			screen.getByRole("button", { name: "select-item:proxy_tempfile" }),
 		);
 		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
 
@@ -531,10 +535,138 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: 4096,
 				name: "Archive S3 Updated",
-				options: JSON.stringify({ presigned_upload: false }),
+				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
 			}),
 		);
 		expect(payload).toHaveProperty("access_key", "NEWKEY");
+		expect(payload).not.toHaveProperty("secret_key");
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
+	it("displays legacy presigned_upload true as presigned strategy", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 10,
+				name: "Legacy Presigned S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				bucket: "legacy-bucket",
+				base_path: "legacy-path",
+				options: JSON.stringify({ presigned_upload: true }),
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+
+		expect(screen.getByDisplayValue("Legacy Presigned S3")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("legacy-bucket")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("legacy-path")).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "select-item:presigned" }),
+		).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("Access Key"), {
+			target: { value: "LEGACYKEY" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: "LEGACYKEY",
+				base_path: "legacy-path",
+				bucket: "legacy-bucket",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				secret_key: undefined,
+			});
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(mockState.update).toHaveBeenCalledWith(
+				10,
+				expect.objectContaining({
+					options: JSON.stringify({ s3_upload_strategy: "presigned" }),
+				}),
+			);
+		});
+
+		const [, payload] = mockState.update.mock.calls[0] as [
+			number,
+			Record<string, unknown>,
+		];
+		expect(payload).toHaveProperty("access_key", "LEGACYKEY");
+		expect(payload).not.toHaveProperty("secret_key");
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
+	it("tests relay_stream params and updates s3 policy without blank secrets", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 9,
+				name: "Relay S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				bucket: "relay-bucket",
+				base_path: "tenant-relay",
+				max_file_size: 4096,
+				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+
+		expect(screen.getByDisplayValue("Relay S3")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("tenant-relay")).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("Access Key"), {
+			target: { value: "NEWKEY" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: "select-item:relay_stream" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: "NEWKEY",
+				base_path: "tenant-relay",
+				bucket: "relay-bucket",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				secret_key: undefined,
+			});
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(mockState.update).toHaveBeenCalledTimes(1);
+		});
+
+		const [, payload] = mockState.update.mock.calls[0] as [
+			number,
+			Record<string, unknown>,
+		];
+		expect(mockState.update).toHaveBeenCalledWith(
+			9,
+			expect.objectContaining({
+				access_key: "NEWKEY",
+				base_path: "tenant-relay",
+				bucket: "relay-bucket",
+				chunk_size: 5 * 1024 * 1024,
+				endpoint: "https://s3.example.com",
+				is_default: false,
+				max_file_size: 4096,
+				name: "Relay S3",
+				options: JSON.stringify({ s3_upload_strategy: "relay_stream" }),
+			}),
+		);
 		expect(payload).not.toHaveProperty("secret_key");
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
 	});
@@ -549,7 +681,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "direct-put",
 				max_file_size: 0,
 				chunk_size: 0,
-				options: '{"presigned_upload":true}',
+				options: JSON.stringify({ s3_upload_strategy: "presigned" }),
 			}),
 		];
 
@@ -612,7 +744,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: undefined,
 				name: "Broken S3",
-				options: JSON.stringify({ presigned_upload: false }),
+				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
 				secret_key: "",
 			});
 		});

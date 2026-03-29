@@ -3,6 +3,7 @@ import {
 	forwardRef,
 	useCallback,
 	useEffect,
+	useEffectEvent,
 	useImperativeHandle,
 	useRef,
 	useState,
@@ -12,11 +13,18 @@ import {
 	UploadPanel,
 	type UploadTaskView,
 } from "@/components/files/UploadPanel";
+import {
+	CHUNK_PROCESSING_PROGRESS,
+	getProcessingProgress,
+	getResumePlan,
+	type UploadMode,
+} from "@/components/files/uploadResume";
 import { Icon } from "@/components/ui/icon";
 import { formatBytes } from "@/lib/format";
 import {
 	appendCompletedPart,
 	loadSessions,
+	type ResumableSession,
 	removeSession,
 	saveSession,
 } from "@/lib/uploadPersistence";
@@ -25,6 +33,7 @@ import { ApiError, api } from "@/services/http";
 import {
 	type CompletedPart,
 	type InitUploadResponse,
+	isRetryableUploadError,
 	uploadService,
 } from "@/services/uploadService";
 import { useAuthStore } from "@/stores/authStore";
@@ -46,7 +55,6 @@ export interface UploadAreaHandle {
 	triggerFolderUpload: () => void;
 }
 
-type UploadMode = "direct" | "chunked" | "presigned" | "presigned_multipart";
 type UploadStatus =
 	| "pending_file"
 	| "queued"
@@ -77,6 +85,14 @@ const MAX_FILE_CONCURRENT = 2;
 const CHUNK_CONCURRENT = 3;
 const CHUNK_MAX_RETRIES = 3;
 const PROGRESS_FLUSH_INTERVAL = 500;
+
+function shouldRemovePersistedSession(error: unknown): boolean {
+	return (
+		error instanceof ApiError &&
+		(error.code === ErrorCode.UploadSessionNotFound ||
+			error.code === ErrorCode.UploadSessionExpired)
+	);
+}
 
 /** completeUpload with polling retry when backend is still assembling (3011) */
 async function completeWithRetry(
@@ -184,11 +200,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 		const patchTask = useCallback(
 			(taskId: string, patch: Partial<UploadTask>) => {
-				const terminalStatus: UploadStatus[] = [
-					"completed",
-					"failed",
-					"cancelled",
-				];
+				const terminalStatus: UploadStatus[] = ["completed", "cancelled"];
 				const finalPatch =
 					patch.status && terminalStatus.includes(patch.status)
 						? { ...patch, file: null }
@@ -261,17 +273,45 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			setTasks((prev) => prev.filter((task) => task.status !== "completed"));
 		}, []);
 
-		// ── 断点续传：mount 时恢复未完成 session ──
-		useEffect(() => {
+		const restorePendingSessions = useEffectEvent(async () => {
 			const sessions = loadSessions();
 			if (sessions.length === 0) return;
 
 			const ghostTasks: UploadTask[] = [];
+			const completionTasks: Array<{
+				task: UploadTask;
+				parts?: CompletedPart[];
+			}> = [];
 
-			const verify = async () => {
-				for (const session of sessions) {
+			const progressResults = await Promise.allSettled(
+				sessions.map(async (session) => {
 					try {
-						await uploadService.getProgress(session.uploadId);
+						const progress = await uploadService.getProgress(session.uploadId);
+						return { session, progress };
+					} catch (error) {
+						throw { session, error };
+					}
+				}),
+			);
+
+			for (const result of progressResults) {
+				if (result.status === "rejected") {
+					const { session, error } = result.reason as {
+						session: ResumableSession;
+						error: unknown;
+					};
+					if (shouldRemovePersistedSession(error)) {
+						removeSession(session.uploadId);
+					}
+					continue;
+				}
+
+				const { session, progress } = result.value;
+				const mode = (session.mode ?? "chunked") as UploadMode;
+				const plan = getResumePlan(mode, progress.status);
+				if (plan === "restart") {
+					removeSession(session.uploadId);
+					if (progress.status === "failed") {
 						ghostTasks.push({
 							id: createTaskId(),
 							file: null,
@@ -279,25 +319,58 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							relativePath: session.relativePath,
 							baseFolderId: session.baseFolderId,
 							baseFolderName: session.baseFolderName,
-							mode: (session.mode ?? "chunked") as UploadMode,
+							mode,
 							status: "pending_file",
 							progress: 0,
-							error: null,
-							uploadId: session.uploadId,
+							error: t("files:upload_failed"),
+							uploadId: null,
 							totalChunks: session.totalChunks,
-							completedChunks: 0,
+							completedChunks: progress.received_count,
 						});
-					} catch {
-						removeSession(session.uploadId);
 					}
+					continue;
 				}
-				if (ghostTasks.length > 0) {
-					setTasks((prev) => [...ghostTasks, ...prev]);
-					setUploadPanelOpen(true);
+
+				const task: UploadTask = {
+					id: createTaskId(),
+					file: null,
+					filename: session.filename,
+					relativePath: session.relativePath,
+					baseFolderId: session.baseFolderId,
+					baseFolderName: session.baseFolderName,
+					mode,
+					status: plan === "upload" ? "pending_file" : "processing",
+					progress: plan === "upload" ? 0 : getProcessingProgress(mode),
+					error: null,
+					uploadId: session.uploadId,
+					totalChunks: session.totalChunks,
+					completedChunks:
+						plan === "upload" ? progress.received_count : session.totalChunks,
+				};
+				ghostTasks.push(task);
+				if (plan === "complete") {
+					completionTasks.push({
+						task,
+						parts:
+							mode === "presigned_multipart"
+								? (session.completedParts ?? [])
+								: undefined,
+					});
 				}
-			};
-			void verify();
-			// eslint-disable-next-line react-hooks/exhaustive-deps
+			}
+
+			if (ghostTasks.length > 0) {
+				setTasks((prev) => [...ghostTasks, ...prev]);
+				setUploadPanelOpen(true);
+				for (const completionTask of completionTasks) {
+					void resumeCompletionTask(completionTask.task, completionTask.parts);
+				}
+			}
+		});
+
+		// ── 断点续传：mount 时恢复未完成 session ──
+		useEffect(() => {
+			void restorePendingSessions();
 		}, []);
 
 		/** 用户为 pending_file task 选好文件后注入 File → 转为 queued */
@@ -357,6 +430,64 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				});
 			},
 			[patchTask],
+		);
+
+		const resumeCompletionTask = useCallback(
+			async (task: UploadTask, parts?: CompletedPart[]) => {
+				const uploadId = task.uploadId;
+				if (!uploadId) return;
+
+				abortFlagsRef.current.set(task.id, false);
+				patchTask(task.id, {
+					status: "processing",
+					progress: getProcessingProgress(task.mode),
+				});
+
+				try {
+					await completeWithRetry(uploadId, parts);
+					if (abortFlagsRef.current.get(task.id)) {
+						patchTask(task.id, { status: "cancelled", error: null });
+						return;
+					}
+					removeSession(uploadId);
+					patchTask(task.id, {
+						status: "completed",
+						progress: 100,
+						error: null,
+					});
+					finalizeTaskRefresh(task);
+				} catch (error) {
+					if (abortFlagsRef.current.get(task.id)) {
+						patchTask(task.id, { status: "cancelled", error: null });
+						return;
+					}
+					const message =
+						error instanceof Error
+							? error.message
+							: t("errors:unexpected_error");
+					if (!task.file) {
+						if (shouldRemovePersistedSession(error)) {
+							removeSession(uploadId);
+							patchTask(task.id, {
+								status: "pending_file",
+								error: message,
+								progress: 0,
+								uploadId: null,
+								completedChunks: 0,
+								totalChunks: 0,
+								mode: null,
+							});
+							return;
+						}
+						markTaskFailed(task.id, message);
+						return;
+					}
+					markTaskFailed(task.id, message);
+				} finally {
+					abortFlagsRef.current.delete(task.id);
+				}
+			},
+			[finalizeTaskRefresh, markTaskFailed, patchTask, t],
 		);
 
 		const buildDirectUploadPath = useCallback((task: UploadTask) => {
@@ -472,6 +603,9 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							} catch (error) {
 								lastError =
 									error instanceof Error ? error : new Error(String(error));
+								if (!isRetryableUploadError(lastError)) {
+									break;
+								}
 								if (attempt < CHUNK_MAX_RETRIES - 1) {
 									await new Promise((resolve) =>
 										setTimeout(resolve, 1000 * 2 ** attempt),
@@ -502,7 +636,10 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					}
 
 					flushProgress();
-					patchTask(task.id, { status: "processing", progress: 95 });
+					patchTask(task.id, {
+						status: "processing",
+						progress: CHUNK_PROCESSING_PROGRESS,
+					});
 					await completeWithRetry(uploadId);
 					removeSession(uploadId);
 					patchTask(task.id, {
@@ -562,7 +699,10 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					);
 
 					flushProgress();
-					patchTask(task.id, { status: "processing", progress: 90 });
+					patchTask(task.id, {
+						status: "processing",
+						progress: getProcessingProgress(task.mode),
+					});
 					await completeWithRetry(uploadId);
 					patchTask(task.id, {
 						status: "completed",
@@ -672,6 +812,9 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 									error instanceof Error ? error : new Error(String(error));
 								// URL 可能过期，清缓存重新获取
 								delete urlCache[partNum];
+								if (!isRetryableUploadError(lastError)) {
+									break;
+								}
 								if (attempt < CHUNK_MAX_RETRIES - 1) {
 									await new Promise((resolve) =>
 										setTimeout(resolve, 1000 * 2 ** attempt),
@@ -702,7 +845,10 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					}
 
 					flushProgress();
-					patchTask(task.id, { status: "processing", progress: 90 });
+					patchTask(task.id, {
+						status: "processing",
+						progress: getProcessingProgress(task.mode),
+					});
 
 					// 按 part_number 排序后发送
 					collectedParts.sort((a, b) => a.part_number - b.part_number);
@@ -753,44 +899,83 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					) {
 						try {
 							const progress = await uploadService.getProgress(task.uploadId);
-							if (task.mode === "chunked") {
-								const resumedInit: InitUploadResponse = {
-									mode: "chunked",
-									upload_id: task.uploadId,
-									chunk_size: Math.ceil(file.size / progress.total_chunks),
-									total_chunks: progress.total_chunks,
-								};
-								await runChunkedUpload(
-									task,
-									resumedInit,
-									progress.chunks_on_disk,
-								);
-							} else {
-								// presigned_multipart resume — 从 localStorage 读已完成 parts
-								const sessions = loadSessions();
-								const saved = sessions.find(
-									(s) => s.uploadId === task.uploadId,
-								);
-								const resumedInit: InitUploadResponse = {
-									mode: "presigned_multipart",
-									upload_id: task.uploadId,
-									chunk_size: Math.ceil(file.size / progress.total_chunks),
-									total_chunks: progress.total_chunks,
-								};
-								await runMultipartUpload(
-									task,
-									resumedInit,
-									saved?.completedParts ?? [],
-								);
+							const plan = getResumePlan(task.mode, progress.status);
+							if (plan === "restart") {
+								removeSession(task.uploadId);
+								patchTask(taskId, {
+									uploadId: null,
+									completedChunks: 0,
+									totalChunks: 0,
+									mode: null,
+								});
 							}
-							return;
-						} catch {
-							patchTask(taskId, {
-								uploadId: null,
-								completedChunks: 0,
-								totalChunks: 0,
-								mode: null,
-							});
+							if (plan !== "restart") {
+								const saved = loadSessions().find(
+									(session) => session.uploadId === task.uploadId,
+								);
+								if (plan === "complete") {
+									await resumeCompletionTask(
+										task,
+										task.mode === "presigned_multipart"
+											? (saved?.completedParts ?? [])
+											: undefined,
+									);
+									return;
+								}
+								const chunkSize =
+									(
+										progress as typeof progress & {
+											chunk_size?: number;
+										}
+									).chunk_size ?? saved?.chunkSize;
+								if (!chunkSize || chunkSize <= 0) {
+									throw new Error("missing resumable chunk size");
+								}
+								if (task.mode === "chunked") {
+									const resumedInit: InitUploadResponse = {
+										mode: "chunked",
+										upload_id: task.uploadId,
+										chunk_size: chunkSize,
+										total_chunks: progress.total_chunks,
+									};
+									await runChunkedUpload(
+										task,
+										resumedInit,
+										progress.chunks_on_disk,
+									);
+								} else {
+									// presigned_multipart resume — 从 localStorage 读已完成 parts
+									const resumedInit: InitUploadResponse = {
+										mode: "presigned_multipart",
+										upload_id: task.uploadId,
+										chunk_size: chunkSize,
+										total_chunks: progress.total_chunks,
+									};
+									await runMultipartUpload(
+										task,
+										resumedInit,
+										saved?.completedParts ?? [],
+									);
+								}
+								return;
+							}
+						} catch (error) {
+							if (shouldRemovePersistedSession(error)) {
+								removeSession(task.uploadId);
+								patchTask(taskId, {
+									uploadId: null,
+									completedChunks: 0,
+									totalChunks: 0,
+									mode: null,
+								});
+							} else {
+								const message =
+									error instanceof Error
+										? error.message
+										: t("errors:unexpected_error");
+								markTaskFailed(taskId, message);
+								return;
+							}
 						}
 					}
 
@@ -848,6 +1033,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				runDirectUpload,
 				runMultipartUpload,
 				runPresignedUpload,
+				resumeCompletionTask,
 				t,
 			],
 		);
@@ -914,22 +1100,35 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			(taskId: string) => {
 				const task = tasksRef.current.find((item) => item.id === taskId);
 				if (!task) return;
+				if (!task.file && task.uploadId) {
+					const saved = loadSessions().find(
+						(session) => session.uploadId === task.uploadId,
+					);
+					void resumeCompletionTask(
+						task,
+						task.mode === "presigned_multipart"
+							? (saved?.completedParts ?? [])
+							: undefined,
+					);
+					setUploadPanelOpen(true);
+					return;
+				}
+				if (task.uploadId) {
+					void uploadService.cancelUpload(task.uploadId).catch(() => undefined);
+					removeSession(task.uploadId);
+				}
 				patchTask(taskId, {
 					status: "queued",
 					progress: 0,
 					error: null,
-					...(task.mode === "chunked" || task.mode === "presigned_multipart"
-						? {}
-						: {
-								uploadId: null,
-								completedChunks: 0,
-								totalChunks: 0,
-								mode: null,
-							}),
+					uploadId: null,
+					completedChunks: 0,
+					totalChunks: 0,
+					mode: null,
 				});
 				setUploadPanelOpen(true);
 			},
-			[patchTask],
+			[patchTask, resumeCompletionTask],
 		);
 
 		const retryFailedTasks = useCallback(() => {
@@ -1179,6 +1378,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				<input
 					ref={resumeFileInputRef}
 					type="file"
+					data-testid="resume-input"
 					className="hidden"
 					onChange={handleResumeFileChange}
 				/>
