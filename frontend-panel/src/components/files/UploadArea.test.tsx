@@ -319,7 +319,7 @@ describe("UploadArea", () => {
 			type: "text/plain",
 		});
 
-		const view = render(
+		render(
 			<UploadArea>
 				<div>content</div>
 			</UploadArea>,
@@ -327,14 +327,7 @@ describe("UploadArea", () => {
 
 		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
 		fireEvent.click(screen.getByText("files:upload_resume_select"));
-
-		const resumeInput =
-			view.container.querySelectorAll('input[type="file"]')[2];
-		if (!(resumeInput instanceof HTMLInputElement)) {
-			throw new Error("resume file input not found");
-		}
-
-		fireEvent.change(resumeInput, {
+		fireEvent.change(screen.getByTestId("resume-input"), {
 			target: { files: [file] },
 		});
 
@@ -423,6 +416,56 @@ describe("UploadArea", () => {
 		expect(
 			screen.queryByText("transient.txt:Chunked:files:upload_pending_file"),
 		).not.toBeInTheDocument();
+	});
+
+	it("does not reinitialize a new upload when resume preflight fails transiently", async () => {
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-resume-transient",
+				filename: "resume.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress
+			.mockResolvedValueOnce({
+				upload_id: "upload-resume-transient",
+				status: "uploading",
+				received_count: 1,
+				chunks_on_disk: [0],
+				total_chunks: 3,
+				filename: "resume.txt",
+			})
+			.mockRejectedValueOnce(new Error("temporary progress failure"));
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		const file = new File(["hello world"], "resume.txt", {
+			type: "text/plain",
+		});
+
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
+		fireEvent.click(screen.getByText("files:upload_resume_select"));
+		fireEvent.change(screen.getByTestId("resume-input"), {
+			target: { files: [file] },
+		});
+
+		await screen.findByText("resume.txt:Chunked:files:upload_failed");
+
+		expect(initUpload).not.toHaveBeenCalled();
+		expect(uploadChunk).not.toHaveBeenCalled();
+		expect(removeSession).not.toHaveBeenCalled();
 	});
 
 	it("continues assembling persisted uploads without asking for file selection", async () => {
@@ -635,7 +678,7 @@ describe("UploadArea", () => {
 			type: "text/plain",
 		});
 
-		const view = render(
+		render(
 			<UploadArea>
 				<div>content</div>
 			</UploadArea>,
@@ -643,14 +686,7 @@ describe("UploadArea", () => {
 
 		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
 		fireEvent.click(screen.getByText("files:upload_resume_select"));
-
-		const resumeInput =
-			view.container.querySelectorAll('input[type="file"]')[2];
-		if (!(resumeInput instanceof HTMLInputElement)) {
-			throw new Error("resume file input not found");
-		}
-
-		fireEvent.change(resumeInput, {
+		fireEvent.change(screen.getByTestId("resume-input"), {
 			target: { files: [file] },
 		});
 

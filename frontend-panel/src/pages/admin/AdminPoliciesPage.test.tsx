@@ -543,6 +543,74 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
 	});
 
+	it("tests relay_stream params and updates s3 policy without blank secrets", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 9,
+				name: "Relay S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				bucket: "relay-bucket",
+				base_path: "tenant-relay",
+				max_file_size: 4096,
+				options: '{"s3_upload_strategy":"proxy_tempfile"}',
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+
+		expect(screen.getByDisplayValue("Relay S3")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("tenant-relay")).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("Access Key"), {
+			target: { value: "NEWKEY" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: "select-item:relay_stream" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: "NEWKEY",
+				base_path: "tenant-relay",
+				bucket: "relay-bucket",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				secret_key: undefined,
+			});
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(mockState.update).toHaveBeenCalledTimes(1);
+		});
+
+		const [, payload] = mockState.update.mock.calls[0] as [
+			number,
+			Record<string, unknown>,
+		];
+		expect(mockState.update).toHaveBeenCalledWith(
+			9,
+			expect.objectContaining({
+				access_key: "NEWKEY",
+				base_path: "tenant-relay",
+				bucket: "relay-bucket",
+				chunk_size: 5 * 1024 * 1024,
+				endpoint: "https://s3.example.com",
+				is_default: false,
+				max_file_size: 4096,
+				name: "Relay S3",
+				options: JSON.stringify({ s3_upload_strategy: "relay_stream" }),
+			}),
+		);
+		expect(payload).not.toHaveProperty("secret_key");
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
 	it("preserves zero-valued policy limits when opening the edit dialog", () => {
 		mockState.items = [
 			createPolicy({

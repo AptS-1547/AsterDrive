@@ -885,63 +885,80 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							const plan = getResumePlan(task.mode, progress.status);
 							if (plan === "restart") {
 								removeSession(task.uploadId);
-								throw new Error("upload session is no longer resumable");
+								patchTask(taskId, {
+									uploadId: null,
+									completedChunks: 0,
+									totalChunks: 0,
+									mode: null,
+								});
 							}
-							const saved = loadSessions().find(
-								(session) => session.uploadId === task.uploadId,
-							);
-							if (plan === "complete") {
-								await resumeCompletionTask(
-									task,
-									task.mode === "presigned_multipart"
-										? (saved?.completedParts ?? [])
-										: undefined,
+							if (plan !== "restart") {
+								const saved = loadSessions().find(
+									(session) => session.uploadId === task.uploadId,
 								);
+								if (plan === "complete") {
+									await resumeCompletionTask(
+										task,
+										task.mode === "presigned_multipart"
+											? (saved?.completedParts ?? [])
+											: undefined,
+									);
+									return;
+								}
+								const chunkSize =
+									(
+										progress as typeof progress & {
+											chunk_size?: number;
+										}
+									).chunk_size ?? saved?.chunkSize;
+								if (!chunkSize || chunkSize <= 0) {
+									throw new Error("missing resumable chunk size");
+								}
+								if (task.mode === "chunked") {
+									const resumedInit: InitUploadResponse = {
+										mode: "chunked",
+										upload_id: task.uploadId,
+										chunk_size: chunkSize,
+										total_chunks: progress.total_chunks,
+									};
+									await runChunkedUpload(
+										task,
+										resumedInit,
+										progress.chunks_on_disk,
+									);
+								} else {
+									// presigned_multipart resume — 从 localStorage 读已完成 parts
+									const resumedInit: InitUploadResponse = {
+										mode: "presigned_multipart",
+										upload_id: task.uploadId,
+										chunk_size: chunkSize,
+										total_chunks: progress.total_chunks,
+									};
+									await runMultipartUpload(
+										task,
+										resumedInit,
+										saved?.completedParts ?? [],
+									);
+								}
 								return;
 							}
-							const chunkSize =
-								(
-									progress as typeof progress & {
-										chunk_size?: number;
-									}
-								).chunk_size ?? saved?.chunkSize;
-							if (!chunkSize || chunkSize <= 0) {
-								throw new Error("missing resumable chunk size");
-							}
-							if (task.mode === "chunked") {
-								const resumedInit: InitUploadResponse = {
-									mode: "chunked",
-									upload_id: task.uploadId,
-									chunk_size: chunkSize,
-									total_chunks: progress.total_chunks,
-								};
-								await runChunkedUpload(
-									task,
-									resumedInit,
-									progress.chunks_on_disk,
-								);
+						} catch (error) {
+							if (shouldRemovePersistedSession(error)) {
+								removeSession(task.uploadId);
+								patchTask(taskId, {
+									uploadId: null,
+									completedChunks: 0,
+									totalChunks: 0,
+									mode: null,
+								});
 							} else {
-								// presigned_multipart resume — 从 localStorage 读已完成 parts
-								const resumedInit: InitUploadResponse = {
-									mode: "presigned_multipart",
-									upload_id: task.uploadId,
-									chunk_size: chunkSize,
-									total_chunks: progress.total_chunks,
-								};
-								await runMultipartUpload(
-									task,
-									resumedInit,
-									saved?.completedParts ?? [],
-								);
+								const message =
+									error instanceof Error
+										? error.message
+										: t("errors:unexpected_error");
+								markTaskFailed(taskId, message);
+								return;
 							}
-							return;
-						} catch {
-							patchTask(taskId, {
-								uploadId: null,
-								completedChunks: 0,
-								totalChunks: 0,
-								mode: null,
-							});
 						}
 					}
 
@@ -1344,6 +1361,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				<input
 					ref={resumeFileInputRef}
 					type="file"
+					data-testid="resume-input"
 					className="hidden"
 					onChange={handleResumeFileChange}
 				/>

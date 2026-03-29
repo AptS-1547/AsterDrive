@@ -12,6 +12,37 @@ pub struct UpsertPartResult {
     pub inserted: bool,
 }
 
+pub async fn try_claim_part<C: ConnectionTrait>(
+    db: &C,
+    upload_id: &str,
+    part_number: i32,
+) -> Result<bool> {
+    let now = Utc::now();
+    match UploadSessionPart::insert(upload_session_part::ActiveModel {
+        upload_id: Set(upload_id.to_string()),
+        part_number: Set(part_number),
+        etag: Set(String::new()),
+        size: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    })
+    .on_conflict_do_nothing_on([
+        upload_session_part::Column::UploadId,
+        upload_session_part::Column::PartNumber,
+    ])
+    .exec(db)
+    .await
+    .map_err(AsterError::from)?
+    {
+        TryInsertResult::Inserted(_) => Ok(true),
+        TryInsertResult::Conflicted => Ok(false),
+        TryInsertResult::Empty => Err(AsterError::internal_error(
+            "try_claim_part produced empty insert result",
+        )),
+    }
+}
+
 pub async fn upsert_part<C: ConnectionTrait>(
     db: &C,
     upload_id: &str,
@@ -101,6 +132,7 @@ pub async fn list_by_upload<C: ConnectionTrait>(
 ) -> Result<Vec<upload_session_part::Model>> {
     UploadSessionPart::find()
         .filter(upload_session_part::Column::UploadId.eq(upload_id))
+        .filter(upload_session_part::Column::Etag.ne(""))
         .order_by_asc(upload_session_part::Column::PartNumber)
         .all(db)
         .await
@@ -112,6 +144,7 @@ pub async fn list_part_numbers<C: ConnectionTrait>(db: &C, upload_id: &str) -> R
         .select_only()
         .column(upload_session_part::Column::PartNumber)
         .filter(upload_session_part::Column::UploadId.eq(upload_id))
+        .filter(upload_session_part::Column::Etag.ne(""))
         .order_by_asc(upload_session_part::Column::PartNumber)
         .into_tuple::<i32>()
         .all(db)
@@ -122,6 +155,20 @@ pub async fn list_part_numbers<C: ConnectionTrait>(db: &C, upload_id: &str) -> R
 pub async fn delete_by_upload<C: ConnectionTrait>(db: &C, upload_id: &str) -> Result<u64> {
     let res = UploadSessionPart::delete_many()
         .filter(upload_session_part::Column::UploadId.eq(upload_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(res.rows_affected)
+}
+
+pub async fn delete_by_upload_and_part<C: ConnectionTrait>(
+    db: &C,
+    upload_id: &str,
+    part_number: i32,
+) -> Result<u64> {
+    let res = UploadSessionPart::delete_many()
+        .filter(upload_session_part::Column::UploadId.eq(upload_id))
+        .filter(upload_session_part::Column::PartNumber.eq(part_number))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

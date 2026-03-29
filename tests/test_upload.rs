@@ -55,6 +55,8 @@ async fn create_upload_session(
 }
 
 async fn create_s3_bucket(endpoint: &str, bucket: &str) {
+    use aws_sdk_s3::error::ProvideErrorMetadata;
+
     let credentials =
         aws_credential_types::Credentials::new("rustfsadmin", "rustfsadmin123", None, None, "test");
     let config = aws_sdk_s3::Config::builder()
@@ -65,7 +67,19 @@ async fn create_s3_bucket(endpoint: &str, bucket: &str) {
         .force_path_style(true)
         .build();
     let client = aws_sdk_s3::Client::from_conf(config);
-    let _ = client.create_bucket().bucket(bucket).send().await;
+    if let Err(err) = client.create_bucket().bucket(bucket).send().await {
+        let code = err
+            .as_service_error()
+            .and_then(|service_err| service_err.code());
+        if matches!(
+            code,
+            Some("BucketAlreadyOwnedByYou") | Some("BucketAlreadyExists")
+        ) {
+            return;
+        }
+
+        panic!("failed to create S3 bucket {bucket} at {endpoint}: {err}");
+    }
 }
 
 async fn create_s3_default_policy(
@@ -1512,10 +1526,20 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
             .is_empty()
     );
 
-    let first = upload_service::upload_chunk(&state, &upload_id, 0, user.id, &part1)
+    let (first_attempt, second_attempt) = tokio::join!(
+        upload_service::upload_chunk(&state, &upload_id, 0, user.id, &part1),
+        upload_service::upload_chunk(&state, &upload_id, 0, user.id, &part1),
+    );
+    first_attempt.unwrap();
+    second_attempt.unwrap();
+
+    let session_after_race = upload_session_repo::find_by_id(&state.db, &upload_id)
         .await
         .unwrap();
-    assert_eq!(first.received_count, 1);
+    assert_eq!(
+        session_after_race.received_count, 1,
+        "concurrent duplicate relay part uploads should only count once"
+    );
 
     let duplicate = upload_service::upload_chunk(&state, &upload_id, 0, user.id, &part1)
         .await
@@ -1595,6 +1619,13 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     let driver = state.driver_registry.get_driver(&policy).unwrap();
     let stored = driver.get(&blob.storage_path).await.unwrap();
     assert_eq!(stored, data);
+    assert!(
+        upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+            .await
+            .unwrap()
+            .is_empty(),
+        "relay multipart part rows should be deleted after completion"
+    );
     assert!(
         !std::path::Path::new(&relay_temp_dir).exists(),
         "relay_stream multipart should never use local chunk temp dir"

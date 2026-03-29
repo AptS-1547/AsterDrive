@@ -47,7 +47,7 @@
 - `relay_stream`：`init` 仍返回 `direct` / `chunked`，但服务端直接把字节流中继到 S3，不落本地临时文件
 - `presigned`：`init` 才会返回 `presigned` / `presigned_multipart`
 
-旧配置 `{"presigned_upload":true}` 仍兼容，等价于 `{"s3_upload_strategy":"presigned"}`。使用预签名模式时，对象存储侧还必须配置好 CORS。
+旧配置 `{"presigned_upload":true}` 仍兼容，等价于 `{"s3_upload_strategy":"presigned"}`；`{"presigned_upload":false}` 或缺省时，默认等价于 `{"s3_upload_strategy":"proxy_tempfile"}`。使用预签名模式时，对象存储侧还必须配置好 CORS。
 
 ### 直传、分片和完成阶段
 

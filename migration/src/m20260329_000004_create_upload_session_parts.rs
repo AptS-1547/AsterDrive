@@ -62,16 +62,6 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 Index::create()
-                    .name("idx_upload_session_parts_upload_id")
-                    .table(UploadSessionParts::Table)
-                    .col(UploadSessionParts::UploadId)
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .create_index(
-                Index::create()
                     .name("uq_upload_session_parts_upload_id_part_number")
                     .table(UploadSessionParts::Table)
                     .col(UploadSessionParts::UploadId)
@@ -87,15 +77,6 @@ impl MigrationTrait for Migration {
             .drop_index(
                 Index::drop()
                     .name("uq_upload_session_parts_upload_id_part_number")
-                    .table(UploadSessionParts::Table)
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .drop_index(
-                Index::drop()
-                    .name("idx_upload_session_parts_upload_id")
                     .table(UploadSessionParts::Table)
                     .to_owned(),
             )

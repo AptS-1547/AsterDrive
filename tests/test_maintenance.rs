@@ -190,6 +190,50 @@ async fn test_cleanup_expired_completed_upload_sessions_removes_broken_temp_obje
 }
 
 #[actix_web::test]
+async fn test_cleanup_expired_completed_upload_sessions_removes_broken_completed_multipart_object()
+{
+    use aster_drive::db::repository::upload_session_repo;
+    use aster_drive::services::{auth_service, maintenance_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "maintuser1b", "maint1b@test.com", "password123")
+        .await
+        .unwrap();
+    let policy = default_policy(&state).await;
+    let driver = state.driver_registry.get_driver(&policy).unwrap();
+    let temp_key = "tmp/broken-completed-multipart.bin";
+    driver
+        .put(temp_key, b"stale completed multipart")
+        .await
+        .unwrap();
+
+    create_upload_session(
+        &state,
+        user.id,
+        "broken-completed-multipart",
+        aster_drive::types::UploadSessionStatus::Completed,
+        Utc::now() - Duration::hours(1),
+        Some(temp_key),
+        Some("already-completed-upload"),
+        None,
+    )
+    .await;
+
+    let stats = maintenance_service::cleanup_expired_completed_upload_sessions(&state)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.completed_sessions_deleted, 1);
+    assert_eq!(stats.broken_completed_sessions_deleted, 1);
+    assert!(
+        upload_session_repo::find_by_id(&state.db, "broken-completed-multipart")
+            .await
+            .is_err()
+    );
+    assert!(!driver.exists(temp_key).await.unwrap());
+}
+
+#[actix_web::test]
 async fn test_cleanup_expired_completed_upload_sessions_keeps_live_blob() {
     use aster_drive::db::repository::{file_repo, upload_session_repo};
     use aster_drive::services::{auth_service, maintenance_service};
@@ -323,7 +367,7 @@ async fn test_reconcile_blob_state_deletes_orphans_and_fixes_ref_counts() {
         .await
         .unwrap();
 
-    assert_eq!(stats.ref_count_fixed, 2);
+    assert_eq!(stats.ref_count_fixed, 3);
     assert_eq!(stats.orphan_blobs_deleted, 1);
 
     let live_blob_after = file_repo::find_blob_by_id(&state.db, live_blob.id)
@@ -364,7 +408,7 @@ async fn test_reconcile_blob_state_processes_all_batches_without_skipping() {
         .await
         .unwrap();
 
-    assert_eq!(stats.ref_count_fixed, 0);
+    assert_eq!(stats.ref_count_fixed, 1001);
     assert_eq!(stats.orphan_blobs_deleted, 1001);
     assert_eq!(FileBlob::find().count(&state.db).await.unwrap(), 0);
     assert!(!driver.exists("paging/blob-0000.bin").await.unwrap());
@@ -418,4 +462,95 @@ async fn test_purge_keeps_blob_row_when_storage_delete_fails_then_maintenance_re
             .is_err()
     );
     assert!(!driver.exists(&blob.storage_path).await.unwrap());
+}
+
+#[actix_web::test]
+async fn test_purge_releases_all_versioned_storage_used() {
+    use aster_drive::db::repository::user_repo;
+    use aster_drive::services::{auth_service, file_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "maintquota1", "maintquota1@test.com", "password123")
+        .await
+        .unwrap();
+
+    let initial_bytes = b"first-version";
+    let updated_bytes = b"second-version-kept";
+    let file = store_test_file(&state, user.id, "quota-purge.txt", initial_bytes).await;
+
+    file_service::update_content(
+        &state,
+        file.id,
+        user.id,
+        actix_web::web::Bytes::from_static(updated_bytes),
+        None,
+    )
+    .await
+    .unwrap();
+
+    let before_purge = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    assert_eq!(
+        before_purge.storage_used,
+        initial_bytes.len() as i64 + updated_bytes.len() as i64
+    );
+
+    file_service::purge(&state, file.id, user.id).await.unwrap();
+
+    let after_purge = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    assert_eq!(after_purge.storage_used, 0);
+}
+
+#[actix_web::test]
+async fn test_batch_purge_releases_all_versioned_storage_used() {
+    use aster_drive::db::repository::{file_repo, user_repo};
+    use aster_drive::services::{auth_service, file_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "maintquota2", "maintquota2@test.com", "password123")
+        .await
+        .unwrap();
+
+    let file_a_v1 = b"alpha-version-one";
+    let file_a_v2 = b"alpha-version-two-long";
+    let file_b_v1 = b"beta-version-one";
+    let file_b_v2 = b"beta-version-two-even-longer";
+
+    let file_a = store_test_file(&state, user.id, "quota-a.txt", file_a_v1).await;
+    let file_b = store_test_file(&state, user.id, "quota-b.txt", file_b_v1).await;
+
+    file_service::update_content(
+        &state,
+        file_a.id,
+        user.id,
+        actix_web::web::Bytes::from_static(file_a_v2),
+        None,
+    )
+    .await
+    .unwrap();
+    file_service::update_content(
+        &state,
+        file_b.id,
+        user.id,
+        actix_web::web::Bytes::from_static(file_b_v2),
+        None,
+    )
+    .await
+    .unwrap();
+
+    let before_purge = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    assert_eq!(
+        before_purge.storage_used,
+        (file_a_v1.len() + file_a_v2.len() + file_b_v1.len() + file_b_v2.len()) as i64
+    );
+
+    let files = file_repo::find_by_ids(&state.db, &[file_a.id, file_b.id])
+        .await
+        .unwrap();
+    let purged = file_service::batch_purge(&state, files, user.id)
+        .await
+        .unwrap();
+    assert_eq!(purged, 2);
+
+    let after_purge = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    assert_eq!(after_purge.storage_used, 0);
 }

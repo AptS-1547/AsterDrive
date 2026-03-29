@@ -128,11 +128,13 @@ pub async fn reconcile_blob_state(state: &AppState) -> Result<BlobMaintenanceSta
                 if blob.ref_count > 0 {
                     file_repo::decrement_blob_ref_count_by(&state.db, blob.id, blob.ref_count)
                         .await?;
+                    stats.ref_count_fixed += 1;
                 } else if blob.ref_count < 0 {
                     let mut active: file_blob::ActiveModel = blob.clone().into();
                     active.ref_count = Set(0);
                     active.updated_at = Set(Utc::now());
                     active.update(&state.db).await.map_err(AsterError::from)?;
+                    stats.ref_count_fixed += 1;
                 }
                 if crate::services::file_service::cleanup_unreferenced_blob(state, &blob).await {
                     stats.orphan_blobs_deleted += 1;
@@ -247,6 +249,14 @@ async fn cleanup_broken_completed_session_object(
                 temp_key = %temp_key,
                 "failed to abort stale multipart upload for completed session: {e}"
             );
+
+            if let Err(delete_err) = driver.delete(temp_key).await {
+                tracing::warn!(
+                    session_id = %session.id,
+                    temp_key = %temp_key,
+                    "failed to delete stale completed multipart object after abort failure: {delete_err}"
+                );
+            }
         }
     } else if let Err(e) = driver.delete(temp_key).await {
         tracing::warn!(

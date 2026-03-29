@@ -1,22 +1,23 @@
 use actix_multipart::Multipart;
 use actix_web::HttpResponse;
 use chrono::Utc;
-use futures::StreamExt;
+use futures::{StreamExt, stream};
 use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
 use tokio::io::AsyncWriteExt;
 
 use crate::cache::CacheExt;
-use crate::db::repository::{file_repo, policy_repo, user_repo};
-use crate::entities::{file, file_blob, user_storage_policy};
+use crate::db::repository::{file_repo, policy_repo, upload_session_repo, user_repo};
+use crate::entities::{file, file_blob, upload_session, user_storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::thumbnail_service;
 use crate::types::{
-    NullablePatch, S3UploadStrategy, effective_s3_multipart_chunk_size,
+    NullablePatch, S3UploadStrategy, UploadSessionStatus, effective_s3_multipart_chunk_size,
     parse_storage_policy_options,
 };
 
 const HASH_BUF_SIZE: usize = 65536; // 64KB
+const BLOB_CLEANUP_CONCURRENCY: usize = 8;
 
 async fn create_s3_nondedup_file(
     state: &AppState,
@@ -59,6 +60,85 @@ async fn create_s3_nondedup_file(
     user_repo::update_storage_used(&txn, user_id, size).await?;
     txn.commit().await.map_err(AsterError::from)?;
     Ok(created)
+}
+
+async fn create_relay_cleanup_handle(
+    state: &AppState,
+    upload_id: &str,
+    user_id: i64,
+    folder_id: Option<i64>,
+    filename: &str,
+    total_size: i64,
+    chunk_size: i64,
+    uploaded_part_count: usize,
+    policy_id: i64,
+    storage_path: &str,
+    multipart_id: &str,
+) -> Result<()> {
+    let total_chunks = i32::try_from(uploaded_part_count).map_err(|_| {
+        AsterError::internal_error(format!(
+            "relay multipart part count overflow for upload {upload_id}"
+        ))
+    })?;
+    let now = Utc::now();
+
+    upload_session_repo::create(
+        &state.db,
+        upload_session::ActiveModel {
+            id: Set(upload_id.to_string()),
+            user_id: Set(user_id),
+            filename: Set(filename.to_string()),
+            total_size: Set(total_size),
+            chunk_size: Set(chunk_size),
+            total_chunks: Set(total_chunks),
+            received_count: Set(total_chunks),
+            folder_id: Set(folder_id),
+            policy_id: Set(policy_id),
+            status: Set(UploadSessionStatus::Completed),
+            s3_temp_key: Set(Some(storage_path.to_string())),
+            s3_multipart_id: Set(Some(multipart_id.to_string())),
+            file_id: Set(None),
+            created_at: Set(now),
+            expires_at: Set(now + chrono::Duration::hours(1)),
+            updated_at: Set(now),
+        },
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn clear_relay_cleanup_handle(state: &AppState, upload_id: &str, file_id: i64) {
+    match upload_session_repo::find_by_id(&state.db, upload_id).await {
+        Ok(session) => {
+            let mut active: upload_session::ActiveModel = session.into();
+            active.file_id = Set(Some(file_id));
+            active.updated_at = Set(Utc::now());
+            if let Err(e) = upload_session_repo::update(&state.db, active).await {
+                tracing::warn!(
+                    upload_id,
+                    file_id,
+                    "failed to mark relay cleanup handle with created file before deletion: {e}"
+                );
+            }
+        }
+        Err(e) if e.code() == "E054" => {}
+        Err(e) => {
+            tracing::warn!(
+                upload_id,
+                file_id,
+                "failed to load relay cleanup handle before deletion: {e}"
+            );
+        }
+    }
+
+    if let Err(e) = upload_session_repo::delete(&state.db, upload_id).await {
+        tracing::warn!(
+            upload_id,
+            file_id,
+            "failed to delete relay cleanup handle after successful upload: {e}"
+        );
+    }
 }
 
 async fn relay_field_to_s3(
@@ -117,12 +197,27 @@ async fn relay_field_to_s3(
             uploaded_parts.push((part_number, final_part_etag));
         }
 
+        create_relay_cleanup_handle(
+            state,
+            &upload_id,
+            user_id,
+            folder_id,
+            filename,
+            total_size,
+            part_size as i64,
+            uploaded_parts.len(),
+            policy.id,
+            &storage_path,
+            &multipart_id,
+        )
+        .await?;
+
         driver
             .complete_multipart_upload(&storage_path, &multipart_id, uploaded_parts)
             .await?;
 
         let file_hash = format!("s3-{upload_id}");
-        create_s3_nondedup_file(
+        let created = create_s3_nondedup_file(
             state,
             user_id,
             folder_id,
@@ -132,7 +227,10 @@ async fn relay_field_to_s3(
             &storage_path,
             &file_hash,
         )
-        .await
+        .await?;
+
+        clear_relay_cleanup_handle(state, &upload_id, created.id).await;
+        Ok(created)
     }
     .await;
 
@@ -704,7 +802,6 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     // 注意：不检查 is_locked——回收站内的文件和 recursive_purge_folder 都需要无条件清理
 
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
-    let blob_size = blob.size;
 
     // ── [事务内] 版本清理 → 属性删除 → 文件删除 → blob ref_count-- → 配额更新 ──
     // 注意：文件删除必须在 blob 删除之前（files.blob_id → file_blobs.id FK 约束）
@@ -735,10 +832,25 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let blob_ids: Vec<i64> = blob_decrements.keys().copied().collect();
     let blobs_by_id = file_repo::find_blobs_by_ids(&txn, &blob_ids).await?;
     let mut blobs_to_cleanup: Vec<file_blob::Model> = Vec::new();
+    let mut total_freed_bytes = 0i64;
     for (blob_id, decrement) in blob_decrements {
         let Some(current_blob) = blobs_by_id.get(&blob_id) else {
             continue;
         };
+
+        let freed_bytes = current_blob
+            .size
+            .checked_mul(i64::from(decrement))
+            .ok_or_else(|| {
+                AsterError::internal_error(format!(
+                    "freed byte count overflow for blob {blob_id} during purge"
+                ))
+            })?;
+        total_freed_bytes = total_freed_bytes.checked_add(freed_bytes).ok_or_else(|| {
+            AsterError::internal_error(format!(
+                "total freed byte count overflow while purging file {id}"
+            ))
+        })?;
 
         file_repo::decrement_blob_ref_count_by(&txn, blob_id, decrement).await?;
         if current_blob.ref_count <= decrement {
@@ -747,7 +859,7 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     }
 
     // 配额更新
-    user_repo::update_storage_used(&txn, user_id, -blob_size).await?;
+    user_repo::update_storage_used(&txn, user_id, -total_freed_bytes).await?;
 
     txn.commit().await.map_err(AsterError::from)?;
 
@@ -774,7 +886,6 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
 
     let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
     let blob_ids: Vec<i64> = files.iter().map(|f| f.blob_id).collect();
-    let total_size: i64 = files.iter().map(|f| f.size).sum();
     let count = files.len() as u32;
 
     // ── 单次事务：版本 → 属性 → 文件 → blob → 配额 ──
@@ -808,9 +919,18 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
     let blob_ids: Vec<i64> = blob_decrements.keys().copied().collect();
     let blobs_by_id = file_repo::find_blobs_by_ids(&txn, &blob_ids).await?;
     let mut blobs_to_cleanup: Vec<file_blob::Model> = Vec::new();
+    let mut total_freed_bytes = 0i64;
 
     for (&blob_id, &decrement) in &blob_decrements {
         if let Some(blob) = blobs_by_id.get(&blob_id) {
+            let freed_bytes = blob.size.checked_mul(decrement).ok_or_else(|| {
+                AsterError::internal_error(format!(
+                    "freed byte count overflow for blob {blob_id} during batch purge"
+                ))
+            })?;
+            total_freed_bytes = total_freed_bytes.checked_add(freed_bytes).ok_or_else(|| {
+                AsterError::internal_error("total freed byte count overflow during batch purge")
+            })?;
             file_repo::decrement_blob_ref_count_by(&txn, blob_id, decrement as i32).await?;
             if i64::from(blob.ref_count) <= decrement {
                 blobs_to_cleanup.push(blob.clone());
@@ -819,25 +939,21 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
     }
 
     // 5. 配额一次性更新
-    user_repo::update_storage_used(&txn, user_id, -total_size).await?;
+    user_repo::update_storage_used(&txn, user_id, -total_freed_bytes).await?;
 
     txn.commit().await.map_err(AsterError::from)?;
 
     // ── 事务后：并行物理清理，清理成功后再删 blob 元数据 ──
-    let state_ref = &state;
-    let cleanup_futures: Vec<_> = blobs_to_cleanup
-        .iter()
-        .map(|blob| async move {
-            if !cleanup_unreferenced_blob(state_ref, blob).await {
+    stream::iter(blobs_to_cleanup.into_iter())
+        .for_each_concurrent(BLOB_CLEANUP_CONCURRENCY, |blob| async move {
+            if !cleanup_unreferenced_blob(state, &blob).await {
                 tracing::warn!(
                     blob_id = blob.id,
                     "batch purge left blob row for retry because object cleanup was incomplete"
                 );
             }
         })
-        .collect();
-
-    futures::future::join_all(cleanup_futures).await;
+        .await;
 
     Ok(count)
 }

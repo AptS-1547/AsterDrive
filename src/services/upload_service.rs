@@ -44,6 +44,33 @@ pub struct UploadProgressResponse {
     pub filename: String,
 }
 
+async fn increment_session_received_count<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    upload_id: &str,
+) -> Result<()> {
+    use crate::entities::upload_session::{Column, Entity as UploadSession};
+    use sea_orm::{ColumnTrait, EntityTrait, ExprTrait, QueryFilter, sea_query::Expr};
+
+    let result = UploadSession::update_many()
+        .col_expr(
+            Column::ReceivedCount,
+            Expr::col(Column::ReceivedCount).add(1),
+        )
+        .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(Column::Id.eq(upload_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    if result.rows_affected == 0 {
+        return Err(AsterError::upload_session_not_found(format!(
+            "session {upload_id}"
+        )));
+    }
+
+    Ok(())
+}
+
 fn expected_chunk_size_for_upload(
     session: &upload_session::Model,
     chunk_number: i32,
@@ -355,10 +382,7 @@ pub async fn upload_chunk(
     ) {
         let s3_part_number = chunk_number + 1;
 
-        if upload_session_part_repo::find_by_upload_and_part(db, upload_id, s3_part_number)
-            .await?
-            .is_some()
-        {
+        if !upload_session_part_repo::try_claim_part(db, upload_id, s3_part_number).await? {
             let updated = upload_session_repo::find_by_id(db, upload_id).await?;
             return Ok(ChunkUploadResponse {
                 received_count: updated.received_count,
@@ -368,31 +392,57 @@ pub async fn upload_chunk(
 
         let policy = policy_repo::find_by_id(db, session.policy_id).await?;
         let driver = state.driver_registry.get_driver(&policy)?;
-        let etag = driver
+        let etag = match driver
             .upload_multipart_part(temp_key, multipart_id, s3_part_number, data)
-            .await?;
-        let upserted = upload_session_part_repo::upsert_part(
-            db,
-            upload_id,
-            s3_part_number,
-            &etag,
-            data.len() as i64,
-        )
-        .await?;
-
-        if upserted.inserted {
-            use crate::entities::upload_session::{Column, Entity as UploadSession};
-            use sea_orm::{ColumnTrait, EntityTrait, ExprTrait, QueryFilter, sea_query::Expr};
-            UploadSession::update_many()
-                .col_expr(
-                    Column::ReceivedCount,
-                    Expr::col(Column::ReceivedCount).add(1),
+            .await
+        {
+            Ok(etag) => etag,
+            Err(err) => {
+                if let Err(cleanup_err) = upload_session_part_repo::delete_by_upload_and_part(
+                    db,
+                    upload_id,
+                    s3_part_number,
                 )
-                .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
-                .filter(Column::Id.eq(upload_id))
-                .exec(db)
                 .await
-                .map_err(AsterError::from)?;
+                {
+                    tracing::warn!(
+                        upload_id,
+                        part_number = s3_part_number,
+                        "failed to release relay multipart part claim after upload error: {cleanup_err}"
+                    );
+                }
+                return Err(err);
+            }
+        };
+
+        let txn = db.begin().await.map_err(AsterError::from)?;
+        let finalize_result = async {
+            upload_session_part_repo::upsert_part(
+                &txn,
+                upload_id,
+                s3_part_number,
+                &etag,
+                data.len() as i64,
+            )
+            .await?;
+            increment_session_received_count(&txn, upload_id).await?;
+            txn.commit().await.map_err(AsterError::from)?;
+            Ok::<(), AsterError>(())
+        }
+        .await;
+
+        if let Err(err) = finalize_result {
+            if let Err(cleanup_err) =
+                upload_session_part_repo::delete_by_upload_and_part(db, upload_id, s3_part_number)
+                    .await
+            {
+                tracing::warn!(
+                    upload_id,
+                    part_number = s3_part_number,
+                    "failed to release relay multipart part claim after DB finalize error: {cleanup_err}"
+                );
+            }
+            return Err(err);
         }
 
         let updated = upload_session_repo::find_by_id(db, upload_id).await?;
@@ -434,18 +484,7 @@ pub async fn upload_chunk(
     }
 
     // 原子 +1（sea-query Expr 避免 read-modify-write race condition）
-    use crate::entities::upload_session::{Column, Entity as UploadSession};
-    use sea_orm::{ColumnTrait, EntityTrait, ExprTrait, QueryFilter, sea_query::Expr};
-    UploadSession::update_many()
-        .col_expr(
-            Column::ReceivedCount,
-            Expr::col(Column::ReceivedCount).add(1),
-        )
-        .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
-        .filter(Column::Id.eq(upload_id))
-        .exec(db)
-        .await
-        .map_err(AsterError::from)?;
+    increment_session_received_count(db, upload_id).await?;
 
     let updated = upload_session_repo::find_by_id(db, upload_id).await?;
     Ok(ChunkUploadResponse {
@@ -905,7 +944,15 @@ async fn complete_s3_relay_multipart(
     .await;
 
     match result {
-        Ok(file) => Ok(file),
+        Ok(file) => {
+            if let Err(e) = upload_session_part_repo::delete_by_upload(db, upload_id).await {
+                tracing::warn!(
+                    upload_id,
+                    "failed to delete relay multipart part rows after completion: {e}"
+                );
+            }
+            Ok(file)
+        }
         Err(e) => {
             mark_session_failed(db, upload_id).await;
             Err(e)
