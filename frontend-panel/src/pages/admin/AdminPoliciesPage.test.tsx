@@ -461,7 +461,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: true,
 				max_file_size: 2048,
 				name: "Primary Local",
-				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
+				options: JSON.stringify({}),
 				secret_key: "",
 			});
 		});
@@ -539,6 +539,66 @@ describe("AdminPoliciesPage", () => {
 			}),
 		);
 		expect(payload).toHaveProperty("access_key", "NEWKEY");
+		expect(payload).not.toHaveProperty("secret_key");
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
+	it("displays legacy presigned_upload true as presigned strategy", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 10,
+				name: "Legacy Presigned S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				bucket: "legacy-bucket",
+				base_path: "legacy-path",
+				options: JSON.stringify({ presigned_upload: true }),
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+
+		expect(screen.getByDisplayValue("Legacy Presigned S3")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("legacy-bucket")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("legacy-path")).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "select-item:presigned" }),
+		).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("Access Key"), {
+			target: { value: "LEGACYKEY" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: "LEGACYKEY",
+				base_path: "legacy-path",
+				bucket: "legacy-bucket",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				secret_key: undefined,
+			});
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(mockState.update).toHaveBeenCalledWith(
+				10,
+				expect.objectContaining({
+					options: JSON.stringify({ s3_upload_strategy: "presigned" }),
+				}),
+			);
+		});
+
+		const [, payload] = mockState.update.mock.calls[0] as [
+			number,
+			Record<string, unknown>,
+		];
+		expect(payload).toHaveProperty("access_key", "LEGACYKEY");
 		expect(payload).not.toHaveProperty("secret_key");
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
 	});

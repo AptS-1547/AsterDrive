@@ -19,6 +19,8 @@ use crate::types::UploadSessionStatus;
 
 const COMPLETED_SESSION_BATCH_SIZE: u64 = 1_000;
 const BLOB_RECONCILE_BATCH_SIZE: u64 = 1_000;
+const MULTIPART_ABORT_MAX_ATTEMPTS: u32 = 3;
+const MULTIPART_ABORT_INITIAL_BACKOFF_MS: u64 = 200;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct UploadSessionMaintenanceStats {
@@ -246,18 +248,49 @@ async fn cleanup_broken_completed_session_object(
     };
 
     if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
-        if let Err(e) = driver.abort_multipart_upload(temp_key, multipart_id).await {
+        let mut abort_error = None;
+
+        for attempt in 1..=MULTIPART_ABORT_MAX_ATTEMPTS {
+            match driver.abort_multipart_upload(temp_key, multipart_id).await {
+                Ok(()) => {
+                    abort_error = None;
+                    break;
+                }
+                Err(err) => {
+                    if attempt == MULTIPART_ABORT_MAX_ATTEMPTS {
+                        abort_error = Some(err);
+                        break;
+                    }
+
+                    let backoff_ms = MULTIPART_ABORT_INITIAL_BACKOFF_MS * (1_u64 << (attempt - 1));
+                    tracing::warn!(
+                        session_id = %session.id,
+                        temp_key = %temp_key,
+                        attempt,
+                        max_attempts = MULTIPART_ABORT_MAX_ATTEMPTS,
+                        backoff_ms,
+                        "failed to abort stale multipart upload for completed session, retrying: {err}"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+                }
+            }
+        }
+
+        if let Some(e) = abort_error {
             tracing::warn!(
                 session_id = %session.id,
                 temp_key = %temp_key,
-                "failed to abort stale multipart upload for completed session: {e}"
+                max_attempts = MULTIPART_ABORT_MAX_ATTEMPTS,
+                "failed to abort stale multipart upload for completed session after retries: {e}"
             );
 
+            // 删除对象 key 不能回收仍在进行中的 multipart parts；生产环境仍应配置
+            // S3/MinIO 生命周期规则来清理 incomplete multipart uploads。
             if let Err(delete_err) = driver.delete(temp_key).await {
                 tracing::warn!(
                     session_id = %session.id,
                     temp_key = %temp_key,
-                    "failed to delete stale completed multipart object after abort failure: {delete_err}"
+                    "failed to delete stale completed multipart object after abort retries exhausted: {delete_err}"
                 );
             }
         }

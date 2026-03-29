@@ -933,7 +933,12 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
             total_freed_bytes = total_freed_bytes.checked_add(freed_bytes).ok_or_else(|| {
                 AsterError::internal_error("total freed byte count overflow during batch purge")
             })?;
-            file_repo::decrement_blob_ref_count_by(&txn, blob_id, decrement as i32).await?;
+            let decrement_i32 = i32::try_from(decrement).map_err(|_| {
+                AsterError::internal_error(format!(
+                    "blob decrement overflow for blob {blob_id} during batch purge"
+                ))
+            })?;
+            file_repo::decrement_blob_ref_count_by(&txn, blob_id, decrement_i32).await?;
             if i64::from(blob.ref_count) <= decrement {
                 blobs_to_cleanup.push(blob.clone());
             }

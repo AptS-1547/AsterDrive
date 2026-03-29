@@ -97,6 +97,16 @@ function getEffectiveS3UploadStrategy(
 	return options.presigned_upload ? "presigned" : "proxy_tempfile";
 }
 
+function buildPolicyOptions(form: PolicyFormData): string {
+	if (form.driver_type !== "s3") {
+		return JSON.stringify({});
+	}
+
+	return JSON.stringify({
+		s3_upload_strategy: form.s3_upload_strategy,
+	});
+}
+
 function buildPolicyTestPayload(form: PolicyFormData) {
 	return {
 		driver_type: form.driver_type,
@@ -305,9 +315,7 @@ export default function AdminPoliciesPage() {
 
 	const persistPolicy = async () => {
 		try {
-			const options = JSON.stringify({
-				s3_upload_strategy: form.s3_upload_strategy,
-			});
+			const options = buildPolicyOptions(form);
 			if (editingId) {
 				const payload: Record<string, unknown> = {
 					name: form.name,
