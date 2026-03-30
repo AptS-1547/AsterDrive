@@ -668,7 +668,11 @@ export default function AdminUsersPage() {
 				}}
 			>
 				<DialogContent className="sm:max-w-md">
-					<form onSubmit={handleCreateUser} className="space-y-4">
+					<form
+						onSubmit={handleCreateUser}
+						autoComplete="off"
+						className="space-y-4"
+					>
 						<DialogHeader>
 							<DialogTitle>{t("create_user")}</DialogTitle>
 							<DialogDescription>{t("create_user_desc")}</DialogDescription>
@@ -677,12 +681,14 @@ export default function AdminUsersPage() {
 							<Label htmlFor="create-user-username">{t("username")}</Label>
 							<Input
 								id="create-user-username"
+								name="admin-create-user-username"
 								value={createForm.username}
 								onChange={(e) => {
 									const value = e.target.value;
 									handleCreateFormChange("username", value);
 									validateCreateField("username", value.trim());
 								}}
+								autoComplete="off"
 								required
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
 								aria-invalid={!!createErrors.username}
@@ -697,12 +703,14 @@ export default function AdminUsersPage() {
 							<Label htmlFor="create-user-email">{t("email")}</Label>
 							<Input
 								id="create-user-email"
+								name="admin-create-user-email"
 								value={createForm.email}
 								onChange={(e) => {
 									const value = e.target.value;
 									handleCreateFormChange("email", value);
 									validateCreateField("email", value.trim());
 								}}
+								autoComplete="off"
 								required
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
 								aria-invalid={!!createErrors.email}
@@ -715,6 +723,7 @@ export default function AdminUsersPage() {
 							<Label htmlFor="create-user-password">{t("password")}</Label>
 							<Input
 								id="create-user-password"
+								name="admin-create-user-password"
 								type="password"
 								value={createForm.password}
 								onChange={(e) => {
@@ -722,6 +731,7 @@ export default function AdminUsersPage() {
 									handleCreateFormChange("password", value);
 									validateCreateField("password", value);
 								}}
+								autoComplete="new-password"
 								required
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
 								aria-invalid={!!createErrors.password}

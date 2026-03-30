@@ -227,6 +227,7 @@ vi.mock("@/components/ui/icon", () => ({
 vi.mock("@/components/ui/input", () => ({
 	Input: ({
 		"aria-invalid": ariaInvalid,
+		autoComplete,
 		className,
 		id,
 		onChange,
@@ -237,6 +238,7 @@ vi.mock("@/components/ui/input", () => ({
 		value,
 	}: {
 		"aria-invalid"?: boolean;
+		autoComplete?: string;
 		className?: string;
 		id?: string;
 		onChange?: (event: { target: { value: string } }) => void;
@@ -248,6 +250,7 @@ vi.mock("@/components/ui/input", () => ({
 	}) => (
 		<input
 			aria-invalid={ariaInvalid}
+			autoComplete={autoComplete}
 			className={className}
 			id={id}
 			onChange={(event) =>
@@ -890,6 +893,22 @@ describe("AdminPoliciesPage", () => {
 		expect(screen.getByDisplayValue("tenant-a")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("4096")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("5")).toBeInTheDocument();
+		expect(screen.getByLabelText("Access Key")).toHaveAttribute(
+			"placeholder",
+			"policy_editor_credentials_keep_placeholder",
+		);
+		expect(screen.getByLabelText("Access Key")).toHaveAttribute(
+			"autocomplete",
+			"off",
+		);
+		expect(screen.getByLabelText("Secret Key")).toHaveAttribute(
+			"placeholder",
+			"policy_editor_credentials_keep_placeholder",
+		);
+		expect(screen.getByLabelText("Secret Key")).toHaveAttribute(
+			"autocomplete",
+			"new-password",
+		);
 
 		fireEvent.change(screen.getByLabelText("core:name"), {
 			target: { value: "Archive S3 Updated" },
@@ -1144,7 +1163,7 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
 	});
 
-	it("preserves zero-valued policy limits when opening the edit dialog", () => {
+	it("shows unlimited for zero max file size while preserving raw limit inputs in edit mode", () => {
 		mockState.items = [
 			createPolicy({
 				id: 8,
@@ -1164,6 +1183,7 @@ describe("AdminPoliciesPage", () => {
 
 		expect(screen.getByDisplayValue("Direct Put S3")).toBeInTheDocument();
 		expect(screen.getAllByDisplayValue("0")).toHaveLength(2);
+		expect(screen.getByText("core:unlimited")).toBeInTheDocument();
 		expect(screen.queryByDisplayValue("5")).not.toBeInTheDocument();
 	});
 

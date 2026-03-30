@@ -250,6 +250,7 @@
 	"policy_editor_overview_desc": "Update the policy name, storage path, and review the active storage driver.",
 	"policy_editor_connection_title": "Connection",
 	"policy_editor_connection_desc": "Adjust the endpoint, bucket, and credentials. Leaving secret fields empty keeps the current values.",
+	"policy_editor_credentials_keep_placeholder": "Leave blank to keep unchanged",
 	"policy_editor_storage_title": "Storage Details",
 	"policy_editor_storage_desc": "Local policies do not need remote connection settings, only the storage path and local behavior.",
 	"policy_editor_rules_title": "Upload Rules",

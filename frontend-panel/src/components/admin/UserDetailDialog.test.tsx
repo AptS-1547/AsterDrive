@@ -104,6 +104,7 @@ vi.mock("@/components/ui/icon", () => ({
 
 vi.mock("@/components/ui/input", () => ({
 	Input: ({
+		autoComplete,
 		className,
 		disabled,
 		id,
@@ -113,6 +114,7 @@ vi.mock("@/components/ui/input", () => ({
 		type,
 		value,
 	}: {
+		autoComplete?: string;
 		className?: string;
 		disabled?: boolean;
 		id?: string;
@@ -123,6 +125,7 @@ vi.mock("@/components/ui/input", () => ({
 		value?: string;
 	}) => (
 		<input
+			autoComplete={autoComplete}
 			className={className}
 			disabled={disabled}
 			id={id}
@@ -535,6 +538,14 @@ describe("UserDetailDialog", () => {
 		renderDialog();
 
 		await screen.findByText("Primary");
+		expect(screen.getByLabelText("password")).toHaveAttribute(
+			"autocomplete",
+			"new-password",
+		);
+		expect(screen.getByLabelText("confirm_password")).toHaveAttribute(
+			"autocomplete",
+			"new-password",
+		);
 
 		fireEvent.change(screen.getByLabelText("password"), {
 			target: { value: "newsecret456" },

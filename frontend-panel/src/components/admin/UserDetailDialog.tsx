@@ -548,6 +548,7 @@ export function UserDetailDialog({
 										<Label htmlFor="user-reset-password">{t("password")}</Label>
 										<Input
 											id="user-reset-password"
+											name="admin-reset-user-password"
 											type="password"
 											value={passwordValue}
 											onChange={(e) => {
@@ -557,6 +558,7 @@ export function UserDetailDialog({
 													password: undefined,
 												}));
 											}}
+											autoComplete="new-password"
 											className={ADMIN_CONTROL_HEIGHT_CLASS}
 											disabled={savingPassword}
 											aria-invalid={passwordErrors.password ? true : undefined}
@@ -576,6 +578,7 @@ export function UserDetailDialog({
 										</Label>
 										<Input
 											id="user-reset-password-confirm"
+											name="admin-reset-user-password-confirm"
 											type="password"
 											value={confirmPasswordValue}
 											onChange={(e) => {
@@ -585,6 +588,7 @@ export function UserDetailDialog({
 													confirm: undefined,
 												}));
 											}}
+											autoComplete="new-password"
 											className={ADMIN_CONTROL_HEIGHT_CLASS}
 											disabled={savingPassword}
 											aria-invalid={passwordErrors.confirm ? true : undefined}

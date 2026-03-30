@@ -233,6 +233,7 @@ vi.mock("@/components/ui/icon", () => ({
 vi.mock("@/components/ui/input", () => ({
 	Input: ({
 		ariaInvalid,
+		autoComplete,
 		className,
 		id,
 		onChange,
@@ -242,6 +243,7 @@ vi.mock("@/components/ui/input", () => ({
 		value,
 	}: {
 		ariaInvalid?: boolean;
+		autoComplete?: string;
 		className?: string;
 		id?: string;
 		onChange?: (event: { target: { value: string } }) => void;
@@ -252,6 +254,7 @@ vi.mock("@/components/ui/input", () => ({
 	}) => (
 		<input
 			aria-invalid={ariaInvalid}
+			autoComplete={autoComplete}
 			className={className}
 			id={id}
 			onChange={(event) =>
@@ -599,6 +602,18 @@ describe("AdminUsersPage", () => {
 		expect(await screen.findByText("no_users")).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: /new_user/i }));
+		expect(screen.getByLabelText("username")).toHaveAttribute(
+			"autocomplete",
+			"off",
+		);
+		expect(screen.getByLabelText("email")).toHaveAttribute(
+			"autocomplete",
+			"off",
+		);
+		expect(screen.getByLabelText("password")).toHaveAttribute(
+			"autocomplete",
+			"new-password",
+		);
 
 		fireEvent.change(screen.getByLabelText("username"), {
 			target: { value: "abc" },

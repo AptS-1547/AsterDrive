@@ -209,7 +209,7 @@ export function StoragePolicyDialog({
 		{
 			label: t("max_file_size"),
 			value:
-				form.max_file_size === ""
+				form.max_file_size === "" || Number(form.max_file_size) === 0
 					? t("core:unlimited")
 					: `${form.max_file_size} bytes`,
 		},
@@ -319,19 +319,33 @@ export function StoragePolicyDialog({
 					<Label htmlFor="access_key">{t("access_key")}</Label>
 					<Input
 						id="access_key"
+						name="storage-policy-access-key"
 						value={form.access_key}
 						onChange={(e) => onFieldChange("access_key", e.target.value)}
+						autoComplete="off"
 						className={ADMIN_CONTROL_HEIGHT_CLASS}
+						placeholder={
+							isCreateMode
+								? undefined
+								: t("policy_editor_credentials_keep_placeholder")
+						}
 					/>
 				</div>
 				<div className="space-y-2">
 					<Label htmlFor="secret_key">{t("secret_key")}</Label>
 					<Input
 						id="secret_key"
+						name="storage-policy-secret-key"
 						type="password"
 						value={form.secret_key}
 						onChange={(e) => onFieldChange("secret_key", e.target.value)}
+						autoComplete="new-password"
 						className={ADMIN_CONTROL_HEIGHT_CLASS}
+						placeholder={
+							isCreateMode
+								? undefined
+								: t("policy_editor_credentials_keep_placeholder")
+						}
 					/>
 				</div>
 			</div>
@@ -523,6 +537,7 @@ export function StoragePolicyDialog({
 				</DialogHeader>
 				<form
 					onSubmit={(e) => e.preventDefault()}
+					autoComplete="off"
 					className="flex min-h-0 flex-1 flex-col overflow-hidden"
 				>
 					<div className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-5">
