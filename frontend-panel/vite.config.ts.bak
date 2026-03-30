@@ -86,16 +86,6 @@ export default defineConfig(({ command }) => {
 
 	return {
 		plugins: [
-
-    {
-      name: 'trace-monaco-entries',
-      moduleParsed(moduleInfo) {
-        if (moduleInfo.id.includes('monaco-editor') && moduleInfo.importers.length === 0 && !moduleInfo.id.includes('?worker')) {
-          const short = moduleInfo.id.replace(/.*monaco-editor\/esm\/vs\//, 'vs/');
-          console.log('[ENTRY]', short);
-        }
-      }
-    },
 			react(),
 			tailwindcss(),
 			VitePWA({
