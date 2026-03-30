@@ -184,7 +184,8 @@ async fn test_audit_log_admin_only() {
         .uri("/api/v1/admin/audit-logs")
         .insert_header(("Cookie", format!("aster_access={}", token2)))
         .to_request();
-    let resp = test::call_service(&app, req).await;
+    let err = test::try_call_service(&app, req).await.unwrap_err();
+    let resp = err.error_response();
     assert_eq!(resp.status(), 403);
 }
 

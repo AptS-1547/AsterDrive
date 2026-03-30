@@ -30,6 +30,73 @@ fn avatar_upload_payload() -> (String, Vec<u8>) {
 }
 
 #[actix_web::test]
+async fn test_admin_scope_requires_authentication() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/config/schema")
+        .to_request();
+    let err = test::try_call_service(&app, req).await.unwrap_err();
+    let resp = err.error_response();
+    assert_eq!(resp.status(), 401);
+}
+
+#[actix_web::test]
+async fn test_admin_scope_rejects_non_admin_users() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (_admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "plainadminscope",
+            "email": "plainadminscope@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "plainadminscope",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let token = common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/config/schema")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let err = test::try_call_service(&app, req).await.unwrap_err();
+    let resp = err.error_response();
+    assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
+async fn test_admin_scope_allows_admin_users() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/config/schema")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"].is_array());
+}
+
+#[actix_web::test]
 async fn test_admin_locks() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -412,7 +479,8 @@ async fn test_non_admin_cannot_create_user() {
             "password": "password123"
         }))
         .to_request();
-    let resp = test::call_service(&app, req).await;
+    let err = test::try_call_service(&app, req).await.unwrap_err();
+    let resp = err.error_response();
     assert_eq!(resp.status(), 403);
 }
 
@@ -836,7 +904,8 @@ async fn test_non_admin_cannot_reset_user_password() {
             "password": "resetpass789"
         }))
         .to_request();
-    let resp = test::call_service(&app, req).await;
+    let err = test::try_call_service(&app, req).await.unwrap_err();
+    let resp = err.error_response();
     assert_eq!(resp.status(), 403);
 
     let req = test::TestRequest::post()

@@ -91,6 +91,9 @@ pub fn init_logging(config: &LoggingConfig) -> LoggingInitResult {
         .with_level(true)
         .with_ansi(is_stdout);
 
+    #[cfg(debug_assertions)]
+    let builder = builder.with_file(true).with_line_number(true);
+
     if config.format == "json" {
         builder.json().init();
     } else {

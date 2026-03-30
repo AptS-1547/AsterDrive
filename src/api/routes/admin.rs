@@ -1,5 +1,4 @@
-use crate::api::middleware::auth::JwtAuth;
-use crate::api::middleware::rate_limit;
+use crate::api::middleware::{admin::RequireAdmin, auth::JwtAuth, rate_limit};
 use crate::api::pagination::{LimitOffsetQuery, OffsetPage};
 use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::config::RateLimitConfig;
@@ -20,60 +19,65 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     let limiter = rate_limit::build_governor(&rl.write);
 
     web::scope("/admin")
-        .wrap(JwtAuth)
         .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
-        .route("/overview", web::get().to(get_overview))
-        // policies
-        .route("/policies", web::get().to(list_policies))
-        .route("/policies", web::post().to(create_policy))
-        .route("/policies/{id}", web::get().to(get_policy))
-        .route("/policies/{id}", web::patch().to(update_policy))
-        .route("/policies/{id}", web::delete().to(delete_policy))
-        .route(
-            "/policies/{id}/test",
-            web::post().to(test_policy_connection),
+        .service(
+            web::scope("").wrap(JwtAuth).service(
+                web::scope("")
+                    .wrap(RequireAdmin)
+                    .route("/overview", web::get().to(get_overview))
+                    // policies
+                    .route("/policies", web::get().to(list_policies))
+                    .route("/policies", web::post().to(create_policy))
+                    .route("/policies/{id}", web::get().to(get_policy))
+                    .route("/policies/{id}", web::patch().to(update_policy))
+                    .route("/policies/{id}", web::delete().to(delete_policy))
+                    .route(
+                        "/policies/{id}/test",
+                        web::post().to(test_policy_connection),
+                    )
+                    .route("/policies/test", web::post().to(test_policy_params))
+                    // users
+                    .route("/users", web::get().to(list_users))
+                    .route("/users", web::post().to(create_user))
+                    .route("/users/{id}", web::get().to(get_user))
+                    .route("/users/{id}", web::patch().to(update_user))
+                    .route("/users/{id}/password", web::put().to(reset_user_password))
+                    .route("/users/{id}", web::delete().to(force_delete_user))
+                    .route("/users/{id}/avatar/{size}", web::get().to(get_user_avatar))
+                    // user storage policies
+                    .route(
+                        "/users/{user_id}/policies",
+                        web::get().to(list_user_policies),
+                    )
+                    .route(
+                        "/users/{user_id}/policies",
+                        web::post().to(assign_user_policy),
+                    )
+                    .route(
+                        "/users/{user_id}/policies/{id}",
+                        web::patch().to(update_user_policy),
+                    )
+                    .route(
+                        "/users/{user_id}/policies/{id}",
+                        web::delete().to(remove_user_policy),
+                    )
+                    // shares
+                    .route("/shares", web::get().to(list_all_shares))
+                    .route("/shares/{id}", web::delete().to(admin_delete_share))
+                    // config
+                    .route("/config", web::get().to(list_config))
+                    .route("/config/schema", web::get().to(config_schema))
+                    .route("/config/{key}", web::get().to(get_config))
+                    .route("/config/{key}", web::put().to(set_config))
+                    .route("/config/{key}", web::delete().to(delete_config))
+                    // audit logs
+                    .route("/audit-logs", web::get().to(list_audit_logs))
+                    // webdav locks
+                    .route("/locks", web::get().to(list_locks))
+                    .route("/locks/expired", web::delete().to(cleanup_expired_locks))
+                    .route("/locks/{id}", web::delete().to(force_unlock)),
+            ),
         )
-        .route("/policies/test", web::post().to(test_policy_params))
-        // users
-        .route("/users", web::get().to(list_users))
-        .route("/users", web::post().to(create_user))
-        .route("/users/{id}", web::get().to(get_user))
-        .route("/users/{id}", web::patch().to(update_user))
-        .route("/users/{id}/password", web::put().to(reset_user_password))
-        .route("/users/{id}", web::delete().to(force_delete_user))
-        .route("/users/{id}/avatar/{size}", web::get().to(get_user_avatar))
-        // user storage policies
-        .route(
-            "/users/{user_id}/policies",
-            web::get().to(list_user_policies),
-        )
-        .route(
-            "/users/{user_id}/policies",
-            web::post().to(assign_user_policy),
-        )
-        .route(
-            "/users/{user_id}/policies/{id}",
-            web::patch().to(update_user_policy),
-        )
-        .route(
-            "/users/{user_id}/policies/{id}",
-            web::delete().to(remove_user_policy),
-        )
-        // shares
-        .route("/shares", web::get().to(list_all_shares))
-        .route("/shares/{id}", web::delete().to(admin_delete_share))
-        // config
-        .route("/config", web::get().to(list_config))
-        .route("/config/schema", web::get().to(config_schema))
-        .route("/config/{key}", web::get().to(get_config))
-        .route("/config/{key}", web::put().to(set_config))
-        .route("/config/{key}", web::delete().to(delete_config))
-        // audit logs
-        .route("/audit-logs", web::get().to(list_audit_logs))
-        // webdav locks
-        .route("/locks", web::get().to(list_locks))
-        .route("/locks/expired", web::delete().to(cleanup_expired_locks))
-        .route("/locks/{id}", web::delete().to(force_unlock))
 }
 
 // ── Policies ─────────────────────────────────────────────────────────
@@ -93,10 +97,8 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
 )]
 pub async fn get_overview(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     query: web::Query<admin_service::AdminOverviewQuery>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let overview = admin_service::get_overview(
         &state,
         query.days_or_default(),
@@ -122,10 +124,8 @@ pub async fn get_overview(
 )]
 pub async fn list_policies(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let policies =
         policy_service::list_paginated(&state, query.limit_or(50, 100), query.offset()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policies)))
@@ -161,10 +161,8 @@ pub struct CreatePolicyReq {
 )]
 pub async fn create_policy(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     body: web::Json<CreatePolicyReq>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let policy = policy_service::create(
         &state,
         &body.name,
@@ -197,12 +195,7 @@ pub async fn create_policy(
     ),
     security(("bearer" = [])),
 )]
-pub async fn get_policy(
-    state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
-    path: web::Path<i64>,
-) -> Result<HttpResponse> {
-    require_admin(&claims)?;
+pub async fn get_policy(state: web::Data<AppState>, path: web::Path<i64>) -> Result<HttpResponse> {
     let policy = policy_service::get(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
@@ -238,11 +231,9 @@ pub struct PatchPolicyReq {
 )]
 pub async fn update_policy(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     body: web::Json<PatchPolicyReq>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let body = body.into_inner();
     let policy = policy_service::update(
         &state,
@@ -278,10 +269,8 @@ pub async fn update_policy(
 )]
 pub async fn delete_policy(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     policy_service::delete(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
@@ -311,10 +300,8 @@ pub struct TestPolicyParamsReq {
 )]
 pub async fn test_policy_connection(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     policy_service::test_connection(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
@@ -332,11 +319,7 @@ pub async fn test_policy_connection(
     ),
     security(("bearer" = [])),
 )]
-pub async fn test_policy_params(
-    claims: web::ReqData<Claims>,
-    body: web::Json<TestPolicyParamsReq>,
-) -> Result<HttpResponse> {
-    require_admin(&claims)?;
+pub async fn test_policy_params(body: web::Json<TestPolicyParamsReq>) -> Result<HttpResponse> {
     policy_service::test_connection_params(
         body.driver_type,
         body.endpoint.as_deref().unwrap_or_default(),
@@ -385,7 +368,6 @@ pub async fn create_user(
     req: actix_web::HttpRequest,
     body: web::Json<CreateUserReq>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let user = user_service::create(&state, &body.username, &body.email, &body.password).await?;
     audit_service::log(
@@ -421,11 +403,9 @@ pub async fn create_user(
 )]
 pub async fn list_users(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     page: web::Query<LimitOffsetQuery>,
     query: web::Query<AdminUserListQuery>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let users = user_service::list_paginated(
         &state,
         page.limit_or(50, 100),
@@ -452,12 +432,7 @@ pub async fn list_users(
     ),
     security(("bearer" = [])),
 )]
-pub async fn get_user(
-    state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
-    path: web::Path<i64>,
-) -> Result<HttpResponse> {
-    require_admin(&claims)?;
+pub async fn get_user(state: web::Data<AppState>, path: web::Path<i64>) -> Result<HttpResponse> {
     let user = user_service::get(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
@@ -496,7 +471,6 @@ pub async fn update_user(
     path: web::Path<i64>,
     body: web::Json<PatchUserReq>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let target_id = *path;
     let body = body.into_inner();
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
@@ -548,7 +522,6 @@ pub async fn reset_user_password(
     path: web::Path<i64>,
     body: web::Json<ResetUserPasswordReq>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let user = crate::services::auth_service::set_password(&state, *path, &body.password).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
@@ -581,10 +554,8 @@ pub async fn reset_user_password(
 )]
 pub async fn force_delete_user(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     user_service::force_delete(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
@@ -608,10 +579,8 @@ pub async fn force_delete_user(
 )]
 pub async fn get_user_avatar(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<(i64, u32)>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let (user_id, size) = path.into_inner();
     let bytes = profile_service::get_avatar_bytes(&state, user_id, size).await?;
     Ok(profile_service::avatar_image_response(bytes))
@@ -645,11 +614,9 @@ pub struct UserPolicyItemPath {
 )]
 pub async fn list_user_policies(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<UserPolicyPath>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let policies = policy_service::list_user_policies_paginated(
         &state,
         path.user_id,
@@ -686,11 +653,9 @@ pub struct AssignUserPolicyReq {
 )]
 pub async fn assign_user_policy(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<UserPolicyPath>,
     body: web::Json<AssignUserPolicyReq>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let usp = policy_service::assign_user_policy(
         &state,
         path.user_id,
@@ -728,11 +693,9 @@ pub struct PatchUserPolicyReq {
 )]
 pub async fn update_user_policy(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<UserPolicyItemPath>,
     body: web::Json<PatchUserPolicyReq>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let usp =
         policy_service::update_user_policy(&state, path.id, body.is_default, body.quota_bytes)
             .await?;
@@ -758,10 +721,8 @@ pub async fn update_user_policy(
 )]
 pub async fn remove_user_policy(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<UserPolicyItemPath>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     policy_service::remove_user_policy(&state, path.id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
@@ -783,10 +744,8 @@ pub async fn remove_user_policy(
 )]
 pub async fn list_all_shares(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let shares =
         share_service::list_paginated(&state, query.limit_or(50, 100), query.offset()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(shares)))
@@ -808,10 +767,8 @@ pub async fn list_all_shares(
 )]
 pub async fn admin_delete_share(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     share_service::admin_delete_share(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
@@ -833,10 +790,8 @@ pub async fn admin_delete_share(
 )]
 pub async fn list_config(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let configs =
         config_service::list_paginated(&state, query.limit_or(50, 100), query.offset()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(configs)))
@@ -854,8 +809,7 @@ pub async fn list_config(
     ),
     security(("bearer" = [])),
 )]
-pub async fn config_schema(claims: web::ReqData<Claims>) -> Result<HttpResponse> {
-    require_admin(&claims)?;
+pub async fn config_schema() -> Result<HttpResponse> {
     let schema = config_service::get_schema();
     Ok(HttpResponse::Ok().json(ApiResponse::ok(schema)))
 }
@@ -876,10 +830,8 @@ pub async fn config_schema(claims: web::ReqData<Claims>) -> Result<HttpResponse>
 )]
 pub async fn get_config(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let config = config_service::get_by_key(&state, &path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
 }
@@ -910,7 +862,6 @@ pub async fn set_config(
     path: web::Path<String>,
     body: web::Json<SetConfigReq>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let config =
         config_service::set_with_audit(&state, &path, &body.value, claims.user_id, &ctx).await?;
@@ -933,15 +884,11 @@ pub async fn set_config(
 )]
 pub async fn delete_config(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     config_service::delete(&state, &path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────
 
 // ── WebDAV Locks ────────────────────────────────────────────────────
 
@@ -959,10 +906,8 @@ pub async fn delete_config(
 )]
 pub async fn list_locks(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     let locks = crate::services::lock_service::list_paginated(
         &state,
         query.limit_or(50, 100),
@@ -987,10 +932,8 @@ pub async fn list_locks(
 )]
 pub async fn force_unlock(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
     crate::services::lock_service::force_unlock(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
@@ -1006,11 +949,7 @@ pub async fn force_unlock(
     ),
     security(("bearer" = [])),
 )]
-pub async fn cleanup_expired_locks(
-    state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
-) -> Result<HttpResponse> {
-    require_admin(&claims)?;
+pub async fn cleanup_expired_locks(state: web::Data<AppState>) -> Result<HttpResponse> {
     let count = crate::services::lock_service::cleanup_expired(&state).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(RemovedCountResponse { removed: count })))
 }
@@ -1032,24 +971,11 @@ pub async fn cleanup_expired_locks(
 )]
 pub async fn list_audit_logs(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
     page: web::Query<LimitOffsetQuery>,
     query: web::Query<audit_service::AuditLogFilterQuery>,
 ) -> Result<HttpResponse> {
-    require_admin(&claims)?;
-
     let filters = audit_service::AuditLogFilters::from_query(&query);
     let page = audit_service::query(&state, filters, page.limit_or(50, 200), page.offset()).await?;
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(page)))
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────
-
-fn require_admin(claims: &Claims) -> Result<()> {
-    use crate::errors::AsterError;
-    if !claims.role.is_admin() {
-        return Err(AsterError::auth_forbidden("admin role required"));
-    }
-    Ok(())
 }
