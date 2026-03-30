@@ -20,6 +20,7 @@ use crate::utils::numbers;
 const HASH_BUF_SIZE: usize = 65536; // 64KB
 const BLOB_CLEANUP_CONCURRENCY: usize = 8;
 
+#[allow(clippy::too_many_arguments)]
 async fn create_s3_nondedup_file(
     state: &AppState,
     user_id: i64,
@@ -63,6 +64,7 @@ async fn create_s3_nondedup_file(
     Ok(created)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn create_relay_cleanup_handle(
     state: &AppState,
     upload_id: &str,
@@ -268,6 +270,7 @@ async fn relay_field_to_s3(
 ///
 /// 返回创建/更新的文件记录。临时文件可能被 put_file rename 走，调用方不要依赖它存在。
 /// `skip_lock_check`: WebDAV 持锁者写入时为 true（dav-server 已验证 lock token）
+#[allow(clippy::too_many_arguments)]
 pub async fn store_from_temp(
     state: &AppState,
     user_id: i64,

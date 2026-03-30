@@ -107,6 +107,7 @@ pub fn build_folder_list_items(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_folder_contents(
     state: &AppState,
     user_id: i64,
@@ -357,6 +358,7 @@ pub async fn resolve_upload_path(
     Ok((current_parent, (*filename).to_string()))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn list(
     state: &AppState,
     user_id: i64,
@@ -610,6 +612,7 @@ pub async fn copy_folder(
 }
 
 /// 列出文件夹内容（无用户校验，用于分享链接）
+#[allow(clippy::too_many_arguments)]
 pub async fn list_shared(
     state: &AppState,
     folder_id: i64,

@@ -10,6 +10,7 @@ use tokio::task::JoinSet;
 const TEST_CHUNK_SIZE: usize = 5_242_880;
 const RUSTFS_TEST_IMAGE_TAG: &str = "1.0.0-alpha.90";
 
+#[allow(clippy::too_many_arguments)]
 async fn create_upload_session(
     state: &aster_drive::runtime::AppState,
     user_id: i64,

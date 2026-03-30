@@ -80,6 +80,7 @@ fn name_search_condition(
 /// Search files with optional filters. JOINs file_blobs to include size.
 ///
 /// Returns `(items, total_count)`.
+#[allow(clippy::too_many_arguments)]
 pub async fn search_files<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
@@ -175,6 +176,7 @@ pub async fn search_files<C: ConnectionTrait>(
 /// Search folders with optional filters.
 ///
 /// Returns `(items, total_count)`.
+#[allow(clippy::too_many_arguments)]
 pub async fn search_folders<C: ConnectionTrait>(
     db: &C,
     user_id: i64,

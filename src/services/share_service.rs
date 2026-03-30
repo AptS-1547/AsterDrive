@@ -340,6 +340,7 @@ pub async fn download_shared_folder_file(
     Ok(response)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn list_shared_folder(
     state: &AppState,
     token: &str,
@@ -568,6 +569,7 @@ pub async fn get_shared_folder_file_thumbnail(
     crate::services::thumbnail_service::get_or_generate(state, &blob).await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn list_shared_subfolder(
     state: &AppState,
     token: &str,

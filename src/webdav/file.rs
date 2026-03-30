@@ -80,6 +80,7 @@ impl AsterDavFile {
     }
 
     /// 创建写模式文件（持有临时文件句柄）
+    #[allow(clippy::too_many_arguments)]
     pub async fn for_write(
         db: DatabaseConnection,
         driver_registry: Arc<DriverRegistry>,

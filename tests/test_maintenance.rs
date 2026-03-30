@@ -44,6 +44,7 @@ async fn default_policy(
         .expect("default policy should exist in test setup")
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn create_upload_session(
     state: &aster_drive::runtime::AppState,
     user_id: i64,

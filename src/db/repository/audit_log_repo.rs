@@ -15,6 +15,7 @@ pub async fn create<C: ConnectionTrait>(
 }
 
 /// 带过滤条件的分页查询
+#[allow(clippy::too_many_arguments)]
 pub async fn find_with_filters<C: ConnectionTrait>(
     db: &C,
     user_id: Option<i64>,

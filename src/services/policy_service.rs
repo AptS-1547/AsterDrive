@@ -30,6 +30,7 @@ pub async fn get(state: &AppState, id: i64) -> Result<storage_policy::Model> {
     policy_repo::find_by_id(&state.db, id).await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create(
     state: &AppState,
     name: &str,
@@ -121,6 +122,7 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update(
     state: &AppState,
     id: i64,
