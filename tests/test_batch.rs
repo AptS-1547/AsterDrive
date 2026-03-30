@@ -314,6 +314,478 @@ async fn test_batch_copy_files() {
 }
 
 #[actix_web::test]
+async fn test_batch_move_preserves_per_item_conflict_reporting() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "SourceA", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let source_a = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "SourceB", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let source_b = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "TargetConflict", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let target_id = body["data"]["id"].as_i64().unwrap();
+
+    let boundary = "----TestBoundary123";
+    let payload = upload_named_file("dup.txt", "same-name", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/upload?folder_id={source_a}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_a = body["data"]["id"].as_i64().unwrap();
+
+    let payload = upload_named_file("dup.txt", "same-name", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/upload?folder_id={source_b}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_b = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/move")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_ids": [file_a, file_b],
+            "folder_ids": [],
+            "target_folder_id": target_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["succeeded"], 1);
+    assert_eq!(body["data"]["failed"], 1);
+    assert_eq!(body["data"]["errors"][0]["entity_type"], "file");
+    assert_eq!(body["data"]["errors"][0]["entity_id"], file_b);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{target_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let target_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(target_files.len(), 1);
+    assert_eq!(target_files[0]["name"], "dup.txt");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{source_b}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
+}
+
+#[actix_web::test]
+async fn test_batch_copy_duplicate_ids_allocate_unique_names() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "CopyDupSource", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let source_id = body["data"]["id"].as_i64().unwrap();
+
+    let boundary = "----TestBoundary123";
+    let payload = upload_named_file("repeat.txt", "repeat-content", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/copy")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_ids": [file_id, file_id],
+            "folder_ids": [],
+            "target_folder_id": null
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["succeeded"], 2);
+    assert_eq!(body["data"]["failed"], 0);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let mut names: Vec<String> = body["data"]["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["name"].as_str().unwrap().to_string())
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        vec!["repeat (1).txt".to_string(), "repeat.txt".to_string()]
+    );
+}
+
+#[actix_web::test]
+async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let boundary = "----TestBoundary123";
+
+    let payload = upload_named_file("delete-ok.txt", "delete-ok", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_ok = body["data"]["id"].as_i64().unwrap();
+
+    let payload = upload_named_file("delete-locked.txt", "delete-locked", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_locked = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "DeleteFolderOk", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_ok = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "DeleteFolderLocked", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_locked = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/{file_locked}/lock"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "locked": true }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/folders/{folder_locked}/lock"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "locked": true }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/delete")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_ids": [file_ok, file_locked],
+            "folder_ids": [folder_ok, folder_locked]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["succeeded"], 2);
+    assert_eq!(body["data"]["failed"], 2);
+    assert_eq!(body["data"]["errors"][0]["entity_type"], "file");
+    assert_eq!(body["data"]["errors"][0]["entity_id"], file_locked);
+    assert_eq!(body["data"]["errors"][1]["entity_type"], "folder");
+    assert_eq!(body["data"]["errors"][1]["entity_id"], folder_locked);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/trash")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["folders"].as_array().unwrap().len(), 1);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_locked}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{folder_locked}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_batch_move_preserves_cycle_failures_for_folders() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "CycleA", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_a = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "CycleB", "parent_id": folder_a }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_b = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "CycleC", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_c = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/move")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_ids": [],
+            "folder_ids": [folder_a, folder_c],
+            "target_folder_id": folder_b
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["succeeded"], 1);
+    assert_eq!(body["data"]["failed"], 1);
+    assert_eq!(body["data"]["errors"][0]["entity_type"], "folder");
+    assert_eq!(body["data"]["errors"][0]["entity_id"], folder_a);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{folder_b}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let children = body["data"]["folders"].as_array().unwrap();
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0]["name"], "CycleC");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let root_folders = body["data"]["folders"].as_array().unwrap();
+    assert!(
+        root_folders
+            .iter()
+            .any(|item| item["id"].as_i64() == Some(folder_a))
+    );
+    assert!(
+        !root_folders
+            .iter()
+            .any(|item| item["id"].as_i64() == Some(folder_c))
+    );
+}
+
+#[actix_web::test]
+async fn test_batch_copy_preserves_partial_failures_for_quota() {
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "QuotaSource", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let source_id = body["data"]["id"].as_i64().unwrap();
+
+    let boundary = "----TestBoundary123";
+
+    let payload = upload_named_file("quota-a.txt", "quota-a-content", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_a = body["data"]["id"].as_i64().unwrap();
+
+    let payload = upload_named_file("quota-b.txt", "quota-b-content", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_b = body["data"]["id"].as_i64().unwrap();
+
+    let user = aster_drive::db::repository::user_repo::find_by_username(&db, "testuser")
+        .await
+        .unwrap()
+        .unwrap();
+    let file_a_model = aster_drive::db::repository::file_repo::find_by_id(&db, file_a)
+        .await
+        .unwrap();
+    let current_used = user.storage_used;
+
+    let mut updated_user: aster_drive::entities::user::ActiveModel = user.into();
+    updated_user.storage_quota = Set(current_used + file_a_model.size);
+    updated_user.update(&db).await.unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/copy")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_ids": [file_a, file_b],
+            "folder_ids": [],
+            "target_folder_id": null
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["succeeded"], 1);
+    assert_eq!(body["data"]["failed"], 1);
+    assert_eq!(body["data"]["errors"][0]["entity_type"], "file");
+    assert_eq!(body["data"]["errors"][0]["entity_id"], file_b);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let root_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(root_files.len(), 1);
+    assert_eq!(root_files[0]["name"], "quota-a.txt");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{source_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 2);
+}
+
+#[actix_web::test]
 async fn test_batch_limit_allows_1000_items() {
     let state = common::setup().await;
     let app = create_test_app!(state);

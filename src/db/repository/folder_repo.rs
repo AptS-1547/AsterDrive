@@ -44,6 +44,24 @@ pub async fn find_children<C: ConnectionTrait>(
     q.all(db).await.map_err(AsterError::from)
 }
 
+/// 批量查询多个父文件夹下的未删除子文件夹
+pub async fn find_children_in_parents<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    parent_ids: &[i64],
+) -> Result<Vec<folder::Model>> {
+    if parent_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    Folder::find()
+        .filter(folder::Column::UserId.eq(user_id))
+        .filter(folder::Column::DeletedAt.is_null())
+        .filter(folder::Column::ParentId.is_in(parent_ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 /// 查询子文件夹（排除已删除，分页）
 pub async fn find_children_paginated<C: ConnectionTrait>(
     db: &C,
@@ -184,6 +202,32 @@ pub async fn create<C: ConnectionTrait>(
     model.insert(db).await.map_err(AsterError::from)
 }
 
+/// 批量移动文件夹到同一父文件夹
+pub async fn move_many_to_parent<C: ConnectionTrait>(
+    db: &C,
+    ids: &[i64],
+    parent_id: Option<i64>,
+    now: chrono::DateTime<Utc>,
+) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    Folder::update_many()
+        .col_expr(
+            folder::Column::ParentId,
+            sea_orm::sea_query::Expr::value(parent_id),
+        )
+        .col_expr(
+            folder::Column::UpdatedAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .filter(folder::Column::Id.is_in(ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
 /// 硬删除文件夹记录（回收站清理用）
 pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Folder::delete_by_id(id)
@@ -213,6 +257,21 @@ pub async fn find_all_children<C: ConnectionTrait>(
 ) -> Result<Vec<folder::Model>> {
     Folder::find()
         .filter(folder::Column::ParentId.eq(parent_id))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+/// 批量查询多个父文件夹下的子文件夹（含已删除）
+pub async fn find_all_children_in_parents<C: ConnectionTrait>(
+    db: &C,
+    parent_ids: &[i64],
+) -> Result<Vec<folder::Model>> {
+    if parent_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    Folder::find()
+        .filter(folder::Column::ParentId.is_in(parent_ids.to_vec()))
         .all(db)
         .await
         .map_err(AsterError::from)

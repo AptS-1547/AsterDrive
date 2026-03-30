@@ -34,6 +34,39 @@ pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<
         .map_err(AsterError::from)
 }
 
+/// 批量查询多个文件夹下的未删除文件
+pub async fn find_by_folders<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    folder_ids: &[i64],
+) -> Result<Vec<file::Model>> {
+    if folder_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    File::find()
+        .filter(file::Column::UserId.eq(user_id))
+        .filter(file::Column::DeletedAt.is_null())
+        .filter(file::Column::FolderId.is_in(folder_ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+/// 批量查询多个文件夹下的文件（含已删除）
+pub async fn find_all_in_folders<C: ConnectionTrait>(
+    db: &C,
+    folder_ids: &[i64],
+) -> Result<Vec<file::Model>> {
+    if folder_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    File::find()
+        .filter(file::Column::FolderId.is_in(folder_ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 /// 查询文件夹下的文件（排除已删除）
 pub async fn find_by_folder<C: ConnectionTrait>(
     db: &C,
@@ -536,6 +569,26 @@ pub async fn create_many<C: ConnectionTrait>(db: &C, models: Vec<file::ActiveMod
         return Ok(());
     }
     File::insert_many(models)
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 批量移动文件到同一文件夹
+pub async fn move_many_to_folder<C: ConnectionTrait>(
+    db: &C,
+    ids: &[i64],
+    folder_id: Option<i64>,
+    now: chrono::DateTime<Utc>,
+) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    File::update_many()
+        .col_expr(file::Column::FolderId, Expr::value(folder_id))
+        .col_expr(file::Column::UpdatedAt, Expr::value(now))
+        .filter(file::Column::Id.is_in(ids.to_vec()))
         .exec(db)
         .await
         .map_err(AsterError::from)?;
