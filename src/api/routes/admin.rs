@@ -5,8 +5,9 @@ use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
-    admin_service, audit_service, auth_service::Claims, config_service, policy_service,
-    profile_service, share_service, user_service,
+    admin_service, audit_service,
+    auth_service::{self, Claims},
+    config_service, policy_service, profile_service, share_service, user_service,
 };
 use crate::types::{DriverType, UserRole, UserStatus};
 use actix_governor::Governor;
@@ -42,6 +43,10 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                     .route("/users/{id}", web::get().to(get_user))
                     .route("/users/{id}", web::patch().to(update_user))
                     .route("/users/{id}/password", web::put().to(reset_user_password))
+                    .route(
+                        "/users/{id}/sessions/revoke",
+                        web::post().to(revoke_user_sessions),
+                    )
                     .route("/users/{id}", web::delete().to(force_delete_user))
                     .route("/users/{id}/avatar/{size}", web::get().to(get_user_avatar))
                     // user storage policies
@@ -450,6 +455,41 @@ pub struct ResetUserPasswordReq {
 }
 
 #[utoipa::path(
+    post,
+    path = "/api/v1/admin/users/{id}/sessions/revoke",
+    tag = "admin",
+    operation_id = "revoke_user_sessions",
+    params(("id" = i64, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "User sessions revoked"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "User not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn revoke_user_sessions(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: actix_web::HttpRequest,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let user = auth_service::revoke_user_sessions(&state, *path).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::AdminRevokeUserSessions,
+        Some("user"),
+        Some(user.id),
+        Some(&user.username),
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+#[utoipa::path(
     patch,
     path = "/api/v1/admin/users/{id}",
     tag = "admin",
@@ -522,7 +562,7 @@ pub async fn reset_user_password(
     path: web::Path<i64>,
     body: web::Json<ResetUserPasswordReq>,
 ) -> Result<HttpResponse> {
-    let user = crate::services::auth_service::set_password(&state, *path, &body.password).await?;
+    let user = auth_service::set_password(&state, *path, &body.password).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
         &state,

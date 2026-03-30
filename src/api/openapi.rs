@@ -66,6 +66,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::admin::get_user,
         crate::api::routes::admin::update_user,
         crate::api::routes::admin::reset_user_password,
+        crate::api::routes::admin::revoke_user_sessions,
         crate::api::routes::admin::get_user_avatar,
         crate::api::routes::admin::list_user_policies,
         crate::api::routes::admin::assign_user_policy,

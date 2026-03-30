@@ -71,7 +71,10 @@ export const adminUserService = {
 	) => api.patch<UserInfo>(`/admin/users/${id}`, data),
 
 	resetPassword: (id: number, data: ResetUserPasswordRequest) =>
-		api.put<null>(`/admin/users/${id}/password`, data),
+		api.put<void>(`/admin/users/${id}/password`, data),
+
+	revokeSessions: (id: number) =>
+		api.post<void>(`/admin/users/${id}/sessions/revoke`),
 
 	delete: (id: number) => api.delete<void>(`/admin/users/${id}`),
 };

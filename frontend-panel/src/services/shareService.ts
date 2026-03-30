@@ -40,7 +40,7 @@ export const shareService = {
 	getInfo: (token: string) => api.get<SharePublicInfo>(`/s/${token}`),
 
 	verifyPassword: (token: string, password: string) =>
-		api.post<null>(`/s/${token}/verify`, { password }),
+		api.post<void>(`/s/${token}/verify`, { password }),
 
 	downloadPath: (token: string) => `/s/${token}/download`,
 

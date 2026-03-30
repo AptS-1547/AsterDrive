@@ -27,6 +27,7 @@ mod m20260329_000003_add_maintenance_indexes;
 mod m20260329_000004_create_upload_session_parts;
 mod m20260330_000001_add_directory_lookup_indexes;
 mod m20260330_000002_add_search_name_indexes;
+mod m20260331_000001_add_user_session_version;
 
 pub struct Migrator;
 
@@ -61,6 +62,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260329_000004_create_upload_session_parts::Migration),
             Box::new(m20260330_000001_add_directory_lookup_indexes::Migration),
             Box::new(m20260330_000002_add_search_name_indexes::Migration),
+            Box::new(m20260331_000001_add_user_session_version::Migration),
         ]
     }
 }

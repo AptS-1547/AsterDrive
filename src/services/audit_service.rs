@@ -25,6 +25,7 @@ pub struct AuditContext {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuditAction {
     AdminCreateUser,
+    AdminRevokeUserSessions,
     AdminResetUserPassword,
     AdminUpdateUser,
     BatchCopy,
@@ -50,6 +51,7 @@ pub enum AuditAction {
     SystemSetup,
     UserChangePassword,
     UserLogin,
+    UserLogout,
     UserRegister,
 }
 
@@ -57,6 +59,7 @@ impl AuditAction {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AdminCreateUser => "admin_create_user",
+            Self::AdminRevokeUserSessions => "admin_revoke_user_sessions",
             Self::AdminResetUserPassword => "admin_reset_user_password",
             Self::AdminUpdateUser => "admin_update_user",
             Self::BatchCopy => "batch_copy",
@@ -82,6 +85,7 @@ impl AuditAction {
             Self::SystemSetup => "system_setup",
             Self::UserChangePassword => "user_change_password",
             Self::UserLogin => "user_login",
+            Self::UserLogout => "user_logout",
             Self::UserRegister => "user_register",
         }
     }
@@ -307,6 +311,10 @@ mod tests {
         let cases = [
             (AuditAction::AdminCreateUser, "admin_create_user"),
             (
+                AuditAction::AdminRevokeUserSessions,
+                "admin_revoke_user_sessions",
+            ),
+            (
                 AuditAction::AdminResetUserPassword,
                 "admin_reset_user_password",
             ),
@@ -334,6 +342,7 @@ mod tests {
             (AuditAction::SystemSetup, "system_setup"),
             (AuditAction::UserChangePassword, "user_change_password"),
             (AuditAction::UserLogin, "user_login"),
+            (AuditAction::UserLogout, "user_logout"),
             (AuditAction::UserRegister, "user_register"),
         ];
 

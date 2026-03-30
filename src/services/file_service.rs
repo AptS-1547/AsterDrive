@@ -52,6 +52,32 @@ pub(crate) async fn create_nondedup_blob<C: ConnectionTrait>(
     .await
 }
 
+pub(crate) async fn create_s3_nondedup_blob<C: ConnectionTrait>(
+    db: &C,
+    size: i64,
+    policy_id: i64,
+    upload_id: &str,
+) -> Result<file_blob::Model> {
+    let now = Utc::now();
+    let file_hash = format!("s3-{upload_id}");
+    let storage_path = format!("files/{upload_id}");
+
+    file_repo::create_blob(
+        db,
+        file_blob::ActiveModel {
+            hash: Set(file_hash),
+            size: Set(size),
+            policy_id: Set(policy_id),
+            storage_path: Set(storage_path),
+            ref_count: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn create_s3_nondedup_file(
     state: &AppState,
@@ -398,6 +424,11 @@ pub async fn store_from_temp(
             driver.put_file(storage_path, temp_path).await?;
         }
         blob.model
+    } else if policy.driver_type == crate::types::DriverType::S3 {
+        let upload_id = crate::utils::id::new_uuid();
+        let blob = create_s3_nondedup_blob(&txn, size, policy.id, &upload_id).await?;
+        driver.put_file(&blob.storage_path, temp_path).await?;
+        blob
     } else {
         let blob = create_nondedup_blob(&txn, size, policy.id).await?;
         driver.put_file(&blob.storage_path, temp_path).await?;
@@ -1435,6 +1466,11 @@ pub async fn create_empty(
             driver.put(&storage_path, &[]).await?;
         }
         blob.model
+    } else if policy.driver_type == crate::types::DriverType::S3 {
+        let upload_id = crate::utils::id::new_uuid();
+        let blob = create_s3_nondedup_blob(&txn, EMPTY_SIZE, policy.id, &upload_id).await?;
+        driver.put(&blob.storage_path, &[]).await?;
+        blob
     } else {
         let blob = create_nondedup_blob(&txn, EMPTY_SIZE, policy.id).await?;
         driver.put(&blob.storage_path, &[]).await?;

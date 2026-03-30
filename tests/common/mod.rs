@@ -119,6 +119,35 @@ macro_rules! create_test_app {
     }};
 }
 
+/// 兼容 `call_service` / `try_call_service` 两种返回路径的状态断言
+#[macro_export]
+macro_rules! assert_service_status {
+    ($app:expr, $req:expr, $status:expr) => {{
+        use actix_web::test;
+
+        let result = test::try_call_service(&$app, $req).await;
+        match result {
+            Ok(resp) => assert_eq!(resp.status(), $status),
+            Err(err) => {
+                let resp = err.error_response();
+                assert_eq!(resp.status(), $status);
+            }
+        }
+    }};
+    ($app:expr, $req:expr, $status:expr, $msg:expr) => {{
+        use actix_web::test;
+
+        let result = test::try_call_service(&$app, $req).await;
+        match result {
+            Ok(resp) => assert_eq!(resp.status(), $status, $msg),
+            Err(err) => {
+                let resp = err.error_response();
+                assert_eq!(resp.status(), $status, $msg);
+            }
+        }
+    }};
+}
+
 /// 注册 + 登录，返回 (access_cookie, refresh_cookie)
 #[macro_export]
 macro_rules! register_and_login {

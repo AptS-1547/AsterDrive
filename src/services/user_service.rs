@@ -292,6 +292,9 @@ pub async fn update(
     }
 
     let existing = user_repo::find_by_id(&state.db, id).await?;
+    let role_changed = role.is_some_and(|r| r != existing.role);
+    let status_changed = status.is_some_and(|s| s != existing.status);
+    let current_session_version = existing.session_version;
     let mut active: user::ActiveModel = existing.into();
     if let Some(r) = role {
         active.role = Set(r);
@@ -302,9 +305,14 @@ pub async fn update(
     if let Some(q) = storage_quota {
         active.storage_quota = Set(q);
     }
+    if status_changed {
+        active.session_version = Set(current_session_version.saturating_add(1));
+    }
     active.updated_at = Set(Utc::now());
     let updated = active.update(&state.db).await.map_err(AsterError::from)?;
-    state.cache.delete(&format!("user_status:{id}")).await;
+    if role_changed || status_changed {
+        auth_service::invalidate_auth_snapshot_cache(state, id).await;
+    }
     to_user_info(state, &updated, profile_service::AvatarAudience::AdminUser).await
 }
 

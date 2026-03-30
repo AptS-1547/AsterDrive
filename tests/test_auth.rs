@@ -111,6 +111,60 @@ async fn test_token_refresh() {
 }
 
 #[actix_web::test]
+async fn test_refresh_token_cannot_access_protected_routes() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (_access, refresh) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={refresh}")))
+        .to_request();
+    assert_service_status!(app, req, 401);
+}
+
+#[actix_web::test]
+async fn test_logout_clears_cookies_without_revoking_existing_tokens() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (access, refresh) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/logout")
+        .insert_header((
+            "Cookie",
+            format!("aster_access={access}; aster_refresh={refresh}"),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        common::extract_cookie(&resp, "aster_access").as_deref(),
+        Some("")
+    );
+    assert_eq!(
+        common::extract_cookie(&resp, "aster_refresh").as_deref(),
+        Some("")
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={access}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", format!("aster_refresh={refresh}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
 async fn test_auth_me() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -188,14 +242,7 @@ async fn test_unauthorized_access() {
         .uri("/api/v1/folders")
         .insert_header(("Authorization", "Bearer fake.token.here"))
         .to_request();
-    let result = test::try_call_service(&app, req).await;
-    match result {
-        Ok(resp) => assert_eq!(resp.status(), 401),
-        Err(err) => {
-            let resp = err.error_response();
-            assert_eq!(resp.status(), 401);
-        }
-    }
+    assert_service_status!(app, req, 401);
 }
 
 /// 用户状态缓存：正常认证 → 连续请求不应查 DB（通过 MemoryCache 验证）
@@ -287,6 +334,7 @@ async fn test_disable_user_invalidates_status_cache() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let bob_token = common::extract_cookie(&resp, "aster_access").unwrap();
+    let bob_refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
 
     // bob 正常访问（写入缓存）
     let req = test::TestRequest::get()
@@ -310,14 +358,33 @@ async fn test_disable_user_invalidates_status_cache() {
         .uri("/api/v1/folders")
         .insert_header(("Cookie", format!("aster_access={bob_token}")))
         .to_request();
-    let result = test::try_call_service(&app, req).await;
-    match result {
-        Ok(resp) => assert_eq!(resp.status(), 403, "disabled user should get 403"),
-        Err(err) => {
-            let resp = err.error_response();
-            assert_eq!(resp.status(), 403, "disabled user should get 403");
-        }
-    }
+    assert_service_status!(app, req, 403, "disabled user should get 403");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", format!("aster_refresh={bob_refresh}")))
+        .to_request();
+    assert_service_status!(app, req, 403, "disabled user refresh should get 403");
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{bob_id}"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .set_json(serde_json::json!({ "status": "active" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={bob_token}")))
+        .to_request();
+    assert_service_status!(app, req, 401, "old token should stay revoked");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", format!("aster_refresh={bob_refresh}")))
+        .to_request();
+    assert_service_status!(app, req, 401, "old refresh token should stay revoked");
 }
 
 // ── Preferences endpoint tests ──
@@ -542,10 +609,10 @@ async fn test_patch_profile_display_name_round_trip_and_clear() {
 }
 
 #[actix_web::test]
-async fn test_change_password_keeps_current_session_active_and_updates_login_secret() {
+async fn test_change_password_rotates_session_and_updates_login_secret() {
     let state = common::setup().await;
     let app = create_test_app!(state);
-    let (token, _) = register_and_login!(app);
+    let (token, refresh) = register_and_login!(app);
 
     let req = test::TestRequest::put()
         .uri("/api/v1/auth/password")
@@ -557,12 +624,33 @@ async fn test_change_password_keeps_current_session_active_and_updates_login_sec
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    let rotated_access = common::extract_cookie(&resp, "aster_access").unwrap();
+    let rotated_refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
         .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    assert_service_status!(app, req, 401);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={rotated_access}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", format!("aster_refresh={refresh}")))
+        .to_request();
+    assert_service_status!(app, req, 401);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", format!("aster_refresh={rotated_refresh}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

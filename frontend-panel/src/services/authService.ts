@@ -18,7 +18,7 @@ export const authService = {
 		api.post<CheckResp>("/auth/check", { identifier }),
 
 	login: (identifier: string, password: string) =>
-		api.post<null>("/auth/login", { identifier, password }),
+		api.post<void>("/auth/login", { identifier, password }),
 
 	register: (username: string, email: string, password: string) =>
 		api.post<UserInfo>("/auth/register", { username, email, password }),
@@ -26,7 +26,7 @@ export const authService = {
 	setup: (username: string, email: string, password: string) =>
 		api.post<UserInfo>("/auth/setup", { username, email, password }),
 
-	logout: () => api.post<null>("/auth/logout"),
+	logout: () => api.post<void>("/auth/logout"),
 
 	me: () => api.get<MeResponse>("/auth/me"),
 
@@ -34,7 +34,7 @@ export const authService = {
 		api.patch<UserPreferences>("/auth/preferences", prefs),
 
 	changePassword: (payload: ChangePasswordRequest) =>
-		api.put<null>("/auth/password", payload),
+		api.put<void>("/auth/password", payload),
 
 	updateProfile: (profile: UpdateProfileRequest) =>
 		api.patch<UserProfileInfo>("/auth/profile", profile),

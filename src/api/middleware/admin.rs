@@ -6,7 +6,7 @@ use futures::future::{LocalBoxFuture, Ready, ok};
 use std::rc::Rc;
 
 use crate::errors::AsterError;
-use crate::services::auth_service::Claims;
+use crate::services::auth_service::AuthSnapshot;
 
 /// 要求请求已经通过 JwtAuth，并且当前用户是管理员。
 pub struct RequireAdmin;
@@ -50,14 +50,14 @@ where
         Box::pin(async move {
             let is_admin = {
                 let extensions = req.extensions();
-                let Some(claims) = extensions.get::<Claims>() else {
+                let Some(snapshot) = extensions.get::<AuthSnapshot>() else {
                     return Err(AsterError::internal_error(
-                        "missing auth claims in request context",
+                        "missing auth snapshot in request context",
                     )
                     .into());
                 };
 
-                claims.role.is_admin()
+                snapshot.role.is_admin()
             };
 
             if !is_admin {

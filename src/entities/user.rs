@@ -18,6 +18,8 @@ pub struct Model {
     pub password_hash: String,
     pub role: UserRole,
     pub status: UserStatus,
+    #[serde(skip_serializing)]
+    pub session_version: i64,
     pub storage_used: i64,
     pub storage_quota: i64, // 0 = unlimited
     #[schema(value_type = String)]

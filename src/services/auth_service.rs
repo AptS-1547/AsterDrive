@@ -3,6 +3,8 @@ use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode}
 use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 use serde::{Deserialize, Serialize};
 
+use crate::cache::CacheExt;
+use crate::config::AuthConfig;
 use crate::db::repository::{config_repo, policy_repo, user_repo};
 use crate::entities::user;
 use crate::errors::{AsterError, MapAsterErr, Result};
@@ -10,13 +12,122 @@ use crate::runtime::AppState;
 use crate::types::{TokenType, UserRole, UserStatus};
 use crate::utils::hash;
 
+pub const AUTH_SNAPSHOT_TTL: u64 = 30; // 秒
+const INITIAL_SESSION_VERSION: i64 = 1;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub sub: String,
     pub user_id: i64,
-    pub role: UserRole,
+    #[serde(default = "default_session_version")]
+    pub session_version: i64,
     pub token_type: TokenType,
     pub exp: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub struct AuthSnapshot {
+    pub status: UserStatus,
+    pub role: UserRole,
+    pub session_version: i64,
+}
+
+impl AuthSnapshot {
+    fn from_user(user: &user::Model) -> Self {
+        Self {
+            status: user.status,
+            role: user.role,
+            session_version: user.session_version,
+        }
+    }
+}
+
+fn default_session_version() -> i64 {
+    0
+}
+
+fn auth_snapshot_cache_key(user_id: i64) -> String {
+    format!("auth_snapshot:{user_id}")
+}
+
+fn ensure_token_type(claims: &Claims, expected: TokenType) -> Result<()> {
+    if claims.token_type != expected {
+        return Err(AsterError::auth_token_invalid(format!(
+            "not an {} token",
+            expected.as_str()
+        )));
+    }
+
+    Ok(())
+}
+
+fn ensure_session_current(claims: &Claims, snapshot: AuthSnapshot) -> Result<()> {
+    if claims.session_version != snapshot.session_version {
+        return Err(AsterError::auth_token_invalid("session revoked"));
+    }
+
+    Ok(())
+}
+
+pub async fn get_auth_snapshot(state: &AppState, user_id: i64) -> Result<AuthSnapshot> {
+    let cache_key = auth_snapshot_cache_key(user_id);
+    if let Some(snapshot) = state.cache.get(&cache_key).await {
+        return Ok(snapshot);
+    }
+
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let snapshot = AuthSnapshot::from_user(&user);
+    state
+        .cache
+        .set(&cache_key, &snapshot, Some(AUTH_SNAPSHOT_TTL))
+        .await;
+    Ok(snapshot)
+}
+
+pub async fn invalidate_auth_snapshot_cache(state: &AppState, user_id: i64) {
+    state.cache.delete(&auth_snapshot_cache_key(user_id)).await;
+}
+
+async fn authenticate_token(
+    state: &AppState,
+    token: &str,
+    expected_type: TokenType,
+) -> Result<(Claims, AuthSnapshot)> {
+    let claims = verify_token(token, &state.config.auth.jwt_secret)?;
+    ensure_token_type(&claims, expected_type)?;
+
+    let snapshot = get_auth_snapshot(state, claims.user_id).await?;
+    if !snapshot.status.is_active() {
+        return Err(AsterError::auth_forbidden("account is disabled"));
+    }
+    ensure_session_current(&claims, snapshot)?;
+
+    Ok((claims, snapshot))
+}
+
+pub async fn authenticate_access_token(
+    state: &AppState,
+    token: &str,
+) -> Result<(Claims, AuthSnapshot)> {
+    authenticate_token(state, token, TokenType::Access).await
+}
+
+pub async fn authenticate_refresh_token(
+    state: &AppState,
+    token: &str,
+) -> Result<(Claims, AuthSnapshot)> {
+    authenticate_token(state, token, TokenType::Refresh).await
+}
+
+pub async fn revoke_user_sessions(state: &AppState, user_id: i64) -> Result<user::Model> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let next_session_version = user.session_version.saturating_add(1);
+    let mut active = user.into_active_model();
+    active.session_version = Set(next_session_version);
+    active.updated_at = Set(Utc::now());
+    let updated = active.update(&state.db).await.map_err(AsterError::from)?;
+    invalidate_auth_snapshot_cache(state, updated.id).await;
+    Ok(updated)
 }
 
 // ── 输入校验 ──────────────────────────────────────────────────
@@ -115,6 +226,7 @@ async fn create_user_with_role(
         password_hash: Set(password_hash),
         role: Set(role),
         status: Set(status),
+        session_version: Set(INITIAL_SESSION_VERSION),
         storage_used: Set(0),
         storage_quota: Set(default_quota),
         created_at: Set(now),
@@ -222,6 +334,35 @@ pub struct LoginResult {
     pub user_id: i64,
 }
 
+fn issue_tokens(
+    user_id: i64,
+    session_version: i64,
+    auth_config: &AuthConfig,
+) -> Result<(String, String)> {
+    let access = create_token(
+        user_id,
+        session_version,
+        TokenType::Access,
+        auth_config.access_token_ttl_secs,
+        &auth_config.jwt_secret,
+    )?;
+    let refresh = create_token(
+        user_id,
+        session_version,
+        TokenType::Refresh,
+        auth_config.refresh_token_ttl_secs,
+        &auth_config.jwt_secret,
+    )?;
+    Ok((access, refresh))
+}
+
+pub fn issue_tokens_for_user(
+    user: &user::Model,
+    auth_config: &AuthConfig,
+) -> Result<(String, String)> {
+    issue_tokens(user.id, user.session_version, auth_config)
+}
+
 /// 登录，返回 tokens + user_id
 /// identifier 支持邮箱或用户名
 pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result<LoginResult> {
@@ -240,20 +381,7 @@ pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result
         return Err(AsterError::auth_invalid_credentials("wrong password"));
     }
 
-    let access = create_token(
-        user.id,
-        user.role,
-        TokenType::Access,
-        auth_config.access_token_ttl_secs,
-        &auth_config.jwt_secret,
-    )?;
-    let refresh = create_token(
-        user.id,
-        user.role,
-        TokenType::Refresh,
-        auth_config.refresh_token_ttl_secs,
-        &auth_config.jwt_secret,
-    )?;
+    let (access, refresh) = issue_tokens(user.id, user.session_version, auth_config)?;
 
     Ok(LoginResult {
         access_token: access,
@@ -267,7 +395,7 @@ pub async fn change_password(
     user_id: i64,
     current_password: &str,
     new_password: &str,
-) -> Result<()> {
+) -> Result<user::Model> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
 
     if !user.status.is_active() {
@@ -278,9 +406,7 @@ pub async fn change_password(
         return Err(AsterError::auth_invalid_credentials("wrong password"));
     }
 
-    set_password(state, user.id, new_password).await?;
-
-    Ok(())
+    set_password(state, user.id, new_password).await
 }
 
 pub async fn set_password(
@@ -291,22 +417,23 @@ pub async fn set_password(
     validate_password(new_password)?;
 
     let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let next_session_version = user.session_version.saturating_add(1);
     let mut active = user.into_active_model();
     active.password_hash = Set(hash::hash_password(new_password)?);
+    active.session_version = Set(next_session_version);
     active.updated_at = Set(Utc::now());
-    active.update(&state.db).await.map_err(AsterError::from)
+    let updated = active.update(&state.db).await.map_err(AsterError::from)?;
+    invalidate_auth_snapshot_cache(state, updated.id).await;
+    Ok(updated)
 }
 
 /// 用 refresh token 换 access token
-pub fn refresh_token(state: &AppState, refresh: &str) -> Result<String> {
+pub async fn refresh_token(state: &AppState, refresh: &str) -> Result<String> {
     let auth_config = &state.config.auth;
-    let claims = verify_token(refresh, &auth_config.jwt_secret)?;
-    if claims.token_type != TokenType::Refresh {
-        return Err(AsterError::auth_token_invalid("not a refresh token"));
-    }
+    let (claims, snapshot) = authenticate_refresh_token(state, refresh).await?;
     create_token(
         claims.user_id,
-        claims.role,
+        snapshot.session_version,
         TokenType::Access,
         auth_config.access_token_ttl_secs,
         &auth_config.jwt_secret,
@@ -315,7 +442,7 @@ pub fn refresh_token(state: &AppState, refresh: &str) -> Result<String> {
 
 fn create_token(
     user_id: i64,
-    role: UserRole,
+    session_version: i64,
     token_type: TokenType,
     ttl_secs: u64,
     secret: &str,
@@ -324,7 +451,7 @@ fn create_token(
     let claims = Claims {
         sub: user_id.to_string(),
         user_id,
-        role,
+        session_version,
         token_type,
         exp,
     };
@@ -346,7 +473,7 @@ pub fn verify_token(token: &str, secret: &str) -> Result<Claims> {
         jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
             AsterError::auth_token_expired("token expired")
         }
-        _ => AsterError::auth_token_invalid(e.to_string()),
+        _ => AsterError::auth_token_invalid("invalid token"),
     })?;
     Ok(data.claims)
 }

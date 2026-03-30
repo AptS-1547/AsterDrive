@@ -821,6 +821,18 @@ async fn test_admin_can_reset_user_password() {
     let body: Value = test::read_body_json(resp).await;
     let user_id = body["data"]["id"].as_i64().unwrap();
 
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "resetuser",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let old_access = common::extract_cookie(&resp, "aster_access").unwrap();
+    let old_refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
+
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/admin/users/{user_id}/password"))
         .insert_header(("Cookie", format!("aster_access={admin_token}")))
@@ -830,6 +842,32 @@ async fn test_admin_can_reset_user_password() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={old_access}")))
+        .to_request();
+    let result = test::try_call_service(&app, req).await;
+    match result {
+        Ok(resp) => assert_eq!(resp.status(), 401),
+        Err(err) => {
+            let resp = err.error_response();
+            assert_eq!(resp.status(), 401);
+        }
+    }
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", format!("aster_refresh={old_refresh}")))
+        .to_request();
+    let result = test::try_call_service(&app, req).await;
+    match result {
+        Ok(resp) => assert_eq!(resp.status(), 401),
+        Err(err) => {
+            let resp = err.error_response();
+            assert_eq!(resp.status(), 401);
+        }
+    }
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/login")
@@ -852,6 +890,141 @@ async fn test_admin_can_reset_user_password() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_admin_can_revoke_user_sessions() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "revokeuser",
+            "email": "revokeuser@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "revokeuser",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let user_access = common::extract_cookie(&resp, "aster_access").unwrap();
+    let user_refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/admin/users/{user_id}/sessions/revoke"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={user_access}")))
+        .to_request();
+    assert_service_status!(app, req, 401);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", format!("aster_refresh={user_refresh}")))
+        .to_request();
+    assert_service_status!(app, req, 401);
+}
+
+#[actix_web::test]
+async fn test_admin_role_change_removes_admin_access_without_revoking_session() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "managedadmin",
+            "email": "managedadmin@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .set_json(serde_json::json!({ "role": "admin" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "managedadmin",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let elevated_access = common::extract_cookie(&resp, "aster_access").unwrap();
+    let elevated_refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/config/schema")
+        .insert_header(("Cookie", format!("aster_access={elevated_access}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .set_json(serde_json::json!({ "role": "user" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={elevated_access}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", format!("aster_refresh={elevated_refresh}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let rotated_access = common::extract_cookie(&resp, "aster_access").unwrap();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/config/schema")
+        .insert_header(("Cookie", format!("aster_access={elevated_access}")))
+        .to_request();
+    assert_service_status!(app, req, 403);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/config/schema")
+        .insert_header(("Cookie", format!("aster_access={rotated_access}")))
+        .to_request();
+    assert_service_status!(app, req, 403);
 }
 
 #[actix_web::test]

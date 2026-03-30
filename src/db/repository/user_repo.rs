@@ -114,6 +114,24 @@ pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64
     Ok(())
 }
 
+pub async fn bump_session_version<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    let result = User::update_many()
+        .col_expr(
+            user::Column::SessionVersion,
+            Expr::col(user::Column::SessionVersion).add(1i64),
+        )
+        .filter(user::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    if result.rows_affected == 0 {
+        return Err(AsterError::record_not_found(format!("user #{id}")));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,5 +153,23 @@ mod tests {
             "{sql}"
         );
         assert!(sql.contains(r#"WHERE "users"."id" = 7"#), "{sql}");
+    }
+
+    #[test]
+    fn postgres_bump_session_version_sql_is_valid() {
+        let sql = User::update_many()
+            .col_expr(
+                user::Column::SessionVersion,
+                Expr::col(user::Column::SessionVersion).add(1i64),
+            )
+            .filter(user::Column::Id.eq(9))
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(
+            sql.contains(r#""session_version" = "session_version" + 1"#),
+            "{sql}"
+        );
+        assert!(sql.contains(r#"WHERE "users"."id" = 9"#), "{sql}");
     }
 }

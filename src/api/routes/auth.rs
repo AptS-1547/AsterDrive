@@ -121,6 +121,14 @@ fn clear_cookie(name: &str, secure: bool) -> Cookie<'static> {
         .finish()
 }
 
+fn bearer_token(req: &actix_web::HttpRequest) -> Option<String> {
+    req.headers()
+        .get("Authorization")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::to_string)
+}
+
 #[utoipa::path(
     post,
     path = "/api/v1/auth/check",
@@ -304,7 +312,7 @@ pub async fn refresh(
         .map(|c| c.value().to_string())
         .ok_or_else(|| crate::errors::AsterError::auth_token_invalid("missing refresh cookie"))?;
 
-    let access = auth_service::refresh_token(&state, &refresh_tok)?;
+    let access = auth_service::refresh_token(&state, &refresh_tok).await?;
 
     let secure = state.config.auth.cookie_secure;
     Ok(HttpResponse::Ok()
@@ -326,7 +334,46 @@ pub async fn refresh(
         (status = 200, description = "Logged out, cookies cleared"),
     ),
 )]
-pub async fn logout(state: web::Data<AppState>) -> HttpResponse {
+pub async fn logout(state: web::Data<AppState>, req: actix_web::HttpRequest) -> HttpResponse {
+    for token in [
+        req.cookie(REFRESH_COOKIE)
+            .map(|cookie| cookie.value().to_string()),
+        req.cookie(ACCESS_COOKIE)
+            .map(|cookie| cookie.value().to_string()),
+        bearer_token(&req),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let Ok(claims) = auth_service::verify_token(&token, &state.config.auth.jwt_secret) else {
+            continue;
+        };
+
+        let ctx = audit_service::AuditContext {
+            user_id: claims.user_id,
+            ip_address: req
+                .connection_info()
+                .realip_remote_addr()
+                .map(|s| s.to_string()),
+            user_agent: req
+                .headers()
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string()),
+        };
+        audit_service::log(
+            &state,
+            &ctx,
+            audit_service::AuditAction::UserLogout,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+        break;
+    }
+
     let secure = state.config.auth.cookie_secure;
     HttpResponse::Ok()
         .cookie(clear_cookie(ACCESS_COOKIE, secure))
@@ -369,13 +416,15 @@ pub async fn put_password(
     claims: web::ReqData<Claims>,
     body: web::Json<ChangePasswordReq>,
 ) -> Result<HttpResponse> {
-    auth_service::change_password(
+    let user = auth_service::change_password(
         &state,
         claims.user_id,
         &body.current_password,
         &body.new_password,
     )
     .await?;
+    let (access_token, refresh_token) =
+        auth_service::issue_tokens_for_user(&user, &state.config.auth)?;
 
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
@@ -389,7 +438,21 @@ pub async fn put_password(
     )
     .await;
 
-    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+    let secure = state.config.auth.cookie_secure;
+    Ok(HttpResponse::Ok()
+        .cookie(build_cookie(
+            ACCESS_COOKIE,
+            &access_token,
+            state.config.auth.access_token_ttl_secs as i64,
+            secure,
+        ))
+        .cookie(build_cookie(
+            REFRESH_COOKIE,
+            &refresh_token,
+            state.config.auth.refresh_token_ttl_secs as i64,
+            secure,
+        ))
+        .json(ApiResponse::<()>::ok_empty()))
 }
 
 /// Update the current user's preferences.

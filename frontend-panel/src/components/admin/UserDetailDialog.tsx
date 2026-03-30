@@ -80,6 +80,7 @@ export function UserDetailDialog({
 		confirm?: string;
 		password?: string;
 	}>({});
+	const [revokingSessions, setRevokingSessions] = useState(false);
 	const [savingPassword, setSavingPassword] = useState(false);
 	const [savingProfile, setSavingProfile] = useState(false);
 	const [assignments, setAssignments] = useState<UserStoragePolicy[]>([]);
@@ -101,6 +102,7 @@ export function UserDetailDialog({
 			setDraftStatus("active");
 			setPasswordValue("");
 			setPasswordErrors({});
+			setRevokingSessions(false);
 			setSavingPassword(false);
 			setSavingProfile(false);
 			setAssignments([]);
@@ -123,6 +125,7 @@ export function UserDetailDialog({
 		setDraftStatus(user.status);
 		setPasswordValue("");
 		setPasswordErrors({});
+		setRevokingSessions(false);
 	}, [user]);
 
 	const loadPolicies = useCallback(async () => {
@@ -182,6 +185,22 @@ export function UserDetailDialog({
 		}
 	};
 
+	const runDialogAction = async (
+		setLoading: (loading: boolean) => void,
+		action: () => Promise<void>,
+		successMessage: string,
+	) => {
+		try {
+			setLoading(true);
+			await action();
+			toast.success(successMessage);
+		} catch (e) {
+			handleApiError(e);
+		} finally {
+			setLoading(false);
+		}
+	};
+
 	const handlePasswordReset = async () => {
 		const nextErrors: { confirm?: string; password?: string } = {};
 		const passwordResult = passwordSchema.safeParse(passwordValue);
@@ -194,20 +213,28 @@ export function UserDetailDialog({
 		setPasswordErrors(nextErrors);
 		if (Object.keys(nextErrors).length > 0) return;
 
-		try {
-			setSavingPassword(true);
-			await adminUserService.resetPassword(user.id, {
-				password: passwordValue,
-			});
-			setPasswordValue("");
-			setConfirmPasswordValue("");
-			setPasswordErrors({});
-			toast.success(t("password_reset_success"));
-		} catch (e) {
-			handleApiError(e);
-		} finally {
-			setSavingPassword(false);
-		}
+		await runDialogAction(
+			setSavingPassword,
+			async () => {
+				await adminUserService.resetPassword(user.id, {
+					password: passwordValue,
+				});
+				setPasswordValue("");
+				setConfirmPasswordValue("");
+				setPasswordErrors({});
+			},
+			t("password_reset_success"),
+		);
+	};
+
+	const handleSessionRevoke = async () => {
+		await runDialogAction(
+			setRevokingSessions,
+			async () => {
+				await adminUserService.revokeSessions(user.id);
+			},
+			t("revoke_sessions_success"),
+		);
 	};
 
 	const policyName = (policyId: number) =>
@@ -580,6 +607,40 @@ export function UserDetailDialog({
 										}
 									>
 										{t("reset_password")}
+									</Button>
+								</div>
+							</section>
+
+							<section className="rounded-2xl border bg-background/60 p-6">
+								<div className="mb-5">
+									<h4 className="text-base font-semibold text-foreground">
+										{t("revoke_sessions")}
+									</h4>
+									<p className="mt-1 text-sm text-muted-foreground">
+										{t("revoke_sessions_desc")}
+									</p>
+								</div>
+								<div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+									<p className="text-sm text-muted-foreground">
+										{t("revoke_sessions_hint")}
+									</p>
+								</div>
+								<div className="mt-5 flex justify-end border-t pt-4">
+									<Button
+										type="button"
+										variant="destructive"
+										onClick={() => void handleSessionRevoke()}
+										disabled={revokingSessions}
+									>
+										{revokingSessions ? (
+											<Icon
+												name="Spinner"
+												className="mr-1 h-4 w-4 animate-spin"
+											/>
+										) : (
+											<Icon name="SignOut" className="mr-1 h-4 w-4" />
+										)}
+										{t("revoke_sessions")}
 									</Button>
 								</div>
 							</section>

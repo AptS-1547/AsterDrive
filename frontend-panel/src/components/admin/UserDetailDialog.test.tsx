@@ -9,6 +9,7 @@ const mockState = vi.hoisted(() => ({
 	listPolicies: vi.fn(),
 	onUpdate: vi.fn(),
 	remove: vi.fn(),
+	revokeSessions: vi.fn(),
 	resetPassword: vi.fn(),
 	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
@@ -249,6 +250,7 @@ vi.mock("@/lib/format", () => ({
 
 vi.mock("@/services/adminService", () => ({
 	adminUserService: {
+		revokeSessions: (...args: unknown[]) => mockState.revokeSessions(...args),
 		resetPassword: (...args: unknown[]) => mockState.resetPassword(...args),
 	},
 	adminPolicyService: {
@@ -316,6 +318,26 @@ function createAssignment(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function renderDialog(userOverrides: Record<string, unknown> = {}) {
+	return render(
+		<UserDetailDialog
+			user={createUser(userOverrides)}
+			open
+			onOpenChange={vi.fn()}
+			onUpdate={mockState.onUpdate}
+		/>,
+	);
+}
+
+async function waitForPolicyLoad(userId = 2) {
+	await waitFor(() => {
+		expect(mockState.listAssignments).toHaveBeenCalledWith(userId, {
+			limit: 100,
+			offset: 0,
+		});
+	});
+}
+
 describe("UserDetailDialog", () => {
 	beforeEach(() => {
 		mockState.assign.mockReset();
@@ -324,6 +346,7 @@ describe("UserDetailDialog", () => {
 		mockState.listPolicies.mockReset();
 		mockState.onUpdate.mockReset();
 		mockState.remove.mockReset();
+		mockState.revokeSessions.mockReset();
 		mockState.resetPassword.mockReset();
 		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
@@ -340,26 +363,15 @@ describe("UserDetailDialog", () => {
 		});
 		mockState.onUpdate.mockResolvedValue(undefined);
 		mockState.remove.mockResolvedValue(undefined);
+		mockState.revokeSessions.mockResolvedValue(undefined);
 		mockState.resetPassword.mockResolvedValue(undefined);
 		mockState.updateAssignment.mockResolvedValue(undefined);
 	});
 
 	it("loads policies on open and saves changed profile values", async () => {
-		render(
-			<UserDetailDialog
-				user={createUser()}
-				open
-				onOpenChange={vi.fn()}
-				onUpdate={mockState.onUpdate}
-			/>,
-		);
+		renderDialog();
 
-		await waitFor(() => {
-			expect(mockState.listAssignments).toHaveBeenCalledWith(2, {
-				limit: 100,
-				offset: 0,
-			});
-		});
+		await waitForPolicyLoad();
 		expect(mockState.listPolicies).toHaveBeenCalledWith({
 			limit: 100,
 			offset: 0,
@@ -419,14 +431,7 @@ describe("UserDetailDialog", () => {
 			total: 3,
 		});
 
-		render(
-			<UserDetailDialog
-				user={createUser()}
-				open
-				onOpenChange={vi.fn()}
-				onUpdate={mockState.onUpdate}
-			/>,
-		);
+		renderDialog();
 
 		await screen.findByText("Primary");
 		expect(screen.getByText("Archive")).toBeInTheDocument();
@@ -494,25 +499,13 @@ describe("UserDetailDialog", () => {
 			total: 0,
 		});
 
-		render(
-			<UserDetailDialog
-				user={createUser({
-					id: 1,
-					role: "admin",
-					username: "root",
-				})}
-				open
-				onOpenChange={vi.fn()}
-				onUpdate={mockState.onUpdate}
-			/>,
-		);
-
-		await waitFor(() => {
-			expect(mockState.listAssignments).toHaveBeenCalledWith(1, {
-				limit: 100,
-				offset: 0,
-			});
+		renderDialog({
+			id: 1,
+			role: "admin",
+			username: "root",
 		});
+
+		await waitForPolicyLoad(1);
 
 		expect(screen.getAllByText("initial_admin_protected")).toHaveLength(2);
 		expect(
@@ -526,14 +519,7 @@ describe("UserDetailDialog", () => {
 	});
 
 	it("caps the dialog height and keeps the detail column scrollable", async () => {
-		const { container } = render(
-			<UserDetailDialog
-				user={createUser()}
-				open
-				onOpenChange={vi.fn()}
-				onUpdate={mockState.onUpdate}
-			/>,
-		);
+		const { container } = renderDialog();
 
 		await screen.findByText("Primary");
 
@@ -546,14 +532,7 @@ describe("UserDetailDialog", () => {
 	});
 
 	it("resets the user's password from the detail dialog", async () => {
-		render(
-			<UserDetailDialog
-				user={createUser()}
-				open
-				onOpenChange={vi.fn()}
-				onUpdate={mockState.onUpdate}
-			/>,
-		);
+		renderDialog();
 
 		await screen.findByText("Primary");
 
@@ -575,5 +554,44 @@ describe("UserDetailDialog", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
 			"password_reset_success",
 		);
+	});
+
+	it("revokes user sessions from the detail dialog", async () => {
+		renderDialog();
+
+		await screen.findByText("Primary");
+
+		const revokeButton = screen.getByRole("button", {
+			name: /revoke_sessions/i,
+		});
+
+		expect(revokeButton).toHaveAttribute("data-variant", "destructive");
+
+		fireEvent.click(revokeButton);
+
+		await waitFor(() => {
+			expect(mockState.revokeSessions).toHaveBeenCalledWith(2);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"revoke_sessions_success",
+		);
+	});
+
+	it("routes revoke session failures through handleApiError", async () => {
+		const error = new Error("revoke failed");
+		mockState.revokeSessions.mockRejectedValueOnce(error);
+
+		renderDialog();
+
+		await screen.findByText("Primary");
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: /revoke_sessions/i,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
+		});
 	});
 });

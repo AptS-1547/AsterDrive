@@ -34,7 +34,7 @@ pub async fn authenticate_webdav(
             root_folder_id,
         })
     } else if let Some(bearer) = auth_header.strip_prefix("Bearer ") {
-        let user_id = authenticate_bearer(bearer.trim(), state)?;
+        let user_id = authenticate_bearer(bearer.trim(), state).await?;
         Ok(WebdavAuthResult {
             user_id,
             root_folder_id: None, // JWT = 全部访问
@@ -86,7 +86,7 @@ async fn authenticate_basic(
 }
 
 /// Bearer JWT: verify_token → Claims.user_id
-fn authenticate_bearer(token: &str, state: &AppState) -> Result<i64, AsterError> {
-    let claims = auth_service::verify_token(token, &state.config.auth.jwt_secret)?;
+async fn authenticate_bearer(token: &str, state: &AppState) -> Result<i64, AsterError> {
+    let (claims, _) = auth_service::authenticate_access_token(state, token).await?;
     Ok(claims.user_id)
 }

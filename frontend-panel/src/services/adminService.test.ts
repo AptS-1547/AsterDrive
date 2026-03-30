@@ -100,6 +100,7 @@ describe("adminService", () => {
 		});
 		adminUserService.update(5, { storage_quota: 1024 });
 		adminUserService.resetPassword(5, { password: "newsecret" });
+		adminUserService.revokeSessions(5);
 		adminUserService.delete(5);
 
 		adminPolicyService.get(3);
@@ -150,10 +151,14 @@ describe("adminService", () => {
 				password: "newsecret",
 			},
 		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			2,
+			"/admin/users/5/sessions/revoke",
+		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/admin/users/5");
 
 		expect(mockState.get).toHaveBeenNthCalledWith(3, "/admin/policies/3");
-		expect(mockState.post).toHaveBeenNthCalledWith(2, "/admin/policies", {
+		expect(mockState.post).toHaveBeenNthCalledWith(3, "/admin/policies", {
 			name: "Primary",
 			driver_type: "s3",
 			bucket: "bucket-a",
@@ -162,14 +167,14 @@ describe("adminService", () => {
 			is_default: true,
 		});
 		expect(mockState.delete).toHaveBeenNthCalledWith(2, "/admin/policies/3");
-		expect(mockState.post).toHaveBeenNthCalledWith(3, "/admin/policies/3/test");
-		expect(mockState.post).toHaveBeenNthCalledWith(4, "/admin/policies/test", {
+		expect(mockState.post).toHaveBeenNthCalledWith(4, "/admin/policies/3/test");
+		expect(mockState.post).toHaveBeenNthCalledWith(5, "/admin/policies/test", {
 			driver_type: "s3",
 			endpoint: "https://example.com",
 		});
 
 		expect(mockState.post).toHaveBeenNthCalledWith(
-			5,
+			6,
 			"/admin/users/5/policies",
 			{
 				policy_id: 3,
