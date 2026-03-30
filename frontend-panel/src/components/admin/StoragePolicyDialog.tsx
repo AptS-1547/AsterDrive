@@ -123,7 +123,7 @@ export function StoragePolicyDialog({
 			type: "local",
 			title: t("driver_type_local"),
 			description: t("policy_wizard_local_storage_desc"),
-			iconSrc: "/static/storage/asterdrive-local.svg",
+			iconSrc: "/static/asterdrive/asterdrive-dark.svg",
 		},
 		{
 			type: "s3",

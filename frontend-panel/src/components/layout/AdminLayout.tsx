@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	ADMIN_SIDEBAR_WIDTH_CLASS,
 	ADMIN_TOPBAR_OFFSET_CLASS,
+	SIDEBAR_SECTION_PADDING_CLASS,
 } from "@/lib/constants";
 import { cn, sidebarNavItemClass } from "@/lib/utils";
 
@@ -23,7 +24,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 		setMobileOpen(false);
 	}, []);
 
-	const navItems: { to: string; label: string; icon: IconName }[] = [
+	const primaryNavItems: { to: string; label: string; icon: IconName }[] = [
 		{ to: "/admin/overview", label: t("overview"), icon: "Presentation" },
 		{ to: "/admin/users", label: t("users"), icon: "Shield" },
 		{ to: "/admin/policies", label: t("policies"), icon: "HardDrive" },
@@ -36,12 +37,15 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 			icon: "ClipboardText",
 		},
 	];
+	const secondaryNavItems: { to: string; label: string; icon: IconName }[] = [
+		{ to: "/admin/about", label: t("about"), icon: "Info" },
+	];
 
 	const sidebarContent = (
 		<div className="flex h-full flex-col bg-background">
-			<ScrollArea className="flex-1 pt-2">
-				<nav className="space-y-1 p-2">
-					{navItems.map((item) => (
+			<ScrollArea className="min-h-0 flex-1 pt-2">
+				<nav className={cn("space-y-1 py-2", SIDEBAR_SECTION_PADDING_CLASS)}>
+					{primaryNavItems.map((item) => (
 						<NavLink
 							key={item.to}
 							to={item.to}
@@ -55,6 +59,22 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 					))}
 				</nav>
 			</ScrollArea>
+			<div className={cn("border-t py-2", SIDEBAR_SECTION_PADDING_CLASS)}>
+				<nav className="space-y-1">
+					{secondaryNavItems.map((item) => (
+						<NavLink
+							key={item.to}
+							to={item.to}
+							viewTransition
+							onClick={handleMobileClose}
+							className={({ isActive }) => sidebarNavItemClass(isActive)}
+						>
+							<Icon name={item.icon} className="h-4 w-4 shrink-0" />
+							{item.label}
+						</NavLink>
+					))}
+				</nav>
+			</div>
 		</div>
 	);
 

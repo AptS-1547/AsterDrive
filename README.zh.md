@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="frontend-panel/public/static/asterdrive/logo.svg" alt="AsterDrive" width="320" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="frontend-panel/public/static/asterdrive/asterdrive-light.svg" />
+    <img src="frontend-panel/public/static/asterdrive/asterdrive-dark.svg" alt="AsterDrive" width="320" />
+  </picture>
 </p>
 
 <h1 align="center">AsterDrive</h1>

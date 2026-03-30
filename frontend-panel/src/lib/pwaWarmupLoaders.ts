@@ -65,6 +65,11 @@ export const adminRouteWarmupLoaders = [
 		label: "AdminAuditPage",
 		load: () => import("@/pages/admin/AdminAuditPage"),
 	},
+	{
+		key: "route:admin-about",
+		label: "AdminAboutPage",
+		load: () => import("@/pages/admin/AdminAboutPage"),
+	},
 ] satisfies WarmupLoaderEntry[];
 
 export const userFeatureWarmupLoaders = [

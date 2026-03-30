@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { AsterDriveWordmark } from "@/components/common/AsterDriveWordmark";
 import { TopBarShell } from "@/components/layout/TopBarShell";
 
 export function ShareTopBar() {
@@ -7,10 +8,9 @@ export function ShareTopBar() {
 	return (
 		<TopBarShell
 			left={
-				<img
-					src="/static/asterdrive/logo.svg"
+				<AsterDriveWordmark
 					alt={t("app_name")}
-					className="h-10 w-auto shrink-0"
+					className="h-16 w-auto shrink-0 px-6"
 				/>
 			}
 			right={

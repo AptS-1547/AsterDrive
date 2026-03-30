@@ -79,7 +79,10 @@ describe("AdminLayout", () => {
 		expect(
 			screen.getByRole("button", { name: /translated:shares/i }),
 		).toBeInTheDocument();
-		expect(screen.getAllByTestId("icon")).toHaveLength(7);
+		expect(
+			screen.getByRole("button", { name: /translated:about/i }),
+		).toBeInTheDocument();
+		expect(screen.getAllByTestId("icon")).toHaveLength(8);
 	});
 
 	it("opens the mobile sidebar overlay and closes it again", () => {

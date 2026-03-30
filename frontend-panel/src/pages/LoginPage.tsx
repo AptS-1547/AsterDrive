@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import type { z } from "zod/v4";
+import { AsterDriveWordmark } from "@/components/common/AsterDriveWordmark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -310,10 +311,9 @@ export default function LoginPage() {
 					<div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-amber-500 blur-3xl" />
 				</div>
 				<div className="relative text-center px-12 max-w-md">
-					<img
-						src="/static/asterdrive/logo.svg"
+					<AsterDriveWordmark
 						alt="AsterDrive"
-						className="mx-auto h-20 w-auto"
+						className="mx-auto h-24 w-auto"
 					/>
 					<p className="text-lg text-white/50 leading-relaxed">
 						Your files, your server, your rules.
@@ -326,10 +326,9 @@ export default function LoginPage() {
 				<div className="w-full max-w-sm">
 					{/* Mobile logo */}
 					<div className="lg:hidden text-center mb-8">
-						<img
-							src="/static/asterdrive/logo.svg"
+						<AsterDriveWordmark
 							alt="AsterDrive"
-							className="mx-auto h-14 w-auto"
+							className="mx-auto h-16 w-auto"
 						/>
 					</div>
 
