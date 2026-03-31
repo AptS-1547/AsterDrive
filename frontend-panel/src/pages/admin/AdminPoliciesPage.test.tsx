@@ -839,6 +839,11 @@ describe("AdminPoliciesPage", () => {
 		expect(screen.getByText("policy_editor_storage_title")).toBeInTheDocument();
 		expect(screen.getByText("policy_editor_rules_title")).toBeInTheDocument();
 		expect(screen.getByTestId("policy-summary-card")).toBeInTheDocument();
+		expect(screen.getByTestId("policy-summary-card").parentElement).toHaveClass(
+			"lg:sticky",
+			"lg:top-0",
+			"lg:self-start",
+		);
 		expect(
 			screen.queryByText("policy_wizard_driver_panel_title"),
 		).not.toBeInTheDocument();

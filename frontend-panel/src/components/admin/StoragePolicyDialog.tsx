@@ -739,7 +739,7 @@ export function StoragePolicyDialog({
 															{renderLimitsFields()}
 															{renderDefaultToggle()}
 														</div>
-														<div className="space-y-4 lg:sticky lg:top-0">
+														<div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
 															{renderPolicySummaryCard(
 																t("policy_wizard_summary_desc"),
 															)}
@@ -821,7 +821,7 @@ export function StoragePolicyDialog({
 										</section>
 									</div>
 
-									<div className="space-y-4 lg:sticky lg:top-0">
+									<div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
 										{renderPolicySummaryCard(t("policy_editor_summary_desc"))}
 									</div>
 								</div>
