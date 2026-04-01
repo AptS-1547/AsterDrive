@@ -46,7 +46,11 @@ vi.mock("@/components/admin/UserDetailDialog", () => ({
 	}: {
 		onUpdate: (
 			id: number,
-			data: { role?: "admin" | "user"; status?: "active" | "disabled" },
+			data: {
+				role?: "admin" | "user";
+				status?: "active" | "disabled";
+				policy_group_id?: number;
+			},
 		) => Promise<void>;
 		open: boolean;
 		user: { id: number; username: string } | null;

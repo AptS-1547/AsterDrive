@@ -3,10 +3,13 @@ import type {
 	AdminSharePage,
 	DriverType,
 	LockPage,
+	PolicyGroupUserMigrationResult,
 	RemovedCountResponse,
 	ResetUserPasswordRequest,
 	ShareInfo,
 	StoragePolicy,
+	StoragePolicyGroup,
+	StoragePolicyGroupPage,
 	StoragePolicyPage,
 	SystemConfig,
 	SystemConfigPage,
@@ -14,8 +17,6 @@ import type {
 	UserPage,
 	UserRole,
 	UserStatus,
-	UserStoragePolicy,
-	UserStoragePolicyPage,
 } from "@/types/api";
 import { api } from "./http";
 
@@ -67,7 +68,12 @@ export const adminUserService = {
 
 	update: (
 		id: number,
-		data: { role?: UserRole; status?: UserStatus; storage_quota?: number },
+		data: {
+			role?: UserRole;
+			status?: UserStatus;
+			storage_quota?: number;
+			policy_group_id?: number;
+		},
 	) => api.patch<UserInfo>(`/admin/users/${id}`, data),
 
 	resetPassword: (id: number, data: ResetUserPasswordRequest) =>
@@ -138,35 +144,79 @@ export const adminPolicyService = {
 	}) => api.post<void>("/admin/policies/test", data),
 };
 
-// --- User Storage Policies ---
+// --- Policy Groups ---
 
-export const adminUserPolicyService = {
-	list: (userId: number, params?: { limit?: number; offset?: number }) => {
+export const adminPolicyGroupService = {
+	list: (params?: { limit?: number; offset?: number }) => {
 		const query = new URLSearchParams();
 		if (params?.limit != null) query.set("limit", String(params.limit));
 		if (params?.offset != null) query.set("offset", String(params.offset));
 		const suffix = query.toString();
-		return api.get<UserStoragePolicyPage>(
-			suffix
-				? `/admin/users/${userId}/policies?${suffix}`
-				: `/admin/users/${userId}/policies`,
+		return api.get<StoragePolicyGroupPage>(
+			suffix ? `/admin/policy-groups?${suffix}` : "/admin/policy-groups",
 		);
 	},
 
-	assign: (
-		userId: number,
-		data: { policy_id: number; is_default?: boolean; quota_bytes?: number },
-	) => api.post<UserStoragePolicy>(`/admin/users/${userId}/policies`, data),
+	listAll: async (pageSize = 100) => {
+		const allGroups: StoragePolicyGroup[] = [];
+		let offset = 0;
+		let total = 0;
+
+		do {
+			const page = await adminPolicyGroupService.list({
+				limit: pageSize,
+				offset,
+			});
+			allGroups.push(...page.items);
+			total = page.total;
+			offset += page.items.length;
+			if (page.items.length === 0) {
+				break;
+			}
+		} while (allGroups.length < total);
+
+		return allGroups;
+	},
+
+	get: (id: number) =>
+		api.get<StoragePolicyGroup>(`/admin/policy-groups/${id}`),
+
+	create: (data: {
+		name: string;
+		description?: string;
+		is_enabled?: boolean;
+		is_default?: boolean;
+		items: Array<{
+			policy_id: number;
+			priority: number;
+			min_file_size?: number;
+			max_file_size?: number;
+		}>;
+	}) => api.post<StoragePolicyGroup>("/admin/policy-groups", data),
 
 	update: (
-		userId: number,
 		id: number,
-		data: { is_default?: boolean; quota_bytes?: number },
-	) =>
-		api.patch<UserStoragePolicy>(`/admin/users/${userId}/policies/${id}`, data),
+		data: {
+			name?: string;
+			description?: string;
+			is_enabled?: boolean;
+			is_default?: boolean;
+			items?: Array<{
+				policy_id: number;
+				priority: number;
+				min_file_size?: number;
+				max_file_size?: number;
+			}>;
+		},
+	) => api.patch<StoragePolicyGroup>(`/admin/policy-groups/${id}`, data),
 
-	remove: (userId: number, id: number) =>
-		api.delete<void>(`/admin/users/${userId}/policies/${id}`),
+	delete: (id: number) => api.delete<void>(`/admin/policy-groups/${id}`),
+
+	migrateUsers: (id: number, data: { target_group_id: number }) =>
+		api.post<PolicyGroupUserMigrationResult>(
+			`/admin/policy-groups/${id}/migrate-users`,
+			data,
+		),
 };
 
 // --- WebDAV Locks ---

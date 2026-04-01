@@ -362,7 +362,13 @@ pub async fn upload_avatar(
     let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
     let upload_data = read_avatar_upload(payload).await?;
     let (small_bytes, large_bytes) = process_avatar_image(upload_data)?;
-    let policy = file_service::resolve_policy(state, user_id, None).await?;
+    let policy = file_service::resolve_policy_for_size(
+        state,
+        user_id,
+        None,
+        i64::try_from(large_bytes.len().max(small_bytes.len())).unwrap_or(i64::MAX),
+    )
+    .await?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let version = existing
         .as_ref()

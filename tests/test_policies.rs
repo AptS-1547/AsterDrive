@@ -62,6 +62,41 @@ async fn test_user_default_policy_switch_updates_snapshot_immediately() {
 }
 
 #[actix_web::test]
+async fn test_seed_policy_groups_backfills_missing_users_to_default_group() {
+    use aster_drive::db::repository::{policy_group_repo, user_repo};
+    use aster_drive::services::{auth_service, policy_service};
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "policybackfill",
+        "policy-backfill@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let default_group = policy_group_repo::find_default_group(&state.db)
+        .await
+        .unwrap()
+        .expect("default group should exist");
+
+    let mut user_active: aster_drive::entities::user::ActiveModel = user.into();
+    user_active.policy_group_id = Set(None);
+    user_active.update(&state.db).await.unwrap();
+
+    policy_service::ensure_policy_groups_seeded(&state.db)
+        .await
+        .unwrap();
+
+    let updated = user_repo::find_by_email(&state.db, "policy-backfill@example.com")
+        .await
+        .unwrap()
+        .expect("user should exist");
+    assert_eq!(updated.policy_group_id, Some(default_group.id));
+}
+
+#[actix_web::test]
 async fn test_policy_crud() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -158,6 +193,29 @@ async fn test_user_policy_assignment() {
     let body: Value = test::read_body_json(resp).await;
     let policy_id = body["data"]["items"][0]["id"].as_i64().unwrap();
 
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policy-groups")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Dedicated User Group",
+            "description": "Single binding target",
+            "is_enabled": true,
+            "is_default": false,
+            "items": [
+                {
+                    "policy_id": policy_id,
+                    "priority": 1,
+                    "min_file_size": 0,
+                    "max_file_size": 0
+                }
+            ]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let group_id = body["data"]["id"].as_i64().unwrap();
+
     // 获取用户 ID
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/users")
@@ -167,42 +225,36 @@ async fn test_user_policy_assignment() {
     let body: Value = test::read_body_json(resp).await;
     let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
 
-    // 分配一个非默认策略给用户
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
-            "policy_id": policy_id,
-            "is_default": false,
-            "quota_bytes": 1073741824
+            "policy_group_id": group_id
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["policy_group_id"], group_id);
 
-    // 列出用户策略（注册时自动分配 1 个 + 手动分配 1 个 = 2 个）
     let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    let policies = body["data"]["items"].as_array().unwrap();
-    assert_eq!(policies.len(), 2, "should have 2 policies (auto + manual)");
+    assert_eq!(body["data"]["policy_group_id"], group_id);
 
-    // 删除手动分配的策略（保留自动分配的）
-    let manual = policies
-        .iter()
-        .find(|p| p["quota_bytes"] == 1073741824)
-        .unwrap();
-    let usp_id = manual["id"].as_i64().unwrap();
-    let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies/{usp_id}"))
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "policy_group_id": serde_json::Value::Null
+        }))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 400);
 }
 
 // ── 系统策略 default 唯一性 ─────────────────────────────────
@@ -289,6 +341,409 @@ async fn test_patch_policy_promotes_existing_policy_to_default() {
         .collect();
 
     assert_eq!(default_ids, vec![policy_id]);
+}
+
+#[actix_web::test]
+async fn test_cannot_disable_default_policy_group() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policy-groups")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let group_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "is_enabled": false }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "cannot disable the default storage policy group; set another group as default first"
+    );
+}
+
+#[actix_web::test]
+async fn test_cannot_disable_assigned_policy_group() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policy-groups")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Assigned Group",
+            "description": "Used by one user",
+            "is_enabled": true,
+            "is_default": false,
+            "items": [
+                {
+                    "policy_id": policy_id,
+                    "priority": 1,
+                    "min_file_size": 0,
+                    "max_file_size": 0
+                }
+            ]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let group_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "policy_group_id": group_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "is_enabled": false }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "cannot disable policy group: 1 user assignment(s) still reference it"
+    );
+}
+
+#[actix_web::test]
+async fn test_cannot_set_disabled_user_policy_group_as_default() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policy-groups")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Legacy Disabled Group",
+            "description": "Disabled after assignment",
+            "is_enabled": true,
+            "is_default": false,
+            "items": [
+                {
+                    "policy_id": policy_id,
+                    "priority": 1,
+                    "min_file_size": 0,
+                    "max_file_size": 0
+                }
+            ]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let group_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "is_enabled": false }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "policy_group_id": group_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "cannot assign a disabled storage policy group");
+}
+
+#[actix_web::test]
+async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default() {
+    use aster_drive::services::auth_service;
+
+    let state = common::setup().await;
+    let admin_user = auth_service::register(
+        &state,
+        "pgmigrate-admin",
+        "pgmigrate-admin@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let user_with_source_only = auth_service::register(
+        &state,
+        "pgmigrate1",
+        "pgmigrate1@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let user_with_existing_target = auth_service::register(
+        &state,
+        "pgmigrate2",
+        "pgmigrate2@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let app = create_test_app!(state);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": admin_user.username,
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let token = common::extract_cookie(&resp, "aster_access").unwrap();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policy-groups")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Source Group",
+            "description": "Users will be migrated away",
+            "is_enabled": true,
+            "is_default": false,
+            "items": [
+                {
+                    "policy_id": policy_id,
+                    "priority": 1,
+                    "min_file_size": 0,
+                    "max_file_size": 0
+                }
+            ]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let source_group_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policy-groups")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Target Group",
+            "description": "Users land here after migration",
+            "is_enabled": true,
+            "is_default": false,
+            "items": [
+                {
+                    "policy_id": policy_id,
+                    "priority": 1,
+                    "min_file_size": 0,
+                    "max_file_size": 0
+                }
+            ]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let target_group_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{}", user_with_source_only.id))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "policy_group_id": source_group_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::patch()
+        .uri(&format!(
+            "/api/v1/admin/users/{}",
+            user_with_existing_target.id
+        ))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "policy_group_id": source_group_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/policy-groups/{source_group_id}/migrate-users"
+        ))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "target_group_id": target_group_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["source_group_id"], source_group_id);
+    assert_eq!(body["data"]["target_group_id"], target_group_id);
+    assert_eq!(body["data"]["affected_users"], 2);
+    assert_eq!(body["data"]["migrated_assignments"], 2);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{}", user_with_source_only.id))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["policy_group_id"], target_group_id);
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/admin/users/{}",
+            user_with_existing_target.id
+        ))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["policy_group_id"], target_group_id);
+}
+
+#[actix_web::test]
+async fn test_cannot_migrate_policy_group_users_to_disabled_group() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policy-groups")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Migration Source",
+            "description": "source",
+            "is_enabled": true,
+            "is_default": false,
+            "items": [
+                {
+                    "policy_id": policy_id,
+                    "priority": 1,
+                    "min_file_size": 0,
+                    "max_file_size": 0
+                }
+            ]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let source_group_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policy-groups")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Disabled Target",
+            "description": "target",
+            "is_enabled": false,
+            "is_default": false,
+            "items": [
+                {
+                    "policy_id": policy_id,
+                    "priority": 1,
+                    "min_file_size": 0,
+                    "max_file_size": 0
+                }
+            ]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let target_group_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/policy-groups/{source_group_id}/migrate-users"
+        ))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "target_group_id": target_group_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "cannot migrate users to a disabled storage policy group"
+    );
 }
 
 // ── 不能删除唯一的默认系统策略 ──────────────────────────────
@@ -400,335 +855,196 @@ async fn test_cannot_unset_only_default_policy() {
     );
 }
 
-// ── 不能删除用户默认策略分配 ────────────────────────────────
+// ── 用户绑定策略组的运行时校验 ─────────────────────────────
 
 #[actix_web::test]
-async fn test_cannot_delete_default_user_policy() {
+async fn test_resolve_policy_fails_without_user_policy_group() {
+    use aster_drive::db::repository::user_repo;
+    use aster_drive::services::{auth_service, file_service};
+    use sea_orm::{ActiveModelTrait, Set};
+
     let state = common::setup().await;
-    let app = create_test_app!(state);
-    let (token, _) = register_and_login!(app);
+    let user = auth_service::register(
+        &state,
+        "nogroup-user",
+        "nogroup-user@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
 
-    // 获取策略 ID 和用户 ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let policy_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+    let model = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let mut active: aster_drive::entities::user::ActiveModel = model.into();
+    active.policy_group_id = Set(None);
+    active.updated_at = Set(chrono::Utc::now());
+    active.update(&state.db).await.unwrap();
+    state.policy_snapshot.reload(&state.db).await.unwrap();
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+    let err = file_service::resolve_policy(&state, user.id, None)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "E030");
+    assert!(err.message().contains("no storage policy group assigned"));
+}
 
-    // 创建第二个策略（非默认）
-    let req = test::TestRequest::post()
-        .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({
-            "name": "Second Policy",
-            "driver_type": "local",
-            "base_path": "/tmp/test-second",
-            "max_file_size": 0,
-            "is_default": false
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let policy2_id = body["data"]["id"].as_i64().unwrap();
+#[actix_web::test]
+async fn test_resolve_policy_fails_for_disabled_assigned_policy_group() {
+    use aster_drive::db::repository::{policy_group_repo, user_repo};
+    use aster_drive::services::{auth_service, file_service};
+    use sea_orm::{ActiveModelTrait, Set};
 
-    // 分配两个策略给用户，第一个是 default
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({
-            "policy_id": policy_id,
-            "is_default": true,
-            "quota_bytes": 0
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let default_assignment_id = body["data"]["id"].as_i64().unwrap();
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "disabledgrpusr",
+        "disabled-group-user@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
 
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({
-            "policy_id": policy2_id,
-            "is_default": false,
-            "quota_bytes": 0
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-
-    // 删除 default 策略分配 → 应被拒绝
-    let req = test::TestRequest::delete()
-        .uri(&format!(
-            "/api/v1/admin/users/{user_id}/policies/{default_assignment_id}"
-        ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 400);
-
-    // 默认分配仍存在，且默认标记未变化
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let policies = body["data"]["items"].as_array().unwrap();
-    let default_assignment = policies
-        .iter()
-        .find(|p| p["id"] == default_assignment_id)
+    let default_policy = aster_drive::db::repository::policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
         .unwrap();
-    assert_eq!(policies.len(), 3);
-    assert_eq!(default_assignment["is_default"], true);
+    let now = chrono::Utc::now();
+    let group = policy_group_repo::create_group(
+        &state.db,
+        aster_drive::entities::storage_policy_group::ActiveModel {
+            name: Set("Disabled Assigned Group".to_string()),
+            description: Set(String::new()),
+            is_enabled: Set(true),
+            is_default: Set(false),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    policy_group_repo::create_group_item(
+        &state.db,
+        aster_drive::entities::storage_policy_group_item::ActiveModel {
+            group_id: Set(group.id),
+            policy_id: Set(default_policy.id),
+            priority: Set(1),
+            min_file_size: Set(0),
+            max_file_size: Set(0),
+            created_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let user_model = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let mut user_active: aster_drive::entities::user::ActiveModel = user_model.into();
+    user_active.policy_group_id = Set(Some(group.id));
+    user_active.updated_at = Set(chrono::Utc::now());
+    user_active.update(&state.db).await.unwrap();
+
+    let group_model = policy_group_repo::find_group_by_id(&state.db, group.id)
+        .await
+        .unwrap();
+    let mut group_active: aster_drive::entities::storage_policy_group::ActiveModel =
+        group_model.into();
+    group_active.is_enabled = Set(false);
+    group_active.updated_at = Set(chrono::Utc::now());
+    group_active.update(&state.db).await.unwrap();
+
+    state.policy_snapshot.reload(&state.db).await.unwrap();
+
+    let err = file_service::resolve_policy(&state, user.id, None)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "E005");
+    assert!(err.message().contains("is disabled"));
 }
 
 #[actix_web::test]
-async fn test_can_delete_non_default_user_policy_with_multiple_assignments() {
+async fn test_resolve_policy_fails_when_policy_group_has_no_matching_rule() {
+    use aster_drive::db::repository::{policy_group_repo, policy_repo, user_repo};
+    use aster_drive::services::{auth_service, file_service, policy_service};
+    use aster_drive::types::DriverType;
+    use sea_orm::{ActiveModelTrait, Set};
+
     let state = common::setup().await;
-    let app = create_test_app!(state);
-    let (token, _) = register_and_login!(app);
+    let user = auth_service::register(
+        &state,
+        "gappolicyuser",
+        "gap-policy-user@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+    let default_policy = policy_repo::find_default(&state.db).await.unwrap().unwrap();
+    let overflow_path = format!("/tmp/asterdrive-gap-policy-{}", uuid::Uuid::new_v4());
+    std::fs::create_dir_all(&overflow_path).unwrap();
+    let overflow_policy = policy_service::create(
+        &state,
+        "Gap Overflow Policy",
+        DriverType::Local,
+        "",
+        "",
+        "",
+        "",
+        &overflow_path,
+        0,
+        None,
+        false,
+        None,
+    )
+    .await
+    .unwrap();
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({
-            "name": "Third Policy",
-            "driver_type": "local",
-            "base_path": "/tmp/test-third",
-            "max_file_size": 0,
-            "is_default": false
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let policy_id = body["data"]["id"].as_i64().unwrap();
+    let now = chrono::Utc::now();
+    let group = policy_group_repo::create_group(
+        &state.db,
+        aster_drive::entities::storage_policy_group::ActiveModel {
+            name: Set("Gap Rule Group".to_string()),
+            description: Set(String::new()),
+            is_enabled: Set(true),
+            is_default: Set(false),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    for (priority, policy_id, min_file_size, max_file_size) in [
+        (1, default_policy.id, 0, 10),
+        (2, overflow_policy.id, 20, 0),
+    ] {
+        policy_group_repo::create_group_item(
+            &state.db,
+            aster_drive::entities::storage_policy_group_item::ActiveModel {
+                group_id: Set(group.id),
+                policy_id: Set(policy_id),
+                priority: Set(priority),
+                min_file_size: Set(min_file_size),
+                max_file_size: Set(max_file_size),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
 
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({
-            "policy_id": policy_id,
-            "is_default": false,
-            "quota_bytes": 0
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let assignment_id = body["data"]["id"].as_i64().unwrap();
+    let user_model = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let mut user_active: aster_drive::entities::user::ActiveModel = user_model.into();
+    user_active.policy_group_id = Set(Some(group.id));
+    user_active.updated_at = Set(now);
+    user_active.update(&state.db).await.unwrap();
+    state.policy_snapshot.reload(&state.db).await.unwrap();
 
-    let req = test::TestRequest::delete()
-        .uri(&format!(
-            "/api/v1/admin/users/{user_id}/policies/{assignment_id}"
-        ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let policies = body["data"]["items"].as_array().unwrap();
-    assert_eq!(policies.len(), 1);
-    assert_eq!(policies[0]["is_default"], true);
-}
-
-#[actix_web::test]
-async fn test_patch_user_policy_switches_default_assignment() {
-    let state = common::setup().await;
-    let app = create_test_app!(state);
-    let (token, _) = register_and_login!(app);
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({
-            "name": "Patch User Default",
-            "driver_type": "local",
-            "base_path": "/tmp/test-user-default-switch",
-            "max_file_size": 0,
-            "is_default": false
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let policy_id = body["data"]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({
-            "policy_id": policy_id,
-            "is_default": false,
-            "quota_bytes": 1234
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let assignment_id = body["data"]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::patch()
-        .uri(&format!(
-            "/api/v1/admin/users/{user_id}/policies/{assignment_id}"
-        ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({
-            "is_default": true,
-            "quota_bytes": 4321
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["is_default"], true);
-    assert_eq!(body["data"]["quota_bytes"], 4321);
-
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let policies = body["data"]["items"].as_array().unwrap();
-    let default_ids: Vec<i64> = policies
-        .iter()
-        .filter(|policy| policy["is_default"] == true)
-        .map(|policy| policy["id"].as_i64().unwrap())
-        .collect();
-
-    assert_eq!(default_ids, vec![assignment_id]);
-}
-
-// ── 不能取消用户唯一默认策略 ────────────────────────────────
-
-#[actix_web::test]
-async fn test_cannot_unset_only_user_default_policy() {
-    let state = common::setup().await;
-    let app = create_test_app!(state);
-    let (token, _) = register_and_login!(app);
-
-    // 获取策略 ID 和用户 ID
-    let req = test::TestRequest::get()
-        .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let policy_id = body["data"]["items"][0]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
-
-    // 分配唯一策略（default）
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({
-            "policy_id": policy_id,
-            "is_default": true,
-            "quota_bytes": 0
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let usp_id = body["data"]["id"].as_i64().unwrap();
-
-    // 尝试取消 default → 应被拒绝
-    let req = test::TestRequest::patch()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies/{usp_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({"is_default": false}))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        400,
-        "should reject unsetting only user default, got {}",
-        resp.status()
-    );
-}
-
-// ── 不能删除用户唯一的策略分配 ──────────────────────────────
-
-#[actix_web::test]
-async fn test_cannot_delete_last_user_policy() {
-    let state = common::setup().await;
-    let app = create_test_app!(state);
-    let (token, _) = register_and_login!(app);
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
-
-    // 注册时已自动分配 1 个策略，直接获取它
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let body: Value = test::read_body_json(resp).await;
-    let policies = body["data"]["items"].as_array().unwrap();
-    assert_eq!(policies.len(), 1, "user should have 1 auto-assigned policy");
-    let usp_id = policies[0]["id"].as_i64().unwrap();
-
-    // 尝试删除唯一策略 → 应被拒绝
-    let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies/{usp_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        400,
-        "should reject deleting only user policy, got {}",
-        resp.status()
-    );
+    let err = file_service::resolve_policy_for_size(&state, user.id, None, 15)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "E005");
+    assert!(err.message().contains("no storage policy rule"));
 }
 
 #[actix_web::test]

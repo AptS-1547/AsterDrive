@@ -72,6 +72,11 @@ export function EditShareDialog({
 	const [expiresAt, setExpiresAt] = useState("");
 	const [maxDownloads, setMaxDownloads] = useState("0");
 	const [loading, setLoading] = useState(false);
+	const passwordActionOptions = [
+		{ label: t("share:my_shares_edit_password_keep"), value: "keep" },
+		{ label: t("share:my_shares_edit_password_clear"), value: "clear" },
+		{ label: t("share:my_shares_edit_password_set"), value: "set" },
+	] satisfies ReadonlyArray<{ label: string; value: PasswordAction }>;
 
 	useEffect(() => {
 		if (!open || !share) return;
@@ -131,6 +136,7 @@ export function EditShareDialog({
 					<div className="space-y-2">
 						<Label>{t("share:my_shares_edit_password_mode")}</Label>
 						<Select
+							items={passwordActionOptions}
 							value={passwordAction}
 							onValueChange={(value) =>
 								setPasswordAction((value as PasswordAction | null) ?? "keep")
@@ -140,15 +146,11 @@ export function EditShareDialog({
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
-								<SelectItem value="keep">
-									{t("share:my_shares_edit_password_keep")}
-								</SelectItem>
-								<SelectItem value="clear">
-									{t("share:my_shares_edit_password_clear")}
-								</SelectItem>
-								<SelectItem value="set">
-									{t("share:my_shares_edit_password_set")}
-								</SelectItem>
+								{passwordActionOptions.map((option) => (
+									<SelectItem key={option.value} value={option.value}>
+										{option.label}
+									</SelectItem>
+								))}
 							</SelectContent>
 						</Select>
 					</div>

@@ -302,6 +302,7 @@ export default function AdminUsersPage() {
 			role?: UserRole;
 			status?: UserStatus;
 			storage_quota?: number;
+			policy_group_id?: number;
 		},
 	) => {
 		try {
@@ -344,6 +345,20 @@ export default function AdminUsersPage() {
 		() => users.find((user) => user.id === deleteUserId) ?? null,
 		[users, deleteUserId],
 	);
+	const roleFilterOptions = [
+		{ label: t("all_roles"), value: "__all__" },
+		{ label: t("role_admin"), value: "admin" },
+		{ label: t("role_user"), value: "user" },
+	] satisfies ReadonlyArray<{ label: string; value: string }>;
+	const statusFilterOptions = [
+		{ label: t("all_statuses"), value: "__all__" },
+		{ label: t("core:active"), value: "active" },
+		{ label: t("core:disabled_status"), value: "disabled" },
+	] satisfies ReadonlyArray<{ label: string; value: string }>;
+	const pageSizeOptions = USER_PAGE_SIZE_OPTIONS.map((size) => ({
+		label: t("page_size_option", { count: size }),
+		value: String(size),
+	}));
 
 	return (
 		<AdminLayout>
@@ -390,19 +405,26 @@ export default function AdminUsersPage() {
 									className={`${ADMIN_CONTROL_HEIGHT_CLASS} pl-9`}
 								/>
 							</div>
-							<Select value={roleFilter} onValueChange={handleRoleFilterChange}>
+							<Select
+								items={roleFilterOptions}
+								value={roleFilter}
+								onValueChange={handleRoleFilterChange}
+							>
 								<SelectTrigger
 									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[140px]`}
 								>
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="__all__">{t("all_roles")}</SelectItem>
-									<SelectItem value="admin">{t("role_admin")}</SelectItem>
-									<SelectItem value="user">{t("role_user")}</SelectItem>
+									{roleFilterOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 							<Select
+								items={statusFilterOptions}
 								value={statusFilter}
 								onValueChange={handleStatusFilterChange}
 							>
@@ -412,11 +434,11 @@ export default function AdminUsersPage() {
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="__all__">{t("all_statuses")}</SelectItem>
-									<SelectItem value="active">{t("core:active")}</SelectItem>
-									<SelectItem value="disabled">
-										{t("core:disabled_status")}
-									</SelectItem>
+									{statusFilterOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 							<div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
@@ -594,6 +616,7 @@ export default function AdminUsersPage() {
 								})}
 							</span>
 							<Select
+								items={pageSizeOptions}
 								value={String(pageSize)}
 								onValueChange={handlePageSizeChange}
 							>
@@ -603,9 +626,9 @@ export default function AdminUsersPage() {
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									{USER_PAGE_SIZE_OPTIONS.map((size) => (
-										<SelectItem key={size} value={String(size)}>
-											{t("page_size_option", { count: size })}
+									{pageSizeOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
 										</SelectItem>
 									))}
 								</SelectContent>

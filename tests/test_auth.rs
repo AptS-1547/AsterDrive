@@ -194,7 +194,7 @@ async fn test_auth_me() {
     assert_eq!(body["data"]["profile"]["avatar"]["source"], "none");
 }
 
-/// 注册时自动分配系统默认存储策略
+/// 注册时自动分配新用户默认策略组
 #[actix_web::test]
 async fn test_register_auto_assigns_policy() {
     let state = common::setup().await;
@@ -208,26 +208,9 @@ async fn test_register_auto_assigns_policy() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["id"].as_i64().unwrap();
-
-    // 用户应已有 1 个策略分配（自动分配的）
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    let policies = body["data"]["items"].as_array().unwrap();
-    assert_eq!(body["data"]["total"], 1);
-    assert_eq!(
-        policies.len(),
-        1,
-        "new user should have 1 auto-assigned policy"
-    );
-    assert_eq!(
-        policies[0]["is_default"], true,
-        "auto-assigned policy should be default"
+    assert!(
+        body["data"]["policy_group_id"].as_i64().unwrap() > 0,
+        "new user should have an auto-assigned policy group"
     );
 }
 

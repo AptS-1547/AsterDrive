@@ -114,6 +114,10 @@ export default function AdminPoliciesPage() {
 	const currentPage = Math.floor(offset / pageSize) + 1;
 	const prevPageDisabled = offset === 0;
 	const nextPageDisabled = offset + pageSize >= total;
+	const pageSizeOptions = POLICY_PAGE_SIZE_OPTIONS.map((size) => ({
+		label: t("page_size_option", { count: size }),
+		value: String(size),
+	}));
 
 	useEffect(() => {
 		const params = new URLSearchParams();
@@ -588,6 +592,7 @@ export default function AdminPoliciesPage() {
 								})}
 							</span>
 							<Select
+								items={pageSizeOptions}
 								value={String(pageSize)}
 								onValueChange={handlePageSizeChange}
 							>
@@ -597,9 +602,9 @@ export default function AdminPoliciesPage() {
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									{POLICY_PAGE_SIZE_OPTIONS.map((size) => (
-										<SelectItem key={size} value={String(size)}>
-											{t("page_size_option", { count: size })}
+									{pageSizeOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
 										</SelectItem>
 									))}
 								</SelectContent>

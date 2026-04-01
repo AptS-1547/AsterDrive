@@ -153,6 +153,7 @@ pub struct AdminCreateUserDetails<'a> {
     pub role: UserRole,
     pub status: UserStatus,
     pub storage_quota: i64,
+    pub policy_group_id: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -160,6 +161,7 @@ pub struct AdminUpdateUserDetails {
     pub role: UserRole,
     pub status: UserStatus,
     pub storage_quota: i64,
+    pub policy_group_id: Option<i64>,
 }
 
 #[derive(Serialize)]

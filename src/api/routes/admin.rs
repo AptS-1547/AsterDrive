@@ -15,7 +15,7 @@ use crate::types::{DriverType, UserRole, UserStatus};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
-use serde::Deserialize;
+use serde::{Deserialize, de::Error as DeError};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
@@ -40,6 +40,16 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                         web::post().to(test_policy_connection),
                     )
                     .route("/policies/test", web::post().to(test_policy_params))
+                    // policy groups
+                    .route("/policy-groups", web::get().to(list_policy_groups))
+                    .route("/policy-groups", web::post().to(create_policy_group))
+                    .route("/policy-groups/{id}", web::get().to(get_policy_group))
+                    .route("/policy-groups/{id}", web::patch().to(update_policy_group))
+                    .route("/policy-groups/{id}", web::delete().to(delete_policy_group))
+                    .route(
+                        "/policy-groups/{id}/migrate-users",
+                        web::post().to(migrate_policy_group_users),
+                    )
                     // users
                     .route("/users", web::get().to(list_users))
                     .route("/users", web::post().to(create_user))
@@ -52,23 +62,6 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                     )
                     .route("/users/{id}", web::delete().to(force_delete_user))
                     .route("/users/{id}/avatar/{size}", web::get().to(get_user_avatar))
-                    // user storage policies
-                    .route(
-                        "/users/{user_id}/policies",
-                        web::get().to(list_user_policies),
-                    )
-                    .route(
-                        "/users/{user_id}/policies",
-                        web::post().to(assign_user_policy),
-                    )
-                    .route(
-                        "/users/{user_id}/policies/{id}",
-                        web::patch().to(update_user_policy),
-                    )
-                    .route(
-                        "/users/{user_id}/policies/{id}",
-                        web::delete().to(remove_user_policy),
-                    )
                     // shares
                     .route("/shares", web::get().to(list_all_shares))
                     .route("/shares/{id}", web::delete().to(admin_delete_share))
@@ -343,6 +336,218 @@ pub async fn test_policy_params(body: web::Json<TestPolicyParamsReq>) -> Result<
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
+// ── Policy Groups ───────────────────────────────────────────────────
+
+#[derive(Clone, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct PolicyGroupItemReq {
+    pub policy_id: i64,
+    pub priority: i32,
+    #[serde(default)]
+    pub min_file_size: i64,
+    #[serde(default)]
+    pub max_file_size: i64,
+}
+
+#[derive(Clone, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct CreatePolicyGroupReq {
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(default = "default_true")]
+    pub is_enabled: bool,
+    #[serde(default)]
+    pub is_default: bool,
+    pub items: Vec<PolicyGroupItemReq>,
+}
+
+#[derive(Clone, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct PatchPolicyGroupReq {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub is_enabled: Option<bool>,
+    pub is_default: Option<bool>,
+    pub items: Option<Vec<PolicyGroupItemReq>>,
+}
+
+#[derive(Clone, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct MigratePolicyGroupUsersReq {
+    pub target_group_id: i64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn map_group_items(
+    items: Vec<PolicyGroupItemReq>,
+) -> Vec<policy_service::StoragePolicyGroupItemInput> {
+    items
+        .into_iter()
+        .map(|item| policy_service::StoragePolicyGroupItemInput {
+            policy_id: item.policy_id,
+            priority: item.priority,
+            min_file_size: item.min_file_size,
+            max_file_size: item.max_file_size,
+        })
+        .collect()
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/admin/policy-groups",
+    tag = "admin",
+    operation_id = "list_policy_groups",
+    params(LimitOffsetQuery),
+    responses(
+        (status = 200, description = "List storage policy groups", body = inline(ApiResponse<OffsetPage<crate::services::policy_service::StoragePolicyGroupInfo>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_policy_groups(
+    state: web::Data<AppState>,
+    query: web::Query<LimitOffsetQuery>,
+) -> Result<HttpResponse> {
+    let groups =
+        policy_service::list_groups_paginated(&state, query.limit_or(50, 100), query.offset())
+            .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(groups)))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/admin/policy-groups",
+    tag = "admin",
+    operation_id = "create_policy_group",
+    request_body = CreatePolicyGroupReq,
+    responses(
+        (status = 201, description = "Policy group created", body = inline(ApiResponse<crate::services::policy_service::StoragePolicyGroupInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn create_policy_group(
+    state: web::Data<AppState>,
+    body: web::Json<CreatePolicyGroupReq>,
+) -> Result<HttpResponse> {
+    let group = policy_service::create_group(
+        &state,
+        &body.name,
+        body.description.clone(),
+        body.is_enabled,
+        body.is_default,
+        map_group_items(body.items.clone()),
+    )
+    .await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(group)))
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/admin/policy-groups/{id}",
+    tag = "admin",
+    operation_id = "get_policy_group",
+    params(("id" = i64, Path, description = "Policy group ID")),
+    responses(
+        (status = 200, description = "Policy group details", body = inline(ApiResponse<crate::services::policy_service::StoragePolicyGroupInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy group not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_policy_group(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let group = policy_service::get_group(&state, *path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(group)))
+}
+
+#[api_docs_macros::path(
+    patch,
+    path = "/api/v1/admin/policy-groups/{id}",
+    tag = "admin",
+    operation_id = "update_policy_group",
+    params(("id" = i64, Path, description = "Policy group ID")),
+    request_body = PatchPolicyGroupReq,
+    responses(
+        (status = 200, description = "Policy group updated", body = inline(ApiResponse<crate::services::policy_service::StoragePolicyGroupInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy group not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn update_policy_group(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+    body: web::Json<PatchPolicyGroupReq>,
+) -> Result<HttpResponse> {
+    let group = policy_service::update_group(
+        &state,
+        *path,
+        body.name.clone(),
+        body.description.clone(),
+        body.is_enabled,
+        body.is_default,
+        body.items.clone().map(map_group_items),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(group)))
+}
+
+#[api_docs_macros::path(
+    delete,
+    path = "/api/v1/admin/policy-groups/{id}",
+    tag = "admin",
+    operation_id = "delete_policy_group",
+    params(("id" = i64, Path, description = "Policy group ID")),
+    responses(
+        (status = 200, description = "Policy group removed"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy group not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_policy_group(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    policy_service::delete_group(&state, *path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/admin/policy-groups/{id}/migrate-users",
+    tag = "admin",
+    operation_id = "migrate_policy_group_users",
+    params(("id" = i64, Path, description = "Source policy group ID")),
+    request_body = MigratePolicyGroupUsersReq,
+    responses(
+        (status = 200, description = "Policy group users migrated", body = inline(ApiResponse<crate::services::policy_service::PolicyGroupUserMigrationResult>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy group not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn migrate_policy_group_users(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+    body: web::Json<MigratePolicyGroupUsersReq>,
+) -> Result<HttpResponse> {
+    let result = policy_service::migrate_group_users(&state, *path, body.target_group_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
+}
+
 // ── Users ────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -395,6 +600,7 @@ pub async fn create_user(
             role: user.role,
             status: user.status,
             storage_quota: user.storage_quota,
+            policy_group_id: user.policy_group_id,
         }),
     )
     .await;
@@ -456,6 +662,23 @@ pub struct PatchUserReq {
     pub role: Option<UserRole>,
     pub status: Option<UserStatus>,
     pub storage_quota: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_non_null_policy_group_id")]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<i64>, nullable = false)
+    )]
+    pub policy_group_id: Option<i64>,
+}
+
+fn deserialize_non_null_policy_group_id<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<i64>::deserialize(deserializer)?
+        .map(Some)
+        .ok_or_else(|| D::Error::custom("policy_group_id cannot be null"))
 }
 
 #[derive(Deserialize)]
@@ -530,6 +753,7 @@ pub async fn update_user(
         body.role,
         body.status,
         body.storage_quota,
+        body.policy_group_id,
     )
     .await?;
     audit_service::log(
@@ -543,6 +767,7 @@ pub async fn update_user(
             role: user.role,
             status: user.status,
             storage_quota: user.storage_quota,
+            policy_group_id: user.policy_group_id,
         }),
     )
     .await;
@@ -634,151 +859,6 @@ pub async fn get_user_avatar(
     let (user_id, size) = path.into_inner();
     let bytes = profile_service::get_avatar_bytes(&state, user_id, size).await?;
     Ok(profile_service::avatar_image_response(bytes))
-}
-
-// ── User Storage Policies ───────────────────────────────────────────
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct UserPolicyPath {
-    pub user_id: i64,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct UserPolicyItemPath {
-    pub user_id: i64,
-    pub id: i64,
-}
-
-#[api_docs_macros::path(
-    get,
-    path = "/api/v1/admin/users/{user_id}/policies",
-    tag = "admin",
-    operation_id = "list_user_policies",
-    params(("user_id" = i64, Path, description = "User ID"), LimitOffsetQuery),
-    responses(
-        (status = 200, description = "User policy assignments", body = inline(ApiResponse<OffsetPage<crate::entities::user_storage_policy::Model>>)),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden"),
-    ),
-    security(("bearer" = [])),
-)]
-pub async fn list_user_policies(
-    state: web::Data<AppState>,
-    path: web::Path<UserPolicyPath>,
-    query: web::Query<LimitOffsetQuery>,
-) -> Result<HttpResponse> {
-    let policies = policy_service::list_user_policies_paginated(
-        &state,
-        path.user_id,
-        query.limit_or(50, 100),
-        query.offset(),
-    )
-    .await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(policies)))
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct AssignUserPolicyReq {
-    pub policy_id: i64,
-    #[serde(default)]
-    pub is_default: bool,
-    #[serde(default)]
-    pub quota_bytes: i64,
-}
-
-#[api_docs_macros::path(
-    post,
-    path = "/api/v1/admin/users/{user_id}/policies",
-    tag = "admin",
-    operation_id = "assign_user_policy",
-    params(("user_id" = i64, Path, description = "User ID")),
-    request_body = AssignUserPolicyReq,
-    responses(
-        (status = 201, description = "Policy assigned", body = inline(ApiResponse<crate::entities::user_storage_policy::Model>)),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden"),
-        (status = 404, description = "Policy not found"),
-    ),
-    security(("bearer" = [])),
-)]
-pub async fn assign_user_policy(
-    state: web::Data<AppState>,
-    path: web::Path<UserPolicyPath>,
-    body: web::Json<AssignUserPolicyReq>,
-) -> Result<HttpResponse> {
-    let usp = policy_service::assign_user_policy(
-        &state,
-        path.user_id,
-        body.policy_id,
-        body.is_default,
-        body.quota_bytes,
-    )
-    .await?;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(usp)))
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PatchUserPolicyReq {
-    pub is_default: Option<bool>,
-    pub quota_bytes: Option<i64>,
-}
-
-#[api_docs_macros::path(
-    patch,
-    path = "/api/v1/admin/users/{user_id}/policies/{id}",
-    tag = "admin",
-    operation_id = "update_user_policy",
-    params(
-        ("user_id" = i64, Path, description = "User ID"),
-        ("id" = i64, Path, description = "User storage policy assignment ID"),
-    ),
-    request_body = PatchUserPolicyReq,
-    responses(
-        (status = 200, description = "Assignment updated", body = inline(ApiResponse<crate::entities::user_storage_policy::Model>)),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden"),
-        (status = 404, description = "Assignment not found"),
-    ),
-    security(("bearer" = [])),
-)]
-pub async fn update_user_policy(
-    state: web::Data<AppState>,
-    path: web::Path<UserPolicyItemPath>,
-    body: web::Json<PatchUserPolicyReq>,
-) -> Result<HttpResponse> {
-    let usp =
-        policy_service::update_user_policy(&state, path.id, body.is_default, body.quota_bytes)
-            .await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(usp)))
-}
-
-#[api_docs_macros::path(
-    delete,
-    path = "/api/v1/admin/users/{user_id}/policies/{id}",
-    tag = "admin",
-    operation_id = "remove_user_policy",
-    params(
-        ("user_id" = i64, Path, description = "User ID"),
-        ("id" = i64, Path, description = "User storage policy assignment ID"),
-    ),
-    responses(
-        (status = 200, description = "Assignment removed"),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden"),
-        (status = 404, description = "Assignment not found"),
-    ),
-    security(("bearer" = [])),
-)]
-pub async fn remove_user_policy(
-    state: web::Data<AppState>,
-    path: web::Path<UserPolicyItemPath>,
-) -> Result<HttpResponse> {
-    policy_service::remove_user_policy(&state, path.id).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
 // ── Shares ──────────────────────────────────────────────────────────

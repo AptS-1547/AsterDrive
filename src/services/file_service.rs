@@ -10,11 +10,7 @@ use crate::entities::{file, file_blob, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::thumbnail_service;
-use crate::types::{
-    NullablePatch, S3UploadStrategy, UploadSessionStatus, effective_s3_multipart_chunk_size,
-    parse_storage_policy_options,
-};
-use crate::utils::numbers;
+use crate::types::{NullablePatch, UploadSessionStatus, parse_storage_policy_options};
 
 const HASH_BUF_SIZE: usize = 65536; // 64KB
 const BLOB_CLEANUP_CONCURRENCY: usize = 8;
@@ -163,172 +159,6 @@ pub(crate) async fn finalize_upload_session_file(
     Ok(created)
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn create_relay_cleanup_handle(
-    state: &AppState,
-    upload_id: &str,
-    user_id: i64,
-    folder_id: Option<i64>,
-    filename: &str,
-    total_size: i64,
-    chunk_size: i64,
-    uploaded_part_count: usize,
-    policy_id: i64,
-    storage_path: &str,
-    multipart_id: &str,
-) -> Result<upload_session::Model> {
-    let total_chunks = numbers::usize_to_i32(uploaded_part_count, "relay multipart part count")
-        .map_err(|_| {
-            AsterError::internal_error(format!(
-                "relay multipart part count overflow for upload {upload_id}"
-            ))
-        })?;
-    let now = Utc::now();
-
-    upload_session_repo::create(
-        &state.db,
-        upload_session::ActiveModel {
-            id: Set(upload_id.to_string()),
-            user_id: Set(user_id),
-            filename: Set(filename.to_string()),
-            total_size: Set(total_size),
-            chunk_size: Set(chunk_size),
-            total_chunks: Set(total_chunks),
-            received_count: Set(total_chunks),
-            folder_id: Set(folder_id),
-            policy_id: Set(policy_id),
-            status: Set(UploadSessionStatus::Completed),
-            s3_temp_key: Set(Some(storage_path.to_string())),
-            s3_multipart_id: Set(Some(multipart_id.to_string())),
-            file_id: Set(None),
-            created_at: Set(now),
-            expires_at: Set(now + chrono::Duration::hours(1)),
-            updated_at: Set(now),
-        },
-    )
-    .await
-}
-
-async fn clear_relay_cleanup_handle(state: &AppState, upload_id: &str) {
-    if let Err(e) = upload_session_repo::delete(&state.db, upload_id).await {
-        tracing::warn!(
-            upload_id,
-            "failed to delete relay cleanup handle after successful upload: {e}"
-        );
-    }
-}
-
-async fn relay_field_to_s3(
-    state: &AppState,
-    user_id: i64,
-    folder_id: Option<i64>,
-    filename: &str,
-    mut field: actix_multipart::Field,
-    policy: &crate::entities::storage_policy::Model,
-) -> Result<file::Model> {
-    let driver = state.driver_registry.get_driver(policy)?;
-    let upload_id = crate::utils::id::new_uuid();
-    let storage_path = format!("files/{upload_id}");
-    let multipart_id = driver.create_multipart_upload(&storage_path).await?;
-    let part_size_bytes = effective_s3_multipart_chunk_size(policy.chunk_size);
-    let part_size = numbers::bytes_to_usize(part_size_bytes, "effective S3 multipart chunk size")?;
-
-    let result = async {
-        let mut total_size: i64 = 0;
-        let mut part_number = 1;
-        let mut uploaded_parts = Vec::new();
-        let mut buffer = Vec::with_capacity(part_size);
-
-        while let Some(chunk) = field.next().await {
-            let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
-            total_size += chunk.len() as i64;
-            if policy.max_file_size > 0 && total_size > policy.max_file_size {
-                return Err(AsterError::file_too_large(format!(
-                    "file size {} exceeds limit {}",
-                    total_size, policy.max_file_size
-                )));
-            }
-
-            buffer.extend_from_slice(&chunk);
-
-            while buffer.len() >= part_size {
-                let remainder = buffer.split_off(part_size);
-                let current_part = std::mem::replace(&mut buffer, remainder);
-                let etag = driver
-                    .upload_multipart_part(&storage_path, &multipart_id, part_number, &current_part)
-                    .await?;
-                uploaded_parts.push((part_number, etag));
-                part_number += 1;
-            }
-        }
-
-        if total_size == 0 {
-            return Err(AsterError::validation_error("empty file"));
-        }
-
-        user_repo::check_quota(&state.db, user_id, total_size).await?;
-
-        if !buffer.is_empty() || uploaded_parts.is_empty() {
-            let final_part_etag = driver
-                .upload_multipart_part(&storage_path, &multipart_id, part_number, &buffer)
-                .await?;
-            uploaded_parts.push((part_number, final_part_etag));
-        }
-
-        let cleanup_session = create_relay_cleanup_handle(
-            state,
-            &upload_id,
-            user_id,
-            folder_id,
-            filename,
-            total_size,
-            part_size_bytes,
-            uploaded_parts.len(),
-            policy.id,
-            &storage_path,
-            &multipart_id,
-        )
-        .await?;
-
-        driver
-            .complete_multipart_upload(&storage_path, &multipart_id, uploaded_parts)
-            .await?;
-
-        let created = finalize_upload_session_file(
-            state,
-            &cleanup_session,
-            &format!("s3-{upload_id}"),
-            total_size,
-            policy.id,
-            &storage_path,
-            Utc::now(),
-        )
-        .await?;
-
-        clear_relay_cleanup_handle(state, &upload_id).await;
-        Ok(created)
-    }
-    .await;
-
-    match result {
-        Ok(file) => Ok(file),
-        Err(err) => {
-            if let Err(cleanup_err) = driver
-                .abort_multipart_upload(&storage_path, &multipart_id)
-                .await
-            {
-                tracing::warn!("failed to abort relay multipart upload {upload_id}: {cleanup_err}");
-                if let Err(delete_err) = driver.delete(&storage_path).await {
-                    tracing::warn!(
-                        "failed to delete relay object {storage_path} after abort failure: {delete_err}"
-                    );
-                }
-            }
-            Err(err)
-        }
-    }
-}
-
 /// 从临时文件存储 blob 并创建文件记录
 ///
 /// 公共函数，REST upload 和 WebDAV flush 都调用。
@@ -357,7 +187,7 @@ pub async fn store_from_temp(
     crate::utils::validate_name(filename)?;
 
     // ── [事务外] 策略解析 ──
-    let policy = resolve_policy(state, user_id, folder_id).await?;
+    let policy = resolve_policy_for_size(state, user_id, folder_id, size).await?;
     let should_dedup = local_content_dedup_enabled(&policy);
 
     // 文件大小限制
@@ -522,43 +352,6 @@ pub async fn upload(
     } else {
         folder_id
     };
-    let policy = resolve_policy(state, user_id, effective_folder_id).await?;
-    let policy_options = parse_storage_policy_options(&policy.options);
-    let s3_strategy = if policy.driver_type == crate::types::DriverType::S3 {
-        Some(policy_options.effective_s3_upload_strategy())
-    } else {
-        None
-    };
-
-    if s3_strategy == Some(S3UploadStrategy::RelayStream) {
-        while let Some(field) = payload.next().await {
-            let field = field.map_aster_err(AsterError::file_upload_failed)?;
-            let uploaded_name = field
-                .content_disposition()
-                .and_then(|cd| cd.get_filename().map(|n| n.to_string()));
-
-            if let Some(name) = uploaded_name {
-                let filename = if relative_path.is_some() {
-                    resolved_filename.clone()
-                } else {
-                    name
-                };
-                crate::utils::validate_name(&filename)?;
-                return relay_field_to_s3(
-                    state,
-                    user_id,
-                    effective_folder_id,
-                    &filename,
-                    field,
-                    &policy,
-                )
-                .await;
-            }
-        }
-
-        return Err(AsterError::validation_error("empty file"));
-    }
-
     // 流式写入临时文件（不在内存中缓冲整个文件）
     let mut filename = String::from("unnamed");
     let temp_dir = &state.config.server.temp_dir;
@@ -1351,11 +1144,20 @@ pub async fn update_content(
     Ok((updated, new_blob.hash.clone()))
 }
 
-/// 根据优先级链解析存储策略：文件夹 → 用户默认 → 系统默认
+/// 根据优先级链解析存储策略：文件夹覆盖 → 用户绑定策略组
 pub async fn resolve_policy(
     state: &AppState,
     user_id: i64,
     folder_id: Option<i64>,
+) -> Result<crate::entities::storage_policy::Model> {
+    resolve_policy_for_size(state, user_id, folder_id, 0).await
+}
+
+pub async fn resolve_policy_for_size(
+    state: &AppState,
+    user_id: i64,
+    folder_id: Option<i64>,
+    file_size: i64,
 ) -> Result<crate::entities::storage_policy::Model> {
     // 1. 文件夹级策略
     if let Some(fid) = folder_id {
@@ -1365,11 +1167,10 @@ pub async fn resolve_policy(
         }
     }
 
-    // 2. 用户默认策略 → 系统默认策略
+    // 2. 用户绑定的策略组
     state
         .policy_snapshot
-        .resolve_default_policy(user_id)
-        .ok_or_else(|| AsterError::storage_policy_not_found("no default storage policy configured"))
+        .resolve_user_policy_for_size(user_id, file_size)
 }
 
 /// 直接创建空文件（0 字节），不走 multipart upload 流程。
@@ -1395,7 +1196,7 @@ pub async fn create_empty(
     const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     const EMPTY_SIZE: i64 = 0;
 
-    let policy = resolve_policy(state, user_id, folder_id).await?;
+    let policy = resolve_policy_for_size(state, user_id, folder_id, EMPTY_SIZE).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let should_dedup = local_content_dedup_enabled(&policy);
 

@@ -20,6 +20,7 @@ pub async fn prepare() -> Result<AppState> {
 
     // 3. 确保默认存储策略存在
     ensure_default_policy(&database).await?;
+    crate::services::policy_service::ensure_policy_groups_seeded(&database).await?;
 
     // 4. 确保默认运行时配置存在
     crate::db::repository::config_repo::ensure_defaults(&database).await?;

@@ -141,7 +141,9 @@ pub async fn init_upload(
     };
 
     // 确定存储策略
-    let policy = file_service::resolve_policy(state, user_id, resolved_folder_id).await?;
+    let policy =
+        file_service::resolve_policy_for_size(state, user_id, resolved_folder_id, total_size)
+            .await?;
 
     // 检查文件大小限制
     if policy.max_file_size > 0 && total_size > policy.max_file_size {

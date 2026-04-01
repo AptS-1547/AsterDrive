@@ -24,6 +24,7 @@ pub struct Model {
     pub session_version: i64,
     pub storage_used: i64,
     pub storage_quota: i64, // 0 = unlimited
+    pub policy_group_id: Option<i64>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTimeUtc,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -40,6 +41,12 @@ pub enum Relation {
     Folders,
     #[sea_orm(has_many = "super::user_storage_policy::Entity")]
     UserStoragePolicies,
+    #[sea_orm(
+        belongs_to = "super::storage_policy_group::Entity",
+        from = "Column::PolicyGroupId",
+        to = "super::storage_policy_group::Column::Id"
+    )]
+    StoragePolicyGroup,
 }
 
 impl Related<super::file::Entity> for Entity {
@@ -57,6 +64,12 @@ impl Related<super::folder::Entity> for Entity {
 impl Related<super::user_storage_policy::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::UserStoragePolicies.def()
+    }
+}
+
+impl Related<super::storage_policy_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StoragePolicyGroup.def()
     }
 }
 

@@ -66,6 +66,11 @@ export default function AdminAuditPage() {
 
 	const totalPages = Math.ceil(total / limit);
 	const currentPage = Math.floor(offset / limit) + 1;
+	const entityTypeOptions = [
+		{ label: t("audit_all_types"), value: "__all__" },
+		{ label: t("core:file"), value: "file" },
+		{ label: t("core:folder"), value: "folder" },
+	] satisfies ReadonlyArray<{ label: string; value: string }>;
 
 	return (
 		<AdminLayout>
@@ -85,6 +90,7 @@ export default function AdminAuditPage() {
 								className={`${ADMIN_CONTROL_HEIGHT_CLASS} max-w-xs`}
 							/>
 							<Select
+								items={entityTypeOptions}
 								value={entityTypeFilter}
 								onValueChange={(v) => {
 									if (v) setEntityTypeFilter(v);
@@ -97,11 +103,11 @@ export default function AdminAuditPage() {
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="__all__">
-										{t("audit_all_types")}
-									</SelectItem>
-									<SelectItem value="file">{t("core:file")}</SelectItem>
-									<SelectItem value="folder">{t("core:folder")}</SelectItem>
+									{entityTypeOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 						</>

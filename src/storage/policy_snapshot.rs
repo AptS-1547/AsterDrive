@@ -3,14 +3,23 @@ use std::sync::RwLock;
 
 use sea_orm::ConnectionTrait;
 
-use crate::db::repository::policy_repo;
-use crate::entities::storage_policy;
+use crate::db::repository::{policy_group_repo, policy_repo, user_repo};
+use crate::entities::{storage_policy, storage_policy_group, storage_policy_group_item};
 use crate::errors::{AsterError, Result};
+
+#[derive(Clone, Debug)]
+pub struct ResolvedPolicyGroupItem {
+    pub item: storage_policy_group_item::Model,
+    pub policy: storage_policy::Model,
+}
 
 #[derive(Default)]
 struct PolicySnapshotData {
     policies_by_id: HashMap<i64, storage_policy::Model>,
-    user_default_policy_by_user_id: HashMap<i64, i64>,
+    policy_groups_by_id: HashMap<i64, storage_policy_group::Model>,
+    policy_group_items_by_group_id: HashMap<i64, Vec<ResolvedPolicyGroupItem>>,
+    user_policy_group_by_user_id: HashMap<i64, i64>,
+    system_default_policy_group_id: Option<i64>,
     system_default_policy_id: Option<i64>,
 }
 
@@ -27,19 +36,45 @@ impl PolicySnapshot {
 
     pub async fn reload<C: ConnectionTrait>(&self, db: &C) -> Result<()> {
         let policies = policy_repo::find_all(db).await?;
-        let user_defaults = policy_repo::find_all_user_defaults(db).await?;
+        let policy_groups = policy_group_repo::find_all_groups(db).await?;
+        let policy_group_items = policy_group_repo::find_all_group_items(db).await?;
+        let users = user_repo::find_all(db).await?;
 
         let system_default_policy_id = policies
             .iter()
             .find(|policy| policy.is_default)
-            .map(|p| p.id);
+            .map(|policy| policy.id);
         let policies_by_id = policies
             .into_iter()
             .map(|policy| (policy.id, policy))
-            .collect();
-        let user_default_policy_by_user_id = user_defaults
+            .collect::<HashMap<_, _>>();
+        let system_default_policy_group_id = policy_groups
+            .iter()
+            .find(|group| group.is_default)
+            .map(|group| group.id);
+        let policy_groups_by_id = policy_groups
             .into_iter()
-            .map(|assignment| (assignment.user_id, assignment.policy_id))
+            .map(|group| (group.id, group))
+            .collect::<HashMap<_, _>>();
+
+        let mut policy_group_items_by_group_id: HashMap<i64, Vec<ResolvedPolicyGroupItem>> =
+            HashMap::new();
+        for item in policy_group_items {
+            let Some(policy) = policies_by_id.get(&item.policy_id).cloned() else {
+                continue;
+            };
+            policy_group_items_by_group_id
+                .entry(item.group_id)
+                .or_default()
+                .push(ResolvedPolicyGroupItem { item, policy });
+        }
+        for items in policy_group_items_by_group_id.values_mut() {
+            items.sort_by_key(|resolved| (resolved.item.priority, resolved.item.id));
+        }
+
+        let user_policy_group_by_user_id = users
+            .into_iter()
+            .filter_map(|user| user.policy_group_id.map(|group_id| (user.id, group_id)))
             .collect();
 
         *self
@@ -47,7 +82,10 @@ impl PolicySnapshot {
             .write()
             .expect("policy snapshot lock poisoned") = PolicySnapshotData {
             policies_by_id,
-            user_default_policy_by_user_id,
+            policy_groups_by_id,
+            policy_group_items_by_group_id,
+            user_policy_group_by_user_id,
+            system_default_policy_group_id,
             system_default_policy_id,
         };
 
@@ -68,19 +106,124 @@ impl PolicySnapshot {
             .ok_or_else(|| AsterError::storage_policy_not_found(format!("policy #{policy_id}")))
     }
 
-    pub fn resolve_default_policy_id(&self, user_id: i64) -> Option<i64> {
-        let snapshot = self.snapshot.read().expect("policy snapshot lock poisoned");
-        snapshot
-            .user_default_policy_by_user_id
+    pub fn get_policy_group(&self, group_id: i64) -> Option<storage_policy_group::Model> {
+        self.snapshot
+            .read()
+            .expect("policy snapshot lock poisoned")
+            .policy_groups_by_id
+            .get(&group_id)
+            .cloned()
+    }
+
+    pub fn get_policy_group_or_err(&self, group_id: i64) -> Result<storage_policy_group::Model> {
+        self.get_policy_group(group_id).ok_or_else(|| {
+            AsterError::record_not_found(format!("storage_policy_group #{group_id}"))
+        })
+    }
+
+    pub fn get_policy_group_items(&self, group_id: i64) -> Vec<ResolvedPolicyGroupItem> {
+        self.snapshot
+            .read()
+            .expect("policy snapshot lock poisoned")
+            .policy_group_items_by_group_id
+            .get(&group_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn resolve_default_policy_group_id(&self, user_id: i64) -> Option<i64> {
+        self.snapshot
+            .read()
+            .expect("policy snapshot lock poisoned")
+            .user_policy_group_by_user_id
             .get(&user_id)
             .copied()
-            .filter(|policy_id| snapshot.policies_by_id.contains_key(policy_id))
-            .or(snapshot.system_default_policy_id)
+    }
+
+    pub fn resolve_default_policy_group(
+        &self,
+        user_id: i64,
+    ) -> Option<storage_policy_group::Model> {
+        let group_id = self.resolve_default_policy_group_id(user_id)?;
+        self.get_policy_group(group_id)
+    }
+
+    pub fn require_user_policy_group_id(&self, user_id: i64) -> Result<i64> {
+        self.resolve_default_policy_group_id(user_id)
+            .ok_or_else(|| {
+                AsterError::storage_policy_not_found(format!(
+                    "no storage policy group assigned to user #{user_id}"
+                ))
+            })
+    }
+
+    pub fn resolve_policy_in_group(
+        &self,
+        group_id: i64,
+        file_size: i64,
+    ) -> Result<storage_policy::Model> {
+        let group = self.get_policy_group_or_err(group_id)?;
+        if !group.is_enabled {
+            return Err(AsterError::validation_error(format!(
+                "storage policy group #{} is disabled",
+                group.id
+            )));
+        }
+
+        let items = self.get_policy_group_items(group_id);
+        if items.is_empty() {
+            return Err(AsterError::storage_policy_not_found(format!(
+                "policy group #{} has no policies",
+                group_id
+            )));
+        }
+
+        for resolved in &items {
+            if matches_size_rule(&resolved.item, file_size) {
+                return Ok(resolved.policy.clone());
+            }
+        }
+
+        Err(AsterError::validation_error(format!(
+            "no storage policy rule in group #{} matches file size {}",
+            group_id, file_size
+        )))
+    }
+
+    pub fn resolve_user_policy_id_for_size(&self, user_id: i64, file_size: i64) -> Result<i64> {
+        let group_id = self.require_user_policy_group_id(user_id)?;
+        self.resolve_policy_in_group(group_id, file_size)
+            .map(|policy| policy.id)
+    }
+
+    pub fn resolve_user_policy_for_size(
+        &self,
+        user_id: i64,
+        file_size: i64,
+    ) -> Result<storage_policy::Model> {
+        let group_id = self.require_user_policy_group_id(user_id)?;
+        self.resolve_policy_in_group(group_id, file_size)
+    }
+
+    pub fn resolve_default_policy_id(&self, user_id: i64) -> Option<i64> {
+        self.resolve_default_policy_id_for_size(user_id, 0)
+    }
+
+    pub fn resolve_default_policy_id_for_size(&self, user_id: i64, file_size: i64) -> Option<i64> {
+        self.resolve_user_policy_id_for_size(user_id, file_size)
+            .ok()
     }
 
     pub fn resolve_default_policy(&self, user_id: i64) -> Option<storage_policy::Model> {
-        let policy_id = self.resolve_default_policy_id(user_id)?;
-        self.get_policy(policy_id)
+        self.resolve_default_policy_for_size(user_id, 0)
+    }
+
+    pub fn resolve_default_policy_for_size(
+        &self,
+        user_id: i64,
+        file_size: i64,
+    ) -> Option<storage_policy::Model> {
+        self.resolve_user_policy_for_size(user_id, file_size).ok()
     }
 
     pub fn system_default_policy(&self) -> Option<storage_policy::Model> {
@@ -92,21 +235,37 @@ impl PolicySnapshot {
         self.get_policy(policy_id)
     }
 
-    pub fn set_user_default_policy(&self, user_id: i64, policy_id: i64) {
-        self.snapshot
-            .write()
+    pub fn system_default_policy_group(&self) -> Option<storage_policy_group::Model> {
+        let group_id = self
+            .snapshot
+            .read()
             .expect("policy snapshot lock poisoned")
-            .user_default_policy_by_user_id
-            .insert(user_id, policy_id);
+            .system_default_policy_group_id?;
+        self.get_policy_group(group_id)
     }
 
-    pub fn remove_user_default_policy(&self, user_id: i64) {
+    pub fn set_user_policy_group(&self, user_id: i64, group_id: i64) {
         self.snapshot
             .write()
             .expect("policy snapshot lock poisoned")
-            .user_default_policy_by_user_id
+            .user_policy_group_by_user_id
+            .insert(user_id, group_id);
+    }
+
+    pub fn remove_user_policy_group(&self, user_id: i64) {
+        self.snapshot
+            .write()
+            .expect("policy snapshot lock poisoned")
+            .user_policy_group_by_user_id
             .remove(&user_id);
     }
+}
+
+fn matches_size_rule(item: &storage_policy_group_item::Model, file_size: i64) -> bool {
+    if file_size < item.min_file_size {
+        return false;
+    }
+    item.max_file_size == 0 || file_size < item.max_file_size
 }
 
 impl Default for PolicySnapshot {
@@ -120,11 +279,11 @@ mod tests {
     use super::PolicySnapshot;
     use crate::config::DatabaseConfig;
     use crate::db;
-    use crate::db::repository::{policy_repo, user_repo};
+    use crate::db::repository::{policy_group_repo, policy_repo, user_repo};
     use crate::types::{DriverType, UserRole, UserStatus};
     use chrono::Utc;
     use migration::{Migrator, MigratorTrait};
-    use sea_orm::Set;
+    use sea_orm::{ActiveModelTrait, Set};
 
     async fn setup_db() -> sea_orm::DatabaseConnection {
         let db = db::connect(&DatabaseConfig {
@@ -169,6 +328,46 @@ mod tests {
         .unwrap()
     }
 
+    async fn create_group(
+        db: &sea_orm::DatabaseConnection,
+        name: &str,
+        policy_id: i64,
+        is_default: bool,
+        min_file_size: i64,
+        max_file_size: i64,
+    ) -> crate::entities::storage_policy_group::Model {
+        let now = Utc::now();
+        let group = policy_group_repo::create_group(
+            db,
+            crate::entities::storage_policy_group::ActiveModel {
+                name: Set(name.to_string()),
+                description: Set(String::new()),
+                is_enabled: Set(true),
+                is_default: Set(is_default),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        policy_group_repo::create_group_item(
+            db,
+            crate::entities::storage_policy_group_item::ActiveModel {
+                group_id: Set(group.id),
+                policy_id: Set(policy_id),
+                priority: Set(1),
+                min_file_size: Set(min_file_size),
+                max_file_size: Set(max_file_size),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        group
+    }
+
     async fn create_user(
         db: &sea_orm::DatabaseConnection,
         username: &str,
@@ -197,81 +396,156 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reload_exposes_policies_and_system_default() {
+    async fn reload_exposes_policies_and_system_default_group() {
         let db = setup_db().await;
         let system_default =
             create_policy(&db, "System Default", "/tmp/policy-snap-default", true).await;
         let secondary = create_policy(&db, "Secondary", "/tmp/policy-snap-secondary", false).await;
+        let default_group = create_group(&db, "Default Group", system_default.id, true, 0, 0).await;
         let snapshot = PolicySnapshot::new();
 
         snapshot.reload(&db).await.unwrap();
 
         assert_eq!(
-            snapshot.system_default_policy().unwrap().id,
-            system_default.id
+            snapshot.system_default_policy_group().unwrap().id,
+            default_group.id
         );
         assert_eq!(snapshot.get_policy(secondary.id).unwrap().name, "Secondary");
     }
 
     #[tokio::test]
-    async fn resolve_default_policy_prefers_user_default_and_falls_back_to_system_default() {
+    async fn resolve_default_policy_uses_assigned_group_and_does_not_fall_back() {
         let db = setup_db().await;
         let system_default =
             create_policy(&db, "System Default", "/tmp/policy-snap-fallback", true).await;
         let user_default = create_policy(&db, "User Default", "/tmp/policy-snap-user", false).await;
-        let now = Utc::now();
+        create_group(&db, "System Default Group", system_default.id, true, 0, 0).await;
+        let user_default_group =
+            create_group(&db, "User Default Group", user_default.id, false, 0, 0).await;
+
         let user = create_user(
             &db,
             "policy_snapshot_user",
             "policy_snapshot_user@example.com",
         )
         .await;
+        let mut user_active: crate::entities::user::ActiveModel = user.clone().into();
+        user_active.policy_group_id = Set(Some(user_default_group.id));
+        user_active.update(&db).await.unwrap();
 
-        policy_repo::create_user_policy(
+        let snapshot = PolicySnapshot::new();
+        snapshot.reload(&db).await.unwrap();
+
+        assert_eq!(
+            snapshot.resolve_default_policy_group_id(user.id),
+            Some(user_default_group.id)
+        );
+        assert_eq!(
+            snapshot
+                .resolve_default_policy_for_size(user.id, 16)
+                .unwrap()
+                .id,
+            user_default.id
+        );
+        assert!(snapshot.resolve_default_policy_for_size(9999, 16).is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_policy_in_group_uses_size_rules() {
+        let db = setup_db().await;
+        let small = create_policy(&db, "Small", "/tmp/policy-snap-small", true).await;
+        let large = create_policy(&db, "Large", "/tmp/policy-snap-large", false).await;
+        let now = Utc::now();
+        let group = policy_group_repo::create_group(
             &db,
-            crate::entities::user_storage_policy::ActiveModel {
-                user_id: Set(user.id),
-                policy_id: Set(user_default.id),
+            crate::entities::storage_policy_group::ActiveModel {
+                name: Set("Tiered".to_string()),
+                description: Set(String::new()),
+                is_enabled: Set(true),
                 is_default: Set(true),
-                quota_bytes: Set(0),
                 created_at: Set(now),
+                updated_at: Set(now),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
+        for (priority, policy_id, min_file_size, max_file_size) in
+            [(1, small.id, 0, 10), (2, large.id, 10, 0)]
+        {
+            policy_group_repo::create_group_item(
+                &db,
+                crate::entities::storage_policy_group_item::ActiveModel {
+                    group_id: Set(group.id),
+                    policy_id: Set(policy_id),
+                    priority: Set(priority),
+                    min_file_size: Set(min_file_size),
+                    max_file_size: Set(max_file_size),
+                    created_at: Set(now),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
 
         let snapshot = PolicySnapshot::new();
         snapshot.reload(&db).await.unwrap();
 
         assert_eq!(
-            snapshot.resolve_default_policy_id(user.id),
-            Some(user_default.id)
+            snapshot.resolve_policy_in_group(group.id, 5).unwrap().id,
+            small.id
         );
         assert_eq!(
-            snapshot.resolve_default_policy_id(9999),
-            Some(system_default.id)
+            snapshot.resolve_policy_in_group(group.id, 1024).unwrap().id,
+            large.id
         );
     }
 
     #[tokio::test]
-    async fn invalid_user_default_mapping_falls_back_to_system_default() {
+    async fn resolve_policy_in_group_errors_when_no_rule_matches() {
         let db = setup_db().await;
-        let system_default =
-            create_policy(&db, "System Default", "/tmp/policy-snap-invalid", true).await;
+        let small = create_policy(&db, "Small", "/tmp/policy-snap-gap-small", true).await;
+        let large = create_policy(&db, "Large", "/tmp/policy-snap-gap-large", false).await;
+        let now = Utc::now();
+        let group = policy_group_repo::create_group(
+            &db,
+            crate::entities::storage_policy_group::ActiveModel {
+                name: Set("Gap".to_string()),
+                description: Set(String::new()),
+                is_enabled: Set(true),
+                is_default: Set(true),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for (priority, policy_id, min_file_size, max_file_size) in
+            [(1, small.id, 0, 10), (2, large.id, 20, 0)]
+        {
+            policy_group_repo::create_group_item(
+                &db,
+                crate::entities::storage_policy_group_item::ActiveModel {
+                    group_id: Set(group.id),
+                    policy_id: Set(policy_id),
+                    priority: Set(priority),
+                    min_file_size: Set(min_file_size),
+                    max_file_size: Set(max_file_size),
+                    created_at: Set(now),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
         let snapshot = PolicySnapshot::new();
         snapshot.reload(&db).await.unwrap();
 
-        snapshot.set_user_default_policy(7, 999_999);
-        assert_eq!(
-            snapshot.resolve_default_policy_id(7),
-            Some(system_default.id)
-        );
-
-        snapshot.remove_user_default_policy(7);
-        assert_eq!(
-            snapshot.resolve_default_policy_id(7),
-            Some(system_default.id)
-        );
+        let err = snapshot.resolve_policy_in_group(group.id, 15).unwrap_err();
+        assert_eq!(err.code(), "E005");
+        assert!(err.message().contains("no storage policy rule"));
     }
 }

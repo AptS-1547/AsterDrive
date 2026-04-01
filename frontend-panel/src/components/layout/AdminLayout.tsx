@@ -28,6 +28,11 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 		{ to: "/admin/overview", label: t("overview"), icon: "Presentation" },
 		{ to: "/admin/users", label: t("users"), icon: "Shield" },
 		{ to: "/admin/policies", label: t("policies"), icon: "HardDrive" },
+		{
+			to: "/admin/policy-groups",
+			label: t("policy_groups"),
+			icon: "ListBullets",
+		},
 		{ to: "/admin/shares", label: t("shares"), icon: "Link" },
 		{ to: "/admin/locks", label: t("locks"), icon: "Lock" },
 		{ to: "/admin/settings", label: t("system_settings"), icon: "Gear" },

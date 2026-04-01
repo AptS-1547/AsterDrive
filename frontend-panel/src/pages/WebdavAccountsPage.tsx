@@ -132,6 +132,16 @@ export default function WebdavAccountsPage() {
 		typeof window === "undefined"
 			? endpointPath
 			: `${window.location.origin}${endpointPath}`;
+	const rootFolderOptions = [
+		{
+			label: t("webdav:all_files_full_access"),
+			value: "__all__",
+		},
+		...folders.map((folder) => ({
+			label: `/${folder.name}`,
+			value: String(folder.id),
+		})),
+	];
 	const sortedAccounts = useMemo(
 		() =>
 			[...accounts].sort(
@@ -265,6 +275,7 @@ export default function WebdavAccountsPage() {
 						<div className="space-y-1.5">
 							<Label htmlFor="rootFolder">{t("webdav:access_scope")}</Label>
 							<Select
+								items={rootFolderOptions}
 								value={
 									selectedFolderId != null
 										? String(selectedFolderId)
@@ -280,12 +291,9 @@ export default function WebdavAccountsPage() {
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="__all__">
-										{t("webdav:all_files_full_access")}
-									</SelectItem>
-									{folders.map((folder) => (
-										<SelectItem key={folder.id} value={String(folder.id)}>
-											/{folder.name}
+									{rootFolderOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
 										</SelectItem>
 									))}
 								</SelectContent>

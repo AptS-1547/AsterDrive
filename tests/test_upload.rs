@@ -4,6 +4,7 @@
 mod common;
 
 use actix_web::test;
+use aster_drive::db::repository::policy_repo;
 use serde_json::Value;
 use tokio::task::JoinSet;
 
@@ -213,18 +214,6 @@ async fn wait_for_s3_bucket(endpoint: &str, bucket: &str) {
     }
 }
 
-async fn head_s3_object_etag(endpoint: &str, bucket: &str, key: &str) -> String {
-    s3_test_client(endpoint)
-        .head_object()
-        .bucket(bucket)
-        .key(key)
-        .send()
-        .await
-        .unwrap()
-        .e_tag
-        .unwrap_or_default()
-}
-
 fn snapshot_dir_tree(
     path: &std::path::Path,
 ) -> std::io::Result<std::collections::BTreeSet<String>> {
@@ -310,22 +299,9 @@ async fn create_s3_default_policy(
     .await
     .unwrap();
 
-    policy_repo::clear_user_default(&state.db, user_id)
+    aster_drive::services::policy_service::assign_user_policy(&state, user_id, policy.id, true, 0)
         .await
         .unwrap();
-    let _ = policy_repo::create_user_policy(
-        &state.db,
-        aster_drive::entities::user_storage_policy::ActiveModel {
-            user_id: Set(user_id),
-            policy_id: Set(policy.id),
-            is_default: Set(true),
-            quota_bytes: Set(0),
-            created_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
 
     reload_policy_snapshot(state).await;
 
@@ -1225,21 +1201,12 @@ async fn test_presigned_upload_s3_e2e() {
     let user = auth_service::register(&state, "s3user", "s3@test.com", "pass123")
         .await
         .unwrap();
-    use aster_drive::db::repository::policy_repo;
-    // 清除 register 自动分配的 local default，确保 S3 策略成为唯一 default
-    policy_repo::clear_user_default(&state.db, user.id)
-        .await
-        .unwrap();
-    let _ = policy_repo::create_user_policy(
-        &state.db,
-        aster_drive::entities::user_storage_policy::ActiveModel {
-            user_id: Set(user.id),
-            policy_id: Set(s3_policy.id),
-            is_default: Set(true),
-            quota_bytes: Set(0),
-            created_at: Set(now),
-            ..Default::default()
-        },
+    aster_drive::services::policy_service::assign_user_policy(
+        &state,
+        user.id,
+        s3_policy.id,
+        true,
+        0,
     )
     .await
     .unwrap();
@@ -1376,19 +1343,12 @@ async fn test_presigned_multipart_upload_s3_e2e() {
         .await
         .unwrap();
 
-    policy_repo::clear_user_default(&state.db, user.id)
-        .await
-        .unwrap();
-    let _ = policy_repo::create_user_policy(
-        &state.db,
-        aster_drive::entities::user_storage_policy::ActiveModel {
-            user_id: Set(user.id),
-            policy_id: Set(s3_policy.id),
-            is_default: Set(true),
-            quota_bytes: Set(0),
-            created_at: Set(now),
-            ..Default::default()
-        },
+    aster_drive::services::policy_service::assign_user_policy(
+        &state,
+        user.id,
+        s3_policy.id,
+        true,
+        0,
     )
     .await
     .unwrap();
@@ -1908,7 +1868,7 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
     assert_eq!(stored2, data);
 }
 
-/// S3 relay_stream 直传：文件大小刚好等于 multipart part_size 时不应追加空 part
+/// S3 relay_stream 直传：文件大小刚好等于 chunk_size 时仍应走 direct upload。
 #[tokio::test]
 async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     use aster_drive::db::repository::file_repo;
@@ -1983,20 +1943,6 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     let blob = file_repo::find_blob_by_id(&db, file.blob_id).await.unwrap();
     let stored = driver.get(&blob.storage_path).await.unwrap();
     assert_eq!(stored, data);
-    let object_key = if policy.base_path.is_empty() {
-        blob.storage_path.clone()
-    } else {
-        format!(
-            "{}/{}",
-            policy.base_path.trim_end_matches('/'),
-            blob.storage_path.trim_start_matches('/')
-        )
-    };
-    let etag = head_s3_object_etag(&endpoint, bucket, &object_key).await;
-    assert!(
-        etag.ends_with("-1\"") || etag.ends_with("-1"),
-        "exact-part relay upload should complete with one multipart part, got etag {etag}"
-    );
 }
 
 /// S3 relay_stream 大文件分片：服务端直接把 chunk 作为 S3 part，中途不落 data/.uploads

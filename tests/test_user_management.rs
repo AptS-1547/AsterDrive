@@ -326,18 +326,11 @@ async fn test_admin_create_user_uses_default_quota_and_policy() {
     let body: Value = test::read_body_json(resp).await;
     let user_id = body["data"]["id"].as_i64().unwrap();
     assert_eq!(body["data"]["storage_quota"], 1_048_576);
-
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    let items = body["data"]["items"].as_array().unwrap();
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["is_default"], true);
-    assert_eq!(items[0]["quota_bytes"], 1_048_576);
+    assert!(user_id > 0);
+    assert!(
+        body["data"]["policy_group_id"].as_i64().unwrap() > 0,
+        "admin-created user should inherit the new-user default policy group"
+    );
 }
 
 #[actix_web::test]

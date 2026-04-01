@@ -5,7 +5,8 @@ use crate::entities::{
 };
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
+    QueryOrder, Set, sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<storage_policy::Model> {
@@ -19,6 +20,7 @@ pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<storage_p
 pub async fn find_default<C: ConnectionTrait>(db: &C) -> Result<Option<storage_policy::Model>> {
     StoragePolicy::find()
         .filter(storage_policy::Column::IsDefault.eq(true))
+        .order_by_asc(storage_policy::Column::Id)
         .one(db)
         .await
         .map_err(AsterError::from)
@@ -87,6 +89,20 @@ pub async fn clear_system_default<C: ConnectionTrait>(db: &C) -> Result<()> {
         active.is_default = Set(false);
         active.update(db).await.map_err(AsterError::from)?;
     }
+    Ok(())
+}
+
+pub async fn set_only_default<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    StoragePolicy::update_many()
+        .col_expr(
+            storage_policy::Column::IsDefault,
+            Expr::case(Expr::col(storage_policy::Column::Id).eq(id), true)
+                .finally(false)
+                .into(),
+        )
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
     Ok(())
 }
 

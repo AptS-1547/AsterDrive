@@ -3,9 +3,9 @@ import {
 	adminConfigService,
 	adminLockService,
 	adminOverviewService,
+	adminPolicyGroupService,
 	adminPolicyService,
 	adminShareService,
-	adminUserPolicyService,
 	adminUserService,
 } from "@/services/adminService";
 
@@ -45,7 +45,7 @@ describe("adminService", () => {
 			status: "active" as never,
 		});
 		adminPolicyService.list({ limit: 5, offset: 10 });
-		adminUserPolicyService.list(7, { offset: 2 });
+		adminPolicyGroupService.list({ limit: 6, offset: 12 });
 		adminShareService.list({ limit: 8, offset: 16 });
 		adminLockService.list({ limit: 9 });
 		adminConfigService.list({ offset: 3 });
@@ -60,7 +60,7 @@ describe("adminService", () => {
 		);
 		expect(mockState.get).toHaveBeenNthCalledWith(
 			3,
-			"/admin/users/7/policies?offset=2",
+			"/admin/policy-groups?limit=6&offset=12",
 		);
 		expect(mockState.get).toHaveBeenNthCalledWith(
 			4,
@@ -73,17 +73,47 @@ describe("adminService", () => {
 	it("uses bare list endpoints when no query params are provided", () => {
 		adminUserService.list();
 		adminPolicyService.list();
-		adminUserPolicyService.list(9);
+		adminPolicyGroupService.list();
 		adminShareService.list();
 		adminLockService.list();
 		adminConfigService.list();
 
 		expect(mockState.get).toHaveBeenNthCalledWith(1, "/admin/users");
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/admin/policies");
-		expect(mockState.get).toHaveBeenNthCalledWith(3, "/admin/users/9/policies");
+		expect(mockState.get).toHaveBeenNthCalledWith(3, "/admin/policy-groups");
 		expect(mockState.get).toHaveBeenNthCalledWith(4, "/admin/shares");
 		expect(mockState.get).toHaveBeenNthCalledWith(5, "/admin/locks");
 		expect(mockState.get).toHaveBeenNthCalledWith(6, "/admin/config");
+	});
+
+	it("loads all policy groups across multiple pages", async () => {
+		mockState.get
+			.mockResolvedValueOnce({
+				items: [{ id: 1 }, { id: 2 }],
+				limit: 2,
+				offset: 0,
+				total: 3,
+			})
+			.mockResolvedValueOnce({
+				items: [{ id: 3 }],
+				limit: 2,
+				offset: 2,
+				total: 3,
+			});
+
+		await expect(adminPolicyGroupService.listAll(2)).resolves.toEqual([
+			{ id: 1 },
+			{ id: 2 },
+			{ id: 3 },
+		]);
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			1,
+			"/admin/policy-groups?limit=2&offset=0",
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			2,
+			"/admin/policy-groups?limit=2&offset=2",
+		);
 	});
 
 	it("uses the expected detail and mutation endpoints", () => {
@@ -98,7 +128,10 @@ describe("adminService", () => {
 			email: "alice@example.com",
 			password: "secret",
 		});
-		adminUserService.update(5, { storage_quota: 1024 });
+		adminUserService.update(5, {
+			storage_quota: 1024,
+			policy_group_id: 7,
+		});
 		adminUserService.resetPassword(5, { password: "newsecret" });
 		adminUserService.revokeSessions(5);
 		adminUserService.delete(5);
@@ -116,10 +149,14 @@ describe("adminService", () => {
 			driver_type: "s3" as never,
 			endpoint: "https://example.com",
 		});
-
-		adminUserPolicyService.assign(5, { policy_id: 3, quota_bytes: 2048 });
-		adminUserPolicyService.update(5, 4, { is_default: true });
-		adminUserPolicyService.remove(5, 4);
+		adminPolicyGroupService.get(4);
+		adminPolicyGroupService.create({
+			name: "Default Group",
+			items: [{ policy_id: 3, priority: 1 }],
+		});
+		adminPolicyGroupService.update(4, { is_default: true });
+		adminPolicyGroupService.migrateUsers(4, { target_group_id: 8 });
+		adminPolicyGroupService.delete(4);
 
 		adminShareService.delete(11);
 
@@ -143,6 +180,7 @@ describe("adminService", () => {
 		});
 		expect(mockState.patch).toHaveBeenNthCalledWith(1, "/admin/users/5", {
 			storage_quota: 1024,
+			policy_group_id: 7,
 		});
 		expect(mockState.put).toHaveBeenNthCalledWith(
 			1,
@@ -172,33 +210,36 @@ describe("adminService", () => {
 			driver_type: "s3",
 			endpoint: "https://example.com",
 		});
-
-		expect(mockState.post).toHaveBeenNthCalledWith(
-			6,
-			"/admin/users/5/policies",
-			{
-				policy_id: 3,
-				quota_bytes: 2048,
-			},
-		);
+		expect(mockState.get).toHaveBeenNthCalledWith(4, "/admin/policy-groups/4");
+		expect(mockState.post).toHaveBeenNthCalledWith(6, "/admin/policy-groups", {
+			name: "Default Group",
+			items: [{ policy_id: 3, priority: 1 }],
+		});
 		expect(mockState.patch).toHaveBeenNthCalledWith(
 			3,
-			"/admin/users/5/policies/4",
+			"/admin/policy-groups/4",
 			{
 				is_default: true,
 			},
 		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			7,
+			"/admin/policy-groups/4/migrate-users",
+			{
+				target_group_id: 8,
+			},
+		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(
 			3,
-			"/admin/users/5/policies/4",
+			"/admin/policy-groups/4",
 		);
 
 		expect(mockState.delete).toHaveBeenNthCalledWith(4, "/admin/shares/11");
 		expect(mockState.delete).toHaveBeenNthCalledWith(5, "/admin/locks/12");
 		expect(mockState.delete).toHaveBeenNthCalledWith(6, "/admin/locks/expired");
 
-		expect(mockState.get).toHaveBeenNthCalledWith(4, "/admin/config/schema");
-		expect(mockState.get).toHaveBeenNthCalledWith(5, "/admin/config/mail.host");
+		expect(mockState.get).toHaveBeenNthCalledWith(5, "/admin/config/schema");
+		expect(mockState.get).toHaveBeenNthCalledWith(6, "/admin/config/mail.host");
 		expect(mockState.put).toHaveBeenCalledWith("/admin/config/mail.host", {
 			value: "smtp.example.com",
 		});

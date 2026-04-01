@@ -42,6 +42,29 @@ pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<user::Model>> {
         .map_err(AsterError::from)
 }
 
+pub async fn find_by_policy_group<C: ConnectionTrait>(
+    db: &C,
+    policy_group_id: i64,
+) -> Result<Vec<user::Model>> {
+    User::find()
+        .filter(user::Column::PolicyGroupId.eq(policy_group_id))
+        .order_by_asc(user::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn count_by_policy_group<C: ConnectionTrait>(
+    db: &C,
+    policy_group_id: i64,
+) -> Result<u64> {
+    User::find()
+        .filter(user::Column::PolicyGroupId.eq(policy_group_id))
+        .count(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_paginated<C: ConnectionTrait>(
     db: &C,
     limit: u64,
