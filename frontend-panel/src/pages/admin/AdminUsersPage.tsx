@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -53,6 +53,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
+import { useApiList } from "@/hooks/useApiList";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	ADMIN_ICON_BUTTON_CLASS,
@@ -109,9 +110,6 @@ export default function AdminUsersPage() {
 	const initialKeyword = searchParams.get("keyword") ?? "";
 	const initialRole = searchParams.get("role");
 	const initialStatus = searchParams.get("status");
-	const [users, setUsers] = useState<UserInfo[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [total, setTotal] = useState(0);
 	const [offset, setOffset] = useState(
 		parseOffsetSearchParam(searchParams.get("offset")),
 	);
@@ -177,28 +175,24 @@ export default function AdminUsersPage() {
 		statusFilter,
 	]);
 
-	const load = useCallback(async () => {
-		try {
-			setLoading(true);
-			const page = await adminUserService.list({
+	const {
+		items: users,
+		loading,
+		reload: reloadUsers,
+		setItems: setUsers,
+		setTotal,
+		total,
+	} = useApiList(
+		() =>
+			adminUserService.list({
 				limit: pageSize,
 				offset,
 				keyword: debouncedKeyword.trim() || undefined,
 				role: roleFilter === "__all__" ? undefined : roleFilter,
 				status: statusFilter === "__all__" ? undefined : statusFilter,
-			});
-			setUsers(page.items);
-			setTotal(page.total);
-		} catch (e) {
-			handleApiError(e);
-		} finally {
-			setLoading(false);
-		}
-	}, [debouncedKeyword, offset, pageSize, roleFilter, statusFilter]);
-
-	useEffect(() => {
-		void load();
-	}, [load]);
+			}),
+		[debouncedKeyword, offset, pageSize, roleFilter, statusFilter],
+	);
 
 	const activeFilterCount =
 		(debouncedKeyword.trim().length > 0 ? 1 : 0) +
@@ -300,7 +294,7 @@ export default function AdminUsersPage() {
 			toast.success(t("user_created"));
 			setCreateDialogOpen(false);
 			resetCreateForm();
-			await load();
+			await reloadUsers();
 		} catch (e) {
 			handleApiError(e);
 		} finally {
@@ -384,7 +378,7 @@ export default function AdminUsersPage() {
 								variant="outline"
 								size="sm"
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
-								onClick={() => void load()}
+								onClick={() => void reloadUsers()}
 								disabled={loading}
 							>
 								<Icon

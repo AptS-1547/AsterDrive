@@ -27,5 +27,5 @@ export function useApiList<T>(
 		void load().catch(() => {});
 	}, [load]);
 
-	return { items, setItems, total, loading, reload: load };
+	return { items, setItems, total, setTotal, loading, reload: load };
 }

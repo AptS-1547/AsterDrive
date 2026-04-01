@@ -262,6 +262,7 @@ fn snapshot_temp_roots(
     Ok(snapshots)
 }
 
+#[allow(deprecated)]
 async fn create_s3_default_policy(
     state: &aster_drive::runtime::AppState,
     user_id: i64,
@@ -1147,6 +1148,7 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
 }
 
 /// S3 presigned upload 端到端测试（需要 testcontainers + rustfs）
+#[allow(deprecated)]
 #[tokio::test]
 async fn test_presigned_upload_s3_e2e() {
     use aster_drive::services::{auth_service, upload_service};
@@ -1291,6 +1293,7 @@ async fn test_presigned_upload_s3_e2e() {
 }
 
 /// S3 presigned multipart 上传端到端测试：覆盖 presign_parts / progress / complete 排序分支
+#[allow(deprecated)]
 #[tokio::test]
 async fn test_presigned_multipart_upload_s3_e2e() {
     use aster_drive::db::repository::{file_repo, policy_repo};

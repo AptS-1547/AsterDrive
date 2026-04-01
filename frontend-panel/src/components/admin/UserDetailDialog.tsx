@@ -183,11 +183,15 @@ export function UserDetailDialog({
 		user.storage_quota && user.storage_quota > 0
 			? String(Math.round(user.storage_quota / 1024 / 1024))
 			: "0";
+	// Admin PATCH supports assigning a group, but not clearing an existing one.
+	const hasPolicyGroupChange =
+		draftPolicyGroupId != null &&
+		draftPolicyGroupId !== (user.policy_group_id ?? null);
 	const hasProfileChanges =
 		draftRole !== user.role ||
 		draftStatus !== user.status ||
 		quotaValue !== currentQuotaMb ||
-		draftPolicyGroupId !== (user.policy_group_id ?? null);
+		hasPolicyGroupChange;
 	const currentAssignedPolicyGroup =
 		user.policy_group_id == null
 			? null
@@ -244,10 +248,7 @@ export function UserDetailDialog({
 		if (draftRole !== user.role) data.role = draftRole;
 		if (draftStatus !== user.status) data.status = draftStatus;
 		if (newQuota !== (user.storage_quota ?? 0)) data.storage_quota = newQuota;
-		if (
-			draftPolicyGroupId != null &&
-			draftPolicyGroupId !== (user.policy_group_id ?? null)
-		) {
+		if (hasPolicyGroupChange) {
 			data.policy_group_id = draftPolicyGroupId;
 		}
 		if (Object.keys(data).length === 0) return;
@@ -557,9 +558,13 @@ export function UserDetailDialog({
 															? String(draftPolicyGroupId)
 															: ""
 													}
-													onValueChange={(value) =>
-														setDraftPolicyGroupId(value ? Number(value) : null)
-													}
+													onValueChange={(value) => {
+														if (!value) {
+															// The API does not allow unassigning a policy group.
+															return;
+														}
+														setDraftPolicyGroupId(Number(value));
+													}}
 													disabled={
 														savingProfile || policyGroupOptions.length === 0
 													}

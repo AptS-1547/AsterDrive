@@ -148,6 +148,44 @@ pub struct CreatePolicyReq {
     pub options: Option<String>,
 }
 
+fn build_policy_connection_input(
+    driver_type: DriverType,
+    endpoint: Option<String>,
+    bucket: Option<String>,
+    access_key: Option<String>,
+    secret_key: Option<String>,
+    base_path: Option<String>,
+) -> policy_service::StoragePolicyConnectionInput {
+    policy_service::StoragePolicyConnectionInput {
+        driver_type,
+        endpoint: endpoint.unwrap_or_default(),
+        bucket: bucket.unwrap_or_default(),
+        access_key: access_key.unwrap_or_default(),
+        secret_key: secret_key.unwrap_or_default(),
+        base_path: base_path.unwrap_or_default(),
+    }
+}
+
+impl From<CreatePolicyReq> for policy_service::CreateStoragePolicyInput {
+    fn from(value: CreatePolicyReq) -> Self {
+        Self {
+            name: value.name,
+            connection: build_policy_connection_input(
+                value.driver_type,
+                value.endpoint,
+                value.bucket,
+                value.access_key,
+                value.secret_key,
+                value.base_path,
+            ),
+            max_file_size: value.max_file_size.unwrap_or(0),
+            chunk_size: value.chunk_size,
+            is_default: value.is_default.unwrap_or(false),
+            options: value.options,
+        }
+    }
+}
+
 #[api_docs_macros::path(
     post,
     path = "/api/v1/admin/policies",
@@ -165,21 +203,7 @@ pub async fn create_policy(
     state: web::Data<AppState>,
     body: web::Json<CreatePolicyReq>,
 ) -> Result<HttpResponse> {
-    let policy = policy_service::create(
-        &state,
-        &body.name,
-        body.driver_type,
-        body.endpoint.as_deref().unwrap_or_default(),
-        body.bucket.as_deref().unwrap_or_default(),
-        body.access_key.as_deref().unwrap_or_default(),
-        body.secret_key.as_deref().unwrap_or_default(),
-        body.base_path.as_deref().unwrap_or_default(),
-        body.max_file_size.unwrap_or(0),
-        body.chunk_size,
-        body.is_default.unwrap_or(false),
-        body.options.clone(),
-    )
-    .await?;
+    let policy = policy_service::create(&state, body.into_inner().into()).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(policy)))
 }
 
@@ -217,6 +241,23 @@ pub struct PatchPolicyReq {
     pub options: Option<String>,
 }
 
+impl From<PatchPolicyReq> for policy_service::UpdateStoragePolicyInput {
+    fn from(value: PatchPolicyReq) -> Self {
+        Self {
+            name: value.name,
+            endpoint: value.endpoint,
+            bucket: value.bucket,
+            access_key: value.access_key,
+            secret_key: value.secret_key,
+            base_path: value.base_path,
+            max_file_size: value.max_file_size,
+            chunk_size: value.chunk_size,
+            is_default: value.is_default,
+            options: value.options,
+        }
+    }
+}
+
 #[api_docs_macros::path(
     patch,
     path = "/api/v1/admin/policies/{id}",
@@ -237,22 +278,7 @@ pub async fn update_policy(
     path: web::Path<i64>,
     body: web::Json<PatchPolicyReq>,
 ) -> Result<HttpResponse> {
-    let body = body.into_inner();
-    let policy = policy_service::update(
-        &state,
-        *path,
-        body.name,
-        body.endpoint,
-        body.bucket,
-        body.access_key,
-        body.secret_key,
-        body.base_path,
-        body.max_file_size,
-        body.chunk_size,
-        body.is_default,
-        body.options,
-    )
-    .await?;
+    let policy = policy_service::update(&state, *path, body.into_inner().into()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 
@@ -287,6 +313,19 @@ pub struct TestPolicyParamsReq {
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
     pub base_path: Option<String>,
+}
+
+impl From<TestPolicyParamsReq> for policy_service::StoragePolicyConnectionInput {
+    fn from(value: TestPolicyParamsReq) -> Self {
+        build_policy_connection_input(
+            value.driver_type,
+            value.endpoint,
+            value.bucket,
+            value.access_key,
+            value.secret_key,
+            value.base_path,
+        )
+    }
 }
 
 #[api_docs_macros::path(
@@ -324,15 +363,7 @@ pub async fn test_policy_connection(
     security(("bearer" = [])),
 )]
 pub async fn test_policy_params(body: web::Json<TestPolicyParamsReq>) -> Result<HttpResponse> {
-    policy_service::test_connection_params(
-        body.driver_type,
-        body.endpoint.as_deref().unwrap_or_default(),
-        body.bucket.as_deref().unwrap_or_default(),
-        body.access_key.as_deref().unwrap_or_default(),
-        body.secret_key.as_deref().unwrap_or_default(),
-        body.base_path.as_deref().unwrap_or_default(),
-    )
-    .await?;
+    policy_service::test_connection_params(body.into_inner().into()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -384,15 +415,42 @@ fn default_true() -> bool {
 fn map_group_items(
     items: Vec<PolicyGroupItemReq>,
 ) -> Vec<policy_service::StoragePolicyGroupItemInput> {
-    items
-        .into_iter()
-        .map(|item| policy_service::StoragePolicyGroupItemInput {
-            policy_id: item.policy_id,
-            priority: item.priority,
-            min_file_size: item.min_file_size,
-            max_file_size: item.max_file_size,
-        })
-        .collect()
+    items.into_iter().map(Into::into).collect()
+}
+
+impl From<PolicyGroupItemReq> for policy_service::StoragePolicyGroupItemInput {
+    fn from(value: PolicyGroupItemReq) -> Self {
+        Self {
+            policy_id: value.policy_id,
+            priority: value.priority,
+            min_file_size: value.min_file_size,
+            max_file_size: value.max_file_size,
+        }
+    }
+}
+
+impl From<CreatePolicyGroupReq> for policy_service::CreateStoragePolicyGroupInput {
+    fn from(value: CreatePolicyGroupReq) -> Self {
+        Self {
+            name: value.name,
+            description: value.description,
+            is_enabled: value.is_enabled,
+            is_default: value.is_default,
+            items: map_group_items(value.items),
+        }
+    }
+}
+
+impl From<PatchPolicyGroupReq> for policy_service::UpdateStoragePolicyGroupInput {
+    fn from(value: PatchPolicyGroupReq) -> Self {
+        Self {
+            name: value.name,
+            description: value.description,
+            is_enabled: value.is_enabled,
+            is_default: value.is_default,
+            items: value.items.map(map_group_items),
+        }
+    }
 }
 
 #[api_docs_macros::path(
@@ -435,15 +493,7 @@ pub async fn create_policy_group(
     state: web::Data<AppState>,
     body: web::Json<CreatePolicyGroupReq>,
 ) -> Result<HttpResponse> {
-    let group = policy_service::create_group(
-        &state,
-        &body.name,
-        body.description.clone(),
-        body.is_enabled,
-        body.is_default,
-        map_group_items(body.items.clone()),
-    )
-    .await?;
+    let group = policy_service::create_group(&state, body.into_inner().into()).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(group)))
 }
 
@@ -489,16 +539,7 @@ pub async fn update_policy_group(
     path: web::Path<i64>,
     body: web::Json<PatchPolicyGroupReq>,
 ) -> Result<HttpResponse> {
-    let group = policy_service::update_group(
-        &state,
-        *path,
-        body.name.clone(),
-        body.description.clone(),
-        body.is_enabled,
-        body.is_default,
-        body.items.clone().map(map_group_items),
-    )
-    .await?;
+    let group = policy_service::update_group(&state, *path, body.into_inner().into()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(group)))
 }
 
@@ -662,6 +703,8 @@ pub struct PatchUserReq {
     pub role: Option<UserRole>,
     pub status: Option<UserStatus>,
     pub storage_quota: Option<i64>,
+    /// Omitted means "leave unchanged". Explicit `null` is rejected because this
+    /// endpoint only supports assigning a policy group, not unassigning one.
     #[serde(default, deserialize_with = "deserialize_non_null_policy_group_id")]
     #[cfg_attr(
         all(debug_assertions, feature = "openapi"),
@@ -676,9 +719,10 @@ fn deserialize_non_null_policy_group_id<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    Option::<i64>::deserialize(deserializer)?
-        .map(Some)
-        .ok_or_else(|| D::Error::custom("policy_group_id cannot be null"))
+    match Option::<i64>::deserialize(deserializer)? {
+        Some(policy_group_id) => Ok(Some(policy_group_id)),
+        None => Err(D::Error::custom("policy_group_id cannot be null")),
+    }
 }
 
 #[derive(Deserialize)]

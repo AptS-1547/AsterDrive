@@ -48,6 +48,10 @@ pub async fn find_paginated<C: ConnectionTrait>(
     .await
 }
 
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy user_storage_policy compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn find_user_default<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
@@ -60,6 +64,10 @@ pub async fn find_user_default<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy user_storage_policy compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn find_all_user_defaults<C: ConnectionTrait>(
     db: &C,
 ) -> Result<Vec<user_storage_policy::Model>> {
@@ -108,6 +116,10 @@ pub async fn set_only_default<C: ConnectionTrait>(db: &C, id: i64) -> Result<()>
 
 // ── User Storage Policy ──────────────────────────────────────────────
 
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy user_storage_policy compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn find_user_policies<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
@@ -120,6 +132,10 @@ pub async fn find_user_policies<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy user_storage_policy compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn find_user_policies_paginated<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
@@ -137,6 +153,10 @@ pub async fn find_user_policies_paginated<C: ConnectionTrait>(
     .await
 }
 
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy user_storage_policy compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn find_user_policy_by_id<C: ConnectionTrait>(
     db: &C,
     id: i64,
@@ -149,6 +169,10 @@ pub async fn find_user_policy_by_id<C: ConnectionTrait>(
 }
 
 /// 清除用户的其他默认策略（设 is_default=false）
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy user_storage_policy compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn clear_user_default<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<()> {
     use sea_orm::QueryFilter;
     let existing = UserStoragePolicy::find()
@@ -166,6 +190,10 @@ pub async fn clear_user_default<C: ConnectionTrait>(db: &C, user_id: i64) -> Res
     Ok(())
 }
 
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy user_storage_policy compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn create_user_policy<C: ConnectionTrait>(
     db: &C,
     model: user_storage_policy::ActiveModel,
@@ -173,6 +201,10 @@ pub async fn create_user_policy<C: ConnectionTrait>(
     model.insert(db).await.map_err(AsterError::from)
 }
 
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy user_storage_policy compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn update_user_policy<C: ConnectionTrait>(
     db: &C,
     model: user_storage_policy::ActiveModel,
@@ -180,6 +212,10 @@ pub async fn update_user_policy<C: ConnectionTrait>(
     model.update(db).await.map_err(AsterError::from)
 }
 
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy user_storage_policy compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn delete_user_policy<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     UserStoragePolicy::delete_by_id(id)
         .exec(db)
@@ -189,6 +225,10 @@ pub async fn delete_user_policy<C: ConnectionTrait>(db: &C, id: i64) -> Result<(
 }
 
 /// 批量删除用户的所有存储策略分配
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy user_storage_policy compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn delete_user_policies_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<u64> {
     let res = UserStoragePolicy::delete_many()
         .filter(user_storage_policy::Column::UserId.eq(user_id))

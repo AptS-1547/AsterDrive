@@ -39,6 +39,7 @@ pub enum Relation {
     Files,
     #[sea_orm(has_many = "super::folder::Entity")]
     Folders,
+    /// Legacy compatibility relation to the deprecated `user_storage_policies` table.
     #[sea_orm(has_many = "super::user_storage_policy::Entity")]
     UserStoragePolicies,
     #[sea_orm(

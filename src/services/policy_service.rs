@@ -61,6 +61,58 @@ pub struct PolicyGroupUserMigrationResult {
     pub migrated_assignments: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct StoragePolicyConnectionInput {
+    pub driver_type: DriverType,
+    pub endpoint: String,
+    pub bucket: String,
+    pub access_key: String,
+    pub secret_key: String,
+    pub base_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateStoragePolicyInput {
+    pub name: String,
+    pub connection: StoragePolicyConnectionInput,
+    pub max_file_size: i64,
+    pub chunk_size: Option<i64>,
+    pub is_default: bool,
+    pub options: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpdateStoragePolicyInput {
+    pub name: Option<String>,
+    pub endpoint: Option<String>,
+    pub bucket: Option<String>,
+    pub access_key: Option<String>,
+    pub secret_key: Option<String>,
+    pub base_path: Option<String>,
+    pub max_file_size: Option<i64>,
+    pub chunk_size: Option<i64>,
+    pub is_default: Option<bool>,
+    pub options: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateStoragePolicyGroupInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub is_enabled: bool,
+    pub is_default: bool,
+    pub items: Vec<StoragePolicyGroupItemInput>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpdateStoragePolicyGroupInput {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub is_enabled: Option<bool>,
+    pub is_default: Option<bool>,
+    pub items: Option<Vec<StoragePolicyGroupItemInput>>,
+}
+
 pub async fn list_all(state: &AppState) -> Result<Vec<storage_policy::Model>> {
     policy_repo::find_all(&state.db).await
 }
@@ -80,33 +132,38 @@ pub async fn get(state: &AppState, id: i64) -> Result<storage_policy::Model> {
     policy_repo::find_by_id(&state.db, id).await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn create(
     state: &AppState,
-    name: &str,
-    driver_type: DriverType,
-    endpoint: &str,
-    bucket: &str,
-    access_key: &str,
-    secret_key: &str,
-    base_path: &str,
-    max_file_size: i64,
-    chunk_size: Option<i64>,
-    is_default: bool,
-    options: Option<String>,
+    input: CreateStoragePolicyInput,
 ) -> Result<storage_policy::Model> {
-    let (endpoint, bucket) = normalize_connection_fields(driver_type, endpoint, bucket)?;
+    let CreateStoragePolicyInput {
+        name,
+        connection,
+        max_file_size,
+        chunk_size,
+        is_default,
+        options,
+    } = input;
+    let StoragePolicyConnectionInput {
+        driver_type,
+        endpoint,
+        bucket,
+        access_key,
+        secret_key,
+        base_path,
+    } = connection;
+    let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
 
     let txn = state.db.begin().await.map_err(AsterError::from)?;
     let now = Utc::now();
     let model = storage_policy::ActiveModel {
-        name: Set(name.to_string()),
+        name: Set(name),
         driver_type: Set(driver_type),
         endpoint: Set(endpoint),
         bucket: Set(bucket),
-        access_key: Set(access_key.to_string()),
-        secret_key: Set(secret_key.to_string()),
-        base_path: Set(base_path.to_string()),
+        access_key: Set(access_key),
+        secret_key: Set(secret_key),
+        base_path: Set(base_path),
         max_file_size: Set(max_file_size),
         allowed_types: Set("[]".to_string()),
         options: Set(options.unwrap_or_else(|| "{}".to_string())),
@@ -178,21 +235,23 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn update(
     state: &AppState,
     id: i64,
-    name: Option<String>,
-    endpoint: Option<String>,
-    bucket: Option<String>,
-    access_key: Option<String>,
-    secret_key: Option<String>,
-    base_path: Option<String>,
-    max_file_size: Option<i64>,
-    chunk_size: Option<i64>,
-    is_default: Option<bool>,
-    options: Option<String>,
+    input: UpdateStoragePolicyInput,
 ) -> Result<storage_policy::Model> {
+    let UpdateStoragePolicyInput {
+        name,
+        endpoint,
+        bucket,
+        access_key,
+        secret_key,
+        base_path,
+        max_file_size,
+        chunk_size,
+        is_default,
+        options,
+    } = input;
     let txn = state.db.begin().await.map_err(AsterError::from)?;
     let existing = policy_repo::find_by_id(&txn, id).await?;
     let existing_endpoint = existing.endpoint.clone();
@@ -287,19 +346,20 @@ pub async fn test_connection(state: &AppState, id: i64) -> Result<()> {
 }
 
 /// 测试存储策略连接（不保存，用临时构造的 policy）
-pub async fn test_connection_params(
-    driver_type: DriverType,
-    endpoint: &str,
-    bucket: &str,
-    access_key: &str,
-    secret_key: &str,
-    base_path: &str,
-) -> Result<()> {
+pub async fn test_connection_params(input: StoragePolicyConnectionInput) -> Result<()> {
     use crate::entities::storage_policy;
     use crate::storage::local::LocalDriver;
     use crate::storage::s3::S3Driver;
 
-    let (endpoint, bucket) = normalize_connection_fields(driver_type, endpoint, bucket)?;
+    let StoragePolicyConnectionInput {
+        driver_type,
+        endpoint,
+        bucket,
+        access_key,
+        secret_key,
+        base_path,
+    } = input;
+    let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
 
     // 构造一个临时 policy model 用于创建 driver
     let fake_policy = storage_policy::Model {
@@ -308,9 +368,9 @@ pub async fn test_connection_params(
         driver_type,
         endpoint,
         bucket,
-        access_key: access_key.to_string(),
-        secret_key: secret_key.to_string(),
-        base_path: base_path.to_string(),
+        access_key,
+        secret_key,
+        base_path,
         max_file_size: 0,
         allowed_types: String::new(),
         options: String::new(),
@@ -668,12 +728,15 @@ pub async fn get_group(state: &AppState, id: i64) -> Result<StoragePolicyGroupIn
 
 pub async fn create_group(
     state: &AppState,
-    name: &str,
-    description: Option<String>,
-    is_enabled: bool,
-    is_default: bool,
-    items: Vec<StoragePolicyGroupItemInput>,
+    input: CreateStoragePolicyGroupInput,
 ) -> Result<StoragePolicyGroupInfo> {
+    let CreateStoragePolicyGroupInput {
+        name,
+        description,
+        is_enabled,
+        is_default,
+        items,
+    } = input;
     if is_default && !is_enabled {
         return Err(AsterError::validation_error(
             "default storage policy group must be enabled",
@@ -687,7 +750,7 @@ pub async fn create_group(
     let group = policy_group_repo::create_group(
         &txn,
         storage_policy_group::ActiveModel {
-            name: Set(name.to_string()),
+            name: Set(name),
             description: Set(description.unwrap_or_default()),
             is_enabled: Set(is_enabled),
             is_default: Set(false),
@@ -711,12 +774,15 @@ pub async fn create_group(
 pub async fn update_group(
     state: &AppState,
     id: i64,
-    name: Option<String>,
-    description: Option<String>,
-    is_enabled: Option<bool>,
-    is_default: Option<bool>,
-    items: Option<Vec<StoragePolicyGroupItemInput>>,
+    input: UpdateStoragePolicyGroupInput,
 ) -> Result<StoragePolicyGroupInfo> {
+    let UpdateStoragePolicyGroupInput {
+        name,
+        description,
+        is_enabled,
+        is_default,
+        items,
+    } = input;
     let txn = state.db.begin().await.map_err(AsterError::from)?;
     let existing = policy_group_repo::find_group_by_id(&txn, id).await?;
     let next_is_enabled = is_enabled.unwrap_or(existing.is_enabled);
@@ -936,6 +1002,14 @@ async fn ensure_singleton_group_for_policy(state: &AppState, policy_id: i64) -> 
     Ok(group.id)
 }
 
+/// Legacy compatibility shim for callers that still assign a single policy per user.
+///
+/// Deprecated since 0.1.0 in favor of assigning `users.policy_group_id`
+/// and managing storage policy groups directly.
+#[deprecated(
+    since = "0.1.0",
+    note = "legacy single-policy assignment compatibility API; use users.policy_group_id and storage policy groups instead"
+)]
 pub async fn assign_user_policy(
     state: &AppState,
     user_id: i64,

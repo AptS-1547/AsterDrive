@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import {
+	normalizeMaxDownloads,
+	toDateTimeLocalValue,
+	toIsoDateTime,
+} from "@/components/files/shareDialogShared";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -30,34 +35,6 @@ interface EditShareDialogProps {
 	onOpenChange: (open: boolean) => void;
 	share: MyShareInfo | null;
 	onSaved?: () => void | Promise<void>;
-}
-
-function toDateTimeLocalValue(value: string | null | undefined): string {
-	if (!value) return "";
-
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) {
-		return "";
-	}
-
-	const offsetMs = date.getTimezoneOffset() * 60 * 1000;
-	return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function toIsoDateTime(value: string): string | null {
-	const trimmed = value.trim();
-	if (!trimmed) return null;
-
-	const date = new Date(trimmed);
-	return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function normalizeMaxDownloads(value: string): number {
-	const parsed = Number.parseInt(value, 10);
-	if (Number.isNaN(parsed) || parsed < 0) {
-		return 0;
-	}
-	return parsed;
 }
 
 export function EditShareDialog({

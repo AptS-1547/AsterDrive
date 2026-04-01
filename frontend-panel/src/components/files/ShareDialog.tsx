@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import {
+	computeShareExpiry,
+	normalizeMaxDownloads,
+} from "@/components/files/shareDialogShared";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -55,15 +59,14 @@ export function ShareDialog({
 		e.preventDefault();
 		setLoading(true);
 		try {
-			const expiresAt = computeExpiry(expiry);
-			const downloads = maxDownloads ? Number.parseInt(maxDownloads, 10) : 0;
+			const expiresAt = computeShareExpiry(expiry);
 
 			const share = await shareService.create({
 				file_id: fileId,
 				folder_id: folderId,
 				password: password || undefined,
 				expires_at: expiresAt ?? undefined,
-				max_downloads: Number.isNaN(downloads) ? 0 : downloads,
+				max_downloads: normalizeMaxDownloads(maxDownloads),
 			});
 
 			const url = `${window.location.origin}/s/${share.token}`;
@@ -188,26 +191,4 @@ export function ShareDialog({
 			</DialogContent>
 		</Dialog>
 	);
-}
-
-function computeExpiry(value: string): string | null {
-	if (value === "never") return null;
-	const now = new Date();
-	switch (value) {
-		case "1h":
-			now.setHours(now.getHours() + 1);
-			break;
-		case "1d":
-			now.setDate(now.getDate() + 1);
-			break;
-		case "7d":
-			now.setDate(now.getDate() + 7);
-			break;
-		case "30d":
-			now.setDate(now.getDate() + 30);
-			break;
-		default:
-			return null;
-	}
-	return now.toISOString();
 }

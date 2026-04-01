@@ -180,7 +180,19 @@ vi.mock("@/components/ui/select", () => {
 			value?: string;
 		}) => (
 			<SelectContext.Provider value={{ disabled, items, onValueChange, value }}>
-				<div>{children}</div>
+				<div>
+					{items ? (
+						<button
+							type="button"
+							aria-label="select-clear"
+							disabled={disabled}
+							onClick={() => onValueChange?.("")}
+						>
+							clear
+						</button>
+					) : null}
+					{children}
+				</div>
 			</SelectContext.Provider>
 		),
 		SelectContent: ({ children }: { children: React.ReactNode }) => (
@@ -397,6 +409,27 @@ describe("UserDetailDialog", () => {
 				role: "admin",
 				status: "disabled",
 				storage_quota: 20 * 1024 * 1024,
+				policy_group_id: 2,
+			});
+		});
+	});
+
+	it("ignores empty policy group selections because unassigning is unsupported", async () => {
+		renderDialog();
+
+		await waitForPolicyLoad();
+		expect(screen.queryByRole("button", { name: /save_changes/i })).toBeNull();
+
+		fireEvent.click(screen.getByLabelText("select-clear"));
+
+		expect(screen.queryByRole("button", { name: /save_changes/i })).toBeNull();
+
+		fireEvent.click(screen.getByRole("button", { name: "select-item:2" }));
+		fireEvent.click(screen.getByLabelText("select-clear"));
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(mockState.onUpdate).toHaveBeenCalledWith(2, {
 				policy_group_id: 2,
 			});
 		});

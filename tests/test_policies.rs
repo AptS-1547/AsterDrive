@@ -6,6 +6,7 @@ mod common;
 use actix_web::test;
 use serde_json::Value;
 
+#[allow(deprecated)]
 #[actix_web::test]
 async fn test_user_default_policy_switch_updates_snapshot_immediately() {
     use aster_drive::services::{auth_service, file_service, policy_service};
@@ -29,17 +30,21 @@ async fn test_user_default_policy_switch_updates_snapshot_immediately() {
     std::fs::create_dir_all(&alternate_base_path).unwrap();
     let alternate_policy = policy_service::create(
         &state,
-        "Alternate Local",
-        DriverType::Local,
-        "",
-        "",
-        "",
-        "",
-        &alternate_base_path,
-        0,
-        None,
-        false,
-        None,
+        policy_service::CreateStoragePolicyInput {
+            name: "Alternate Local".to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::Local,
+                endpoint: String::new(),
+                bucket: String::new(),
+                access_key: String::new(),
+                secret_key: String::new(),
+                base_path: alternate_base_path.clone(),
+            },
+            max_file_size: 0,
+            chunk_size: None,
+            is_default: false,
+            options: None,
+        },
     )
     .await
     .unwrap();
@@ -983,17 +988,21 @@ async fn test_resolve_policy_fails_when_policy_group_has_no_matching_rule() {
     std::fs::create_dir_all(&overflow_path).unwrap();
     let overflow_policy = policy_service::create(
         &state,
-        "Gap Overflow Policy",
-        DriverType::Local,
-        "",
-        "",
-        "",
-        "",
-        &overflow_path,
-        0,
-        None,
-        false,
-        None,
+        policy_service::CreateStoragePolicyInput {
+            name: "Gap Overflow Policy".to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::Local,
+                endpoint: String::new(),
+                bucket: String::new(),
+                access_key: String::new(),
+                secret_key: String::new(),
+                base_path: overflow_path.clone(),
+            },
+            max_file_size: 0,
+            chunk_size: None,
+            is_default: false,
+            options: None,
+        },
     )
     .await
     .unwrap();

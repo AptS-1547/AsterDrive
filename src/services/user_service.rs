@@ -442,7 +442,10 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     }
 
     // 6. 删除用户存储策略分配
-    policy_repo::delete_user_policies_by_user(db, target_user_id).await?;
+    #[allow(deprecated)]
+    {
+        policy_repo::delete_user_policies_by_user(db, target_user_id).await?;
+    }
 
     // 7. 清理上传 session
     upload_session_repo::delete_all_by_user(db, target_user_id).await?;

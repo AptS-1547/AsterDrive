@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
@@ -25,44 +25,28 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { handleApiError } from "@/hooks/useApiError";
+import { useApiList } from "@/hooks/useApiList";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { formatDateAbsolute } from "@/lib/format";
 import { auditService } from "@/services/auditService";
-import type { AuditLogEntry } from "@/types/api";
 
 export default function AdminAuditPage() {
 	const { t } = useTranslation("admin");
-	const [items, setItems] = useState<AuditLogEntry[]>([]);
-	const [total, setTotal] = useState(0);
 	const [offset, setOffset] = useState(0);
 	const [actionFilter, setActionFilter] = useState("");
 	const [entityTypeFilter, setEntityTypeFilter] = useState("__all__");
-	const [loading, setLoading] = useState(true);
 	const limit = 20;
-
-	const load = useCallback(async () => {
-		setLoading(true);
-		try {
-			const page = await auditService.list({
+	const { items, total, loading } = useApiList(
+		() =>
+			auditService.list({
 				action: actionFilter || undefined,
 				entity_type:
 					entityTypeFilter === "__all__" ? undefined : entityTypeFilter,
 				limit,
 				offset,
-			});
-			setItems(page.items);
-			setTotal(page.total);
-		} catch (err) {
-			handleApiError(err);
-		} finally {
-			setLoading(false);
-		}
-	}, [offset, actionFilter, entityTypeFilter]);
-
-	useEffect(() => {
-		load();
-	}, [load]);
+			}),
+		[offset, actionFilter, entityTypeFilter],
+	);
 
 	const totalPages = Math.ceil(total / limit);
 	const currentPage = Math.floor(offset / limit) + 1;
