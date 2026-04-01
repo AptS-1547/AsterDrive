@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cache::CacheExt;
 use crate::config::AuthConfig;
-use crate::db::repository::{policy_repo, user_repo};
+use crate::db::repository::user_repo;
 use crate::entities::user;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -218,6 +218,15 @@ async fn create_user_with_role(
             }
             0
         });
+    let default_policy_group_id = state
+        .policy_snapshot
+        .system_default_policy_group()
+        .map(|group| group.id)
+        .ok_or_else(|| {
+            AsterError::storage_policy_not_found(
+                "no system default storage policy group configured",
+            )
+        })?;
 
     let model = user::ActiveModel {
         username: Set(username.to_string()),
@@ -228,31 +237,17 @@ async fn create_user_with_role(
         session_version: Set(INITIAL_SESSION_VERSION),
         storage_used: Set(0),
         storage_quota: Set(default_quota),
+        policy_group_id: Set(Some(default_policy_group_id)),
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()
     };
     let user = user_repo::create(db, model).await?;
 
-    if let Some(default_policy) = state.policy_snapshot.system_default_policy() {
-        let usp = crate::entities::user_storage_policy::ActiveModel {
-            user_id: Set(user.id),
-            policy_id: Set(default_policy.id),
-            is_default: Set(true),
-            quota_bytes: Set(default_quota),
-            created_at: Set(now),
-            ..Default::default()
-        };
-        if let Err(e) = policy_repo::create_user_policy(db, usp).await {
-            tracing::warn!(
-                "failed to assign default policy to new user '{}': {e}",
-                username
-            );
-        } else {
-            state
-                .policy_snapshot
-                .set_user_default_policy(user.id, default_policy.id);
-        }
+    if let Some(policy_group_id) = user.policy_group_id {
+        state
+            .policy_snapshot
+            .set_user_policy_group(user.id, policy_group_id);
     }
 
     Ok(user)

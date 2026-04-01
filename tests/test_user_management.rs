@@ -299,7 +299,14 @@ async fn test_force_delete_user_tolerates_missing_avatar_object() {
 
 #[actix_web::test]
 async fn test_admin_create_user_uses_default_quota_and_policy() {
+    use aster_drive::db::repository::policy_group_repo;
+
     let state = common::setup().await;
+    let expected_default_id = policy_group_repo::find_default_group(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy group should exist")
+        .id;
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
@@ -326,18 +333,11 @@ async fn test_admin_create_user_uses_default_quota_and_policy() {
     let body: Value = test::read_body_json(resp).await;
     let user_id = body["data"]["id"].as_i64().unwrap();
     assert_eq!(body["data"]["storage_quota"], 1_048_576);
-
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    let items = body["data"]["items"].as_array().unwrap();
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["is_default"], true);
-    assert_eq!(items[0]["quota_bytes"], 1_048_576);
+    assert!(user_id > 0);
+    assert_eq!(
+        body["data"]["policy_group_id"].as_i64().unwrap(),
+        expected_default_id
+    );
 }
 
 #[actix_web::test]

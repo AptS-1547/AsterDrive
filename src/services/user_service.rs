@@ -103,6 +103,7 @@ pub struct UserCore {
     pub status: crate::types::UserStatus,
     pub storage_used: i64,
     pub storage_quota: i64,
+    pub policy_group_id: Option<i64>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -120,6 +121,7 @@ pub struct MeResponse {
     pub status: crate::types::UserStatus,
     pub storage_used: i64,
     pub storage_quota: i64,
+    pub policy_group_id: Option<i64>,
     pub access_token_expires_at: i64,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -140,6 +142,7 @@ pub struct UserInfo {
     pub status: crate::types::UserStatus,
     pub storage_used: i64,
     pub storage_quota: i64,
+    pub policy_group_id: Option<i64>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -156,6 +159,7 @@ fn user_core(user: &user::Model) -> UserCore {
         status: user.status,
         storage_used: user.storage_used,
         storage_quota: user.storage_quota,
+        policy_group_id: user.policy_group_id,
         created_at: user.created_at,
         updated_at: user.updated_at,
     }
@@ -175,6 +179,7 @@ pub async fn to_user_info(
         status: core.status,
         storage_used: core.storage_used,
         storage_quota: core.storage_quota,
+        policy_group_id: core.policy_group_id,
         created_at: core.created_at,
         updated_at: core.updated_at,
         profile: profile_service::get_profile_info(state, user, audience).await?,
@@ -199,6 +204,7 @@ pub async fn to_user_infos(
             status: user.status,
             storage_used: user.storage_used,
             storage_quota: user.storage_quota,
+            policy_group_id: user.policy_group_id,
             created_at: user.created_at,
             updated_at: user.updated_at,
             profile: profile_map.get(&user.id).cloned().unwrap_or_else(|| {
@@ -225,6 +231,7 @@ pub async fn get_me(
         status: core.status,
         storage_used: core.storage_used,
         storage_quota: core.storage_quota,
+        policy_group_id: core.policy_group_id,
         access_token_expires_at,
         created_at: core.created_at,
         updated_at: core.updated_at,
@@ -289,6 +296,7 @@ pub async fn update(
     role: Option<UserRole>,
     status: Option<UserStatus>,
     storage_quota: Option<i64>,
+    policy_group_id: Option<i64>,
 ) -> Result<UserInfo> {
     if id == 1 {
         if let Some(ref status) = status
@@ -308,8 +316,11 @@ pub async fn update(
     }
 
     let existing = user_repo::find_by_id(&state.db, id).await?;
+    let existing_policy_group_id = existing.policy_group_id;
     let role_changed = role.is_some_and(|r| r != existing.role);
     let status_changed = status.is_some_and(|s| s != existing.status);
+    let policy_group_changed =
+        policy_group_id.is_some_and(|group_id| existing_policy_group_id != Some(group_id));
     let current_session_version = existing.session_version;
     let mut active: user::ActiveModel = existing.into();
     if let Some(r) = role {
@@ -321,11 +332,37 @@ pub async fn update(
     if let Some(q) = storage_quota {
         active.storage_quota = Set(q);
     }
+    if let Some(group_id) = policy_group_id {
+        let group =
+            crate::db::repository::policy_group_repo::find_group_by_id(&state.db, group_id).await?;
+        if !group.is_enabled {
+            return Err(AsterError::validation_error(
+                "cannot assign a disabled storage policy group",
+            ));
+        }
+        let items =
+            crate::db::repository::policy_group_repo::find_group_items(&state.db, group_id).await?;
+        if items.is_empty() {
+            return Err(AsterError::validation_error(
+                "cannot assign a storage policy group without policies",
+            ));
+        }
+        active.policy_group_id = Set(Some(group_id));
+    }
     if status_changed {
         active.session_version = Set(current_session_version.saturating_add(1));
     }
     active.updated_at = Set(Utc::now());
     let updated = active.update(&state.db).await.map_err(AsterError::from)?;
+    if policy_group_changed {
+        if let Some(policy_group_id) = updated.policy_group_id {
+            state
+                .policy_snapshot
+                .set_user_policy_group(updated.id, policy_group_id);
+        } else {
+            state.policy_snapshot.remove_user_policy_group(updated.id);
+        }
+    }
     if role_changed || status_changed {
         auth_service::invalidate_auth_snapshot_cache(state, id).await;
     }
@@ -401,7 +438,10 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     }
 
     // 6. 删除用户存储策略分配
-    policy_repo::delete_user_policies_by_user(db, target_user_id).await?;
+    #[allow(deprecated)]
+    {
+        policy_repo::delete_user_policies_by_user(db, target_user_id).await?;
+    }
 
     // 7. 清理上传 session
     upload_session_repo::delete_all_by_user(db, target_user_id).await?;
@@ -433,7 +473,7 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
 
     state
         .policy_snapshot
-        .remove_user_default_policy(target_user_id);
+        .remove_user_policy_group(target_user_id);
 
     tracing::info!(
         "force-deleted user #{} ({}) and all associated data ({} files, {} folders)",

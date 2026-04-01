@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { handleApiError } from "@/hooks/useApiError";
 
 export function useApiList<T>(
@@ -8,17 +8,26 @@ export function useApiList<T>(
 	const [items, setItems] = useState<T[]>([]);
 	const [total, setTotal] = useState(0);
 	const [loading, setLoading] = useState(true);
+	const requestIdRef = useRef(0);
 
 	const load = useCallback(async () => {
+		const requestId = ++requestIdRef.current;
 		try {
 			setLoading(true);
 			const data = await fetcher();
+			if (requestId !== requestIdRef.current) {
+				return;
+			}
 			setItems(data.items);
 			if (data.total !== undefined) setTotal(data.total);
 		} catch (e) {
-			handleApiError(e);
+			if (requestId === requestIdRef.current) {
+				handleApiError(e);
+			}
 		} finally {
-			setLoading(false);
+			if (requestId === requestIdRef.current) {
+				setLoading(false);
+			}
 		}
 		// biome-ignore lint/correctness/useExhaustiveDependencies: deps is a dynamic parameter by design
 	}, deps);
@@ -27,5 +36,5 @@ export function useApiList<T>(
 		void load().catch(() => {});
 	}, [load]);
 
-	return { items, setItems, total, loading, reload: load };
+	return { items, setItems, total, setTotal, loading, reload: load };
 }

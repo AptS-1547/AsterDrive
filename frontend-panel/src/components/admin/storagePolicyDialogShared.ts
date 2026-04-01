@@ -2,7 +2,12 @@ import {
 	isPublicR2DevUrl,
 	normalizeS3ConnectionFields,
 } from "@/lib/s3Endpoint";
-import type { DriverType, StoragePolicy } from "@/types/api";
+import type {
+	CreatePolicyRequest,
+	DriverType,
+	StoragePolicy,
+	UpdatePolicyRequest,
+} from "@/types/api";
 
 export type S3UploadStrategy = "proxy_tempfile" | "relay_stream" | "presigned";
 
@@ -79,6 +84,30 @@ export function buildPolicyOptions(form: PolicyFormData): string {
 	});
 }
 
+export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
+	const options = parsePolicyOptions(policy.options);
+
+	return {
+		name: policy.name,
+		driver_type: policy.driver_type,
+		endpoint: policy.endpoint,
+		bucket: policy.bucket,
+		access_key: "",
+		secret_key: "",
+		base_path: policy.base_path,
+		max_file_size:
+			policy.max_file_size != null ? String(policy.max_file_size) : "",
+		chunk_size:
+			policy.chunk_size != null
+				? String(Math.round(policy.chunk_size / 1024 / 1024))
+				: "5",
+		is_default: policy.is_default,
+		content_dedup:
+			policy.driver_type === "local" && options.content_dedup === true,
+		s3_upload_strategy: getEffectiveS3UploadStrategy(options),
+	};
+}
+
 export function normalizePolicyForm(form: PolicyFormData): PolicyFormData {
 	if (form.driver_type !== "s3") {
 		return form;
@@ -110,6 +139,59 @@ export function buildPolicyTestPayload(form: PolicyFormData) {
 		secret_key: normalizedForm.secret_key || undefined,
 		base_path: normalizedForm.base_path || undefined,
 	};
+}
+
+export function buildCreatePolicyPayload(
+	form: PolicyFormData,
+): CreatePolicyRequest {
+	const normalizedForm = normalizePolicyForm(form);
+
+	return {
+		name: normalizedForm.name,
+		driver_type: normalizedForm.driver_type,
+		endpoint: normalizedForm.endpoint,
+		bucket: normalizedForm.bucket,
+		access_key: normalizedForm.access_key,
+		secret_key: normalizedForm.secret_key,
+		base_path: normalizedForm.base_path,
+		max_file_size: normalizedForm.max_file_size
+			? Number(normalizedForm.max_file_size)
+			: undefined,
+		chunk_size: normalizedForm.chunk_size
+			? Number(normalizedForm.chunk_size) * 1024 * 1024
+			: 0,
+		is_default: normalizedForm.is_default,
+		options: buildPolicyOptions(normalizedForm),
+	};
+}
+
+export function buildUpdatePolicyPayload(
+	form: PolicyFormData,
+): UpdatePolicyRequest {
+	const normalizedForm = normalizePolicyForm(form);
+	const payload: UpdatePolicyRequest = {
+		name: normalizedForm.name,
+		endpoint: normalizedForm.endpoint,
+		bucket: normalizedForm.bucket,
+		base_path: normalizedForm.base_path,
+		max_file_size: normalizedForm.max_file_size
+			? Number(normalizedForm.max_file_size)
+			: undefined,
+		chunk_size: normalizedForm.chunk_size
+			? Number(normalizedForm.chunk_size) * 1024 * 1024
+			: 0,
+		is_default: normalizedForm.is_default,
+		options: buildPolicyOptions(normalizedForm),
+	};
+
+	if (normalizedForm.access_key) {
+		payload.access_key = normalizedForm.access_key;
+	}
+	if (normalizedForm.secret_key) {
+		payload.secret_key = normalizedForm.secret_key;
+	}
+
+	return payload;
 }
 
 export function hasConnectionFieldChanges(

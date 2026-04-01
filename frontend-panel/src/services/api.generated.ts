@@ -196,6 +196,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/policy-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_policy_groups"];
+        put?: never;
+        post: operations["create_policy_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/policy-groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_policy_group"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_policy_group"];
+        options?: never;
+        head?: never;
+        patch: operations["update_policy_group"];
+        trace?: never;
+    };
+    "/api/v1/admin/policy-groups/{id}/migrate-users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["migrate_policy_group_users"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/shares": {
         parameters: {
             query?: never;
@@ -306,38 +354,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/users/{user_id}/policies": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_user_policies"];
-        put?: never;
-        post: operations["assign_user_policy"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/users/{user_id}/policies/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["remove_user_policy"];
-        options?: never;
-        head?: never;
-        patch: operations["update_user_policy"];
         trace?: never;
     };
     "/api/v1/auth/check": {
@@ -1413,13 +1429,6 @@ export interface components {
             };
             msg: string;
         };
-        AssignUserPolicyReq: {
-            is_default?: boolean;
-            /** Format: int64 */
-            policy_id: number;
-            /** Format: int64 */
-            quota_bytes?: number;
-        };
         AuditLogEntry: {
             action: string;
             created_at: string;
@@ -1542,6 +1551,13 @@ export interface components {
             name: string;
             /** Format: int64 */
             parent_id?: number | null;
+        };
+        CreatePolicyGroupReq: {
+            description?: string | null;
+            is_default?: boolean;
+            is_enabled?: boolean;
+            items: components["schemas"]["PolicyGroupItemReq"][];
+            name: string;
         };
         CreatePolicyReq: {
             access_key?: string | null;
@@ -1773,6 +1789,8 @@ export interface components {
             email: string;
             /** Format: int64 */
             id: number;
+            /** Format: int64 */
+            policy_group_id?: number | null;
             preferences?: null | components["schemas"]["UserPreferences"];
             profile: components["schemas"]["UserProfileInfo"];
             role: components["schemas"]["UserRole"];
@@ -1787,6 +1805,10 @@ export interface components {
         MemoryStatsResponse: {
             heap_allocated_mb: string;
             heap_peak_mb: string;
+        };
+        MigratePolicyGroupUsersReq: {
+            /** Format: int64 */
+            target_group_id: number;
         };
         MyShareInfo: {
             created_at: string;
@@ -1943,6 +1965,25 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        OffsetPage_StoragePolicyGroupInfo: {
+            items: {
+                created_at: string;
+                description: string;
+                /** Format: int64 */
+                id: number;
+                is_default: boolean;
+                is_enabled: boolean;
+                items: components["schemas"]["StoragePolicyGroupItemInfo"][];
+                name: string;
+                updated_at: string;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
         OffsetPage_SystemConfig: {
             items: {
                 /** @description 分类（前端分组用） */
@@ -1980,6 +2021,8 @@ export interface components {
                 email: string;
                 /** Format: int64 */
                 id: number;
+                /** Format: int64 */
+                policy_group_id?: number | null;
                 profile: components["schemas"]["UserProfileInfo"];
                 role: components["schemas"]["UserRole"];
                 status: components["schemas"]["UserStatus"];
@@ -1989,26 +2032,6 @@ export interface components {
                 storage_used: number;
                 updated_at: string;
                 username: string;
-            }[];
-            /** Format: int64 */
-            limit: number;
-            /** Format: int64 */
-            offset: number;
-            /** Format: int64 */
-            total: number;
-        };
-        OffsetPage_UserStoragePolicy: {
-            items: {
-                created_at: string;
-                /** Format: int64 */
-                id: number;
-                is_default: boolean;
-                /** Format: int64 */
-                policy_id: number;
-                /** Format: int64 */
-                quota_bytes: number;
-                /** Format: int64 */
-                user_id: number;
             }[];
             /** Format: int64 */
             limit: number;
@@ -2049,6 +2072,13 @@ export interface components {
             /** Format: int64 */
             policy_id?: number | null;
         };
+        PatchPolicyGroupReq: {
+            description?: string | null;
+            is_default?: boolean | null;
+            is_enabled?: boolean | null;
+            items?: components["schemas"]["PolicyGroupItemReq"][] | null;
+            name?: string | null;
+        };
         PatchPolicyReq: {
             access_key?: string | null;
             base_path?: string | null;
@@ -2063,16 +2093,38 @@ export interface components {
             options?: string | null;
             secret_key?: string | null;
         };
-        PatchUserPolicyReq: {
-            is_default?: boolean | null;
-            /** Format: int64 */
-            quota_bytes?: number | null;
-        };
         PatchUserReq: {
+            /**
+             * Format: int64
+             * @description Omitted means "leave unchanged". Explicit `null` is rejected because this
+             *     endpoint only supports assigning a policy group, not unassigning one. To
+             *     change the assignment, provide a valid policy group ID.
+             */
+            policy_group_id?: number;
             role?: null | components["schemas"]["UserRole"];
             status?: null | components["schemas"]["UserStatus"];
             /** Format: int64 */
             storage_quota?: number | null;
+        };
+        PolicyGroupItemReq: {
+            /** Format: int64 */
+            max_file_size?: number;
+            /** Format: int64 */
+            min_file_size?: number;
+            /** Format: int64 */
+            policy_id: number;
+            /** Format: int32 */
+            priority: number;
+        };
+        PolicyGroupUserMigrationResult: {
+            /** Format: int64 */
+            affected_users: number;
+            /** Format: int64 */
+            migrated_assignments: number;
+            /** Format: int64 */
+            source_group_id: number;
+            /** Format: int64 */
+            target_group_id: number;
         };
         /**
          * @description File browser view mode.
@@ -2243,6 +2295,71 @@ export interface components {
             options: string;
             updated_at: string;
         };
+        StoragePolicyGroup: {
+            created_at: string;
+            description: string;
+            /** Format: int64 */
+            id: number;
+            is_default: boolean;
+            is_enabled: boolean;
+            name: string;
+            updated_at: string;
+        };
+        StoragePolicyGroupInfo: {
+            created_at: string;
+            description: string;
+            /** Format: int64 */
+            id: number;
+            is_default: boolean;
+            is_enabled: boolean;
+            items: components["schemas"]["StoragePolicyGroupItemInfo"][];
+            name: string;
+            updated_at: string;
+        };
+        StoragePolicyGroupItem: {
+            created_at: string;
+            /** Format: int64 */
+            group_id: number;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            max_file_size: number;
+            /** Format: int64 */
+            min_file_size: number;
+            /** Format: int64 */
+            policy_id: number;
+            /** Format: int32 */
+            priority: number;
+        };
+        StoragePolicyGroupItemInfo: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            max_file_size: number;
+            /** Format: int64 */
+            min_file_size: number;
+            policy: components["schemas"]["StoragePolicySummaryInfo"];
+            /** Format: int64 */
+            policy_id: number;
+            /** Format: int32 */
+            priority: number;
+        };
+        StoragePolicyGroupItemInput: {
+            /** Format: int64 */
+            max_file_size: number;
+            /** Format: int64 */
+            min_file_size: number;
+            /** Format: int64 */
+            policy_id: number;
+            /** Format: int32 */
+            priority: number;
+        };
+        StoragePolicySummaryInfo: {
+            driver_type: components["schemas"]["DriverType"];
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
         SystemConfig: {
             /** @description 分类（前端分组用） */
             category?: string;
@@ -2405,6 +2522,8 @@ export interface components {
             email: string;
             /** Format: int64 */
             id: number;
+            /** Format: int64 */
+            policy_group_id?: number | null;
             role: components["schemas"]["UserRole"];
             status: components["schemas"]["UserStatus"];
             /** Format: int64 */
@@ -2420,6 +2539,8 @@ export interface components {
             email: string;
             /** Format: int64 */
             id: number;
+            /** Format: int64 */
+            policy_group_id?: number | null;
             profile: components["schemas"]["UserProfileInfo"];
             role: components["schemas"]["UserRole"];
             status: components["schemas"]["UserStatus"];
@@ -2456,18 +2577,6 @@ export interface components {
          * @enum {string}
          */
         UserStatus: "active" | "disabled";
-        UserStoragePolicy: {
-            created_at: string;
-            /** Format: int64 */
-            id: number;
-            is_default: boolean;
-            /** Format: int64 */
-            policy_id: number;
-            /** Format: int64 */
-            quota_bytes: number;
-            /** Format: int64 */
-            user_id: number;
-        };
         VerifyPasswordReq: {
             password: string;
         };
@@ -3429,6 +3538,368 @@ export interface operations {
             };
         };
     };
+    list_policy_groups: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List storage policy groups */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            items: {
+                                created_at: string;
+                                description: string;
+                                /** Format: int64 */
+                                id: number;
+                                is_default: boolean;
+                                is_enabled: boolean;
+                                items: components["schemas"]["StoragePolicyGroupItemInfo"][];
+                                name: string;
+                                updated_at: string;
+                            }[];
+                            /** Format: int64 */
+                            limit: number;
+                            /** Format: int64 */
+                            offset: number;
+                            /** Format: int64 */
+                            total: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_policy_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePolicyGroupReq"];
+            };
+        };
+        responses: {
+            /** @description Policy group created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            description: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_default: boolean;
+                            is_enabled: boolean;
+                            items: components["schemas"]["StoragePolicyGroupItemInfo"][];
+                            name: string;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_policy_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy group ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Policy group details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            description: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_default: boolean;
+                            is_enabled: boolean;
+                            items: components["schemas"]["StoragePolicyGroupItemInfo"][];
+                            name: string;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy group not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_policy_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy group ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Policy group removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy group not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_policy_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy group ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchPolicyGroupReq"];
+            };
+        };
+        responses: {
+            /** @description Policy group updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            description: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_default: boolean;
+                            is_enabled: boolean;
+                            items: components["schemas"]["StoragePolicyGroupItemInfo"][];
+                            name: string;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy group not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    migrate_policy_group_users: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Source policy group ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigratePolicyGroupUsersReq"];
+            };
+        };
+        responses: {
+            /** @description Policy group users migrated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            affected_users: number;
+                            /** Format: int64 */
+                            migrated_assignments: number;
+                            /** Format: int64 */
+                            source_group_id: number;
+                            /** Format: int64 */
+                            target_group_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy group not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_all_shares: {
         parameters: {
             query?: {
@@ -3568,6 +4039,8 @@ export interface operations {
                                 email: string;
                                 /** Format: int64 */
                                 id: number;
+                                /** Format: int64 */
+                                policy_group_id?: number | null;
                                 profile: components["schemas"]["UserProfileInfo"];
                                 role: components["schemas"]["UserRole"];
                                 status: components["schemas"]["UserStatus"];
@@ -3632,6 +4105,8 @@ export interface operations {
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
                             profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
                             status: components["schemas"]["UserStatus"];
@@ -3695,6 +4170,8 @@ export interface operations {
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
                             profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
                             status: components["schemas"]["UserStatus"];
@@ -3811,6 +4288,8 @@ export interface operations {
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
                             profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
                             status: components["schemas"]["UserStatus"];
@@ -3824,6 +4303,13 @@ export interface operations {
                         msg: string;
                     };
                 };
+            };
+            /** @description Bad request, for example when policy_group_id cannot be null */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {
@@ -3987,241 +4473,6 @@ export interface operations {
             };
         };
     };
-    list_user_policies: {
-        parameters: {
-            query?: {
-                limit?: number | null;
-                offset?: number | null;
-            };
-            header?: never;
-            path: {
-                /** @description User ID */
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description User policy assignments */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        code: components["schemas"]["ErrorCode"];
-                        data?: {
-                            items: {
-                                created_at: string;
-                                /** Format: int64 */
-                                id: number;
-                                is_default: boolean;
-                                /** Format: int64 */
-                                policy_id: number;
-                                /** Format: int64 */
-                                quota_bytes: number;
-                                /** Format: int64 */
-                                user_id: number;
-                            }[];
-                            /** Format: int64 */
-                            limit: number;
-                            /** Format: int64 */
-                            offset: number;
-                            /** Format: int64 */
-                            total: number;
-                        };
-                        msg: string;
-                    };
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    assign_user_policy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User ID */
-                user_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AssignUserPolicyReq"];
-            };
-        };
-        responses: {
-            /** @description Policy assigned */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        code: components["schemas"]["ErrorCode"];
-                        data?: {
-                            created_at: string;
-                            /** Format: int64 */
-                            id: number;
-                            is_default: boolean;
-                            /** Format: int64 */
-                            policy_id: number;
-                            /** Format: int64 */
-                            quota_bytes: number;
-                            /** Format: int64 */
-                            user_id: number;
-                        };
-                        msg: string;
-                    };
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Policy not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    remove_user_policy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User ID */
-                user_id: number;
-                /** @description User storage policy assignment ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Assignment removed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Assignment not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_user_policy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description User ID */
-                user_id: number;
-                /** @description User storage policy assignment ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PatchUserPolicyReq"];
-            };
-        };
-        responses: {
-            /** @description Assignment updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        code: components["schemas"]["ErrorCode"];
-                        data?: {
-                            created_at: string;
-                            /** Format: int64 */
-                            id: number;
-                            is_default: boolean;
-                            /** Format: int64 */
-                            policy_id: number;
-                            /** Format: int64 */
-                            quota_bytes: number;
-                            /** Format: int64 */
-                            user_id: number;
-                        };
-                        msg: string;
-                    };
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Assignment not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     check_identifier: {
         parameters: {
             query?: never;
@@ -4334,6 +4585,8 @@ export interface operations {
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
                             preferences?: null | components["schemas"]["UserPreferences"];
                             profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
@@ -4681,6 +4934,8 @@ export interface operations {
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
                             profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
                             status: components["schemas"]["UserStatus"];
@@ -4731,6 +4986,8 @@ export interface operations {
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
                             profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
                             status: components["schemas"]["UserStatus"];

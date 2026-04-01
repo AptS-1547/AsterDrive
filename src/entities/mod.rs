@@ -7,10 +7,13 @@ pub mod folder;
 pub mod resource_lock;
 pub mod share;
 pub mod storage_policy;
+pub mod storage_policy_group;
+pub mod storage_policy_group_item;
 pub mod system_config;
 pub mod upload_session;
 pub mod upload_session_part;
 pub mod user;
 pub mod user_profile;
+/// Legacy compatibility entity for the deprecated `user_storage_policies` table.
 pub mod user_storage_policy;
 pub mod webdav_account;

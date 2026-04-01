@@ -4,6 +4,7 @@ pub mod file_repo;
 pub mod folder_repo;
 pub mod lock_repo;
 pub mod pagination_repo;
+pub mod policy_group_repo;
 pub mod policy_repo;
 pub mod property_repo;
 pub mod search_repo;

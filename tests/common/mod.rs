@@ -54,6 +54,10 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
     .await
     .unwrap();
 
+    aster_drive::services::policy_service::ensure_policy_groups_seeded(&db)
+        .await
+        .unwrap();
+
     aster_drive::db::repository::config_repo::ensure_defaults(&db)
         .await
         .unwrap();

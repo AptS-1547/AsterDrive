@@ -1132,16 +1132,10 @@ async fn test_driver_registry_invalidate_on_policy_update() {
     aster_drive::services::policy_service::update(
         &state,
         policy.id,
-        Some("Updated Name".to_string()),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        aster_drive::services::policy_service::UpdateStoragePolicyInput {
+            name: Some("Updated Name".to_string()),
+            ..Default::default()
+        },
     )
     .await
     .unwrap();

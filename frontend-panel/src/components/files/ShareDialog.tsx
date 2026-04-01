@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import {
+	computeShareExpiry,
+	normalizeMaxDownloads,
+} from "@/components/files/shareDialogShared";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -43,20 +47,26 @@ export function ShareDialog({
 	const [shareUrl, setShareUrl] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
 	const [loading, setLoading] = useState(false);
+	const expiryOptions = [
+		{ label: t("share:share_expiry_never"), value: "never" },
+		{ label: t("share:share_expiry_1h"), value: "1h" },
+		{ label: t("share:share_expiry_1d"), value: "1d" },
+		{ label: t("share:share_expiry_7d"), value: "7d" },
+		{ label: t("share:share_expiry_30d"), value: "30d" },
+	] satisfies ReadonlyArray<{ label: string; value: string }>;
 
 	const handleCreate = async (e: React.FormEvent) => {
 		e.preventDefault();
 		setLoading(true);
 		try {
-			const expiresAt = computeExpiry(expiry);
-			const downloads = maxDownloads ? Number.parseInt(maxDownloads, 10) : 0;
+			const expiresAt = computeShareExpiry(expiry);
 
 			const share = await shareService.create({
 				file_id: fileId,
 				folder_id: folderId,
 				password: password || undefined,
 				expires_at: expiresAt ?? undefined,
-				max_downloads: Number.isNaN(downloads) ? 0 : downloads,
+				max_downloads: normalizeMaxDownloads(maxDownloads),
 			});
 
 			const url = `${window.location.origin}/s/${share.token}`;
@@ -141,6 +151,7 @@ export function ShareDialog({
 						<div className="space-y-2">
 							<Label>{t("share:share_expiration")}</Label>
 							<Select
+								items={expiryOptions}
 								value={expiry}
 								onValueChange={(v) => setExpiry(v ?? "never")}
 							>
@@ -148,21 +159,11 @@ export function ShareDialog({
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="never">
-										{t("share:share_expiry_never")}
-									</SelectItem>
-									<SelectItem value="1h">
-										{t("share:share_expiry_1h")}
-									</SelectItem>
-									<SelectItem value="1d">
-										{t("share:share_expiry_1d")}
-									</SelectItem>
-									<SelectItem value="7d">
-										{t("share:share_expiry_7d")}
-									</SelectItem>
-									<SelectItem value="30d">
-										{t("share:share_expiry_30d")}
-									</SelectItem>
+									{expiryOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 						</div>
@@ -190,26 +191,4 @@ export function ShareDialog({
 			</DialogContent>
 		</Dialog>
 	);
-}
-
-function computeExpiry(value: string): string | null {
-	if (value === "never") return null;
-	const now = new Date();
-	switch (value) {
-		case "1h":
-			now.setHours(now.getHours() + 1);
-			break;
-		case "1d":
-			now.setDate(now.getDate() + 1);
-			break;
-		case "7d":
-			now.setDate(now.getDate() + 7);
-			break;
-		case "30d":
-			now.setDate(now.getDate() + 30);
-			break;
-		default:
-			return null;
-	}
-	return now.toISOString();
 }

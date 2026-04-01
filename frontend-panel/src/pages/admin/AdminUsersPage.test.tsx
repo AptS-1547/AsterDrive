@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
+import type { UpdateUserRequest } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	create: vi.fn(),
@@ -44,10 +45,7 @@ vi.mock("@/components/admin/UserDetailDialog", () => ({
 		open,
 		user,
 	}: {
-		onUpdate: (
-			id: number,
-			data: { role?: "admin" | "user"; status?: "active" | "disabled" },
-		) => Promise<void>;
+		onUpdate: (id: number, data: UpdateUserRequest) => Promise<void>;
 		open: boolean;
 		user: { id: number; username: string } | null;
 	}) =>

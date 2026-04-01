@@ -27,7 +27,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import {
 	Tooltip,
 	TooltipContent,
@@ -40,28 +39,58 @@ import { formatBytes, formatDateAbsolute } from "@/lib/format";
 import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
 import { passwordSchema } from "@/lib/validation";
 import {
-	adminPolicyService,
-	adminUserPolicyService,
+	adminPolicyGroupService,
 	adminUserService,
 } from "@/services/adminService";
 import type {
-	StoragePolicy,
+	StoragePolicyGroup,
+	UpdateUserRequest,
 	UserInfo,
 	UserRole,
 	UserStatus,
-	UserStoragePolicy,
 } from "@/types/api";
 
-const POLICY_PAGE_SIZE = 100;
+const POLICY_GROUP_PAGE_SIZE = 100;
 
 interface UserDetailDialogProps {
 	user: UserInfo | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	onUpdate: (
-		id: number,
-		data: { role?: UserRole; status?: UserStatus; storage_quota?: number },
-	) => Promise<void>;
+	onUpdate: (id: number, data: UpdateUserRequest) => Promise<void>;
+}
+
+interface PolicyGroupOption {
+	disabled?: boolean;
+	label: string;
+	value: string;
+}
+
+function buildPolicyGroupOptions(
+	policyGroups: StoragePolicyGroup[],
+	selectedPolicyGroupId: number | null,
+): PolicyGroupOption[] {
+	const options: PolicyGroupOption[] = policyGroups
+		.filter((group) => group.is_enabled && group.items.length > 0)
+		.map((group) => ({
+			label: group.name,
+			value: String(group.id),
+		}));
+
+	if (
+		selectedPolicyGroupId != null &&
+		!options.some((option) => option.value === String(selectedPolicyGroupId))
+	) {
+		const selectedGroup = policyGroups.find(
+			(group) => group.id === selectedPolicyGroupId,
+		);
+		options.unshift({
+			label: selectedGroup?.name ?? `#${selectedPolicyGroupId}`,
+			value: String(selectedPolicyGroupId),
+			disabled: true,
+		});
+	}
+
+	return options;
 }
 
 export function UserDetailDialog({
@@ -75,84 +104,70 @@ export function UserDetailDialog({
 	const [quotaValue, setQuotaValue] = useState("");
 	const [draftRole, setDraftRole] = useState<UserRole>("user");
 	const [draftStatus, setDraftStatus] = useState<UserStatus>("active");
+	const [draftPolicyGroupId, setDraftPolicyGroupId] = useState<number | null>(
+		null,
+	);
 	const [passwordValue, setPasswordValue] = useState("");
 	const [passwordErrors, setPasswordErrors] = useState<{
 		confirm?: string;
 		password?: string;
 	}>({});
+	const [policyGroups, setPolicyGroups] = useState<StoragePolicyGroup[]>([]);
+	const [policyGroupsLoading, setPolicyGroupsLoading] = useState(true);
 	const [revokingSessions, setRevokingSessions] = useState(false);
 	const [savingPassword, setSavingPassword] = useState(false);
 	const [savingProfile, setSavingProfile] = useState(false);
-	const [assignments, setAssignments] = useState<UserStoragePolicy[]>([]);
-	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
-	const [policiesLoading, setPoliciesLoading] = useState(true);
-	const [addPolicyId, setAddPolicyId] = useState<number | null>(null);
-	const [addQuota, setAddQuota] = useState("");
-	const [addDefault, setAddDefault] = useState(false);
-	const [editingAssignmentId, setEditingAssignmentId] = useState<number | null>(
-		null,
-	);
-	const [editingAssignmentQuota, setEditingAssignmentQuota] = useState("");
 
 	useEffect(() => {
 		if (!user) {
 			setConfirmPasswordValue("");
-			setQuotaValue("");
+			setDraftPolicyGroupId(null);
 			setDraftRole("user");
 			setDraftStatus("active");
 			setPasswordValue("");
 			setPasswordErrors({});
+			setPolicyGroups([]);
+			setPolicyGroupsLoading(true);
+			setQuotaValue("");
 			setRevokingSessions(false);
 			setSavingPassword(false);
 			setSavingProfile(false);
-			setAssignments([]);
-			setPolicies([]);
-			setPoliciesLoading(true);
-			setAddPolicyId(null);
-			setAddQuota("");
-			setAddDefault(false);
-			setEditingAssignmentId(null);
-			setEditingAssignmentQuota("");
 			return;
 		}
+
+		setConfirmPasswordValue("");
+		setDraftPolicyGroupId(user.policy_group_id ?? null);
+		setDraftRole(user.role);
+		setDraftStatus(user.status);
+		setPasswordValue("");
+		setPasswordErrors({});
 		setQuotaValue(
 			user.storage_quota > 0
 				? String(Math.round(user.storage_quota / 1024 / 1024))
 				: "0",
 		);
-		setConfirmPasswordValue("");
-		setDraftRole(user.role);
-		setDraftStatus(user.status);
-		setPasswordValue("");
-		setPasswordErrors({});
 		setRevokingSessions(false);
 	}, [user]);
 
-	const loadPolicies = useCallback(async () => {
+	const loadPolicyGroups = useCallback(async () => {
 		if (!user) return;
 		try {
-			setPoliciesLoading(true);
-			const [a, p] = await Promise.all([
-				adminUserPolicyService.list(user.id, {
-					limit: POLICY_PAGE_SIZE,
-					offset: 0,
-				}),
-				adminPolicyService.list({ limit: POLICY_PAGE_SIZE, offset: 0 }),
-			]);
-			setAssignments(a.items);
-			setPolicies(p.items);
+			setPolicyGroupsLoading(true);
+			setPolicyGroups(
+				await adminPolicyGroupService.listAll(POLICY_GROUP_PAGE_SIZE),
+			);
 		} catch (e) {
 			handleApiError(e);
 		} finally {
-			setPoliciesLoading(false);
+			setPolicyGroupsLoading(false);
 		}
 	}, [user]);
 
 	useEffect(() => {
 		if (open && user) {
-			void loadPolicies();
+			void loadPolicyGroups();
 		}
-	}, [open, user, loadPolicies]);
+	}, [loadPolicyGroups, open, user]);
 
 	if (!user) return null;
 
@@ -164,26 +179,50 @@ export function UserDetailDialog({
 	const showUsernameSecondary =
 		getNormalizedDisplayName(user.profile.display_name) !== null &&
 		displayName !== user.username;
-
-	const handleProfileSave = async () => {
-		const mb = Number.parseInt(quotaValue, 10);
-		const newQuota = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
-		const data: {
-			role?: UserRole;
-			status?: UserStatus;
-			storage_quota?: number;
-		} = {};
-		if (draftRole !== user.role) data.role = draftRole;
-		if (draftStatus !== user.status) data.status = draftStatus;
-		if (newQuota !== (user.storage_quota ?? 0)) data.storage_quota = newQuota;
-		if (Object.keys(data).length === 0) return;
-		try {
-			setSavingProfile(true);
-			await onUpdate(user.id, data);
-		} finally {
-			setSavingProfile(false);
-		}
-	};
+	const currentQuotaMb =
+		user.storage_quota && user.storage_quota > 0
+			? String(Math.round(user.storage_quota / 1024 / 1024))
+			: "0";
+	// Admin PATCH supports assigning a group, but not clearing an existing one.
+	const hasPolicyGroupChange =
+		draftPolicyGroupId != null &&
+		draftPolicyGroupId !== (user.policy_group_id ?? null);
+	const hasProfileChanges =
+		draftRole !== user.role ||
+		draftStatus !== user.status ||
+		quotaValue !== currentQuotaMb ||
+		hasPolicyGroupChange;
+	const currentAssignedPolicyGroup =
+		user.policy_group_id == null
+			? null
+			: (policyGroups.find((group) => group.id === user.policy_group_id) ??
+				null);
+	const selectedPolicyGroup =
+		draftPolicyGroupId == null
+			? null
+			: (policyGroups.find((group) => group.id === draftPolicyGroupId) ?? null);
+	const policyGroupOptions = buildPolicyGroupOptions(
+		policyGroups,
+		draftPolicyGroupId,
+	);
+	const selectedPolicyGroupOption =
+		policyGroupOptions.find(
+			(option) => option.value === String(draftPolicyGroupId ?? ""),
+		) ?? null;
+	const assignedPolicyGroupIsInvalid =
+		!policyGroupsLoading &&
+		user.policy_group_id != null &&
+		(currentAssignedPolicyGroup === null ||
+			!currentAssignedPolicyGroup.is_enabled ||
+			currentAssignedPolicyGroup.items.length === 0);
+	const statusOptions = [
+		{ label: t("core:active"), value: "active" },
+		{ label: t("core:disabled_status"), value: "disabled" },
+	] satisfies ReadonlyArray<{ label: string; value: UserStatus }>;
+	const roleOptions = [
+		{ label: t("role_admin"), value: "admin" },
+		{ label: t("role_user"), value: "user" },
+	] satisfies ReadonlyArray<{ label: string; value: UserRole }>;
 
 	const runDialogAction = async (
 		setLoading: (loading: boolean) => void,
@@ -198,6 +237,27 @@ export function UserDetailDialog({
 			handleApiError(e);
 		} finally {
 			setLoading(false);
+		}
+	};
+
+	const handleProfileSave = async () => {
+		const mb = Number.parseInt(quotaValue, 10);
+		const newQuota = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
+		const data: UpdateUserRequest = {};
+
+		if (draftRole !== user.role) data.role = draftRole;
+		if (draftStatus !== user.status) data.status = draftStatus;
+		if (newQuota !== (user.storage_quota ?? 0)) data.storage_quota = newQuota;
+		if (hasPolicyGroupChange) {
+			data.policy_group_id = draftPolicyGroupId;
+		}
+		if (Object.keys(data).length === 0) return;
+
+		try {
+			setSavingProfile(true);
+			await onUpdate(user.id, data);
+		} finally {
+			setSavingProfile(false);
 		}
 	};
 
@@ -237,101 +297,14 @@ export function UserDetailDialog({
 		);
 	};
 
-	const policyName = (policyId: number) =>
-		policies.find((p) => p.id === policyId)?.name ?? `#${policyId}`;
-
-	const handleAssign = async () => {
-		if (!addPolicyId) return;
-		try {
-			const mb = Number.parseInt(addQuota, 10);
-			const quotaBytes = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
-			await adminUserPolicyService.assign(user.id, {
-				policy_id: addPolicyId,
-				is_default: addDefault,
-				quota_bytes: quotaBytes,
-			});
-			setAddPolicyId(null);
-			setAddQuota("");
-			setAddDefault(false);
-			toast.success(t("policy_assigned"));
-			await loadPolicies();
-		} catch (e) {
-			handleApiError(e);
-		}
-	};
-
-	const handleSetDefault = async (a: UserStoragePolicy) => {
-		if (a.is_default) return;
-		try {
-			await adminUserPolicyService.update(user.id, a.id, {
-				is_default: true,
-			});
-			await loadPolicies();
-		} catch (e) {
-			handleApiError(e);
-		}
-	};
-
-	const handleRemove = async (assignment: UserStoragePolicy) => {
-		if (assignment.is_default && assignments.length > 1) {
-			toast.error(t("default_policy_remove_blocked"));
-			return;
-		}
-		try {
-			await adminUserPolicyService.remove(user.id, assignment.id);
-			toast.success(t("assignment_removed"));
-			await loadPolicies();
-		} catch (e) {
-			handleApiError(e);
-		}
-	};
-
-	const startEditAssignmentQuota = (assignment: UserStoragePolicy) => {
-		setEditingAssignmentId(assignment.id);
-		setEditingAssignmentQuota(
-			assignment.quota_bytes > 0
-				? String(Math.round(assignment.quota_bytes / 1024 / 1024))
-				: "0",
-		);
-	};
-
-	const saveAssignmentQuota = async (assignment: UserStoragePolicy) => {
-		try {
-			const mb = Number.parseInt(editingAssignmentQuota, 10);
-			const quotaBytes = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
-			await adminUserPolicyService.update(user.id, assignment.id, {
-				quota_bytes: quotaBytes,
-			});
-			setEditingAssignmentId(null);
-			setEditingAssignmentQuota("");
-			toast.success(t("assignment_updated"));
-			await loadPolicies();
-		} catch (e) {
-			handleApiError(e);
-		}
-	};
-
-	const availablePolicies = policies.filter(
-		(p) => !assignments.some((a) => a.policy_id === p.id),
-	);
-	const hasDefaultPolicy = assignments.some((a) => a.is_default);
-	const currentQuotaMb =
-		user.storage_quota && user.storage_quota > 0
-			? String(Math.round(user.storage_quota / 1024 / 1024))
-			: "0";
-	const hasProfileChanges =
-		draftRole !== user.role ||
-		draftStatus !== user.status ||
-		quotaValue !== currentQuotaMb;
-
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="flex max-h-[min(880px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden sm:max-w-[min(1100px,calc(100vw-2rem))] p-0">
+			<DialogContent className="flex max-h-[min(860px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1100px,calc(100vw-2rem))]">
 				<DialogHeader className="flex items-center justify-center px-6 pt-5 pb-0 text-center">
 					<DialogTitle className="text-lg">{t("user_details")}</DialogTitle>
 				</DialogHeader>
 				<div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
-					<aside className="space-y-5 border-b bg-muted/20 p-6 lg:border-r lg:border-b-0">
+					<aside className="space-y-5 border-b bg-muted/20 p-6 lg:sticky lg:top-0 lg:self-start lg:border-r lg:border-b-0">
 						<div className="space-y-3">
 							<UserAvatarImage
 								avatar={user.profile.avatar}
@@ -402,7 +375,7 @@ export function UserDetailDialog({
 					</aside>
 
 					<div className="min-h-0 min-w-0 overflow-y-auto p-6">
-						<div className="space-y-5">
+						<div className="space-y-4">
 							<section className="rounded-2xl border bg-background/60 p-6">
 								<div className="mb-5">
 									<h4 className="text-base font-semibold text-foreground">
@@ -452,15 +425,23 @@ export function UserDetailDialog({
 															<SelectTrigger
 																className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
 															>
-																<SelectValue />
+																<SelectValue>
+																	{t(
+																		draftStatus === "active"
+																			? "core:active"
+																			: "core:disabled_status",
+																	)}
+																</SelectValue>
 															</SelectTrigger>
 															<SelectContent>
-																<SelectItem value="active">
-																	{t("core:active")}
-																</SelectItem>
-																<SelectItem value="disabled">
-																	{t("core:disabled_status")}
-																</SelectItem>
+																{statusOptions.map((option) => (
+																	<SelectItem
+																		key={option.value}
+																		value={option.value}
+																	>
+																		{option.label}
+																	</SelectItem>
+																))}
 															</SelectContent>
 														</Select>
 													</div>
@@ -496,15 +477,21 @@ export function UserDetailDialog({
 															<SelectTrigger
 																className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
 															>
-																<SelectValue />
+																<SelectValue>
+																	{draftRole === "admin"
+																		? t("role_admin")
+																		: t("role_user")}
+																</SelectValue>
 															</SelectTrigger>
 															<SelectContent>
-																<SelectItem value="admin">
-																	{t("role_admin")}
-																</SelectItem>
-																<SelectItem value="user">
-																	{t("role_user")}
-																</SelectItem>
+																{roleOptions.map((option) => (
+																	<SelectItem
+																		key={option.value}
+																		value={option.value}
+																	>
+																		{option.label}
+																	</SelectItem>
+																))}
 															</SelectContent>
 														</Select>
 													</div>
@@ -519,138 +506,21 @@ export function UserDetailDialog({
 									</div>
 									<div className="space-y-2 md:col-span-2">
 										<Label htmlFor="user-storage-quota">{t("quota_mb")}</Label>
-										<div className="flex gap-3">
-											<Input
-												id="user-storage-quota"
-												type="number"
-												value={quotaValue}
-												onChange={(e) => setQuotaValue(e.target.value)}
-												placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
-												className={ADMIN_CONTROL_HEIGHT_CLASS}
-												disabled={savingProfile}
-											/>
-										</div>
-									</div>
-								</div>
-							</section>
-
-							<section className="rounded-2xl border bg-background/60 p-6">
-								<div className="mb-5">
-									<h4 className="text-base font-semibold text-foreground">
-										{t("reset_password")}
-									</h4>
-									<p className="mt-1 text-sm text-muted-foreground">
-										{t("reset_password_desc")}
-									</p>
-								</div>
-								<div className="grid gap-5 md:grid-cols-2">
-									<div className="space-y-2">
-										<Label htmlFor="user-reset-password">{t("password")}</Label>
 										<Input
-											id="user-reset-password"
-											name="admin-reset-user-password"
-											type="password"
-											value={passwordValue}
-											onChange={(e) => {
-												setPasswordValue(e.target.value);
-												setPasswordErrors((prev) => ({
-													...prev,
-													password: undefined,
-												}));
-											}}
-											autoComplete="new-password"
+											id="user-storage-quota"
+											type="number"
+											value={quotaValue}
+											onChange={(event) => setQuotaValue(event.target.value)}
+											placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
 											className={ADMIN_CONTROL_HEIGHT_CLASS}
-											disabled={savingPassword}
-											aria-invalid={passwordErrors.password ? true : undefined}
+											disabled={savingProfile}
 										/>
-										<p className="text-xs text-muted-foreground">
-											{t("reset_password_hint")}
-										</p>
-										{passwordErrors.password ? (
-											<p className="text-xs text-destructive">
-												{passwordErrors.password}
-											</p>
-										) : null}
 									</div>
-									<div className="space-y-2">
-										<Label htmlFor="user-reset-password-confirm">
-											{t("confirm_password")}
-										</Label>
-										<Input
-											id="user-reset-password-confirm"
-											name="admin-reset-user-password-confirm"
-											type="password"
-											value={confirmPasswordValue}
-											onChange={(e) => {
-												setConfirmPasswordValue(e.target.value);
-												setPasswordErrors((prev) => ({
-													...prev,
-													confirm: undefined,
-												}));
-											}}
-											autoComplete="new-password"
-											className={ADMIN_CONTROL_HEIGHT_CLASS}
-											disabled={savingPassword}
-											aria-invalid={passwordErrors.confirm ? true : undefined}
-										/>
-										{passwordErrors.confirm ? (
-											<p className="text-xs text-destructive">
-												{passwordErrors.confirm}
-											</p>
-										) : null}
-									</div>
-								</div>
-								<div className="mt-5 flex justify-end border-t pt-4">
-									<Button
-										type="button"
-										onClick={() => void handlePasswordReset()}
-										disabled={
-											savingPassword ||
-											passwordValue.length === 0 ||
-											confirmPasswordValue.length === 0
-										}
-									>
-										{t("reset_password")}
-									</Button>
 								</div>
 							</section>
 
-							<section className="rounded-2xl border bg-background/60 p-6">
-								<div className="mb-5">
-									<h4 className="text-base font-semibold text-foreground">
-										{t("revoke_sessions")}
-									</h4>
-									<p className="mt-1 text-sm text-muted-foreground">
-										{t("revoke_sessions_desc")}
-									</p>
-								</div>
-								<div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
-									<p className="text-sm text-muted-foreground">
-										{t("revoke_sessions_hint")}
-									</p>
-								</div>
-								<div className="mt-5 flex justify-end border-t pt-4">
-									<Button
-										type="button"
-										variant="destructive"
-										onClick={() => void handleSessionRevoke()}
-										disabled={revokingSessions}
-									>
-										{revokingSessions ? (
-											<Icon
-												name="Spinner"
-												className="mr-1 h-4 w-4 animate-spin"
-											/>
-										) : (
-											<Icon name="SignOut" className="mr-1 h-4 w-4" />
-										)}
-										{t("revoke_sessions")}
-									</Button>
-								</div>
-							</section>
-
-							<section className="rounded-2xl border bg-background/60 p-6">
-								<div className="mb-5 flex items-center justify-between gap-3">
+							<section className="rounded-2xl border bg-background/60 p-5">
+								<div className="mb-4 flex items-start justify-between gap-3">
 									<div>
 										<h4 className="text-base font-semibold text-foreground">
 											{t("storage_policy_assignments")}
@@ -663,164 +533,265 @@ export function UserDetailDialog({
 										variant="ghost"
 										size="sm"
 										className={ADMIN_CONTROL_HEIGHT_CLASS}
-										onClick={() => void loadPolicies()}
-										disabled={policiesLoading}
+										onClick={() => void loadPolicyGroups()}
+										disabled={policyGroupsLoading}
 									>
 										<Icon
-											name={policiesLoading ? "Spinner" : "ArrowsClockwise"}
-											className={`mr-1 h-3.5 w-3.5 ${policiesLoading ? "animate-spin" : ""}`}
+											name={policyGroupsLoading ? "Spinner" : "ArrowsClockwise"}
+											className={`mr-1 h-3.5 w-3.5 ${policyGroupsLoading ? "animate-spin" : ""}`}
 										/>
 										{t("refresh")}
 									</Button>
 								</div>
 
-								{policiesLoading ? (
-									<SkeletonTable columns={4} rows={4} />
-								) : assignments.length === 0 ? (
-									<p className="text-sm text-muted-foreground">
-										{t("no_policies_assigned")}
-									</p>
+								{policyGroupsLoading ? (
+									<SkeletonTable columns={2} rows={3} />
 								) : (
-									<div className="space-y-2">
-										{assignments.map((a) => (
-											<div
-												key={a.id}
-												className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"
-											>
-												<div className="min-w-0 flex-1">
-													<div className="text-sm font-medium text-foreground">
-														{policyName(a.policy_id)}
-													</div>
-													{editingAssignmentId === a.id ? (
-														<div className="mt-2 flex items-center gap-2">
-															<Input
-																type="number"
-																value={editingAssignmentQuota}
-																onChange={(e) =>
-																	setEditingAssignmentQuota(e.target.value)
-																}
-																placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
-																className="h-8 max-w-[180px]"
-															/>
-															<Button
-																size="sm"
-																onClick={() => void saveAssignmentQuota(a)}
-															>
-																{t("core:save")}
-															</Button>
-															<Button
-																variant="ghost"
-																size="sm"
-																onClick={() => {
-																	setEditingAssignmentId(null);
-																	setEditingAssignmentQuota("");
-																}}
-															>
-																{t("core:cancel")}
-															</Button>
-														</div>
-													) : (
-														<div className="text-xs text-muted-foreground">
-															{t("quota")}:{" "}
-															{a.quota_bytes > 0
-																? formatBytes(a.quota_bytes)
-																: t("core:unlimited")}
-														</div>
-													)}
-												</div>
-												<div className="flex items-center gap-2">
-													{a.is_default ? (
-														<Badge className="border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-700 dark:bg-blue-900 dark:text-blue-300">
-															{t("is_default")}
-														</Badge>
-													) : null}
-													<Button
-														variant="ghost"
-														size="sm"
-														onClick={() => void handleSetDefault(a)}
-														disabled={a.is_default}
-													>
-														{a.is_default
-															? t("default_selected")
-															: t("set_default")}
-													</Button>
-													<Button
-														variant="ghost"
-														size="sm"
-														onClick={() => startEditAssignmentQuota(a)}
-													>
-														{t("edit_quota")}
-													</Button>
-													<Button
-														variant="ghost"
-														size="icon"
-														className="h-8 w-8 text-destructive"
-														onClick={() => void handleRemove(a)}
-													>
-														<Icon name="Trash" className="h-3.5 w-3.5" />
-													</Button>
-												</div>
-											</div>
-										))}
-									</div>
-								)}
-
-								{availablePolicies.length > 0 ? (
-									<div className="mt-5 space-y-4 rounded-xl border bg-muted/10 p-4">
-										<Label className="text-sm font-medium">
-											{t("assign_policy")}
-										</Label>
-										{!hasDefaultPolicy ? (
-											<p className="text-xs text-amber-600 dark:text-amber-400">
-												{t("default_policy_required")}
-											</p>
-										) : null}
-										<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-center">
-											<Select
-												value={addPolicyId != null ? String(addPolicyId) : ""}
-												onValueChange={(v) =>
-													setAddPolicyId(v ? Number(v) : null)
-												}
-											>
-												<SelectTrigger>
-													<SelectValue placeholder={t("select_policy")} />
-												</SelectTrigger>
-												<SelectContent>
-													{availablePolicies.map((p) => (
-														<SelectItem key={p.id} value={String(p.id)}>
-															{p.name} ({p.driver_type})
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-											<Input
-												placeholder={`${t("quota")} (MB, 0=${t("core:unlimited").toLowerCase()})`}
-												value={addQuota}
-												onChange={(e) => setAddQuota(e.target.value)}
-											/>
-											<div className="flex items-center justify-between gap-3 md:justify-end">
-												<div className="flex items-center gap-2">
-													<Switch
-														checked={addDefault}
-														onCheckedChange={setAddDefault}
-													/>
-													<span className="text-xs">{t("is_default")}</span>
-												</div>
-												<Button
-													disabled={!addPolicyId}
-													onClick={() => void handleAssign()}
+									<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+										<div className="space-y-3">
+											<div className="space-y-2">
+												<Label>{t("policy_groups")}</Label>
+												<Select
+													value={
+														draftPolicyGroupId != null
+															? String(draftPolicyGroupId)
+															: ""
+													}
+													onValueChange={(value) => {
+														if (!value) {
+															// The API does not allow unassigning a policy group.
+															return;
+														}
+														setDraftPolicyGroupId(Number(value));
+													}}
+													disabled={
+														savingProfile || policyGroupOptions.length === 0
+													}
 												>
-													{t("core:confirm")}
-												</Button>
+													<SelectTrigger
+														className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
+													>
+														<SelectValue
+															placeholder={t("select_policy_group")}
+														/>
+													</SelectTrigger>
+													<SelectContent>
+														{policyGroupOptions.map((option) => (
+															<SelectItem
+																key={option.value}
+																value={option.value}
+																disabled={option.disabled}
+															>
+																{option.label}
+															</SelectItem>
+														))}
+													</SelectContent>
+												</Select>
 											</div>
+
+											{assignedPolicyGroupIsInvalid ? (
+												<div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+													{t("policy_group_invalid_assignment")}
+												</div>
+											) : null}
+
+											{policyGroupOptions.length === 0 ? (
+												<p className="text-sm text-muted-foreground">
+													{t("policy_group_no_assignable_groups")}
+												</p>
+											) : null}
+										</div>
+
+										<div className="rounded-xl border bg-muted/10 p-4">
+											<div className="flex flex-wrap items-center gap-2">
+												<p className="text-sm font-semibold text-foreground">
+													{selectedPolicyGroup?.name ??
+														selectedPolicyGroupOption?.label ??
+														t("no_policies_assigned")}
+												</p>
+												{selectedPolicyGroup?.is_default ? (
+													<Badge className="border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-700 dark:bg-blue-900 dark:text-blue-300">
+														{t("is_default")}
+													</Badge>
+												) : null}
+											</div>
+											{selectedPolicyGroup ? (
+												<>
+													<p className="mt-2 text-xs text-muted-foreground">
+														{selectedPolicyGroup.description ||
+															t("policy_group_description_empty")}
+													</p>
+													<p className="mt-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+														{t("policy_group_rules_count", {
+															count: selectedPolicyGroup.items.length,
+														})}
+													</p>
+													<div className="mt-3 space-y-2">
+														{selectedPolicyGroup.items
+															.slice(0, 3)
+															.map((item) => (
+																<div
+																	key={item.id}
+																	className="rounded-lg border bg-background/80 px-3 py-2"
+																>
+																	<div className="text-sm font-medium text-foreground">
+																		{item.policy.name}
+																	</div>
+																	<div className="mt-1 text-xs text-muted-foreground">
+																		{t("policy_group_priority_short", {
+																			priority: item.priority,
+																		})}
+																	</div>
+																</div>
+															))}
+													</div>
+												</>
+											) : (
+												<p className="mt-2 text-sm text-muted-foreground">
+													{t("no_policies_assigned")}
+												</p>
+											)}
 										</div>
 									</div>
-								) : null}
+								)}
+							</section>
+
+							<section className="rounded-2xl border bg-background/60 p-5">
+								<div className="mb-4">
+									<h4 className="text-base font-semibold text-foreground">
+										{t("security_actions")}
+									</h4>
+									<p className="mt-1 text-sm text-muted-foreground">
+										{t("security_actions_desc")}
+									</p>
+								</div>
+
+								<div className="space-y-3">
+									<div className="rounded-xl border bg-muted/10 p-4">
+										<div className="mb-3">
+											<h5 className="text-sm font-semibold text-foreground">
+												{t("reset_password")}
+											</h5>
+											<p className="mt-1 text-sm text-muted-foreground">
+												{t("reset_password_desc")}
+											</p>
+										</div>
+										<div className="grid gap-4 md:grid-cols-2">
+											<div className="space-y-2">
+												<Label htmlFor="user-reset-password">
+													{t("password")}
+												</Label>
+												<Input
+													id="user-reset-password"
+													name="admin-reset-user-password"
+													type="password"
+													value={passwordValue}
+													onChange={(event) => {
+														setPasswordValue(event.target.value);
+														setPasswordErrors((prev) => ({
+															...prev,
+															password: undefined,
+														}));
+													}}
+													autoComplete="new-password"
+													className={ADMIN_CONTROL_HEIGHT_CLASS}
+													disabled={savingPassword}
+													aria-invalid={
+														passwordErrors.password ? true : undefined
+													}
+												/>
+												<p className="text-xs text-muted-foreground">
+													{t("reset_password_hint")}
+												</p>
+												{passwordErrors.password ? (
+													<p className="text-xs text-destructive">
+														{passwordErrors.password}
+													</p>
+												) : null}
+											</div>
+											<div className="space-y-2">
+												<Label htmlFor="user-reset-password-confirm">
+													{t("confirm_password")}
+												</Label>
+												<Input
+													id="user-reset-password-confirm"
+													name="admin-reset-user-password-confirm"
+													type="password"
+													value={confirmPasswordValue}
+													onChange={(event) => {
+														setConfirmPasswordValue(event.target.value);
+														setPasswordErrors((prev) => ({
+															...prev,
+															confirm: undefined,
+														}));
+													}}
+													autoComplete="new-password"
+													className={ADMIN_CONTROL_HEIGHT_CLASS}
+													disabled={savingPassword}
+													aria-invalid={
+														passwordErrors.confirm ? true : undefined
+													}
+												/>
+												{passwordErrors.confirm ? (
+													<p className="text-xs text-destructive">
+														{passwordErrors.confirm}
+													</p>
+												) : null}
+											</div>
+										</div>
+										<div className="mt-4 flex justify-end">
+											<Button
+												type="button"
+												onClick={() => void handlePasswordReset()}
+												disabled={
+													savingPassword ||
+													passwordValue.length === 0 ||
+													confirmPasswordValue.length === 0
+												}
+											>
+												{t("reset_password")}
+											</Button>
+										</div>
+									</div>
+
+									<div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+										<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+											<div className="max-w-2xl">
+												<h5 className="text-sm font-semibold text-foreground">
+													{t("revoke_sessions")}
+												</h5>
+												<p className="mt-1 text-sm text-muted-foreground">
+													{t("revoke_sessions_desc")}
+												</p>
+												<p className="mt-2 text-xs text-muted-foreground">
+													{t("revoke_sessions_hint")}
+												</p>
+											</div>
+											<Button
+												type="button"
+												variant="destructive"
+												onClick={() => void handleSessionRevoke()}
+												disabled={revokingSessions}
+												className="md:shrink-0"
+											>
+												{revokingSessions ? (
+													<Icon
+														name="Spinner"
+														className="mr-1 h-4 w-4 animate-spin"
+													/>
+												) : (
+													<Icon name="SignOut" className="mr-1 h-4 w-4" />
+												)}
+												{t("revoke_sessions")}
+											</Button>
+										</div>
+									</div>
+								</div>
 							</section>
 						</div>
 					</div>
 				</div>
-				<DialogFooter className="mx-0 mb-0 rounded-b-xl px-6 py-3 sm:flex-row sm:items-center sm:justify-end">
+				<DialogFooter className="mx-0 mb-0 rounded-b-xl px-6 py-2.5 sm:flex-row sm:items-center sm:justify-end">
 					{hasProfileChanges ? (
 						<Button
 							onClick={() => void handleProfileSave()}

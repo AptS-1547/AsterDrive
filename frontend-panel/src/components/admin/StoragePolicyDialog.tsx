@@ -245,6 +245,23 @@ export function StoragePolicyDialog({
 				]
 			: []),
 	];
+	const s3UploadStrategyOptions = [
+		{
+			label: t("s3_upload_strategy_proxy_tempfile"),
+			value: "proxy_tempfile",
+		},
+		{
+			label: t("s3_upload_strategy_relay_stream"),
+			value: "relay_stream",
+		},
+		{
+			label: t("s3_upload_strategy_presigned"),
+			value: "presigned",
+		},
+	] satisfies ReadonlyArray<{
+		label: string;
+		value: S3UploadStrategy;
+	}>;
 
 	const renderNameField = (showCreateValidation = false) => (
 		<div className="space-y-2">
@@ -356,6 +373,7 @@ export function StoragePolicyDialog({
 		<div className="space-y-2 pt-1">
 			<Label htmlFor="s3_upload_strategy">{t("s3_upload_strategy")}</Label>
 			<Select
+				items={s3UploadStrategyOptions}
 				value={form.s3_upload_strategy}
 				onValueChange={(value) =>
 					onFieldChange("s3_upload_strategy", value as S3UploadStrategy)
@@ -368,15 +386,11 @@ export function StoragePolicyDialog({
 					<SelectValue />
 				</SelectTrigger>
 				<SelectContent>
-					<SelectItem value="proxy_tempfile">
-						{t("s3_upload_strategy_proxy_tempfile")}
-					</SelectItem>
-					<SelectItem value="relay_stream">
-						{t("s3_upload_strategy_relay_stream")}
-					</SelectItem>
-					<SelectItem value="presigned">
-						{t("s3_upload_strategy_presigned")}
-					</SelectItem>
+					{s3UploadStrategyOptions.map((option) => (
+						<SelectItem key={option.value} value={option.value}>
+							{option.label}
+						</SelectItem>
+					))}
 				</SelectContent>
 			</Select>
 			<p className="text-xs text-muted-foreground">

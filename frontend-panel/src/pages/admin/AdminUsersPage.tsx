@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -53,28 +53,109 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
+import { useApiList } from "@/hooks/useApiList";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	ADMIN_ICON_BUTTON_CLASS,
 } from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
+import {
+	buildOffsetPaginationSearchParams,
+	parseOffsetSearchParam,
+	parsePageSizeOption,
+	parsePageSizeSearchParam,
+} from "@/lib/pagination";
 import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
 import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { adminUserService } from "@/services/adminService";
 import type {
 	CreateUserReq,
+	UpdateUserRequest,
 	UserInfo,
 	UserRole,
 	UserStatus,
 } from "@/types/api";
 
 const USER_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const DEFAULT_USER_PAGE_SIZE = 20 as const;
+const USER_MANAGED_QUERY_KEYS = [
+	"keyword",
+	"offset",
+	"pageSize",
+	"role",
+	"status",
+] as const;
 const INTERACTIVE_TABLE_ROW_CLASS =
 	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
 const USER_TEXT_CELL_CONTENT_CLASS =
 	"flex min-w-0 items-center rounded-lg bg-muted/10 px-3 py-3 text-left transition-colors duration-200";
 const USER_BADGE_CELL_CONTENT_CLASS =
 	"flex items-center rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
+
+function normalizeOffset(offset: number) {
+	return Math.max(0, Math.floor(offset));
+}
+
+function parseRoleSearchParam(value: string | null): "__all__" | UserRole {
+	return value === "admin" || value === "user" ? value : "__all__";
+}
+
+function parseStatusSearchParam(value: string | null): "__all__" | UserStatus {
+	return value === "active" || value === "disabled" ? value : "__all__";
+}
+
+function buildManagedUserSearchParams({
+	offset,
+	pageSize,
+	keyword,
+	role,
+	status,
+}: {
+	offset: number;
+	pageSize: (typeof USER_PAGE_SIZE_OPTIONS)[number];
+	keyword: string;
+	role: "__all__" | UserRole;
+	status: "__all__" | UserStatus;
+}) {
+	return buildOffsetPaginationSearchParams({
+		offset,
+		pageSize,
+		defaultPageSize: DEFAULT_USER_PAGE_SIZE,
+		extraParams: {
+			keyword: keyword.trim() || undefined,
+			role: role !== "__all__" ? role : undefined,
+			status: status !== "__all__" ? status : undefined,
+		},
+	});
+}
+
+function getManagedUserSearchString(searchParams: URLSearchParams) {
+	return buildManagedUserSearchParams({
+		offset: normalizeOffset(parseOffsetSearchParam(searchParams.get("offset"))),
+		pageSize: parsePageSizeSearchParam(
+			searchParams.get("pageSize"),
+			USER_PAGE_SIZE_OPTIONS,
+			DEFAULT_USER_PAGE_SIZE,
+		),
+		keyword: searchParams.get("keyword") ?? "",
+		role: parseRoleSearchParam(searchParams.get("role")),
+		status: parseStatusSearchParam(searchParams.get("status")),
+	}).toString();
+}
+
+function mergeManagedUserSearchParams(
+	searchParams: URLSearchParams,
+	managedSearchParams: URLSearchParams,
+) {
+	const merged = new URLSearchParams(searchParams);
+	for (const key of USER_MANAGED_QUERY_KEYS) {
+		merged.delete(key);
+	}
+	for (const [key, value] of managedSearchParams.entries()) {
+		merged.set(key, value);
+	}
+	return merged;
+}
 
 function QuotaCell({ user }: { user: UserInfo }) {
 	const { t } = useTranslation("admin");
@@ -101,22 +182,17 @@ export default function AdminUsersPage() {
 	const initialKeyword = searchParams.get("keyword") ?? "";
 	const initialRole = searchParams.get("role");
 	const initialStatus = searchParams.get("status");
-	const initialOffset = Number(searchParams.get("offset") ?? "0");
-	const initialPageSize = Number(searchParams.get("pageSize") ?? "20");
-	const [users, setUsers] = useState<UserInfo[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [total, setTotal] = useState(0);
-	const [offset, setOffset] = useState(
-		Number.isNaN(initialOffset) ? 0 : initialOffset,
+	const [offset, setOffsetState] = useState(
+		normalizeOffset(parseOffsetSearchParam(searchParams.get("offset"))),
 	);
 	const [pageSize, setPageSize] = useState<
 		(typeof USER_PAGE_SIZE_OPTIONS)[number]
 	>(
-		USER_PAGE_SIZE_OPTIONS.includes(
-			initialPageSize as (typeof USER_PAGE_SIZE_OPTIONS)[number],
-		)
-			? (initialPageSize as (typeof USER_PAGE_SIZE_OPTIONS)[number])
-			: 20,
+		parsePageSizeSearchParam(
+			searchParams.get("pageSize"),
+			USER_PAGE_SIZE_OPTIONS,
+			DEFAULT_USER_PAGE_SIZE,
+		),
 	);
 	const [keyword, setKeyword] = useState(initialKeyword);
 	const [debouncedKeyword, setDebouncedKeyword] = useState(initialKeyword);
@@ -140,6 +216,10 @@ export default function AdminUsersPage() {
 		email: "",
 		password: "",
 	});
+	const lastWrittenSearchRef = useRef<string | null>(null);
+	const setOffset = (value: number) => {
+		setOffsetState(normalizeOffset(value));
+	};
 
 	useEffect(() => {
 		const timer = window.setTimeout(() => {
@@ -149,44 +229,85 @@ export default function AdminUsersPage() {
 	}, [keyword]);
 
 	useEffect(() => {
-		const params = new URLSearchParams();
-		if (debouncedKeyword.trim()) params.set("keyword", debouncedKeyword.trim());
-		if (roleFilter !== "__all__") params.set("role", roleFilter);
-		if (statusFilter !== "__all__") params.set("status", statusFilter);
-		if (offset > 0) params.set("offset", String(offset));
-		if (pageSize !== 20) params.set("pageSize", String(pageSize));
-		setSearchParams(params, { replace: true });
+		const managedSearch = getManagedUserSearchString(searchParams);
+		if (managedSearch === lastWrittenSearchRef.current) {
+			return;
+		}
+
+		const nextOffset = normalizeOffset(
+			parseOffsetSearchParam(searchParams.get("offset")),
+		);
+		const nextPageSize = parsePageSizeSearchParam(
+			searchParams.get("pageSize"),
+			USER_PAGE_SIZE_OPTIONS,
+			DEFAULT_USER_PAGE_SIZE,
+		);
+		const nextKeyword = searchParams.get("keyword") ?? "";
+		const nextRole = parseRoleSearchParam(searchParams.get("role"));
+		const nextStatus = parseStatusSearchParam(searchParams.get("status"));
+
+		setOffsetState((prev) => (prev === nextOffset ? prev : nextOffset));
+		setPageSize((prev) => (prev === nextPageSize ? prev : nextPageSize));
+		setKeyword((prev) => (prev === nextKeyword ? prev : nextKeyword));
+		setDebouncedKeyword((prev) => (prev === nextKeyword ? prev : nextKeyword));
+		setRoleFilter((prev) => (prev === nextRole ? prev : nextRole));
+		setStatusFilter((prev) => (prev === nextStatus ? prev : nextStatus));
+	}, [searchParams]);
+
+	useEffect(() => {
+		const nextManagedSearchParams = buildManagedUserSearchParams({
+			offset,
+			pageSize,
+			keyword: debouncedKeyword,
+			role: roleFilter,
+			status: statusFilter,
+		});
+		const nextSearch = nextManagedSearchParams.toString();
+		const currentSearch = getManagedUserSearchString(searchParams);
+		if (
+			currentSearch !== lastWrittenSearchRef.current &&
+			currentSearch !== nextSearch
+		) {
+			return;
+		}
+
+		lastWrittenSearchRef.current = nextSearch;
+		if (nextSearch === currentSearch) {
+			return;
+		}
+
+		setSearchParams(
+			mergeManagedUserSearchParams(searchParams, nextManagedSearchParams),
+			{ replace: true },
+		);
 	}, [
 		debouncedKeyword,
 		offset,
 		pageSize,
 		roleFilter,
+		searchParams,
 		setSearchParams,
 		statusFilter,
 	]);
 
-	const load = useCallback(async () => {
-		try {
-			setLoading(true);
-			const page = await adminUserService.list({
+	const {
+		items: users,
+		loading,
+		reload: reloadUsers,
+		setItems: setUsers,
+		setTotal,
+		total,
+	} = useApiList(
+		() =>
+			adminUserService.list({
 				limit: pageSize,
 				offset,
 				keyword: debouncedKeyword.trim() || undefined,
 				role: roleFilter === "__all__" ? undefined : roleFilter,
 				status: statusFilter === "__all__" ? undefined : statusFilter,
-			});
-			setUsers(page.items);
-			setTotal(page.total);
-		} catch (e) {
-			handleApiError(e);
-		} finally {
-			setLoading(false);
-		}
-	}, [debouncedKeyword, offset, pageSize, roleFilter, statusFilter]);
-
-	useEffect(() => {
-		void load();
-	}, [load]);
+			}),
+		[debouncedKeyword, offset, pageSize, roleFilter, statusFilter],
+	);
 
 	const activeFilterCount =
 		(debouncedKeyword.trim().length > 0 ? 1 : 0) +
@@ -207,8 +328,8 @@ export default function AdminUsersPage() {
 	};
 
 	const handlePageSizeChange = (value: string | null) => {
-		if (!value) return;
-		const next = Number(value) as (typeof USER_PAGE_SIZE_OPTIONS)[number];
+		const next = parsePageSizeOption(value, USER_PAGE_SIZE_OPTIONS);
+		if (next == null) return;
 		setPageSize(next);
 		setOffset(0);
 	};
@@ -288,7 +409,7 @@ export default function AdminUsersPage() {
 			toast.success(t("user_created"));
 			setCreateDialogOpen(false);
 			resetCreateForm();
-			await load();
+			await reloadUsers();
 		} catch (e) {
 			handleApiError(e);
 		} finally {
@@ -296,17 +417,10 @@ export default function AdminUsersPage() {
 		}
 	};
 
-	const updateUser = async (
-		id: number,
-		data: {
-			role?: UserRole;
-			status?: UserStatus;
-			storage_quota?: number;
-		},
-	) => {
+	const updateUser = async (id: number, data: UpdateUserRequest) => {
 		try {
-			const updated = await adminUserService.update(id, data);
-			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
+			await adminUserService.update(id, data);
+			await reloadUsers();
 			toast.success(t("user_updated"));
 		} catch (e) {
 			handleApiError(e);
@@ -344,6 +458,20 @@ export default function AdminUsersPage() {
 		() => users.find((user) => user.id === deleteUserId) ?? null,
 		[users, deleteUserId],
 	);
+	const roleFilterOptions = [
+		{ label: t("all_roles"), value: "__all__" },
+		{ label: t("role_admin"), value: "admin" },
+		{ label: t("role_user"), value: "user" },
+	] satisfies ReadonlyArray<{ label: string; value: string }>;
+	const statusFilterOptions = [
+		{ label: t("all_statuses"), value: "__all__" },
+		{ label: t("core:active"), value: "active" },
+		{ label: t("core:disabled_status"), value: "disabled" },
+	] satisfies ReadonlyArray<{ label: string; value: string }>;
+	const pageSizeOptions = USER_PAGE_SIZE_OPTIONS.map((size) => ({
+		label: t("page_size_option", { count: size }),
+		value: String(size),
+	}));
 
 	return (
 		<AdminLayout>
@@ -365,7 +493,7 @@ export default function AdminUsersPage() {
 								variant="outline"
 								size="sm"
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
-								onClick={() => void load()}
+								onClick={() => void reloadUsers()}
 								disabled={loading}
 							>
 								<Icon
@@ -390,19 +518,26 @@ export default function AdminUsersPage() {
 									className={`${ADMIN_CONTROL_HEIGHT_CLASS} pl-9`}
 								/>
 							</div>
-							<Select value={roleFilter} onValueChange={handleRoleFilterChange}>
+							<Select
+								items={roleFilterOptions}
+								value={roleFilter}
+								onValueChange={handleRoleFilterChange}
+							>
 								<SelectTrigger
 									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[140px]`}
 								>
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="__all__">{t("all_roles")}</SelectItem>
-									<SelectItem value="admin">{t("role_admin")}</SelectItem>
-									<SelectItem value="user">{t("role_user")}</SelectItem>
+									{roleFilterOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 							<Select
+								items={statusFilterOptions}
 								value={statusFilter}
 								onValueChange={handleStatusFilterChange}
 							>
@@ -412,11 +547,11 @@ export default function AdminUsersPage() {
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="__all__">{t("all_statuses")}</SelectItem>
-									<SelectItem value="active">{t("core:active")}</SelectItem>
-									<SelectItem value="disabled">
-										{t("core:disabled_status")}
-									</SelectItem>
+									{statusFilterOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 							<div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
@@ -594,6 +729,7 @@ export default function AdminUsersPage() {
 								})}
 							</span>
 							<Select
+								items={pageSizeOptions}
 								value={String(pageSize)}
 								onValueChange={handlePageSizeChange}
 							>
@@ -603,9 +739,9 @@ export default function AdminUsersPage() {
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									{USER_PAGE_SIZE_OPTIONS.map((size) => (
-										<SelectItem key={size} value={String(size)}>
-											{t("page_size_option", { count: size })}
+									{pageSizeOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
 										</SelectItem>
 									))}
 								</SelectContent>

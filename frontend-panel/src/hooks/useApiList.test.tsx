@@ -9,6 +9,17 @@ vi.mock("@/hooks/useApiError", () => ({
 	handleApiError: mockState.handleApiError,
 }));
 
+function createDeferred<T>() {
+	let reject!: (reason?: unknown) => void;
+	let resolve!: (value: T | PromiseLike<T>) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+
+	return { promise, reject, resolve };
+}
+
 describe("useApiList", () => {
 	beforeEach(() => {
 		mockState.handleApiError.mockReset();
@@ -49,5 +60,33 @@ describe("useApiList", () => {
 		expect(result.current.items).toEqual([]);
 		expect(result.current.total).toBe(0);
 		expect(mockState.handleApiError).toHaveBeenCalledWith(failure);
+	});
+
+	it("ignores stale responses when a newer load finishes first", async () => {
+		const first = createDeferred<{ items: string[]; total: number }>();
+		const second = createDeferred<{ items: string[]; total: number }>();
+		const fetcher = vi
+			.fn()
+			.mockImplementationOnce(() => first.promise)
+			.mockImplementationOnce(() => second.promise);
+		const { useApiList } = await import("@/hooks/useApiList");
+		const { result } = renderHook(() => useApiList(fetcher));
+
+		const reloadPromise = result.current.reload();
+
+		second.resolve({ items: ["new"], total: 1 });
+		await waitFor(() => {
+			expect(result.current.loading).toBe(false);
+		});
+		expect(result.current.items).toEqual(["new"]);
+		expect(result.current.total).toBe(1);
+
+		first.resolve({ items: ["old"], total: 99 });
+		await Promise.resolve();
+		await reloadPromise;
+
+		expect(result.current.items).toEqual(["new"]);
+		expect(result.current.total).toBe(1);
+		expect(mockState.handleApiError).not.toHaveBeenCalled();
 	});
 });

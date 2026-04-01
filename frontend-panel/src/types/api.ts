@@ -25,9 +25,6 @@ export type UserPreferences = components["schemas"]["UserPreferences"];
 export type UserProfileInfo = components["schemas"]["UserProfileInfo"];
 export type UserRole = components["schemas"]["UserRole"];
 export type UserStatus = components["schemas"]["UserStatus"];
-export type UserStoragePolicy = components["schemas"]["UserStoragePolicy"];
-export type UserStoragePolicyPage =
-	components["schemas"]["OffsetPage_UserStoragePolicy"];
 
 // Files, folders, and trash
 export type FileInfo = components["schemas"]["FileInfo"];
@@ -63,8 +60,19 @@ export type AdminOverview = components["schemas"]["AdminOverview"];
 export type AdminOverviewDailyReport =
 	components["schemas"]["AdminOverviewDailyReport"];
 export type AdminOverviewStats = components["schemas"]["AdminOverviewStats"];
+export type CreatePolicyGroupRequest =
+	components["schemas"]["CreatePolicyGroupReq"];
+export type CreatePolicyRequest = components["schemas"]["CreatePolicyReq"];
 export type DriverType = components["schemas"]["DriverType"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
+export type MigratePolicyGroupUsersRequest =
+	components["schemas"]["MigratePolicyGroupUsersReq"];
+export type PolicyGroupItemRequest =
+	components["schemas"]["PolicyGroupItemReq"];
+export type UpdatePolicyGroupRequest =
+	components["schemas"]["PatchPolicyGroupReq"];
+export type UpdatePolicyRequest = components["schemas"]["PatchPolicyReq"];
+export type UpdateUserRequest = components["schemas"]["PatchUserReq"];
 export type RemovedCountResponse =
 	components["schemas"]["RemovedCountResponse"];
 export type ResetUserPasswordRequest =
@@ -72,6 +80,14 @@ export type ResetUserPasswordRequest =
 export type StoragePolicy = components["schemas"]["StoragePolicy"];
 export type StoragePolicyPage =
 	components["schemas"]["OffsetPage_StoragePolicy"];
+export type StoragePolicyGroupItem =
+	components["schemas"]["StoragePolicyGroupItemInfo"];
+export type StoragePolicyGroup =
+	components["schemas"]["StoragePolicyGroupInfo"];
+export type PolicyGroupUserMigrationResult =
+	components["schemas"]["PolicyGroupUserMigrationResult"];
+export type StoragePolicyGroupPage =
+	components["schemas"]["OffsetPage_StoragePolicyGroupInfo"];
 export type SystemConfig = components["schemas"]["SystemConfig"];
 export type SystemConfigPage = components["schemas"]["OffsetPage_SystemConfig"];
 export type WebdavAccount = components["schemas"]["WebdavAccount"];

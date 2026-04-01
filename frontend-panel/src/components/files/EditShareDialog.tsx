@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import {
+	normalizeMaxDownloads,
+	toDateTimeLocalValue,
+	toIsoDateTime,
+} from "@/components/files/shareDialogShared";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -32,34 +37,6 @@ interface EditShareDialogProps {
 	onSaved?: () => void | Promise<void>;
 }
 
-function toDateTimeLocalValue(value: string | null | undefined): string {
-	if (!value) return "";
-
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) {
-		return "";
-	}
-
-	const offsetMs = date.getTimezoneOffset() * 60 * 1000;
-	return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function toIsoDateTime(value: string): string | null {
-	const trimmed = value.trim();
-	if (!trimmed) return null;
-
-	const date = new Date(trimmed);
-	return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function normalizeMaxDownloads(value: string): number {
-	const parsed = Number.parseInt(value, 10);
-	if (Number.isNaN(parsed) || parsed < 0) {
-		return 0;
-	}
-	return parsed;
-}
-
 export function EditShareDialog({
 	open,
 	onOpenChange,
@@ -72,6 +49,11 @@ export function EditShareDialog({
 	const [expiresAt, setExpiresAt] = useState("");
 	const [maxDownloads, setMaxDownloads] = useState("0");
 	const [loading, setLoading] = useState(false);
+	const passwordActionOptions = [
+		{ label: t("share:my_shares_edit_password_keep"), value: "keep" },
+		{ label: t("share:my_shares_edit_password_clear"), value: "clear" },
+		{ label: t("share:my_shares_edit_password_set"), value: "set" },
+	] satisfies ReadonlyArray<{ label: string; value: PasswordAction }>;
 
 	useEffect(() => {
 		if (!open || !share) return;
@@ -131,6 +113,7 @@ export function EditShareDialog({
 					<div className="space-y-2">
 						<Label>{t("share:my_shares_edit_password_mode")}</Label>
 						<Select
+							items={passwordActionOptions}
 							value={passwordAction}
 							onValueChange={(value) =>
 								setPasswordAction((value as PasswordAction | null) ?? "keep")
@@ -140,15 +123,11 @@ export function EditShareDialog({
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
-								<SelectItem value="keep">
-									{t("share:my_shares_edit_password_keep")}
-								</SelectItem>
-								<SelectItem value="clear">
-									{t("share:my_shares_edit_password_clear")}
-								</SelectItem>
-								<SelectItem value="set">
-									{t("share:my_shares_edit_password_set")}
-								</SelectItem>
+								{passwordActionOptions.map((option) => (
+									<SelectItem key={option.value} value={option.value}>
+										{option.label}
+									</SelectItem>
+								))}
 							</SelectContent>
 						</Select>
 					</div>
