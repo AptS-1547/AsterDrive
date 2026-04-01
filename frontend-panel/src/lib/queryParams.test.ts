@@ -41,8 +41,8 @@ describe("queryParams", () => {
 		expect(withQuery("/admin/users#section", { offset: 40 })).toBe(
 			"/admin/users?offset=40#section",
 		);
-		expect(
-			withQuery("/admin/users?active=true#section", { offset: 40 }),
-		).toBe("/admin/users?active=true&offset=40#section");
+		expect(withQuery("/admin/users?active=true#section", { offset: 40 })).toBe(
+			"/admin/users?active=true&offset=40#section",
+		);
 	});
 });

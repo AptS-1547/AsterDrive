@@ -300,7 +300,7 @@ async fn create_s3_default_policy(
     .await
     .unwrap();
 
-    aster_drive::services::policy_service::assign_user_policy(&state, user_id, policy.id, true, 0)
+    aster_drive::services::policy_service::assign_user_policy(state, user_id, policy.id, true, 0)
         .await
         .unwrap();
 

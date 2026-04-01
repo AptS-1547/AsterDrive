@@ -2,11 +2,7 @@ import { buildQueryParams, type QueryParamRecord } from "@/lib/queryParams";
 
 export function parseOffsetSearchParam(rawValue: string | null): number {
 	const parsed = Number(rawValue ?? "0");
-	if (
-		!Number.isFinite(parsed) ||
-		parsed < 0 ||
-		!Number.isInteger(parsed)
-	) {
+	if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
 		return 0;
 	}
 

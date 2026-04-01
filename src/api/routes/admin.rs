@@ -484,6 +484,7 @@ pub async fn list_policy_groups(
     request_body = CreatePolicyGroupReq,
     responses(
         (status = 201, description = "Policy group created", body = inline(ApiResponse<crate::services::policy_service::StoragePolicyGroupInfo>)),
+        (status = 400, description = "Bad Request"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -545,6 +546,7 @@ pub async fn get_policy_group(
     request_body = PatchPolicyGroupReq,
     responses(
         (status = 200, description = "Policy group updated", body = inline(ApiResponse<crate::services::policy_service::StoragePolicyGroupInfo>)),
+        (status = 400, description = "Bad Request"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy group not found"),
@@ -585,6 +587,7 @@ pub async fn update_policy_group(
     params(("id" = i64, Path, description = "Policy group ID")),
     responses(
         (status = 200, description = "Policy group removed"),
+        (status = 400, description = "Bad Request"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy group not found"),
@@ -626,6 +629,7 @@ pub async fn delete_policy_group(
     request_body = MigratePolicyGroupUsersReq,
     responses(
         (status = 200, description = "Policy group users migrated", body = inline(ApiResponse<crate::services::policy_service::PolicyGroupUserMigrationResult>)),
+        (status = 400, description = "Bad Request"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy group not found"),

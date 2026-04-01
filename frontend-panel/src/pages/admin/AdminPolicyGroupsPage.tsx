@@ -88,6 +88,7 @@ const GROUP_TEXT_CELL_CONTENT_CLASS =
 	"flex min-w-0 items-center rounded-lg bg-muted/10 px-3 py-3 text-left transition-colors duration-200";
 const GROUP_BADGE_CELL_CONTENT_CLASS =
 	"flex flex-wrap items-center gap-2 rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
+type PolicyLookup = Pick<StoragePolicy, "driver_type" | "id" | "name">;
 
 function getRuleRangeLabel(
 	t: ReturnType<typeof useTranslation>["t"],
@@ -126,9 +127,9 @@ function getMigrationSuccessMessage(
 }
 
 function mergePolicies(
-	current: StoragePolicy[],
-	incoming: StoragePolicy[],
-): StoragePolicy[] {
+	current: PolicyLookup[],
+	incoming: PolicyLookup[],
+): PolicyLookup[] {
 	if (incoming.length === 0) return current;
 	const merged = [...current];
 	const seen = new Set(current.map((policy) => policy.id));
@@ -140,7 +141,7 @@ function mergePolicies(
 	return merged;
 }
 
-function matchesPolicySearch(policy: StoragePolicy, query: string) {
+function matchesPolicySearch(policy: PolicyLookup, query: string) {
 	if (!query) return true;
 	const normalizedQuery = query.toLowerCase();
 	return (
@@ -150,7 +151,7 @@ function matchesPolicySearch(policy: StoragePolicy, query: string) {
 	);
 }
 
-function findPolicyName(policies: StoragePolicy[], policyId: string) {
+function findPolicyName(policies: PolicyLookup[], policyId: string) {
 	if (!policyId) return null;
 	return (
 		policies.find((policy) => String(policy.id) === policyId)?.name ??
@@ -182,7 +183,8 @@ export default function AdminPolicyGroupsPage() {
 		() => adminPolicyGroupService.list({ limit: pageSize, offset }),
 		[offset, pageSize],
 	);
-	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
+	const [policies, setPolicies] = useState<PolicyLookup[]>([]);
+	const [loadedPoliciesCount, setLoadedPoliciesCount] = useState(0);
 	const [policiesTotal, setPoliciesTotal] = useState(0);
 	const [policiesLoading, setPoliciesLoading] = useState(true);
 	const [policiesLoadingMore, setPoliciesLoadingMore] = useState(false);
@@ -211,7 +213,7 @@ export default function AdminPolicyGroupsPage() {
 	const currentPage = Math.floor(offset / pageSize) + 1;
 	const prevPageDisabled = offset === 0;
 	const nextPageDisabled = offset + pageSize >= total;
-	const hasMorePolicies = policies.length < policiesTotal;
+	const hasMorePolicies = loadedPoliciesCount < policiesTotal;
 	const refreshing = loading || policiesLoading || policiesLoadingMore;
 	const pageSizeOptions = POLICY_GROUP_PAGE_SIZE_OPTIONS.map((size) => ({
 		label: t("page_size_option", { count: size }),
@@ -278,6 +280,9 @@ export default function AdminPolicyGroupsPage() {
 					offset: pageOffset,
 				});
 				setPoliciesTotal(page.total);
+				setLoadedPoliciesCount(
+					reset ? page.items.length : pageOffset + page.items.length,
+				);
 				setPolicies((prev) =>
 					reset ? page.items : mergePolicies(prev, page.items),
 				);
@@ -349,11 +354,11 @@ export default function AdminPolicyGroupsPage() {
 		if (policiesLoading || policiesLoadingMore || !hasMorePolicies) {
 			return;
 		}
-		await loadPoliciesPage(policies.length);
+		await loadPoliciesPage(loadedPoliciesCount);
 	}, [
 		hasMorePolicies,
+		loadedPoliciesCount,
 		loadPoliciesPage,
-		policies.length,
 		policiesLoading,
 		policiesLoadingMore,
 	]);
@@ -389,7 +394,7 @@ export default function AdminPolicyGroupsPage() {
 	};
 
 	const handlePolicySelectOpenChange = (open: boolean) => {
-		if (open && policies.length === 0 && !policiesLoading) {
+		if (open && loadedPoliciesCount === 0 && !policiesLoading) {
 			void reloadPolicies();
 		}
 	};

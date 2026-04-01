@@ -1,5 +1,8 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, DbBackend, EntityTrait, QuerySelect, Set, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, DbBackend, EntityTrait, QuerySelect, Set, TransactionSession,
+    TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -19,13 +22,21 @@ const SYSTEM_STORAGE_POLICY_ID: i64 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct StoragePolicySummaryInfo {
+    pub id: i64,
+    pub name: String,
+    pub driver_type: DriverType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct StoragePolicyGroupItemInfo {
     pub id: i64,
     pub policy_id: i64,
     pub priority: i32,
     pub min_file_size: i64,
     pub max_file_size: i64,
-    pub policy: storage_policy::Model,
+    pub policy: StoragePolicySummaryInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -423,13 +434,20 @@ fn build_group_info(
         .policy_snapshot
         .get_policy_group_items(group.id)
         .into_iter()
-        .map(|resolved| StoragePolicyGroupItemInfo {
-            id: resolved.item.id,
-            policy_id: resolved.item.policy_id,
-            priority: resolved.item.priority,
-            min_file_size: resolved.item.min_file_size,
-            max_file_size: resolved.item.max_file_size,
-            policy: resolved.policy,
+        .map(|resolved| {
+            let policy = resolved.policy;
+            StoragePolicyGroupItemInfo {
+                id: resolved.item.id,
+                policy_id: resolved.item.policy_id,
+                priority: resolved.item.priority,
+                min_file_size: resolved.item.min_file_size,
+                max_file_size: resolved.item.max_file_size,
+                policy: StoragePolicySummaryInfo {
+                    id: policy.id,
+                    name: policy.name,
+                    driver_type: policy.driver_type,
+                },
+            }
         })
         .collect();
 
@@ -443,6 +461,49 @@ fn build_group_info(
         updated_at: group.updated_at,
         items,
     }
+}
+
+fn migrated_group_name(policy_name: &str) -> String {
+    format!("Migrated · {policy_name}")
+}
+
+fn migrated_group_description(policy_id: i64) -> String {
+    format!("Automatically migrated singleton group for storage policy #{policy_id}")
+}
+
+async fn find_existing_migrated_group_id<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    policy: &storage_policy::Model,
+) -> Result<Option<i64>> {
+    let groups = policy_group_repo::find_all_groups(db).await?;
+    let items = policy_group_repo::find_all_group_items(db).await?;
+    let mut items_by_group_id =
+        std::collections::HashMap::<i64, Vec<storage_policy_group_item::Model>>::new();
+    for item in items {
+        items_by_group_id
+            .entry(item.group_id)
+            .or_default()
+            .push(item);
+    }
+
+    let expected_name = migrated_group_name(&policy.name);
+    let expected_description = migrated_group_description(policy.id);
+    for group in groups {
+        if !group.is_enabled
+            || (group.name != expected_name && group.description != expected_description)
+        {
+            continue;
+        }
+
+        let Some(group_items) = items_by_group_id.get(&group.id) else {
+            continue;
+        };
+        if group_items.len() == 1 && group_items[0].policy_id == policy.id {
+            return Ok(Some(group.id));
+        }
+    }
+
+    Ok(None)
 }
 
 async fn validate_group_items<C: sea_orm::ConnectionTrait>(
@@ -544,164 +605,185 @@ async fn lock_default_policy_assignment<C: sea_orm::ConnectionTrait>(db: &C) -> 
     lock_default_group_assignment(db).await
 }
 
-pub async fn ensure_policy_groups_seeded<C: sea_orm::ConnectionTrait>(db: &C) -> Result<()> {
+pub async fn ensure_policy_groups_seeded<C>(db: &C) -> Result<()>
+where
+    C: sea_orm::ConnectionTrait + TransactionTrait,
+{
     let default_policy = match policy_repo::find_default(db).await? {
         Some(policy) => policy,
         None => return Ok(()),
     };
 
-    let default_group = match policy_group_repo::find_default_group(db).await? {
-        Some(group) => {
-            let items = policy_group_repo::find_group_items(db, group.id).await?;
-            if items.is_empty() {
+    let txn = db.begin().await.map_err(AsterError::from)?;
+    let result = async {
+        let default_group = match policy_group_repo::find_default_group(&txn).await? {
+            Some(group) => {
+                let items = policy_group_repo::find_group_items(&txn, group.id).await?;
+                if items.is_empty() {
+                    policy_group_repo::create_group_item(
+                        &txn,
+                        storage_policy_group_item::ActiveModel {
+                            group_id: Set(group.id),
+                            policy_id: Set(default_policy.id),
+                            priority: Set(1),
+                            min_file_size: Set(0),
+                            max_file_size: Set(0),
+                            created_at: Set(Utc::now()),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                }
+                group
+            }
+            None => {
+                let now = Utc::now();
+                let group = policy_group_repo::create_group(
+                    &txn,
+                    storage_policy_group::ActiveModel {
+                        name: Set("Default Policy Group".to_string()),
+                        description: Set(
+                            "System default storage policy group created automatically".to_string(),
+                        ),
+                        is_enabled: Set(true),
+                        is_default: Set(false),
+                        created_at: Set(now),
+                        updated_at: Set(now),
+                        ..Default::default()
+                    },
+                )
+                .await?;
                 policy_group_repo::create_group_item(
-                    db,
+                    &txn,
                     storage_policy_group_item::ActiveModel {
                         group_id: Set(group.id),
                         policy_id: Set(default_policy.id),
                         priority: Set(1),
                         min_file_size: Set(0),
                         max_file_size: Set(0),
-                        created_at: Set(Utc::now()),
+                        created_at: Set(now),
                         ..Default::default()
                     },
                 )
                 .await?;
+                group
             }
-            group
-        }
-        None => {
-            let now = Utc::now();
-            let group = policy_group_repo::create_group(
-                db,
-                storage_policy_group::ActiveModel {
-                    name: Set("Default Policy Group".to_string()),
-                    description: Set(
-                        "System default storage policy group created automatically".to_string()
-                    ),
-                    is_enabled: Set(true),
-                    is_default: Set(false),
-                    created_at: Set(now),
-                    updated_at: Set(now),
-                    ..Default::default()
-                },
-            )
-            .await?;
-            policy_group_repo::create_group_item(
-                db,
-                storage_policy_group_item::ActiveModel {
-                    group_id: Set(group.id),
-                    policy_id: Set(default_policy.id),
-                    priority: Set(1),
-                    min_file_size: Set(0),
-                    max_file_size: Set(0),
-                    created_at: Set(now),
-                    ..Default::default()
-                },
-            )
-            .await?;
-            group
-        }
-    };
-    policy_group_repo::set_only_default_group(db, default_group.id).await?;
+        };
+        lock_default_group_assignment(&txn).await?;
+        policy_group_repo::set_only_default_group(&txn, default_group.id).await?;
 
-    let users_without_group = user_repo::find_all(db).await?;
-    let users_without_group = users_without_group
-        .into_iter()
-        .filter(|user| user.policy_group_id.is_none())
-        .collect::<Vec<_>>();
-    if users_without_group.is_empty() {
-        return Ok(());
-    }
-
-    let users_without_group_ids = users_without_group
-        .iter()
-        .map(|user| user.id)
-        .collect::<std::collections::HashSet<_>>();
-    let legacy_assignments = user_storage_policy::Entity::find().all(db).await?;
-    let legacy_assignments = legacy_assignments
-        .into_iter()
-        .filter(|assignment| users_without_group_ids.contains(&assignment.user_id))
-        .collect::<Vec<_>>();
-
-    let mut singleton_group_by_policy_id =
-        std::collections::HashMap::from([(default_policy.id, default_group.id)]);
-
-    if !legacy_assignments.is_empty() {
-        let policies = policy_repo::find_all(db).await?;
-        let policy_by_id = policies
+        let users_without_group = user_repo::find_all(&txn).await?;
+        let users_without_group = users_without_group
             .into_iter()
-            .map(|policy| (policy.id, policy))
-            .collect::<std::collections::HashMap<_, _>>();
+            .filter(|user| user.policy_group_id.is_none())
+            .collect::<Vec<_>>();
+        if users_without_group.is_empty() {
+            return Ok(());
+        }
 
-        for assignment in &legacy_assignments {
-            if singleton_group_by_policy_id.contains_key(&assignment.policy_id) {
-                continue;
+        let users_without_group_ids = users_without_group
+            .iter()
+            .map(|user| user.id)
+            .collect::<std::collections::HashSet<_>>();
+        let legacy_assignments = user_storage_policy::Entity::find().all(&txn).await?;
+        let legacy_assignments = legacy_assignments
+            .into_iter()
+            .filter(|assignment| users_without_group_ids.contains(&assignment.user_id))
+            .collect::<Vec<_>>();
+
+        let mut singleton_group_by_policy_id =
+            std::collections::HashMap::from([(default_policy.id, default_group.id)]);
+
+        if !legacy_assignments.is_empty() {
+            let policies = policy_repo::find_all(&txn).await?;
+            let policy_by_id = policies
+                .into_iter()
+                .map(|policy| (policy.id, policy))
+                .collect::<std::collections::HashMap<_, _>>();
+
+            for assignment in &legacy_assignments {
+                if singleton_group_by_policy_id.contains_key(&assignment.policy_id) {
+                    continue;
+                }
+                let Some(policy) = policy_by_id.get(&assignment.policy_id) else {
+                    continue;
+                };
+                if let Some(existing_group_id) =
+                    find_existing_migrated_group_id(&txn, policy).await?
+                {
+                    singleton_group_by_policy_id.insert(policy.id, existing_group_id);
+                    continue;
+                }
+
+                let now = Utc::now();
+                let group = policy_group_repo::create_group(
+                    &txn,
+                    storage_policy_group::ActiveModel {
+                        name: Set(migrated_group_name(&policy.name)),
+                        description: Set(migrated_group_description(policy.id)),
+                        is_enabled: Set(true),
+                        is_default: Set(false),
+                        created_at: Set(now),
+                        updated_at: Set(now),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+                policy_group_repo::create_group_item(
+                    &txn,
+                    storage_policy_group_item::ActiveModel {
+                        group_id: Set(group.id),
+                        policy_id: Set(policy.id),
+                        priority: Set(1),
+                        min_file_size: Set(0),
+                        max_file_size: Set(0),
+                        created_at: Set(now),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+                singleton_group_by_policy_id.insert(policy.id, group.id);
             }
-            let Some(policy) = policy_by_id.get(&assignment.policy_id) else {
-                continue;
-            };
-            let now = Utc::now();
-            let group = policy_group_repo::create_group(
-                db,
-                storage_policy_group::ActiveModel {
-                    name: Set(format!("Migrated · {}", policy.name)),
-                    description: Set(format!(
-                        "Automatically migrated singleton group for storage policy #{}",
-                        policy.id
-                    )),
-                    is_enabled: Set(true),
-                    is_default: Set(false),
-                    created_at: Set(now),
-                    updated_at: Set(now),
-                    ..Default::default()
-                },
-            )
-            .await?;
-            policy_group_repo::create_group_item(
-                db,
-                storage_policy_group_item::ActiveModel {
-                    group_id: Set(group.id),
-                    policy_id: Set(policy.id),
-                    priority: Set(1),
-                    min_file_size: Set(0),
-                    max_file_size: Set(0),
-                    created_at: Set(now),
-                    ..Default::default()
-                },
-            )
-            .await?;
-            singleton_group_by_policy_id.insert(policy.id, group.id);
+        }
+
+        let mut selected_assignment_by_user_id = HashMap::new();
+        for assignment in legacy_assignments {
+            selected_assignment_by_user_id
+                .entry(assignment.user_id)
+                .and_modify(|current: &mut user_storage_policy::Model| {
+                    let should_replace = assignment.is_default && !current.is_default
+                        || (assignment.is_default == current.is_default
+                            && assignment.id < current.id);
+                    if should_replace {
+                        *current = assignment.clone();
+                    }
+                })
+                .or_insert(assignment);
+        }
+
+        for user_model in users_without_group {
+            let group_id = selected_assignment_by_user_id
+                .get(&user_model.id)
+                .and_then(|assignment| singleton_group_by_policy_id.get(&assignment.policy_id))
+                .copied()
+                .unwrap_or(default_group.id);
+            let mut active: user::ActiveModel = user_model.into();
+            active.policy_group_id = Set(Some(group_id));
+            active.updated_at = Set(Utc::now());
+            active.update(&txn).await.map_err(AsterError::from)?;
+        }
+
+        Ok(())
+    }
+    .await;
+
+    match result {
+        Ok(()) => txn.commit().await.map_err(AsterError::from),
+        Err(err) => {
+            txn.rollback().await.map_err(AsterError::from)?;
+            Err(err)
         }
     }
-
-    let mut selected_assignment_by_user_id = HashMap::new();
-    for assignment in legacy_assignments {
-        selected_assignment_by_user_id
-            .entry(assignment.user_id)
-            .and_modify(|current: &mut user_storage_policy::Model| {
-                let should_replace = assignment.is_default && !current.is_default
-                    || (assignment.is_default == current.is_default && assignment.id < current.id);
-                if should_replace {
-                    *current = assignment.clone();
-                }
-            })
-            .or_insert(assignment);
-    }
-
-    for user_model in users_without_group {
-        let group_id = selected_assignment_by_user_id
-            .get(&user_model.id)
-            .and_then(|assignment| singleton_group_by_policy_id.get(&assignment.policy_id))
-            .copied()
-            .unwrap_or(default_group.id);
-        let mut active: user::ActiveModel = user_model.into();
-        active.policy_group_id = Set(Some(group_id));
-        active.updated_at = Set(Utc::now());
-        active.update(db).await.map_err(AsterError::from)?;
-    }
-
-    Ok(())
 }
 
 pub async fn list_groups_paginated(

@@ -74,7 +74,7 @@ export function buildPolicyGroupRuleForm(
 }
 
 export function getDefaultPolicyGroupForm(
-	policies: StoragePolicy[],
+	policies: Pick<StoragePolicy, "id">[],
 ): PolicyGroupFormData {
 	return {
 		name: "",
@@ -162,7 +162,7 @@ export function buildPolicyGroupPayload(
 ): CreatePolicyGroupRequest {
 	return {
 		name: form.name.trim(),
-		description: form.description.trim() || undefined,
+		description: form.description.trim(),
 		is_enabled: form.isEnabled,
 		is_default: form.isDefault,
 		items: [...form.items]

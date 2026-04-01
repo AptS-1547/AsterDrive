@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -148,6 +148,7 @@ export default function AdminUsersPage() {
 		email: "",
 		password: "",
 	});
+	const lastWrittenSearchRef = useRef<string | null>(null);
 	const setOffset = (value: number) => {
 		setOffsetState(normalizeOffset(value));
 	};
@@ -160,24 +161,71 @@ export default function AdminUsersPage() {
 	}, [keyword]);
 
 	useEffect(() => {
-		setSearchParams(
-			buildOffsetPaginationSearchParams({
-				offset,
-				pageSize,
-				defaultPageSize: DEFAULT_USER_PAGE_SIZE,
-				extraParams: {
-					keyword: debouncedKeyword.trim() || undefined,
-					role: roleFilter !== "__all__" ? roleFilter : undefined,
-					status: statusFilter !== "__all__" ? statusFilter : undefined,
-				},
-			}),
-			{ replace: true },
+		const nextSearch = searchParams.toString();
+		if (nextSearch === lastWrittenSearchRef.current) {
+			return;
+		}
+
+		const nextOffset = normalizeOffset(
+			parseOffsetSearchParam(searchParams.get("offset")),
 		);
+		const nextPageSize = parsePageSizeSearchParam(
+			searchParams.get("pageSize"),
+			USER_PAGE_SIZE_OPTIONS,
+			DEFAULT_USER_PAGE_SIZE,
+		);
+		const nextKeyword = searchParams.get("keyword") ?? "";
+		const nextRole =
+			searchParams.get("role") === "admin" ||
+			searchParams.get("role") === "user"
+				? (searchParams.get("role") as UserRole)
+				: "__all__";
+		const nextStatus =
+			searchParams.get("status") === "active" ||
+			searchParams.get("status") === "disabled"
+				? (searchParams.get("status") as UserStatus)
+				: "__all__";
+
+		setOffsetState((prev) => (prev === nextOffset ? prev : nextOffset));
+		setPageSize((prev) => (prev === nextPageSize ? prev : nextPageSize));
+		setKeyword((prev) => (prev === nextKeyword ? prev : nextKeyword));
+		setDebouncedKeyword((prev) => (prev === nextKeyword ? prev : nextKeyword));
+		setRoleFilter((prev) => (prev === nextRole ? prev : nextRole));
+		setStatusFilter((prev) => (prev === nextStatus ? prev : nextStatus));
+	}, [searchParams]);
+
+	useEffect(() => {
+		const nextSearchParams = buildOffsetPaginationSearchParams({
+			offset,
+			pageSize,
+			defaultPageSize: DEFAULT_USER_PAGE_SIZE,
+			extraParams: {
+				keyword: debouncedKeyword.trim() || undefined,
+				role: roleFilter !== "__all__" ? roleFilter : undefined,
+				status: statusFilter !== "__all__" ? statusFilter : undefined,
+			},
+		});
+		const nextSearch = nextSearchParams.toString();
+		const currentSearch = searchParams.toString();
+		if (
+			currentSearch !== lastWrittenSearchRef.current &&
+			currentSearch !== nextSearch
+		) {
+			return;
+		}
+
+		lastWrittenSearchRef.current = nextSearch;
+		if (nextSearch === currentSearch) {
+			return;
+		}
+
+		setSearchParams(nextSearchParams, { replace: true });
 	}, [
 		debouncedKeyword,
 		offset,
 		pageSize,
 		roleFilter,
+		searchParams,
 		setSearchParams,
 		statusFilter,
 	]);

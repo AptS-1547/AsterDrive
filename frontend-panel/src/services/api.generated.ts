@@ -2290,6 +2290,12 @@ export interface components {
             options: string;
             updated_at: string;
         };
+        StoragePolicySummaryInfo: {
+            driver_type: components["schemas"]["DriverType"];
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
         StoragePolicyGroup: {
             created_at: string;
             description: string;
@@ -2333,7 +2339,7 @@ export interface components {
             max_file_size: number;
             /** Format: int64 */
             min_file_size: number;
-            policy: components["schemas"]["StoragePolicy"];
+            policy: components["schemas"]["StoragePolicySummaryInfo"];
             /** Format: int64 */
             policy_id: number;
             /** Format: int32 */
@@ -3622,6 +3628,13 @@ export interface operations {
                     };
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -3715,6 +3728,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -3777,6 +3797,13 @@ export interface operations {
                     };
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -3837,6 +3864,13 @@ export interface operations {
                         msg: string;
                     };
                 };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

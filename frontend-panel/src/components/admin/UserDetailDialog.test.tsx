@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
 
@@ -151,14 +157,19 @@ vi.mock("@/components/ui/progress", () => ({
 }));
 
 vi.mock("@/components/ui/select", () => {
-	const { createContext, useContext } =
+	const { createContext, useContext, useEffect, useState } =
 		require("react") as typeof import("react");
 
 	const SelectContext = createContext<{
 		disabled?: boolean;
 		onValueChange?: (value: string) => void;
+		options: Record<string, React.ReactNode>;
+		registerOption: (value: string, label: React.ReactNode) => void;
 		value?: string;
-	}>({});
+	}>({
+		options: {},
+		registerOption: () => {},
+	});
 
 	return {
 		Select: ({
@@ -171,11 +182,31 @@ vi.mock("@/components/ui/select", () => {
 			disabled?: boolean;
 			onValueChange?: (value: string) => void;
 			value?: string;
-		}) => (
-			<SelectContext.Provider value={{ disabled, onValueChange, value }}>
-				<div>{children}</div>
-			</SelectContext.Provider>
-		),
+		}) => {
+			const [options, setOptions] = useState<Record<string, React.ReactNode>>(
+				{},
+			);
+
+			return (
+				<SelectContext.Provider
+					value={{
+						disabled,
+						onValueChange,
+						options,
+						registerOption: (optionValue, label) => {
+							setOptions((prev) =>
+								prev[optionValue] === label
+									? prev
+									: { ...prev, [optionValue]: label },
+							);
+						},
+						value,
+					}}
+				>
+					<div>{children}</div>
+				</SelectContext.Provider>
+			);
+		},
 		SelectContent: ({ children }: { children: React.ReactNode }) => (
 			<div>{children}</div>
 		),
@@ -190,10 +221,15 @@ vi.mock("@/components/ui/select", () => {
 		}) => {
 			const context = useContext(SelectContext);
 
+			useEffect(() => {
+				context.registerOption(value, children);
+			}, [children, context, value]);
+
 			return (
 				<button
 					type="button"
 					aria-label={`select-item:${value}`}
+					data-selected={context.value === value ? "true" : "false"}
 					disabled={disabled || context.disabled}
 					onClick={() => context.onValueChange?.(value)}
 				>
@@ -207,10 +243,26 @@ vi.mock("@/components/ui/select", () => {
 		}: {
 			children: React.ReactNode;
 			className?: string;
-		}) => <div className={className}>{children}</div>,
-		SelectValue: ({ placeholder }: { placeholder?: string }) => (
-			<span>{placeholder ?? "select-value"}</span>
+		}) => (
+			<button
+				type="button"
+				role="combobox"
+				aria-expanded="false"
+				className={className}
+			>
+				{children}
+			</button>
 		),
+		SelectValue: ({ placeholder }: { placeholder?: string }) => {
+			const context = useContext(SelectContext);
+			return (
+				<span>
+					{(context.value ? context.options[context.value] : null) ??
+						placeholder ??
+						"select-value"}
+				</span>
+			);
+		},
 	};
 });
 
@@ -333,7 +385,26 @@ async function waitForPolicyLoad(selectedPolicyLabel = "Primary") {
 			limit: 100,
 			offset: 0,
 		});
-		expect(screen.getAllByText(selectedPolicyLabel)).not.toHaveLength(0);
+
+		const selectedTrigger = screen
+			.queryAllByRole("combobox")
+			.some(
+				(trigger) => within(trigger).queryByText(selectedPolicyLabel) !== null,
+			);
+		const matchingLabels = screen.queryAllByText(selectedPolicyLabel);
+		const selectedOption = matchingLabels.some(
+			(node) => node.closest('button[data-selected="true"]') !== null,
+		);
+		const optionLabelPresent = matchingLabels.some(
+			(node) => node.closest('button[aria-label^="select-item:"]') !== null,
+		);
+
+		if (selectedTrigger || optionLabelPresent) {
+			expect(selectedTrigger || selectedOption).toBe(true);
+			return;
+		}
+
+		expect(matchingLabels).not.toHaveLength(0);
 	});
 }
 
