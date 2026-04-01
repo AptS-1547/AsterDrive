@@ -58,17 +58,25 @@ import {
 	ADMIN_ICON_BUTTON_CLASS,
 } from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
+import {
+	buildOffsetPaginationSearchParams,
+	parseOffsetSearchParam,
+	parsePageSizeOption,
+	parsePageSizeSearchParam,
+} from "@/lib/pagination";
 import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
 import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { adminUserService } from "@/services/adminService";
 import type {
 	CreateUserReq,
+	UpdateUserRequest,
 	UserInfo,
 	UserRole,
 	UserStatus,
 } from "@/types/api";
 
 const USER_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const DEFAULT_USER_PAGE_SIZE = 20 as const;
 const INTERACTIVE_TABLE_ROW_CLASS =
 	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
 const USER_TEXT_CELL_CONTENT_CLASS =
@@ -101,22 +109,20 @@ export default function AdminUsersPage() {
 	const initialKeyword = searchParams.get("keyword") ?? "";
 	const initialRole = searchParams.get("role");
 	const initialStatus = searchParams.get("status");
-	const initialOffset = Number(searchParams.get("offset") ?? "0");
-	const initialPageSize = Number(searchParams.get("pageSize") ?? "20");
 	const [users, setUsers] = useState<UserInfo[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [total, setTotal] = useState(0);
 	const [offset, setOffset] = useState(
-		Number.isNaN(initialOffset) ? 0 : initialOffset,
+		parseOffsetSearchParam(searchParams.get("offset")),
 	);
 	const [pageSize, setPageSize] = useState<
 		(typeof USER_PAGE_SIZE_OPTIONS)[number]
 	>(
-		USER_PAGE_SIZE_OPTIONS.includes(
-			initialPageSize as (typeof USER_PAGE_SIZE_OPTIONS)[number],
-		)
-			? (initialPageSize as (typeof USER_PAGE_SIZE_OPTIONS)[number])
-			: 20,
+		parsePageSizeSearchParam(
+			searchParams.get("pageSize"),
+			USER_PAGE_SIZE_OPTIONS,
+			DEFAULT_USER_PAGE_SIZE,
+		),
 	);
 	const [keyword, setKeyword] = useState(initialKeyword);
 	const [debouncedKeyword, setDebouncedKeyword] = useState(initialKeyword);
@@ -149,13 +155,19 @@ export default function AdminUsersPage() {
 	}, [keyword]);
 
 	useEffect(() => {
-		const params = new URLSearchParams();
-		if (debouncedKeyword.trim()) params.set("keyword", debouncedKeyword.trim());
-		if (roleFilter !== "__all__") params.set("role", roleFilter);
-		if (statusFilter !== "__all__") params.set("status", statusFilter);
-		if (offset > 0) params.set("offset", String(offset));
-		if (pageSize !== 20) params.set("pageSize", String(pageSize));
-		setSearchParams(params, { replace: true });
+		setSearchParams(
+			buildOffsetPaginationSearchParams({
+				offset,
+				pageSize,
+				defaultPageSize: DEFAULT_USER_PAGE_SIZE,
+				extraParams: {
+					keyword: debouncedKeyword.trim() || undefined,
+					role: roleFilter !== "__all__" ? roleFilter : undefined,
+					status: statusFilter !== "__all__" ? statusFilter : undefined,
+				},
+			}),
+			{ replace: true },
+		);
 	}, [
 		debouncedKeyword,
 		offset,
@@ -207,8 +219,8 @@ export default function AdminUsersPage() {
 	};
 
 	const handlePageSizeChange = (value: string | null) => {
-		if (!value) return;
-		const next = Number(value) as (typeof USER_PAGE_SIZE_OPTIONS)[number];
+		const next = parsePageSizeOption(value, USER_PAGE_SIZE_OPTIONS);
+		if (next == null) return;
 		setPageSize(next);
 		setOffset(0);
 	};
@@ -296,15 +308,7 @@ export default function AdminUsersPage() {
 		}
 	};
 
-	const updateUser = async (
-		id: number,
-		data: {
-			role?: UserRole;
-			status?: UserStatus;
-			storage_quota?: number;
-			policy_group_id?: number;
-		},
-	) => {
+	const updateUser = async (id: number, data: UpdateUserRequest) => {
 		try {
 			const updated = await adminUserService.update(id, data);
 			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));

@@ -44,6 +44,7 @@ import {
 } from "@/services/adminService";
 import type {
 	StoragePolicyGroup,
+	UpdateUserRequest,
 	UserInfo,
 	UserRole,
 	UserStatus,
@@ -55,15 +56,7 @@ interface UserDetailDialogProps {
 	user: UserInfo | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	onUpdate: (
-		id: number,
-		data: {
-			role?: UserRole;
-			status?: UserStatus;
-			storage_quota?: number;
-			policy_group_id?: number;
-		},
-	) => Promise<void>;
+	onUpdate: (id: number, data: UpdateUserRequest) => Promise<void>;
 }
 
 interface PolicyGroupOption {
@@ -246,12 +239,7 @@ export function UserDetailDialog({
 	const handleProfileSave = async () => {
 		const mb = Number.parseInt(quotaValue, 10);
 		const newQuota = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
-		const data: {
-			role?: UserRole;
-			status?: UserStatus;
-			storage_quota?: number;
-			policy_group_id?: number;
-		} = {};
+		const data: UpdateUserRequest = {};
 
 		if (draftRole !== user.role) data.role = draftRole;
 		if (draftStatus !== user.status) data.status = draftStatus;

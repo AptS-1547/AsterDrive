@@ -4,16 +4,16 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { StoragePolicyDialog } from "@/components/admin/StoragePolicyDialog";
 import {
-	buildPolicyOptions,
+	buildCreatePolicyPayload,
 	buildPolicyTestPayload,
+	buildUpdatePolicyPayload,
 	emptyForm,
-	getEffectiveS3UploadStrategy,
 	getEndpointValidationMessage,
+	getPolicyForm,
 	getS3ConnectionTestKey,
 	hasConnectionFieldChanges,
 	normalizePolicyForm,
 	type PolicyFormData,
-	parsePolicyOptions,
 } from "@/components/admin/storagePolicyDialogShared";
 import { AdminTableList } from "@/components/common/AdminTableList";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -50,10 +50,17 @@ import {
 	ADMIN_ICON_BUTTON_CLASS,
 	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
 } from "@/lib/constants";
+import {
+	buildOffsetPaginationSearchParams,
+	parseOffsetSearchParam,
+	parsePageSizeOption,
+	parsePageSizeSearchParam,
+} from "@/lib/pagination";
 import { adminPolicyService } from "@/services/adminService";
 import type { DriverType, StoragePolicy } from "@/types/api";
 
 const POLICY_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const DEFAULT_POLICY_PAGE_SIZE = 20 as const;
 const CREATE_LAST_STEP = 2;
 const PROTECTED_POLICY_ID = 1;
 const INTERACTIVE_TABLE_ROW_CLASS =
@@ -74,19 +81,17 @@ const POLICY_BADGE_CELL_CONTENT_CLASS =
 export default function AdminPoliciesPage() {
 	const { t } = useTranslation("admin");
 	const [searchParams, setSearchParams] = useSearchParams();
-	const initialOffset = Number(searchParams.get("offset") ?? "0");
-	const initialPageSize = Number(searchParams.get("pageSize") ?? "20");
 	const [offset, setOffset] = useState(
-		Number.isNaN(initialOffset) ? 0 : initialOffset,
+		parseOffsetSearchParam(searchParams.get("offset")),
 	);
 	const [pageSize, setPageSize] = useState<
 		(typeof POLICY_PAGE_SIZE_OPTIONS)[number]
 	>(
-		POLICY_PAGE_SIZE_OPTIONS.includes(
-			initialPageSize as (typeof POLICY_PAGE_SIZE_OPTIONS)[number],
-		)
-			? (initialPageSize as (typeof POLICY_PAGE_SIZE_OPTIONS)[number])
-			: 20,
+		parsePageSizeSearchParam(
+			searchParams.get("pageSize"),
+			POLICY_PAGE_SIZE_OPTIONS,
+			DEFAULT_POLICY_PAGE_SIZE,
+		),
 	);
 	const {
 		items: policies,
@@ -120,15 +125,19 @@ export default function AdminPoliciesPage() {
 	}));
 
 	useEffect(() => {
-		const params = new URLSearchParams();
-		if (offset > 0) params.set("offset", String(offset));
-		if (pageSize !== 20) params.set("pageSize", String(pageSize));
-		setSearchParams(params, { replace: true });
+		setSearchParams(
+			buildOffsetPaginationSearchParams({
+				offset,
+				pageSize,
+				defaultPageSize: DEFAULT_POLICY_PAGE_SIZE,
+			}),
+			{ replace: true },
+		);
 	}, [offset, pageSize, setSearchParams]);
 
 	const handlePageSizeChange = (value: string | null) => {
-		if (!value) return;
-		const next = Number(value) as (typeof POLICY_PAGE_SIZE_OPTIONS)[number];
+		const next = parsePageSizeOption(value, POLICY_PAGE_SIZE_OPTIONS);
+		if (next == null) return;
 		setPageSize(next);
 		setOffset(0);
 	};
@@ -177,26 +186,7 @@ export default function AdminPoliciesPage() {
 		setEditingId(policy.id);
 		setEditingPolicy(policy);
 		resetDialogState();
-		const options = parsePolicyOptions(policy.options);
-		setForm({
-			name: policy.name,
-			driver_type: policy.driver_type,
-			endpoint: policy.endpoint,
-			bucket: policy.bucket,
-			access_key: "",
-			secret_key: "",
-			base_path: policy.base_path,
-			max_file_size:
-				policy.max_file_size != null ? String(policy.max_file_size) : "",
-			chunk_size:
-				policy.chunk_size != null
-					? String(Math.round(policy.chunk_size / 1024 / 1024))
-					: "5",
-			is_default: policy.is_default,
-			content_dedup:
-				policy.driver_type === "local" && options.content_dedup === true,
-			s3_upload_strategy: getEffectiveS3UploadStrategy(options),
-		});
+		setForm(getPolicyForm(policy));
 		setDialogOpen(true);
 	};
 
@@ -278,47 +268,17 @@ export default function AdminPoliciesPage() {
 	const persistPolicy = async () => {
 		try {
 			const currentForm = syncNormalizedS3Form();
-			const options = buildPolicyOptions(currentForm);
 			if (editingId) {
-				const payload: Record<string, unknown> = {
-					name: currentForm.name,
-					endpoint: currentForm.endpoint,
-					bucket: currentForm.bucket,
-					base_path: currentForm.base_path,
-					max_file_size: currentForm.max_file_size
-						? Number(currentForm.max_file_size)
-						: undefined,
-					chunk_size: currentForm.chunk_size
-						? Number(currentForm.chunk_size) * 1024 * 1024
-						: 0,
-					is_default: currentForm.is_default,
-					options,
-				};
-				if (currentForm.access_key) payload.access_key = currentForm.access_key;
-				if (currentForm.secret_key) payload.secret_key = currentForm.secret_key;
-				const updated = await adminPolicyService.update(editingId, payload);
+				const updated = await adminPolicyService.update(
+					editingId,
+					buildUpdatePolicyPayload(currentForm),
+				);
 				setPolicies((prev) =>
 					prev.map((policy) => (policy.id === editingId ? updated : policy)),
 				);
 				toast.success(t("policy_updated"));
 			} else {
-				await adminPolicyService.create({
-					name: currentForm.name,
-					driver_type: currentForm.driver_type,
-					endpoint: currentForm.endpoint,
-					bucket: currentForm.bucket,
-					access_key: currentForm.access_key,
-					secret_key: currentForm.secret_key,
-					base_path: currentForm.base_path,
-					max_file_size: currentForm.max_file_size
-						? Number(currentForm.max_file_size)
-						: undefined,
-					chunk_size: currentForm.chunk_size
-						? Number(currentForm.chunk_size) * 1024 * 1024
-						: 0,
-					is_default: currentForm.is_default,
-					options,
-				});
+				await adminPolicyService.create(buildCreatePolicyPayload(currentForm));
 				const nextTotal = total + 1;
 				const nextLastOffset = Math.max(
 					0,

@@ -60,8 +60,19 @@ export type AdminOverview = components["schemas"]["AdminOverview"];
 export type AdminOverviewDailyReport =
 	components["schemas"]["AdminOverviewDailyReport"];
 export type AdminOverviewStats = components["schemas"]["AdminOverviewStats"];
+export type CreatePolicyGroupRequest =
+	components["schemas"]["CreatePolicyGroupReq"];
+export type CreatePolicyRequest = components["schemas"]["CreatePolicyReq"];
 export type DriverType = components["schemas"]["DriverType"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
+export type MigratePolicyGroupUsersRequest =
+	components["schemas"]["MigratePolicyGroupUsersReq"];
+export type PolicyGroupItemRequest =
+	components["schemas"]["PolicyGroupItemReq"];
+export type UpdatePolicyGroupRequest =
+	components["schemas"]["PatchPolicyGroupReq"];
+export type UpdatePolicyRequest = components["schemas"]["PatchPolicyReq"];
+export type UpdateUserRequest = components["schemas"]["PatchUserReq"];
 export type RemovedCountResponse =
 	components["schemas"]["RemovedCountResponse"];
 export type ResetUserPasswordRequest =

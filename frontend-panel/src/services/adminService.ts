@@ -1,8 +1,13 @@
+import { withQuery } from "@/lib/queryParams";
 import type {
 	AdminOverview,
 	AdminSharePage,
+	CreatePolicyGroupRequest,
+	CreatePolicyRequest,
+	CreateUserReq,
 	DriverType,
 	LockPage,
+	MigratePolicyGroupUsersRequest,
 	PolicyGroupUserMigrationResult,
 	RemovedCountResponse,
 	ResetUserPasswordRequest,
@@ -13,6 +18,9 @@ import type {
 	StoragePolicyPage,
 	SystemConfig,
 	SystemConfigPage,
+	UpdatePolicyGroupRequest,
+	UpdatePolicyRequest,
+	UpdateUserRequest,
 	UserInfo,
 	UserPage,
 	UserRole,
@@ -21,22 +29,14 @@ import type {
 import { api } from "./http";
 
 export const adminOverviewService = {
-	get: (params?: {
-		days?: number;
-		timezone?: string;
-		event_limit?: number;
-	}) => {
-		const query = new URLSearchParams();
-		if (params?.days != null) query.set("days", String(params.days));
-		if (params?.timezone) query.set("timezone", params.timezone);
-		if (params?.event_limit != null) {
-			query.set("event_limit", String(params.event_limit));
-		}
-		const suffix = query.toString();
-		return api.get<AdminOverview>(
-			suffix ? `/admin/overview?${suffix}` : "/admin/overview",
-		);
-	},
+	get: (params?: { days?: number; timezone?: string; event_limit?: number }) =>
+		api.get<AdminOverview>(
+			withQuery("/admin/overview", {
+				days: params?.days,
+				timezone: params?.timezone,
+				event_limit: params?.event_limit,
+			}),
+		),
 };
 
 // --- Users ---
@@ -48,33 +48,23 @@ export const adminUserService = {
 		keyword?: string;
 		role?: UserRole;
 		status?: UserStatus;
-	}) => {
-		const query = new URLSearchParams();
-		if (params?.limit != null) query.set("limit", String(params.limit));
-		if (params?.offset != null) query.set("offset", String(params.offset));
-		if (params?.keyword) query.set("keyword", params.keyword);
-		if (params?.role) query.set("role", params.role);
-		if (params?.status) query.set("status", params.status);
-		const suffix = query.toString();
-		return api.get<UserPage>(
-			suffix ? `/admin/users?${suffix}` : "/admin/users",
-		);
-	},
+	}) =>
+		api.get<UserPage>(
+			withQuery("/admin/users", {
+				limit: params?.limit,
+				offset: params?.offset,
+				keyword: params?.keyword,
+				role: params?.role,
+				status: params?.status,
+			}),
+		),
 
 	get: (id: number) => api.get<UserInfo>(`/admin/users/${id}`),
 
-	create: (data: { username: string; email: string; password: string }) =>
-		api.post<UserInfo>("/admin/users", data),
+	create: (data: CreateUserReq) => api.post<UserInfo>("/admin/users", data),
 
-	update: (
-		id: number,
-		data: {
-			role?: UserRole;
-			status?: UserStatus;
-			storage_quota?: number;
-			policy_group_id?: number;
-		},
-	) => api.patch<UserInfo>(`/admin/users/${id}`, data),
+	update: (id: number, data: UpdateUserRequest) =>
+		api.patch<UserInfo>(`/admin/users/${id}`, data),
 
 	resetPassword: (id: number, data: ResetUserPasswordRequest) =>
 		api.put<void>(`/admin/users/${id}/password`, data),
@@ -88,47 +78,21 @@ export const adminUserService = {
 // --- Policies ---
 
 export const adminPolicyService = {
-	list: (params?: { limit?: number; offset?: number }) => {
-		const query = new URLSearchParams();
-		if (params?.limit != null) query.set("limit", String(params.limit));
-		if (params?.offset != null) query.set("offset", String(params.offset));
-		const suffix = query.toString();
-		return api.get<StoragePolicyPage>(
-			suffix ? `/admin/policies?${suffix}` : "/admin/policies",
-		);
-	},
+	list: (params?: { limit?: number; offset?: number }) =>
+		api.get<StoragePolicyPage>(
+			withQuery("/admin/policies", {
+				limit: params?.limit,
+				offset: params?.offset,
+			}),
+		),
 
 	get: (id: number) => api.get<StoragePolicy>(`/admin/policies/${id}`),
 
-	create: (data: {
-		name: string;
-		driver_type: DriverType;
-		endpoint?: string;
-		bucket?: string;
-		access_key?: string;
-		secret_key?: string;
-		base_path?: string;
-		max_file_size?: number;
-		chunk_size?: number;
-		is_default?: boolean;
-		options?: string;
-	}) => api.post<StoragePolicy>("/admin/policies", data),
+	create: (data: CreatePolicyRequest) =>
+		api.post<StoragePolicy>("/admin/policies", data),
 
-	update: (
-		id: number,
-		data: {
-			name?: string;
-			endpoint?: string;
-			bucket?: string;
-			access_key?: string;
-			secret_key?: string;
-			base_path?: string;
-			max_file_size?: number;
-			chunk_size?: number;
-			is_default?: boolean;
-			options?: string;
-		},
-	) => api.patch<StoragePolicy>(`/admin/policies/${id}`, data),
+	update: (id: number, data: UpdatePolicyRequest) =>
+		api.patch<StoragePolicy>(`/admin/policies/${id}`, data),
 
 	delete: (id: number) => api.delete<void>(`/admin/policies/${id}`),
 
@@ -147,15 +111,13 @@ export const adminPolicyService = {
 // --- Policy Groups ---
 
 export const adminPolicyGroupService = {
-	list: (params?: { limit?: number; offset?: number }) => {
-		const query = new URLSearchParams();
-		if (params?.limit != null) query.set("limit", String(params.limit));
-		if (params?.offset != null) query.set("offset", String(params.offset));
-		const suffix = query.toString();
-		return api.get<StoragePolicyGroupPage>(
-			suffix ? `/admin/policy-groups?${suffix}` : "/admin/policy-groups",
-		);
-	},
+	list: (params?: { limit?: number; offset?: number }) =>
+		api.get<StoragePolicyGroupPage>(
+			withQuery("/admin/policy-groups", {
+				limit: params?.limit,
+				offset: params?.offset,
+			}),
+		),
 
 	listAll: async (pageSize = 100) => {
 		const allGroups: StoragePolicyGroup[] = [];
@@ -181,38 +143,15 @@ export const adminPolicyGroupService = {
 	get: (id: number) =>
 		api.get<StoragePolicyGroup>(`/admin/policy-groups/${id}`),
 
-	create: (data: {
-		name: string;
-		description?: string;
-		is_enabled?: boolean;
-		is_default?: boolean;
-		items: Array<{
-			policy_id: number;
-			priority: number;
-			min_file_size?: number;
-			max_file_size?: number;
-		}>;
-	}) => api.post<StoragePolicyGroup>("/admin/policy-groups", data),
+	create: (data: CreatePolicyGroupRequest) =>
+		api.post<StoragePolicyGroup>("/admin/policy-groups", data),
 
-	update: (
-		id: number,
-		data: {
-			name?: string;
-			description?: string;
-			is_enabled?: boolean;
-			is_default?: boolean;
-			items?: Array<{
-				policy_id: number;
-				priority: number;
-				min_file_size?: number;
-				max_file_size?: number;
-			}>;
-		},
-	) => api.patch<StoragePolicyGroup>(`/admin/policy-groups/${id}`, data),
+	update: (id: number, data: UpdatePolicyGroupRequest) =>
+		api.patch<StoragePolicyGroup>(`/admin/policy-groups/${id}`, data),
 
 	delete: (id: number) => api.delete<void>(`/admin/policy-groups/${id}`),
 
-	migrateUsers: (id: number, data: { target_group_id: number }) =>
+	migrateUsers: (id: number, data: MigratePolicyGroupUsersRequest) =>
 		api.post<PolicyGroupUserMigrationResult>(
 			`/admin/policy-groups/${id}/migrate-users`,
 			data,
@@ -225,29 +164,25 @@ export type WebdavLock = LockPage["items"][number];
 export type AdminShare = ShareInfo;
 
 export const adminShareService = {
-	list: (params?: { limit?: number; offset?: number }) => {
-		const query = new URLSearchParams();
-		if (params?.limit != null) query.set("limit", String(params.limit));
-		if (params?.offset != null) query.set("offset", String(params.offset));
-		const suffix = query.toString();
-		return api.get<AdminSharePage>(
-			suffix ? `/admin/shares?${suffix}` : "/admin/shares",
-		);
-	},
+	list: (params?: { limit?: number; offset?: number }) =>
+		api.get<AdminSharePage>(
+			withQuery("/admin/shares", {
+				limit: params?.limit,
+				offset: params?.offset,
+			}),
+		),
 
 	delete: (id: number) => api.delete<void>(`/admin/shares/${id}`),
 };
 
 export const adminLockService = {
-	list: (params?: { limit?: number; offset?: number }) => {
-		const query = new URLSearchParams();
-		if (params?.limit != null) query.set("limit", String(params.limit));
-		if (params?.offset != null) query.set("offset", String(params.offset));
-		const suffix = query.toString();
-		return api.get<LockPage>(
-			suffix ? `/admin/locks?${suffix}` : "/admin/locks",
-		);
-	},
+	list: (params?: { limit?: number; offset?: number }) =>
+		api.get<LockPage>(
+			withQuery("/admin/locks", {
+				limit: params?.limit,
+				offset: params?.offset,
+			}),
+		),
 
 	forceUnlock: (id: number) => api.delete<void>(`/admin/locks/${id}`),
 
@@ -268,15 +203,13 @@ export interface ConfigSchemaItem {
 }
 
 export const adminConfigService = {
-	list: (params?: { limit?: number; offset?: number }) => {
-		const query = new URLSearchParams();
-		if (params?.limit != null) query.set("limit", String(params.limit));
-		if (params?.offset != null) query.set("offset", String(params.offset));
-		const suffix = query.toString();
-		return api.get<SystemConfigPage>(
-			suffix ? `/admin/config?${suffix}` : "/admin/config",
-		);
-	},
+	list: (params?: { limit?: number; offset?: number }) =>
+		api.get<SystemConfigPage>(
+			withQuery("/admin/config", {
+				limit: params?.limit,
+				offset: params?.offset,
+			}),
+		),
 
 	schema: () => api.get<ConfigSchemaItem[]>("/admin/config/schema"),
 

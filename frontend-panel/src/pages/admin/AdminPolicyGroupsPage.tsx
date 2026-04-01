@@ -2,6 +2,15 @@ import { type UIEvent, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import {
+	buildPolicyGroupPayload,
+	buildPolicyGroupRuleForm,
+	getDefaultPolicyGroupForm,
+	getPolicyGroupForm,
+	type PolicyGroupFormData,
+	type PolicyGroupRuleForm,
+	validatePolicyGroupForm,
+} from "@/components/admin/policyGroupDialogShared";
 import { AdminTableList } from "@/components/common/AdminTableList";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -52,6 +61,12 @@ import {
 } from "@/lib/constants";
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
 import {
+	buildOffsetPaginationSearchParams,
+	parseOffsetSearchParam,
+	parsePageSizeOption,
+	parsePageSizeSearchParam,
+} from "@/lib/pagination";
+import {
 	adminPolicyGroupService,
 	adminPolicyService,
 } from "@/services/adminService";
@@ -63,9 +78,9 @@ import type {
 } from "@/types/api";
 
 const POLICY_GROUP_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const DEFAULT_POLICY_GROUP_PAGE_SIZE = 20 as const;
 const POLICY_GROUP_LOOKUP_PAGE_SIZE = 100;
 const POLICY_LOOKUP_PAGE_SIZE = 100;
-const BYTES_PER_MB = 1024 * 1024;
 const POLICY_GROUP_ACTIONS_WIDTH_CLASS = "w-32";
 const INTERACTIVE_TABLE_ROW_CLASS =
 	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
@@ -73,57 +88,6 @@ const GROUP_TEXT_CELL_CONTENT_CLASS =
 	"flex min-w-0 items-center rounded-lg bg-muted/10 px-3 py-3 text-left transition-colors duration-200";
 const GROUP_BADGE_CELL_CONTENT_CLASS =
 	"flex flex-wrap items-center gap-2 rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
-
-let nextRuleKey = 0;
-
-interface PolicyGroupRuleForm {
-	key: string;
-	policyId: string;
-	priority: string;
-	minFileSizeMb: string;
-	maxFileSizeMb: string;
-}
-
-interface PolicyGroupFormData {
-	name: string;
-	description: string;
-	isEnabled: boolean;
-	isDefault: boolean;
-	items: PolicyGroupRuleForm[];
-}
-
-function createRuleKey() {
-	nextRuleKey += 1;
-	return `policy-group-rule-${nextRuleKey}`;
-}
-
-function bytesToMbInput(bytes: number) {
-	if (bytes <= 0) return "";
-	const mb = bytes / BYTES_PER_MB;
-	return Number.isInteger(mb) ? String(mb) : String(Number(mb.toFixed(2)));
-}
-
-function mbInputToBytes(value: string) {
-	if (!value.trim()) return 0;
-	const parsed = Number(value);
-	if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-	return Math.round(parsed * BYTES_PER_MB);
-}
-
-function buildRuleForm(
-	policyId?: number | null,
-	priority = 1,
-	minFileSize = 0,
-	maxFileSize = 0,
-): PolicyGroupRuleForm {
-	return {
-		key: createRuleKey(),
-		policyId: policyId != null ? String(policyId) : "",
-		priority: String(priority),
-		minFileSizeMb: bytesToMbInput(minFileSize),
-		maxFileSizeMb: bytesToMbInput(maxFileSize),
-	};
-}
 
 function getRuleRangeLabel(
 	t: ReturnType<typeof useTranslation>["t"],
@@ -159,33 +123,6 @@ function getMigrationSuccessMessage(
 		source: sourceName,
 		target: targetName,
 	});
-}
-
-function getDefaultGroupForm(policies: StoragePolicy[]): PolicyGroupFormData {
-	return {
-		name: "",
-		description: "",
-		isEnabled: true,
-		isDefault: false,
-		items: [buildRuleForm(policies[0]?.id ?? null)],
-	};
-}
-
-function getGroupForm(group: StoragePolicyGroup): PolicyGroupFormData {
-	return {
-		name: group.name,
-		description: group.description,
-		isEnabled: group.is_enabled,
-		isDefault: group.is_default,
-		items: group.items.map((item) =>
-			buildRuleForm(
-				item.policy_id,
-				item.priority,
-				item.min_file_size,
-				item.max_file_size,
-			),
-		),
-	};
 }
 
 function mergePolicies(
@@ -224,19 +161,17 @@ function findPolicyName(policies: StoragePolicy[], policyId: string) {
 export default function AdminPolicyGroupsPage() {
 	const { t } = useTranslation("admin");
 	const [searchParams, setSearchParams] = useSearchParams();
-	const initialOffset = Number(searchParams.get("offset") ?? "0");
-	const initialPageSize = Number(searchParams.get("pageSize") ?? "20");
 	const [offset, setOffset] = useState(
-		Number.isNaN(initialOffset) ? 0 : initialOffset,
+		parseOffsetSearchParam(searchParams.get("offset")),
 	);
 	const [pageSize, setPageSize] = useState<
 		(typeof POLICY_GROUP_PAGE_SIZE_OPTIONS)[number]
 	>(
-		POLICY_GROUP_PAGE_SIZE_OPTIONS.includes(
-			initialPageSize as (typeof POLICY_GROUP_PAGE_SIZE_OPTIONS)[number],
-		)
-			? (initialPageSize as (typeof POLICY_GROUP_PAGE_SIZE_OPTIONS)[number])
-			: 20,
+		parsePageSizeSearchParam(
+			searchParams.get("pageSize"),
+			POLICY_GROUP_PAGE_SIZE_OPTIONS,
+			DEFAULT_POLICY_GROUP_PAGE_SIZE,
+		),
 	);
 	const {
 		items: groups,
@@ -268,7 +203,7 @@ export default function AdminPolicyGroupsPage() {
 	>(null);
 	const [migrationGroupsLoading, setMigrationGroupsLoading] = useState(false);
 	const [form, setForm] = useState<PolicyGroupFormData>(() =>
-		getDefaultGroupForm([]),
+		getDefaultPolicyGroupForm([]),
 	);
 	const [formError, setFormError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
@@ -312,17 +247,19 @@ export default function AdminPolicyGroupsPage() {
 		) ?? null;
 
 	useEffect(() => {
-		const params = new URLSearchParams();
-		if (offset > 0) params.set("offset", String(offset));
-		if (pageSize !== 20) params.set("pageSize", String(pageSize));
-		setSearchParams(params, { replace: true });
+		setSearchParams(
+			buildOffsetPaginationSearchParams({
+				offset,
+				pageSize,
+				defaultPageSize: DEFAULT_POLICY_GROUP_PAGE_SIZE,
+			}),
+			{ replace: true },
+		);
 	}, [offset, pageSize, setSearchParams]);
 
 	const handlePageSizeChange = (value: string | null) => {
-		if (!value) return;
-		const next = Number(
-			value,
-		) as (typeof POLICY_GROUP_PAGE_SIZE_OPTIONS)[number];
+		const next = parsePageSizeOption(value, POLICY_GROUP_PAGE_SIZE_OPTIONS);
+		if (next == null) return;
 		setPageSize(next);
 		setOffset(0);
 	};
@@ -522,7 +459,7 @@ export default function AdminPolicyGroupsPage() {
 			...prev,
 			items: [
 				...prev.items,
-				buildRuleForm(getNextPolicyId(), prev.items.length + 1),
+				buildPolicyGroupRuleForm(getNextPolicyId(), prev.items.length + 1),
 			],
 		}));
 		setFormError(null);
@@ -538,7 +475,7 @@ export default function AdminPolicyGroupsPage() {
 
 	const openCreate = () => {
 		setEditingGroup(null);
-		setForm(getDefaultGroupForm(policies));
+		setForm(getDefaultPolicyGroupForm(policies));
 		setFormError(null);
 		setPolicySearch("");
 		setDialogOpen(true);
@@ -552,7 +489,7 @@ export default function AdminPolicyGroupsPage() {
 			),
 		);
 		setEditingGroup(group);
-		setForm(getGroupForm(group));
+		setForm(getPolicyGroupForm(group));
 		setFormError(null);
 		setPolicySearch("");
 		setDialogOpen(true);
@@ -590,79 +527,14 @@ export default function AdminPolicyGroupsPage() {
 		}
 	};
 
-	const validateForm = () => {
-		if (!form.name.trim()) {
-			return t("policy_group_name_required");
-		}
-		if (form.isDefault && !form.isEnabled) {
-			return t("policy_group_default_requires_enabled");
-		}
-		if (policies.length === 0) {
-			return t("policy_group_no_policies_available");
-		}
-		if (form.items.length === 0) {
-			return t("policy_group_rule_required");
-		}
-
-		const seenPolicyIds = new Set<string>();
-		const seenPriorities = new Set<number>();
-
-		for (const item of form.items) {
-			if (!item.policyId) {
-				return t("policy_group_rule_policy_required");
-			}
-			const priority = Number(item.priority);
-			if (!Number.isInteger(priority) || priority <= 0) {
-				return t("policy_group_rule_priority_invalid");
-			}
-			if (seenPolicyIds.has(item.policyId)) {
-				return t("policy_group_rule_policy_duplicate");
-			}
-			if (seenPriorities.has(priority)) {
-				return t("policy_group_rule_priority_duplicate");
-			}
-			seenPolicyIds.add(item.policyId);
-			seenPriorities.add(priority);
-
-			const min = item.minFileSizeMb.trim() ? Number(item.minFileSizeMb) : 0;
-			const max = item.maxFileSizeMb.trim() ? Number(item.maxFileSizeMb) : 0;
-			if (
-				!Number.isFinite(min) ||
-				!Number.isFinite(max) ||
-				min < 0 ||
-				max < 0
-			) {
-				return t("policy_group_rule_size_invalid");
-			}
-			if (max > 0 && max <= min) {
-				return t("policy_group_rule_range_invalid");
-			}
-		}
-
-		return null;
-	};
-
 	const submitForm = async () => {
-		const validationError = validateForm();
+		const validationError = validatePolicyGroupForm(form, policies.length, t);
 		if (validationError) {
 			setFormError(validationError);
 			return;
 		}
 
-		const payload = {
-			name: form.name.trim(),
-			description: form.description.trim() || undefined,
-			is_enabled: form.isEnabled,
-			is_default: form.isDefault,
-			items: [...form.items]
-				.map((item) => ({
-					policy_id: Number(item.policyId),
-					priority: Number(item.priority),
-					min_file_size: mbInputToBytes(item.minFileSizeMb),
-					max_file_size: mbInputToBytes(item.maxFileSizeMb),
-				}))
-				.sort((a, b) => a.priority - b.priority),
-		};
+		const payload = buildPolicyGroupPayload(form);
 
 		try {
 			setSubmitting(true);

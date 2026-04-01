@@ -1,3 +1,4 @@
+import { withQuery } from "@/lib/queryParams";
 import { api } from "@/services/http";
 import type { AuditLogPage } from "@/types/api";
 
@@ -13,22 +14,14 @@ interface AuditLogQuery {
 
 export const auditService = {
 	list: (params: AuditLogQuery = {}) => {
-		const query = new URLSearchParams();
-		if (params.limit !== undefined && params.limit !== null) {
-			query.set("limit", String(params.limit));
-		}
-		if (params.offset !== undefined && params.offset !== null) {
-			query.set("offset", String(params.offset));
-		}
-		for (const [key, value] of Object.entries(params)) {
-			if (key === "limit" || key === "offset") continue;
-			if (value !== undefined && value !== null && value !== "") {
-				query.set(key, String(value));
-			}
-		}
-		const suffix = query.toString();
+		const { limit, offset, ...filters } = params;
+
 		return api.get<AuditLogPage>(
-			suffix ? `/admin/audit-logs?${suffix}` : "/admin/audit-logs",
+			withQuery("/admin/audit-logs", {
+				limit,
+				offset,
+				...filters,
+			}),
 		);
 	},
 };
