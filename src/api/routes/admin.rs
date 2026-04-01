@@ -491,9 +491,26 @@ pub async fn list_policy_groups(
 )]
 pub async fn create_policy_group(
     state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: actix_web::HttpRequest,
     body: web::Json<CreatePolicyGroupReq>,
 ) -> Result<HttpResponse> {
     let group = policy_service::create_group(&state, body.into_inner().into()).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::AdminCreatePolicyGroup,
+        Some("policy_group"),
+        Some(group.id),
+        Some(&group.name),
+        audit_service::details(audit_service::PolicyGroupAuditDetails {
+            is_default: group.is_default,
+            is_enabled: group.is_enabled,
+            item_count: group.items.len(),
+        }),
+    )
+    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(group)))
 }
 
@@ -536,10 +553,27 @@ pub async fn get_policy_group(
 )]
 pub async fn update_policy_group(
     state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: actix_web::HttpRequest,
     path: web::Path<i64>,
     body: web::Json<PatchPolicyGroupReq>,
 ) -> Result<HttpResponse> {
     let group = policy_service::update_group(&state, *path, body.into_inner().into()).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::AdminUpdatePolicyGroup,
+        Some("policy_group"),
+        Some(group.id),
+        Some(&group.name),
+        audit_service::details(audit_service::PolicyGroupAuditDetails {
+            is_default: group.is_default,
+            is_enabled: group.is_enabled,
+            item_count: group.items.len(),
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(group)))
 }
 
@@ -559,9 +593,27 @@ pub async fn update_policy_group(
 )]
 pub async fn delete_policy_group(
     state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: actix_web::HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
+    let group = policy_service::get_group(&state, *path).await?;
     policy_service::delete_group(&state, *path).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::AdminDeletePolicyGroup,
+        Some("policy_group"),
+        Some(group.id),
+        Some(&group.name),
+        audit_service::details(audit_service::PolicyGroupAuditDetails {
+            is_default: group.is_default,
+            is_enabled: group.is_enabled,
+            item_count: group.items.len(),
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -582,10 +634,32 @@ pub async fn delete_policy_group(
 )]
 pub async fn migrate_policy_group_users(
     state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: actix_web::HttpRequest,
     path: web::Path<i64>,
     body: web::Json<MigratePolicyGroupUsersReq>,
 ) -> Result<HttpResponse> {
+    let source_group = policy_service::get_group(&state, *path).await?;
+    let target_group = policy_service::get_group(&state, body.target_group_id).await?;
     let result = policy_service::migrate_group_users(&state, *path, body.target_group_id).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::AdminMigratePolicyGroupUsers,
+        Some("policy_group"),
+        Some(source_group.id),
+        Some(&source_group.name),
+        audit_service::details(audit_service::PolicyGroupMigrationDetails {
+            source_group_id: source_group.id,
+            source_group_name: &source_group.name,
+            target_group_id: target_group.id,
+            target_group_name: &target_group.name,
+            affected_users: result.affected_users,
+            migrated_assignments: result.migrated_assignments,
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }
 
@@ -775,6 +849,7 @@ pub async fn revoke_user_sessions(
     request_body = PatchUserReq,
     responses(
         (status = 200, description = "User updated", body = inline(ApiResponse<crate::services::user_service::UserInfo>)),
+        (status = 400, description = "Bad request, for example when policy_group_id cannot be null"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "User not found"),

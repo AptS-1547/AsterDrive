@@ -14,6 +14,8 @@ export interface PolicyGroupRuleForm {
 	priority: string;
 	minFileSizeMb: string;
 	maxFileSizeMb: string;
+	originalMinFileSizeBytes?: number;
+	originalMaxFileSizeBytes?: number;
 }
 
 export interface PolicyGroupFormData {
@@ -33,13 +35,22 @@ export function bytesToMbInput(bytes: number) {
 	if (bytes <= 0) return "";
 
 	const mb = bytes / BYTES_PER_MB;
-	return Number.isInteger(mb) ? String(mb) : String(Number(mb.toFixed(2)));
+	return Number.isInteger(mb) ? String(mb) : String(mb);
 }
 
-export function mbInputToBytes(value: string) {
-	if (!value.trim()) return 0;
+export function mbInputToBytes(value: string, originalBytes?: number) {
+	const normalized = value.trim();
+	if (!normalized) return 0;
 
-	const parsed = Number(value);
+	if (
+		originalBytes != null &&
+		originalBytes > 0 &&
+		normalized === bytesToMbInput(originalBytes)
+	) {
+		return originalBytes;
+	}
+
+	const parsed = Number(normalized);
 	if (!Number.isFinite(parsed) || parsed <= 0) return 0;
 
 	return Math.round(parsed * BYTES_PER_MB);
@@ -57,6 +68,8 @@ export function buildPolicyGroupRuleForm(
 		priority: String(priority),
 		minFileSizeMb: bytesToMbInput(minFileSize),
 		maxFileSizeMb: bytesToMbInput(maxFileSize),
+		originalMinFileSizeBytes: minFileSize || undefined,
+		originalMaxFileSizeBytes: maxFileSize || undefined,
 	};
 }
 
@@ -156,8 +169,14 @@ export function buildPolicyGroupPayload(
 			.map((item) => ({
 				policy_id: Number(item.policyId),
 				priority: Number(item.priority),
-				min_file_size: mbInputToBytes(item.minFileSizeMb),
-				max_file_size: mbInputToBytes(item.maxFileSizeMb),
+				min_file_size: mbInputToBytes(
+					item.minFileSizeMb,
+					item.originalMinFileSizeBytes,
+				),
+				max_file_size: mbInputToBytes(
+					item.maxFileSizeMb,
+					item.originalMaxFileSizeBytes,
+				),
 			}))
 			.sort((a, b) => a.priority - b.priority),
 	};

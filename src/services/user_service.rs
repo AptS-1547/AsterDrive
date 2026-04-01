@@ -362,10 +362,6 @@ pub async fn update(
         } else {
             state.policy_snapshot.remove_user_policy_group(updated.id);
         }
-    } else if let Some(policy_group_id) = updated.policy_group_id {
-        state
-            .policy_snapshot
-            .set_user_policy_group(updated.id, policy_group_id);
     }
     if role_changed || status_changed {
         auth_service::invalidate_auth_snapshot_cache(state, id).await;

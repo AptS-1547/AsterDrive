@@ -10,6 +10,9 @@ describe("pagination helpers", () => {
 	it("parses offset values and falls back to zero", () => {
 		expect(parseOffsetSearchParam("24")).toBe(24);
 		expect(parseOffsetSearchParam("invalid")).toBe(0);
+		expect(parseOffsetSearchParam("-1")).toBe(0);
+		expect(parseOffsetSearchParam("1.5")).toBe(0);
+		expect(parseOffsetSearchParam("Infinity")).toBe(0);
 	});
 
 	it("accepts only supported page sizes", () => {
@@ -27,6 +30,8 @@ describe("pagination helpers", () => {
 				defaultPageSize: 20,
 				extraParams: {
 					keyword: "alice",
+					offset: 999,
+					pageSize: 999,
 					role: "__all__",
 					status: undefined,
 				},

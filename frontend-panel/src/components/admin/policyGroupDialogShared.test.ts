@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildPolicyGroupPayload,
+	bytesToMbInput,
 	getDefaultPolicyGroupForm,
 	validatePolicyGroupForm,
 } from "@/components/admin/policyGroupDialogShared";
@@ -48,6 +49,35 @@ describe("policyGroupDialogShared", () => {
 				t,
 			),
 		).toBe("policy_group_rule_policy_duplicate");
+
+		expect(
+			validatePolicyGroupForm(
+				{
+					name: "Duplicated priority",
+					description: "",
+					isEnabled: true,
+					isDefault: false,
+					items: [
+						{
+							key: "a",
+							policyId: "1",
+							priority: "1",
+							minFileSizeMb: "",
+							maxFileSizeMb: "",
+						},
+						{
+							key: "b",
+							policyId: "2",
+							priority: "1",
+							minFileSizeMb: "",
+							maxFileSizeMb: "",
+						},
+					],
+				},
+				2,
+				t,
+			),
+		).toBe("policy_group_rule_priority_duplicate");
 	});
 
 	it("builds sorted payloads and converts megabytes to bytes", () => {
@@ -94,5 +124,28 @@ describe("policyGroupDialogShared", () => {
 				},
 			],
 		});
+	});
+
+	it("preserves exact byte thresholds when editing an existing group", () => {
+		const preciseBytes = 12_345;
+
+		expect(
+			buildPolicyGroupPayload({
+				name: "Tiered",
+				description: "",
+				isEnabled: true,
+				isDefault: false,
+				items: [
+					{
+						key: "a",
+						policyId: "1",
+						priority: "1",
+						minFileSizeMb: bytesToMbInput(preciseBytes),
+						maxFileSizeMb: "",
+						originalMinFileSizeBytes: preciseBytes,
+					},
+				],
+			}).items[0]?.min_file_size,
+		).toBe(preciseBytes);
 	});
 });

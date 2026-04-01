@@ -2,7 +2,15 @@ import { buildQueryParams, type QueryParamRecord } from "@/lib/queryParams";
 
 export function parseOffsetSearchParam(rawValue: string | null): number {
 	const parsed = Number(rawValue ?? "0");
-	return Number.isNaN(parsed) ? 0 : parsed;
+	if (
+		!Number.isFinite(parsed) ||
+		parsed < 0 ||
+		!Number.isInteger(parsed)
+	) {
+		return 0;
+	}
+
+	return Math.min(parsed, Number.MAX_SAFE_INTEGER);
 }
 
 export function parsePageSizeSearchParam<PageSize extends number>(
@@ -43,6 +51,8 @@ export function buildOffsetPaginationSearchParams<PageSize extends number>({
 	extraParams?: QueryParamRecord;
 }): URLSearchParams {
 	const query = buildQueryParams(extraParams);
+	query.delete("offset");
+	query.delete("pageSize");
 
 	if (offset > 0) {
 		query.set("offset", String(offset));

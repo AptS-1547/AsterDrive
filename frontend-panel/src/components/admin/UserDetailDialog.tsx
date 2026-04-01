@@ -552,7 +552,6 @@ export function UserDetailDialog({
 											<div className="space-y-2">
 												<Label>{t("policy_groups")}</Label>
 												<Select
-													items={policyGroupOptions}
 													value={
 														draftPolicyGroupId != null
 															? String(draftPolicyGroupId)

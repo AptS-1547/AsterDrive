@@ -6,10 +6,9 @@ mod common;
 use actix_web::test;
 use serde_json::Value;
 
-#[allow(deprecated)]
 #[actix_web::test]
 async fn test_user_default_policy_switch_updates_snapshot_immediately() {
-    use aster_drive::services::{auth_service, file_service, policy_service};
+    use aster_drive::services::{auth_service, file_service, policy_service, user_service};
     use aster_drive::types::DriverType;
 
     let state = common::setup().await;
@@ -51,7 +50,25 @@ async fn test_user_default_policy_switch_updates_snapshot_immediately() {
 
     assert_ne!(alternate_policy.id, initial_policy.id);
 
-    policy_service::assign_user_policy(&state, user.id, alternate_policy.id, true, 0)
+    let alternate_group = policy_service::create_group(
+        &state,
+        policy_service::CreateStoragePolicyGroupInput {
+            name: "Alternate Group".to_string(),
+            description: Some("Snapshot switch target".to_string()),
+            is_enabled: true,
+            is_default: false,
+            items: vec![policy_service::StoragePolicyGroupItemInput {
+                policy_id: alternate_policy.id,
+                priority: 1,
+                min_file_size: 0,
+                max_file_size: 0,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+
+    user_service::update(&state, user.id, None, None, None, Some(alternate_group.id))
         .await
         .unwrap();
 
@@ -266,7 +283,10 @@ async fn test_user_policy_assignment() {
 
 #[actix_web::test]
 async fn test_system_policy_default_uniqueness() {
+    use aster_drive::db::repository::policy_group_repo;
+
     let state = common::setup().await;
+    let db = state.db.clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -284,6 +304,8 @@ async fn test_system_policy_default_uniqueness() {
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let new_default_id = body["data"]["id"].as_i64().unwrap();
 
     // 列出所有策略，应只有一个 is_default=true
     let req = test::TestRequest::get()
@@ -298,11 +320,24 @@ async fn test_system_policy_default_uniqueness() {
         default_count, 1,
         "should have exactly 1 default policy, got {default_count}"
     );
+
+    let default_group = policy_group_repo::find_default_group(&db)
+        .await
+        .unwrap()
+        .expect("default group should exist");
+    let items = policy_group_repo::find_group_items(&db, default_group.id)
+        .await
+        .unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].policy_id, new_default_id);
 }
 
 #[actix_web::test]
 async fn test_patch_policy_promotes_existing_policy_to_default() {
+    use aster_drive::db::repository::policy_group_repo;
+
     let state = common::setup().await;
+    let db = state.db.clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -346,6 +381,38 @@ async fn test_patch_policy_promotes_existing_policy_to_default() {
         .collect();
 
     assert_eq!(default_ids, vec![policy_id]);
+
+    let default_group = policy_group_repo::find_default_group(&db)
+        .await
+        .unwrap()
+        .expect("default group should exist");
+    let items = policy_group_repo::find_group_items(&db, default_group.id)
+        .await
+        .unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].policy_id, policy_id);
+}
+
+#[actix_web::test]
+async fn test_set_only_default_rejects_missing_policy_without_clearing_default() {
+    use aster_drive::db::repository::policy_repo;
+
+    let state = common::setup().await;
+    let original_default = policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist");
+
+    let err = policy_repo::set_only_default(&state.db, i64::MAX)
+        .await
+        .unwrap_err();
+    assert!(err.message().contains("policy"));
+
+    let current_default = policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should still exist");
+    assert_eq!(current_default.id, original_default.id);
 }
 
 #[actix_web::test]
@@ -449,7 +516,7 @@ async fn test_cannot_disable_assigned_policy_group() {
 }
 
 #[actix_web::test]
-async fn test_cannot_set_disabled_user_policy_group_as_default() {
+async fn test_cannot_assign_disabled_policy_group_to_user() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -627,7 +694,7 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
         ))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
-            "policy_group_id": source_group_id
+            "policy_group_id": target_group_id
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -647,8 +714,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["source_group_id"], source_group_id);
     assert_eq!(body["data"]["target_group_id"], target_group_id);
-    assert_eq!(body["data"]["affected_users"], 2);
-    assert_eq!(body["data"]["migrated_assignments"], 2);
+    assert_eq!(body["data"]["affected_users"], 1);
+    assert_eq!(body["data"]["migrated_assignments"], 1);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/users/{}", user_with_source_only.id))
@@ -670,6 +737,24 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["policy_group_id"], target_group_id);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/policy-groups/{source_group_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["is_default"], false);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/policy-groups/{target_group_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["is_default"], false);
 }
 
 #[actix_web::test]

@@ -197,7 +197,14 @@ async fn test_auth_me() {
 /// 注册时自动分配新用户默认策略组
 #[actix_web::test]
 async fn test_register_auto_assigns_policy() {
+    use aster_drive::db::repository::policy_group_repo;
+
     let state = common::setup().await;
+    let expected_default_id = policy_group_repo::find_default_group(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy group should exist")
+        .id;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -208,9 +215,9 @@ async fn test_register_auto_assigns_policy() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
-    assert!(
-        body["data"]["policy_group_id"].as_i64().unwrap() > 0,
-        "new user should have an auto-assigned policy group"
+    assert_eq!(
+        body["data"]["policy_group_id"].as_i64().unwrap(),
+        expected_default_id
     );
 }
 

@@ -26,9 +26,13 @@ pub struct AuditContext {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuditAction {
     AdminCreateUser,
+    AdminCreatePolicyGroup,
     AdminRevokeUserSessions,
     AdminResetUserPassword,
     AdminUpdateUser,
+    AdminDeletePolicyGroup,
+    AdminMigratePolicyGroupUsers,
+    AdminUpdatePolicyGroup,
     BatchCopy,
     BatchDelete,
     BatchMove,
@@ -60,9 +64,13 @@ impl AuditAction {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AdminCreateUser => "admin_create_user",
+            Self::AdminCreatePolicyGroup => "admin_create_policy_group",
             Self::AdminRevokeUserSessions => "admin_revoke_user_sessions",
             Self::AdminResetUserPassword => "admin_reset_user_password",
             Self::AdminUpdateUser => "admin_update_user",
+            Self::AdminDeletePolicyGroup => "admin_delete_policy_group",
+            Self::AdminMigratePolicyGroupUsers => "admin_migrate_policy_group_users",
+            Self::AdminUpdatePolicyGroup => "admin_update_policy_group",
             Self::BatchCopy => "batch_copy",
             Self::BatchDelete => "batch_delete",
             Self::BatchMove => "batch_move",
@@ -162,6 +170,23 @@ pub struct AdminUpdateUserDetails {
     pub status: UserStatus,
     pub storage_quota: i64,
     pub policy_group_id: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct PolicyGroupAuditDetails {
+    pub is_default: bool,
+    pub is_enabled: bool,
+    pub item_count: usize,
+}
+
+#[derive(Serialize)]
+pub struct PolicyGroupMigrationDetails<'a> {
+    pub source_group_id: i64,
+    pub source_group_name: &'a str,
+    pub target_group_id: i64,
+    pub target_group_name: &'a str,
+    pub affected_users: u64,
+    pub migrated_assignments: u64,
 }
 
 #[derive(Serialize)]
@@ -314,12 +339,28 @@ mod tests {
         let cases = [
             (AuditAction::AdminCreateUser, "admin_create_user"),
             (
+                AuditAction::AdminCreatePolicyGroup,
+                "admin_create_policy_group",
+            ),
+            (
+                AuditAction::AdminDeletePolicyGroup,
+                "admin_delete_policy_group",
+            ),
+            (
+                AuditAction::AdminMigratePolicyGroupUsers,
+                "admin_migrate_policy_group_users",
+            ),
+            (
                 AuditAction::AdminRevokeUserSessions,
                 "admin_revoke_user_sessions",
             ),
             (
                 AuditAction::AdminResetUserPassword,
                 "admin_reset_user_password",
+            ),
+            (
+                AuditAction::AdminUpdatePolicyGroup,
+                "admin_update_policy_group",
             ),
             (AuditAction::AdminUpdateUser, "admin_update_user"),
             (AuditAction::BatchCopy, "batch_copy"),

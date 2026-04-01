@@ -43,6 +43,7 @@ describe("shareDialogShared", () => {
 			new Date("2026-04-03T08:30").toISOString(),
 		);
 		expect(toIsoDateTime("   ")).toBeNull();
+		expect(toIsoDateTime("invalid-date")).toBeNull();
 		expect(normalizeMaxDownloads("8")).toBe(8);
 		expect(normalizeMaxDownloads("-1")).toBe(0);
 		expect(normalizeMaxDownloads("oops")).toBe(0);

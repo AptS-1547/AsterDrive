@@ -154,13 +154,8 @@ vi.mock("@/components/ui/select", () => {
 	const { createContext, useContext } =
 		require("react") as typeof import("react");
 
-	type SelectOption = {
-		label: string;
-		value: string;
-	};
 	const SelectContext = createContext<{
 		disabled?: boolean;
-		items?: SelectOption[];
 		onValueChange?: (value: string) => void;
 		value?: string;
 	}>({});
@@ -169,30 +164,16 @@ vi.mock("@/components/ui/select", () => {
 		Select: ({
 			children,
 			disabled,
-			items,
 			onValueChange,
 			value,
 		}: {
 			children: React.ReactNode;
 			disabled?: boolean;
-			items?: SelectOption[];
 			onValueChange?: (value: string) => void;
 			value?: string;
 		}) => (
-			<SelectContext.Provider value={{ disabled, items, onValueChange, value }}>
-				<div>
-					{items ? (
-						<button
-							type="button"
-							aria-label="select-clear"
-							disabled={disabled}
-							onClick={() => onValueChange?.("")}
-						>
-							clear
-						</button>
-					) : null}
-					{children}
-				</div>
+			<SelectContext.Provider value={{ disabled, onValueChange, value }}>
+				<div>{children}</div>
 			</SelectContext.Provider>
 		),
 		SelectContent: ({ children }: { children: React.ReactNode }) => (
@@ -227,13 +208,9 @@ vi.mock("@/components/ui/select", () => {
 			children: React.ReactNode;
 			className?: string;
 		}) => <div className={className}>{children}</div>,
-		SelectValue: ({ placeholder }: { placeholder?: string }) => {
-			const context = useContext(SelectContext);
-			const selectedLabel = context.items?.find(
-				(option) => option.value === context.value,
-			)?.label;
-			return <span>{selectedLabel ?? placeholder ?? "select-value"}</span>;
-		},
+		SelectValue: ({ placeholder }: { placeholder?: string }) => (
+			<span>{placeholder ?? "select-value"}</span>
+		),
 	};
 });
 
@@ -350,15 +327,13 @@ function renderDialog(userOverrides: Record<string, unknown> = {}) {
 	);
 }
 
-async function waitForPolicyLoad(userId = 2) {
+async function waitForPolicyLoad(selectedPolicyLabel = "Primary") {
 	await waitFor(() => {
 		expect(mockState.listPolicies).toHaveBeenCalledWith({
 			limit: 100,
 			offset: 0,
 		});
-		expect(
-			screen.getByText(`avatar:${userId === 1 ? "root" : "alice"}`),
-		).toBeDefined();
+		expect(screen.getAllByText(selectedPolicyLabel)).not.toHaveLength(0);
 	});
 }
 
@@ -391,7 +366,6 @@ describe("UserDetailDialog", () => {
 		renderDialog();
 
 		await waitForPolicyLoad();
-		expect(screen.getAllByText("Primary")).not.toHaveLength(0);
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "select-item:disabled" }),
@@ -414,27 +388,6 @@ describe("UserDetailDialog", () => {
 		});
 	});
 
-	it("ignores empty policy group selections because unassigning is unsupported", async () => {
-		renderDialog();
-
-		await waitForPolicyLoad();
-		expect(screen.queryByRole("button", { name: /save_changes/i })).toBeNull();
-
-		fireEvent.click(screen.getByLabelText("select-clear"));
-
-		expect(screen.queryByRole("button", { name: /save_changes/i })).toBeNull();
-
-		fireEvent.click(screen.getByRole("button", { name: "select-item:2" }));
-		fireEvent.click(screen.getByLabelText("select-clear"));
-		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
-
-		await waitFor(() => {
-			expect(mockState.onUpdate).toHaveBeenCalledWith(2, {
-				policy_group_id: 2,
-			});
-		});
-	});
-
 	it("shows the invalid assignment warning when the current policy group is unavailable", async () => {
 		mockState.listPolicies.mockResolvedValue({
 			items: [createPolicyGroup({ id: 2, name: "Archive" })],
@@ -443,7 +396,7 @@ describe("UserDetailDialog", () => {
 
 		renderDialog();
 
-		await waitForPolicyLoad();
+		await waitForPolicyLoad("#1");
 		expect(
 			screen.getByText("policy_group_invalid_assignment"),
 		).toBeInTheDocument();
@@ -481,6 +434,7 @@ describe("UserDetailDialog", () => {
 				limit: 100,
 				offset: 100,
 			});
+			expect(screen.getAllByText("Overflow Group")).not.toHaveLength(0);
 		});
 
 		expect(
@@ -502,7 +456,7 @@ describe("UserDetailDialog", () => {
 			username: "root",
 		});
 
-		await waitForPolicyLoad(1);
+		await waitForPolicyLoad("no_policies_assigned");
 
 		expect(screen.getAllByText("initial_admin_protected")).toHaveLength(2);
 		expect(

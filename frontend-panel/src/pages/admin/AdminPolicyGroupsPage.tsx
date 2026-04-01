@@ -1357,7 +1357,7 @@ export default function AdminPolicyGroupsPage() {
 																	id={`${item.key}-min-size`}
 																	type="number"
 																	min="0"
-																	step="0.1"
+																	step="any"
 																	value={item.minFileSizeMb}
 																	onChange={(event) =>
 																		setRuleField(
@@ -1378,7 +1378,7 @@ export default function AdminPolicyGroupsPage() {
 																	id={`${item.key}-max-size`}
 																	type="number"
 																	min="0"
-																	step="0.1"
+																	step="any"
 																	value={item.maxFileSizeMb}
 																	onChange={(event) =>
 																		setRuleField(

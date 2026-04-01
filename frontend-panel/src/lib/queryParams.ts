@@ -25,5 +25,21 @@ export function buildQueryString(params?: QueryParamRecord): string {
 
 export function withQuery(path: string, params?: QueryParamRecord): string {
 	const query = buildQueryString(params);
-	return query ? `${path}?${query}` : path;
+	if (!query) {
+		return path;
+	}
+
+	const hashIndex = path.indexOf("#");
+	const hash = hashIndex >= 0 ? path.slice(hashIndex) : "";
+	const base = hashIndex >= 0 ? path.slice(0, hashIndex) : path;
+
+	if (base.endsWith("?") || base.endsWith("&")) {
+		return `${base}${query}${hash}`;
+	}
+
+	if (base.includes("?")) {
+		return `${base}&${query}${hash}`;
+	}
+
+	return `${base}?${query}${hash}`;
 }

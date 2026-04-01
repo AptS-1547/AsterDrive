@@ -85,6 +85,10 @@ const USER_TEXT_CELL_CONTENT_CLASS =
 const USER_BADGE_CELL_CONTENT_CLASS =
 	"flex items-center rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
 
+function normalizeOffset(offset: number) {
+	return Math.max(0, Math.floor(offset));
+}
+
 function QuotaCell({ user }: { user: UserInfo }) {
 	const { t } = useTranslation("admin");
 	const quota = user.storage_quota ?? 0;
@@ -110,8 +114,8 @@ export default function AdminUsersPage() {
 	const initialKeyword = searchParams.get("keyword") ?? "";
 	const initialRole = searchParams.get("role");
 	const initialStatus = searchParams.get("status");
-	const [offset, setOffset] = useState(
-		parseOffsetSearchParam(searchParams.get("offset")),
+	const [offset, setOffsetState] = useState(
+		normalizeOffset(parseOffsetSearchParam(searchParams.get("offset"))),
 	);
 	const [pageSize, setPageSize] = useState<
 		(typeof USER_PAGE_SIZE_OPTIONS)[number]
@@ -144,6 +148,9 @@ export default function AdminUsersPage() {
 		email: "",
 		password: "",
 	});
+	const setOffset = (value: number) => {
+		setOffsetState(normalizeOffset(value));
+	};
 
 	useEffect(() => {
 		const timer = window.setTimeout(() => {
@@ -304,8 +311,8 @@ export default function AdminUsersPage() {
 
 	const updateUser = async (id: number, data: UpdateUserRequest) => {
 		try {
-			const updated = await adminUserService.update(id, data);
-			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
+			await adminUserService.update(id, data);
+			await reloadUsers();
 			toast.success(t("user_updated"));
 		} catch (e) {
 			handleApiError(e);

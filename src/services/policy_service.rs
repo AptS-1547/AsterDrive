@@ -177,6 +177,8 @@ pub async fn create(
     if is_default {
         lock_default_policy_assignment(&txn).await?;
         policy_repo::set_only_default(&txn, result.id).await?;
+        let default_group_id = ensure_singleton_group_for_policy(&txn, result.id).await?;
+        policy_group_repo::set_only_default_group(&txn, default_group_id).await?;
     }
     txn.commit().await.map_err(AsterError::from)?;
     state.policy_snapshot.reload(&state.db).await?;
@@ -314,6 +316,8 @@ pub async fn update(
     if is_default == Some(true) {
         lock_default_policy_assignment(&txn).await?;
         policy_repo::set_only_default(&txn, result.id).await?;
+        let default_group_id = ensure_singleton_group_for_policy(&txn, result.id).await?;
+        policy_group_repo::set_only_default_group(&txn, default_group_id).await?;
     }
 
     txn.commit().await.map_err(AsterError::from)?;
@@ -943,13 +947,16 @@ pub async fn migrate_group_users(
     })
 }
 
-async fn ensure_singleton_group_for_policy(state: &AppState, policy_id: i64) -> Result<i64> {
+async fn ensure_singleton_group_for_policy<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    policy_id: i64,
+) -> Result<i64> {
     let singleton_description = format!(
         "Compatibility singleton group for storage policy #{}",
         policy_id
     );
-    let groups = policy_group_repo::find_all_groups(&state.db).await?;
-    let items = policy_group_repo::find_all_group_items(&state.db).await?;
+    let groups = policy_group_repo::find_all_groups(db).await?;
+    let items = policy_group_repo::find_all_group_items(db).await?;
     let mut items_by_group_id =
         std::collections::HashMap::<i64, Vec<storage_policy_group_item::Model>>::new();
     for item in items {
@@ -971,9 +978,9 @@ async fn ensure_singleton_group_for_policy(state: &AppState, policy_id: i64) -> 
     }
 
     let now = Utc::now();
-    let policy = policy_repo::find_by_id(&state.db, policy_id).await?;
+    let policy = policy_repo::find_by_id(db, policy_id).await?;
     let group = policy_group_repo::create_group(
-        &state.db,
+        db,
         storage_policy_group::ActiveModel {
             name: Set(format!("Singleton · {}", policy.name)),
             description: Set(singleton_description),
@@ -986,7 +993,7 @@ async fn ensure_singleton_group_for_policy(state: &AppState, policy_id: i64) -> 
     )
     .await?;
     policy_group_repo::create_group_item(
-        &state.db,
+        db,
         storage_policy_group_item::ActiveModel {
             group_id: Set(group.id),
             policy_id: Set(policy.id),
@@ -998,7 +1005,6 @@ async fn ensure_singleton_group_for_policy(state: &AppState, policy_id: i64) -> 
         },
     )
     .await?;
-    state.policy_snapshot.reload(&state.db).await?;
     Ok(group.id)
 }
 
@@ -1018,11 +1024,12 @@ pub async fn assign_user_policy(
     _quota_bytes: i64,
 ) -> Result<()> {
     let existing_user = user_repo::find_by_id(&state.db, user_id).await?;
-    let group_id = ensure_singleton_group_for_policy(state, policy_id).await?;
+    let group_id = ensure_singleton_group_for_policy(&state.db, policy_id).await?;
     let mut active: user::ActiveModel = existing_user.into();
     active.policy_group_id = Set(Some(group_id));
     active.updated_at = Set(Utc::now());
     let updated = active.update(&state.db).await.map_err(AsterError::from)?;
+    state.policy_snapshot.reload(&state.db).await?;
     state
         .policy_snapshot
         .set_user_policy_group(updated.id, group_id);

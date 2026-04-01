@@ -370,6 +370,12 @@ pub async fn upload_avatar(
     )
     .await?;
     let driver = state.driver_registry.get_driver(&policy)?;
+    user_repo::check_quota(
+        &state.db,
+        user_id,
+        i64::try_from(small_bytes.len() + large_bytes.len()).unwrap_or(i64::MAX),
+    )
+    .await?;
     let version = existing
         .as_ref()
         .map(|profile| profile.avatar_version.saturating_add(1))

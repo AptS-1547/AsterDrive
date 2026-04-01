@@ -552,7 +552,6 @@ export default function AdminPoliciesPage() {
 								})}
 							</span>
 							<Select
-								items={pageSizeOptions}
 								value={String(pageSize)}
 								onValueChange={handlePageSizeChange}
 							>

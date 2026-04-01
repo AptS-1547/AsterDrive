@@ -299,7 +299,14 @@ async fn test_force_delete_user_tolerates_missing_avatar_object() {
 
 #[actix_web::test]
 async fn test_admin_create_user_uses_default_quota_and_policy() {
+    use aster_drive::db::repository::policy_group_repo;
+
     let state = common::setup().await;
+    let expected_default_id = policy_group_repo::find_default_group(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy group should exist")
+        .id;
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
@@ -327,9 +334,9 @@ async fn test_admin_create_user_uses_default_quota_and_policy() {
     let user_id = body["data"]["id"].as_i64().unwrap();
     assert_eq!(body["data"]["storage_quota"], 1_048_576);
     assert!(user_id > 0);
-    assert!(
-        body["data"]["policy_group_id"].as_i64().unwrap() > 0,
-        "admin-created user should inherit the new-user default policy group"
+    assert_eq!(
+        body["data"]["policy_group_id"].as_i64().unwrap(),
+        expected_default_id
     );
 }
 

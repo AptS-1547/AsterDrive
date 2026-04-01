@@ -101,6 +101,8 @@ pub async fn clear_system_default<C: ConnectionTrait>(db: &C) -> Result<()> {
 }
 
 pub async fn set_only_default<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    find_by_id(db, id).await?;
+
     StoragePolicy::update_many()
         .col_expr(
             storage_policy::Column::IsDefault,
