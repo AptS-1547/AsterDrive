@@ -28,6 +28,18 @@ import type {
 } from "@/types/api";
 import { api } from "./http";
 
+function sanitizeUpdateUserRequest(data: UpdateUserRequest): UpdateUserRequest {
+	const rawData = data as UpdateUserRequest & {
+		policy_group_id?: number | null;
+	};
+	if (rawData.policy_group_id != null) {
+		return data;
+	}
+
+	const { policy_group_id: _policyGroupId, ...payload } = rawData;
+	return payload;
+}
+
 export const adminOverviewService = {
 	get: (params?: { days?: number; timezone?: string; event_limit?: number }) =>
 		api.get<AdminOverview>(
@@ -64,7 +76,7 @@ export const adminUserService = {
 	create: (data: CreateUserReq) => api.post<UserInfo>("/admin/users", data),
 
 	update: (id: number, data: UpdateUserRequest) =>
-		api.patch<UserInfo>(`/admin/users/${id}`, data),
+		api.patch<UserInfo>(`/admin/users/${id}`, sanitizeUpdateUserRequest(data)),
 
 	resetPassword: (id: number, data: ResetUserPasswordRequest) =>
 		api.put<void>(`/admin/users/${id}/password`, data),

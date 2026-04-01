@@ -78,6 +78,13 @@ import type {
 
 const USER_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const DEFAULT_USER_PAGE_SIZE = 20 as const;
+const USER_MANAGED_QUERY_KEYS = [
+	"keyword",
+	"offset",
+	"pageSize",
+	"role",
+	"status",
+] as const;
 const INTERACTIVE_TABLE_ROW_CLASS =
 	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
 const USER_TEXT_CELL_CONTENT_CLASS =
@@ -87,6 +94,67 @@ const USER_BADGE_CELL_CONTENT_CLASS =
 
 function normalizeOffset(offset: number) {
 	return Math.max(0, Math.floor(offset));
+}
+
+function parseRoleSearchParam(value: string | null): "__all__" | UserRole {
+	return value === "admin" || value === "user" ? value : "__all__";
+}
+
+function parseStatusSearchParam(value: string | null): "__all__" | UserStatus {
+	return value === "active" || value === "disabled" ? value : "__all__";
+}
+
+function buildManagedUserSearchParams({
+	offset,
+	pageSize,
+	keyword,
+	role,
+	status,
+}: {
+	offset: number;
+	pageSize: (typeof USER_PAGE_SIZE_OPTIONS)[number];
+	keyword: string;
+	role: "__all__" | UserRole;
+	status: "__all__" | UserStatus;
+}) {
+	return buildOffsetPaginationSearchParams({
+		offset,
+		pageSize,
+		defaultPageSize: DEFAULT_USER_PAGE_SIZE,
+		extraParams: {
+			keyword: keyword.trim() || undefined,
+			role: role !== "__all__" ? role : undefined,
+			status: status !== "__all__" ? status : undefined,
+		},
+	});
+}
+
+function getManagedUserSearchString(searchParams: URLSearchParams) {
+	return buildManagedUserSearchParams({
+		offset: normalizeOffset(parseOffsetSearchParam(searchParams.get("offset"))),
+		pageSize: parsePageSizeSearchParam(
+			searchParams.get("pageSize"),
+			USER_PAGE_SIZE_OPTIONS,
+			DEFAULT_USER_PAGE_SIZE,
+		),
+		keyword: searchParams.get("keyword") ?? "",
+		role: parseRoleSearchParam(searchParams.get("role")),
+		status: parseStatusSearchParam(searchParams.get("status")),
+	}).toString();
+}
+
+function mergeManagedUserSearchParams(
+	searchParams: URLSearchParams,
+	managedSearchParams: URLSearchParams,
+) {
+	const merged = new URLSearchParams(searchParams);
+	for (const key of USER_MANAGED_QUERY_KEYS) {
+		merged.delete(key);
+	}
+	for (const [key, value] of managedSearchParams.entries()) {
+		merged.set(key, value);
+	}
+	return merged;
 }
 
 function QuotaCell({ user }: { user: UserInfo }) {
@@ -161,8 +229,8 @@ export default function AdminUsersPage() {
 	}, [keyword]);
 
 	useEffect(() => {
-		const nextSearch = searchParams.toString();
-		if (nextSearch === lastWrittenSearchRef.current) {
+		const managedSearch = getManagedUserSearchString(searchParams);
+		if (managedSearch === lastWrittenSearchRef.current) {
 			return;
 		}
 
@@ -175,16 +243,8 @@ export default function AdminUsersPage() {
 			DEFAULT_USER_PAGE_SIZE,
 		);
 		const nextKeyword = searchParams.get("keyword") ?? "";
-		const nextRole =
-			searchParams.get("role") === "admin" ||
-			searchParams.get("role") === "user"
-				? (searchParams.get("role") as UserRole)
-				: "__all__";
-		const nextStatus =
-			searchParams.get("status") === "active" ||
-			searchParams.get("status") === "disabled"
-				? (searchParams.get("status") as UserStatus)
-				: "__all__";
+		const nextRole = parseRoleSearchParam(searchParams.get("role"));
+		const nextStatus = parseStatusSearchParam(searchParams.get("status"));
 
 		setOffsetState((prev) => (prev === nextOffset ? prev : nextOffset));
 		setPageSize((prev) => (prev === nextPageSize ? prev : nextPageSize));
@@ -195,18 +255,15 @@ export default function AdminUsersPage() {
 	}, [searchParams]);
 
 	useEffect(() => {
-		const nextSearchParams = buildOffsetPaginationSearchParams({
+		const nextManagedSearchParams = buildManagedUserSearchParams({
 			offset,
 			pageSize,
-			defaultPageSize: DEFAULT_USER_PAGE_SIZE,
-			extraParams: {
-				keyword: debouncedKeyword.trim() || undefined,
-				role: roleFilter !== "__all__" ? roleFilter : undefined,
-				status: statusFilter !== "__all__" ? statusFilter : undefined,
-			},
+			keyword: debouncedKeyword,
+			role: roleFilter,
+			status: statusFilter,
 		});
-		const nextSearch = nextSearchParams.toString();
-		const currentSearch = searchParams.toString();
+		const nextSearch = nextManagedSearchParams.toString();
+		const currentSearch = getManagedUserSearchString(searchParams);
 		if (
 			currentSearch !== lastWrittenSearchRef.current &&
 			currentSearch !== nextSearch
@@ -219,7 +276,10 @@ export default function AdminUsersPage() {
 			return;
 		}
 
-		setSearchParams(nextSearchParams, { replace: true });
+		setSearchParams(
+			mergeManagedUserSearchParams(searchParams, nextManagedSearchParams),
+			{ replace: true },
+		);
 	}, [
 		debouncedKeyword,
 		offset,

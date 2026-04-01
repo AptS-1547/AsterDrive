@@ -248,4 +248,15 @@ describe("adminService", () => {
 			"/admin/config/mail.host",
 		);
 	});
+
+	it("omits null policy_group_id values from update user payloads", () => {
+		adminUserService.update(5, {
+			role: "admin" as never,
+			policy_group_id: null,
+		} as never);
+
+		expect(mockState.patch).toHaveBeenCalledWith("/admin/users/5", {
+			role: "admin",
+		});
+	});
 });

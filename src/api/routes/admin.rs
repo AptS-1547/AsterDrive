@@ -782,7 +782,8 @@ pub struct PatchUserReq {
     pub status: Option<UserStatus>,
     pub storage_quota: Option<i64>,
     /// Omitted means "leave unchanged". Explicit `null` is rejected because this
-    /// endpoint only supports assigning a policy group, not unassigning one.
+    /// endpoint only supports assigning a policy group, not unassigning one. To
+    /// change the assignment, provide a valid policy group ID.
     #[serde(default, deserialize_with = "deserialize_non_null_policy_group_id")]
     #[cfg_attr(
         all(debug_assertions, feature = "openapi"),

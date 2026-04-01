@@ -2094,7 +2094,12 @@ export interface components {
             secret_key?: string | null;
         };
         PatchUserReq: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Omitted means "leave unchanged". Explicit `null` is rejected because this
+             *     endpoint only supports assigning a policy group, not unassigning one. To
+             *     change the assignment, provide a valid policy group ID.
+             */
             policy_group_id?: number;
             role?: null | components["schemas"]["UserRole"];
             status?: null | components["schemas"]["UserStatus"];
@@ -2290,12 +2295,6 @@ export interface components {
             options: string;
             updated_at: string;
         };
-        StoragePolicySummaryInfo: {
-            driver_type: components["schemas"]["DriverType"];
-            /** Format: int64 */
-            id: number;
-            name: string;
-        };
         StoragePolicyGroup: {
             created_at: string;
             description: string;
@@ -2354,6 +2353,12 @@ export interface components {
             policy_id: number;
             /** Format: int32 */
             priority: number;
+        };
+        StoragePolicySummaryInfo: {
+            driver_type: components["schemas"]["DriverType"];
+            /** Format: int64 */
+            id: number;
+            name: string;
         };
         SystemConfig: {
             /** @description 分类（前端分组用） */
@@ -4298,6 +4303,13 @@ export interface operations {
                         msg: string;
                     };
                 };
+            };
+            /** @description Bad request, for example when policy_group_id cannot be null */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

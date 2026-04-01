@@ -1875,7 +1875,9 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
 #[tokio::test]
 async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     use aster_drive::db::repository::file_repo;
+    use aster_drive::entities::{upload_session, upload_session_part};
     use aster_drive::services::{auth_service, upload_service};
+    use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
     use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
     let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
@@ -1924,6 +1926,23 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     assert_eq!(init.mode, aster_drive::types::UploadMode::Direct);
 
     let db = state.db.clone();
+    assert_eq!(
+        upload_session::Entity::find()
+            .filter(upload_session::Column::UserId.eq(user.id))
+            .count(&db)
+            .await
+            .unwrap(),
+        0,
+        "direct init should not create upload sessions at the exact chunk boundary"
+    );
+    assert_eq!(
+        upload_session_part::Entity::find()
+            .count(&db)
+            .await
+            .unwrap(),
+        0,
+        "direct init should not create multipart part rows at the exact chunk boundary"
+    );
     let driver = state.driver_registry.get_driver(&policy).unwrap();
     let app = create_test_app!(state);
 
@@ -1946,6 +1965,23 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     let blob = file_repo::find_blob_by_id(&db, file.blob_id).await.unwrap();
     let stored = driver.get(&blob.storage_path).await.unwrap();
     assert_eq!(stored, data);
+    assert_eq!(
+        upload_session::Entity::find()
+            .filter(upload_session::Column::UserId.eq(user.id))
+            .count(&db)
+            .await
+            .unwrap(),
+        0,
+        "direct /files/upload should not create upload sessions at the exact chunk boundary"
+    );
+    assert_eq!(
+        upload_session_part::Entity::find()
+            .count(&db)
+            .await
+            .unwrap(),
+        0,
+        "direct /files/upload should not create multipart part rows at the exact chunk boundary"
+    );
 }
 
 /// S3 relay_stream 大文件分片：服务端直接把 chunk 作为 S3 part，中途不落 data/.uploads

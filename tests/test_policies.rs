@@ -873,6 +873,21 @@ async fn test_cannot_delete_builtin_system_policy_even_after_switching_default()
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let initial_policies = body["data"]["items"].as_array().unwrap();
+    assert_eq!(
+        initial_policies.len(),
+        1,
+        "fresh setup should contain exactly one built-in policy"
+    );
+    let built_in_policy_id = initial_policies[0]["id"].as_i64().unwrap();
+
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies")
         .insert_header(("Cookie", format!("aster_access={token}")))
@@ -888,14 +903,14 @@ async fn test_cannot_delete_builtin_system_policy_even_after_switching_default()
     assert_eq!(resp.status(), 201);
 
     let req = test::TestRequest::delete()
-        .uri("/api/v1/admin/policies/1")
+        .uri(&format!("/api/v1/admin/policies/{built_in_policy_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(
         resp.status(),
         400,
-        "should reject deleting built-in policy #1, got {}",
+        "should reject deleting built-in policy #{built_in_policy_id}, got {}",
         resp.status()
     );
 
@@ -908,8 +923,10 @@ async fn test_cannot_delete_builtin_system_policy_even_after_switching_default()
     let body: Value = test::read_body_json(resp).await;
     let policies = body["data"]["items"].as_array().unwrap();
     assert!(
-        policies.iter().any(|policy| policy["id"] == 1),
-        "built-in policy #1 should still exist after failed delete"
+        policies
+            .iter()
+            .any(|policy| policy["id"].as_i64() == Some(built_in_policy_id)),
+        "built-in policy #{built_in_policy_id} should still exist after failed delete"
     );
 }
 

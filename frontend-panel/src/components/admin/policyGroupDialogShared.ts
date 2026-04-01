@@ -6,8 +6,6 @@ import type {
 
 const BYTES_PER_MB = 1024 * 1024;
 
-let nextRuleKey = 0;
-
 export interface PolicyGroupRuleForm {
 	key: string;
 	policyId: string;
@@ -26,16 +24,18 @@ export interface PolicyGroupFormData {
 	items: PolicyGroupRuleForm[];
 }
 
-function createRuleKey() {
-	nextRuleKey += 1;
-	return `policy-group-rule-${nextRuleKey}`;
+function generateRuleKey() {
+	return (
+		globalThis.crypto?.randomUUID?.() ??
+		`policy-group-rule-${Date.now()}-${Math.random().toString(36).slice(2)}`
+	);
 }
 
 export function bytesToMbInput(bytes: number) {
 	if (bytes <= 0) return "";
 
 	const mb = bytes / BYTES_PER_MB;
-	return Number.isInteger(mb) ? String(mb) : String(mb);
+	return String(mb);
 }
 
 export function mbInputToBytes(value: string, originalBytes?: number) {
@@ -63,7 +63,7 @@ export function buildPolicyGroupRuleForm(
 	maxFileSize = 0,
 ): PolicyGroupRuleForm {
 	return {
-		key: createRuleKey(),
+		key: generateRuleKey(),
 		policyId: policyId != null ? String(policyId) : "",
 		priority: String(priority),
 		minFileSizeMb: bytesToMbInput(minFileSize),

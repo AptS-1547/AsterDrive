@@ -395,16 +395,7 @@ async function waitForPolicyLoad(selectedPolicyLabel = "Primary") {
 		const selectedOption = matchingLabels.some(
 			(node) => node.closest('button[data-selected="true"]') !== null,
 		);
-		const optionLabelPresent = matchingLabels.some(
-			(node) => node.closest('button[aria-label^="select-item:"]') !== null,
-		);
-
-		if (selectedTrigger || optionLabelPresent) {
-			expect(selectedTrigger || selectedOption).toBe(true);
-			return;
-		}
-
-		expect(matchingLabels).not.toHaveLength(0);
+		expect(selectedTrigger || selectedOption).toBe(true);
 	});
 }
 
@@ -527,7 +518,7 @@ describe("UserDetailDialog", () => {
 			username: "root",
 		});
 
-		await waitForPolicyLoad("no_policies_assigned");
+		await waitForPolicyLoad("select_policy_group");
 
 		expect(screen.getAllByText("initial_admin_protected")).toHaveLength(2);
 		expect(
