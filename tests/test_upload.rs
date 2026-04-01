@@ -300,6 +300,8 @@ async fn create_s3_default_policy(
     .await
     .unwrap();
 
+    // Keep the legacy per-user policy assignment path centralized here so
+    // tests can switch to a policy-group helper in one place later.
     aster_drive::services::policy_service::assign_user_policy(state, user_id, policy.id, true, 0)
         .await
         .unwrap();
@@ -1146,7 +1148,6 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
 }
 
 /// S3 presigned upload 端到端测试（需要 testcontainers + rustfs）
-#[allow(deprecated)]
 #[tokio::test]
 async fn test_presigned_upload_s3_e2e() {
     use aster_drive::services::{auth_service, upload_service};
@@ -1170,47 +1171,19 @@ async fn test_presigned_upload_s3_e2e() {
     // 创建 state（内存 SQLite）
     let state = common::setup().await;
 
-    // 创建 S3 策略 + presigned_upload: true
-    use chrono::Utc;
-    use sea_orm::Set;
-    let now = Utc::now();
-    let s3_policy = aster_drive::db::repository::policy_repo::create(
-        &state.db,
-        aster_drive::entities::storage_policy::ActiveModel {
-            name: Set("Test S3 Presigned".to_string()),
-            driver_type: Set(aster_drive::types::DriverType::S3),
-            endpoint: Set(endpoint),
-            bucket: Set(bucket.to_string()),
-            access_key: Set("rustfsadmin".to_string()),
-            secret_key: Set("rustfsadmin123".to_string()),
-            base_path: Set("uploads".to_string()),
-            max_file_size: Set(0),
-            allowed_types: Set("[]".to_string()),
-            options: Set(r#"{"presigned_upload":true}"#.to_string()),
-            is_default: Set(false),
-            chunk_size: Set(5_242_880),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-
-    // 注册用户 + 分配 S3 策略为默认
     let user = auth_service::register(&state, "s3user", "s3@test.com", "pass123")
         .await
         .unwrap();
-    aster_drive::services::policy_service::assign_user_policy(
+    let s3_policy = create_s3_default_policy(
         &state,
         user.id,
-        s3_policy.id,
-        true,
-        0,
+        "Test S3 Presigned",
+        &endpoint,
+        bucket,
+        r#"{"presigned_upload":true}"#,
+        5_242_880,
     )
-    .await
-    .unwrap();
-    reload_policy_snapshot(&state).await;
+    .await;
 
     // 1. init_upload → 应返回 presigned 模式
     let data = b"hello presigned world!";
@@ -1291,7 +1264,6 @@ async fn test_presigned_upload_s3_e2e() {
 }
 
 /// S3 presigned multipart 上传端到端测试：覆盖 presign_parts / progress / complete 排序分支
-#[allow(deprecated)]
 #[tokio::test]
 async fn test_presigned_multipart_upload_s3_e2e() {
     use aster_drive::db::repository::{file_repo, policy_repo};
@@ -1314,46 +1286,19 @@ async fn test_presigned_multipart_upload_s3_e2e() {
 
     let state = common::setup().await;
 
-    use chrono::Utc;
-    use sea_orm::Set;
-    let now = Utc::now();
-    let s3_policy = policy_repo::create(
-        &state.db,
-        aster_drive::entities::storage_policy::ActiveModel {
-            name: Set("Test S3 Multipart".to_string()),
-            driver_type: Set(aster_drive::types::DriverType::S3),
-            endpoint: Set(endpoint),
-            bucket: Set(bucket.to_string()),
-            access_key: Set("rustfsadmin".to_string()),
-            secret_key: Set("rustfsadmin123".to_string()),
-            base_path: Set("uploads".to_string()),
-            max_file_size: Set(0),
-            allowed_types: Set("[]".to_string()),
-            options: Set(r#"{"presigned_upload":true}"#.to_string()),
-            is_default: Set(false),
-            chunk_size: Set(5_242_880),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-
     let user = auth_service::register(&state, "s3multipartuser", "s3multipart@test.com", "pass123")
         .await
         .unwrap();
-
-    aster_drive::services::policy_service::assign_user_policy(
+    let s3_policy = create_s3_default_policy(
         &state,
         user.id,
-        s3_policy.id,
-        true,
-        0,
+        "Test S3 Multipart",
+        &endpoint,
+        bucket,
+        r#"{"presigned_upload":true}"#,
+        5_242_880,
     )
-    .await
-    .unwrap();
-    reload_policy_snapshot(&state).await;
+    .await;
 
     let mut data = vec![b'A'; 5_242_880];
     data.extend_from_slice(b"multipart tail");
@@ -1912,6 +1857,22 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
         .await
         .unwrap();
 
+    let db = state.db.clone();
+    let sessions_before = upload_session::Entity::find()
+        .filter(upload_session::Column::UserId.eq(user.id))
+        .count(&db)
+        .await
+        .unwrap();
+    let parts_before = upload_session_part::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            upload_session_part::Relation::UploadSession.def(),
+        )
+        .filter(upload_session::Column::UserId.eq(user.id))
+        .count(&db)
+        .await
+        .unwrap();
+
     let data = vec![b'Z'; 5_242_880];
     let init = upload_service::init_upload(
         &state,
@@ -1924,24 +1885,13 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     .await
     .unwrap();
     assert_eq!(init.mode, aster_drive::types::UploadMode::Direct);
-
-    let db = state.db.clone();
-    let parts_before = upload_session_part::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            upload_session_part::Relation::UploadSession.def(),
-        )
-        .filter(upload_session::Column::UserId.eq(user.id))
-        .count(&db)
-        .await
-        .unwrap();
     assert_eq!(
         upload_session::Entity::find()
             .filter(upload_session::Column::UserId.eq(user.id))
             .count(&db)
             .await
             .unwrap(),
-        0,
+        sessions_before,
         "direct init should not create upload sessions at the exact chunk boundary"
     );
     assert_eq!(
@@ -1985,7 +1935,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
             .count(&db)
             .await
             .unwrap(),
-        0,
+        sessions_before,
         "direct /files/upload should not create upload sessions at the exact chunk boundary"
     );
     assert_eq!(
