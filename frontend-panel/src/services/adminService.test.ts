@@ -136,6 +136,19 @@ describe("adminService", () => {
 		);
 	});
 
+	it("fails when policy group pagination exceeds the safety cap", async () => {
+		mockState.get.mockResolvedValue({
+			items: [{ id: 1 }],
+			limit: 100,
+			offset: 0,
+			total: 100,
+		});
+
+		await expect(adminPolicyGroupService.listAll(100)).rejects.toThrow(
+			"pagination exceeded max iterations",
+		);
+	});
+
 	it("uses the expected detail and mutation endpoints", () => {
 		adminOverviewService.get({
 			days: 30,

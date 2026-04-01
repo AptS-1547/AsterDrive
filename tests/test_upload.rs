@@ -304,8 +304,6 @@ async fn create_s3_default_policy(
         .await
         .unwrap();
 
-    reload_policy_snapshot(state).await;
-
     policy
 }
 
@@ -1877,7 +1875,9 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     use aster_drive::db::repository::file_repo;
     use aster_drive::entities::{upload_session, upload_session_part};
     use aster_drive::services::{auth_service, upload_service};
-    use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
+    use sea_orm::{
+        ColumnTrait, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait,
+    };
     use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
     let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
@@ -1927,6 +1927,11 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
 
     let db = state.db.clone();
     let parts_before = upload_session_part::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            upload_session_part::Relation::UploadSession.def(),
+        )
+        .filter(upload_session::Column::UserId.eq(user.id))
         .count(&db)
         .await
         .unwrap();
@@ -1941,6 +1946,11 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     );
     assert_eq!(
         upload_session_part::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                upload_session_part::Relation::UploadSession.def(),
+            )
+            .filter(upload_session::Column::UserId.eq(user.id))
             .count(&db)
             .await
             .unwrap(),
@@ -1980,6 +1990,11 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     );
     assert_eq!(
         upload_session_part::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                upload_session_part::Relation::UploadSession.def(),
+            )
+            .filter(upload_session::Column::UserId.eq(user.id))
             .count(&db)
             .await
             .unwrap(),

@@ -127,11 +127,12 @@ export function validatePolicyGroupForm(
 		return t("policy_group_rule_required");
 	}
 
-	const seenPolicyIds = new Set<string>();
+	const seenPolicyIds = new Set<number>();
 	const seenPriorities = new Set<number>();
 
 	for (const item of form.items) {
-		if (!item.policyId) {
+		const policyIdNum = Number(item.policyId);
+		if (!Number.isInteger(policyIdNum) || policyIdNum <= 0) {
 			return t("policy_group_rule_policy_required");
 		}
 
@@ -139,14 +140,14 @@ export function validatePolicyGroupForm(
 		if (!Number.isInteger(priority) || priority <= 0) {
 			return t("policy_group_rule_priority_invalid");
 		}
-		if (seenPolicyIds.has(item.policyId)) {
+		if (seenPolicyIds.has(policyIdNum)) {
 			return t("policy_group_rule_policy_duplicate");
 		}
 		if (seenPriorities.has(priority)) {
 			return t("policy_group_rule_priority_duplicate");
 		}
 
-		seenPolicyIds.add(item.policyId);
+		seenPolicyIds.add(policyIdNum);
 		seenPriorities.add(priority);
 
 		const min = item.minFileSizeMb.trim() ? Number(item.minFileSizeMb) : 0;

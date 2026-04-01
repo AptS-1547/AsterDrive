@@ -28,6 +28,9 @@ import type {
 } from "@/types/api";
 import { api } from "./http";
 
+// The admin PATCH endpoint rejects `policy_group_id: null`, and current callers
+// only support assigning a group or leaving it unchanged. Strip accidental nulls
+// here so broader callers cannot request an unsupported clear operation.
 function sanitizeUpdateUserRequest(data: UpdateUserRequest): UpdateUserRequest {
 	const rawData = data as UpdateUserRequest & {
 		policy_group_id?: number | null;
@@ -132,23 +135,40 @@ export const adminPolicyGroupService = {
 		),
 
 	listAll: async (pageSize = 100) => {
+		if (!Number.isInteger(pageSize) || pageSize <= 0) {
+			throw new Error("pageSize must be a positive integer");
+		}
+
 		const allGroups: StoragePolicyGroup[] = [];
 		let offset = 0;
 		let total = 0;
+		let pageCount = 0;
+		let maxPages = Number.POSITIVE_INFINITY;
 
 		do {
+			pageCount += 1;
+			if (pageCount > maxPages) {
+				throw new Error("pagination exceeded max iterations");
+			}
+
+			const previousOffset = offset;
+			const previousCount = allGroups.length;
 			const page = await adminPolicyGroupService.list({
 				limit: pageSize,
 				offset,
 			});
 			allGroups.push(...page.items);
 			total = page.total;
+			maxPages = Math.max(1, Math.ceil(total / pageSize)) + 2;
 			offset += page.items.length;
 			if (page.items.length === 0) {
 				if (allGroups.length < total) {
 					throw new Error("incomplete pages from adminPolicyGroupService.list");
 				}
 				break;
+			}
+			if (offset <= previousOffset || allGroups.length <= previousCount) {
+				throw new Error("pagination did not make progress");
 			}
 		} while (allGroups.length < total);
 

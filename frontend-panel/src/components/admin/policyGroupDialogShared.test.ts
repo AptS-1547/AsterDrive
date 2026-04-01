@@ -80,6 +80,59 @@ describe("policyGroupDialogShared", () => {
 		).toBe("policy_group_rule_priority_duplicate");
 	});
 
+	it("rejects invalid and numerically duplicated policy ids", () => {
+		expect(
+			validatePolicyGroupForm(
+				{
+					name: "Invalid policy",
+					description: "",
+					isEnabled: true,
+					isDefault: false,
+					items: [
+						{
+							key: "a",
+							policyId: "abc",
+							priority: "1",
+							minFileSizeMb: "",
+							maxFileSizeMb: "",
+						},
+					],
+				},
+				1,
+				t,
+			),
+		).toBe("policy_group_rule_policy_required");
+
+		expect(
+			validatePolicyGroupForm(
+				{
+					name: "Numeric duplicate",
+					description: "",
+					isEnabled: true,
+					isDefault: false,
+					items: [
+						{
+							key: "a",
+							policyId: "1",
+							priority: "1",
+							minFileSizeMb: "",
+							maxFileSizeMb: "",
+						},
+						{
+							key: "b",
+							policyId: "01",
+							priority: "2",
+							minFileSizeMb: "",
+							maxFileSizeMb: "",
+						},
+					],
+				},
+				2,
+				t,
+			),
+		).toBe("policy_group_rule_policy_duplicate");
+	});
+
 	it("builds sorted payloads and converts megabytes to bytes", () => {
 		expect(
 			buildPolicyGroupPayload({
