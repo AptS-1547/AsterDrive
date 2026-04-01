@@ -145,6 +145,9 @@ export const adminPolicyGroupService = {
 			total = page.total;
 			offset += page.items.length;
 			if (page.items.length === 0) {
+				if (allGroups.length < total) {
+					throw new Error("incomplete pages from adminPolicyGroupService.list");
+				}
 				break;
 			}
 		} while (allGroups.length < total);

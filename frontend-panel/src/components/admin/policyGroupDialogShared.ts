@@ -24,6 +24,11 @@ export interface PolicyGroupFormData {
 	items: PolicyGroupRuleForm[];
 }
 
+export type PolicyGroupPayload = Pick<
+	CreatePolicyGroupRequest,
+	"name" | "description" | "is_enabled" | "is_default" | "items"
+>;
+
 function generateRuleKey() {
 	return (
 		globalThis.crypto?.randomUUID?.() ??
@@ -159,7 +164,7 @@ export function validatePolicyGroupForm(
 
 export function buildPolicyGroupPayload(
 	form: PolicyGroupFormData,
-): CreatePolicyGroupRequest {
+): PolicyGroupPayload {
 	return {
 		name: form.name.trim(),
 		description: form.description.trim(),

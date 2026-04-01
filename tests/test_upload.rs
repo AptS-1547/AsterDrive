@@ -1926,6 +1926,10 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     assert_eq!(init.mode, aster_drive::types::UploadMode::Direct);
 
     let db = state.db.clone();
+    let parts_before = upload_session_part::Entity::find()
+        .count(&db)
+        .await
+        .unwrap();
     assert_eq!(
         upload_session::Entity::find()
             .filter(upload_session::Column::UserId.eq(user.id))
@@ -1940,7 +1944,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
             .count(&db)
             .await
             .unwrap(),
-        0,
+        parts_before,
         "direct init should not create multipart part rows at the exact chunk boundary"
     );
     let driver = state.driver_registry.get_driver(&policy).unwrap();
@@ -1979,7 +1983,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
             .count(&db)
             .await
             .unwrap(),
-        0,
+        parts_before,
         "direct /files/upload should not create multipart part rows at the exact chunk boundary"
     );
 }

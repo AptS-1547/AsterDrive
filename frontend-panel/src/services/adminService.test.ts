@@ -116,6 +116,26 @@ describe("adminService", () => {
 		);
 	});
 
+	it("fails when policy group pagination returns an empty page before total is reached", async () => {
+		mockState.get
+			.mockResolvedValueOnce({
+				items: [{ id: 1 }, { id: 2 }],
+				limit: 2,
+				offset: 0,
+				total: 3,
+			})
+			.mockResolvedValueOnce({
+				items: [],
+				limit: 2,
+				offset: 2,
+				total: 3,
+			});
+
+		await expect(adminPolicyGroupService.listAll(2)).rejects.toThrow(
+			"incomplete pages from adminPolicyGroupService.list",
+		);
+	});
+
 	it("uses the expected detail and mutation endpoints", () => {
 		adminOverviewService.get({
 			days: 30,

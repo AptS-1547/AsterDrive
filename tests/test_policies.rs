@@ -428,7 +428,14 @@ async fn test_cannot_disable_default_policy_group() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    let group_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+    let groups = body["data"]["items"]
+        .as_array()
+        .expect("policy group list should be an array");
+    let group_id = groups
+        .iter()
+        .find(|item| item["is_default"].as_bool() == Some(true))
+        .and_then(|item| item["id"].as_i64())
+        .expect("default policy group should exist in list");
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
