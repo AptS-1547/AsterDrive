@@ -36,6 +36,8 @@ function getStored<T extends string>(key: string, fallback: T): T {
 }
 
 interface FileState {
+	resetWorkspaceState: () => void;
+
 	// Navigation
 	currentFolderId: number | null;
 	breadcrumb: BreadcrumbItem[];
@@ -160,6 +162,27 @@ async function resolveBreadcrumb(
 }
 
 export const useFileStore = create<FileState>((set, get) => ({
+	resetWorkspaceState: () => {
+		set({
+			currentFolderId: null,
+			folders: [],
+			files: [],
+			breadcrumb: [{ id: null, name: "Root" }],
+			loading: false,
+			error: null,
+			filesTotalCount: 0,
+			foldersTotalCount: 0,
+			loadingMore: false,
+			nextFileCursor: null,
+			searchQuery: null,
+			searchFolders: [],
+			searchFiles: [],
+			selectedFileIds: new Set(),
+			selectedFolderIds: new Set(),
+			clipboard: null,
+		});
+	},
+
 	currentFolderId: null,
 	folders: [],
 	files: [],

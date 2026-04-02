@@ -12,6 +12,7 @@ pub struct Model {
     pub id: i64,
     pub name: String,
     pub parent_id: Option<i64>,
+    pub team_id: Option<i64>,
     pub user_id: i64,
     pub policy_id: Option<i64>, // 覆盖存储策略
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -39,6 +40,12 @@ pub enum Relation {
         to = "super::storage_policy::Column::Id"
     )]
     StoragePolicy,
+    #[sea_orm(
+        belongs_to = "super::team::Entity",
+        from = "Column::TeamId",
+        to = "super::team::Column::Id"
+    )]
+    Team,
     #[sea_orm(has_many = "super::file::Entity")]
     Files,
 }
@@ -52,6 +59,12 @@ impl Related<super::user::Entity> for Entity {
 impl Related<super::storage_policy::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::StoragePolicy.def()
+    }
+}
+
+impl Related<super::team::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Team.def()
     }
 }
 

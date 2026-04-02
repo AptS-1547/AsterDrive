@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { formatBytes, formatDate, formatDateAbsolute } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { TrashItem } from "@/types/api";
+import type { TrashItem } from "@/types/api-helpers";
 
 interface TrashTableProps {
 	items: TrashItem[];

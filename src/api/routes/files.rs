@@ -7,7 +7,8 @@ use crate::runtime::AppState;
 use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
-    file_service, upload_service,
+    file_service, upload_service, version_service,
+    workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::types::NullablePatch;
 use actix_governor::Governor;
@@ -89,26 +90,18 @@ pub async fn upload(
     query: web::Query<FileQuery>,
     mut payload: actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
-    let file = file_service::upload(
+    upload_response(
         &state,
-        claims.user_id,
-        &mut payload,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
         query.folder_id,
         query.relative_path.as_deref(),
+        &mut payload,
     )
-    .await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::FileUpload,
-        Some("file"),
-        Some(file.id),
-        Some(&file.name),
-        None,
-    )
-    .await;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+    .await
 }
 
 #[derive(Deserialize)]
@@ -136,9 +129,14 @@ pub async fn create_empty(
     claims: web::ReqData<Claims>,
     body: web::Json<CreateEmptyRequest>,
 ) -> Result<HttpResponse> {
-    let file =
-        file_service::create_empty(&state, claims.user_id, body.folder_id, &body.name).await?;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+    create_empty_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        &body,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -159,8 +157,14 @@ pub async fn get_file(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let file = file_service::get_info(&state, *path, claims.user_id).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+    get_file_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -182,24 +186,16 @@ pub async fn download(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let file_id = *path;
-    let if_none_match = req
-        .headers()
-        .get("If-None-Match")
-        .and_then(|v| v.to_str().ok());
-    let response = file_service::download(&state, file_id, claims.user_id, if_none_match).await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    download_response(
         &state,
-        &ctx,
-        audit_service::AuditAction::FileDownload,
-        Some("file"),
-        Some(file_id),
-        None,
-        None,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
     )
-    .await;
-    Ok(response)
+    .await
 }
 
 #[api_docs_macros::path(
@@ -220,24 +216,14 @@ pub async fn get_thumbnail(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    match file_service::get_thumbnail_data(&state, *path, claims.user_id).await? {
-        Some(result) => Ok(HttpResponse::Ok()
-            .content_type("image/webp")
-            .insert_header((
-                "Cache-Control",
-                format!(
-                    "public, max-age={}, immutable",
-                    crate::api::constants::YEAR_SECS
-                ),
-            ))
-            .body(result.data)),
-        None => {
-            // 缩略图正在后台生成，返回 202 让前端稍后重试
-            Ok(HttpResponse::Accepted()
-                .insert_header(("Retry-After", "2"))
-                .json(ApiResponse::<()>::ok_empty()))
-        }
-    }
+    get_thumbnail_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -259,20 +245,16 @@ pub async fn delete_file(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let file_id = *path;
-    file_service::delete(&state, file_id, claims.user_id).await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    delete_file_response(
         &state,
-        &ctx,
-        audit_service::AuditAction::FileDelete,
-        Some("file"),
-        Some(file_id),
-        None,
-        None,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
     )
-    .await;
-    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+    .await
 }
 
 #[derive(Deserialize)]
@@ -305,31 +287,17 @@ pub async fn patch_file(
     path: web::Path<i64>,
     body: web::Json<PatchFileReq>,
 ) -> Result<HttpResponse> {
-    let file = file_service::update(
+    patch_file_response(
         &state,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
         *path,
-        claims.user_id,
-        body.name.clone(),
-        body.folder_id,
+        &body,
     )
-    .await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    let action = if body.folder_id.is_present() {
-        audit_service::AuditAction::FileMove
-    } else {
-        audit_service::AuditAction::FileRename
-    };
-    audit_service::log(
-        &state,
-        &ctx,
-        action,
-        Some("file"),
-        Some(file.id),
-        Some(&file.name),
-        None,
-    )
-    .await;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+    .await
 }
 
 // ── Chunked Upload ──────────────────────────────────────────────────
@@ -565,26 +533,17 @@ pub async fn update_content(
     req: HttpRequest,
     body: web::Bytes,
 ) -> Result<HttpResponse> {
-    let if_match = req.headers().get("If-Match").and_then(|v| v.to_str().ok());
-
-    let (file, new_hash) =
-        file_service::update_content(&state, *path, claims.user_id, body, if_match).await?;
-
-    let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    update_content_response(
         &state,
-        &ctx,
-        audit_service::AuditAction::FileEdit,
-        Some("file"),
-        Some(file.id),
-        Some(&file.name),
-        None,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+        body,
     )
-    .await;
-
-    Ok(HttpResponse::Ok()
-        .insert_header(("ETag", format!("\"{new_hash}\"")))
-        .json(ApiResponse::ok(file)))
+    .await
 }
 
 // ── Lock ────────────────────────────────────────────────────────────
@@ -615,8 +574,15 @@ pub async fn set_lock(
     path: web::Path<i64>,
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
-    let file = file_service::set_lock(&state, *path, claims.user_id, body.locked).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+    set_lock_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+        body.locked,
+    )
+    .await
 }
 
 // ── Copy ───────────────────────────────────────────────────────────
@@ -649,10 +615,208 @@ pub async fn copy_file(
     path: web::Path<i64>,
     body: web::Json<CopyFileReq>,
 ) -> Result<HttpResponse> {
-    let file = file_service::copy_file(&state, *path, claims.user_id, body.folder_id).await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    copy_file_response(
         &state,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+        &body,
+    )
+    .await
+}
+
+pub(crate) async fn upload_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    relative_path: Option<&str>,
+    payload: &mut actix_multipart::Multipart,
+) -> Result<HttpResponse> {
+    let file =
+        workspace_storage_service::upload(state, scope, payload, folder_id, relative_path).await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::FileUpload,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+}
+
+pub(crate) async fn create_empty_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    body: &CreateEmptyRequest,
+) -> Result<HttpResponse> {
+    let file =
+        workspace_storage_service::create_empty(state, scope, body.folder_id, &body.name).await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+}
+
+pub(crate) async fn get_file_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    let file = file_service::get_info_in_scope(state, scope, file_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+}
+
+pub(crate) async fn download_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    let if_none_match = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|v| v.to_str().ok());
+    let response = file_service::download_in_scope(state, scope, file_id, if_none_match).await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::FileDownload,
+        Some("file"),
+        Some(file_id),
+        None,
+        None,
+    )
+    .await;
+    Ok(response)
+}
+
+pub(crate) async fn get_thumbnail_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    match file_service::get_thumbnail_data_in_scope(state, scope, file_id).await? {
+        Some(result) => Ok(HttpResponse::Ok()
+            .content_type("image/webp")
+            .insert_header(("Cache-Control", "private, max-age=0, must-revalidate"))
+            .body(result.data)),
+        None => Ok(HttpResponse::Accepted()
+            .insert_header(("Retry-After", "2"))
+            .json(ApiResponse::<()>::ok_empty())),
+    }
+}
+
+pub(crate) async fn delete_file_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    file_service::delete_in_scope(state, scope, file_id).await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::FileDelete,
+        Some("file"),
+        Some(file_id),
+        None,
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+pub(crate) async fn patch_file_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    body: &PatchFileReq,
+) -> Result<HttpResponse> {
+    let file =
+        file_service::update_in_scope(state, scope, file_id, body.name.clone(), body.folder_id)
+            .await?;
+    let ctx = AuditContext::from_request(req, claims);
+    let action = if body.folder_id.is_present() {
+        audit_service::AuditAction::FileMove
+    } else {
+        audit_service::AuditAction::FileRename
+    };
+    audit_service::log(
+        state,
+        &ctx,
+        action,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+}
+
+pub(crate) async fn update_content_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    body: web::Bytes,
+) -> Result<HttpResponse> {
+    let if_match = req.headers().get("If-Match").and_then(|v| v.to_str().ok());
+    let (file, new_hash) =
+        file_service::update_content_in_scope(state, scope, file_id, body, if_match).await?;
+
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::FileEdit,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        None,
+    )
+    .await;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(("ETag", format!("\"{new_hash}\"")))
+        .json(ApiResponse::ok(file)))
+}
+
+pub(crate) async fn set_lock_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    locked: bool,
+) -> Result<HttpResponse> {
+    let file = file_service::set_lock_in_scope(state, scope, file_id, locked).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+}
+
+pub(crate) async fn copy_file_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    body: &CopyFileReq,
+) -> Result<HttpResponse> {
+    let file = file_service::copy_file_in_scope(state, scope, file_id, body.folder_id).await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
         &ctx,
         audit_service::AuditAction::FileCopy,
         Some("file"),
@@ -665,8 +829,6 @@ pub async fn copy_file(
 }
 
 // ── Versions ───────────────────────────────────────────────────────
-
-use crate::services::version_service;
 
 #[derive(Deserialize)]
 pub struct VersionPath {

@@ -9,6 +9,8 @@ pub mod policy_repo;
 pub mod property_repo;
 pub mod search_repo;
 pub mod share_repo;
+pub mod team_member_repo;
+pub mod team_repo;
 pub mod upload_session_part_repo;
 pub mod upload_session_repo;
 pub mod user_profile_repo;

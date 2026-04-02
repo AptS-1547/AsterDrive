@@ -5,32 +5,13 @@ use crate::db::repository::{file_repo, version_repo};
 use crate::entities::file_version;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
+use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
-/// 列出文件的所有版本
-pub async fn list_versions(
-    state: &AppState,
-    file_id: i64,
-    user_id: i64,
-) -> Result<Vec<file_version::Model>> {
-    let f = file_repo::find_by_id(&state.db, file_id).await?;
-    crate::utils::verify_owner(f.user_id, user_id, "file")?;
-    version_repo::find_by_file_id(&state.db, file_id).await
-}
-
-/// 恢复到指定版本，并截断该版本及之后的历史版本
-pub async fn restore_version(
-    state: &AppState,
+async fn load_version_for_file(
+    db: &sea_orm::DatabaseConnection,
     file_id: i64,
     version_id: i64,
-    user_id: i64,
-) -> Result<crate::entities::file::Model> {
-    let db = &state.db;
-    let f = file_repo::find_by_id(db, file_id).await?;
-    crate::utils::verify_owner(f.user_id, user_id, "file")?;
-    if f.is_locked {
-        return Err(AsterError::resource_locked("file is locked"));
-    }
-
+) -> Result<file_version::Model> {
     let version = version_repo::find_by_id(db, version_id)
         .await?
         .ok_or_else(|| AsterError::record_not_found("version not found"))?;
@@ -39,10 +20,21 @@ pub async fn restore_version(
         return Err(AsterError::record_not_found("version not found"));
     }
 
-    let now = Utc::now();
+    Ok(version)
+}
 
-    // 删除当前 blob 的缩略图（恢复后缩略图按需重新生成）
-    let current_blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
+async fn restore_version_inner(
+    state: &AppState,
+    file: crate::entities::file::Model,
+    version: file_version::Model,
+) -> Result<crate::entities::file::Model> {
+    let db = &state.db;
+    if file.is_locked {
+        return Err(AsterError::resource_locked("file is locked"));
+    }
+
+    let now = Utc::now();
+    let current_blob = file_repo::find_blob_by_id(db, file.blob_id).await?;
     if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, &current_blob).await
     {
         tracing::warn!(
@@ -56,13 +48,13 @@ pub async fn restore_version(
     let previous_blob_id = current_blob.id;
     let target_blob_id = version.blob_id;
 
-    let mut active: crate::entities::file::ActiveModel = f.into();
+    let mut active: crate::entities::file::ActiveModel = file.into();
     active.blob_id = Set(target_blob_id);
     active.updated_at = Set(now);
     let updated = active.update(&txn).await.map_err(AsterError::from)?;
 
     let truncated_blob_ids =
-        version_repo::delete_by_file_id_from_version(&txn, file_id, version.version).await?;
+        version_repo::delete_by_file_id_from_version(&txn, updated.id, version.version).await?;
 
     txn.commit().await.map_err(AsterError::from)?;
 
@@ -87,6 +79,104 @@ pub async fn restore_version(
     Ok(updated)
 }
 
+async fn delete_version_inner(state: &AppState, version: file_version::Model) -> Result<()> {
+    version_repo::delete_by_id(&state.db, version.id).await?;
+    cleanup_blob_if_unused(state, version.blob_id).await?;
+    Ok(())
+}
+
+async fn list_versions_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<Vec<file_version::Model>> {
+    workspace_storage_service::verify_file_access(state, scope, file_id).await?;
+    version_repo::find_by_file_id(&state.db, file_id).await
+}
+
+async fn restore_version_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    version_id: i64,
+) -> Result<crate::entities::file::Model> {
+    let file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
+    let version = load_version_for_file(&state.db, file_id, version_id).await?;
+    restore_version_inner(state, file, version).await
+}
+
+async fn delete_version_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    version_id: i64,
+) -> Result<()> {
+    workspace_storage_service::verify_file_access(state, scope, file_id).await?;
+    let version = load_version_for_file(&state.db, file_id, version_id).await?;
+    delete_version_inner(state, version).await
+}
+
+/// 列出文件的所有版本
+pub async fn list_versions(
+    state: &AppState,
+    file_id: i64,
+    user_id: i64,
+) -> Result<Vec<file_version::Model>> {
+    list_versions_in_scope(state, WorkspaceStorageScope::Personal { user_id }, file_id).await
+}
+
+pub async fn list_versions_for_team(
+    state: &AppState,
+    team_id: i64,
+    file_id: i64,
+    user_id: i64,
+) -> Result<Vec<file_version::Model>> {
+    list_versions_in_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        file_id,
+    )
+    .await
+}
+
+/// 恢复到指定版本，并截断该版本及之后的历史版本
+pub async fn restore_version(
+    state: &AppState,
+    file_id: i64,
+    version_id: i64,
+    user_id: i64,
+) -> Result<crate::entities::file::Model> {
+    restore_version_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        file_id,
+        version_id,
+    )
+    .await
+}
+
+pub async fn restore_version_for_team(
+    state: &AppState,
+    team_id: i64,
+    file_id: i64,
+    version_id: i64,
+    user_id: i64,
+) -> Result<crate::entities::file::Model> {
+    restore_version_in_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        file_id,
+        version_id,
+    )
+    .await
+}
+
 /// 删除指定版本（减 blob ref_count）
 pub async fn delete_version(
     state: &AppState,
@@ -94,22 +184,32 @@ pub async fn delete_version(
     version_id: i64,
     user_id: i64,
 ) -> Result<()> {
-    let db = &state.db;
-    let f = file_repo::find_by_id(db, file_id).await?;
-    crate::utils::verify_owner(f.user_id, user_id, "file")?;
+    delete_version_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        file_id,
+        version_id,
+    )
+    .await
+}
 
-    let version = version_repo::find_by_id(db, version_id)
-        .await?
-        .ok_or_else(|| AsterError::record_not_found("version not found"))?;
-
-    if version.file_id != file_id {
-        return Err(AsterError::record_not_found("version not found"));
-    }
-
-    version_repo::delete_by_id(db, version_id).await?;
-    cleanup_blob_if_unused(state, version.blob_id).await?;
-
-    Ok(())
+pub async fn delete_version_for_team(
+    state: &AppState,
+    team_id: i64,
+    file_id: i64,
+    version_id: i64,
+    user_id: i64,
+) -> Result<()> {
+    delete_version_in_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        file_id,
+        version_id,
+    )
+    .await
 }
 
 /// 超出版本上限时清理最旧版本

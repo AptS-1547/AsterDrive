@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TrashTable } from "@/components/trash/TrashTable";
-import type { TrashItem } from "@/types/api";
+import type { TrashItem } from "@/types/api-helpers";
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({

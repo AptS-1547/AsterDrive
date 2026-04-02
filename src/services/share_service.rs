@@ -7,11 +7,16 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::{file_repo, folder_repo, share_repo, user_profile_repo, user_repo};
+use crate::db::repository::{
+    file_repo, folder_repo, share_repo, team_repo, user_profile_repo, user_repo,
+};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::{batch_service, file_service, folder_service, profile_service};
+use crate::services::{
+    batch_service, file_service, folder_service, profile_service,
+    workspace_storage_service::{self, WorkspaceStorageScope},
+};
 use crate::types::EntityType;
 use crate::utils::{hash, id};
 
@@ -83,9 +88,31 @@ fn validate_max_downloads(max_downloads: i64) -> Result<()> {
     Ok(())
 }
 
-pub async fn create_share(
+fn ensure_share_scope(share: &share::Model, scope: WorkspaceStorageScope) -> Result<()> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            if share.team_id.is_some() {
+                return Err(AsterError::auth_forbidden(
+                    "share belongs to a team workspace",
+                ));
+            }
+            crate::utils::verify_owner(share.user_id, user_id, "share")?;
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            if share.team_id != Some(team_id) {
+                return Err(AsterError::auth_forbidden(
+                    "share is outside team workspace",
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) async fn create_share_in_scope(
     state: &AppState,
-    user_id: i64,
+    scope: WorkspaceStorageScope,
     file_id: Option<i64>,
     folder_id: Option<i64>,
     password: Option<String>,
@@ -93,39 +120,40 @@ pub async fn create_share(
     max_downloads: i64,
 ) -> Result<share::Model> {
     let db = &state.db;
+    workspace_storage_service::require_scope_access(state, scope).await?;
 
     validate_max_downloads(max_downloads)?;
 
-    // 至少一个不为空
     if file_id.is_none() && folder_id.is_none() {
         return Err(AsterError::validation_error(
             "file_id or folder_id is required",
         ));
     }
 
-    // 检查是否已有活跃分享
-    if let Some(existing) =
-        share_repo::find_active_by_resource(db, user_id, file_id, folder_id).await?
-    {
-        // 如果已有分享且未过期，返回错误
+    let existing = match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            share_repo::find_active_by_resource(db, user_id, file_id, folder_id).await?
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            share_repo::find_active_by_team_resource(db, team_id, file_id, folder_id).await?
+        }
+    };
+
+    if let Some(existing) = existing {
         let is_expired = existing.expires_at.is_some_and(|exp| exp < Utc::now());
         if !is_expired {
             return Err(AsterError::validation_error(
                 "an active share already exists for this resource",
             ));
         }
-        // 过期的分享自动删除，然后继续创建新的
         share_repo::delete(db, existing.id).await?;
     }
 
-    // 校验文件/文件夹属于该用户
     if let Some(fid) = file_id {
-        let f = file_repo::find_by_id(db, fid).await?;
-        crate::utils::verify_owner(f.user_id, user_id, "file")?;
+        workspace_storage_service::verify_file_access(state, scope, fid).await?;
     }
-    if let Some(fid) = folder_id {
-        let f = folder_repo::find_by_id(db, fid).await?;
-        crate::utils::verify_owner(f.user_id, user_id, "folder")?;
+    if let Some(folder_id) = folder_id {
+        workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
     }
 
     let password_hash = match password {
@@ -136,7 +164,8 @@ pub async fn create_share(
     let now = Utc::now();
     let model = share::ActiveModel {
         token: Set(id::new_share_token()),
-        user_id: Set(user_id),
+        user_id: Set(scope.actor_user_id()),
+        team_id: Set(scope.team_id()),
         file_id: Set(file_id),
         folder_id: Set(folder_id),
         password: Set(password_hash),
@@ -149,6 +178,27 @@ pub async fn create_share(
         ..Default::default()
     };
     share_repo::create(db, model).await
+}
+
+pub async fn create_share(
+    state: &AppState,
+    user_id: i64,
+    file_id: Option<i64>,
+    folder_id: Option<i64>,
+    password: Option<String>,
+    expires_at: Option<chrono::DateTime<Utc>>,
+    max_downloads: i64,
+) -> Result<share::Model> {
+    create_share_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        file_id,
+        folder_id,
+        password,
+        expires_at,
+        max_downloads,
+    )
+    .await
 }
 
 pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublicInfo> {
@@ -302,13 +352,8 @@ pub async fn download_shared_file(
     if_none_match: Option<&str>,
 ) -> Result<actix_web::HttpResponse> {
     let share = load_valid_share(state, token).await?;
-
-    let file_id = share
-        .file_id
-        .ok_or_else(|| AsterError::validation_error("this share is for a folder, not a file"))?;
-
-    // reuse existing download logic (bypass user ownership check)
-    let response = file_service::download_raw(state, file_id, if_none_match).await?;
+    let file = load_share_file_resource(state, &share).await?;
+    let response = file_service::download_raw_unchecked(state, file.id, if_none_match).await?;
 
     // only count actual downloads, not 304 cache hits
     if response.status() != actix_web::http::StatusCode::NOT_MODIFIED
@@ -331,7 +376,7 @@ pub async fn download_shared_folder_file(
 ) -> Result<actix_web::HttpResponse> {
     let (share, file) = load_shared_folder_file_target(state, token, file_id).await?;
 
-    let response = file_service::download_raw(state, file.id, if_none_match).await?;
+    let response = file_service::download_raw_unchecked(state, file.id, if_none_match).await?;
 
     if response.status() != actix_web::http::StatusCode::NOT_MODIFIED
         && let Err(e) = share_repo::increment_download_count(&state.db, share.id).await
@@ -372,45 +417,75 @@ pub async fn list_shared_folder(
     .await
 }
 
-pub async fn list_my_shares(state: &AppState, user_id: i64) -> Result<Vec<MyShareInfo>> {
-    let shares = share_repo::find_by_user(&state.db, user_id).await?;
+async fn list_shares_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+) -> Result<Vec<MyShareInfo>> {
+    workspace_storage_service::require_scope_access(state, scope).await?;
+    let shares = match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            share_repo::find_by_user(&state.db, user_id).await?
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            share_repo::find_by_team(&state.db, team_id).await?
+        }
+    };
     build_my_share_infos(&state.db, shares).await
 }
 
-pub async fn list_my_shares_paginated(
+pub(crate) async fn list_shares_paginated_in_scope(
     state: &AppState,
-    user_id: i64,
+    scope: WorkspaceStorageScope,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<MyShareInfo>> {
+    workspace_storage_service::require_scope_access(state, scope).await?;
     load_offset_page(limit, offset, 100, |limit, offset| async move {
-        let (shares, total) =
-            share_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await?;
+        let (shares, total) = match scope {
+            WorkspaceStorageScope::Personal { user_id } => {
+                share_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await?
+            }
+            WorkspaceStorageScope::Team { team_id, .. } => {
+                share_repo::find_by_team_paginated(&state.db, team_id, limit, offset).await?
+            }
+        };
         let items = build_my_share_infos(&state.db, shares).await?;
         Ok((items, total))
     })
     .await
 }
 
-pub async fn delete_share(state: &AppState, share_id: i64, user_id: i64) -> Result<()> {
+async fn load_share_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    share_id: i64,
+) -> Result<share::Model> {
+    workspace_storage_service::require_scope_access(state, scope).await?;
     let share = share_repo::find_by_id(&state.db, share_id).await?;
-    crate::utils::verify_owner(share.user_id, user_id, "share")?;
+    ensure_share_scope(&share, scope)?;
+    Ok(share)
+}
+
+pub(crate) async fn delete_share_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    share_id: i64,
+) -> Result<()> {
+    load_share_in_scope(state, scope, share_id).await?;
     share_repo::delete(&state.db, share_id).await
 }
 
-pub async fn update_share(
+pub(crate) async fn update_share_in_scope(
     state: &AppState,
+    scope: WorkspaceStorageScope,
     share_id: i64,
-    user_id: i64,
     password: Option<String>,
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
 ) -> Result<share::Model> {
     validate_max_downloads(max_downloads)?;
 
-    let existing = share_repo::find_by_id(&state.db, share_id).await?;
-    crate::utils::verify_owner(existing.user_id, user_id, "share")?;
-
+    let existing = load_share_in_scope(state, scope, share_id).await?;
     let mut active: share::ActiveModel = existing.into();
 
     if let Some(password) = password {
@@ -426,6 +501,150 @@ pub async fn update_share(
     active.updated_at = Set(Utc::now());
 
     share_repo::update(&state.db, active).await
+}
+
+pub(crate) async fn batch_delete_shares_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    share_ids: &[i64],
+) -> Result<batch_service::BatchResult> {
+    let mut result = batch_service::BatchResult {
+        succeeded: 0,
+        failed: 0,
+        errors: vec![],
+    };
+
+    for &id in share_ids {
+        match delete_share_in_scope(state, scope, id).await {
+            Ok(()) => result.succeeded += 1,
+            Err(e) => {
+                result.failed += 1;
+                result.errors.push(batch_service::BatchItemError {
+                    entity_type: "share".to_string(),
+                    entity_id: id,
+                    error: e.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+pub async fn list_my_shares(state: &AppState, user_id: i64) -> Result<Vec<MyShareInfo>> {
+    list_shares_in_scope(state, WorkspaceStorageScope::Personal { user_id }).await
+}
+
+pub async fn list_team_shares(
+    state: &AppState,
+    team_id: i64,
+    user_id: i64,
+) -> Result<Vec<MyShareInfo>> {
+    list_shares_in_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+    )
+    .await
+}
+
+pub async fn list_my_shares_paginated(
+    state: &AppState,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<MyShareInfo>> {
+    list_shares_paginated_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        limit,
+        offset,
+    )
+    .await
+}
+
+pub async fn list_team_shares_paginated(
+    state: &AppState,
+    team_id: i64,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<MyShareInfo>> {
+    list_shares_paginated_in_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        limit,
+        offset,
+    )
+    .await
+}
+
+pub async fn delete_share(state: &AppState, share_id: i64, user_id: i64) -> Result<()> {
+    delete_share_in_scope(state, WorkspaceStorageScope::Personal { user_id }, share_id).await
+}
+
+pub async fn delete_team_share(
+    state: &AppState,
+    team_id: i64,
+    share_id: i64,
+    user_id: i64,
+) -> Result<()> {
+    delete_share_in_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        share_id,
+    )
+    .await
+}
+
+pub async fn update_share(
+    state: &AppState,
+    share_id: i64,
+    user_id: i64,
+    password: Option<String>,
+    expires_at: Option<chrono::DateTime<Utc>>,
+    max_downloads: i64,
+) -> Result<share::Model> {
+    update_share_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        share_id,
+        password,
+        expires_at,
+        max_downloads,
+    )
+    .await
+}
+
+pub async fn update_team_share(
+    state: &AppState,
+    team_id: i64,
+    share_id: i64,
+    user_id: i64,
+    password: Option<String>,
+    expires_at: Option<chrono::DateTime<Utc>>,
+    max_downloads: i64,
+) -> Result<share::Model> {
+    update_share_in_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        share_id,
+        password,
+        expires_at,
+        max_downloads,
+    )
+    .await
 }
 
 pub fn validate_batch_share_ids(share_ids: &[i64]) -> Result<()> {
@@ -448,27 +667,29 @@ pub async fn batch_delete_shares(
     user_id: i64,
     share_ids: &[i64],
 ) -> Result<batch_service::BatchResult> {
-    let mut result = batch_service::BatchResult {
-        succeeded: 0,
-        failed: 0,
-        errors: vec![],
-    };
+    batch_delete_shares_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        share_ids,
+    )
+    .await
+}
 
-    for &id in share_ids {
-        match delete_share(state, id, user_id).await {
-            Ok(()) => result.succeeded += 1,
-            Err(e) => {
-                result.failed += 1;
-                result.errors.push(batch_service::BatchItemError {
-                    entity_type: "share".to_string(),
-                    entity_id: id,
-                    error: e.to_string(),
-                });
-            }
-        }
-    }
-
-    Ok(result)
+pub async fn batch_delete_team_shares(
+    state: &AppState,
+    team_id: i64,
+    user_id: i64,
+    share_ids: &[i64],
+) -> Result<batch_service::BatchResult> {
+    batch_delete_shares_in_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        share_ids,
+    )
+    .await
 }
 
 pub async fn list_all(state: &AppState) -> Result<Vec<share::Model>> {
@@ -540,12 +761,7 @@ async fn build_my_share_infos(
 /// 获取公开分享文件的缩略图（公开访问，无需认证）
 pub async fn get_shared_thumbnail(state: &AppState, token: &str) -> Result<Vec<u8>> {
     let share = load_valid_share(state, token).await?;
-
-    let file_id = share
-        .file_id
-        .ok_or_else(|| AsterError::validation_error("share is not a file"))?;
-
-    let f = file_repo::find_by_id(&state.db, file_id).await?;
+    let f = load_share_file_resource(state, &share).await?;
     if !crate::services::thumbnail_service::is_supported_mime(&f.mime_type) {
         return Err(AsterError::thumbnail_generation_failed(
             "unsupported image type",
@@ -607,8 +823,77 @@ async fn load_valid_share(state: &AppState, token: &str) -> Result<share::Model>
     let share = share_repo::find_by_token(&state.db, token)
         .await?
         .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+    if let Some(team_id) = share.team_id {
+        team_repo::find_active_by_id(&state.db, team_id)
+            .await
+            .map_err(|_| AsterError::share_not_found(format!("token={token}")))?;
+    }
     validate_share(&share)?;
     Ok(share)
+}
+
+fn ensure_share_matches_file(
+    share: &share::Model,
+    file: &crate::entities::file::Model,
+) -> Result<()> {
+    if let Some(team_id) = share.team_id {
+        if file.team_id != Some(team_id) {
+            return Err(AsterError::auth_forbidden("file is outside shared scope"));
+        }
+    } else {
+        file_service::ensure_personal_file_scope(file)?;
+        crate::utils::verify_owner(file.user_id, share.user_id, "file")?;
+    }
+    Ok(())
+}
+
+fn ensure_share_matches_folder(
+    share: &share::Model,
+    folder: &crate::entities::folder::Model,
+) -> Result<()> {
+    if let Some(team_id) = share.team_id {
+        if folder.team_id != Some(team_id) {
+            return Err(AsterError::auth_forbidden("folder is outside shared scope"));
+        }
+    } else {
+        folder_service::ensure_personal_folder_scope(folder)?;
+        crate::utils::verify_owner(folder.user_id, share.user_id, "folder")?;
+    }
+    Ok(())
+}
+
+async fn load_share_file_resource(
+    state: &AppState,
+    share: &share::Model,
+) -> Result<crate::entities::file::Model> {
+    let file_id = share
+        .file_id
+        .ok_or_else(|| AsterError::validation_error("this share is for a folder, not a file"))?;
+    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    ensure_share_matches_file(share, &file)?;
+    if file.deleted_at.is_some() {
+        return Err(AsterError::file_not_found(format!(
+            "file #{file_id} is in trash"
+        )));
+    }
+    Ok(file)
+}
+
+async fn load_share_folder_resource(
+    state: &AppState,
+    share: &share::Model,
+) -> Result<crate::entities::folder::Model> {
+    let folder_id = share
+        .folder_id
+        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
+    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    ensure_share_matches_folder(share, &folder)?;
+    if folder.deleted_at.is_some() {
+        return Err(AsterError::folder_not_found(format!(
+            "folder #{folder_id} is in trash"
+        )));
+    }
+    Ok(folder)
 }
 
 async fn load_valid_folder_share_root(
@@ -616,10 +901,8 @@ async fn load_valid_folder_share_root(
     token: &str,
 ) -> Result<(share::Model, i64)> {
     let share = load_valid_share(state, token).await?;
-    let root_folder_id = share
-        .folder_id
-        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
-    Ok((share, root_folder_id))
+    let root = load_share_folder_resource(state, &share).await?;
+    Ok((share, root.id))
 }
 
 async fn load_shared_folder_file_target(
@@ -629,6 +912,7 @@ async fn load_shared_folder_file_target(
 ) -> Result<(share::Model, crate::entities::file::Model)> {
     let (share, root_folder_id) = load_valid_folder_share_root(state, token).await?;
     let file = file_repo::find_by_id(&state.db, file_id).await?;
+    ensure_share_matches_file(&share, &file)?;
     if file.deleted_at.is_some() {
         return Err(AsterError::file_not_found(format!(
             "file #{file_id} is in trash"
@@ -648,6 +932,7 @@ async fn load_shared_subfolder_target(
 ) -> Result<(share::Model, crate::entities::folder::Model)> {
     let (share, root_folder_id) = load_valid_folder_share_root(state, token).await?;
     let target = folder_repo::find_by_id(&state.db, folder_id).await?;
+    ensure_share_matches_folder(&share, &target)?;
     if target.deleted_at.is_some() {
         return Err(AsterError::folder_not_found(format!(
             "folder #{folder_id} is in trash"
@@ -734,9 +1019,21 @@ async fn resolve_share_name(
 ) -> Result<(String, String, Option<String>, Option<i64>)> {
     if let Some(file_id) = share.file_id {
         let f = file_repo::find_by_id(db, file_id).await?;
+        ensure_share_matches_file(share, &f)?;
+        if f.deleted_at.is_some() {
+            return Err(AsterError::file_not_found(format!(
+                "file #{file_id} is in trash"
+            )));
+        }
         Ok((f.name, "file".to_string(), Some(f.mime_type), Some(f.size)))
     } else if let Some(folder_id) = share.folder_id {
         let f = folder_repo::find_by_id(db, folder_id).await?;
+        ensure_share_matches_folder(share, &f)?;
+        if f.deleted_at.is_some() {
+            return Err(AsterError::folder_not_found(format!(
+                "folder #{folder_id} is in trash"
+            )));
+        }
         Ok((f.name, "folder".to_string(), None, None))
     } else {
         Ok(("Unknown".to_string(), "unknown".to_string(), None, None))

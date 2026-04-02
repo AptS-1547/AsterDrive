@@ -9,6 +9,7 @@ use crate::services::search_service::SearchResults;
 use crate::services::{
     auth_service::Claims,
     search_service::{self, SearchParams},
+    workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
@@ -40,6 +41,22 @@ pub async fn search(
     claims: web::ReqData<Claims>,
     query: web::Query<SearchParams>,
 ) -> Result<HttpResponse> {
-    let results = search_service::search(&state, claims.user_id, &query).await?;
+    let query = query.into_inner();
+    search_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        &query,
+    )
+    .await
+}
+
+pub(crate) async fn search_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    query: &SearchParams,
+) -> Result<HttpResponse> {
+    let results = search_service::search_in_scope(state, scope, query).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(results)))
 }

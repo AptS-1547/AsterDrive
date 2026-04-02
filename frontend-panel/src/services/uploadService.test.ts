@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ErrorCode } from "@/types/api";
+import { ErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => {
 	class MockApiError extends Error {
@@ -90,7 +90,9 @@ describe("uploadService", () => {
 	});
 
 	it("uses the expected init/cancel/progress/presign endpoints", async () => {
-		const { uploadService } = await import("@/services/uploadService");
+		const { createUploadService, uploadService } = await import(
+			"@/services/uploadService"
+		);
 
 		uploadService.initUpload({
 			filename: "hello.txt",
@@ -115,6 +117,39 @@ describe("uploadService", () => {
 			"/files/upload/upload-1/presign-parts",
 			{
 				part_numbers: [1, 2, 3],
+			},
+		);
+
+		const teamUploadService = createUploadService({ kind: "team", teamId: 8 });
+		teamUploadService.initUpload({
+			filename: "team.txt",
+			total_size: 3,
+		});
+		teamUploadService.cancelUpload("upload-2");
+		teamUploadService.getProgress("upload-2");
+		teamUploadService.presignParts("upload-2", [1]);
+
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			3,
+			"/teams/8/files/upload/init",
+			{
+				filename: "team.txt",
+				total_size: 3,
+			},
+		);
+		expect(mockState.delete).toHaveBeenNthCalledWith(
+			2,
+			"/teams/8/files/upload/upload-2",
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			2,
+			"/teams/8/files/upload/upload-2",
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			4,
+			"/teams/8/files/upload/upload-2/presign-parts",
+			{
+				part_numbers: [1],
 			},
 		);
 	});

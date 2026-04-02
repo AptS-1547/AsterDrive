@@ -140,13 +140,16 @@ async fn test_thumbnail_returns_200_after_generation() {
         .unwrap_or("");
     assert_eq!(content_type, "image/webp");
 
-    // Cache-Control 应设为 immutable
+    // 鉴权缩略图不应允许共享缓存，也不应标记 immutable
     let cache_control = resp
         .headers()
         .get("Cache-Control")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    assert!(cache_control.contains("immutable"));
+    assert!(cache_control.contains("private"));
+    assert!(cache_control.contains("must-revalidate"));
+    assert!(!cache_control.contains("public"));
+    assert!(!cache_control.contains("immutable"));
 }
 
 #[actix_web::test]

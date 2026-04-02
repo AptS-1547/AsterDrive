@@ -2,13 +2,15 @@ use std::future::Future;
 use std::pin::Pin;
 
 use chrono::Utc;
-use sea_orm::{Set, TransactionTrait};
+use sea_orm::TransactionTrait;
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::folder;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::file_service;
+use crate::services::{
+    file_service, folder_service, workspace_storage_service::WorkspaceStorageScope,
+};
 
 /// 递归收集文件夹树内的所有文件和子文件夹 ID
 ///
@@ -20,30 +22,13 @@ pub async fn collect_folder_tree(
     folder_id: i64,
     include_deleted: bool,
 ) -> Result<(Vec<crate::entities::file::Model>, Vec<i64>)> {
-    let mut files = Vec::new();
-    let mut folder_ids = Vec::new();
-    let mut frontier = vec![folder_id];
-
-    while !frontier.is_empty() {
-        folder_ids.extend(frontier.iter().copied());
-
-        let batch_files = if include_deleted {
-            file_repo::find_all_in_folders(db, &frontier).await?
-        } else {
-            file_repo::find_by_folders(db, user_id, &frontier).await?
-        };
-        files.extend(batch_files);
-
-        let children = if include_deleted {
-            folder_repo::find_all_children_in_parents(db, &frontier).await?
-        } else {
-            folder_repo::find_children_in_parents(db, user_id, &frontier).await?
-        };
-
-        frontier = children.into_iter().map(|child| child.id).collect();
-    }
-
-    Ok((files, folder_ids))
+    folder_service::collect_folder_tree_in_scope(
+        db,
+        WorkspaceStorageScope::Personal { user_id },
+        folder_id,
+        include_deleted,
+    )
+    .await
 }
 
 /// 递归软删除文件夹及其所有内容（→ 回收站）
@@ -71,12 +56,13 @@ pub async fn recursive_purge_folder(state: &AppState, user_id: i64, folder_id: i
     let (all_files, all_folder_ids) =
         collect_folder_tree(&state.db, user_id, folder_id, true).await?;
 
-    // ── 批量清理文件（一次事务 + 并行物理清理） ──
-    if let Err(e) = file_service::batch_purge(state, all_files, user_id).await {
-        tracing::warn!("batch purge files in folder #{folder_id} failed: {e}");
-    }
+    file_service::batch_purge_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        all_files,
+    )
+    .await?;
 
-    // ── 批量清理文件夹属性 ──
     crate::db::repository::property_repo::delete_all_for_entities(
         &state.db,
         crate::types::EntityType::Folder,
@@ -84,7 +70,6 @@ pub async fn recursive_purge_folder(state: &AppState, user_id: i64, folder_id: i
     )
     .await?;
 
-    // ── 批量硬删除文件夹记录 ──
     folder_repo::delete_many(&state.db, &all_folder_ids).await?;
 
     Ok(())
@@ -100,37 +85,11 @@ pub fn recursive_copy_folder<'a>(
     dest_parent_id: Option<i64>,
     dest_name: &'a str,
 ) -> Pin<Box<dyn Future<Output = Result<folder::Model>> + Send + 'a>> {
-    Box::pin(async move {
-        let db = &state.db;
-        let now = Utc::now();
-        let src_folder = folder_repo::find_by_id(db, src_folder_id).await?;
-
-        // 创建目标文件夹
-        let new_folder = folder_repo::create(
-            db,
-            folder::ActiveModel {
-                name: Set(dest_name.to_string()),
-                parent_id: Set(dest_parent_id),
-                user_id: Set(user_id),
-                policy_id: Set(src_folder.policy_id),
-                created_at: Set(now),
-                updated_at: Set(now),
-                ..Default::default()
-            },
-        )
-        .await?;
-
-        // 批量复制文件：一次事务处理所有文件
-        let files = file_repo::find_by_folder(db, user_id, Some(src_folder_id)).await?;
-        file_service::batch_duplicate_file_records(state, &files, Some(new_folder.id)).await?;
-
-        // 递归复制子文件夹
-        let children = folder_repo::find_children(db, user_id, Some(src_folder_id)).await?;
-        for child in children {
-            recursive_copy_folder(state, user_id, child.id, Some(new_folder.id), &child.name)
-                .await?;
-        }
-
-        Ok(new_folder)
-    })
+    crate::services::folder_service::recursive_copy_folder_in_scope(
+        state,
+        crate::services::workspace_storage_service::WorkspaceStorageScope::Personal { user_id },
+        src_folder_id,
+        dest_parent_id,
+        dest_name,
+    )
 }

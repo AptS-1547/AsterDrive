@@ -1,4 +1,10 @@
 import { config } from "@/config/app";
+import {
+	PERSONAL_WORKSPACE,
+	type Workspace,
+	workspaceApiPrefix,
+} from "@/lib/workspace";
+import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
 	ErrorCode,
 	FileInfo,
@@ -19,89 +25,132 @@ export interface FolderListParams {
 	sort_order?: "asc" | "desc";
 }
 
-export const fileService = {
-	listRoot: (params?: FolderListParams) =>
-		api.get<FolderContents>("/folders", { params }),
+function buildPath(workspace: Workspace, path: string) {
+	return `${workspaceApiPrefix(workspace)}${path}`;
+}
 
-	listFolder: (id: number, params?: FolderListParams) =>
-		api.get<FolderContents>(`/folders/${id}`, { params }),
+export function createFileService(workspace: Workspace = PERSONAL_WORKSPACE) {
+	return {
+		listRoot: (params?: FolderListParams) =>
+			api.get<FolderContents>(buildPath(workspace, "/folders"), { params }),
 
-	getFolderAncestors: (id: number) =>
-		api.get<FolderAncestorItem[]>(`/folders/${id}/ancestors`),
+		listFolder: (id: number, params?: FolderListParams) =>
+			api.get<FolderContents>(buildPath(workspace, `/folders/${id}`), {
+				params,
+			}),
 
-	createFolder: (name: string, parentId?: number | null) =>
-		api.post<FolderInfo>("/folders", { name, parent_id: parentId ?? null }),
+		getFolderAncestors: (id: number) =>
+			api.get<FolderAncestorItem[]>(
+				buildPath(workspace, `/folders/${id}/ancestors`),
+			),
 
-	deleteFolder: (id: number) => api.delete<void>(`/folders/${id}`),
+		createFolder: (name: string, parentId?: number | null) =>
+			api.post<FolderInfo>(buildPath(workspace, "/folders"), {
+				name,
+				parent_id: parentId ?? null,
+			}),
 
-	renameFolder: (id: number, name: string) =>
-		api.patch<FolderInfo>(`/folders/${id}`, { name }),
+		deleteFolder: (id: number) =>
+			api.delete<void>(buildPath(workspace, `/folders/${id}`)),
 
-	getFile: (id: number) => api.get<FileInfo>(`/files/${id}`),
+		renameFolder: (id: number, name: string) =>
+			api.patch<FolderInfo>(buildPath(workspace, `/folders/${id}`), {
+				name,
+			}),
 
-	deleteFile: (id: number) => api.delete<void>(`/files/${id}`),
+		getFile: (id: number) =>
+			api.get<FileInfo>(buildPath(workspace, `/files/${id}`)),
 
-	renameFile: (id: number, name: string) =>
-		api.patch<FileInfo>(`/files/${id}`, { name }),
+		deleteFile: (id: number) =>
+			api.delete<void>(buildPath(workspace, `/files/${id}`)),
 
-	downloadPath: (id: number) => `/files/${id}/download`,
+		renameFile: (id: number, name: string) =>
+			api.patch<FileInfo>(buildPath(workspace, `/files/${id}`), {
+				name,
+			}),
 
-	downloadUrl: (id: number) => `${config.apiBaseUrl}/files/${id}/download`,
+		downloadPath: (id: number) => buildPath(workspace, `/files/${id}/download`),
 
-	thumbnailPath: (id: number) => `/files/${id}/thumbnail`,
+		downloadUrl: (id: number) =>
+			`${config.apiBaseUrl}${buildPath(workspace, `/files/${id}/download`)}`,
 
-	setFileLock: (id: number, locked: boolean) =>
-		api.post<FileInfo>(`/files/${id}/lock`, { locked }),
+		thumbnailPath: (id: number) =>
+			buildPath(workspace, `/files/${id}/thumbnail`),
 
-	setFolderLock: (id: number, locked: boolean) =>
-		api.post<FolderInfo>(`/folders/${id}/lock`, { locked }),
+		setFileLock: (id: number, locked: boolean) =>
+			api.post<FileInfo>(buildPath(workspace, `/files/${id}/lock`), {
+				locked,
+			}),
 
-	createEmptyFile: (name: string, folderId?: number | null) =>
-		api.post<FileInfo>("/files/new", { name, folder_id: folderId ?? null }),
+		setFolderLock: (id: number, locked: boolean) =>
+			api.post<FolderInfo>(buildPath(workspace, `/folders/${id}/lock`), {
+				locked,
+			}),
 
-	copyFile: (id: number, folderId?: number | null) =>
-		api.post<FileInfo>(`/files/${id}/copy`, {
-			folder_id: folderId ?? null,
-		}),
+		createEmptyFile: (name: string, folderId?: number | null) =>
+			api.post<FileInfo>(buildPath(workspace, "/files/new"), {
+				name,
+				folder_id: folderId ?? null,
+			}),
 
-	copyFolder: (id: number, parentId?: number | null) =>
-		api.post<FolderInfo>(`/folders/${id}/copy`, {
-			parent_id: parentId ?? null,
-		}),
+		copyFile: (id: number, folderId?: number | null) =>
+			api.post<FileInfo>(buildPath(workspace, `/files/${id}/copy`), {
+				folder_id: folderId ?? null,
+			}),
 
-	updateContent: async (id: number, content: string, etag?: string) => {
-		const headers: Record<string, string> = {
-			"Content-Type": "application/octet-stream",
-		};
-		if (etag) headers["If-Match"] = etag;
-		try {
-			const resp = await api.client.put(`/files/${id}/content`, content, {
-				headers,
-			});
-			return resp.data.data as FileInfo;
-		} catch (err: unknown) {
-			if (err && typeof err === "object" && "response" in err) {
-				const axiosErr = err as {
-					response: { status: number; data?: { code?: number; msg?: string } };
-				};
-				const status = axiosErr.response.status;
-				const body = axiosErr.response.data;
-				const apiErr = new ApiError(
-					(body?.code ?? status) as ErrorCode,
-					body?.msg ?? `HTTP ${status}`,
+		copyFolder: (id: number, parentId?: number | null) =>
+			api.post<FolderInfo>(buildPath(workspace, `/folders/${id}/copy`), {
+				parent_id: parentId ?? null,
+			}),
+
+		updateContent: async (id: number, content: string, etag?: string) => {
+			const headers: Record<string, string> = {
+				"Content-Type": "application/octet-stream",
+			};
+			if (etag) headers["If-Match"] = etag;
+			try {
+				const resp = await api.client.put(
+					buildPath(workspace, `/files/${id}/content`),
+					content,
+					{
+						headers,
+					},
 				);
-				(apiErr as ApiError & { status: number }).status = status;
-				throw apiErr;
+				return resp.data.data as FileInfo;
+			} catch (err: unknown) {
+				if (err && typeof err === "object" && "response" in err) {
+					const axiosErr = err as {
+						response: {
+							status: number;
+							data?: { code?: number; msg?: string };
+						};
+					};
+					const status = axiosErr.response.status;
+					const body = axiosErr.response.data;
+					const apiErr = new ApiError(
+						(body?.code ?? status) as ErrorCode,
+						body?.msg ?? `HTTP ${status}`,
+					);
+					(apiErr as ApiError & { status: number }).status = status;
+					throw apiErr;
+				}
+				throw err;
 			}
-			throw err;
-		}
-	},
+		},
 
-	listVersions: (id: number) => api.get<FileVersion[]>(`/files/${id}/versions`),
+		listVersions: (id: number) =>
+			api.get<FileVersion[]>(buildPath(workspace, `/files/${id}/versions`)),
 
-	restoreVersion: (fileId: number, versionId: number) =>
-		api.post<FileInfo>(`/files/${fileId}/versions/${versionId}/restore`),
+		restoreVersion: (fileId: number, versionId: number) =>
+			api.post<FileInfo>(
+				buildPath(workspace, `/files/${fileId}/versions/${versionId}/restore`),
+			),
 
-	deleteVersion: (fileId: number, versionId: number) =>
-		api.delete<void>(`/files/${fileId}/versions/${versionId}`),
-};
+		deleteVersion: (fileId: number, versionId: number) =>
+			api.delete<void>(
+				buildPath(workspace, `/files/${fileId}/versions/${versionId}`),
+			),
+	};
+}
+
+export const fileService = bindWorkspaceService(createFileService);

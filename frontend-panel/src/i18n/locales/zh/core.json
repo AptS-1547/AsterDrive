@@ -63,6 +63,8 @@
 	"all_files": "所有文件",
 	"file_browser": "文件浏览器",
 	"file_browser_desc": "文件浏览器的默认视图模式。",
+	"my_drive": "我的空间",
+	"workspaces": "工作空间",
 	"loading_contents": "加载内容中...",
 	"appearance_desc": "选择你偏好的主题模式和强调色。",
 	"mode": "模式",

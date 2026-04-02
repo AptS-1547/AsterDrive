@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FolderListParams } from "@/services/fileService";
-import { shareService } from "@/services/shareService";
+import { createShareService, shareService } from "@/services/shareService";
 
 const { apiDelete, apiGet, apiPatch, apiPost } = vi.hoisted(() => ({
 	apiDelete: vi.fn(),
@@ -55,6 +55,35 @@ describe("shareService", () => {
 		expect(apiDelete).toHaveBeenCalledWith("/shares/7");
 		expect(apiPost).toHaveBeenNthCalledWith(2, "/shares/batch-delete", {
 			share_ids: [7, 8],
+		});
+
+		const teamShareService = createShareService({ kind: "team", teamId: 5 });
+		teamShareService.create(createPayload);
+		teamShareService.listMine({ limit: 10 });
+		teamShareService.update(7, {
+			password: "team-secret",
+			expires_at: null,
+			max_downloads: 2,
+		});
+		teamShareService.delete(7);
+		teamShareService.batchDelete([7]);
+
+		expect(apiPost).toHaveBeenNthCalledWith(
+			3,
+			"/teams/5/shares",
+			createPayload,
+		);
+		expect(apiGet).toHaveBeenNthCalledWith(2, "/teams/5/shares", {
+			params: { limit: 10 },
+		});
+		expect(apiPatch).toHaveBeenNthCalledWith(2, "/teams/5/shares/7", {
+			password: "team-secret",
+			expires_at: null,
+			max_downloads: 2,
+		});
+		expect(apiDelete).toHaveBeenNthCalledWith(2, "/teams/5/shares/7");
+		expect(apiPost).toHaveBeenNthCalledWith(4, "/teams/5/shares/batch-delete", {
+			share_ids: [7],
 		});
 	});
 

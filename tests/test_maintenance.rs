@@ -64,6 +64,7 @@ async fn create_upload_session(
         aster_drive::entities::upload_session::ActiveModel {
             id: Set(upload_id.to_string()),
             user_id: Set(user_id),
+            team_id: Set(None),
             filename: Set("manual-upload.bin".to_string()),
             total_size: Set(10),
             chunk_size: Set(5),

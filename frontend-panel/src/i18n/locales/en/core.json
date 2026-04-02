@@ -63,6 +63,8 @@
 	"all_files": "All files",
 	"file_browser": "File Browser",
 	"file_browser_desc": "Default view mode for the file browser.",
+	"my_drive": "My Drive",
+	"workspaces": "Workspaces",
 	"loading_contents": "Loading contents...",
 	"appearance_desc": "Choose your preferred theme mode and accent color.",
 	"mode": "Mode",

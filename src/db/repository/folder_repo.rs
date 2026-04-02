@@ -9,12 +9,39 @@ use sea_orm::{
 use crate::entities::folder::{self, Entity as Folder};
 use crate::errors::{AsterError, Result};
 
+#[derive(Clone, Copy)]
+enum FolderScope {
+    Personal { user_id: i64 },
+    Team { team_id: i64 },
+}
+
+fn scope_condition(scope: FolderScope) -> Condition {
+    match scope {
+        FolderScope::Personal { user_id } => Condition::all()
+            .add(folder::Column::UserId.eq(user_id))
+            .add(folder::Column::TeamId.is_null()),
+        FolderScope::Team { team_id } => Condition::all().add(folder::Column::TeamId.eq(team_id)),
+    }
+}
+
+fn active_scope_condition(scope: FolderScope) -> Condition {
+    scope_condition(scope).add(folder::Column::DeletedAt.is_null())
+}
+
+fn apply_parent_condition(cond: Condition, parent_id: Option<i64>) -> Condition {
+    match parent_id {
+        Some(parent_id) => cond.add(folder::Column::ParentId.eq(parent_id)),
+        None => cond.add(folder::Column::ParentId.is_null()),
+    }
+}
+
 #[derive(Debug, Clone, FromQueryResult)]
 struct ResolvedPathFolderRow {
     segment_index: i64,
     id: i64,
     name: String,
     parent_id: Option<i64>,
+    team_id: Option<i64>,
     user_id: i64,
     policy_id: Option<i64>,
     created_at: chrono::DateTime<chrono::Utc>,
@@ -30,6 +57,7 @@ impl From<ResolvedPathFolderRow> for folder::Model {
             id: row.id,
             name: row.name,
             parent_id: row.parent_id,
+            team_id: row.team_id,
             user_id: row.user_id,
             policy_id: row.policy_id,
             created_at: row.created_at,
@@ -59,6 +87,7 @@ enum FolderChain {
     Id,
     Name,
     ParentId,
+    TeamId,
     UserId,
     PolicyId,
     CreatedAt,
@@ -94,6 +123,7 @@ fn build_resolve_path_chain_query(
         .column((folder::Entity, folder::Column::Id))
         .column((folder::Entity, folder::Column::Name))
         .column((folder::Entity, folder::Column::ParentId))
+        .column((folder::Entity, folder::Column::TeamId))
         .column((folder::Entity, folder::Column::UserId))
         .column((folder::Entity, folder::Column::PolicyId))
         .column((folder::Entity, folder::Column::CreatedAt))
@@ -113,6 +143,7 @@ fn build_resolve_path_chain_query(
                 ),
         )
         .and_where(Expr::col((folder::Entity, folder::Column::UserId)).eq(user_id))
+        .and_where(Expr::col((folder::Entity, folder::Column::TeamId)).is_null())
         .and_where(Expr::col((folder::Entity, folder::Column::DeletedAt)).is_null());
 
     base_select = match root_parent_id {
@@ -129,6 +160,7 @@ fn build_resolve_path_chain_query(
         .column((folder::Entity, folder::Column::Id))
         .column((folder::Entity, folder::Column::Name))
         .column((folder::Entity, folder::Column::ParentId))
+        .column((folder::Entity, folder::Column::TeamId))
         .column((folder::Entity, folder::Column::UserId))
         .column((folder::Entity, folder::Column::PolicyId))
         .column((folder::Entity, folder::Column::CreatedAt))
@@ -157,6 +189,7 @@ fn build_resolve_path_chain_query(
                 ),
         )
         .and_where(Expr::col((folder::Entity, folder::Column::UserId)).eq(user_id))
+        .and_where(Expr::col((folder::Entity, folder::Column::TeamId)).is_null())
         .and_where(Expr::col((folder::Entity, folder::Column::DeletedAt)).is_null())
         .to_owned();
 
@@ -167,6 +200,7 @@ fn build_resolve_path_chain_query(
             FolderChain::Id,
             FolderChain::Name,
             FolderChain::ParentId,
+            FolderChain::TeamId,
             FolderChain::UserId,
             FolderChain::PolicyId,
             FolderChain::CreatedAt,
@@ -186,6 +220,7 @@ fn build_resolve_path_chain_query(
         .column((FolderChain::Table, FolderChain::Id))
         .column((FolderChain::Table, FolderChain::Name))
         .column((FolderChain::Table, FolderChain::ParentId))
+        .column((FolderChain::Table, FolderChain::TeamId))
         .column((FolderChain::Table, FolderChain::UserId))
         .column((FolderChain::Table, FolderChain::PolicyId))
         .column((FolderChain::Table, FolderChain::CreatedAt))
@@ -223,61 +258,86 @@ pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<
         .map_err(AsterError::from)
 }
 
+async fn find_children_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FolderScope,
+    parent_id: Option<i64>,
+) -> Result<Vec<folder::Model>> {
+    Folder::find()
+        .filter(apply_parent_condition(
+            active_scope_condition(scope),
+            parent_id,
+        ))
+        .order_by_asc(folder::Column::Name)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 /// 查询子文件夹（排除已删除）
 pub async fn find_children<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
     parent_id: Option<i64>,
 ) -> Result<Vec<folder::Model>> {
-    // Keep the predicate aligned with idx_folders_user_deleted_parent_name; name lookups reuse it too.
-    let mut q = Folder::find()
-        .filter(folder::Column::UserId.eq(user_id))
-        .filter(folder::Column::DeletedAt.is_null())
-        .order_by_asc(folder::Column::Name);
-    q = match parent_id {
-        Some(pid) => q.filter(folder::Column::ParentId.eq(pid)),
-        None => q.filter(folder::Column::ParentId.is_null()),
-    };
-    q.all(db).await.map_err(AsterError::from)
+    find_children_in_scope(db, FolderScope::Personal { user_id }, parent_id).await
+}
+
+pub async fn find_team_children<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    parent_id: Option<i64>,
+) -> Result<Vec<folder::Model>> {
+    find_children_in_scope(db, FolderScope::Team { team_id }, parent_id).await
 }
 
 /// 批量查询多个父文件夹下的未删除子文件夹
-pub async fn find_children_in_parents<C: ConnectionTrait>(
+async fn find_children_in_parents_in_scope<C: ConnectionTrait>(
     db: &C,
-    user_id: i64,
+    scope: FolderScope,
     parent_ids: &[i64],
 ) -> Result<Vec<folder::Model>> {
     if parent_ids.is_empty() {
         return Ok(vec![]);
     }
     Folder::find()
-        .filter(folder::Column::UserId.eq(user_id))
-        .filter(folder::Column::DeletedAt.is_null())
-        .filter(folder::Column::ParentId.is_in(parent_ids.to_vec()))
+        .filter(active_scope_condition(scope))
+        .filter(folder::Column::ParentId.is_in(parent_ids.iter().copied()))
         .all(db)
         .await
         .map_err(AsterError::from)
 }
 
-/// 查询子文件夹（排除已删除，分页）
-pub async fn find_children_paginated<C: ConnectionTrait>(
+pub async fn find_children_in_parents<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
+    parent_ids: &[i64],
+) -> Result<Vec<folder::Model>> {
+    find_children_in_parents_in_scope(db, FolderScope::Personal { user_id }, parent_ids).await
+}
+
+pub async fn find_team_children_in_parents<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    parent_ids: &[i64],
+) -> Result<Vec<folder::Model>> {
+    find_children_in_parents_in_scope(db, FolderScope::Team { team_id }, parent_ids).await
+}
+
+/// 查询子文件夹（排除已删除，分页）
+async fn find_children_paginated_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FolderScope,
     parent_id: Option<i64>,
     limit: u64,
     offset: u64,
     sort_by: crate::api::pagination::SortBy,
     sort_order: crate::api::pagination::SortOrder,
 ) -> Result<(Vec<folder::Model>, u64)> {
-    let mut cond = Condition::all()
-        .add(folder::Column::UserId.eq(user_id))
-        .add(folder::Column::DeletedAt.is_null());
-    cond = match parent_id {
-        Some(pid) => cond.add(folder::Column::ParentId.eq(pid)),
-        None => cond.add(folder::Column::ParentId.is_null()),
-    };
-
-    let base = Folder::find().filter(cond);
+    let base = Folder::find().filter(apply_parent_condition(
+        active_scope_condition(scope),
+        parent_id,
+    ));
 
     let total = base.clone().count(db).await.map_err(AsterError::from)?;
     if total == 0 || limit == 0 {
@@ -305,7 +365,6 @@ pub async fn find_children_paginated<C: ConnectionTrait>(
                     .order_by_desc(folder::Column::Id)
             }
         }
-        // name, size, type — all fall back to name for folders
         _ => {
             if is_asc {
                 base.order_by_asc(folder::Column::Name)
@@ -325,14 +384,50 @@ pub async fn find_children_paginated<C: ConnectionTrait>(
     Ok((items, total))
 }
 
-/// 查询顶层已删除文件夹（分页），用 SQL 过滤而非内存过滤
-pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
+pub async fn find_children_paginated<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
+    parent_id: Option<i64>,
     limit: u64,
     offset: u64,
+    sort_by: crate::api::pagination::SortBy,
+    sort_order: crate::api::pagination::SortOrder,
 ) -> Result<(Vec<folder::Model>, u64)> {
-    // 顶层 = deleted_at IS NOT NULL 且 parent 要么是 NULL，要么 parent 未被删除
+    find_children_paginated_in_scope(
+        db,
+        FolderScope::Personal { user_id },
+        parent_id,
+        limit,
+        offset,
+        sort_by,
+        sort_order,
+    )
+    .await
+}
+
+pub async fn find_team_children_paginated<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    parent_id: Option<i64>,
+    limit: u64,
+    offset: u64,
+    sort_by: crate::api::pagination::SortBy,
+    sort_order: crate::api::pagination::SortOrder,
+) -> Result<(Vec<folder::Model>, u64)> {
+    find_children_paginated_in_scope(
+        db,
+        FolderScope::Team { team_id },
+        parent_id,
+        limit,
+        offset,
+        sort_by,
+        sort_order,
+    )
+    .await
+}
+
+/// 查询顶层已删除文件夹（分页），用 SQL 过滤而非内存过滤
+fn top_level_deleted_condition(scope: FolderScope) -> Condition {
     use sea_orm::sea_query::{Alias, Expr, Query};
 
     let parent_deleted_subquery = Query::select()
@@ -345,17 +440,22 @@ pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
         .and_where(Expr::col((Alias::new("p"), Alias::new("deleted_at"))).is_not_null())
         .to_owned();
 
-    // Match idx_folders_user_deleted_at_id so recycle-bin pages walk deleted_at/id instead of scanning.
-    let cond = Condition::all()
-        .add(folder::Column::UserId.eq(user_id))
+    scope_condition(scope)
         .add(folder::Column::DeletedAt.is_not_null())
         .add(
             Condition::any()
                 .add(folder::Column::ParentId.is_null())
                 .add(Expr::exists(parent_deleted_subquery).not()),
-        );
+        )
+}
 
-    let base = Folder::find().filter(cond);
+async fn find_top_level_deleted_paginated_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FolderScope,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<folder::Model>, u64)> {
+    let base = Folder::find().filter(top_level_deleted_condition(scope));
 
     let total = base.clone().count(db).await.map_err(AsterError::from)?;
     if total == 0 || limit == 0 {
@@ -373,23 +473,60 @@ pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
     Ok((items, total))
 }
 
+pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<folder::Model>, u64)> {
+    find_top_level_deleted_paginated_in_scope(db, FolderScope::Personal { user_id }, limit, offset)
+        .await
+}
+
+pub async fn find_top_level_deleted_by_team_paginated<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<folder::Model>, u64)> {
+    find_top_level_deleted_paginated_in_scope(db, FolderScope::Team { team_id }, limit, offset)
+        .await
+}
+
 /// 按名称查文件夹（排除已删除）
+async fn find_by_name_in_parent_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FolderScope,
+    parent_id: Option<i64>,
+    name: &str,
+) -> Result<Option<folder::Model>> {
+    Folder::find()
+        .filter(apply_parent_condition(
+            active_scope_condition(scope),
+            parent_id,
+        ))
+        .filter(folder::Column::Name.eq(name))
+        .one(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_by_name_in_parent<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
     parent_id: Option<i64>,
     name: &str,
 ) -> Result<Option<folder::Model>> {
-    // Create/rename/path resolution duplicate checks share the same directory lookup index.
-    let mut q = Folder::find()
-        .filter(folder::Column::UserId.eq(user_id))
-        .filter(folder::Column::Name.eq(name))
-        .filter(folder::Column::DeletedAt.is_null());
-    q = match parent_id {
-        Some(pid) => q.filter(folder::Column::ParentId.eq(pid)),
-        None => q.filter(folder::Column::ParentId.is_null()),
-    };
-    q.one(db).await.map_err(AsterError::from)
+    find_by_name_in_parent_in_scope(db, FolderScope::Personal { user_id }, parent_id, name).await
+}
+
+pub async fn find_by_name_in_team_parent<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    parent_id: Option<i64>,
+    name: &str,
+) -> Result<Option<folder::Model>> {
+    find_by_name_in_parent_in_scope(db, FolderScope::Team { team_id }, parent_id, name).await
 }
 
 /// 批量解析路径前缀中的文件夹链，避免逐段 round-trip。
@@ -612,6 +749,7 @@ pub async fn find_deleted_by_user<C: ConnectionTrait>(
 ) -> Result<Vec<folder::Model>> {
     Folder::find()
         .filter(folder::Column::UserId.eq(user_id))
+        .filter(folder::Column::TeamId.is_null())
         .filter(folder::Column::DeletedAt.is_not_null())
         .order_by_desc(folder::Column::DeletedAt)
         .all(db)
@@ -652,6 +790,7 @@ pub async fn find_expired_deleted<C: ConnectionTrait>(
     before: chrono::DateTime<Utc>,
 ) -> Result<Vec<folder::Model>> {
     Folder::find()
+        .filter(folder::Column::TeamId.is_null())
         .filter(folder::Column::DeletedAt.is_not_null())
         .filter(folder::Column::DeletedAt.lt(before))
         .all(db)
@@ -666,6 +805,7 @@ pub async fn find_all_by_user<C: ConnectionTrait>(
 ) -> Result<Vec<folder::Model>> {
     Folder::find()
         .filter(folder::Column::UserId.eq(user_id))
+        .filter(folder::Column::TeamId.is_null())
         .all(db)
         .await
         .map_err(AsterError::from)

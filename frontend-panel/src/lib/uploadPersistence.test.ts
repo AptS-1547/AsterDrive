@@ -7,6 +7,7 @@ import {
 	removeSession,
 	saveSession,
 } from "@/lib/uploadPersistence";
+import type { Workspace } from "@/lib/workspace";
 
 function createSession(
 	overrides: Partial<ResumableSession> = {},
@@ -25,6 +26,8 @@ function createSession(
 		...overrides,
 	};
 }
+
+const TEAM_WORKSPACE: Workspace = { kind: "team", teamId: 9 };
 
 describe("uploadPersistence", () => {
 	beforeEach(() => {
@@ -130,5 +133,22 @@ describe("uploadPersistence", () => {
 		clearAllSessions();
 
 		expect(loadSessions()).toEqual([]);
+	});
+
+	it("filters sessions by workspace when requested", () => {
+		saveSession(createSession({ uploadId: "personal-1" }));
+		saveSession(
+			createSession({
+				uploadId: "team-1",
+				workspace: TEAM_WORKSPACE,
+			}),
+		);
+
+		expect(loadSessions()).toHaveLength(2);
+		expect(loadSessions(TEAM_WORKSPACE)).toEqual([
+			expect.objectContaining({
+				uploadId: "team-1",
+			}),
+		]);
 	});
 });

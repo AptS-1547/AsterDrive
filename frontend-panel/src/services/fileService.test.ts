@@ -43,7 +43,9 @@ describe("fileService", () => {
 	});
 
 	it("uses the expected file and folder endpoints", async () => {
-		const { fileService } = await import("@/services/fileService");
+		const { createFileService, fileService } = await import(
+			"@/services/fileService"
+		);
 
 		fileService.listRoot({ file_limit: 50 });
 		fileService.listFolder(7, { sort_by: "updated_at" });
@@ -106,6 +108,25 @@ describe("fileService", () => {
 		expect(fileService.downloadPath(8)).toBe("/files/8/download");
 		expect(fileService.downloadUrl(8)).toBe("/api/v1/files/8/download");
 		expect(fileService.thumbnailPath(8)).toBe("/files/8/thumbnail");
+
+		const teamFileService = createFileService({ kind: "team", teamId: 9 });
+		teamFileService.listRoot();
+		teamFileService.getFile(8);
+		teamFileService.listVersions(8);
+
+		expect(mockState.get).toHaveBeenNthCalledWith(6, "/teams/9/folders", {
+			params: undefined,
+		});
+		expect(mockState.get).toHaveBeenNthCalledWith(7, "/teams/9/files/8");
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			8,
+			"/teams/9/files/8/versions",
+		);
+		expect(teamFileService.downloadPath(8)).toBe("/teams/9/files/8/download");
+		expect(teamFileService.downloadUrl(8)).toBe(
+			"/api/v1/teams/9/files/8/download",
+		);
+		expect(teamFileService.thumbnailPath(8)).toBe("/teams/9/files/8/thumbnail");
 	});
 
 	it("updates file content with optimistic concurrency headers", async () => {

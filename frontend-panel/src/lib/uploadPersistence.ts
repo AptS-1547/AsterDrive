@@ -1,3 +1,9 @@
+import {
+	PERSONAL_WORKSPACE,
+	type Workspace,
+	workspaceEquals,
+} from "@/lib/workspace";
+
 /**
  * 断点续传持久化层
  * 将 chunked upload session 元数据存入 localStorage，刷新后可恢复。
@@ -13,6 +19,7 @@ export interface ResumableSession {
 	baseFolderName: string;
 	relativePath: string | null;
 	savedAt: number;
+	workspace?: Workspace;
 	/** "chunked" (本地分片) 或 "presigned_multipart" (S3 分片直传) */
 	mode?: "chunked" | "presigned_multipart";
 	/** S3 multipart: 已上传 part 的 {partNumber, etag} */
@@ -41,10 +48,17 @@ function writeAll(sessions: ResumableSession[]): void {
 	}
 }
 
+function normalizeWorkspace(workspace?: Workspace): Workspace {
+	return workspace ?? PERSONAL_WORKSPACE;
+}
+
 /** 保存一个 chunked upload session（init 成功后调用） */
 export function saveSession(session: ResumableSession): void {
 	const all = readAll().filter((s) => s.uploadId !== session.uploadId);
-	all.push(session);
+	all.push({
+		...session,
+		workspace: normalizeWorkspace(session.workspace),
+	});
 	writeAll(all);
 }
 
@@ -70,14 +84,17 @@ export function appendCompletedPart(
 }
 
 /** 加载所有未过期的 session，自动清理过期的 */
-export function loadSessions(): ResumableSession[] {
+export function loadSessions(workspace?: Workspace): ResumableSession[] {
 	const now = Date.now();
 	const all = readAll();
 	const valid = all.filter((s) => now - s.savedAt < MAX_AGE_MS);
 	if (valid.length !== all.length) {
 		writeAll(valid);
 	}
-	return valid;
+	if (!workspace) return valid;
+	return valid.filter((session) =>
+		workspaceEquals(normalizeWorkspace(session.workspace), workspace),
+	);
 }
 
 /** 清空所有 session */

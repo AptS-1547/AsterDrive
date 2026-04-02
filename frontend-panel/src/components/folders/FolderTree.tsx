@@ -21,9 +21,15 @@ import {
 	writeInternalDragData,
 } from "@/lib/dragDrop";
 import { folderTreeRowClass } from "@/lib/utils";
+import {
+	workspaceFolderPath,
+	workspaceKey,
+	workspaceRootPath,
+} from "@/lib/workspace";
 import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { FolderInfo } from "@/types/api";
 
 interface FolderTreeNode {
@@ -38,6 +44,7 @@ interface FolderTreeSnapshot {
 	nodeEntries: Array<[number, FolderTreeNode]>;
 	rootIds: number[];
 	userId: number | null;
+	workspaceKey: string;
 }
 
 interface TreeNodeProps {
@@ -275,6 +282,8 @@ interface FolderTreeProps {
 export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 	const { t } = useTranslation("files");
 	const userId = useAuthStore((s) => s.user?.id ?? null);
+	const workspace = useWorkspaceStore((s) => s.workspace);
+	const currentWorkspaceKey = workspaceKey(workspace);
 	const location = useLocation();
 	const navigate = useNavigate();
 	const breadcrumb = useFileStore((s) => s.breadcrumb);
@@ -283,9 +292,12 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 	const storeFolders = useFileStore((s) => s.folders);
 	const storeCurrentFolderId = useFileStore((s) => s.currentFolderId);
 	const storeLoading = useFileStore((s) => s.loading);
-	const isRootRoute = location.pathname === "/";
+	const isRootRoute = location.pathname === workspaceRootPath(workspace);
 	const cachedSnapshot =
-		folderTreeSnapshot?.userId === userId ? folderTreeSnapshot : null;
+		folderTreeSnapshot?.userId === userId &&
+		folderTreeSnapshot.workspaceKey === currentWorkspaceKey
+			? folderTreeSnapshot
+			: null;
 
 	const [nodeMap, setNodeMap] = useState<Map<number, FolderTreeNode>>(
 		() => new Map(cachedSnapshot?.nodeEntries ?? []),
@@ -322,7 +334,11 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 	}, []);
 
 	useEffect(() => {
-		if (folderTreeSnapshot?.userId === userId) return;
+		if (
+			folderTreeSnapshot?.userId === userId &&
+			folderTreeSnapshot.workspaceKey === currentWorkspaceKey
+		)
+			return;
 		clearHoverExpandTimer();
 		folderTreeSnapshot = null;
 		childrenCacheRef.current = new Map();
@@ -334,7 +350,7 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 		setLoadingIds(new Set());
 		setLoadedIds(new Set());
 		setRootLoaded(false);
-	}, [clearHoverExpandTimer, userId]);
+	}, [clearHoverExpandTimer, currentWorkspaceKey, userId]);
 
 	useEffect(() => {
 		folderTreeSnapshot = {
@@ -343,8 +359,9 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 			nodeEntries: cloneNodeEntries(nodeMap),
 			rootIds,
 			userId,
+			workspaceKey: currentWorkspaceKey,
 		};
-	}, [expandedIds, loadedIds, nodeMap, rootIds, userId]);
+	}, [currentWorkspaceKey, expandedIds, loadedIds, nodeMap, rootIds, userId]);
 
 	const syncFolderChildren = useCallback(
 		(parentId: number | null, folders: FolderInfo[]) => {
@@ -586,9 +603,9 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 		async (id: number, name: string) => {
 			clearHoverExpandTimer();
 			await ensureFolderExpanded(id);
-			navigate(`/folder/${id}?name=${encodeURIComponent(name)}`);
+			navigate(workspaceFolderPath(workspace, id, name));
 		},
-		[clearHoverExpandTimer, ensureFolderExpanded, navigate],
+		[clearHoverExpandTimer, ensureFolderExpanded, navigate, workspace],
 	);
 
 	const handleDrop = useCallback(
@@ -717,11 +734,10 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 						type="button"
 						className={folderTreeRowClass(
 							currentFolderId === null &&
-								(location.pathname === "/" ||
-									location.pathname.startsWith("/folder")),
+								location.pathname === workspaceRootPath(workspace),
 							rootDragOver && "ring-2 ring-primary bg-accent/30",
 						)}
-						onClick={() => navigate("/")}
+						onClick={() => navigate(workspaceRootPath(workspace))}
 						onDragOver={handleRootDragOver}
 						onDragLeave={() => setRootDragOver(false)}
 						onDrop={handleRootDrop}

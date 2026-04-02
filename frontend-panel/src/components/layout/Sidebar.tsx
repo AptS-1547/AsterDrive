@@ -1,4 +1,4 @@
-import { type DragEvent, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { FolderTree } from "@/components/folders/FolderTree";
@@ -17,7 +17,16 @@ import {
 } from "@/lib/dragDrop";
 import { formatBytes } from "@/lib/format";
 import { cn, sidebarNavItemClass } from "@/lib/utils";
+import {
+	isTeamWorkspace,
+	workspaceRootPath,
+	workspaceSharesPath,
+	workspaceTrashPath,
+	workspaceWebdavPath,
+} from "@/lib/workspace";
 import { useAuthStore } from "@/stores/authStore";
+import { useTeamStore } from "@/stores/teamStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 interface SidebarProps {
 	mobileOpen: boolean;
@@ -39,13 +48,56 @@ export function Sidebar({
 	const { t } = useTranslation();
 	const location = useLocation();
 	const user = useAuthStore((s) => s.user);
+	const workspace = useWorkspaceStore((s) => s.workspace);
+	const teams = useTeamStore((s) => s.teams);
+	const loadingTeams = useTeamStore((s) => s.loading);
+	const ensureTeamsLoaded = useTeamStore((s) => s.ensureLoaded);
 	const [trashDragOver, setTrashDragOver] = useState(false);
+	const activeTeam = isTeamWorkspace(workspace)
+		? (teams.find((team) => team.id === workspace.teamId) ?? null)
+		: null;
 
-	const navLinks: { to: string; icon: IconName; label: string }[] = [
-		{ to: "/trash", icon: "Trash", label: t("trash") },
-		{ to: "/shares", icon: "Link", label: t("share:my_shares_title") },
-		{ to: "/settings/webdav", icon: "HardDrive", label: t("webdav") },
-	];
+	useEffect(() => {
+		void ensureTeamsLoaded(user?.id ?? null).catch(() => undefined);
+	}, [ensureTeamsLoaded, user?.id]);
+
+	const navLinks: { to: string; icon: IconName; label: string }[] =
+		useMemo(() => {
+			const links: { to: string; icon: IconName; label: string }[] = [
+				{
+					to: workspaceTrashPath(workspace),
+					icon: "Trash",
+					label: t("trash"),
+				},
+				{
+					to: workspaceSharesPath(workspace),
+					icon: "Link",
+					label: t("share:my_shares_title"),
+				},
+			];
+
+			if (!isTeamWorkspace(workspace)) {
+				links.push({
+					to: workspaceWebdavPath(),
+					icon: "HardDrive",
+					label: t("webdav"),
+				});
+			}
+
+			return links;
+		}, [t, workspace]);
+
+	const storageUsed = activeTeam
+		? activeTeam.storage_used
+		: !isTeamWorkspace(workspace)
+			? (user?.storage_used ?? 0)
+			: 0;
+	const storageQuota = activeTeam
+		? activeTeam.storage_quota
+		: !isTeamWorkspace(workspace)
+			? (user?.storage_quota ?? 0)
+			: 0;
+	const trashPath = workspaceTrashPath(workspace);
 
 	const handleTrashDragOver = (e: DragEvent<HTMLAnchorElement>) => {
 		if (!onTrashDrop || !hasInternalDragData(e.dataTransfer)) return;
@@ -73,6 +125,48 @@ export function Sidebar({
 
 	const sidebarContent = (
 		<div className="flex flex-col h-full">
+			<div className="p-2 space-y-1">
+				<p className="px-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+					{t("workspaces")}
+				</p>
+				<Link
+					to={workspaceRootPath({ kind: "personal" })}
+					onClick={onMobileClose}
+					className={sidebarNavItemClass(
+						!isTeamWorkspace(workspace),
+						"justify-between",
+					)}
+				>
+					<span className="inline-flex items-center gap-2">
+						<Icon name="House" className="h-4 w-4 shrink-0" />
+						{t("my_drive")}
+					</span>
+				</Link>
+				{teams.map((team) => (
+					<Link
+						key={team.id}
+						to={workspaceRootPath({ kind: "team", teamId: team.id })}
+						onClick={onMobileClose}
+						className={sidebarNavItemClass(
+							isTeamWorkspace(workspace) && workspace.teamId === team.id,
+							"justify-between",
+						)}
+					>
+						<span className="inline-flex min-w-0 items-center gap-2">
+							<Icon name="Cloud" className="h-4 w-4 shrink-0" />
+							<span className="truncate">{team.name}</span>
+						</span>
+					</Link>
+				))}
+				{loadingTeams && teams.length === 0 ? (
+					<div className="px-2 py-1 text-xs text-muted-foreground">
+						{t("loading")}
+					</div>
+				) : null}
+			</div>
+
+			<Separator />
+
 			{/* Folder tree */}
 			<ScrollArea className="flex-1">
 				<FolderTree onMoveToFolder={onMoveToFolder} />
@@ -87,14 +181,14 @@ export function Sidebar({
 						key={link.to}
 						to={link.to}
 						onClick={onMobileClose}
-						onDragOver={link.to === "/trash" ? handleTrashDragOver : undefined}
+						onDragOver={link.to === trashPath ? handleTrashDragOver : undefined}
 						onDragLeave={
-							link.to === "/trash" ? handleTrashDragLeave : undefined
+							link.to === trashPath ? handleTrashDragLeave : undefined
 						}
-						onDrop={link.to === "/trash" ? handleTrashDrop : undefined}
+						onDrop={link.to === trashPath ? handleTrashDrop : undefined}
 						className={sidebarNavItemClass(
 							location.pathname === link.to,
-							link.to === "/trash" &&
+							link.to === trashPath &&
 								trashDragOver &&
 								"bg-destructive/10 text-destructive ring-1 ring-destructive/30",
 						)}
@@ -106,32 +200,29 @@ export function Sidebar({
 			</div>
 
 			{/* Storage usage */}
-			{user && (
+			{user && (!isTeamWorkspace(workspace) || activeTeam) && (
 				<>
 					<Separator />
 					<div className="p-3 space-y-1.5">
 						<p className="text-xs font-medium text-muted-foreground">
-							{t("files:storage_space")}
+							{activeTeam ? activeTeam.name : t("files:storage_space")}
 						</p>
 						<Progress
 							value={
-								user.storage_quota > 0
-									? Math.min(
-											(user.storage_used / user.storage_quota) * 100,
-											100,
-										)
+								storageQuota > 0
+									? Math.min((storageUsed / storageQuota) * 100, 100)
 									: 0
 							}
 							className="h-1.5"
 						/>
 						<p className="text-xs text-muted-foreground">
-							{user.storage_quota > 0
+							{storageQuota > 0
 								? t("files:storage_quota", {
-										used: formatBytes(user.storage_used),
-										quota: formatBytes(user.storage_quota),
+										used: formatBytes(storageUsed),
+										quota: formatBytes(storageQuota),
 									})
 								: t("files:storage_used", {
-										used: formatBytes(user.storage_used),
+										used: formatBytes(storageUsed),
 									})}
 						</p>
 					</div>

@@ -51,10 +51,12 @@ import {
 } from "@/lib/dragDrop";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { cn } from "@/lib/utils";
+import { workspaceFolderPath } from "@/lib/workspace";
 import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type {
 	FileInfo,
 	FileListItem,
@@ -102,6 +104,7 @@ const UploadArea = lazy(async () => {
 export default function FileBrowserPage() {
 	const { t } = useTranslation("files");
 	const navigate = useNavigate();
+	const workspace = useWorkspaceStore((s) => s.workspace);
 	const params = useParams<{ folderId?: string }>();
 	const [searchParams] = useSearchParams();
 	const folderId = params.folderId ? Number(params.folderId) : null;
@@ -475,7 +478,7 @@ export default function FileBrowserPage() {
 		scrollElement: scrollViewport,
 		breadcrumbPathIds,
 		onFolderOpen: (id: number, name: string) =>
-			navigate(`/folder/${id}?name=${encodeURIComponent(name)}`),
+			navigate(workspaceFolderPath(workspace, id, name)),
 		onFileClick: (file: FileListItem) => setPreviewFile(file),
 		onShare: setShareTarget,
 		onDownload: handleDownload,
@@ -561,9 +564,11 @@ export default function FileBrowserPage() {
 															}
 															onClick={() =>
 																navigate(
-																	item.id === null
-																		? "/"
-																		: `/folder/${item.id}?name=${encodeURIComponent(item.name)}`,
+																	workspaceFolderPath(
+																		workspace,
+																		item.id,
+																		item.name,
+																	),
 																)
 															}
 														>

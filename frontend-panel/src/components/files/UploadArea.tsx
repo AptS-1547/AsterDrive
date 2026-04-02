@@ -29,6 +29,7 @@ import {
 	saveSession,
 } from "@/lib/uploadPersistence";
 import { cn } from "@/lib/utils";
+import { workspaceKey } from "@/lib/workspace";
 import { ApiError, api } from "@/services/http";
 import {
 	type CompletedPart,
@@ -38,7 +39,8 @@ import {
 } from "@/services/uploadService";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
-import { ErrorCode } from "@/types/api";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { ErrorCode } from "@/types/api-helpers";
 import {
 	extractFilesFromDrop,
 	extractFilesFromInput,
@@ -146,6 +148,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 		const refresh = useFileStore((s) => s.refresh);
 		const currentFolderId = useFileStore((s) => s.currentFolderId);
 		const breadcrumb = useFileStore((s) => s.breadcrumb);
+		const workspace = useWorkspaceStore((s) => s.workspace);
 		const refreshUser = useAuthStore((s) => s.refreshUser);
 		const currentFolderIdRef = useRef(currentFolderId);
 		const [isDragging, setIsDragging] = useState(false);
@@ -161,6 +164,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 		const folderInputRef = useRef<HTMLInputElement | null>(null);
 		const resumeFileInputRef = useRef<HTMLInputElement | null>(null);
 		const resumeTaskIdRef = useRef<string | null>(null);
+		const restoredWorkspaceKeysRef = useRef(new Set<string>());
 
 		useImperativeHandle(
 			ref,
@@ -291,7 +295,13 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 		}, []);
 
 		const restorePendingSessions = useEffectEvent(async () => {
-			const sessions = loadSessions();
+			const currentWorkspaceKey = workspaceKey(workspace);
+			if (restoredWorkspaceKeysRef.current.has(currentWorkspaceKey)) {
+				return;
+			}
+			restoredWorkspaceKeysRef.current.add(currentWorkspaceKey);
+
+			const sessions = loadSessions(workspace);
 			if (sessions.length === 0) return;
 
 			const ghostTasks: UploadTask[] = [];
@@ -326,6 +336,9 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				}
 
 				const { session, progress } = result.value;
+				if (!progress?.status) {
+					continue;
+				}
 				const mode = (session.mode ?? "chunked") as UploadMode;
 				const plan = getResumePlan(mode, progress.status);
 				if (plan === "restart") {
@@ -399,7 +412,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				if (!task || task.status !== "pending_file") return;
 
 				// 校验 name + size 匹配
-				const sessions = loadSessions();
+				const sessions = loadSessions(workspace);
 				const session = sessions.find((s) => s.uploadId === task.uploadId);
 				if (
 					session &&
@@ -421,7 +434,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					progress: 0,
 				});
 			},
-			[patchTask, t],
+			[patchTask, t, workspace],
 		);
 
 		const handleResumeFileChange = useCallback(
@@ -929,7 +942,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 								});
 							}
 							if (plan !== "restart") {
-								const saved = loadSessions().find(
+								const saved = loadSessions(workspace).find(
 									(session) => session.uploadId === task.uploadId,
 								);
 								if (plan === "complete") {
@@ -1020,6 +1033,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							baseFolderName: task.baseFolderName,
 							relativePath: task.relativePath,
 							savedAt: Date.now(),
+							workspace,
 							mode:
 								init.mode === "presigned_multipart"
 									? "presigned_multipart"
@@ -1054,6 +1068,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				runPresignedUpload,
 				resumeCompletionTask,
 				t,
+				workspace,
 			],
 		);
 
@@ -1120,7 +1135,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				const task = tasksRef.current.find((item) => item.id === taskId);
 				if (!task) return;
 				if (!task.file && task.uploadId) {
-					const saved = loadSessions().find(
+					const saved = loadSessions(workspace).find(
 						(session) => session.uploadId === task.uploadId,
 					);
 					void resumeCompletionTask(
@@ -1147,7 +1162,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				});
 				setUploadPanelOpen(true);
 			},
-			[patchTask, resumeCompletionTask],
+			[patchTask, resumeCompletionTask, workspace],
 		);
 
 		const retryFailedTasks = useCallback(() => {

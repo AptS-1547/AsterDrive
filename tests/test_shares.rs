@@ -133,7 +133,7 @@ async fn test_share_update_replaces_password_and_limits_without_changing_token()
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
             "password": "new-secret",
-            "expires_at": "2026-04-02T12:00:00Z",
+            "expires_at": "2099-04-02T12:00:00Z",
             "max_downloads": 2
         }))
         .to_request();
@@ -156,7 +156,7 @@ async fn test_share_update_replaces_password_and_limits_without_changing_token()
     assert_eq!(body["data"]["items"][0]["max_downloads"], 2);
     assert_eq!(
         body["data"]["items"][0]["expires_at"],
-        "2026-04-02T12:00:00Z"
+        "2099-04-02T12:00:00Z"
     );
 
     let req = test::TestRequest::post()
@@ -345,6 +345,114 @@ async fn test_share_batch_delete_removes_multiple_shares() {
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 404);
     }
+}
+
+#[actix_web::test]
+async fn test_share_batch_delete_preserves_partial_failures_for_foreign_and_missing_ids() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (owner_token, _) = register_and_login!(app);
+
+    let owner_file = upload_test_file_named!(app, owner_token, "owner-share.txt");
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .set_json(serde_json::json!({ "file_id": owner_file }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let owner_share_id = body["data"]["id"].as_i64().unwrap();
+    let owner_share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "shareother",
+            "email": "shareother@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "shareother",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let other_token =
+        common::extract_cookie(&resp, "aster_access").expect("other access cookie missing");
+
+    let other_file = upload_test_file_named!(app, other_token, "other-share.txt");
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={other_token}")))
+        .set_json(serde_json::json!({ "file_id": other_file }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let other_share_id = body["data"]["id"].as_i64().unwrap();
+    let other_share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares/batch-delete")
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .set_json(serde_json::json!({
+            "share_ids": [owner_share_id, other_share_id, 999999]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["succeeded"], 1);
+    assert_eq!(body["data"]["failed"], 2);
+    let errors = body["data"]["errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 2);
+    assert!(
+        errors
+            .iter()
+            .any(|item| item["entity_id"] == other_share_id)
+    );
+    assert!(errors.iter().any(|item| item["entity_id"] == 999999));
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 0);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{owner_share_token}"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={other_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["items"][0]["id"], other_share_id);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{other_share_token}"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
 }
 
 #[actix_web::test]

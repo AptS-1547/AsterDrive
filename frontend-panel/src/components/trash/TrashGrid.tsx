@@ -6,7 +6,7 @@ import { Icon } from "@/components/ui/icon";
 import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import { formatBytes, formatDate, formatDateAbsolute } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { TrashItem } from "@/types/api";
+import type { TrashItem } from "@/types/api-helpers";
 
 interface TrashGridProps {
 	items: TrashItem[];

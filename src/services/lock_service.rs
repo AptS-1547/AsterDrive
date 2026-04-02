@@ -222,10 +222,24 @@ pub async fn resolve_entity_path(
                     .await?
                     .remove(&folder_id)
                     .map(|path| format!("{path}/"))
-                    .unwrap_or_else(|| "/".to_string()),
-                None => "/".to_string(),
+                    .unwrap_or_default(),
+                None => String::new(),
             };
-            Ok(format!("{}{}", folder_path, f.name))
+            if let Some(team_id) = f.team_id {
+                let prefix = if folder_path.is_empty() {
+                    format!("/teams/{team_id}/")
+                } else {
+                    format!("/teams/{team_id}{folder_path}")
+                };
+                Ok(format!("{prefix}{}", f.name))
+            } else {
+                let prefix = if folder_path.is_empty() {
+                    "/"
+                } else {
+                    &folder_path
+                };
+                Ok(format!("{}{}", prefix, f.name))
+            }
         }
         EntityType::Folder => {
             let f = folder_repo::find_by_id(db, entity_id).await?;
@@ -233,7 +247,11 @@ pub async fn resolve_entity_path(
                 .await?
                 .remove(&f.id)
                 .ok_or_else(|| AsterError::record_not_found(format!("folder #{}", f.id)))?;
-            Ok(format!("{path}/"))
+            if let Some(team_id) = f.team_id {
+                Ok(format!("/teams/{team_id}{path}/"))
+            } else {
+                Ok(format!("{path}/"))
+            }
         }
     }
 }

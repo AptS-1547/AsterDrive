@@ -10,6 +10,8 @@ pub mod storage_policy;
 pub mod storage_policy_group;
 pub mod storage_policy_group_item;
 pub mod system_config;
+pub mod team;
+pub mod team_member;
 pub mod upload_session;
 pub mod upload_session_part;
 pub mod user;

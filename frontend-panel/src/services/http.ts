@@ -1,8 +1,11 @@
 import type { AxiosInstance } from "axios";
 import axios from "axios";
 import { config } from "@/config/app";
-import type { ApiResponse } from "@/types/api";
-import { ErrorCode } from "@/types/api";
+import {
+	type ApiResponse,
+	ErrorCode,
+	type ErrorCode as ErrorCodeType,
+} from "@/types/api-helpers";
 
 const client: AxiosInstance = axios.create({
 	baseURL: config.apiBaseUrl,
@@ -72,8 +75,8 @@ client.interceptors.response.use(
 );
 
 export class ApiError extends Error {
-	code: ErrorCode;
-	constructor(code: ErrorCode, message: string) {
+	code: ErrorCodeType;
+	constructor(code: ErrorCodeType, message: string) {
 		super(message);
 		this.code = code;
 	}
