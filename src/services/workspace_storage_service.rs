@@ -153,6 +153,23 @@ pub(crate) async fn require_team_access(
     Ok(team)
 }
 
+pub(crate) async fn require_team_management_access(
+    state: &AppState,
+    team_id: i64,
+    user_id: i64,
+) -> Result<team::Model> {
+    let team = team_repo::find_active_by_id(&state.db, team_id).await?;
+    let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, user_id)
+        .await?
+        .ok_or_else(|| AsterError::auth_forbidden("not a member of this team"))?;
+    if !membership.role.can_manage_team() {
+        return Err(AsterError::auth_forbidden(
+            "team owner or admin role is required",
+        ));
+    }
+    Ok(team)
+}
+
 pub(crate) async fn verify_folder_access(
     state: &AppState,
     scope: WorkspaceStorageScope,
@@ -315,20 +332,7 @@ pub(crate) async fn resolve_policy_for_size(
     file_size: i64,
 ) -> Result<crate::entities::storage_policy::Model> {
     if let Some(folder_id) = folder_id {
-        let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
-        match scope {
-            WorkspaceStorageScope::Personal { user_id } => {
-                ensure_personal_folder_scope(&folder)?;
-                crate::utils::verify_owner(folder.user_id, user_id, "folder")?;
-            }
-            WorkspaceStorageScope::Team { team_id, .. } => {
-                if folder.team_id != Some(team_id) {
-                    return Err(AsterError::auth_forbidden(
-                        "folder is outside team workspace",
-                    ));
-                }
-            }
-        }
+        let folder = verify_folder_access(state, scope, folder_id).await?;
 
         if let Some(policy_id) = folder.policy_id {
             return state.policy_snapshot.get_policy_or_err(policy_id);
@@ -783,6 +787,7 @@ pub(crate) async fn upload(
                     .map_aster_err_ctx("write temp", AsterError::file_upload_failed)?;
                 size += chunk.len() as i64;
             }
+            break;
         }
     }
 

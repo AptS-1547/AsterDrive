@@ -101,6 +101,14 @@ async fn restore_version_in_scope(
     version_id: i64,
 ) -> Result<crate::entities::file::Model> {
     let file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
+    if let WorkspaceStorageScope::Team {
+        team_id,
+        actor_user_id,
+    } = scope
+    {
+        workspace_storage_service::require_team_management_access(state, team_id, actor_user_id)
+            .await?;
+    }
     let version = load_version_for_file(&state.db, file_id, version_id).await?;
     restore_version_inner(state, file, version).await
 }
@@ -112,6 +120,14 @@ async fn delete_version_in_scope(
     version_id: i64,
 ) -> Result<()> {
     workspace_storage_service::verify_file_access(state, scope, file_id).await?;
+    if let WorkspaceStorageScope::Team {
+        team_id,
+        actor_user_id,
+    } = scope
+    {
+        workspace_storage_service::require_team_management_access(state, team_id, actor_user_id)
+            .await?;
+    }
     let version = load_version_for_file(&state.db, file_id, version_id).await?;
     delete_version_inner(state, version).await
 }

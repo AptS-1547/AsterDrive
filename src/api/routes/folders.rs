@@ -411,6 +411,8 @@ pub(crate) async fn patch_folder_response(
     let ctx = AuditContext::from_request(req, claims);
     let action = if body.parent_id.is_present() {
         audit_service::AuditAction::FolderMove
+    } else if body.policy_id.is_present() {
+        audit_service::AuditAction::FolderPolicyChange
     } else {
         audit_service::AuditAction::FolderRename
     };

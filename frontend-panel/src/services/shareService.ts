@@ -1,8 +1,8 @@
 import { config } from "@/config/app";
 import {
+	buildWorkspacePath,
 	PERSONAL_WORKSPACE,
 	type Workspace,
-	workspaceApiPrefix,
 } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
@@ -16,7 +16,7 @@ import type { FolderListParams } from "./fileService";
 import { api } from "./http";
 
 function workspaceSharesPrefix(workspace: Workspace) {
-	return `${workspaceApiPrefix(workspace)}/shares`;
+	return buildWorkspacePath(workspace, "/shares");
 }
 
 export function createShareService(workspace: Workspace = PERSONAL_WORKSPACE) {

@@ -1,8 +1,8 @@
 import { withQuery } from "@/lib/queryParams";
 import {
+	buildWorkspacePath,
 	PERSONAL_WORKSPACE,
 	type Workspace,
-	workspaceApiPrefix,
 } from "@/lib/workspace";
 import { api } from "@/services/http";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
@@ -12,7 +12,7 @@ export function createSearchService(workspace: Workspace = PERSONAL_WORKSPACE) {
 	return {
 		search: (params: SearchParams) =>
 			api.get<SearchResults>(
-				withQuery(`${workspaceApiPrefix(workspace)}/search`, params),
+				withQuery(buildWorkspacePath(workspace, "/search"), params),
 			),
 	};
 }

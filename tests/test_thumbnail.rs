@@ -147,6 +147,7 @@ async fn test_thumbnail_returns_200_after_generation() {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     assert!(cache_control.contains("private"));
+    assert!(cache_control.contains("no-cache") || cache_control.contains("max-age=0"));
     assert!(cache_control.contains("must-revalidate"));
     assert!(!cache_control.contains("public"));
     assert!(!cache_control.contains("immutable"));

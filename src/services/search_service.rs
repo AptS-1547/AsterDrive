@@ -76,9 +76,7 @@ fn build_search_file_list_items(
 }
 
 fn validate_search_params(params: &SearchParams) -> Result<()> {
-    if let Some(ref q) = params.q
-        && q.trim().is_empty()
-    {
+    if params.q.is_some() && normalized_query(params).is_none() {
         return Err(AsterError::validation_error(
             "search query must not be empty",
         ));
@@ -99,6 +97,10 @@ fn validate_search_params(params: &SearchParams) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn normalized_query(params: &SearchParams) -> Option<&str> {
+    params.q.as_deref().map(str::trim).filter(|q| !q.is_empty())
 }
 
 fn parse_search_dates(params: &SearchParams) -> Result<SearchDateRange> {
@@ -141,6 +143,7 @@ pub(crate) async fn search_in_scope(
 
     let limit = params.limit.unwrap_or(50).clamp(1, 100);
     let offset = params.offset.unwrap_or(0);
+    let query = normalized_query(params);
 
     let search_type = params.search_type.as_deref().unwrap_or("all");
     let (created_after, created_before) = parse_search_dates(params)?;
@@ -154,7 +157,7 @@ pub(crate) async fn search_in_scope(
                     search_repo::search_files(
                         &state.db,
                         user_id,
-                        params.q.as_deref(),
+                        query,
                         params.mime_type.as_deref(),
                         params.min_size,
                         params.max_size,
@@ -173,7 +176,7 @@ pub(crate) async fn search_in_scope(
                     search_repo::search_folders(
                         &state.db,
                         user_id,
-                        params.q.as_deref(),
+                        query,
                         created_after,
                         created_before,
                         params.folder_id,
@@ -206,7 +209,7 @@ pub(crate) async fn search_in_scope(
                     search_repo::search_team_files(
                         &state.db,
                         team_id,
-                        params.q.as_deref(),
+                        query,
                         params.mime_type.as_deref(),
                         params.min_size,
                         params.max_size,
@@ -225,7 +228,7 @@ pub(crate) async fn search_in_scope(
                     search_repo::search_team_folders(
                         &state.db,
                         team_id,
-                        params.q.as_deref(),
+                        query,
                         created_after,
                         created_before,
                         params.folder_id,

@@ -256,13 +256,21 @@ fn resolve_folder_path(
 fn parent_restore_target_unavailable(
     parent_result: &Result<folder::Model>,
     scope: WorkspaceStorageScope,
-) -> bool {
+) -> Result<bool> {
     match parent_result {
-        Ok(parent) => {
-            parent.deleted_at.is_some()
-                || workspace_storage_service::ensure_folder_scope(parent, scope).is_err()
-        }
-        Err(_) => true,
+        Ok(parent) => match workspace_storage_service::ensure_folder_scope(parent, scope) {
+            Ok(()) => Ok(parent.deleted_at.is_some()),
+            Err(AsterError::AuthForbidden(_))
+            | Err(AsterError::RecordNotFound(_))
+            | Err(AsterError::FileNotFound(_))
+            | Err(AsterError::FolderNotFound(_)) => Ok(true),
+            Err(error) => Err(error),
+        },
+        Err(AsterError::AuthForbidden(_))
+        | Err(AsterError::RecordNotFound(_))
+        | Err(AsterError::FileNotFound(_))
+        | Err(AsterError::FolderNotFound(_)) => Ok(true),
+        Err(error) => Err(error.clone()),
     }
 }
 
@@ -344,7 +352,7 @@ async fn restore_file_in_scope(
 
     if let Some(folder_id) = file.folder_id {
         let parent = folder_repo::find_by_id(&state.db, folder_id).await;
-        if parent_restore_target_unavailable(&parent, scope) {
+        if parent_restore_target_unavailable(&parent, scope)? {
             let mut active: file::ActiveModel = file.into();
             active.folder_id = sea_orm::Set(None);
             active.deleted_at = sea_orm::Set(None);
@@ -366,7 +374,7 @@ async fn restore_folder_in_scope(
 
     if let Some(parent_id) = folder.parent_id {
         let parent = folder_repo::find_by_id(&state.db, parent_id).await;
-        if parent_restore_target_unavailable(&parent, scope) {
+        if parent_restore_target_unavailable(&parent, scope)? {
             let mut active: folder::ActiveModel = folder.into();
             active.parent_id = sea_orm::Set(None);
             active.deleted_at = sea_orm::Set(None);

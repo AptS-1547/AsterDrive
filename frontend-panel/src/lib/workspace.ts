@@ -33,6 +33,10 @@ export function workspaceApiPrefix(workspace: Workspace) {
 	return isTeamWorkspace(workspace) ? `/teams/${workspace.teamId}` : "";
 }
 
+export function buildWorkspacePath(workspace: Workspace, path: string) {
+	return `${workspaceApiPrefix(workspace)}${path}`;
+}
+
 export function workspaceRootPath(workspace: Workspace) {
 	return isTeamWorkspace(workspace) ? `/teams/${workspace.teamId}` : "/";
 }

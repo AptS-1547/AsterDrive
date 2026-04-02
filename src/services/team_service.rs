@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use chrono::Utc;
 use sea_orm::{IntoActiveModel, Set, TransactionTrait};
 use serde::Serialize;
@@ -104,12 +106,26 @@ async fn build_team_info(
     let creator = user_repo::find_by_id(&state.db, team.created_by).await?;
     let member_count = team_member_repo::count_by_team(&state.db, team.id).await?;
 
-    Ok(TeamInfo {
+    Ok(build_team_info_with_metadata(
+        team,
+        my_role,
+        creator.username,
+        member_count,
+    ))
+}
+
+fn build_team_info_with_metadata(
+    team: &team::Model,
+    my_role: TeamMemberRole,
+    created_by_username: String,
+    member_count: u64,
+) -> TeamInfo {
+    TeamInfo {
         id: team.id,
         name: team.name.clone(),
         description: team.description.clone(),
         created_by: team.created_by,
-        created_by_username: creator.username,
+        created_by_username,
         my_role,
         member_count,
         storage_used: team.storage_used,
@@ -118,7 +134,7 @@ async fn build_team_info(
         created_at: team.created_at,
         updated_at: team.updated_at,
         archived_at: team.archived_at,
-    })
+    }
 }
 
 fn build_team_member_info(membership: team_member::Model, user: user::Model) -> TeamMemberInfo {
@@ -194,9 +210,44 @@ async fn ensure_not_last_owner(state: &AppState, team_id: i64) -> Result<()> {
 
 pub async fn list_teams(state: &AppState, user_id: i64) -> Result<Vec<TeamInfo>> {
     let memberships = team_member_repo::list_by_user_with_team(&state.db, user_id).await?;
+    if memberships.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let creator_ids: Vec<i64> = memberships
+        .iter()
+        .map(|(_, team)| team.created_by)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let team_ids: Vec<i64> = memberships
+        .iter()
+        .map(|(_, team)| team.id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let (creators, member_counts) = tokio::try_join!(
+        user_repo::find_by_ids(&state.db, &creator_ids),
+        team_member_repo::count_by_team_ids(&state.db, &team_ids),
+    )?;
+    let creator_usernames: HashMap<i64, String> = creators
+        .into_iter()
+        .map(|creator| (creator.id, creator.username))
+        .collect();
+
     let mut teams = Vec::with_capacity(memberships.len());
     for (membership, team) in memberships {
-        teams.push(build_team_info(state, &team, membership.role).await?);
+        let created_by_username = creator_usernames
+            .get(&team.created_by)
+            .cloned()
+            .ok_or_else(|| AsterError::record_not_found(format!("user #{}", team.created_by)))?;
+        let member_count = member_counts.get(&team.id).copied().unwrap_or_default();
+        teams.push(build_team_info_with_metadata(
+            &team,
+            membership.role,
+            created_by_username,
+            member_count,
+        ));
     }
     Ok(teams)
 }

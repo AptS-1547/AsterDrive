@@ -48,6 +48,7 @@ async fn default_policy(
 async fn create_upload_session(
     state: &aster_drive::runtime::AppState,
     user_id: i64,
+    team_id: Option<i64>,
     upload_id: &str,
     status: aster_drive::types::UploadSessionStatus,
     expires_at: chrono::DateTime<chrono::Utc>,
@@ -64,7 +65,7 @@ async fn create_upload_session(
         aster_drive::entities::upload_session::ActiveModel {
             id: Set(upload_id.to_string()),
             user_id: Set(user_id),
-            team_id: Set(None),
+            team_id: Set(team_id),
             filename: Set("manual-upload.bin".to_string()),
             total_size: Set(10),
             chunk_size: Set(5),
@@ -171,6 +172,7 @@ async fn test_cleanup_expired_completed_upload_sessions_removes_broken_temp_obje
     create_upload_session(
         &state,
         user.id,
+        None,
         "broken-completed",
         aster_drive::types::UploadSessionStatus::Completed,
         Utc::now() - Duration::hours(1),
@@ -215,6 +217,7 @@ async fn test_cleanup_expired_completed_upload_sessions_removes_broken_completed
     create_upload_session(
         &state,
         user.id,
+        None,
         "broken-completed-multipart",
         aster_drive::types::UploadSessionStatus::Completed,
         Utc::now() - Duration::hours(1),
@@ -257,6 +260,7 @@ async fn test_cleanup_expired_completed_upload_sessions_keeps_live_blob() {
     create_upload_session(
         &state,
         user.id,
+        None,
         "completed-with-file",
         aster_drive::types::UploadSessionStatus::Completed,
         Utc::now() - Duration::hours(1),
@@ -298,6 +302,7 @@ async fn test_cleanup_expired_completed_upload_sessions_processes_all_batches() 
         create_upload_session(
             &state,
             user.id,
+            None,
             &upload_id,
             aster_drive::types::UploadSessionStatus::Completed,
             Utc::now() - Duration::hours(1),
@@ -315,6 +320,57 @@ async fn test_cleanup_expired_completed_upload_sessions_processes_all_batches() 
     assert_eq!(stats.completed_sessions_deleted, 1001);
     assert_eq!(stats.broken_completed_sessions_deleted, 501);
     assert_eq!(UploadSession::find().count(&state.db).await.unwrap(), 0);
+}
+
+#[actix_web::test]
+async fn test_cleanup_expired_completed_upload_sessions_cleans_team_sessions() {
+    use aster_drive::db::repository::upload_session_repo;
+    use aster_drive::services::{auth_service, maintenance_service, team_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "maintteam1", "maintteam1@test.com", "password123")
+        .await
+        .unwrap();
+    let team = team_service::create_team(
+        &state,
+        user.id,
+        team_service::CreateTeamInput {
+            name: "Maintenance Team".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let policy = default_policy(&state).await;
+    let driver = state.driver_registry.get_driver(&policy).unwrap();
+    let temp_key = "tmp/team-broken-completed.bin";
+    driver.put(temp_key, b"stale upload").await.unwrap();
+
+    create_upload_session(
+        &state,
+        user.id,
+        Some(team.id),
+        "team-broken-completed",
+        aster_drive::types::UploadSessionStatus::Completed,
+        Utc::now() - Duration::hours(1),
+        Some(temp_key),
+        None,
+        None,
+    )
+    .await;
+
+    let stats = maintenance_service::cleanup_expired_completed_upload_sessions(&state)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.completed_sessions_deleted, 1);
+    assert_eq!(stats.broken_completed_sessions_deleted, 1);
+    assert!(
+        upload_session_repo::find_by_id(&state.db, "team-broken-completed")
+            .await
+            .is_err()
+    );
+    assert!(!driver.exists(temp_key).await.unwrap());
 }
 
 #[actix_web::test]

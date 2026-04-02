@@ -1,5 +1,5 @@
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
     QueryOrder, sea_query::Expr,
 };
 
@@ -42,7 +42,13 @@ pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<team::Model>> {
 
 pub async fn check_quota<C: ConnectionTrait>(db: &C, team_id: i64, needed_size: i64) -> Result<()> {
     let team = find_active_by_id(db, team_id).await?;
-    if team.storage_quota > 0 && team.storage_used + needed_size > team.storage_quota {
+    let projected_storage_used = team.storage_used.checked_add(needed_size).ok_or_else(|| {
+        AsterError::internal_error(format!(
+            "team storage usage overflow: used {}, delta {}",
+            team.storage_used, needed_size
+        ))
+    })?;
+    if team.storage_quota > 0 && projected_storage_used > team.storage_quota {
         return Err(AsterError::storage_quota_exceeded(format!(
             "team quota {}, used {}, need {}",
             team.storage_quota, team.storage_used, needed_size
@@ -61,14 +67,39 @@ pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64
             .into()
     };
 
-    let result = Team::update_many()
+    let mut query = Team::update_many()
         .col_expr(team::Column::StorageUsed, expr)
         .filter(team::Column::Id.eq(id))
-        .exec(db)
-        .await
-        .map_err(AsterError::from)?;
+        .filter(team::Column::ArchivedAt.is_null());
+
+    if delta >= 0 {
+        query = query.filter(
+            Condition::any().add(team::Column::StorageQuota.eq(0)).add(
+                Expr::col(team::Column::StorageUsed)
+                    .add(delta)
+                    .lte(Expr::col(team::Column::StorageQuota)),
+            ),
+        );
+    }
+
+    let result = query.exec(db).await.map_err(AsterError::from)?;
 
     if result.rows_affected == 0 {
+        if delta >= 0 {
+            let team = find_active_by_id(db, id).await?;
+            let projected_storage_used = team.storage_used.checked_add(delta).ok_or_else(|| {
+                AsterError::internal_error(format!(
+                    "team storage usage overflow: used {}, delta {}",
+                    team.storage_used, delta
+                ))
+            })?;
+            if team.storage_quota > 0 && projected_storage_used > team.storage_quota {
+                return Err(AsterError::storage_quota_exceeded(format!(
+                    "team quota {}, used {}, need {}",
+                    team.storage_quota, team.storage_used, delta
+                )));
+            }
+        }
         return Err(AsterError::record_not_found(format!("team #{id}")));
     }
 

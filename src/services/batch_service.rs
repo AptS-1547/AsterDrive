@@ -82,6 +82,88 @@ fn build_folder_map(folders: Vec<folder::Model>) -> HashMap<i64, folder::Model> 
         .collect()
 }
 
+async fn load_folder_hierarchy_map(
+    db: &sea_orm::DatabaseConnection,
+    file_map: &HashMap<i64, file::Model>,
+    folder_map: &HashMap<i64, folder::Model>,
+) -> Result<HashMap<i64, folder::Model>> {
+    let mut hierarchy = folder_map.clone();
+    let mut frontier: HashSet<i64> = folder_map
+        .values()
+        .filter_map(|folder| folder.parent_id)
+        .chain(file_map.values().filter_map(|file| file.folder_id))
+        .filter(|folder_id| !hierarchy.contains_key(folder_id))
+        .collect();
+
+    while !frontier.is_empty() {
+        let ids: Vec<i64> = frontier.drain().collect();
+        let rows = folder_repo::find_by_ids(db, &ids).await?;
+        for row in rows {
+            let parent_id = row.parent_id;
+            let id = row.id;
+            if hierarchy.insert(id, row).is_none()
+                && let Some(parent_id) = parent_id
+                && !hierarchy.contains_key(&parent_id)
+            {
+                frontier.insert(parent_id);
+            }
+        }
+    }
+
+    Ok(hierarchy)
+}
+
+fn has_selected_ancestor(
+    start_folder_id: Option<i64>,
+    selected_folder_ids: &HashSet<i64>,
+    hierarchy: &HashMap<i64, folder::Model>,
+) -> bool {
+    let mut current = start_folder_id;
+    while let Some(folder_id) = current {
+        if selected_folder_ids.contains(&folder_id) {
+            return true;
+        }
+        current = hierarchy
+            .get(&folder_id)
+            .and_then(|folder| folder.parent_id);
+    }
+    false
+}
+
+fn normalize_selection(
+    file_ids: &[i64],
+    folder_ids: &[i64],
+    file_map: &HashMap<i64, file::Model>,
+    folder_map: &HashMap<i64, folder::Model>,
+    hierarchy: &HashMap<i64, folder::Model>,
+) -> (Vec<i64>, Vec<i64>) {
+    let selected_folder_ids: HashSet<i64> = folder_ids.iter().copied().collect();
+
+    let normalized_folder_ids = folder_ids
+        .iter()
+        .copied()
+        .filter(|folder_id| {
+            let Some(folder) = folder_map.get(folder_id) else {
+                return true;
+            };
+            !has_selected_ancestor(folder.parent_id, &selected_folder_ids, hierarchy)
+        })
+        .collect();
+
+    let normalized_file_ids = file_ids
+        .iter()
+        .copied()
+        .filter(|file_id| {
+            let Some(file) = file_map.get(file_id) else {
+                return true;
+            };
+            !has_selected_ancestor(file.folder_id, &selected_folder_ids, hierarchy)
+        })
+        .collect();
+
+    (normalized_file_ids, normalized_folder_ids)
+}
+
 fn reserve_unique_name(reserved_names: &mut HashSet<String>, original_name: &str) -> String {
     let mut candidate = original_name.to_string();
     while !reserved_names.insert(candidate.clone()) {
@@ -136,12 +218,15 @@ pub(crate) async fn batch_delete_in_scope(
     let mut result = BatchResult::new();
     let file_map = build_file_map(file_repo::find_by_ids(&state.db, file_ids).await?);
     let folder_map = build_folder_map(folder_repo::find_by_ids(&state.db, folder_ids).await?);
+    let hierarchy = load_folder_hierarchy_map(&state.db, &file_map, &folder_map).await?;
+    let (normalized_file_ids, normalized_folder_ids) =
+        normalize_selection(file_ids, folder_ids, &file_map, &folder_map, &hierarchy);
 
     let mut file_ids_to_delete = HashSet::new();
     let mut root_folder_ids_to_delete = Vec::new();
     let mut queued_root_folders = HashSet::new();
 
-    for &id in file_ids {
+    for &id in &normalized_file_ids {
         let Some(file) = file_map.get(&id) else {
             result.record_failure(
                 "file",
@@ -166,7 +251,7 @@ pub(crate) async fn batch_delete_in_scope(
         file_ids_to_delete.insert(id);
     }
 
-    for &id in folder_ids {
+    for &id in &normalized_folder_ids {
         let Some(folder) = folder_map.get(&id) else {
             result.record_failure(
                 "folder",
@@ -395,6 +480,10 @@ pub(crate) async fn batch_copy_in_scope(
 
     let mut result = BatchResult::new();
     let file_map = build_file_map(file_repo::find_by_ids(&state.db, file_ids).await?);
+    let folder_map = build_folder_map(folder_repo::find_by_ids(&state.db, folder_ids).await?);
+    let hierarchy = load_folder_hierarchy_map(&state.db, &file_map, &folder_map).await?;
+    let (normalized_file_ids, normalized_folder_ids) =
+        normalize_selection(file_ids, folder_ids, &file_map, &folder_map, &hierarchy);
     let target_error = load_target_folder_in_scope(state, scope, target_folder_id)
         .await
         .err();
@@ -413,7 +502,7 @@ pub(crate) async fn batch_copy_in_scope(
         workspace_storage_service::load_storage_limits(state, scope).await?;
     let mut file_copy_specs = Vec::new();
 
-    for &id in file_ids {
+    for &id in &normalized_file_ids {
         let Some(file) = file_map.get(&id) else {
             result.record_failure(
                 "file",
@@ -467,7 +556,7 @@ pub(crate) async fn batch_copy_in_scope(
         .await?;
     }
 
-    for &id in folder_ids {
+    for &id in &normalized_folder_ids {
         if let Some(error) = target_error.as_ref() {
             result.record_failure("folder", id, error.clone());
             continue;

@@ -25,9 +25,21 @@ export function getCurrentWorkspace() {
 export function bindWorkspaceService<T extends object>(
 	factory: (workspace: Workspace) => T,
 ): T {
+	let cachedService: T | null = null;
+	let cachedWorkspace: Workspace | null = null;
+
 	return new Proxy({} as T, {
 		get(_target, prop) {
-			const service = factory(getCurrentWorkspace());
+			const workspace = getCurrentWorkspace();
+			if (
+				cachedService === null ||
+				cachedWorkspace === null ||
+				!workspaceEquals(cachedWorkspace, workspace)
+			) {
+				cachedWorkspace = workspace;
+				cachedService = factory(workspace);
+			}
+			const service = cachedService;
 			const value = service[prop as keyof T];
 			return typeof value === "function" ? value.bind(service) : value;
 		},

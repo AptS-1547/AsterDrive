@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { workspaceKey } from "@/lib/workspace";
 import { ApiError, api } from "@/services/http";
 import {
+	buildUploadPath,
 	type CompletedPart,
 	type InitUploadResponse,
 	isRetryableUploadError,
@@ -402,8 +403,12 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 		// ── 断点续传：mount 时恢复未完成 session ──
 		useEffect(() => {
+			const currentWorkspaceKey = workspaceKey(workspace);
+			if (restoredWorkspaceKeysRef.current.has(currentWorkspaceKey)) {
+				return;
+			}
 			void restorePendingSessions();
-		}, []);
+		}, [workspace]);
 
 		/** 用户为 pending_file task 选好文件后注入 File → 转为 queued */
 		const attachFileToTask = useCallback(
@@ -522,18 +527,22 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			[finalizeTaskRefresh, markTaskFailed, patchTask, t],
 		);
 
-		const buildDirectUploadPath = useCallback((task: UploadTask) => {
-			const params = new URLSearchParams();
-			const folderId = task.baseFolderId;
-			if (folderId !== null) {
-				params.set("folder_id", String(folderId));
-			}
-			if (task.relativePath) {
-				params.set("relative_path", task.relativePath);
-			}
-			const query = params.toString();
-			return query ? `/files/upload?${query}` : "/files/upload";
-		}, []);
+		const buildDirectUploadPath = useCallback(
+			(task: UploadTask) => {
+				const params = new URLSearchParams();
+				const folderId = task.baseFolderId;
+				if (folderId !== null) {
+					params.set("folder_id", String(folderId));
+				}
+				if (task.relativePath) {
+					params.set("relative_path", task.relativePath);
+				}
+				const basePath = buildUploadPath(workspace, "/files/upload");
+				const query = params.toString();
+				return query ? `${basePath}?${query}` : basePath;
+			},
+			[workspace],
+		);
 
 		const runDirectUpload = useCallback(
 			async (task: UploadTask) => {

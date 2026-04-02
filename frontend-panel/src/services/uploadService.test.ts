@@ -37,6 +37,7 @@ class MockXMLHttpRequest {
 
 	headers: Record<string, string> = {};
 	method?: string;
+	onabort?: () => void;
 	onerror?: () => void;
 	onload?: () => void;
 	responseHeaders: Record<string, string> = {};
@@ -70,6 +71,10 @@ class MockXMLHttpRequest {
 		this.sentBody = body;
 	}
 
+	abort() {
+		this.onabort?.();
+	}
+
 	getResponseHeader(name: string) {
 		return this.responseHeaders[name] ?? null;
 	}
@@ -89,7 +94,7 @@ describe("uploadService", () => {
 		});
 	});
 
-	it("uses the expected init/cancel/progress/presign endpoints", async () => {
+	it("uses the expected init/cancel/progress/presign endpoints for the personal workspace", async () => {
 		const { createUploadService, uploadService } = await import(
 			"@/services/uploadService"
 		);
@@ -120,6 +125,11 @@ describe("uploadService", () => {
 			},
 		);
 
+		expect(createUploadService).toBeTypeOf("function");
+	});
+
+	it("uses the expected init/cancel/progress/presign endpoints for team workspaces", async () => {
+		const { createUploadService } = await import("@/services/uploadService");
 		const teamUploadService = createUploadService({ kind: "team", teamId: 8 });
 		teamUploadService.initUpload({
 			filename: "team.txt",
@@ -129,24 +139,17 @@ describe("uploadService", () => {
 		teamUploadService.getProgress("upload-2");
 		teamUploadService.presignParts("upload-2", [1]);
 
-		expect(mockState.post).toHaveBeenNthCalledWith(
-			3,
-			"/teams/8/files/upload/init",
-			{
-				filename: "team.txt",
-				total_size: 3,
-			},
-		);
-		expect(mockState.delete).toHaveBeenNthCalledWith(
-			2,
+		expect(mockState.post).toHaveBeenCalledWith("/teams/8/files/upload/init", {
+			filename: "team.txt",
+			total_size: 3,
+		});
+		expect(mockState.delete).toHaveBeenCalledWith(
 			"/teams/8/files/upload/upload-2",
 		);
-		expect(mockState.get).toHaveBeenNthCalledWith(
-			2,
+		expect(mockState.get).toHaveBeenCalledWith(
 			"/teams/8/files/upload/upload-2",
 		);
-		expect(mockState.post).toHaveBeenNthCalledWith(
-			4,
+		expect(mockState.post).toHaveBeenCalledWith(
 			"/teams/8/files/upload/upload-2/presign-parts",
 			{
 				part_numbers: [1],
@@ -225,6 +228,41 @@ describe("uploadService", () => {
 		xhrNetwork.onerror?.();
 		await expect(networkFailure).rejects.toThrow("network error");
 		await expect(networkFailure).rejects.toMatchObject({ retryable: true });
+
+		const parseFailure = uploadService.uploadChunk(
+			"upload-1",
+			4,
+			new Blob(["d"]),
+		);
+		const xhrParse = MockXMLHttpRequest.instances[3];
+		xhrParse.status = 200;
+		xhrParse.responseText = "";
+		xhrParse.onload?.();
+		await expect(parseFailure).rejects.toBeInstanceOf(UploadRequestError);
+		await expect(parseFailure).rejects.toMatchObject({
+			status: 200,
+			retryable: false,
+		});
+	});
+
+	it("rejects presigned uploads when the caller aborts the XHR", async () => {
+		const { UploadRequestError, uploadService } = await import(
+			"@/services/uploadService"
+		);
+		const promise = uploadService.presignedUpload(
+			"https://storage.example/upload",
+			new Blob(["hello"]),
+		);
+		const xhr = MockXMLHttpRequest.instances[0];
+
+		xhr.abort();
+
+		await expect(promise).rejects.toThrow("upload aborted");
+		await expect(promise).rejects.toBeInstanceOf(UploadRequestError);
+		await expect(promise).rejects.toMatchObject({
+			status: 0,
+			retryable: false,
+		});
 	});
 
 	it("completes uploads with the expected payload and timeout policy", async () => {

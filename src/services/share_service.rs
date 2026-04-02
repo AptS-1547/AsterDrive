@@ -129,6 +129,11 @@ pub(crate) async fn create_share_in_scope(
             "file_id or folder_id is required",
         ));
     }
+    if file_id.is_some() && folder_id.is_some() {
+        return Err(AsterError::validation_error(
+            "only one of file_id or folder_id is allowed",
+        ));
+    }
 
     let existing = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
@@ -824,9 +829,13 @@ async fn load_valid_share(state: &AppState, token: &str) -> Result<share::Model>
         .await?
         .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
     if let Some(team_id) = share.team_id {
-        team_repo::find_active_by_id(&state.db, team_id)
-            .await
-            .map_err(|_| AsterError::share_not_found(format!("token={token}")))?;
+        match team_repo::find_active_by_id(&state.db, team_id).await {
+            Ok(_) => {}
+            Err(AsterError::RecordNotFound(_)) => {
+                return Err(AsterError::share_not_found(format!("token={token}")));
+            }
+            Err(error) => return Err(error),
+        }
     }
     validate_share(&share)?;
     Ok(share)

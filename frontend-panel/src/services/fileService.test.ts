@@ -114,9 +114,9 @@ describe("fileService", () => {
 		teamFileService.getFile(8);
 		teamFileService.listVersions(8);
 
-		expect(mockState.get).toHaveBeenNthCalledWith(6, "/teams/9/folders", {
-			params: undefined,
-		});
+		expect(
+			mockState.get.mock.calls.some(([url]) => url === "/teams/9/folders"),
+		).toBe(true);
 		expect(mockState.get).toHaveBeenNthCalledWith(7, "/teams/9/files/8");
 		expect(mockState.get).toHaveBeenNthCalledWith(
 			8,

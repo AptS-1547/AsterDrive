@@ -191,6 +191,7 @@ impl MigrationTrait for Migration {
                             .timestamp_with_time_zone()
                             .not_null(),
                     )
+                    .check(Expr::col(TeamMembers::Role).is_in(["owner", "admin", "member"]))
                     .foreign_key(
                         ForeignKey::create()
                             .from(TeamMembers::Table, TeamMembers::TeamId)

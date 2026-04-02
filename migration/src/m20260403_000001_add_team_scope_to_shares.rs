@@ -23,7 +23,7 @@ impl MigrationTrait for Migration {
                         .name("fk_shares_team_id")
                         .from(Shares::Table, Shares::TeamId)
                         .to(Teams::Table, Teams::Id)
-                        .on_delete(ForeignKeyAction::SetNull)
+                        .on_delete(ForeignKeyAction::Cascade)
                         .to_owned(),
                 )
                 .await?;

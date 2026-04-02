@@ -1,8 +1,8 @@
 import { config } from "@/config/app";
 import {
+	buildWorkspacePath,
 	PERSONAL_WORKSPACE,
 	type Workspace,
-	workspaceApiPrefix,
 } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
@@ -63,8 +63,8 @@ export function isRetryableUploadError(error: unknown): boolean {
 	);
 }
 
-function uploadPath(workspace: Workspace, path: string) {
-	return `${workspaceApiPrefix(workspace)}${path}`;
+export function buildUploadPath(workspace: Workspace, path: string) {
+	return buildWorkspacePath(workspace, path);
 }
 
 export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
@@ -76,7 +76,7 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 			relative_path?: string;
 		}) =>
 			api.post<InitUploadResponse>(
-				uploadPath(workspace, "/files/upload/init"),
+				buildUploadPath(workspace, "/files/upload/init"),
 				data,
 			),
 
@@ -90,7 +90,7 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 				const xhr = new XMLHttpRequest();
 				xhr.open(
 					"PUT",
-					`${config.apiBaseUrl}${uploadPath(
+					`${config.apiBaseUrl}${buildUploadPath(
 						workspace,
 						`/files/upload/${uploadId}/${chunkNumber}`,
 					)}`,
@@ -106,15 +106,36 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 
 				xhr.onload = () => {
 					if (xhr.status >= 200 && xhr.status < 300) {
-						const resp = JSON.parse(xhr.responseText);
-						if (resp.code === 0) {
-							resolve(resp.data);
-						} else {
+						try {
+							const resp = JSON.parse(xhr.responseText) as {
+								code?: number;
+								msg?: string;
+								data?: ChunkUploadResponse;
+							};
+							if (resp.code === 0) {
+								resolve(resp.data as ChunkUploadResponse);
+							} else {
+								reject(
+									new UploadRequestError(
+										resp.msg ?? `chunk upload failed: ${xhr.status}`,
+										{
+											status: xhr.status,
+											retryable: false,
+										},
+									),
+								);
+							}
+						} catch (error) {
 							reject(
-								new UploadRequestError(resp.msg, {
-									status: xhr.status,
-									retryable: false,
-								}),
+								new UploadRequestError(
+									error instanceof Error
+										? error.message
+										: "failed to parse upload response",
+									{
+										status: xhr.status,
+										retryable: isRetryableHttpStatus(xhr.status),
+									},
+								),
 							);
 						}
 					} else {
@@ -145,7 +166,7 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 			parts?: CompletedPart[],
 		): Promise<FileInfo> => {
 			const resp = await api.client.post<ApiResponse<FileInfo>>(
-				uploadPath(workspace, `/files/upload/${uploadId}/complete`),
+				buildUploadPath(workspace, `/files/upload/${uploadId}/complete`),
 				parts ? { parts } : undefined,
 				{ timeout: 0 },
 			);
@@ -156,16 +177,16 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 		},
 
 		cancelUpload: (uploadId: string) =>
-			api.delete<void>(uploadPath(workspace, `/files/upload/${uploadId}`)),
+			api.delete<void>(buildUploadPath(workspace, `/files/upload/${uploadId}`)),
 
 		getProgress: (uploadId: string) =>
 			api.get<UploadProgressResponse>(
-				uploadPath(workspace, `/files/upload/${uploadId}`),
+				buildUploadPath(workspace, `/files/upload/${uploadId}`),
 			),
 
 		presignParts: (uploadId: string, partNumbers: number[]) =>
 			api.post<Record<number, string>>(
-				uploadPath(workspace, `/files/upload/${uploadId}/presign-parts`),
+				buildUploadPath(workspace, `/files/upload/${uploadId}/presign-parts`),
 				{
 					part_numbers: partNumbers,
 				},
@@ -219,6 +240,13 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 					reject(
 						new UploadRequestError("network error", {
 							retryable: true,
+						}),
+					);
+				xhr.onabort = () =>
+					reject(
+						new UploadRequestError("upload aborted", {
+							status: xhr.status,
+							retryable: false,
 						}),
 					);
 				xhr.send(file);

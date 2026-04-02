@@ -36,7 +36,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
 				});
 			} catch (error) {
 				logger.warn("Failed to load teams", error);
-				set({ loading: false, loadedForUserId: null });
+				set({ teams: [], loading: false, loadedForUserId: null });
 				throw error;
 			} finally {
 				inFlightEnsure = null;

@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 use crate::entities::{
@@ -95,6 +97,31 @@ pub async fn count_by_team<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<u
         .count(db)
         .await
         .map_err(AsterError::from)
+}
+
+pub async fn count_by_team_ids<C: ConnectionTrait>(
+    db: &C,
+    team_ids: &[i64],
+) -> Result<HashMap<i64, u64>> {
+    if team_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let counts = TeamMember::find()
+        .select_only()
+        .column(team_member::Column::TeamId)
+        .column_as(Expr::col(team_member::Column::Id).count(), "member_count")
+        .filter(team_member::Column::TeamId.is_in(team_ids.iter().copied()))
+        .group_by(team_member::Column::TeamId)
+        .into_tuple::<(i64, i64)>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    Ok(counts
+        .into_iter()
+        .map(|(team_id, member_count)| (team_id, member_count as u64))
+        .collect())
 }
 
 pub async fn count_by_team_and_role<C: ConnectionTrait>(

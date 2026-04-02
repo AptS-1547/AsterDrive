@@ -330,9 +330,5 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 }));
 
 export function forceLogout() {
-	cancelPreferenceSync();
-	clearRefreshTimer();
-	setStoredExpiresAt(null);
-	setCachedUser(null);
-	useAuthStore.setState(LOGGED_OUT_STATE);
+	applyLoggedOutState((state) => useAuthStore.setState(state));
 }

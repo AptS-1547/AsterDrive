@@ -1,7 +1,7 @@
 import {
+	buildWorkspacePath,
 	PERSONAL_WORKSPACE,
 	type Workspace,
-	workspaceApiPrefix,
 } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type { PurgedCountResponse, TrashContents } from "@/types/api";
@@ -16,7 +16,7 @@ export interface TrashListParams {
 }
 
 function trashPath(workspace: Workspace) {
-	return `${workspaceApiPrefix(workspace)}/trash`;
+	return buildWorkspacePath(workspace, "/trash");
 }
 
 export function createTrashService(workspace: Workspace = PERSONAL_WORKSPACE) {

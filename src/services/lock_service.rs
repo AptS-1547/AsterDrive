@@ -218,11 +218,14 @@ pub async fn resolve_entity_path(
         EntityType::File => {
             let f = file_repo::find_by_id(db, entity_id).await?;
             let folder_path = match f.folder_id {
-                Some(folder_id) => folder_service::build_folder_paths(db, &[folder_id])
-                    .await?
-                    .remove(&folder_id)
-                    .map(|path| format!("{path}/"))
-                    .unwrap_or_default(),
+                Some(folder_id) => {
+                    let mut folder_paths =
+                        folder_service::build_folder_paths(db, &[folder_id]).await?;
+                    let path = folder_paths.remove(&folder_id).ok_or_else(|| {
+                        AsterError::record_not_found(format!("folder #{folder_id}"))
+                    })?;
+                    format!("{path}/")
+                }
                 None => String::new(),
             };
             if let Some(team_id) = f.team_id {

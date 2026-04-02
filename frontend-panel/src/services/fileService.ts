@@ -1,8 +1,8 @@
 import { config } from "@/config/app";
 import {
+	buildWorkspacePath,
 	PERSONAL_WORKSPACE,
 	type Workspace,
-	workspaceApiPrefix,
 } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
@@ -25,83 +25,88 @@ export interface FolderListParams {
 	sort_order?: "asc" | "desc";
 }
 
-function buildPath(workspace: Workspace, path: string) {
-	return `${workspaceApiPrefix(workspace)}${path}`;
-}
-
 export function createFileService(workspace: Workspace = PERSONAL_WORKSPACE) {
 	return {
 		listRoot: (params?: FolderListParams) =>
-			api.get<FolderContents>(buildPath(workspace, "/folders"), { params }),
+			api.get<FolderContents>(buildWorkspacePath(workspace, "/folders"), {
+				params,
+			}),
 
 		listFolder: (id: number, params?: FolderListParams) =>
-			api.get<FolderContents>(buildPath(workspace, `/folders/${id}`), {
+			api.get<FolderContents>(buildWorkspacePath(workspace, `/folders/${id}`), {
 				params,
 			}),
 
 		getFolderAncestors: (id: number) =>
 			api.get<FolderAncestorItem[]>(
-				buildPath(workspace, `/folders/${id}/ancestors`),
+				buildWorkspacePath(workspace, `/folders/${id}/ancestors`),
 			),
 
 		createFolder: (name: string, parentId?: number | null) =>
-			api.post<FolderInfo>(buildPath(workspace, "/folders"), {
+			api.post<FolderInfo>(buildWorkspacePath(workspace, "/folders"), {
 				name,
 				parent_id: parentId ?? null,
 			}),
 
 		deleteFolder: (id: number) =>
-			api.delete<void>(buildPath(workspace, `/folders/${id}`)),
+			api.delete<void>(buildWorkspacePath(workspace, `/folders/${id}`)),
 
 		renameFolder: (id: number, name: string) =>
-			api.patch<FolderInfo>(buildPath(workspace, `/folders/${id}`), {
+			api.patch<FolderInfo>(buildWorkspacePath(workspace, `/folders/${id}`), {
 				name,
 			}),
 
 		getFile: (id: number) =>
-			api.get<FileInfo>(buildPath(workspace, `/files/${id}`)),
+			api.get<FileInfo>(buildWorkspacePath(workspace, `/files/${id}`)),
 
 		deleteFile: (id: number) =>
-			api.delete<void>(buildPath(workspace, `/files/${id}`)),
+			api.delete<void>(buildWorkspacePath(workspace, `/files/${id}`)),
 
 		renameFile: (id: number, name: string) =>
-			api.patch<FileInfo>(buildPath(workspace, `/files/${id}`), {
+			api.patch<FileInfo>(buildWorkspacePath(workspace, `/files/${id}`), {
 				name,
 			}),
 
-		downloadPath: (id: number) => buildPath(workspace, `/files/${id}/download`),
+		downloadPath: (id: number) =>
+			buildWorkspacePath(workspace, `/files/${id}/download`),
 
 		downloadUrl: (id: number) =>
-			`${config.apiBaseUrl}${buildPath(workspace, `/files/${id}/download`)}`,
+			`${config.apiBaseUrl}${buildWorkspacePath(workspace, `/files/${id}/download`)}`,
 
 		thumbnailPath: (id: number) =>
-			buildPath(workspace, `/files/${id}/thumbnail`),
+			buildWorkspacePath(workspace, `/files/${id}/thumbnail`),
 
 		setFileLock: (id: number, locked: boolean) =>
-			api.post<FileInfo>(buildPath(workspace, `/files/${id}/lock`), {
+			api.post<FileInfo>(buildWorkspacePath(workspace, `/files/${id}/lock`), {
 				locked,
 			}),
 
 		setFolderLock: (id: number, locked: boolean) =>
-			api.post<FolderInfo>(buildPath(workspace, `/folders/${id}/lock`), {
-				locked,
-			}),
+			api.post<FolderInfo>(
+				buildWorkspacePath(workspace, `/folders/${id}/lock`),
+				{
+					locked,
+				},
+			),
 
 		createEmptyFile: (name: string, folderId?: number | null) =>
-			api.post<FileInfo>(buildPath(workspace, "/files/new"), {
+			api.post<FileInfo>(buildWorkspacePath(workspace, "/files/new"), {
 				name,
 				folder_id: folderId ?? null,
 			}),
 
 		copyFile: (id: number, folderId?: number | null) =>
-			api.post<FileInfo>(buildPath(workspace, `/files/${id}/copy`), {
+			api.post<FileInfo>(buildWorkspacePath(workspace, `/files/${id}/copy`), {
 				folder_id: folderId ?? null,
 			}),
 
 		copyFolder: (id: number, parentId?: number | null) =>
-			api.post<FolderInfo>(buildPath(workspace, `/folders/${id}/copy`), {
-				parent_id: parentId ?? null,
-			}),
+			api.post<FolderInfo>(
+				buildWorkspacePath(workspace, `/folders/${id}/copy`),
+				{
+					parent_id: parentId ?? null,
+				},
+			),
 
 		updateContent: async (id: number, content: string, etag?: string) => {
 			const headers: Record<string, string> = {
@@ -110,7 +115,7 @@ export function createFileService(workspace: Workspace = PERSONAL_WORKSPACE) {
 			if (etag) headers["If-Match"] = etag;
 			try {
 				const resp = await api.client.put(
-					buildPath(workspace, `/files/${id}/content`),
+					buildWorkspacePath(workspace, `/files/${id}/content`),
 					content,
 					{
 						headers,
@@ -139,16 +144,21 @@ export function createFileService(workspace: Workspace = PERSONAL_WORKSPACE) {
 		},
 
 		listVersions: (id: number) =>
-			api.get<FileVersion[]>(buildPath(workspace, `/files/${id}/versions`)),
+			api.get<FileVersion[]>(
+				buildWorkspacePath(workspace, `/files/${id}/versions`),
+			),
 
 		restoreVersion: (fileId: number, versionId: number) =>
 			api.post<FileInfo>(
-				buildPath(workspace, `/files/${fileId}/versions/${versionId}/restore`),
+				buildWorkspacePath(
+					workspace,
+					`/files/${fileId}/versions/${versionId}/restore`,
+				),
 			),
 
 		deleteVersion: (fileId: number, versionId: number) =>
 			api.delete<void>(
-				buildPath(workspace, `/files/${fileId}/versions/${versionId}`),
+				buildWorkspacePath(workspace, `/files/${fileId}/versions/${versionId}`),
 			),
 	};
 }

@@ -124,7 +124,9 @@ async fn find_active_by_resource_in_scope<C: ConnectionTrait>(
     file_id: Option<i64>,
     folder_id: Option<i64>,
 ) -> Result<Option<share::Model>> {
-    let mut q = Share::find().filter(scope_condition(scope));
+    let mut q = Share::find()
+        .filter(scope_condition(scope))
+        .filter(active_share_condition());
     if let Some(file_id) = file_id {
         q = q.filter(share::Column::FileId.eq(file_id));
     }

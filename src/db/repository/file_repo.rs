@@ -948,7 +948,6 @@ pub async fn find_expired_deleted<C: ConnectionTrait>(
     before: chrono::DateTime<Utc>,
 ) -> Result<Vec<file::Model>> {
     File::find()
-        .filter(file::Column::TeamId.is_null())
         .filter(file::Column::DeletedAt.is_not_null())
         .filter(file::Column::DeletedAt.lt(before))
         .all(db)
