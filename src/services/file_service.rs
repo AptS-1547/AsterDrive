@@ -989,11 +989,7 @@ pub(crate) async fn get_thumbnail_data_in_scope(
     file_id: i64,
 ) -> Result<Option<ThumbnailResult>> {
     let f = get_info_in_scope(state, scope, file_id).await?;
-    if !thumbnail_service::is_supported_mime(&f.mime_type) {
-        return Err(AsterError::thumbnail_generation_failed(
-            "unsupported image type",
-        ));
-    }
+    thumbnail_service::ensure_supported_mime(&f.mime_type)?;
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
     match thumbnail_service::get_or_enqueue(state, &blob).await? {
         Some(data) => Ok(Some(ThumbnailResult { data })),

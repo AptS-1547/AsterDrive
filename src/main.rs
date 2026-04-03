@@ -49,12 +49,13 @@ async fn main() -> std::io::Result<()> {
         n => n,
     };
 
-    let db = state.db.clone();
+    let configure_db = state.db.clone();
+    let shutdown_db = state.db.clone();
     let state = web::Data::new(state);
 
     let value = state.clone();
     let server = HttpServer::new(move || {
-        let db = db.clone();
+        let db = configure_db.clone();
         App::new()
             .wrap(actix_web::middleware::Compress::default())
             .wrap(aster_drive::api::middleware::request_id::RequestIdMiddleware)
@@ -79,13 +80,13 @@ async fn main() -> std::io::Result<()> {
 
     // 优雅关闭监听
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        tracing::info!("received shutdown signal");
+        aster_drive::runtime::shutdown::wait_for_signal().await;
         server_handle.stop(true).await;
     });
 
-    server.await?;
+    let server_result = server.await;
     tracing::info!("server stopped");
+    aster_drive::runtime::shutdown::perform_shutdown(shutdown_db).await;
 
-    Ok(())
+    server_result
 }

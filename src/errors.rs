@@ -135,8 +135,7 @@ impl AsterError {
             | Self::StoragePolicyNotFound(_)
             | Self::FolderNotFound(_)
             | Self::ShareNotFound(_)
-            | Self::UploadSessionNotFound(_)
-            | Self::ThumbnailGenerationFailed(_) => StatusCode::NOT_FOUND,
+            | Self::UploadSessionNotFound(_) => StatusCode::NOT_FOUND,
 
             Self::ShareExpired(_) => StatusCode::NOT_FOUND,
 
@@ -304,5 +303,12 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("no-store, max-age=0")
         );
+    }
+
+    #[test]
+    fn thumbnail_generation_failed_maps_to_server_error() {
+        let err = AsterError::thumbnail_generation_failed("decode failed");
+        assert_eq!(err.http_status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.response_log_level(), ResponseLogLevel::Error);
     }
 }

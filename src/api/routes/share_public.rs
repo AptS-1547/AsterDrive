@@ -290,8 +290,10 @@ pub async fn shared_avatar(
     params(("token" = String, Path, description = "Share token")),
     responses(
         (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 403, description = "Password required"),
-        (status = 404, description = "Not found or not an image"),
+        (status = 404, description = "Share or file not found"),
+        (status = 500, description = "Thumbnail generation failed"),
     ),
 )]
 pub async fn shared_thumbnail(
@@ -326,8 +328,10 @@ pub async fn shared_thumbnail(
     ),
     responses(
         (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 403, description = "Password required or file outside shared scope"),
-        (status = 404, description = "Not found or not an image"),
+        (status = 404, description = "Share or file not found"),
+        (status = 500, description = "Thumbnail generation failed"),
     )
 )]
 pub async fn shared_folder_file_thumbnail(

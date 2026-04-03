@@ -20,6 +20,12 @@ pub fn i32_to_usize(value: i32, value_name: &str) -> Result<usize> {
     })
 }
 
+pub fn i64_to_u64(value: i64, value_name: &str) -> Result<u64> {
+    u64::try_from(value).map_err(|_| {
+        AsterError::internal_error(format!("{value_name} cannot be negative: {value}"))
+    })
+}
+
 pub fn usize_to_i32(value: usize, value_name: &str) -> Result<i32> {
     i32::try_from(value)
         .map_err(|_| AsterError::internal_error(format!("{value_name} exceeds i32 range: {value}")))
@@ -65,6 +71,17 @@ mod tests {
     #[test]
     fn i32_to_usize_rejects_negative_values() {
         let err = i32_to_usize(-1, "total_chunks").unwrap_err();
+        assert_eq!(err.code(), "E004");
+    }
+
+    #[test]
+    fn i64_to_u64_accepts_positive_values() {
+        assert_eq!(i64_to_u64(42, "content_length").unwrap(), 42);
+    }
+
+    #[test]
+    fn i64_to_u64_rejects_negative_values() {
+        let err = i64_to_u64(-1, "content_length").unwrap_err();
         assert_eq!(err.code(), "E004");
     }
 

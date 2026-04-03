@@ -2,6 +2,7 @@ use super::driver::{BlobMetadata, StorageDriver};
 use super::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::utils::numbers;
 use async_trait::async_trait;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::Client;
@@ -292,8 +293,15 @@ impl StorageDriver for S3Driver {
             .await
             .map_err(|err| Self::map_sdk_error("S3 head failed", err))?;
 
+        let size = resp
+            .content_length
+            .map(|value| numbers::i64_to_u64(value, "S3 content_length"))
+            .transpose()
+            .map_err(|err| AsterError::storage_driver_error(err.message().to_string()))?
+            .unwrap_or(0);
+
         Ok(BlobMetadata {
-            size: resp.content_length.unwrap_or(0) as u64,
+            size,
             content_type: resp.content_type,
         })
     }

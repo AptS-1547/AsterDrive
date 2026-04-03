@@ -206,8 +206,11 @@ pub async fn download(
     params(("id" = i64, Path, description = "File ID")),
     responses(
         (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 202, description = "Thumbnail generation in progress"),
+        (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 401, description = "Unauthorized"),
-        (status = 404, description = "Not found or not an image"),
+        (status = 404, description = "File not found"),
+        (status = 500, description = "Thumbnail generation failed"),
     ),
     security(("bearer" = [])),
 )]

@@ -26,6 +26,16 @@ pub fn is_supported_mime(mime: &str) -> bool {
     )
 }
 
+pub fn ensure_supported_mime(mime: &str) -> Result<()> {
+    if is_supported_mime(mime) {
+        return Ok(());
+    }
+
+    Err(AsterError::validation_error(format!(
+        "thumbnails are not supported for MIME type '{mime}'"
+    )))
+}
+
 /// 计算缩略图在存储驱动中的路径
 fn thumb_path(blob_hash: &str) -> String {
     format!(

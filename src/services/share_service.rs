@@ -762,11 +762,7 @@ async fn build_my_share_infos(
 pub async fn get_shared_thumbnail(state: &AppState, token: &str) -> Result<Vec<u8>> {
     let share = load_valid_share(state, token).await?;
     let f = load_share_file_resource(state, &share).await?;
-    if !crate::services::thumbnail_service::is_supported_mime(&f.mime_type) {
-        return Err(AsterError::thumbnail_generation_failed(
-            "unsupported image type",
-        ));
-    }
+    crate::services::thumbnail_service::ensure_supported_mime(&f.mime_type)?;
 
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
     crate::services::thumbnail_service::get_or_generate(state, &blob).await
@@ -780,11 +776,7 @@ pub async fn get_shared_folder_file_thumbnail(
 ) -> Result<Vec<u8>> {
     let (_, f) = load_shared_folder_file_target(state, token, file_id).await?;
 
-    if !crate::services::thumbnail_service::is_supported_mime(&f.mime_type) {
-        return Err(AsterError::thumbnail_generation_failed(
-            "unsupported image type",
-        ));
-    }
+    crate::services::thumbnail_service::ensure_supported_mime(&f.mime_type)?;
 
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
     crate::services::thumbnail_service::get_or_generate(state, &blob).await
