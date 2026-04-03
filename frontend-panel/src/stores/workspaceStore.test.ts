@@ -80,13 +80,16 @@ describe("bindWorkspaceService", () => {
 			workspaceKey: "personal",
 		}));
 
-		expect(() => {
+		const mutateWorkspaceKey = () => {
 			(
 				service as unknown as {
 					workspaceKey: string;
 				}
 			).workspaceKey = "mutated";
-		}).toThrow('Cannot set property "workspaceKey" on workspace-bound service');
+		};
+
+		expect(mutateWorkspaceKey).toThrowError(TypeError);
+		expect(mutateWorkspaceKey).toThrow(/Cannot set property "workspaceKey"/);
 		expect(service.workspaceKey).toBe("personal");
 	});
 });
