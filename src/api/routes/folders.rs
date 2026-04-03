@@ -9,6 +9,7 @@ use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
     folder_service,
+    workspace_storage_service::WorkspaceStorageScope,
 };
 use crate::types::NullablePatch;
 use actix_governor::Governor;
@@ -59,19 +60,16 @@ pub async fn create_folder(
     req: HttpRequest,
     body: web::Json<CreateFolderReq>,
 ) -> Result<HttpResponse> {
-    let folder = folder_service::create(&state, claims.user_id, &body.name, body.parent_id).await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    create_folder_response(
         &state,
-        &ctx,
-        audit_service::AuditAction::FolderCreate,
-        Some("folder"),
-        Some(folder.id),
-        Some(&folder.name),
-        None,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        &body,
     )
-    .await;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
+    .await
 }
 
 #[api_docs_macros::path(
@@ -91,19 +89,15 @@ pub async fn list_root(
     claims: web::ReqData<Claims>,
     query: web::Query<FolderListQuery>,
 ) -> Result<HttpResponse> {
-    let contents = folder_service::list(
+    list_folder_response(
         &state,
-        claims.user_id,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
         None,
-        query.folder_limit(),
-        query.folder_offset(),
-        query.file_limit(),
-        query.file_cursor(),
-        query.sort_by(),
-        query.sort_order(),
+        &query,
     )
-    .await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
+    .await
 }
 
 #[api_docs_macros::path(
@@ -125,19 +119,15 @@ pub async fn list_folder(
     path: web::Path<i64>,
     query: web::Query<FolderListQuery>,
 ) -> Result<HttpResponse> {
-    let contents = folder_service::list(
+    list_folder_response(
         &state,
-        claims.user_id,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
         Some(*path),
-        query.folder_limit(),
-        query.folder_offset(),
-        query.file_limit(),
-        query.file_cursor(),
-        query.sort_by(),
-        query.sort_order(),
+        &query,
     )
-    .await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
+    .await
 }
 
 #[api_docs_macros::path(
@@ -158,8 +148,14 @@ pub async fn get_ancestors(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let ancestors = folder_service::get_ancestors(&state, claims.user_id, *path).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(ancestors)))
+    get_ancestors_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -181,20 +177,16 @@ pub async fn delete_folder(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let folder_id = *path;
-    folder_service::delete(&state, folder_id, claims.user_id).await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    delete_folder_response(
         &state,
-        &ctx,
-        audit_service::AuditAction::FolderDelete,
-        Some("folder"),
-        Some(folder_id),
-        None,
-        None,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
     )
-    .await;
-    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+    .await
 }
 
 #[derive(Deserialize)]
@@ -230,32 +222,17 @@ pub async fn patch_folder(
     path: web::Path<i64>,
     body: web::Json<PatchFolderReq>,
 ) -> Result<HttpResponse> {
-    let folder = folder_service::update(
+    patch_folder_response(
         &state,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
         *path,
-        claims.user_id,
-        body.name.clone(),
-        body.parent_id,
-        body.policy_id,
+        &body,
     )
-    .await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    let action = if body.parent_id.is_present() {
-        audit_service::AuditAction::FolderMove
-    } else {
-        audit_service::AuditAction::FolderRename
-    };
-    audit_service::log(
-        &state,
-        &ctx,
-        action,
-        Some("folder"),
-        Some(folder.id),
-        Some(&folder.name),
-        None,
-    )
-    .await;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
+    .await
 }
 
 // ── Lock ────────────────────────────────────────────────────────────
@@ -286,8 +263,15 @@ pub async fn set_lock(
     path: web::Path<i64>,
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
-    let folder = folder_service::set_lock(&state, *path, claims.user_id, body.locked).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
+    set_lock_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+        body.locked,
+    )
+    .await
 }
 
 // ── Copy ───────────────────────────────────────────────────────────
@@ -320,10 +304,154 @@ pub async fn copy_folder(
     path: web::Path<i64>,
     body: web::Json<CopyFolderReq>,
 ) -> Result<HttpResponse> {
-    let folder = folder_service::copy_folder(&state, *path, claims.user_id, body.parent_id).await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    copy_folder_response(
         &state,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+        &body,
+    )
+    .await
+}
+
+pub(crate) async fn create_folder_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    body: &CreateFolderReq,
+) -> Result<HttpResponse> {
+    let folder = folder_service::create_in_scope(state, scope, &body.name, body.parent_id).await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::FolderCreate,
+        Some("folder"),
+        Some(folder.id),
+        Some(&folder.name),
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
+}
+
+pub(crate) async fn list_folder_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    parent_id: Option<i64>,
+    query: &FolderListQuery,
+) -> Result<HttpResponse> {
+    let contents = folder_service::list_in_scope(
+        state,
+        scope,
+        parent_id,
+        query.folder_limit(),
+        query.folder_offset(),
+        query.file_limit(),
+        query.file_cursor(),
+        query.sort_by(),
+        query.sort_order(),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
+}
+
+pub(crate) async fn get_ancestors_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<HttpResponse> {
+    let ancestors = folder_service::get_ancestors_in_scope(state, scope, folder_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(ancestors)))
+}
+
+pub(crate) async fn delete_folder_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<HttpResponse> {
+    folder_service::delete_in_scope(state, scope, folder_id).await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::FolderDelete,
+        Some("folder"),
+        Some(folder_id),
+        None,
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+pub(crate) async fn patch_folder_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+    body: &PatchFolderReq,
+) -> Result<HttpResponse> {
+    let folder = folder_service::update_in_scope(
+        state,
+        scope,
+        folder_id,
+        body.name.clone(),
+        body.parent_id,
+        body.policy_id,
+    )
+    .await?;
+    let ctx = AuditContext::from_request(req, claims);
+    let action = if body.parent_id.is_present() {
+        audit_service::AuditAction::FolderMove
+    } else if body.policy_id.is_present() {
+        audit_service::AuditAction::FolderPolicyChange
+    } else {
+        audit_service::AuditAction::FolderRename
+    };
+    audit_service::log(
+        state,
+        &ctx,
+        action,
+        Some("folder"),
+        Some(folder.id),
+        Some(&folder.name),
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
+}
+
+pub(crate) async fn set_lock_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+    locked: bool,
+) -> Result<HttpResponse> {
+    let folder = folder_service::set_lock_in_scope(state, scope, folder_id, locked).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
+}
+
+pub(crate) async fn copy_folder_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+    body: &CopyFolderReq,
+) -> Result<HttpResponse> {
+    let folder =
+        folder_service::copy_folder_in_scope(state, scope, folder_id, body.parent_id).await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
         &ctx,
         audit_service::AuditAction::FolderCopy,
         Some("folder"),

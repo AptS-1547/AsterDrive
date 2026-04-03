@@ -6,6 +6,7 @@ import { cancelPreferenceSync } from "@/lib/preferenceSync";
 import { authService } from "@/services/authService";
 import type { SortBy, SortOrder, ViewMode } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
+import { useTeamStore } from "@/stores/teamStore";
 import type { ColorPreset, ThemeMode } from "@/stores/themeStore";
 import { useThemeStore } from "@/stores/themeStore";
 import type { MeResponse, UserPreferences } from "@/types/api";
@@ -138,6 +139,7 @@ function applyLoggedOutState(
 ) {
 	cancelPreferenceSync();
 	clearRefreshTimer();
+	useTeamStore.getState().clear();
 	setStoredExpiresAt(null);
 	setCachedUser(null);
 	setAuthState(LOGGED_OUT_STATE);
@@ -328,9 +330,5 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 }));
 
 export function forceLogout() {
-	cancelPreferenceSync();
-	clearRefreshTimer();
-	setStoredExpiresAt(null);
-	setCachedUser(null);
-	useAuthStore.setState(LOGGED_OUT_STATE);
+	applyLoggedOutState((state) => useAuthStore.setState(state));
 }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { trashService } from "@/services/trashService";
+import { createTrashService, trashService } from "@/services/trashService";
 
 const { apiDelete, apiGet, apiPost } = vi.hoisted(() => ({
 	apiDelete: vi.fn(),
@@ -46,5 +46,28 @@ describe("trashService", () => {
 		expect(apiDelete).toHaveBeenCalledWith("/trash/file/12");
 		expect(apiDelete).toHaveBeenCalledWith("/trash/folder/34");
 		expect(apiDelete).toHaveBeenCalledWith("/trash");
+
+		const teamTrashService = createTrashService({ kind: "team", teamId: 6 });
+		teamTrashService.list();
+		teamTrashService.restoreFile(12);
+		teamTrashService.restoreFolder(34);
+		teamTrashService.purgeFile(12);
+		teamTrashService.purgeFolder(34);
+		teamTrashService.purgeAll();
+
+		expect(apiGet).toHaveBeenNthCalledWith(1, "/teams/6/trash", {
+			params: undefined,
+		});
+		expect(apiPost).toHaveBeenNthCalledWith(
+			1,
+			"/teams/6/trash/file/12/restore",
+		);
+		expect(apiPost).toHaveBeenNthCalledWith(
+			2,
+			"/teams/6/trash/folder/34/restore",
+		);
+		expect(apiDelete).toHaveBeenNthCalledWith(4, "/teams/6/trash/file/12");
+		expect(apiDelete).toHaveBeenNthCalledWith(5, "/teams/6/trash/folder/34");
+		expect(apiDelete).toHaveBeenNthCalledWith(6, "/teams/6/trash");
 	});
 });

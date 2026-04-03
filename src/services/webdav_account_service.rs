@@ -70,6 +70,7 @@ pub async fn create(
     // 如果指定了 root_folder_id，验证文件夹属于该用户
     let root_folder_path = if let Some(fid) = root_folder_id {
         let folder = folder_repo::find_by_id(&state.db, fid).await?;
+        crate::services::folder_service::ensure_personal_folder_scope(&folder)?;
         crate::utils::verify_owner(folder.user_id, user_id, "folder")?;
         crate::services::folder_service::build_folder_paths(&state.db, &[fid])
             .await?

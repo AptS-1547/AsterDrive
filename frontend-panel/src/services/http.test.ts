@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ErrorCode } from "@/types/api";
+import { ErrorCode } from "@/types/api-helpers";
 
 type MockAxiosError = {
 	config?: { _retry?: boolean; url?: string };

@@ -1,13 +1,15 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { AsterDriveWordmark } from "@/components/common/AsterDriveWordmark";
 import { HeaderControls } from "@/components/layout/HeaderControls";
 import { TopBarShell } from "@/components/layout/TopBarShell";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { workspaceRootPath } from "@/lib/workspace";
 import { useFileStore } from "@/stores/fileStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 interface TopBarProps {
 	onSidebarToggle: () => void;
@@ -17,6 +19,8 @@ interface TopBarProps {
 export function TopBar({ onSidebarToggle, actions }: TopBarProps) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const location = useLocation();
+	const workspace = useWorkspaceStore((s) => s.workspace);
 	const search = useFileStore((s) => s.search);
 	const clearSearch = useFileStore((s) => s.clearSearch);
 	const activeQuery = useFileStore((s) => s.searchQuery);
@@ -29,9 +33,9 @@ export function TopBar({ onSidebarToggle, actions }: TopBarProps) {
 
 	const handleSearch = (e: React.KeyboardEvent) => {
 		if (e.key === "Enter" && searchInput.trim()) {
-			// Navigate to file browser if not already there
-			if (window.location.pathname !== "/") {
-				navigate("/");
+			const rootPath = workspaceRootPath(workspace);
+			if (location.pathname !== rootPath) {
+				navigate(rootPath);
 			}
 			search(searchInput.trim());
 		}

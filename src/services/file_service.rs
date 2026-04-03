@@ -1,162 +1,110 @@
-use actix_multipart::Multipart;
 use actix_web::HttpResponse;
 use chrono::Utc;
 use futures::{StreamExt, stream};
-use sea_orm::{ActiveModelTrait, ConnectionTrait, Set, TransactionTrait};
-use tokio::io::AsyncWriteExt;
+use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
 
-use crate::db::repository::{file_repo, upload_session_repo, user_repo};
-use crate::entities::{file, file_blob, upload_session};
+use crate::db::repository::file_repo;
+use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::services::thumbnail_service;
-use crate::types::{NullablePatch, UploadSessionStatus, parse_storage_policy_options};
+use crate::services::{
+    thumbnail_service,
+    workspace_storage_service::{self, WorkspaceStorageScope},
+};
+use crate::types::NullablePatch;
 
-const HASH_BUF_SIZE: usize = 65536; // 64KB
 const BLOB_CLEANUP_CONCURRENCY: usize = 8;
 
-pub(crate) fn local_content_dedup_enabled(policy: &crate::entities::storage_policy::Model) -> bool {
-    policy.driver_type == crate::types::DriverType::Local
-        && parse_storage_policy_options(&policy.options)
-            .content_dedup
-            .unwrap_or(false)
+pub(crate) fn ensure_personal_file_scope(file: &file::Model) -> Result<()> {
+    workspace_storage_service::ensure_personal_file_scope(file)
 }
 
-pub(crate) async fn create_nondedup_blob<C: ConnectionTrait>(
-    db: &C,
-    size: i64,
-    policy_id: i64,
-) -> Result<file_blob::Model> {
-    let blob_key = crate::utils::id::new_short_token();
-    let storage_path = crate::utils::storage_path_from_blob_key(&blob_key);
-    let now = Utc::now();
-
-    file_repo::create_blob(
-        db,
-        file_blob::ActiveModel {
-            hash: Set(blob_key),
-            size: Set(size),
-            policy_id: Set(policy_id),
-            storage_path: Set(storage_path),
-            ref_count: Set(1),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await
-}
-
-pub(crate) async fn create_s3_nondedup_blob<C: ConnectionTrait>(
-    db: &C,
-    size: i64,
-    policy_id: i64,
-    upload_id: &str,
-) -> Result<file_blob::Model> {
-    let now = Utc::now();
-    let file_hash = format!("s3-{upload_id}");
-    let storage_path = format!("files/{upload_id}");
-
-    file_repo::create_blob(
-        db,
-        file_blob::ActiveModel {
-            hash: Set(file_hash),
-            size: Set(size),
-            policy_id: Set(policy_id),
-            storage_path: Set(storage_path),
-            ref_count: Set(1),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await
-}
-
-pub(crate) async fn create_new_file_from_blob<C: ConnectionTrait>(
-    db: &C,
-    user_id: i64,
-    folder_id: Option<i64>,
-    filename: &str,
-    blob: &file_blob::Model,
-    now: chrono::DateTime<Utc>,
-) -> Result<file::Model> {
-    let final_name = file_repo::resolve_unique_filename(db, user_id, folder_id, filename).await?;
-    let mime = mime_guess::from_path(&final_name)
-        .first_or_octet_stream()
-        .to_string();
-
-    file_repo::create(
-        db,
-        file::ActiveModel {
-            name: Set(final_name),
-            folder_id: Set(folder_id),
-            blob_id: Set(blob.id),
-            size: Set(blob.size),
-            user_id: Set(user_id),
-            mime_type: Set(mime),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await
-}
-
-pub(crate) async fn mark_upload_session_completed<C: ConnectionTrait>(
-    db: &C,
-    session_id: &str,
-    file_id: i64,
-) -> Result<()> {
-    let session_fresh = upload_session_repo::find_by_id(db, session_id).await?;
-    let mut active: upload_session::ActiveModel = session_fresh.into();
-    active.status = Set(UploadSessionStatus::Completed);
-    active.file_id = Set(Some(file_id));
-    active.updated_at = Set(Utc::now());
-    upload_session_repo::update(db, active).await?;
-    Ok(())
-}
-
-pub(crate) async fn finalize_upload_session_blob<C: ConnectionTrait>(
-    db: &C,
-    session: &upload_session::Model,
-    blob: &file_blob::Model,
-    now: chrono::DateTime<Utc>,
-) -> Result<file::Model> {
-    let created = create_new_file_from_blob(
-        db,
-        session.user_id,
-        session.folder_id,
-        &session.filename,
-        blob,
-        now,
-    )
-    .await?;
-
-    user_repo::update_storage_used(db, session.user_id, blob.size).await?;
-    mark_upload_session_completed(db, &session.id, created.id).await?;
-    Ok(created)
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn finalize_upload_session_file(
+pub(crate) async fn get_info_in_scope(
     state: &AppState,
-    session: &upload_session::Model,
-    file_hash: &str,
-    size: i64,
-    policy_id: i64,
-    storage_path: &str,
-    now: chrono::DateTime<Utc>,
+    scope: WorkspaceStorageScope,
+    id: i64,
 ) -> Result<file::Model> {
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
-    user_repo::check_quota(&txn, session.user_id, size).await?;
+    workspace_storage_service::verify_file_access(state, scope, id).await
+}
 
-    let blob =
-        file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
-    let created = finalize_upload_session_blob(&txn, session, &blob.model, now).await?;
+pub(crate) async fn download_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    id: i64,
+    if_none_match: Option<&str>,
+) -> Result<HttpResponse> {
+    let file = get_info_in_scope(state, scope, id).await?;
+    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+    build_stream_response(state, &file, &blob, if_none_match).await
+}
 
-    txn.commit().await.map_err(AsterError::from)?;
-    Ok(created)
+pub(crate) async fn delete_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    id: i64,
+) -> Result<()> {
+    let file = get_info_in_scope(state, scope, id).await?;
+    if file.is_locked {
+        return Err(AsterError::resource_locked("file is locked"));
+    }
+    file_repo::soft_delete(&state.db, id).await
+}
+
+pub(crate) async fn update_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    id: i64,
+    name: Option<String>,
+    folder_id: NullablePatch<i64>,
+) -> Result<file::Model> {
+    let db = &state.db;
+    let f = get_info_in_scope(state, scope, id).await?;
+    if f.is_locked {
+        return Err(AsterError::resource_locked("file is locked"));
+    }
+
+    let target_folder = match folder_id {
+        NullablePatch::Absent => f.folder_id,
+        NullablePatch::Null => None,
+        NullablePatch::Value(fid) => Some(fid),
+    };
+    if let NullablePatch::Value(fid) = folder_id {
+        workspace_storage_service::verify_folder_access(state, scope, fid).await?;
+    }
+
+    if let Some(ref n) = name {
+        crate::utils::validate_name(n)?;
+    }
+
+    let final_name = name.as_deref().unwrap_or(&f.name);
+    let existing = match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            file_repo::find_by_name_in_folder(db, user_id, target_folder, final_name).await?
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            file_repo::find_by_name_in_team_folder(db, team_id, target_folder, final_name).await?
+        }
+    };
+    if let Some(existing) = existing
+        && existing.id != id
+    {
+        return Err(AsterError::validation_error(format!(
+            "file '{}' already exists in this folder",
+            final_name
+        )));
+    }
+
+    let mut active: file::ActiveModel = f.into();
+    if let Some(n) = name {
+        active.name = Set(n);
+    }
+    match folder_id {
+        NullablePatch::Absent => {}
+        NullablePatch::Null => active.folder_id = Set(None),
+        NullablePatch::Value(fid) => active.folder_id = Set(Some(fid)),
+    }
+    active.updated_at = Set(Utc::now());
+    active.update(db).await.map_err(AsterError::from)
 }
 
 /// 从临时文件存储 blob 并创建文件记录
@@ -182,252 +130,40 @@ pub async fn store_from_temp(
     existing_file_id: Option<i64>,
     skip_lock_check: bool,
 ) -> Result<file::Model> {
-    let db = &state.db;
-
-    crate::utils::validate_name(filename)?;
-
-    // ── [事务外] 策略解析 ──
-    let policy = resolve_policy_for_size(state, user_id, folder_id, size).await?;
-    let should_dedup = local_content_dedup_enabled(&policy);
-
-    // 文件大小限制
-    if policy.max_file_size > 0 && size > policy.max_file_size {
-        return Err(AsterError::file_too_large(format!(
-            "file size {} exceeds limit {}",
-            size, policy.max_file_size
-        )));
-    }
-
-    // ── [事务外] 配额检查 ──
-    user_repo::check_quota(db, user_id, size).await?;
-
-    let now = Utc::now();
-    let driver = state.driver_registry.get_driver(&policy)?;
-
-    let dedup_target = if should_dedup {
-        // ── [事务外] sha256 计算 ──
-        let file_hash = {
-            use sha2::{Digest, Sha256};
-            use tokio::io::AsyncReadExt;
-            let mut hasher = Sha256::new();
-            let mut reader = tokio::fs::File::open(temp_path)
-                .await
-                .map_aster_err_ctx("open temp", AsterError::file_upload_failed)?;
-            let mut buf = vec![0u8; HASH_BUF_SIZE];
-            loop {
-                let n = reader
-                    .read(&mut buf)
-                    .await
-                    .map_aster_err_ctx("read temp", AsterError::file_upload_failed)?;
-                if n == 0 {
-                    break;
-                }
-                hasher.update(&buf[..n]);
-            }
-            crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
-        };
-        let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-        Some((file_hash, storage_path))
-    } else {
-        None
-    };
-
-    // ── [事务外] 覆盖模式：预读旧文件 + 删除旧缩略图 ──
-    let overwrite_ctx = if let Some(existing_id) = existing_file_id {
-        let old_file = file_repo::find_by_id(db, existing_id).await?;
-        if old_file.is_locked && !skip_lock_check {
-            return Err(AsterError::resource_locked("file is locked"));
-        }
-        let old_blob = file_repo::find_blob_by_id(db, old_file.blob_id).await?;
-        // 覆盖时删除旧缩略图（新 blob 的缩略图会按需生成）
-        if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, &old_blob).await
-        {
-            tracing::warn!("failed to delete thumbnail for blob {}: {e}", old_blob.id);
-        }
-        Some((old_file, old_blob))
-    } else {
-        None
-    };
-
-    let mime = mime_guess::from_path(filename)
-        .first_or_octet_stream()
-        .to_string();
-
-    // ── [事务内] 配额再校验 → blob 查找/创建(ref_count) → 文件记录创建/更新 → 版本记录 → 配额更新 ──
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
-
-    // 事务内配额权威检查（防止并发上传绕过事务外 fast-fail）
-    user_repo::check_quota(&txn, user_id, size).await?;
-
-    let blob = if let Some((file_hash, storage_path)) = dedup_target.as_ref() {
-        // Blob 去重（事务内重新检查，防止并发竞争）
-        let blob =
-            file_repo::find_or_create_blob(&txn, file_hash, size, policy.id, storage_path).await?;
-        if blob.inserted {
-            driver.put_file(storage_path, temp_path).await?;
-        }
-        blob.model
-    } else if policy.driver_type == crate::types::DriverType::S3 {
-        let upload_id = crate::utils::id::new_uuid();
-        let blob = create_s3_nondedup_blob(&txn, size, policy.id, &upload_id).await?;
-        driver.put_file(&blob.storage_path, temp_path).await?;
-        blob
-    } else {
-        let blob = create_nondedup_blob(&txn, size, policy.id).await?;
-        driver.put_file(&blob.storage_path, temp_path).await?;
-        blob
-    };
-
-    let result = if let Some((old_file, old_blob)) = overwrite_ctx {
-        // 覆盖现有文件
-        let existing_id = old_file.id;
-        let mut active: file::ActiveModel = old_file.into();
-        active.blob_id = Set(blob.id);
-        active.size = Set(blob.size);
-        active.mime_type = Set(mime);
-        active.updated_at = Set(now);
-        let updated = active.update(&txn).await.map_err(AsterError::from)?;
-
-        // 版本溯源：保留旧 blob 作为历史版本（不减 ref_count）
-        let next_ver = crate::db::repository::version_repo::next_version(&txn, existing_id).await?;
-        crate::db::repository::version_repo::create(
-            &txn,
-            crate::entities::file_version::ActiveModel {
-                file_id: Set(existing_id),
-                blob_id: Set(old_blob.id),
-                version: Set(next_ver),
-                size: Set(old_blob.size),
-                created_at: Set(now),
-                ..Default::default()
-            },
-        )
-        .await?;
-
-        // 配额：只增加新文件大小（旧版本 blob 已计入配额）
-        user_repo::update_storage_used(&txn, user_id, size).await?;
-
-        updated
-    } else {
-        // 新建文件
-        let created =
-            create_new_file_from_blob(&txn, user_id, folder_id, filename, &blob, now).await?;
-        user_repo::update_storage_used(&txn, user_id, size).await?;
-
-        created
-    };
-
-    txn.commit().await.map_err(AsterError::from)?;
-
-    // ── [事务后] 清理超出上限的旧版本（独立操作，不需要在主事务内） ──
-    if let Some(existing_id) = existing_file_id {
-        crate::services::version_service::cleanup_excess(state, existing_id).await?;
-    }
-
-    Ok(result)
+    workspace_storage_service::store_from_temp(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        folder_id,
+        filename,
+        temp_path,
+        size,
+        existing_file_id,
+        skip_lock_check,
+    )
+    .await
 }
 
 /// 上传文件（REST API，multipart）
 pub async fn upload(
     state: &AppState,
     user_id: i64,
-    payload: &mut Multipart,
+    payload: &mut actix_multipart::Multipart,
     folder_id: Option<i64>,
     relative_path: Option<&str>,
 ) -> Result<file::Model> {
-    let (resolved_folder_id, resolved_filename) = match relative_path {
-        Some(path) => {
-            crate::services::folder_service::resolve_upload_path(state, user_id, folder_id, path)
-                .await?
-        }
-        None => {
-            if let Some(fid) = folder_id {
-                crate::services::folder_service::verify_folder_access(state, user_id, fid).await?;
-            }
-            (folder_id, String::new())
-        }
-    };
-
-    let effective_folder_id = if relative_path.is_some() {
-        resolved_folder_id
-    } else {
-        folder_id
-    };
-    // 流式写入临时文件（不在内存中缓冲整个文件）
-    let mut filename = String::from("unnamed");
-    let temp_dir = &state.config.server.temp_dir;
-    let temp_path =
-        crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
-    tokio::fs::create_dir_all(temp_dir)
-        .await
-        .map_aster_err_ctx("create temp dir", AsterError::file_upload_failed)?;
-
-    let mut temp_file = tokio::fs::File::create(&temp_path)
-        .await
-        .map_aster_err_ctx("create temp", AsterError::file_upload_failed)?;
-    let mut size: i64 = 0;
-
-    while let Some(field) = payload.next().await {
-        let mut field = field.map_aster_err(AsterError::file_upload_failed)?;
-        let is_file = field
-            .content_disposition()
-            .and_then(|cd| cd.get_filename().map(|n| n.to_string()));
-
-        if let Some(name) = is_file {
-            filename = if relative_path.is_some() {
-                resolved_filename.clone()
-            } else {
-                name
-            };
-            while let Some(chunk) = field.next().await {
-                let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
-                temp_file
-                    .write_all(&chunk)
-                    .await
-                    .map_aster_err_ctx("write temp", AsterError::file_upload_failed)?;
-                size += chunk.len() as i64;
-            }
-        }
-    }
-
-    temp_file
-        .flush()
-        .await
-        .map_aster_err_ctx("flush temp", AsterError::file_upload_failed)?;
-    drop(temp_file);
-
-    if size == 0 {
-        crate::utils::cleanup_temp_file(&temp_path).await;
-        return Err(AsterError::validation_error("empty file"));
-    }
-
-    let result = store_from_temp(
+    workspace_storage_service::upload(
         state,
-        user_id,
-        effective_folder_id,
-        &filename,
-        &temp_path,
-        size,
-        None,
-        false,
+        WorkspaceStorageScope::Personal { user_id },
+        payload,
+        folder_id,
+        relative_path,
     )
-    .await;
-
-    // 清理临时文件（put_file 可能已经 rename 走了，忽略错误）
-    crate::utils::cleanup_temp_file(&temp_path).await;
-
-    result
+    .await
 }
 
 /// 获取文件信息
 pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<file::Model> {
-    let f = file_repo::find_by_id(&state.db, id).await?;
-    crate::utils::verify_owner(f.user_id, user_id, "file")?;
-    if f.deleted_at.is_some() {
-        return Err(AsterError::file_not_found(format!(
-            "file #{id} is in trash"
-        )));
-    }
-    Ok(f)
+    get_info_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
 }
 
 /// 下载文件（流式，不全量缓冲）
@@ -437,17 +173,13 @@ pub async fn download(
     user_id: i64,
     if_none_match: Option<&str>,
 ) -> Result<HttpResponse> {
-    let db = &state.db;
-    let f = file_repo::find_by_id(db, id).await?;
-    crate::utils::verify_owner(f.user_id, user_id, "file")?;
-    if f.deleted_at.is_some() {
-        return Err(AsterError::file_not_found(format!(
-            "file #{id} is in trash"
-        )));
-    }
-
-    let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
-    build_stream_response(state, &f, &blob, if_none_match).await
+    download_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        id,
+        if_none_match,
+    )
+    .await
 }
 
 /// 下载文件（无用户校验，用于分享链接，流式）
@@ -458,11 +190,30 @@ pub async fn download_raw(
 ) -> Result<HttpResponse> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
-    let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
+    ensure_personal_file_scope(&f)?;
+    download_raw_unchecked_with_file(state, f, if_none_match).await
+}
+
+#[allow(dead_code)]
+pub(crate) async fn download_raw_unchecked(
+    state: &AppState,
+    id: i64,
+    if_none_match: Option<&str>,
+) -> Result<HttpResponse> {
+    let f = file_repo::find_by_id(&state.db, id).await?;
+    download_raw_unchecked_with_file(state, f, if_none_match).await
+}
+
+async fn download_raw_unchecked_with_file(
+    state: &AppState,
+    f: file::Model,
+    if_none_match: Option<&str>,
+) -> Result<HttpResponse> {
+    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
     build_stream_response(state, &f, &blob, if_none_match).await
 }
 
-fn if_none_match_matches(if_none_match: &str, blob_hash: &str) -> bool {
+pub(crate) fn if_none_match_matches(if_none_match: &str, blob_hash: &str) -> bool {
     if_none_match.split(',').any(|value| {
         let candidate = value.trim();
         candidate == "*" || candidate.trim_matches('"').eq_ignore_ascii_case(blob_hash)
@@ -470,7 +221,7 @@ fn if_none_match_matches(if_none_match: &str, blob_hash: &str) -> bool {
 }
 
 /// 构建流式下载响应
-async fn build_stream_response(
+pub(crate) async fn build_stream_response(
     state: &AppState,
     f: &file::Model,
     blob: &file_blob::Model,
@@ -509,12 +260,7 @@ async fn build_stream_response(
 
 /// 删除文件（软删除 → 回收站）
 pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
-    let f = file_repo::find_by_id(&state.db, id).await?;
-    crate::utils::verify_owner(f.user_id, user_id, "file")?;
-    if f.is_locked {
-        return Err(AsterError::resource_locked("file is locked"));
-    }
-    file_repo::soft_delete(&state.db, id).await
+    delete_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
 }
 
 pub(crate) async fn cleanup_unreferenced_blob(state: &AppState, blob: &file_blob::Model) -> bool {
@@ -667,94 +413,39 @@ pub(crate) async fn cleanup_unreferenced_blob(state: &AppState, blob: &file_blob
     }
 }
 
-/// 永久删除文件（回收站清理用，处理 blob ref_count + 物理文件 + 缩略图 + 配额）
-pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
-    let db = &state.db;
-    let f = file_repo::find_by_id(db, id).await?;
-    crate::utils::verify_owner(f.user_id, user_id, "file")?;
-    // 注意：不检查 is_locked——回收站内的文件和 recursive_purge_folder 都需要无条件清理
+pub(crate) async fn purge_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    id: i64,
+) -> Result<()> {
+    workspace_storage_service::require_scope_access(state, scope).await?;
 
-    let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
+    let file = file_repo::find_by_id(&state.db, id).await?;
+    workspace_storage_service::ensure_file_scope(&file, scope)?;
 
-    // ── [事务内] 版本清理 → 属性删除 → 文件删除 → blob ref_count-- → 配额更新 ──
-    // 注意：文件删除必须在 blob 删除之前（files.blob_id → file_blobs.id FK 约束）
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
-
-    // 版本清理：删除版本记录（file_versions 无 FK 到 file_blobs，安全）
-    let version_blob_ids =
-        crate::db::repository::version_repo::delete_all_by_file_id(&txn, id).await?;
-
-    // 属性删除
-    crate::db::repository::property_repo::delete_all_for_entity(
-        &txn,
-        crate::types::EntityType::File,
-        id,
-    )
-    .await?;
-
-    // 文件删除（先于 blob 删除，解除 FK 引用）
-    file_repo::delete(&txn, id).await?;
-
-    // 版本 blob / 主 blob 引用处理（文件和版本记录已删除，可安全操作 blob）
-    let mut blob_decrements = std::collections::HashMap::<i64, i32>::new();
-    for vblob_id in version_blob_ids {
-        *blob_decrements.entry(vblob_id).or_default() += 1;
-    }
-    *blob_decrements.entry(blob.id).or_default() += 1;
-
-    let blob_ids: Vec<i64> = blob_decrements.keys().copied().collect();
-    let blobs_by_id = file_repo::find_blobs_by_ids(&txn, &blob_ids).await?;
-    let mut blobs_to_cleanup: Vec<file_blob::Model> = Vec::new();
-    let mut total_freed_bytes = 0i64;
-    for (blob_id, decrement) in blob_decrements {
-        let Some(current_blob) = blobs_by_id.get(&blob_id) else {
-            continue;
-        };
-
-        let freed_bytes = current_blob
-            .size
-            .checked_mul(i64::from(decrement))
-            .ok_or_else(|| {
-                AsterError::internal_error(format!(
-                    "freed byte count overflow for blob {blob_id} during purge"
-                ))
-            })?;
-        total_freed_bytes = total_freed_bytes.checked_add(freed_bytes).ok_or_else(|| {
-            AsterError::internal_error(format!(
-                "total freed byte count overflow while purging file {id}"
-            ))
-        })?;
-
-        file_repo::decrement_blob_ref_count_by(&txn, blob_id, decrement).await?;
-        if current_blob.ref_count <= decrement {
-            blobs_to_cleanup.push(current_blob.clone());
-        }
-    }
-
-    // 配额更新
-    user_repo::update_storage_used(&txn, user_id, -total_freed_bytes).await?;
-
-    txn.commit().await.map_err(AsterError::from)?;
-
-    // ── [事务后] 物理文件清理成功后再删 blob 元数据 ──
-    for blob_to_clean in blobs_to_cleanup {
-        if !cleanup_unreferenced_blob(state, &blob_to_clean).await {
-            tracing::warn!(
-                blob_id = blob_to_clean.id,
-                "blob cleanup incomplete after purge; blob row retained for retry"
-            );
-        }
-    }
-
+    batch_purge_in_scope(state, scope, vec![file]).await?;
     Ok(())
+}
+
+/// 永久删除文件，处理 blob ref_count、物理文件、缩略图和配额。
+pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
+    purge_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
 }
 
 /// 批量永久删除文件：一次事务处理所有 DB 操作，事务后并行清理物理文件
 ///
 /// 比逐个调 `purge()` 快得多——N 个文件只需 ~10 次 DB 查询而非 ~12N 次。
-pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64) -> Result<u32> {
+pub(crate) async fn batch_purge_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    files: Vec<file::Model>,
+) -> Result<u32> {
     if files.is_empty() {
         return Ok(0);
+    }
+
+    for file in &files {
+        workspace_storage_service::ensure_file_scope(file, scope)?;
     }
 
     let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
@@ -817,7 +508,7 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
     }
 
     // 5. 配额一次性更新
-    user_repo::update_storage_used(&txn, user_id, -total_freed_bytes).await?;
+    workspace_storage_service::update_storage_used(&txn, scope, -total_freed_bytes).await?;
 
     txn.commit().await.map_err(AsterError::from)?;
 
@@ -836,6 +527,10 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
     Ok(count)
 }
 
+pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64) -> Result<u32> {
+    batch_purge_in_scope(state, WorkspaceStorageScope::Personal { user_id }, files).await
+}
+
 /// 更新文件（重命名/移动）
 pub async fn update(
     state: &AppState,
@@ -844,52 +539,14 @@ pub async fn update(
     name: Option<String>,
     folder_id: NullablePatch<i64>,
 ) -> Result<file::Model> {
-    let db = &state.db;
-    let f = file_repo::find_by_id(db, id).await?;
-    crate::utils::verify_owner(f.user_id, user_id, "file")?;
-    if f.is_locked {
-        return Err(AsterError::resource_locked("file is locked"));
-    }
-
-    // 目标文件夹校验
-    let target_folder = match folder_id {
-        NullablePatch::Absent => f.folder_id,
-        NullablePatch::Null => None,
-        NullablePatch::Value(fid) => Some(fid),
-    };
-    if let NullablePatch::Value(fid) = folder_id {
-        let target = crate::db::repository::folder_repo::find_by_id(db, fid).await?;
-        crate::utils::verify_owner(target.user_id, user_id, "folder")?;
-    }
-
-    // 文件名验证
-    if let Some(ref n) = name {
-        crate::utils::validate_name(n)?;
-    }
-
-    // 同名冲突检查
-    let final_name = name.as_deref().unwrap_or(&f.name);
-    if let Some(existing) =
-        file_repo::find_by_name_in_folder(db, user_id, target_folder, final_name).await?
-        && existing.id != id
-    {
-        return Err(AsterError::validation_error(format!(
-            "file '{}' already exists in this folder",
-            final_name
-        )));
-    }
-
-    let mut active: file::ActiveModel = f.into();
-    if let Some(n) = name {
-        active.name = Set(n);
-    }
-    match folder_id {
-        NullablePatch::Absent => {}
-        NullablePatch::Null => active.folder_id = Set(None),
-        NullablePatch::Value(fid) => active.folder_id = Set(Some(fid)),
-    }
-    active.updated_at = Set(Utc::now());
-    active.update(db).await.map_err(AsterError::from)
+    update_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        id,
+        name,
+        folder_id,
+    )
+    .await
 }
 
 /// 移动文件到指定文件夹（None = 根目录）
@@ -903,34 +560,45 @@ pub async fn move_file(
     user_id: i64,
     target_folder_id: Option<i64>,
 ) -> Result<file::Model> {
+    update_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        id,
+        None,
+        match target_folder_id {
+            Some(folder_id) => NullablePatch::Value(folder_id),
+            None => NullablePatch::Null,
+        },
+    )
+    .await
+}
+
+pub(crate) async fn copy_file_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    src_id: i64,
+    dest_folder_id: Option<i64>,
+) -> Result<file::Model> {
     let db = &state.db;
-    let f = file_repo::find_by_id(db, id).await?;
-    crate::utils::verify_owner(f.user_id, user_id, "file")?;
-    if f.is_locked {
-        return Err(AsterError::resource_locked("file is locked"));
+    let src = get_info_in_scope(state, scope, src_id).await?;
+
+    if let Some(folder_id) = dest_folder_id {
+        workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
     }
 
-    // 验证目标文件夹
-    if let Some(fid) = target_folder_id {
-        let target = crate::db::repository::folder_repo::find_by_id(db, fid).await?;
-        crate::utils::verify_owner(target.user_id, user_id, "folder")?;
-    }
+    let blob = file_repo::find_blob_by_id(db, src.blob_id).await?;
+    workspace_storage_service::check_quota(db, scope, blob.size).await?;
 
-    // 检查同名冲突
-    if let Some(existing) =
-        file_repo::find_by_name_in_folder(db, user_id, target_folder_id, &f.name).await?
-        && existing.id != id
-    {
-        return Err(AsterError::validation_error(format!(
-            "file '{}' already exists in target folder",
-            f.name
-        )));
-    }
+    let copy_name = match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            file_repo::resolve_unique_filename(db, user_id, dest_folder_id, &src.name).await?
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            file_repo::resolve_unique_team_filename(db, team_id, dest_folder_id, &src.name).await?
+        }
+    };
 
-    let mut active: file::ActiveModel = f.into();
-    active.folder_id = Set(target_folder_id);
-    active.updated_at = Set(Utc::now());
-    active.update(db).await.map_err(AsterError::from)
+    duplicate_file_record_in_scope(state, scope, &src, dest_folder_id, &copy_name).await
 }
 
 /// 复制文件（REST API 入口，带权限检查 + 副本命名）
@@ -942,23 +610,118 @@ pub async fn copy_file(
     user_id: i64,
     dest_folder_id: Option<i64>,
 ) -> Result<file::Model> {
-    let db = &state.db;
-    let src = file_repo::find_by_id(db, src_id).await?;
-    crate::utils::verify_owner(src.user_id, user_id, "file")?;
+    copy_file_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        src_id,
+        dest_folder_id,
+    )
+    .await
+}
 
-    if let Some(folder_id) = dest_folder_id {
-        crate::services::folder_service::verify_folder_access(state, user_id, folder_id).await?;
+#[derive(Clone)]
+pub(crate) struct BatchDuplicateFileRecordSpec {
+    pub src: file::Model,
+    pub dest_name: String,
+}
+
+async fn batch_duplicate_file_records_with_specs_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    copy_specs: &[BatchDuplicateFileRecordSpec],
+    dest_folder_id: Option<i64>,
+) -> Result<()> {
+    if copy_specs.is_empty() {
+        return Ok(());
     }
 
-    // 配额检查
-    let blob = file_repo::find_blob_by_id(db, src.blob_id).await?;
-    user_repo::check_quota(db, user_id, blob.size).await?;
+    let total_size = copy_specs.iter().try_fold(0i64, |acc, spec| {
+        acc.checked_add(spec.src.size).ok_or_else(|| {
+            AsterError::internal_error("total copied byte count overflow during batch copy")
+        })
+    })?;
+    let now = chrono::Utc::now();
 
-    // 副本命名：目标无冲突保留原名，有冲突则递增
-    let copy_name =
-        file_repo::resolve_unique_filename(db, user_id, dest_folder_id, &src.name).await?;
+    workspace_storage_service::check_quota(&state.db, scope, total_size).await?;
 
-    duplicate_file_record(state, &src, dest_folder_id, &copy_name).await
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    workspace_storage_service::check_quota(&txn, scope, total_size).await?;
+
+    let mut blob_counts: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
+    for spec in copy_specs {
+        let entry = blob_counts.entry(spec.src.blob_id).or_default();
+        *entry = entry.checked_add(1).ok_or_else(|| {
+            AsterError::internal_error(format!(
+                "blob copy count overflow for blob {} during batch copy",
+                spec.src.blob_id
+            ))
+        })?;
+    }
+    for (&blob_id, &count) in &blob_counts {
+        file_repo::increment_blob_ref_count_by(&txn, blob_id, count).await?;
+    }
+
+    let models: Vec<file::ActiveModel> = copy_specs
+        .iter()
+        .map(|spec| file::ActiveModel {
+            name: Set(spec.dest_name.clone()),
+            folder_id: Set(dest_folder_id),
+            team_id: Set(scope.team_id()),
+            blob_id: Set(spec.src.blob_id),
+            size: Set(spec.src.size),
+            user_id: Set(scope.actor_user_id()),
+            mime_type: Set(spec.src.mime_type.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        })
+        .collect();
+    file_repo::create_many(&txn, models).await?;
+
+    workspace_storage_service::update_storage_used(&txn, scope, total_size).await?;
+
+    txn.commit().await.map_err(AsterError::from)?;
+    Ok(())
+}
+
+pub(crate) async fn duplicate_file_record_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    src: &file::Model,
+    dest_folder_id: Option<i64>,
+    dest_name: &str,
+) -> Result<file::Model> {
+    let blob = file_repo::find_blob_by_id(&state.db, src.blob_id).await?;
+    let now = Utc::now();
+    let blob_size = blob.size;
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    workspace_storage_service::check_quota(&txn, scope, blob_size).await?;
+
+    file_repo::increment_blob_ref_count(&txn, blob.id).await?;
+
+    let new_file = file_repo::create(
+        &txn,
+        file::ActiveModel {
+            name: Set(dest_name.to_string()),
+            folder_id: Set(dest_folder_id),
+            team_id: Set(scope.team_id()),
+            blob_id: Set(src.blob_id),
+            size: Set(src.size),
+            user_id: Set(scope.actor_user_id()),
+            mime_type: Set(src.mime_type.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await?;
+
+    workspace_storage_service::update_storage_used(&txn, scope, blob_size).await?;
+
+    txn.commit().await.map_err(AsterError::from)?;
+
+    Ok(new_file)
 }
 
 /// 复制文件记录的核心逻辑（blob ref_count++ + 新文件记录 + 配额更新）
@@ -970,39 +733,44 @@ pub async fn duplicate_file_record(
     dest_folder_id: Option<i64>,
     dest_name: &str,
 ) -> Result<file::Model> {
-    let blob = file_repo::find_blob_by_id(&state.db, src.blob_id).await?;
-    let now = Utc::now();
-    let blob_size = blob.size;
-
-    // ── [事务内] 配额再校验 → blob ref_count++ → 文件记录创建 → 配额更新 ──
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
-
-    // 事务内配额权威检查（防止并发 copy 绕过事务外 fast-fail）
-    user_repo::check_quota(&txn, src.user_id, blob_size).await?;
-
-    file_repo::increment_blob_ref_count(&txn, blob.id).await?;
-
-    let new_file = file_repo::create(
-        &txn,
-        file::ActiveModel {
-            name: Set(dest_name.to_string()),
-            folder_id: Set(dest_folder_id),
-            blob_id: Set(src.blob_id),
-            size: Set(src.size),
-            user_id: Set(src.user_id),
-            mime_type: Set(src.mime_type.clone()),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
+    duplicate_file_record_in_scope(
+        state,
+        WorkspaceStorageScope::Personal {
+            user_id: src.user_id,
         },
+        src,
+        dest_folder_id,
+        dest_name,
     )
-    .await?;
+    .await
+}
 
-    user_repo::update_storage_used(&txn, src.user_id, blob_size).await?;
+pub(crate) async fn batch_duplicate_file_records_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    src_files: &[file::Model],
+    dest_folder_id: Option<i64>,
+) -> Result<()> {
+    let copy_specs: Vec<BatchDuplicateFileRecordSpec> = src_files
+        .iter()
+        .cloned()
+        .map(|src| BatchDuplicateFileRecordSpec {
+            dest_name: src.name.clone(),
+            src,
+        })
+        .collect();
 
-    txn.commit().await.map_err(AsterError::from)?;
+    batch_duplicate_file_records_with_specs_in_scope(state, scope, &copy_specs, dest_folder_id)
+        .await
+}
 
-    Ok(new_file)
+pub(crate) async fn batch_duplicate_file_records_with_names_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    copy_specs: &[BatchDuplicateFileRecordSpec],
+    dest_folder_id: Option<i64>,
+) -> Result<()> {
+    batch_duplicate_file_records_with_specs_in_scope(state, scope, copy_specs, dest_folder_id).await
 }
 
 /// 批量复制文件记录：一次事务处理 blob ref_count + 文件创建 + 配额
@@ -1019,49 +787,80 @@ pub async fn batch_duplicate_file_records(
         return Ok(());
     }
 
-    let user_id = src_files[0].user_id;
-    let total_size: i64 = src_files.iter().map(|f| f.size).sum();
-    let now = chrono::Utc::now();
+    batch_duplicate_file_records_in_scope(
+        state,
+        WorkspaceStorageScope::Personal {
+            user_id: src_files[0].user_id,
+        },
+        src_files,
+        dest_folder_id,
+    )
+    .await
+}
 
-    // 事务外 fast-fail 配额检查
-    user_repo::check_quota(&state.db, user_id, total_size).await?;
+pub(crate) async fn update_content_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    body: actix_web::web::Bytes,
+    if_match: Option<&str>,
+) -> Result<(file::Model, String)> {
+    let db = &state.db;
+    let f = get_info_in_scope(state, scope, file_id).await?;
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
-
-    // 事务内权威配额检查
-    user_repo::check_quota(&txn, user_id, total_size).await?;
-
-    // 按 blob_id 合并 ref_count 递增
-    let mut blob_counts: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
-    for f in src_files {
-        *blob_counts.entry(f.blob_id).or_default() += 1;
+    if f.is_locked {
+        let lock = crate::db::repository::lock_repo::find_by_entity(
+            db,
+            crate::types::EntityType::File,
+            file_id,
+        )
+        .await?;
+        if let Some(lock) = lock
+            && lock.owner_id != Some(scope.actor_user_id())
+        {
+            return Err(AsterError::resource_locked(
+                "file is locked by another user",
+            ));
+        }
     }
-    for (&blob_id, &count) in &blob_counts {
-        file_repo::increment_blob_ref_count_by(&txn, blob_id, count).await?;
+
+    let current_blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
+    if let Some(etag) = if_match {
+        let expected = etag.trim_matches('"');
+        if !expected.eq_ignore_ascii_case(&current_blob.hash) {
+            return Err(AsterError::precondition_failed(
+                "file has been modified (ETag mismatch)",
+            ));
+        }
     }
 
-    // 批量插入文件记录
-    let models: Vec<file::ActiveModel> = src_files
-        .iter()
-        .map(|f| file::ActiveModel {
-            name: Set(f.name.clone()),
-            folder_id: Set(dest_folder_id),
-            blob_id: Set(f.blob_id),
-            size: Set(f.size),
-            user_id: Set(f.user_id),
-            mime_type: Set(f.mime_type.clone()),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        })
-        .collect();
-    file_repo::create_many(&txn, models).await?;
+    let temp_dir = &state.config.server.temp_dir;
+    let temp_path =
+        crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
+    tokio::fs::create_dir_all(temp_dir)
+        .await
+        .map_aster_err(AsterError::storage_driver_error)?;
+    tokio::fs::write(&temp_path, &body)
+        .await
+        .map_aster_err(AsterError::storage_driver_error)?;
 
-    // 配额一次性更新
-    user_repo::update_storage_used(&txn, user_id, total_size).await?;
+    let size = body.len() as i64;
+    let result = workspace_storage_service::store_from_temp(
+        state,
+        scope,
+        f.folder_id,
+        &f.name,
+        &temp_path,
+        size,
+        Some(file_id),
+        true,
+    )
+    .await;
+    crate::utils::cleanup_temp_file(&temp_path).await;
 
-    txn.commit().await.map_err(AsterError::from)?;
-    Ok(())
+    let updated = result?;
+    let new_blob = file_repo::find_blob_by_id(db, updated.blob_id).await?;
+    Ok((updated, new_blob.hash.clone()))
 }
 
 /// 覆盖文件内容（REST API 编辑入口）
@@ -1075,73 +874,14 @@ pub async fn update_content(
     body: actix_web::web::Bytes,
     if_match: Option<&str>,
 ) -> Result<(file::Model, String)> {
-    let db = &state.db;
-    let f = file_repo::find_by_id(db, file_id).await?;
-    crate::utils::verify_owner(f.user_id, user_id, "file")?;
-    if f.deleted_at.is_some() {
-        return Err(AsterError::file_not_found(format!(
-            "file #{file_id} is in trash"
-        )));
-    }
-
-    // 悲观锁检查：如果文件被锁，只允许锁持有者或文件所有者写入
-    if f.is_locked {
-        let lock = crate::db::repository::lock_repo::find_by_entity(
-            db,
-            crate::types::EntityType::File,
-            file_id,
-        )
-        .await?;
-        if let Some(lock) = lock
-            && lock.owner_id != Some(user_id)
-        {
-            return Err(AsterError::resource_locked(
-                "file is locked by another user",
-            ));
-        }
-    }
-
-    // 乐观锁检查：ETag 比对
-    let current_blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
-    if let Some(etag) = if_match {
-        let expected = etag.trim_matches('"');
-        if !expected.eq_ignore_ascii_case(&current_blob.hash) {
-            return Err(AsterError::precondition_failed(
-                "file has been modified (ETag mismatch)",
-            ));
-        }
-    }
-
-    // 写入临时文件
-    let temp_dir = &state.config.server.temp_dir;
-    let temp_path =
-        crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
-    tokio::fs::create_dir_all(temp_dir)
-        .await
-        .map_aster_err(AsterError::storage_driver_error)?;
-    tokio::fs::write(&temp_path, &body)
-        .await
-        .map_aster_err(AsterError::storage_driver_error)?;
-
-    let size = body.len() as i64;
-
-    // 复用 store_from_temp（自动版本溯源 + blob 去重）
-    // skip_lock_check=true 因为上面已经手动检查过锁持有者了
-    let updated = store_from_temp(
+    update_content_in_scope(
         state,
-        user_id,
-        f.folder_id,
-        &f.name,
-        &temp_path,
-        size,
-        Some(file_id),
-        true,
+        WorkspaceStorageScope::Personal { user_id },
+        file_id,
+        body,
+        if_match,
     )
-    .await?;
-
-    // 获取新 blob hash
-    let new_blob = file_repo::find_blob_by_id(db, updated.blob_id).await?;
-    Ok((updated, new_blob.hash.clone()))
+    .await
 }
 
 /// 根据优先级链解析存储策略：文件夹覆盖 → 用户绑定策略组
@@ -1159,18 +899,41 @@ pub async fn resolve_policy_for_size(
     folder_id: Option<i64>,
     file_size: i64,
 ) -> Result<crate::entities::storage_policy::Model> {
-    // 1. 文件夹级策略
-    if let Some(fid) = folder_id {
-        let folder = crate::db::repository::folder_repo::find_by_id(&state.db, fid).await?;
-        if let Some(pid) = folder.policy_id {
-            return state.policy_snapshot.get_policy_or_err(pid);
-        }
+    workspace_storage_service::resolve_policy_for_size(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        folder_id,
+        file_size,
+    )
+    .await
+}
+
+pub(crate) async fn set_lock_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    locked: bool,
+) -> Result<file::Model> {
+    use crate::services::lock_service;
+    use crate::types::EntityType;
+
+    get_info_in_scope(state, scope, file_id).await?;
+
+    if locked {
+        lock_service::lock(
+            state,
+            EntityType::File,
+            file_id,
+            Some(scope.actor_user_id()),
+            None,
+            None,
+        )
+        .await?;
+    } else {
+        lock_service::unlock(state, EntityType::File, file_id, scope.actor_user_id()).await?;
     }
 
-    // 2. 用户绑定的策略组
-    state
-        .policy_snapshot
-        .resolve_user_policy_for_size(user_id, file_size)
+    get_info_in_scope(state, scope, file_id).await
 }
 
 /// 直接创建空文件（0 字节），不走 multipart upload 流程。
@@ -1186,57 +949,13 @@ pub async fn create_empty(
     folder_id: Option<i64>,
     filename: &str,
 ) -> Result<file::Model> {
-    use crate::db::repository::{file_repo, user_repo};
-
-    let db = &state.db;
-
-    crate::utils::validate_name(filename)?;
-
-    // 空文件固定 sha256
-    const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-    const EMPTY_SIZE: i64 = 0;
-
-    let policy = resolve_policy_for_size(state, user_id, folder_id, EMPTY_SIZE).await?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-    let should_dedup = local_content_dedup_enabled(&policy);
-
-    let now = chrono::Utc::now();
-
-    let txn = db.begin().await.map_err(AsterError::from)?;
-
-    let blob = if should_dedup {
-        let storage_path = crate::utils::storage_path_from_hash(EMPTY_SHA256);
-        let blob = file_repo::find_or_create_blob(
-            &txn,
-            EMPTY_SHA256,
-            EMPTY_SIZE,
-            policy.id,
-            &storage_path,
-        )
-        .await?;
-        if blob.inserted {
-            driver.put(&storage_path, &[]).await?;
-        }
-        blob.model
-    } else if policy.driver_type == crate::types::DriverType::S3 {
-        let upload_id = crate::utils::id::new_uuid();
-        let blob = create_s3_nondedup_blob(&txn, EMPTY_SIZE, policy.id, &upload_id).await?;
-        driver.put(&blob.storage_path, &[]).await?;
-        blob
-    } else {
-        let blob = create_nondedup_blob(&txn, EMPTY_SIZE, policy.id).await?;
-        driver.put(&blob.storage_path, &[]).await?;
-        blob
-    };
-
-    let created = create_new_file_from_blob(&txn, user_id, folder_id, filename, &blob, now).await?;
-
-    // 空文件配额为 0，仍调用以保持一致性
-    user_repo::update_storage_used(&txn, user_id, EMPTY_SIZE).await?;
-
-    txn.commit().await.map_err(AsterError::from)?;
-
-    Ok(created)
+    workspace_storage_service::create_empty(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        folder_id,
+        filename,
+    )
+    .await
 }
 
 // ── Lock ─────────────────────────────────────────────────────────────
@@ -1248,15 +967,13 @@ pub async fn set_lock(
     user_id: i64,
     locked: bool,
 ) -> Result<file::Model> {
-    use crate::services::lock_service;
-    use crate::types::EntityType;
-
-    if locked {
-        lock_service::lock(state, EntityType::File, file_id, Some(user_id), None, None).await?;
-    } else {
-        lock_service::unlock(state, EntityType::File, file_id, user_id).await?;
-    }
-    get_info(state, file_id, user_id).await
+    set_lock_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        file_id,
+        locked,
+    )
+    .await
 }
 
 // ── Thumbnail ────────────────────────────────────────────────────────
@@ -1266,13 +983,12 @@ pub struct ThumbnailResult {
     pub data: Vec<u8>,
 }
 
-/// 获取文件缩略图。返回 `Ok(Some(data))` 直接有图；`Ok(None)` 表示正在后台生成。
-pub async fn get_thumbnail_data(
+pub(crate) async fn get_thumbnail_data_in_scope(
     state: &AppState,
+    scope: WorkspaceStorageScope,
     file_id: i64,
-    user_id: i64,
 ) -> Result<Option<ThumbnailResult>> {
-    let f = get_info(state, file_id, user_id).await?;
+    let f = get_info_in_scope(state, scope, file_id).await?;
     if !thumbnail_service::is_supported_mime(&f.mime_type) {
         return Err(AsterError::thumbnail_generation_failed(
             "unsupported image type",
@@ -1283,4 +999,13 @@ pub async fn get_thumbnail_data(
         Some(data) => Ok(Some(ThumbnailResult { data })),
         None => Ok(None),
     }
+}
+
+/// 获取文件缩略图。返回 `Ok(Some(data))` 直接有图；`Ok(None)` 表示正在后台生成。
+pub async fn get_thumbnail_data(
+    state: &AppState,
+    file_id: i64,
+    user_id: i64,
+) -> Result<Option<ThumbnailResult>> {
+    get_thumbnail_data_in_scope(state, WorkspaceStorageScope::Personal { user_id }, file_id).await
 }

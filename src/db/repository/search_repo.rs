@@ -18,6 +18,30 @@ use sea_orm::sea_query::extension::postgres::PgExpr;
 
 type DateTimeUtc = DateTime<Utc>;
 
+#[derive(Clone, Copy)]
+enum SearchScope {
+    Personal { user_id: i64 },
+    Team { team_id: i64 },
+}
+
+fn file_scope_condition(scope: SearchScope) -> Condition {
+    match scope {
+        SearchScope::Personal { user_id } => Condition::all()
+            .add(file::Column::UserId.eq(user_id))
+            .add(file::Column::TeamId.is_null()),
+        SearchScope::Team { team_id } => Condition::all().add(file::Column::TeamId.eq(team_id)),
+    }
+}
+
+fn folder_scope_condition(scope: SearchScope) -> Condition {
+    match scope {
+        SearchScope::Personal { user_id } => Condition::all()
+            .add(folder::Column::UserId.eq(user_id))
+            .add(folder::Column::TeamId.is_null()),
+        SearchScope::Team { team_id } => Condition::all().add(folder::Column::TeamId.eq(team_id)),
+    }
+}
+
 /// Search result file item (includes blob size from JOIN)
 #[derive(Debug, Serialize, FromQueryResult)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -83,9 +107,9 @@ fn name_search_condition(
 ///
 /// Returns `(items, total_count)`.
 #[allow(clippy::too_many_arguments)]
-pub async fn search_files<C: ConnectionTrait>(
+async fn search_files_in_scope<C: ConnectionTrait>(
     db: &C,
-    user_id: i64,
+    scope: SearchScope,
     query: Option<&str>,
     mime_type: Option<&str>,
     min_size: Option<i64>,
@@ -97,9 +121,7 @@ pub async fn search_files<C: ConnectionTrait>(
     offset: u64,
 ) -> Result<(Vec<FileSearchItem>, u64)> {
     let backend = db.get_database_backend();
-    let mut file_condition = Condition::all()
-        .add(file::Column::UserId.eq(user_id))
-        .add(file::Column::DeletedAt.is_null());
+    let mut file_condition = file_scope_condition(scope).add(file::Column::DeletedAt.is_null());
     let mut blob_condition = Condition::all();
 
     if let Some(q) = query {
@@ -130,8 +152,8 @@ pub async fn search_files<C: ConnectionTrait>(
         file_condition = file_condition.add(file::Column::CreatedAt.lte(before));
     }
 
-    if let Some(fid) = folder_id {
-        file_condition = file_condition.add(file::Column::FolderId.eq(fid));
+    if let Some(folder_id) = folder_id {
+        file_condition = file_condition.add(file::Column::FolderId.eq(folder_id));
     }
 
     let needs_blob_filters = min_size.is_some() || max_size.is_some();
@@ -175,13 +197,73 @@ pub async fn search_files<C: ConnectionTrait>(
     Ok((items, total))
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn search_files<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    query: Option<&str>,
+    mime_type: Option<&str>,
+    min_size: Option<i64>,
+    max_size: Option<i64>,
+    created_after: Option<DateTime<Utc>>,
+    created_before: Option<DateTime<Utc>>,
+    folder_id: Option<i64>,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<FileSearchItem>, u64)> {
+    search_files_in_scope(
+        db,
+        SearchScope::Personal { user_id },
+        query,
+        mime_type,
+        min_size,
+        max_size,
+        created_after,
+        created_before,
+        folder_id,
+        limit,
+        offset,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn search_team_files<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    query: Option<&str>,
+    mime_type: Option<&str>,
+    min_size: Option<i64>,
+    max_size: Option<i64>,
+    created_after: Option<DateTime<Utc>>,
+    created_before: Option<DateTime<Utc>>,
+    folder_id: Option<i64>,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<FileSearchItem>, u64)> {
+    search_files_in_scope(
+        db,
+        SearchScope::Team { team_id },
+        query,
+        mime_type,
+        min_size,
+        max_size,
+        created_after,
+        created_before,
+        folder_id,
+        limit,
+        offset,
+    )
+    .await
+}
+
 /// Search folders with optional filters.
 ///
 /// Returns `(items, total_count)`.
 #[allow(clippy::too_many_arguments)]
-pub async fn search_folders<C: ConnectionTrait>(
+async fn search_folders_in_scope<C: ConnectionTrait>(
     db: &C,
-    user_id: i64,
+    scope: SearchScope,
     query: Option<&str>,
     created_after: Option<DateTime<Utc>>,
     created_before: Option<DateTime<Utc>>,
@@ -190,9 +272,7 @@ pub async fn search_folders<C: ConnectionTrait>(
     offset: u64,
 ) -> Result<(Vec<folder::Model>, u64)> {
     let backend = db.get_database_backend();
-    let mut condition = Condition::all()
-        .add(folder::Column::UserId.eq(user_id))
-        .add(folder::Column::DeletedAt.is_null());
+    let mut condition = folder_scope_condition(scope).add(folder::Column::DeletedAt.is_null());
 
     if let Some(q) = query {
         condition = condition.add(name_search_condition(
@@ -210,8 +290,8 @@ pub async fn search_folders<C: ConnectionTrait>(
         condition = condition.add(folder::Column::CreatedAt.lte(before));
     }
 
-    if let Some(pid) = parent_id {
-        condition = condition.add(folder::Column::ParentId.eq(pid));
+    if let Some(parent_id) = parent_id {
+        condition = condition.add(folder::Column::ParentId.eq(parent_id));
     }
 
     let base = Folder::find().filter(condition);
@@ -231,6 +311,54 @@ pub async fn search_folders<C: ConnectionTrait>(
         .map_err(AsterError::from)?;
 
     Ok((items, total))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn search_folders<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    query: Option<&str>,
+    created_after: Option<DateTime<Utc>>,
+    created_before: Option<DateTime<Utc>>,
+    parent_id: Option<i64>,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<folder::Model>, u64)> {
+    search_folders_in_scope(
+        db,
+        SearchScope::Personal { user_id },
+        query,
+        created_after,
+        created_before,
+        parent_id,
+        limit,
+        offset,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn search_team_folders<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    query: Option<&str>,
+    created_after: Option<DateTime<Utc>>,
+    created_before: Option<DateTime<Utc>>,
+    parent_id: Option<i64>,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<folder::Model>, u64)> {
+    search_folders_in_scope(
+        db,
+        SearchScope::Team { team_id },
+        query,
+        created_after,
+        created_before,
+        parent_id,
+        limit,
+        offset,
+    )
+    .await
 }
 
 #[cfg(test)]

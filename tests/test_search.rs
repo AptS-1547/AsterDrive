@@ -157,6 +157,36 @@ async fn test_search_by_name() {
 }
 
 #[actix_web::test]
+async fn test_search_rejects_invalid_type_and_dates() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let invalid_type_req = test::TestRequest::get()
+        .uri("/api/v1/search?type=bogus")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let invalid_type_resp = test::call_service(&app, invalid_type_req).await;
+    assert_eq!(invalid_type_resp.status(), 400);
+
+    let invalid_date_req = test::TestRequest::get()
+        .uri("/api/v1/search?created_after=not-a-date")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let invalid_date_resp = test::call_service(&app, invalid_date_req).await;
+    assert_eq!(invalid_date_resp.status(), 400);
+
+    let inverted_range_req = test::TestRequest::get()
+        .uri(
+            "/api/v1/search?created_after=2026-04-03T00:00:00Z&created_before=2026-04-02T00:00:00Z",
+        )
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let inverted_range_resp = test::call_service(&app, inverted_range_req).await;
+    assert_eq!(inverted_range_resp.status(), 400);
+}
+
+#[actix_web::test]
 async fn test_search_by_mime_type() {
     let state = common::setup().await;
     let app = create_test_app!(state);

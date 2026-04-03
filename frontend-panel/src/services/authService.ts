@@ -1,5 +1,4 @@
 import type {
-	ApiResponse,
 	AuthTokenResp,
 	AvatarSource,
 	ChangePasswordRequest,
@@ -11,7 +10,7 @@ import type {
 	UserPreferences,
 	UserProfileInfo,
 } from "@/types/api";
-import { ErrorCode } from "@/types/api";
+import { type ApiResponse, ErrorCode } from "@/types/api-helpers";
 import { ApiError, api } from "./http";
 
 export interface AuthSessionInfo {

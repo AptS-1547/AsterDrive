@@ -1,9 +1,12 @@
 import { toast } from "sonner";
 import i18n from "@/i18n";
 import { ApiError } from "@/services/http";
-import { ErrorCode } from "@/types/api";
+import {
+	ErrorCode,
+	type ErrorCode as ErrorCodeType,
+} from "@/types/api-helpers";
 
-const errorMessageKeys: Partial<Record<ErrorCode, string>> = {
+const errorMessageKeys: Partial<Record<ErrorCodeType, string>> = {
 	[ErrorCode.AuthFailed]: "errors:auth_failed",
 	[ErrorCode.TokenExpired]: "errors:token_expired",
 	[ErrorCode.TokenInvalid]: "errors:token_invalid",

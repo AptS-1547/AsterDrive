@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { batchService } from "@/services/batchService";
+import { batchService, createBatchService } from "@/services/batchService";
 
 const apiPost = vi.hoisted(() => vi.fn());
 
@@ -31,6 +31,26 @@ describe("batchService", () => {
 		expect(apiPost).toHaveBeenNthCalledWith(3, "/batch/copy", {
 			file_ids: [],
 			folder_ids: [4],
+			target_folder_id: null,
+		});
+
+		const teamBatchService = createBatchService({ kind: "team", teamId: 4 });
+		teamBatchService.batchDelete([1], []);
+		teamBatchService.batchMove([], [2], 8);
+		teamBatchService.batchCopy([3], [], null);
+
+		expect(apiPost).toHaveBeenNthCalledWith(4, "/teams/4/batch/delete", {
+			file_ids: [1],
+			folder_ids: [],
+		});
+		expect(apiPost).toHaveBeenNthCalledWith(5, "/teams/4/batch/move", {
+			file_ids: [],
+			folder_ids: [2],
+			target_folder_id: 8,
+		});
+		expect(apiPost).toHaveBeenNthCalledWith(6, "/teams/4/batch/copy", {
+			file_ids: [3],
+			folder_ids: [],
 			target_folder_id: null,
 		});
 	});

@@ -15,6 +15,18 @@ pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<user::Mod
         .ok_or_else(|| AsterError::record_not_found(format!("user #{id}")))
 }
 
+pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<user::Model>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    User::find()
+        .filter(user::Column::Id.is_in(ids.iter().copied()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_by_username<C: ConnectionTrait>(
     db: &C,
     username: &str,

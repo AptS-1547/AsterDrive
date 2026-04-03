@@ -1,3 +1,9 @@
+import {
+	buildWorkspacePath,
+	PERSONAL_WORKSPACE,
+	type Workspace,
+} from "@/lib/workspace";
+import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type { PurgedCountResponse, TrashContents } from "@/types/api";
 import { api } from "./http";
 
@@ -9,17 +15,28 @@ export interface TrashListParams {
 	file_after_id?: number;
 }
 
-export const trashService = {
-	list: (params?: TrashListParams) =>
-		api.get<TrashContents>("/trash", { params }),
+function trashPath(workspace: Workspace) {
+	return buildWorkspacePath(workspace, "/trash");
+}
 
-	restoreFile: (id: number) => api.post<void>(`/trash/file/${id}/restore`),
+export function createTrashService(workspace: Workspace = PERSONAL_WORKSPACE) {
+	const basePath = trashPath(workspace);
+	return {
+		list: (params?: TrashListParams) =>
+			api.get<TrashContents>(basePath, { params }),
 
-	restoreFolder: (id: number) => api.post<void>(`/trash/folder/${id}/restore`),
+		restoreFile: (id: number) =>
+			api.post<void>(`${basePath}/file/${id}/restore`),
 
-	purgeFile: (id: number) => api.delete<void>(`/trash/file/${id}`),
+		restoreFolder: (id: number) =>
+			api.post<void>(`${basePath}/folder/${id}/restore`),
 
-	purgeFolder: (id: number) => api.delete<void>(`/trash/folder/${id}`),
+		purgeFile: (id: number) => api.delete<void>(`${basePath}/file/${id}`),
 
-	purgeAll: () => api.delete<PurgedCountResponse>("/trash"),
-};
+		purgeFolder: (id: number) => api.delete<void>(`${basePath}/folder/${id}`),
+
+		purgeAll: () => api.delete<PurgedCountResponse>(basePath),
+	};
+}
+
+export const trashService = bindWorkspaceService(createTrashService);

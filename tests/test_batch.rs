@@ -684,6 +684,111 @@ async fn test_batch_move_preserves_cycle_failures_for_folders() {
 }
 
 #[actix_web::test]
+async fn test_batch_move_normalizes_descendants_of_selected_folders() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "MoveParent", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let parent_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "MoveChild", "parent_id": parent_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let child_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "MoveTarget", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let target_id = body["data"]["id"].as_i64().unwrap();
+
+    let boundary = "----TestBoundary123";
+    let payload = upload_named_file("nested.txt", "nested content", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/upload?folder_id={child_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/move")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_ids": [file_id],
+            "folder_ids": [parent_id, child_id],
+            "target_folder_id": target_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{target_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let target_folders = body["data"]["folders"].as_array().unwrap();
+    let target_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(target_folders.len(), 1);
+    assert_eq!(target_folders[0]["id"], parent_id);
+    assert_eq!(target_folders[0]["name"], "MoveParent");
+    assert!(target_files.is_empty());
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{parent_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let parent_folders = body["data"]["folders"].as_array().unwrap();
+    let parent_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(parent_folders.len(), 1);
+    assert_eq!(parent_folders[0]["id"], child_id);
+    assert_eq!(parent_folders[0]["name"], "MoveChild");
+    assert!(parent_files.is_empty());
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{child_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let child_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(child_files.len(), 1);
+    assert_eq!(child_files[0]["id"], file_id);
+    assert_eq!(child_files[0]["name"], "nested.txt");
+}
+
+#[actix_web::test]
 async fn test_batch_copy_preserves_partial_failures_for_quota() {
     use sea_orm::{ActiveModelTrait, Set};
 

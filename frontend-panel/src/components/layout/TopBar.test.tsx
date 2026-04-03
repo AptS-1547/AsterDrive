@@ -19,6 +19,9 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("react-router-dom", () => ({
 	useNavigate: () => mockState.navigate,
+	useLocation: () => ({
+		pathname: window.location.pathname,
+	}),
 }));
 
 vi.mock("@/stores/fileStore", () => ({

@@ -41,7 +41,7 @@ import { formatDateShort } from "@/lib/format";
 import { ApiError } from "@/services/http";
 import { shareService } from "@/services/shareService";
 import type { FileInfo, FolderContents, SharePublicInfo } from "@/types/api";
-import { ErrorCode } from "@/types/api";
+import { ErrorCode } from "@/types/api-helpers";
 
 interface ShareBreadcrumbItem {
 	id: number | null;

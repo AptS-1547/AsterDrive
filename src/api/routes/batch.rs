@@ -8,6 +8,7 @@ use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
     batch_service,
+    workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
@@ -78,27 +79,16 @@ pub async fn batch_delete(
     body: web::Json<BatchDeleteReq>,
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
-    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
-    let result =
-        batch_service::batch_delete(&state, claims.user_id, &body.file_ids, &body.folder_ids)
-            .await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    batch_delete_response(
         &state,
-        &ctx,
-        audit_service::AuditAction::BatchDelete,
-        None,
-        None,
-        None,
-        audit_service::details(audit_service::BatchDeleteDetails {
-            file_ids: &body.file_ids,
-            folder_ids: &body.folder_ids,
-            succeeded: result.succeeded,
-            failed: result.failed,
-        }),
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        &body,
     )
-    .await;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
+    .await
 }
 
 #[api_docs_macros::path(
@@ -121,33 +111,16 @@ pub async fn batch_move(
     body: web::Json<BatchMoveReq>,
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
-    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
-    let result = batch_service::batch_move(
+    batch_move_response(
         &state,
-        claims.user_id,
-        &body.file_ids,
-        &body.folder_ids,
-        body.target_folder_id,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        &body,
     )
-    .await?;
-    let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::BatchMove,
-        None,
-        None,
-        None,
-        audit_service::details(audit_service::BatchTransferDetails {
-            file_ids: &body.file_ids,
-            folder_ids: &body.folder_ids,
-            target_folder_id: body.target_folder_id,
-            succeeded: result.succeeded,
-            failed: result.failed,
-        }),
-    )
-    .await;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
+    .await
 }
 
 #[api_docs_macros::path(
@@ -170,18 +143,103 @@ pub async fn batch_copy(
     body: web::Json<BatchCopyReq>,
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
-    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
-    let result = batch_service::batch_copy(
+    batch_copy_response(
         &state,
-        claims.user_id,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        &body,
+    )
+    .await
+}
+
+pub(crate) async fn batch_delete_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    body: &BatchDeleteReq,
+) -> Result<HttpResponse> {
+    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
+    let result =
+        batch_service::batch_delete_in_scope(state, scope, &body.file_ids, &body.folder_ids)
+            .await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::BatchDelete,
+        None,
+        None,
+        None,
+        audit_service::details(audit_service::BatchDeleteDetails {
+            file_ids: &body.file_ids,
+            folder_ids: &body.folder_ids,
+            succeeded: result.succeeded,
+            failed: result.failed,
+        }),
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
+}
+
+pub(crate) async fn batch_move_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    body: &BatchMoveReq,
+) -> Result<HttpResponse> {
+    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
+    let result = batch_service::batch_move_in_scope(
+        state,
+        scope,
         &body.file_ids,
         &body.folder_ids,
         body.target_folder_id,
     )
     .await?;
-    let ctx = AuditContext::from_request(&req, &claims);
+    let ctx = AuditContext::from_request(req, claims);
     audit_service::log(
-        &state,
+        state,
+        &ctx,
+        audit_service::AuditAction::BatchMove,
+        None,
+        None,
+        None,
+        audit_service::details(audit_service::BatchTransferDetails {
+            file_ids: &body.file_ids,
+            folder_ids: &body.folder_ids,
+            target_folder_id: body.target_folder_id,
+            succeeded: result.succeeded,
+            failed: result.failed,
+        }),
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
+}
+
+pub(crate) async fn batch_copy_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    body: &BatchCopyReq,
+) -> Result<HttpResponse> {
+    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
+    let result = batch_service::batch_copy_in_scope(
+        state,
+        scope,
+        &body.file_ids,
+        &body.folder_ids,
+        body.target_folder_id,
+    )
+    .await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
         &ctx,
         audit_service::AuditAction::BatchCopy,
         None,

@@ -21,7 +21,8 @@ import { FOLDER_LIMIT } from "@/lib/constants";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { trashService } from "@/services/trashService";
 import { useAuthStore } from "@/stores/authStore";
-import type { TrashContents, TrashItem } from "@/types/api";
+import type { TrashContents } from "@/types/api";
+import type { TrashItem } from "@/types/api-helpers";
 
 type ViewMode = "grid" | "list";
 type TrashOperation = "restore" | "purge";

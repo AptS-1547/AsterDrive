@@ -5,11 +5,11 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::constants::HOUR_SECS;
-use crate::db::repository::{file_repo, upload_session_part_repo, upload_session_repo, user_repo};
+use crate::db::repository::{file_repo, upload_session_part_repo, upload_session_repo};
 use crate::entities::{file, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::services::{file_service, folder_service};
+use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::storage::driver::StorageDriver;
 use crate::types::{
     DriverType, S3UploadStrategy, UploadMode, UploadSessionStatus,
@@ -118,34 +118,74 @@ async fn generate_upload_id<C: sea_orm::ConnectionTrait>(db: &C) -> Result<Strin
     ))
 }
 
-/// 上传协商：服务端根据存储策略决定上传模式
-pub async fn init_upload(
+fn ensure_personal_upload_session_scope(session: &upload_session::Model) -> Result<()> {
+    if session.team_id.is_some() {
+        return Err(AsterError::auth_forbidden(
+            "upload session belongs to a team workspace",
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_team_upload_session_scope(session: &upload_session::Model, team_id: i64) -> Result<()> {
+    if session.team_id != Some(team_id) {
+        return Err(AsterError::auth_forbidden(
+            "upload session is outside team workspace",
+        ));
+    }
+    Ok(())
+}
+
+async fn load_upload_session(
     state: &AppState,
-    user_id: i64,
+    scope: WorkspaceStorageScope,
+    upload_id: &str,
+) -> Result<upload_session::Model> {
+    let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
+    crate::utils::verify_owner(session.user_id, scope.actor_user_id(), "upload session")?;
+    if let Some(team_id) = scope.team_id() {
+        workspace_storage_service::require_team_access(state, team_id, scope.actor_user_id())
+            .await?;
+        ensure_team_upload_session_scope(&session, team_id)?;
+    } else {
+        ensure_personal_upload_session_scope(&session)?;
+    }
+    Ok(session)
+}
+
+async fn init_upload_for_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
     filename: &str,
     total_size: i64,
     folder_id: Option<i64>,
     relative_path: Option<&str>,
 ) -> Result<InitUploadResponse> {
     let db = &state.db;
+    let user_id = scope.actor_user_id();
+    let team_id = scope.team_id();
 
     let (resolved_folder_id, resolved_filename) = match relative_path {
-        Some(path) => folder_service::resolve_upload_path(state, user_id, folder_id, path).await?,
+        Some(path) => {
+            workspace_storage_service::resolve_upload_path(state, scope, folder_id, path).await?
+        }
         None => {
             crate::utils::validate_name(filename)?;
-            if let Some(fid) = folder_id {
-                folder_service::verify_folder_access(state, user_id, fid).await?;
+            if let Some(folder_id) = folder_id {
+                workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
             }
             (folder_id, filename.to_string())
         }
     };
 
-    // 确定存储策略
-    let policy =
-        file_service::resolve_policy_for_size(state, user_id, resolved_folder_id, total_size)
-            .await?;
+    let policy = workspace_storage_service::resolve_policy_for_size(
+        state,
+        scope,
+        resolved_folder_id,
+        total_size,
+    )
+    .await?;
 
-    // 检查文件大小限制
     if policy.max_file_size > 0 && total_size > policy.max_file_size {
         return Err(AsterError::file_too_large(format!(
             "file size {} exceeds limit {}",
@@ -153,10 +193,8 @@ pub async fn init_upload(
         )));
     }
 
-    // 检查用户配额
-    user_repo::check_quota(db, user_id, total_size).await?;
+    workspace_storage_service::check_quota(db, scope, total_size).await?;
 
-    // S3 presigned 直传：策略开启 + S3 驱动
     if policy.driver_type == DriverType::S3 {
         let opts = parse_storage_policy_options(&policy.options);
         let strategy = opts.effective_s3_upload_strategy();
@@ -166,7 +204,6 @@ pub async fn init_upload(
             let temp_key = format!("files/{upload_id}");
             let chunk_size = effective_s3_multipart_chunk_size(policy.chunk_size);
 
-            // chunk_size == 0 → 禁用分片；文件 ≤ chunk_size → 单次 presigned PUT
             if policy.chunk_size == 0 || total_size <= chunk_size {
                 let presigned_url = driver
                     .presigned_put_url(&temp_key, std::time::Duration::from_secs(HOUR_SECS))
@@ -181,6 +218,7 @@ pub async fn init_upload(
                 let session = upload_session::ActiveModel {
                     id: Set(upload_id.clone()),
                     user_id: Set(user_id),
+                    team_id: Set(team_id),
                     filename: Set(resolved_filename.clone()),
                     total_size: Set(total_size),
                     chunk_size: Set(0),
@@ -218,6 +256,7 @@ pub async fn init_upload(
             let session = upload_session::ActiveModel {
                 id: Set(upload_id.clone()),
                 user_id: Set(user_id),
+                team_id: Set(team_id),
                 filename: Set(resolved_filename.clone()),
                 total_size: Set(total_size),
                 chunk_size: Set(chunk_size),
@@ -268,6 +307,7 @@ pub async fn init_upload(
             let session = upload_session::ActiveModel {
                 id: Set(upload_id.clone()),
                 user_id: Set(user_id),
+                team_id: Set(team_id),
                 filename: Set(resolved_filename.clone()),
                 total_size: Set(total_size),
                 chunk_size: Set(chunk_size),
@@ -295,7 +335,6 @@ pub async fn init_upload(
         }
     }
 
-    // 策略决策：chunk_size == 0 → 禁用分片；文件 <= chunk_size → 直传
     if policy.chunk_size == 0 || total_size <= policy.chunk_size {
         return Ok(InitUploadResponse {
             mode: UploadMode::Direct,
@@ -312,7 +351,6 @@ pub async fn init_upload(
     let now = Utc::now();
     let expires_at = now + chrono::Duration::hours(24);
 
-    // 创建临时目录
     let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, &upload_id);
     tokio::fs::create_dir_all(&temp_dir)
         .await
@@ -321,6 +359,7 @@ pub async fn init_upload(
     let session = upload_session::ActiveModel {
         id: Set(upload_id.clone()),
         user_id: Set(user_id),
+        team_id: Set(team_id),
         filename: Set(resolved_filename.clone()),
         total_size: Set(total_size),
         chunk_size: Set(chunk_size),
@@ -347,18 +386,57 @@ pub async fn init_upload(
     })
 }
 
-/// 上传单个分片
-pub async fn upload_chunk(
+/// 上传协商：服务端根据存储策略决定上传模式
+pub async fn init_upload(
     state: &AppState,
-    upload_id: &str,
-    chunk_number: i32,
     user_id: i64,
+    filename: &str,
+    total_size: i64,
+    folder_id: Option<i64>,
+    relative_path: Option<&str>,
+) -> Result<InitUploadResponse> {
+    init_upload_for_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        filename,
+        total_size,
+        folder_id,
+        relative_path,
+    )
+    .await
+}
+
+pub async fn init_upload_for_team(
+    state: &AppState,
+    team_id: i64,
+    user_id: i64,
+    filename: &str,
+    total_size: i64,
+    folder_id: Option<i64>,
+    relative_path: Option<&str>,
+) -> Result<InitUploadResponse> {
+    init_upload_for_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        filename,
+        total_size,
+        folder_id,
+        relative_path,
+    )
+    .await
+}
+
+async fn upload_chunk_impl(
+    state: &AppState,
+    session: upload_session::Model,
+    chunk_number: i32,
     data: &[u8],
 ) -> Result<ChunkUploadResponse> {
     let db = &state.db;
-    let session = upload_session_repo::find_by_id(db, upload_id).await?;
-
-    crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
+    let upload_id = session.id.as_str();
     if session.status != UploadSessionStatus::Uploading {
         return Err(AsterError::chunk_upload_failed(format!(
             "session status is '{:?}', expected 'uploading'",
@@ -504,17 +582,51 @@ pub async fn upload_chunk(
     })
 }
 
-/// 完成分片上传：组装 → 按策略决定是否计算 hash / 去重 → 写入最终存储
-pub async fn complete_upload(
+/// 上传单个分片
+pub async fn upload_chunk(
     state: &AppState,
     upload_id: &str,
+    chunk_number: i32,
     user_id: i64,
+    data: &[u8],
+) -> Result<ChunkUploadResponse> {
+    let session = load_upload_session(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        upload_id,
+    )
+    .await?;
+    upload_chunk_impl(state, session, chunk_number, data).await
+}
+
+pub async fn upload_chunk_for_team(
+    state: &AppState,
+    team_id: i64,
+    upload_id: &str,
+    chunk_number: i32,
+    user_id: i64,
+    data: &[u8],
+) -> Result<ChunkUploadResponse> {
+    let session = load_upload_session(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        upload_id,
+    )
+    .await?;
+    upload_chunk_impl(state, session, chunk_number, data).await
+}
+
+/// 完成分片上传：组装 → 按策略决定是否计算 hash / 去重 → 写入最终存储
+async fn complete_upload_impl(
+    state: &AppState,
+    session: upload_session::Model,
     parts: Option<Vec<(i32, String)>>,
 ) -> Result<file::Model> {
     let db = &state.db;
-    let session = upload_session_repo::find_by_id(db, upload_id).await?;
-
-    crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
+    let upload_id = session.id.as_str();
 
     // ── 幂等性处理：如果已完成，返回对应文件 ──
     if session.status == UploadSessionStatus::Completed {
@@ -574,7 +686,7 @@ pub async fn complete_upload(
 
     let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
-    let should_dedup = file_service::local_content_dedup_enabled(&policy);
+    let should_dedup = workspace_storage_service::local_content_dedup_enabled(&policy);
 
     // ── [事务外] 流式拼接分片；local 未开启 dedup 时跳过 sha256 ──
     // 任何失败都将 session 标记为 Failed，避免前端无限轮询 Assembling
@@ -642,18 +754,22 @@ pub async fn complete_upload(
             }
             blob.model
         } else if policy.driver_type == DriverType::S3 {
-            let blob =
-                file_service::create_s3_nondedup_blob(&txn, size, policy.id, upload_id).await?;
+            let blob = workspace_storage_service::create_s3_nondedup_blob(
+                &txn, size, policy.id, upload_id,
+            )
+            .await?;
             driver.put_file(&blob.storage_path, &assembled_path).await?;
             blob
         } else {
-            let blob = file_service::create_nondedup_blob(&txn, size, policy.id).await?;
+            let blob =
+                workspace_storage_service::create_nondedup_blob(&txn, size, policy.id).await?;
             driver.put_file(&blob.storage_path, &assembled_path).await?;
             blob
         };
 
         let created =
-            file_service::finalize_upload_session_blob(&txn, &session, &blob, now).await?;
+            workspace_storage_service::finalize_upload_session_blob(&txn, &session, &blob, now)
+                .await?;
 
         txn.commit().await.map_err(AsterError::from)?;
         Ok(created)
@@ -673,6 +789,40 @@ pub async fn complete_upload(
             Err(e)
         }
     }
+}
+
+pub async fn complete_upload(
+    state: &AppState,
+    upload_id: &str,
+    user_id: i64,
+    parts: Option<Vec<(i32, String)>>,
+) -> Result<file::Model> {
+    let session = load_upload_session(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        upload_id,
+    )
+    .await?;
+    complete_upload_impl(state, session, parts).await
+}
+
+pub async fn complete_upload_for_team(
+    state: &AppState,
+    team_id: i64,
+    upload_id: &str,
+    user_id: i64,
+    parts: Option<Vec<(i32, String)>>,
+) -> Result<file::Model> {
+    let session = load_upload_session(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        upload_id,
+    )
+    .await?;
+    complete_upload_impl(state, session, parts).await
 }
 
 fn upload_session_status_label(status: UploadSessionStatus) -> &'static str {
@@ -740,7 +890,7 @@ async fn finalize_s3_upload_session(
     storage_path: &str,
     size: i64,
 ) -> Result<file::Model> {
-    file_service::finalize_upload_session_file(
+    workspace_storage_service::finalize_upload_session_file(
         state,
         session,
         &format!("s3-{}", session.id),
@@ -933,9 +1083,8 @@ async fn find_file_by_session<C: sea_orm::ConnectionTrait>(
 }
 
 /// 取消上传
-pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> Result<()> {
-    let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
-    crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
+async fn cancel_upload_impl(state: &AppState, session: upload_session::Model) -> Result<()> {
+    let upload_id = session.id.as_str();
 
     // 清理 S3 临时对象 / multipart upload
     if let Some(ref temp_key) = session.s3_temp_key {
@@ -956,15 +1105,39 @@ pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> R
     upload_session_repo::delete(&state.db, upload_id).await
 }
 
-/// 查询上传进度
-pub async fn get_progress(
+pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> Result<()> {
+    let session = load_upload_session(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        upload_id,
+    )
+    .await?;
+    cancel_upload_impl(state, session).await
+}
+
+pub async fn cancel_upload_for_team(
     state: &AppState,
+    team_id: i64,
     upload_id: &str,
     user_id: i64,
-) -> Result<UploadProgressResponse> {
-    let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
-    crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
+) -> Result<()> {
+    let session = load_upload_session(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        upload_id,
+    )
+    .await?;
+    cancel_upload_impl(state, session).await
+}
 
+/// 查询上传进度
+async fn get_progress_impl(
+    state: &AppState,
+    session: upload_session::Model,
+) -> Result<UploadProgressResponse> {
     // S3 relay multipart 在整个生命周期都以 upload_session_parts 为准；
     // S3 presigned multipart 仅在 Presigned 阶段查询远端已上传 parts；
     // 其他上传模式仍按本地临时分片扫描。
@@ -1011,17 +1184,44 @@ pub async fn get_progress(
     })
 }
 
-/// 为 S3 multipart presigned 上传批量生成 per-part presigned PUT URL
-pub async fn presign_parts(
+pub async fn get_progress(
     state: &AppState,
     upload_id: &str,
     user_id: i64,
+) -> Result<UploadProgressResponse> {
+    let session = load_upload_session(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        upload_id,
+    )
+    .await?;
+    get_progress_impl(state, session).await
+}
+
+pub async fn get_progress_for_team(
+    state: &AppState,
+    team_id: i64,
+    upload_id: &str,
+    user_id: i64,
+) -> Result<UploadProgressResponse> {
+    let session = load_upload_session(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        upload_id,
+    )
+    .await?;
+    get_progress_impl(state, session).await
+}
+
+/// 为 S3 multipart presigned 上传批量生成 per-part presigned PUT URL
+async fn presign_parts_impl(
+    state: &AppState,
+    session: upload_session::Model,
     part_numbers: Vec<i32>,
 ) -> Result<std::collections::HashMap<i32, String>> {
-    let db = &state.db;
-    let session = upload_session_repo::find_by_id(db, upload_id).await?;
-    crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
-
     if session.status != UploadSessionStatus::Presigned {
         return Err(AsterError::validation_error(format!(
             "session status is '{:?}', expected 'presigned'",
@@ -1050,6 +1250,40 @@ pub async fn presign_parts(
         urls.insert(part_num, url);
     }
     Ok(urls)
+}
+
+pub async fn presign_parts(
+    state: &AppState,
+    upload_id: &str,
+    user_id: i64,
+    part_numbers: Vec<i32>,
+) -> Result<std::collections::HashMap<i32, String>> {
+    let session = load_upload_session(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        upload_id,
+    )
+    .await?;
+    presign_parts_impl(state, session, part_numbers).await
+}
+
+pub async fn presign_parts_for_team(
+    state: &AppState,
+    team_id: i64,
+    upload_id: &str,
+    user_id: i64,
+    part_numbers: Vec<i32>,
+) -> Result<std::collections::HashMap<i32, String>> {
+    let session = load_upload_session(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        upload_id,
+    )
+    .await?;
+    presign_parts_impl(state, session, part_numbers).await
 }
 
 /// 扫描临时目录中实际存在的 chunk 文件，返回排序后的 chunk 编号列表

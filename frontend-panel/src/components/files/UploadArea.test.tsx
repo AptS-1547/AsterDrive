@@ -190,6 +190,7 @@ describe("UploadArea", () => {
 		saveSession.mockReset();
 		uploadChunk.mockReset();
 		uploadPanelSpy.mockReset();
+		vi.unstubAllEnvs();
 	});
 
 	it("handles direct uploads through the form-data endpoint", async () => {
@@ -426,6 +427,57 @@ describe("UploadArea", () => {
 		expect(
 			screen.queryByText("transient.txt:Chunked:files:upload_pending_file"),
 		).not.toBeInTheDocument();
+	});
+
+	it("logs restored sessions with missing progress status in development", async () => {
+		const warnSpy = vi
+			.spyOn(console, "warn")
+			.mockImplementation(() => undefined);
+		vi.stubEnv("NODE_ENV", "development");
+
+		loadSessions.mockReturnValue([
+			{
+				uploadId: "upload-missing-status",
+				filename: "missing-status.txt",
+				totalSize: 11,
+				totalChunks: 3,
+				chunkSize: 5,
+				baseFolderId: 42,
+				baseFolderName: "Projects",
+				relativePath: null,
+				savedAt: Date.now(),
+				mode: "chunked",
+			},
+		]);
+		getProgress.mockResolvedValue({
+			upload_id: "upload-missing-status",
+			received_count: 0,
+			total_chunks: 3,
+			filename: "missing-status.txt",
+		});
+
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		await waitFor(() => {
+			expect(getProgress).toHaveBeenCalledWith("upload-missing-status");
+		});
+		expect(warnSpy).toHaveBeenCalledWith(
+			"skipping restored upload session because progress is missing a status",
+			expect.objectContaining({
+				progress: expect.objectContaining({
+					filename: "missing-status.txt",
+					received_count: 0,
+				}),
+				uploadId: "upload-missing-status",
+			}),
+		);
+		expect(removeSession).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
 	});
 
 	it("limits persisted session progress preflight concurrency during restore", async () => {

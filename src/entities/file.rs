@@ -12,6 +12,7 @@ pub struct Model {
     pub id: i64,
     pub name: String,
     pub folder_id: Option<i64>,
+    pub team_id: Option<i64>,
     pub blob_id: i64,
     pub size: i64,
     pub user_id: i64,
@@ -42,6 +43,12 @@ pub enum Relation {
     )]
     Folder,
     #[sea_orm(
+        belongs_to = "super::team::Entity",
+        from = "Column::TeamId",
+        to = "super::team::Column::Id"
+    )]
+    Team,
+    #[sea_orm(
         belongs_to = "super::file_blob::Entity",
         from = "Column::BlobId",
         to = "super::file_blob::Column::Id"
@@ -58,6 +65,12 @@ impl Related<super::user::Entity> for Entity {
 impl Related<super::folder::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Folder.def()
+    }
+}
+
+impl Related<super::team::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Team.def()
     }
 }
 

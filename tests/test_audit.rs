@@ -405,7 +405,7 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
         .uri(&format!("/api/v1/shares/{share_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
-            "expires_at": "2026-04-02T12:00:00Z",
+            "expires_at": "2099-04-02T12:00:00Z",
             "max_downloads": 3
         }))
         .to_request();

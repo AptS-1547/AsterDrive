@@ -1,9 +1,5 @@
-import {
-	type ApiResponse,
-	ErrorCode,
-	type FolderContents,
-	type MeResponse,
-} from "@/types/api";
+import type { FolderContents, MeResponse } from "@/types/api";
+import { type ApiResponse, ErrorCode } from "@/types/api-helpers";
 
 export function apiResponse<T>(data: T, message = "ok"): ApiResponse<T> {
 	return {

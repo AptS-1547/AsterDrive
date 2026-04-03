@@ -133,6 +133,7 @@ async fn create_upload_session(
         aster_drive::entities::upload_session::ActiveModel {
             id: Set(upload_id.to_string()),
             user_id: Set(user_id),
+            team_id: Set(None),
             filename: Set("manual-upload.bin".to_string()),
             total_size: Set(10),
             chunk_size: Set(5),
@@ -1015,6 +1016,7 @@ async fn test_upload_service_get_progress_uses_db_parts_for_terminal_relay_multi
             aster_drive::entities::upload_session::ActiveModel {
                 id: Set(upload_id.clone()),
                 user_id: Set(user.id),
+                team_id: Set(None),
                 filename: Set("relay-progress.bin".to_string()),
                 total_size: Set(15),
                 chunk_size: Set(5),

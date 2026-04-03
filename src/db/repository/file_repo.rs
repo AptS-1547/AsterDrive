@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set, TryInsertResult, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TryInsertResult, sea_query::Expr,
 };
 
 use crate::entities::{
@@ -15,12 +15,91 @@ pub struct FindOrCreateBlobResult {
     pub inserted: bool,
 }
 
+#[derive(Clone, Copy)]
+enum FileScope {
+    Personal { user_id: i64 },
+    Team { team_id: i64 },
+}
+
+fn scope_condition(scope: FileScope) -> Condition {
+    match scope {
+        FileScope::Personal { user_id } => Condition::all()
+            .add(file::Column::UserId.eq(user_id))
+            .add(file::Column::TeamId.is_null()),
+        FileScope::Team { team_id } => Condition::all().add(file::Column::TeamId.eq(team_id)),
+    }
+}
+
+fn active_scope_condition(scope: FileScope) -> Condition {
+    scope_condition(scope).add(file::Column::DeletedAt.is_null())
+}
+
+fn apply_folder_condition(cond: Condition, folder_id: Option<i64>) -> Condition {
+    match folder_id {
+        Some(folder_id) => cond.add(file::Column::FolderId.eq(folder_id)),
+        None => cond.add(file::Column::FolderId.is_null()),
+    }
+}
+
+async fn find_by_folders_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FileScope,
+    folder_ids: &[i64],
+) -> Result<Vec<file::Model>> {
+    if folder_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    File::find()
+        .filter(active_scope_condition(scope))
+        .filter(file::Column::FolderId.is_in(folder_ids.iter().copied()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+async fn find_by_folder_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FileScope,
+    folder_id: Option<i64>,
+) -> Result<Vec<file::Model>> {
+    File::find()
+        .filter(apply_folder_condition(
+            active_scope_condition(scope),
+            folder_id,
+        ))
+        .order_by_asc(file::Column::Name)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file::Model> {
     File::find_by_id(id)
         .one(db)
         .await
         .map_err(AsterError::from)?
         .ok_or_else(|| AsterError::file_not_found(format!("file #{id}")))
+}
+
+pub async fn lock_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file::Model> {
+    match db.get_database_backend() {
+        DbBackend::Postgres | DbBackend::MySql => File::find_by_id(id)
+            .lock_exclusive()
+            .one(db)
+            .await
+            .map_err(AsterError::from)?
+            .ok_or_else(|| AsterError::file_not_found(format!("file #{id}"))),
+        DbBackend::Sqlite => {
+            File::update_many()
+                .col_expr(file::Column::UpdatedAt, Expr::col(file::Column::UpdatedAt))
+                .filter(file::Column::Id.eq(id))
+                .exec(db)
+                .await
+                .map_err(AsterError::from)?;
+            find_by_id(db, id).await
+        }
+        _ => find_by_id(db, id).await,
+    }
 }
 
 pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<file::Model>> {
@@ -40,16 +119,15 @@ pub async fn find_by_folders<C: ConnectionTrait>(
     user_id: i64,
     folder_ids: &[i64],
 ) -> Result<Vec<file::Model>> {
-    if folder_ids.is_empty() {
-        return Ok(vec![]);
-    }
-    File::find()
-        .filter(file::Column::UserId.eq(user_id))
-        .filter(file::Column::DeletedAt.is_null())
-        .filter(file::Column::FolderId.is_in(folder_ids.to_vec()))
-        .all(db)
-        .await
-        .map_err(AsterError::from)
+    find_by_folders_in_scope(db, FileScope::Personal { user_id }, folder_ids).await
+}
+
+pub async fn find_by_team_folders<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    folder_ids: &[i64],
+) -> Result<Vec<file::Model>> {
+    find_by_folders_in_scope(db, FileScope::Team { team_id }, folder_ids).await
 }
 
 /// 批量查询多个文件夹下的文件（含已删除）
@@ -73,22 +151,21 @@ pub async fn find_by_folder<C: ConnectionTrait>(
     user_id: i64,
     folder_id: Option<i64>,
 ) -> Result<Vec<file::Model>> {
-    // Keep the predicate aligned with idx_files_user_deleted_folder_name; name lookups reuse it too.
-    let mut q = File::find()
-        .filter(file::Column::UserId.eq(user_id))
-        .filter(file::Column::DeletedAt.is_null())
-        .order_by_asc(file::Column::Name);
-    q = match folder_id {
-        Some(fid) => q.filter(file::Column::FolderId.eq(fid)),
-        None => q.filter(file::Column::FolderId.is_null()),
-    };
-    q.all(db).await.map_err(AsterError::from)
+    find_by_folder_in_scope(db, FileScope::Personal { user_id }, folder_id).await
+}
+
+pub async fn find_by_team_folder<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    folder_id: Option<i64>,
+) -> Result<Vec<file::Model>> {
+    find_by_folder_in_scope(db, FileScope::Team { team_id }, folder_id).await
 }
 
 /// 查询文件夹下的文件（排除已删除，cursor 分页，支持多字段排序）
-pub async fn find_by_folder_cursor<C: ConnectionTrait>(
+async fn find_by_folder_cursor_in_scope<C: ConnectionTrait>(
     db: &C,
-    user_id: i64,
+    scope: FileScope,
     folder_id: Option<i64>,
     limit: u64,
     after: Option<(String, i64)>,
@@ -97,15 +174,10 @@ pub async fn find_by_folder_cursor<C: ConnectionTrait>(
 ) -> Result<(Vec<file::Model>, u64)> {
     use crate::api::pagination::{SortBy, SortOrder};
 
-    let mut cond = sea_orm::Condition::all()
-        .add(file::Column::UserId.eq(user_id))
-        .add(file::Column::DeletedAt.is_null());
-    cond = match folder_id {
-        Some(fid) => cond.add(file::Column::FolderId.eq(fid)),
-        None => cond.add(file::Column::FolderId.is_null()),
-    };
-
-    let base = File::find().filter(cond);
+    let base = File::find().filter(apply_folder_condition(
+        active_scope_condition(scope),
+        folder_id,
+    ));
     let total = base.clone().count(db).await.map_err(AsterError::from)?;
 
     if total == 0 || limit == 0 {
@@ -114,14 +186,12 @@ pub async fn find_by_folder_cursor<C: ConnectionTrait>(
 
     let is_asc = matches!(sort_order, SortOrder::Asc);
 
-    // 构建 cursor 条件
     let mut q = base;
     if let Some((after_value, after_id)) = after {
         let cursor_cond = build_cursor_condition(sort_by, is_asc, &after_value, after_id)?;
         q = q.filter(cursor_cond);
     }
 
-    // 排序
     let primary_col = match sort_by {
         SortBy::Name => file::Column::Name,
         SortBy::Size => file::Column::Size,
@@ -138,6 +208,48 @@ pub async fn find_by_folder_cursor<C: ConnectionTrait>(
 
     let items = q.limit(limit).all(db).await.map_err(AsterError::from)?;
     Ok((items, total))
+}
+
+pub async fn find_by_folder_cursor<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    folder_id: Option<i64>,
+    limit: u64,
+    after: Option<(String, i64)>,
+    sort_by: crate::api::pagination::SortBy,
+    sort_order: crate::api::pagination::SortOrder,
+) -> Result<(Vec<file::Model>, u64)> {
+    find_by_folder_cursor_in_scope(
+        db,
+        FileScope::Personal { user_id },
+        folder_id,
+        limit,
+        after,
+        sort_by,
+        sort_order,
+    )
+    .await
+}
+
+pub async fn find_by_team_folder_cursor<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    folder_id: Option<i64>,
+    limit: u64,
+    after: Option<(String, i64)>,
+    sort_by: crate::api::pagination::SortBy,
+    sort_order: crate::api::pagination::SortOrder,
+) -> Result<(Vec<file::Model>, u64)> {
+    find_by_folder_cursor_in_scope(
+        db,
+        FileScope::Team { team_id },
+        folder_id,
+        limit,
+        after,
+        sort_by,
+        sort_order,
+    )
+    .await
 }
 
 /// 构建 cursor WHERE 条件
@@ -247,15 +359,9 @@ fn build_cursor_condition(
 }
 
 /// 查询顶层已删除文件（cursor 分页），cursor = (deleted_at, id) 降序
-pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
-    db: &C,
-    user_id: i64,
-    limit: u64,
-    after: Option<(chrono::DateTime<chrono::Utc>, i64)>,
-) -> Result<(Vec<file::Model>, u64)> {
+fn top_level_deleted_condition(scope: FileScope) -> Condition {
     use sea_orm::sea_query::{Alias, Expr, Query};
 
-    // 顶层 = deleted_at IS NOT NULL 且 folder 要么 NULL，要么 folder 未被删除
     let folder_deleted_subquery = Query::select()
         .expr(Expr::val(1i32))
         .from_as(Alias::new("folders"), Alias::new("f2"))
@@ -266,16 +372,22 @@ pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
         .and_where(Expr::col((Alias::new("f2"), Alias::new("deleted_at"))).is_not_null())
         .to_owned();
 
-    // Match idx_files_user_deleted_at_id so recycle-bin pages walk deleted_at/id instead of scanning.
-    let base_cond = sea_orm::Condition::all()
-        .add(file::Column::UserId.eq(user_id))
+    scope_condition(scope)
         .add(file::Column::DeletedAt.is_not_null())
         .add(
-            sea_orm::Condition::any()
+            Condition::any()
                 .add(file::Column::FolderId.is_null())
                 .add(Expr::exists(folder_deleted_subquery).not()),
-        );
+        )
+}
 
+async fn find_top_level_deleted_paginated_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FileScope,
+    limit: u64,
+    after: Option<(chrono::DateTime<Utc>, i64)>,
+) -> Result<(Vec<file::Model>, u64)> {
+    let base_cond = top_level_deleted_condition(scope);
     let base = File::find().filter(base_cond.clone());
 
     let total = base.clone().count(db).await.map_err(AsterError::from)?;
@@ -286,10 +398,10 @@ pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
     let mut q = File::find().filter(base_cond);
     if let Some((after_deleted_at, after_id)) = after {
         q = q.filter(
-            sea_orm::Condition::any()
+            Condition::any()
                 .add(file::Column::DeletedAt.lt(after_deleted_at))
                 .add(
-                    sea_orm::Condition::all()
+                    Condition::all()
                         .add(file::Column::DeletedAt.eq(after_deleted_at))
                         .add(file::Column::Id.gt(after_id)),
                 ),
@@ -307,40 +419,94 @@ pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
     Ok((items, total))
 }
 
+pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    limit: u64,
+    after: Option<(chrono::DateTime<chrono::Utc>, i64)>,
+) -> Result<(Vec<file::Model>, u64)> {
+    find_top_level_deleted_paginated_in_scope(db, FileScope::Personal { user_id }, limit, after)
+        .await
+}
+
+pub async fn find_top_level_deleted_by_team_paginated<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    limit: u64,
+    after: Option<(chrono::DateTime<Utc>, i64)>,
+) -> Result<(Vec<file::Model>, u64)> {
+    find_top_level_deleted_paginated_in_scope(db, FileScope::Team { team_id }, limit, after).await
+}
+
 /// 按名称查文件（排除已删除）
+async fn find_by_name_in_folder_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FileScope,
+    folder_id: Option<i64>,
+    name: &str,
+) -> Result<Option<file::Model>> {
+    File::find()
+        .filter(apply_folder_condition(
+            active_scope_condition(scope),
+            folder_id,
+        ))
+        .filter(file::Column::Name.eq(name))
+        .one(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_by_name_in_folder<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
     folder_id: Option<i64>,
     name: &str,
 ) -> Result<Option<file::Model>> {
-    // Upload/copy/rename duplicate checks share the same directory lookup index.
-    let mut q = File::find()
-        .filter(file::Column::UserId.eq(user_id))
-        .filter(file::Column::Name.eq(name))
-        .filter(file::Column::DeletedAt.is_null());
-    q = match folder_id {
-        Some(fid) => q.filter(file::Column::FolderId.eq(fid)),
-        None => q.filter(file::Column::FolderId.is_null()),
-    };
-    q.one(db).await.map_err(AsterError::from)
+    find_by_name_in_folder_in_scope(db, FileScope::Personal { user_id }, folder_id, name).await
+}
+
+pub async fn find_by_name_in_team_folder<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    folder_id: Option<i64>,
+    name: &str,
+) -> Result<Option<file::Model>> {
+    find_by_name_in_folder_in_scope(db, FileScope::Team { team_id }, folder_id, name).await
 }
 
 /// 查找不冲突的文件名：如果 name 已存在则递增 " (1)", " (2)" ...
-pub async fn resolve_unique_filename<C: ConnectionTrait>(
+async fn resolve_unique_filename_in_scope<C: ConnectionTrait>(
     db: &C,
-    user_id: i64,
+    scope: FileScope,
     folder_id: Option<i64>,
     name: &str,
 ) -> Result<String> {
     let mut final_name = name.to_string();
-    while find_by_name_in_folder(db, user_id, folder_id, &final_name)
+    while find_by_name_in_folder_in_scope(db, scope, folder_id, &final_name)
         .await?
         .is_some()
     {
         final_name = crate::utils::next_copy_name(&final_name);
     }
     Ok(final_name)
+}
+
+pub async fn resolve_unique_filename<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    folder_id: Option<i64>,
+    name: &str,
+) -> Result<String> {
+    resolve_unique_filename_in_scope(db, FileScope::Personal { user_id }, folder_id, name).await
+}
+
+pub async fn resolve_unique_team_filename<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    folder_id: Option<i64>,
+    name: &str,
+) -> Result<String> {
+    resolve_unique_filename_in_scope(db, FileScope::Team { team_id }, folder_id, name).await
 }
 
 pub async fn find_blob_by_hash<C: ConnectionTrait>(
@@ -776,6 +942,7 @@ pub async fn find_deleted_by_user<C: ConnectionTrait>(
 ) -> Result<Vec<file::Model>> {
     File::find()
         .filter(file::Column::UserId.eq(user_id))
+        .filter(file::Column::TeamId.is_null())
         .filter(file::Column::DeletedAt.is_not_null())
         .order_by_desc(file::Column::DeletedAt)
         .all(db)
@@ -816,6 +983,7 @@ pub async fn find_all_by_user<C: ConnectionTrait>(
 ) -> Result<Vec<file::Model>> {
     File::find()
         .filter(file::Column::UserId.eq(user_id))
+        .filter(file::Column::TeamId.is_null())
         .all(db)
         .await
         .map_err(AsterError::from)

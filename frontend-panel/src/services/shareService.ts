@@ -1,4 +1,7 @@
 import { config } from "@/config/app";
+import { joinApiUrl } from "@/lib/apiUrl";
+import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
+import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
 	BatchResult,
 	FolderContents,
@@ -9,60 +12,78 @@ import type {
 import type { FolderListParams } from "./fileService";
 import { api } from "./http";
 
-export const shareService = {
-	create: (data: {
-		file_id?: number;
-		folder_id?: number;
-		password?: string;
-		expires_at?: string;
-		max_downloads?: number;
-	}) => api.post<ShareInfo>("/shares", data),
+function workspaceSharesPrefix(workspace: Workspace) {
+	return buildWorkspacePath(workspace, "/shares");
+}
 
-	listMine: (params?: { limit?: number; offset?: number }) =>
-		api.get<SharePage>("/shares", { params }),
+export function createShareService(workspace: Workspace) {
+	if (workspace == null) {
+		throw new Error("workspace is required");
+	}
 
-	update: (
-		id: number,
-		data: {
+	return {
+		create: (data: {
+			file_id?: number;
+			folder_id?: number;
 			password?: string;
-			expires_at: string | null;
-			max_downloads: number;
-		},
-	) => api.patch<ShareInfo>(`/shares/${id}`, data),
+			expires_at?: string;
+			max_downloads?: number;
+		}) => api.post<ShareInfo>(workspaceSharesPrefix(workspace), data),
 
-	delete: (id: number) => api.delete<void>(`/shares/${id}`),
+		listMine: (params?: { limit?: number; offset?: number }) =>
+			api.get<SharePage>(workspaceSharesPrefix(workspace), { params }),
 
-	batchDelete: (shareIds: number[]) =>
-		api.post<BatchResult>("/shares/batch-delete", {
-			share_ids: shareIds,
-		}),
+		update: (
+			id: number,
+			data: {
+				password?: string;
+				expires_at: string | null;
+				max_downloads: number;
+			},
+		) =>
+			api.patch<ShareInfo>(`${workspaceSharesPrefix(workspace)}/${id}`, data),
 
-	getInfo: (token: string) => api.get<SharePublicInfo>(`/s/${token}`),
+		delete: (id: number) =>
+			api.delete<void>(`${workspaceSharesPrefix(workspace)}/${id}`),
 
-	verifyPassword: (token: string, password: string) =>
-		api.post<void>(`/s/${token}/verify`, { password }),
+		batchDelete: (shareIds: number[]) =>
+			api.post<BatchResult>(
+				`${workspaceSharesPrefix(workspace)}/batch-delete`,
+				{
+					share_ids: shareIds,
+				},
+			),
 
-	downloadPath: (token: string) => `/s/${token}/download`,
+		getInfo: (token: string) => api.get<SharePublicInfo>(`/s/${token}`),
 
-	thumbnailPath: (token: string) => `/s/${token}/thumbnail`,
+		verifyPassword: (token: string, password: string) =>
+			api.post<void>(`/s/${token}/verify`, { password }),
 
-	downloadFolderPath: (token: string, fileId: number) =>
-		`/s/${token}/files/${fileId}/download`,
+		downloadPath: (token: string) => `/s/${token}/download`,
 
-	downloadUrl: (token: string) => `${config.apiBaseUrl}/s/${token}/download`,
+		thumbnailPath: (token: string) => `/s/${token}/thumbnail`,
 
-	downloadFolderFileUrl: (token: string, fileId: number) =>
-		`${config.apiBaseUrl}/s/${token}/files/${fileId}/download`,
+		downloadFolderPath: (token: string, fileId: number) =>
+			`/s/${token}/files/${fileId}/download`,
 
-	listContent: (token: string, params?: FolderListParams) =>
-		api.get<FolderContents>(`/s/${token}/content`, { params }),
+		downloadUrl: (token: string) =>
+			joinApiUrl(config.apiBaseUrl, `/s/${token}/download`),
 
-	listSubfolderContent: (
-		token: string,
-		folderId: number,
-		params?: FolderListParams,
-	) =>
-		api.get<FolderContents>(`/s/${token}/folders/${folderId}/content`, {
-			params,
-		}),
-};
+		downloadFolderFileUrl: (token: string, fileId: number) =>
+			joinApiUrl(config.apiBaseUrl, `/s/${token}/files/${fileId}/download`),
+
+		listContent: (token: string, params?: FolderListParams) =>
+			api.get<FolderContents>(`/s/${token}/content`, { params }),
+
+		listSubfolderContent: (
+			token: string,
+			folderId: number,
+			params?: FolderListParams,
+		) =>
+			api.get<FolderContents>(`/s/${token}/folders/${folderId}/content`, {
+				params,
+			}),
+	};
+}
+
+export const shareService = bindWorkspaceService(createShareService);

@@ -36,6 +36,9 @@ function getStored<T extends string>(key: string, fallback: T): T {
 }
 
 interface FileState {
+	resetWorkspaceState: () => void;
+	workspaceRequestRevision: number;
+
 	// Navigation
 	currentFolderId: number | null;
 	breadcrumb: BreadcrumbItem[];
@@ -159,7 +162,38 @@ async function resolveBreadcrumb(
 	];
 }
 
+function isCurrentWorkspaceRevision(
+	get: () => FileState,
+	revision: number,
+): boolean {
+	return get().workspaceRequestRevision === revision;
+}
+
 export const useFileStore = create<FileState>((set, get) => ({
+	resetWorkspaceState: () => {
+		set((state) => ({
+			workspaceRequestRevision: state.workspaceRequestRevision + 1,
+			currentFolderId: null,
+			folders: [],
+			files: [],
+			breadcrumb: [{ id: null, name: "Root" }],
+			loading: false,
+			error: null,
+			filesTotalCount: 0,
+			foldersTotalCount: 0,
+			loadingMore: false,
+			nextFileCursor: null,
+			searchQuery: null,
+			searchFolders: [],
+			searchFiles: [],
+			selectedFileIds: new Set(),
+			selectedFolderIds: new Set(),
+			clipboard: null,
+		}));
+	},
+
+	workspaceRequestRevision: 0,
+
 	currentFolderId: null,
 	folders: [],
 	files: [],
@@ -186,6 +220,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 	clipboard: null,
 
 	navigateTo: async (folderId, folderName, breadcrumbPath) => {
+		const revision = get().workspaceRequestRevision;
 		set({
 			loading: true,
 			error: null,
@@ -209,6 +244,10 @@ export const useFileStore = create<FileState>((set, get) => ({
 				resolveBreadcrumb(folderId, breadcrumbPath),
 			]);
 
+			if (!isCurrentWorkspaceRevision(get, revision)) {
+				return;
+			}
+
 			set({
 				currentFolderId: folderId,
 				folders: contents.folders,
@@ -225,13 +264,15 @@ export const useFileStore = create<FileState>((set, get) => ({
 				error && typeof error === "object" && "message" in error
 					? (error as { message: string }).message
 					: folderName || "Failed to load folder";
-			set({ loading: false, error: msg });
+			if (isCurrentWorkspaceRevision(get, revision)) {
+				set({ loading: false, error: msg });
+			}
 			throw error;
 		}
 	},
 
 	refresh: async () => {
-		const { currentFolderId } = get();
+		const { currentFolderId, workspaceRequestRevision } = get();
 		set({
 			loading: true,
 			files: [],
@@ -245,6 +286,9 @@ export const useFileStore = create<FileState>((set, get) => ({
 				currentFolderId,
 				getInitialPageParams(get().sortBy, get().sortOrder),
 			);
+			if (!isCurrentWorkspaceRevision(get, workspaceRequestRevision)) {
+				return;
+			}
 			set({
 				folders: contents.folders,
 				files: contents.files,
@@ -254,14 +298,22 @@ export const useFileStore = create<FileState>((set, get) => ({
 				loading: false,
 			});
 		} catch (error) {
-			set({ loading: false });
+			if (isCurrentWorkspaceRevision(get, workspaceRequestRevision)) {
+				set({ loading: false });
+			}
 			throw error;
 		}
 	},
 
 	loadMoreFiles: async () => {
-		const { currentFolderId, nextFileCursor, loadingMore, sortBy, sortOrder } =
-			get();
+		const {
+			currentFolderId,
+			nextFileCursor,
+			loadingMore,
+			sortBy,
+			sortOrder,
+			workspaceRequestRevision,
+		} = get();
 		if (loadingMore || !nextFileCursor) return;
 
 		set({ loadingMore: true });
@@ -274,13 +326,18 @@ export const useFileStore = create<FileState>((set, get) => ({
 				sort_by: sortBy,
 				sort_order: sortOrder,
 			});
+			if (!isCurrentWorkspaceRevision(get, workspaceRequestRevision)) {
+				return;
+			}
 			set((state) => ({
 				files: [...state.files, ...contents.files],
 				nextFileCursor: contents.next_file_cursor ?? null,
 				loadingMore: false,
 			}));
 		} catch (e) {
-			set({ loadingMore: false });
+			if (isCurrentWorkspaceRevision(get, workspaceRequestRevision)) {
+				set({ loadingMore: false });
+			}
 			logger.warn("loadMoreFiles failed", e);
 		}
 	},
@@ -307,19 +364,23 @@ export const useFileStore = create<FileState>((set, get) => ({
 			filesTotalCount: 0,
 			foldersTotalCount: 0,
 		});
-		const { currentFolderId, sortOrder } = get();
-		void fetchFolder(
-			currentFolderId,
-			getInitialPageParams(sortBy, sortOrder),
-		).then((contents) =>
-			set({
-				files: contents.files,
-				folders: contents.folders,
-				filesTotalCount: contents.files_total,
-				foldersTotalCount: contents.folders_total,
-				nextFileCursor: contents.next_file_cursor ?? null,
-			}),
-		);
+		const { currentFolderId, sortOrder, workspaceRequestRevision } = get();
+		void fetchFolder(currentFolderId, getInitialPageParams(sortBy, sortOrder))
+			.then((contents) => {
+				if (!isCurrentWorkspaceRevision(get, workspaceRequestRevision)) {
+					return;
+				}
+				set({
+					files: contents.files,
+					folders: contents.folders,
+					filesTotalCount: contents.files_total,
+					foldersTotalCount: contents.folders_total,
+					nextFileCursor: contents.next_file_cursor ?? null,
+				});
+			})
+			.catch((error) => {
+				logger.warn("setSortBy refresh failed", error);
+			});
 	},
 
 	setSortOrder: (sortOrder) => {
@@ -333,19 +394,23 @@ export const useFileStore = create<FileState>((set, get) => ({
 			filesTotalCount: 0,
 			foldersTotalCount: 0,
 		});
-		const { currentFolderId, sortBy } = get();
-		void fetchFolder(
-			currentFolderId,
-			getInitialPageParams(sortBy, sortOrder),
-		).then((contents) =>
-			set({
-				files: contents.files,
-				folders: contents.folders,
-				filesTotalCount: contents.files_total,
-				foldersTotalCount: contents.folders_total,
-				nextFileCursor: contents.next_file_cursor ?? null,
-			}),
-		);
+		const { currentFolderId, sortBy, workspaceRequestRevision } = get();
+		void fetchFolder(currentFolderId, getInitialPageParams(sortBy, sortOrder))
+			.then((contents) => {
+				if (!isCurrentWorkspaceRevision(get, workspaceRequestRevision)) {
+					return;
+				}
+				set({
+					files: contents.files,
+					folders: contents.folders,
+					filesTotalCount: contents.files_total,
+					foldersTotalCount: contents.folders_total,
+					nextFileCursor: contents.next_file_cursor ?? null,
+				});
+			})
+			.catch((error) => {
+				logger.warn("setSortOrder refresh failed", error);
+			});
 	},
 
 	_applyFromServer: ({ viewMode, sortBy, sortOrder }) => {
@@ -393,9 +458,13 @@ export const useFileStore = create<FileState>((set, get) => ({
 	},
 
 	search: async (query) => {
+		const revision = get().workspaceRequestRevision;
 		set({ loading: true, searchQuery: query });
 		try {
 			const results = await searchService.search({ q: query, limit: 100 });
+			if (!isCurrentWorkspaceRevision(get, revision)) {
+				return;
+			}
 			set({
 				searchFiles: results.files,
 				searchFolders: results.folders,
@@ -404,7 +473,9 @@ export const useFileStore = create<FileState>((set, get) => ({
 				selectedFolderIds: new Set(),
 			});
 		} catch (error) {
-			set({ loading: false });
+			if (isCurrentWorkspaceRevision(get, revision)) {
+				set({ loading: false });
+			}
 			throw error;
 		}
 	},
@@ -446,7 +517,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 	},
 
 	clipboardPaste: async () => {
-		const { clipboard, currentFolderId } = get();
+		const { clipboard, currentFolderId, workspaceRequestRevision } = get();
 		if (!clipboard) throw new Error("No clipboard");
 
 		const result =
@@ -475,6 +546,9 @@ export const useFileStore = create<FileState>((set, get) => ({
 			currentFolderId,
 			getInitialPageParams(get().sortBy, get().sortOrder),
 		);
+		if (!isCurrentWorkspaceRevision(get, workspaceRequestRevision)) {
+			return { mode, result };
+		}
 		set({
 			folders: contents.folders,
 			files: contents.files,
@@ -519,6 +593,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 	},
 
 	moveToFolder: async (fileIds, folderIds, targetFolderId) => {
+		const revision = get().workspaceRequestRevision;
 		const result = await batchService.batchMove(
 			fileIds,
 			folderIds,
@@ -534,6 +609,9 @@ export const useFileStore = create<FileState>((set, get) => ({
 			),
 			resolveBreadcrumb(currentFolderId),
 		]);
+		if (!isCurrentWorkspaceRevision(get, revision)) {
+			return result;
+		}
 		set({
 			folders: contents.folders,
 			files: contents.files,

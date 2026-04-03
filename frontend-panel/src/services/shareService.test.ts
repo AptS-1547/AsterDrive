@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PERSONAL_WORKSPACE } from "@/lib/workspace";
 import type { FolderListParams } from "@/services/fileService";
-import { shareService } from "@/services/shareService";
+import { createShareService, shareService } from "@/services/shareService";
 
 const { apiDelete, apiGet, apiPatch, apiPost } = vi.hoisted(() => ({
 	apiDelete: vi.fn(),
@@ -56,6 +57,35 @@ describe("shareService", () => {
 		expect(apiPost).toHaveBeenNthCalledWith(2, "/shares/batch-delete", {
 			share_ids: [7, 8],
 		});
+
+		const teamShareService = createShareService({ kind: "team", teamId: 5 });
+		teamShareService.create(createPayload);
+		teamShareService.listMine({ limit: 10 });
+		teamShareService.update(7, {
+			password: "team-secret",
+			expires_at: null,
+			max_downloads: 2,
+		});
+		teamShareService.delete(7);
+		teamShareService.batchDelete([7]);
+
+		expect(apiPost).toHaveBeenNthCalledWith(
+			3,
+			"/teams/5/shares",
+			createPayload,
+		);
+		expect(apiGet).toHaveBeenNthCalledWith(2, "/teams/5/shares", {
+			params: { limit: 10 },
+		});
+		expect(apiPatch).toHaveBeenNthCalledWith(2, "/teams/5/shares/7", {
+			password: "team-secret",
+			expires_at: null,
+			max_downloads: 2,
+		});
+		expect(apiDelete).toHaveBeenNthCalledWith(2, "/teams/5/shares/7");
+		expect(apiPost).toHaveBeenNthCalledWith(4, "/teams/5/shares/batch-delete", {
+			share_ids: [7],
+		});
 	});
 
 	it("uses the expected public share routes and download helpers", () => {
@@ -90,5 +120,35 @@ describe("shareService", () => {
 		expect(shareService.downloadFolderFileUrl("token-1", 42)).toBe(
 			"/api/v1/s/token-1/files/42/download",
 		);
+	});
+
+	it("normalizes trailing slashes when building public download URLs", async () => {
+		vi.resetModules();
+		vi.doMock("@/config/app", () => ({
+			config: {
+				apiBaseUrl: "/api/v1///",
+				appName: "AsterDrive",
+				appVersion: "test",
+			},
+		}));
+
+		const { createShareService } = await import("@/services/shareService");
+		const service = createShareService(PERSONAL_WORKSPACE);
+		expect(service.downloadUrl("token-1")).toBe("/api/v1/s/token-1/download");
+		expect(service.downloadFolderFileUrl("token-1", 42)).toBe(
+			"/api/v1/s/token-1/files/42/download",
+		);
+
+		vi.doUnmock("@/config/app");
+	});
+
+	it("requires an explicit workspace when creating a share service directly", () => {
+		expect(() =>
+			(
+				createShareService as unknown as (
+					workspace?: unknown,
+				) => ReturnType<typeof createShareService>
+			)(),
+		).toThrow("workspace is required");
 	});
 });

@@ -29,6 +29,8 @@ mod m20260330_000001_add_directory_lookup_indexes;
 mod m20260330_000002_add_search_name_indexes;
 mod m20260331_000001_add_user_session_version;
 mod m20260331_000002_create_storage_policy_groups;
+mod m20260402_000001_create_teams;
+mod m20260403_000001_add_team_scope_to_shares;
 
 pub struct Migrator;
 
@@ -65,6 +67,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260330_000002_add_search_name_indexes::Migration),
             Box::new(m20260331_000001_add_user_session_version::Migration),
             Box::new(m20260331_000002_create_storage_policy_groups::Migration),
+            Box::new(m20260402_000001_create_teams::Migration),
+            Box::new(m20260403_000001_add_team_scope_to_shares::Migration),
         ]
     }
 }

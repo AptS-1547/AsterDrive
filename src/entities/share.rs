@@ -13,6 +13,7 @@ pub struct Model {
     #[sea_orm(unique)]
     pub token: String,
     pub user_id: i64,
+    pub team_id: Option<i64>,
     pub file_id: Option<i64>,
     pub folder_id: Option<i64>,
     #[serde(skip_serializing)]
@@ -43,6 +44,12 @@ pub enum Relation {
     )]
     File,
     #[sea_orm(
+        belongs_to = "super::team::Entity",
+        from = "Column::TeamId",
+        to = "super::team::Column::Id"
+    )]
+    Team,
+    #[sea_orm(
         belongs_to = "super::folder::Entity",
         from = "Column::FolderId",
         to = "super::folder::Column::Id"
@@ -59,6 +66,12 @@ impl Related<super::user::Entity> for Entity {
 impl Related<super::file::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::File.def()
+    }
+}
+
+impl Related<super::team::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Team.def()
     }
 }
 

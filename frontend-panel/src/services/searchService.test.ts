@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { searchService } from "@/services/searchService";
+import { createSearchService, searchService } from "@/services/searchService";
 import type { SearchParams } from "@/types/api";
 
 const { apiGet } = vi.hoisted(() => ({
@@ -31,6 +31,14 @@ describe("searchService", () => {
 
 		expect(apiGet).toHaveBeenCalledWith(
 			"/search?q=report&folder_id=7&limit=50&offset=0",
+		);
+
+		const teamSearchService = createSearchService({ kind: "team", teamId: 3 });
+		teamSearchService.search(params);
+
+		expect(apiGet).toHaveBeenNthCalledWith(
+			2,
+			"/teams/3/search?q=report&folder_id=7&limit=50&offset=0",
 		);
 	});
 });

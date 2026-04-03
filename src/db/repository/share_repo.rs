@@ -9,6 +9,21 @@ use sea_orm::{
     QueryOrder, QuerySelect, sea_query::Expr,
 };
 
+#[derive(Clone, Copy)]
+enum ShareScope {
+    Personal { user_id: i64 },
+    Team { team_id: i64 },
+}
+
+fn scope_condition(scope: ShareScope) -> Condition {
+    match scope {
+        ShareScope::Personal { user_id } => Condition::all()
+            .add(share::Column::UserId.eq(user_id))
+            .add(share::Column::TeamId.is_null()),
+        ShareScope::Team { team_id } => Condition::all().add(share::Column::TeamId.eq(team_id)),
+    }
+}
+
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<share::Model> {
     Share::find_by_id(id)
         .one(db)
@@ -30,7 +45,16 @@ pub async fn find_by_token<C: ConnectionTrait>(
 
 pub async fn find_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<Vec<share::Model>> {
     Share::find()
-        .filter(share::Column::UserId.eq(user_id))
+        .filter(scope_condition(ShareScope::Personal { user_id }))
+        .order_by_desc(share::Column::CreatedAt)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_by_team<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<Vec<share::Model>> {
+    Share::find()
+        .filter(scope_condition(ShareScope::Team { team_id }))
         .order_by_desc(share::Column::CreatedAt)
         .all(db)
         .await
@@ -46,7 +70,24 @@ pub async fn find_by_user_paginated<C: ConnectionTrait>(
     fetch_offset_page(
         db,
         Share::find()
-            .filter(share::Column::UserId.eq(user_id))
+            .filter(scope_condition(ShareScope::Personal { user_id }))
+            .order_by_desc(share::Column::CreatedAt),
+        limit,
+        offset,
+    )
+    .await
+}
+
+pub async fn find_by_team_paginated<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<share::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        Share::find()
+            .filter(scope_condition(ShareScope::Team { team_id }))
             .order_by_desc(share::Column::CreatedAt),
         limit,
         offset,
@@ -77,20 +118,40 @@ pub async fn find_paginated<C: ConnectionTrait>(
 }
 
 /// 查找用户对同一资源是否已有活跃分享
+async fn find_active_by_resource_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: ShareScope,
+    file_id: Option<i64>,
+    folder_id: Option<i64>,
+) -> Result<Option<share::Model>> {
+    let mut q = Share::find()
+        .filter(scope_condition(scope))
+        .filter(active_share_condition());
+    if let Some(file_id) = file_id {
+        q = q.filter(share::Column::FileId.eq(file_id));
+    }
+    if let Some(folder_id) = folder_id {
+        q = q.filter(share::Column::FolderId.eq(folder_id));
+    }
+    q.one(db).await.map_err(AsterError::from)
+}
+
 pub async fn find_active_by_resource<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
     file_id: Option<i64>,
     folder_id: Option<i64>,
 ) -> Result<Option<share::Model>> {
-    let mut q = Share::find().filter(share::Column::UserId.eq(user_id));
-    if let Some(fid) = file_id {
-        q = q.filter(share::Column::FileId.eq(fid));
-    }
-    if let Some(fid) = folder_id {
-        q = q.filter(share::Column::FolderId.eq(fid));
-    }
-    q.one(db).await.map_err(AsterError::from)
+    find_active_by_resource_in_scope(db, ShareScope::Personal { user_id }, file_id, folder_id).await
+}
+
+pub async fn find_active_by_team_resource<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    file_id: Option<i64>,
+    folder_id: Option<i64>,
+) -> Result<Option<share::Model>> {
+    find_active_by_resource_in_scope(db, ShareScope::Team { team_id }, file_id, folder_id).await
 }
 
 fn active_share_condition() -> Condition {
@@ -109,21 +170,22 @@ fn available_downloads_condition() -> Condition {
         .add(Expr::col(share::Column::DownloadCount).lt(Expr::col(share::Column::MaxDownloads)))
 }
 
-pub async fn find_active_file_ids<C: ConnectionTrait>(
+async fn find_active_ids_in_scope<C: ConnectionTrait>(
     db: &C,
-    user_id: i64,
-    file_ids: &[i64],
+    scope: ShareScope,
+    column: share::Column,
+    ids: &[i64],
 ) -> Result<HashSet<i64>> {
-    if file_ids.is_empty() {
+    if ids.is_empty() {
         return Ok(HashSet::new());
     }
 
     let rows = Share::find()
         .select_only()
-        .column(share::Column::FileId)
-        .filter(share::Column::UserId.eq(user_id))
-        .filter(share::Column::FileId.is_in(file_ids.iter().copied()))
-        .filter(share::Column::FileId.is_not_null())
+        .column(column)
+        .filter(scope_condition(scope))
+        .filter(column.is_in(ids.iter().copied()))
+        .filter(column.is_not_null())
         .filter(active_share_condition())
         .into_tuple::<Option<i64>>()
         .all(db)
@@ -133,28 +195,60 @@ pub async fn find_active_file_ids<C: ConnectionTrait>(
     Ok(rows.into_iter().flatten().collect())
 }
 
+pub async fn find_active_file_ids<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    file_ids: &[i64],
+) -> Result<HashSet<i64>> {
+    find_active_ids_in_scope(
+        db,
+        ShareScope::Personal { user_id },
+        share::Column::FileId,
+        file_ids,
+    )
+    .await
+}
+
+pub async fn find_active_team_file_ids<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    file_ids: &[i64],
+) -> Result<HashSet<i64>> {
+    find_active_ids_in_scope(
+        db,
+        ShareScope::Team { team_id },
+        share::Column::FileId,
+        file_ids,
+    )
+    .await
+}
+
 pub async fn find_active_folder_ids<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
     folder_ids: &[i64],
 ) -> Result<HashSet<i64>> {
-    if folder_ids.is_empty() {
-        return Ok(HashSet::new());
-    }
+    find_active_ids_in_scope(
+        db,
+        ShareScope::Personal { user_id },
+        share::Column::FolderId,
+        folder_ids,
+    )
+    .await
+}
 
-    let rows = Share::find()
-        .select_only()
-        .column(share::Column::FolderId)
-        .filter(share::Column::UserId.eq(user_id))
-        .filter(share::Column::FolderId.is_in(folder_ids.iter().copied()))
-        .filter(share::Column::FolderId.is_not_null())
-        .filter(active_share_condition())
-        .into_tuple::<Option<i64>>()
-        .all(db)
-        .await
-        .map_err(AsterError::from)?;
-
-    Ok(rows.into_iter().flatten().collect())
+pub async fn find_active_team_folder_ids<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    folder_ids: &[i64],
+) -> Result<HashSet<i64>> {
+    find_active_ids_in_scope(
+        db,
+        ShareScope::Team { team_id },
+        share::Column::FolderId,
+        folder_ids,
+    )
+    .await
 }
 
 pub async fn create<C: ConnectionTrait>(db: &C, model: share::ActiveModel) -> Result<share::Model> {
@@ -198,6 +292,22 @@ pub async fn increment_download_count<C: ConnectionTrait>(db: &C, id: i64) -> Re
         .filter(share::Column::Id.eq(id))
         // 只在未达上限时递增（max_downloads=0 表示不限）
         .filter(available_downloads_condition())
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected > 0)
+}
+
+/// 回滚一次 download_count 递增。
+/// 返回 false 表示分享不存在或计数已经是 0。
+pub async fn decrement_download_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<bool> {
+    let result = Share::update_many()
+        .col_expr(
+            share::Column::DownloadCount,
+            Expr::col(share::Column::DownloadCount).sub(1i64),
+        )
+        .filter(share::Column::Id.eq(id))
+        .filter(share::Column::DownloadCount.gt(0))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

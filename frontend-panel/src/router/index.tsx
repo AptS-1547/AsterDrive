@@ -1,7 +1,19 @@
-import { lazy, Suspense } from "react";
-import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
+import { lazy, Suspense, useLayoutEffect } from "react";
+import {
+	createBrowserRouter,
+	Navigate,
+	Outlet,
+	useParams,
+} from "react-router-dom";
+import {
+	PERSONAL_WORKSPACE,
+	type Workspace,
+	workspaceEquals,
+} from "@/lib/workspace";
 import ErrorPage from "@/pages/ErrorPage";
 import { useAuthStore } from "@/stores/authStore";
+import { useFileStore } from "@/stores/fileStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const FileBrowserPage = lazy(() => import("@/pages/FileBrowserPage"));
@@ -76,6 +88,33 @@ function LoginGuard() {
 	);
 }
 
+function WorkspaceOutlet({ workspace }: { workspace: Workspace }) {
+	useLayoutEffect(() => {
+		if (workspaceEquals(useWorkspaceStore.getState().workspace, workspace)) {
+			return;
+		}
+		useWorkspaceStore.getState().setWorkspace(workspace);
+		useFileStore.getState().resetWorkspaceState();
+	}, [workspace]);
+
+	return <Outlet />;
+}
+
+function PersonalWorkspaceRoute() {
+	return <WorkspaceOutlet workspace={PERSONAL_WORKSPACE} />;
+}
+
+function TeamWorkspaceRoute() {
+	const { teamId } = useParams<{ teamId?: string }>();
+	const parsedTeamId = Number(teamId);
+
+	if (!Number.isSafeInteger(parsedTeamId) || parsedTeamId <= 0) {
+		return <Navigate to="/" replace />;
+	}
+
+	return <WorkspaceOutlet workspace={{ kind: "team", teamId: parsedTeamId }} />;
+}
+
 export const router = createBrowserRouter([
 	{
 		element: <LoginGuard />,
@@ -86,26 +125,41 @@ export const router = createBrowserRouter([
 		element: <ProtectedRoute />,
 		errorElement: <ErrorPage />,
 		children: [
-			{ path: "/", element: <FileBrowserPage /> },
-			{ path: "/folder/:folderId", element: <FileBrowserPage /> },
-			{ path: "/shares", element: <MySharesPage /> },
-			{ path: "/settings/webdav", element: <WebdavAccountsPage /> },
-			{ path: "/trash", element: <TrashPage /> },
 			{
-				path: "/settings",
-				element: <Navigate to="/settings/profile" replace />,
+				element: <PersonalWorkspaceRoute />,
+				children: [
+					{ path: "/", element: <FileBrowserPage /> },
+					{ path: "/folder/:folderId", element: <FileBrowserPage /> },
+					{ path: "/shares", element: <MySharesPage /> },
+					{ path: "/settings/webdav", element: <WebdavAccountsPage /> },
+					{ path: "/trash", element: <TrashPage /> },
+					{
+						path: "/settings",
+						element: <Navigate to="/settings/profile" replace />,
+					},
+					{
+						path: "/settings/profile",
+						element: <SettingsPage section="profile" />,
+					},
+					{
+						path: "/settings/interface",
+						element: <SettingsPage section="interface" />,
+					},
+					{
+						path: "/settings/security",
+						element: <SettingsPage section="security" />,
+					},
+				],
 			},
 			{
-				path: "/settings/profile",
-				element: <SettingsPage section="profile" />,
-			},
-			{
-				path: "/settings/interface",
-				element: <SettingsPage section="interface" />,
-			},
-			{
-				path: "/settings/security",
-				element: <SettingsPage section="security" />,
+				path: "/teams/:teamId",
+				element: <TeamWorkspaceRoute />,
+				children: [
+					{ index: true, element: <FileBrowserPage /> },
+					{ path: "folder/:folderId", element: <FileBrowserPage /> },
+					{ path: "shares", element: <MySharesPage /> },
+					{ path: "trash", element: <TrashPage /> },
+				],
 			},
 		],
 	},

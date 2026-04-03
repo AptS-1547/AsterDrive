@@ -2,6 +2,7 @@ use crate::db::repository::{file_repo, folder_repo, property_repo};
 use crate::entities::entity_property;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
+use crate::services::{file_service, folder_service};
 use crate::types::EntityType;
 
 /// 验证实体归属并返回
@@ -14,12 +15,14 @@ async fn verify_ownership(
     match entity_type {
         EntityType::File => {
             let f = file_repo::find_by_id(&state.db, entity_id).await?;
+            file_service::ensure_personal_file_scope(&f)?;
             if f.user_id != user_id {
                 return Err(AsterError::auth_forbidden("not your file"));
             }
         }
         EntityType::Folder => {
             let f = folder_repo::find_by_id(&state.db, entity_id).await?;
+            folder_service::ensure_personal_folder_scope(&f)?;
             if f.user_id != user_id {
                 return Err(AsterError::auth_forbidden("not your folder"));
             }
