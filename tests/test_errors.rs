@@ -1,5 +1,6 @@
-use actix_web::{ResponseError, http::StatusCode};
+use actix_web::{ResponseError, body::to_bytes, http::StatusCode};
 use aster_drive::errors::AsterError;
+use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{
@@ -60,6 +61,11 @@ fn capture_events(f: impl FnOnce()) -> Vec<RecordedEvent> {
     recorder.events.lock().unwrap().clone()
 }
 
+async fn response_body_json(resp: actix_web::HttpResponse) -> Value {
+    let body = to_bytes(resp.into_body()).await.unwrap();
+    serde_json::from_slice(&body).unwrap()
+}
+
 #[test]
 fn storage_quota_exceeded_logs_warn_for_507() {
     let err = AsterError::storage_quota_exceeded("quota 1024, used 1000, need 100");
@@ -98,4 +104,37 @@ fn unauthorized_error_skips_logging() {
     });
 
     assert!(events.is_empty());
+}
+
+#[actix_web::test]
+async fn internal_error_redacts_response_message() {
+    let err = AsterError::internal_error("db pool poisoned");
+
+    let resp = err.error_response();
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    let body = response_body_json(resp).await;
+    assert_eq!(body["msg"], "Internal Server Error");
+}
+
+#[actix_web::test]
+async fn storage_driver_error_redacts_response_message() {
+    let err = AsterError::storage_driver_error("read file: /tmp/private/secret.txt");
+
+    let resp = err.error_response();
+    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    let body = response_body_json(resp).await;
+    assert_eq!(body["msg"], "Storage Driver Error");
+}
+
+#[actix_web::test]
+async fn storage_quota_exceeded_keeps_response_message() {
+    let err = AsterError::storage_quota_exceeded("quota 1024, used 1000, need 100");
+
+    let resp = err.error_response();
+    assert_eq!(resp.status(), StatusCode::INSUFFICIENT_STORAGE);
+
+    let body = response_body_json(resp).await;
+    assert_eq!(body["msg"], "quota 1024, used 1000, need 100");
 }

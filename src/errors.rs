@@ -189,6 +189,13 @@ impl AsterError {
             }
         }
     }
+
+    fn client_message(&self) -> &str {
+        match self.response_log_level() {
+            ResponseLogLevel::Error => self.error_type(),
+            ResponseLogLevel::Warn | ResponseLogLevel::Skip => self.message(),
+        }
+    }
 }
 
 impl actix_web::ResponseError for AsterError {
@@ -215,7 +222,7 @@ impl actix_web::ResponseError for AsterError {
         if self.share_error_should_disable_cache() {
             response.insert_header(("Cache-Control", "no-store, max-age=0"));
         }
-        response.json(ApiResponse::<()>::error(error_code, self.message()))
+        response.json(ApiResponse::<()>::error(error_code, self.client_message()))
     }
 }
 
@@ -288,6 +295,13 @@ mod tests {
     fn internal_error_logs_as_error() {
         let err = AsterError::internal_error("db pool poisoned");
         assert_eq!(err.response_log_level(), ResponseLogLevel::Error);
+        assert_eq!(err.client_message(), "Internal Server Error");
+    }
+
+    #[test]
+    fn quota_exceeded_keeps_client_message() {
+        let err = AsterError::storage_quota_exceeded("quota 1024, used 1000, need 100");
+        assert_eq!(err.client_message(), "quota 1024, used 1000, need 100");
     }
 
     #[test]

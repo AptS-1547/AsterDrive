@@ -2,6 +2,10 @@ use crate::api::response::{ApiResponse, HealthResponse, MemoryStatsResponse};
 use crate::runtime::AppState;
 use actix_web::{HttpResponse, web};
 
+const READY_DB_UNAVAILABLE_MESSAGE: &str = "Database unavailable";
+#[cfg(feature = "metrics")]
+const METRICS_EXPORT_FAILED_MESSAGE: &str = "Failed to export metrics";
+
 pub fn routes() -> actix_web::Scope {
     let scope = web::scope("/health")
         .route("", web::get().to(health))
@@ -44,10 +48,13 @@ pub async fn health() -> HttpResponse {
 pub async fn ready(state: web::Data<AppState>) -> HttpResponse {
     match state.db.ping().await {
         Ok(_) => HttpResponse::Ok().json(ApiResponse::ok(status_response("ready"))),
-        Err(e) => HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error(
-            crate::api::error_code::ErrorCode::DatabaseError,
-            &e.to_string(),
-        )),
+        Err(e) => {
+            tracing::error!(error = %e, "health readiness database ping failed");
+            HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error(
+                crate::api::error_code::ErrorCode::DatabaseError,
+                READY_DB_UNAVAILABLE_MESSAGE,
+            ))
+        }
     }
 }
 
@@ -79,7 +86,10 @@ pub async fn metrics_endpoint() -> HttpResponse {
         Ok(output) => HttpResponse::Ok()
             .content_type("text/plain; version=0.0.4; charset=utf-8")
             .body(output),
-        Err(e) => HttpResponse::InternalServerError().body(format!("Failed to export: {e}")),
+        Err(e) => {
+            tracing::error!(error = %e, "metrics export failed");
+            HttpResponse::InternalServerError().body(METRICS_EXPORT_FAILED_MESSAGE)
+        }
     }
 }
 
