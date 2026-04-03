@@ -43,4 +43,25 @@ describe("bindWorkspaceService", () => {
 		expect(service.workspaceKey).toBe("team:7");
 		expect(service.describe()).toBe("team:7");
 	});
+
+	it("uses the current workspace for cached method references", () => {
+		const service = bindWorkspaceService((workspace) => ({
+			deleteFile(id: number) {
+				const prefix =
+					workspace.kind === "team" ? `/teams/${workspace.teamId}` : "";
+				return `${prefix}/files/${id}`;
+			},
+		}));
+
+		const remove = service.deleteFile;
+		const { deleteFile } = service;
+
+		expect(remove(8)).toBe("/files/8");
+		expect(deleteFile(9)).toBe("/files/9");
+
+		useWorkspaceStore.getState().setWorkspace({ kind: "team", teamId: 7 });
+
+		expect(remove(8)).toBe("/teams/7/files/8");
+		expect(deleteFile(9)).toBe("/teams/7/files/9");
+	});
 });

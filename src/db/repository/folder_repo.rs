@@ -559,6 +559,11 @@ pub async fn find_by_name_in_team_parent<C: ConnectionTrait>(
 
 /// 批量解析路径前缀中的文件夹链，避免逐段 round-trip。
 ///
+/// `resolve_path_chain` only resolves personal user-space folders.
+/// `build_resolve_path_chain_query` applies `TeamId IS NULL`, so team-root
+/// paths will not match here. Callers resolving team folders must use a
+/// different team-aware code path instead of this helper.
+///
 /// 返回已成功匹配的文件夹链；如果中途断开，只返回前缀中已匹配的部分。
 pub async fn resolve_path_chain<C: ConnectionTrait>(
     db: &C,

@@ -1,4 +1,5 @@
 import { config } from "@/config/app";
+import { joinApiUrl } from "@/lib/apiUrl";
 import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
@@ -66,12 +67,11 @@ export function createFileService(workspace: Workspace) {
 		downloadPath: (id: number) =>
 			buildWorkspacePath(workspace, `/files/${id}/download`),
 
-		downloadUrl: (id: number) => {
-			const baseUrl = config.apiBaseUrl.endsWith("/")
-				? config.apiBaseUrl.slice(0, -1)
-				: config.apiBaseUrl;
-			return `${baseUrl}${buildWorkspacePath(workspace, `/files/${id}/download`)}`;
-		},
+		downloadUrl: (id: number) =>
+			joinApiUrl(
+				config.apiBaseUrl,
+				buildWorkspacePath(workspace, `/files/${id}/download`),
+			),
 
 		thumbnailPath: (id: number) =>
 			buildWorkspacePath(workspace, `/files/${id}/thumbnail`),
@@ -167,7 +167,7 @@ export function createFileService(workspace: Workspace) {
 	};
 }
 
-// `fileService` is a `bindWorkspaceService(createFileService)` proxy bound on
-// property access to the current workspace. Do not destructure or cache methods
-// from `fileService`; use `createFileService(workspace)` for a stable instance.
+// `fileService` methods resolve the current workspace when invoked, so cached
+// or destructured method references still follow workspace changes. Use
+// `createFileService(workspace)` for an explicit stable workspace instance.
 export const fileService = bindWorkspaceService(createFileService);

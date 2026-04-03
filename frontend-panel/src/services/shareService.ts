@@ -1,4 +1,5 @@
 import { config } from "@/config/app";
+import { joinApiUrl } from "@/lib/apiUrl";
 import {
 	buildWorkspacePath,
 	PERSONAL_WORKSPACE,
@@ -17,13 +18,6 @@ import { api } from "./http";
 
 function workspaceSharesPrefix(workspace: Workspace) {
 	return buildWorkspacePath(workspace, "/shares");
-}
-
-function joinApiUrl(path: string) {
-	const baseUrl = config.apiBaseUrl.endsWith("/")
-		? config.apiBaseUrl.slice(0, -1)
-		: config.apiBaseUrl;
-	return `${baseUrl}${path}`;
 }
 
 export function createShareService(workspace: Workspace = PERSONAL_WORKSPACE) {
@@ -72,10 +66,11 @@ export function createShareService(workspace: Workspace = PERSONAL_WORKSPACE) {
 		downloadFolderPath: (token: string, fileId: number) =>
 			`/s/${token}/files/${fileId}/download`,
 
-		downloadUrl: (token: string) => joinApiUrl(`/s/${token}/download`),
+		downloadUrl: (token: string) =>
+			joinApiUrl(config.apiBaseUrl, `/s/${token}/download`),
 
 		downloadFolderFileUrl: (token: string, fileId: number) =>
-			joinApiUrl(`/s/${token}/files/${fileId}/download`),
+			joinApiUrl(config.apiBaseUrl, `/s/${token}/files/${fileId}/download`),
 
 		listContent: (token: string, params?: FolderListParams) =>
 			api.get<FolderContents>(`/s/${token}/content`, { params }),

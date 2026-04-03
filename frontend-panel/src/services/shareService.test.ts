@@ -125,7 +125,7 @@ describe("shareService", () => {
 		vi.resetModules();
 		vi.doMock("@/config/app", () => ({
 			config: {
-				apiBaseUrl: "/api/v1/",
+				apiBaseUrl: "/api/v1///",
 				appName: "AsterDrive",
 				appVersion: "test",
 			},

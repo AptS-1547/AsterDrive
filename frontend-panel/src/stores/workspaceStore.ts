@@ -27,6 +27,7 @@ export function bindWorkspaceService<T extends object>(
 ): T {
 	let cachedService: T | null = null;
 	let cachedWorkspace: Workspace | null = null;
+	const wrappedMethods = new Map<PropertyKey, unknown>();
 
 	function getService(): T {
 		const workspace = getCurrentWorkspace();
@@ -41,11 +42,28 @@ export function bindWorkspaceService<T extends object>(
 		return cachedService;
 	}
 
+	function getWrappedMethod(prop: PropertyKey) {
+		if (wrappedMethods.has(prop)) {
+			return wrappedMethods.get(prop);
+		}
+
+		const wrapped = (...args: unknown[]) => {
+			const service = getService();
+			const value = service[prop as keyof T];
+			if (typeof value !== "function") {
+				throw new TypeError(`Property ${String(prop)} is not callable`);
+			}
+			return Reflect.apply(value, service, args);
+		};
+		wrappedMethods.set(prop, wrapped);
+		return wrapped;
+	}
+
 	return new Proxy({} as T, {
 		get(_target, prop) {
 			const service = getService();
 			const value = service[prop as keyof T];
-			return typeof value === "function" ? value.bind(service) : value;
+			return typeof value === "function" ? getWrappedMethod(prop) : value;
 		},
 		has(_target, prop) {
 			return prop in getService();
@@ -61,7 +79,7 @@ export function bindWorkspaceService<T extends object>(
 				return {
 					...descriptor,
 					configurable: true,
-					value: descriptor.value.bind(service),
+					value: getWrappedMethod(prop),
 				};
 			}
 			return {
