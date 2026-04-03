@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::{policy_group_repo, policy_repo, user_repo};
+use crate::db::repository::{policy_group_repo, policy_repo, team_repo, user_repo};
 use crate::entities::{
     storage_policy, storage_policy_group, storage_policy_group_item, user, user_storage_policy,
 };
@@ -19,6 +19,33 @@ use crate::storage::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::types::DriverType;
 
 const SYSTEM_STORAGE_POLICY_ID: i64 = 1;
+
+fn format_group_assignment_blocker(
+    action: &str,
+    user_assignment_count: u64,
+    team_assignment_count: u64,
+) -> Option<String> {
+    let mut refs = Vec::new();
+    if user_assignment_count > 0 {
+        refs.push(format!(
+            "{user_assignment_count} user assignment(s) still reference it"
+        ));
+    }
+    if team_assignment_count > 0 {
+        refs.push(format!(
+            "{team_assignment_count} team assignment(s) still reference it"
+        ));
+    }
+
+    if refs.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "cannot {action} policy group: {}",
+        refs.join(" and ")
+    ))
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -882,12 +909,15 @@ pub async fn update_group(
         }
 
         if existing.is_enabled {
-            let assignment_count =
+            let user_assignment_count =
                 policy_group_repo::count_user_group_assignments(&txn, id).await?;
-            if assignment_count > 0 {
-                return Err(AsterError::validation_error(format!(
-                    "cannot disable policy group: {assignment_count} user assignment(s) still reference it"
-                )));
+            let team_assignment_count = team_repo::count_active_by_policy_group(&txn, id).await?;
+            if let Some(message) = format_group_assignment_blocker(
+                "disable",
+                user_assignment_count,
+                team_assignment_count,
+            ) {
+                return Err(AsterError::validation_error(message));
             }
         }
     }
@@ -960,11 +990,13 @@ pub async fn delete_group(state: &AppState, id: i64) -> Result<()> {
         }
     }
 
-    let assignment_count = policy_group_repo::count_user_group_assignments(&state.db, id).await?;
-    if assignment_count > 0 {
-        return Err(AsterError::validation_error(format!(
-            "cannot delete policy group: {assignment_count} user assignment(s) still reference it"
-        )));
+    let user_assignment_count =
+        policy_group_repo::count_user_group_assignments(&state.db, id).await?;
+    let team_assignment_count = team_repo::count_active_by_policy_group(&state.db, id).await?;
+    if let Some(message) =
+        format_group_assignment_blocker("delete", user_assignment_count, team_assignment_count)
+    {
+        return Err(AsterError::validation_error(message));
     }
 
     policy_group_repo::delete_group(&state.db, id).await?;

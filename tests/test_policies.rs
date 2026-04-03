@@ -588,6 +588,94 @@ async fn test_cannot_assign_disabled_policy_group_to_user() {
 }
 
 #[actix_web::test]
+async fn test_cannot_disable_or_delete_policy_group_assigned_to_team() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policy-groups")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Team Bound Group",
+            "description": "Referenced by a team",
+            "is_enabled": true,
+            "is_default": false,
+            "items": [
+                {
+                    "policy_id": policy_id,
+                    "priority": 1,
+                    "min_file_size": 0,
+                    "max_file_size": 0
+                }
+            ]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let group_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "teampolicyadmin",
+            "email": "teampolicyadmin@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/teams")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Policy Bound Team",
+            "admin_identifier": "teampolicyadmin",
+            "policy_group_id": group_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "is_enabled": false }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "cannot disable policy group: 1 team assignment(s) still reference it"
+    );
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "cannot delete policy group: 1 team assignment(s) still reference it"
+    );
+}
+
+#[actix_web::test]
 async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default() {
     use aster_drive::services::auth_service;
 

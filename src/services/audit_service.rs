@@ -12,7 +12,7 @@ use crate::entities::audit_log;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::auth_service::Claims;
-use crate::types::{UserRole, UserStatus};
+use crate::types::{TeamMemberRole, UserRole, UserStatus};
 
 const DEFAULT_RETENTION_DAYS: i64 = 90;
 
@@ -26,9 +26,13 @@ pub struct AuditContext {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuditAction {
     AdminCreateUser,
+    AdminCreateTeam,
     AdminCreatePolicyGroup,
+    AdminArchiveTeam,
+    AdminRestoreTeam,
     AdminRevokeUserSessions,
     AdminResetUserPassword,
+    AdminUpdateTeam,
     AdminUpdateUser,
     AdminDeletePolicyGroup,
     AdminMigratePolicyGroupUsers,
@@ -55,6 +59,11 @@ pub enum AuditAction {
     ShareDelete,
     ShareUpdate,
     SystemSetup,
+    TeamArchive,
+    TeamCleanupExpired,
+    TeamCreate,
+    TeamRestore,
+    TeamUpdate,
     UserChangePassword,
     UserLogin,
     UserLogout,
@@ -65,9 +74,13 @@ impl AuditAction {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AdminCreateUser => "admin_create_user",
+            Self::AdminCreateTeam => "admin_create_team",
             Self::AdminCreatePolicyGroup => "admin_create_policy_group",
+            Self::AdminArchiveTeam => "admin_archive_team",
+            Self::AdminRestoreTeam => "admin_restore_team",
             Self::AdminRevokeUserSessions => "admin_revoke_user_sessions",
             Self::AdminResetUserPassword => "admin_reset_user_password",
+            Self::AdminUpdateTeam => "admin_update_team",
             Self::AdminUpdateUser => "admin_update_user",
             Self::AdminDeletePolicyGroup => "admin_delete_policy_group",
             Self::AdminMigratePolicyGroupUsers => "admin_migrate_policy_group_users",
@@ -94,6 +107,11 @@ impl AuditAction {
             Self::ShareDelete => "share_delete",
             Self::ShareUpdate => "share_update",
             Self::SystemSetup => "system_setup",
+            Self::TeamArchive => "team_archive",
+            Self::TeamCleanupExpired => "team_cleanup_expired",
+            Self::TeamCreate => "team_create",
+            Self::TeamRestore => "team_restore",
+            Self::TeamUpdate => "team_update",
             Self::UserChangePassword => "user_change_password",
             Self::UserLogin => "user_login",
             Self::UserLogout => "user_logout",
@@ -222,6 +240,22 @@ pub struct ShareUpdateDetails {
     pub max_downloads: i64,
 }
 
+#[derive(Serialize)]
+pub struct TeamAuditDetails<'a> {
+    pub description: &'a str,
+    pub member_count: u64,
+    pub storage_quota: i64,
+    pub policy_group_id: Option<i64>,
+    pub archived_at: Option<DateTime<Utc>>,
+    pub actor_role: Option<TeamMemberRole>,
+}
+
+#[derive(Serialize)]
+pub struct TeamCleanupAuditDetails {
+    pub archived_at: Option<DateTime<Utc>>,
+    pub retention_days: i64,
+}
+
 pub fn details<T: Serialize>(value: T) -> Option<serde_json::Value> {
     match serde_json::to_value(value) {
         Ok(value) => Some(value),
@@ -233,6 +267,14 @@ pub fn details<T: Serialize>(value: T) -> Option<serde_json::Value> {
 }
 
 impl AuditContext {
+    pub fn system() -> Self {
+        Self {
+            user_id: 0,
+            ip_address: None,
+            user_agent: None,
+        }
+    }
+
     pub fn from_request(req: &HttpRequest, claims: &Claims) -> Self {
         let ip_address = req
             .connection_info()
@@ -340,10 +382,13 @@ mod tests {
     fn audit_action_strings_match_existing_contract() {
         let cases = [
             (AuditAction::AdminCreateUser, "admin_create_user"),
+            (AuditAction::AdminCreateTeam, "admin_create_team"),
             (
                 AuditAction::AdminCreatePolicyGroup,
                 "admin_create_policy_group",
             ),
+            (AuditAction::AdminArchiveTeam, "admin_archive_team"),
+            (AuditAction::AdminRestoreTeam, "admin_restore_team"),
             (
                 AuditAction::AdminDeletePolicyGroup,
                 "admin_delete_policy_group",
@@ -360,6 +405,7 @@ mod tests {
                 AuditAction::AdminResetUserPassword,
                 "admin_reset_user_password",
             ),
+            (AuditAction::AdminUpdateTeam, "admin_update_team"),
             (
                 AuditAction::AdminUpdatePolicyGroup,
                 "admin_update_policy_group",
@@ -387,6 +433,11 @@ mod tests {
             (AuditAction::ShareDelete, "share_delete"),
             (AuditAction::ShareUpdate, "share_update"),
             (AuditAction::SystemSetup, "system_setup"),
+            (AuditAction::TeamArchive, "team_archive"),
+            (AuditAction::TeamCleanupExpired, "team_cleanup_expired"),
+            (AuditAction::TeamCreate, "team_create"),
+            (AuditAction::TeamRestore, "team_restore"),
+            (AuditAction::TeamUpdate, "team_update"),
             (AuditAction::UserChangePassword, "user_change_password"),
             (AuditAction::UserLogin, "user_login"),
             (AuditAction::UserLogout, "user_logout"),

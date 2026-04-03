@@ -170,6 +170,168 @@ async fn test_admin_users() {
 }
 
 #[actix_web::test]
+async fn test_admin_team_crud() {
+    let state = common::setup().await;
+    let default_group_id = state
+        .policy_snapshot
+        .system_default_policy_group()
+        .expect("default policy group should exist")
+        .id;
+    let default_policy_id = aster_drive::db::repository::policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist")
+        .id;
+    let alternate_group_id = aster_drive::services::policy_service::create_group(
+        &state,
+        aster_drive::services::policy_service::CreateStoragePolicyGroupInput {
+            name: "Operations Archive".to_string(),
+            description: Some("Secondary team routing".to_string()),
+            is_enabled: true,
+            is_default: false,
+            items: vec![
+                aster_drive::services::policy_service::StoragePolicyGroupItemInput {
+                    policy_id: default_policy_id,
+                    priority: 1,
+                    min_file_size: 0,
+                    max_file_size: 0,
+                },
+            ],
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "team-admin",
+            "email": "team-admin@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "team-admin",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let team_admin_token = common::extract_cookie(&resp, "aster_access").unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/teams")
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .set_json(serde_json::json!({
+            "name": "Operations",
+            "description": "Shared operations workspace",
+            "admin_identifier": "team-admin",
+            "policy_group_id": default_group_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0, "{body}");
+    let team = &body["data"];
+    let team_id = team["id"].as_i64().unwrap();
+    assert_eq!(team["name"], "Operations");
+    assert_eq!(team["created_by_username"], "testuser");
+    assert_eq!(team["member_count"], 1);
+    assert_eq!(team["policy_group_id"], default_group_id);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/teams?keyword=Operations")
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["items"][0]["id"], team_id);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", format!("aster_access={team_admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"][0]["id"], team_id);
+    assert_eq!(body["data"][0]["my_role"], "admin");
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/teams/{team_id}"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .set_json(serde_json::json!({
+            "name": "Operations Core",
+            "description": "Updated by admin",
+            "policy_group_id": alternate_group_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "Operations Core");
+    assert_eq!(body["data"]["description"], "Updated by admin");
+    assert_eq!(body["data"]["policy_group_id"], alternate_group_id);
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/admin/teams/{team_id}"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/teams")
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 0);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/teams?archived=true")
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["items"][0]["id"], team_id);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/admin/teams/{team_id}/restore"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["id"], team_id);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/teams")
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+}
+
+#[actix_web::test]
 async fn test_admin_overview() {
     let state = common::setup().await;
     let app = create_test_app!(state);

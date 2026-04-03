@@ -469,3 +469,210 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
     assert_eq!(update_entry["entity_type"], "user");
     assert_eq!(update_entry["entity_name"], "managed-user");
 }
+
+#[actix_web::test]
+async fn test_audit_log_recorded_on_admin_team_lifecycle() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "username": "team-admin-user",
+            "email": "team-admin@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_admin_user_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/teams")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Admin Audit Team",
+            "description": "created by admin route",
+            "admin_user_id": team_admin_user_id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/teams/{team_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Admin Audit Team Updated",
+            "description": "updated by admin route"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/admin/teams/{team_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/admin/teams/{team_id}/restore"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let items = fetch_audit_items!(app, token);
+
+    let create_entry = assert_action_present(&items, "admin_create_team");
+    assert_eq!(create_entry["entity_type"], "team");
+    assert_eq!(create_entry["entity_name"], "Admin Audit Team");
+
+    let update_entry = assert_action_present(&items, "admin_update_team");
+    assert_eq!(update_entry["entity_type"], "team");
+    assert_eq!(update_entry["entity_name"], "Admin Audit Team Updated");
+
+    let archive_entry = assert_action_present(&items, "admin_archive_team");
+    assert_eq!(archive_entry["entity_type"], "team");
+    assert_eq!(archive_entry["entity_name"], "Admin Audit Team Updated");
+
+    let restore_entry = assert_action_present(&items, "admin_restore_team");
+    assert_eq!(restore_entry["entity_type"], "team");
+    assert_eq!(restore_entry["entity_name"], "Admin Audit Team Updated");
+}
+
+#[actix_web::test]
+async fn test_audit_log_recorded_on_team_lifecycle() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Member Audit Team",
+            "description": "created from team route"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/teams/{team_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Member Audit Team Updated",
+            "description": "updated from team route"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/teams/{team_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/teams/{team_id}/restore"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let items = fetch_audit_items!(app, token);
+
+    let create_entry = assert_action_present(&items, "team_create");
+    assert_eq!(create_entry["entity_type"], "team");
+    assert_eq!(create_entry["entity_name"], "Member Audit Team");
+
+    let update_entry = assert_action_present(&items, "team_update");
+    assert_eq!(update_entry["entity_type"], "team");
+    assert_eq!(update_entry["entity_name"], "Member Audit Team Updated");
+
+    let archive_entry = assert_action_present(&items, "team_archive");
+    assert_eq!(archive_entry["entity_type"], "team");
+    assert_eq!(archive_entry["entity_name"], "Member Audit Team Updated");
+
+    let restore_entry = assert_action_present(&items, "team_restore");
+    assert_eq!(restore_entry["entity_type"], "team");
+    assert_eq!(restore_entry["entity_name"], "Member Audit Team Updated");
+}
+
+#[actix_web::test]
+async fn test_audit_log_recorded_on_team_archive_cleanup() {
+    use actix_web::{App, web};
+    use chrono::{Duration, Utc};
+    use sea_orm::{IntoActiveModel, Set};
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let state = web::Data::new(state);
+    let app = test::init_service(
+        App::new()
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::clone(&state))
+            .configure(move |cfg| aster_drive::api::configure(cfg, &db)),
+    )
+    .await;
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Cleanup Audit Team",
+            "description": "cleanup target"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/teams/{team_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let mut archived_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team_id)
+        .await
+        .unwrap()
+        .into_active_model();
+    let archived_at = Utc::now() - Duration::days(10);
+    archived_team.archived_at = Set(Some(archived_at));
+    archived_team.updated_at = Set(archived_at);
+    aster_drive::db::repository::team_repo::update(&state.db, archived_team)
+        .await
+        .unwrap();
+
+    let deleted = aster_drive::services::team_service::cleanup_expired_archived_teams(&state)
+        .await
+        .unwrap();
+    assert_eq!(deleted, 1);
+
+    let items = fetch_audit_items!(app, token);
+    let cleanup_entry = assert_action_present(&items, "team_cleanup_expired");
+    assert_eq!(cleanup_entry["entity_type"], "team");
+    assert_eq!(cleanup_entry["entity_name"], "Cleanup Audit Team");
+    assert_eq!(cleanup_entry["user_id"], 0);
+
+    let details: Value = serde_json::from_str(cleanup_entry["details"].as_str().unwrap()).unwrap();
+    assert_eq!(details["retention_days"], 7);
+    assert!(details["archived_at"].is_string());
+}

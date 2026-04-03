@@ -5,14 +5,18 @@ use crate::api::routes::{team_batch, team_search, team_shares, team_space, team_
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{auth_service::Claims, team_service};
+use crate::services::{
+    audit_service,
+    auth_service::{self, Claims},
+    team_service,
+};
 use crate::types::TeamMemberRole;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api);
@@ -25,6 +29,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{id}", web::get().to(get_team))
         .route("/{id}", web::patch().to(patch_team))
         .route("/{id}", web::delete().to(delete_team))
+        .route("/{id}/restore", web::post().to(restore_team))
         .route("/{id}/members", web::get().to(list_members))
         .route("/{id}/members", web::post().to(add_member))
         .route(
@@ -40,6 +45,15 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .service(team_shares::routes())
         .service(team_trash::routes())
         .service(team_space::routes(rl))
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(
+    all(debug_assertions, feature = "openapi"),
+    derive(IntoParams, ToSchema)
+)]
+pub struct ListTeamsQuery {
+    pub archived: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,11 +84,23 @@ pub struct PatchTeamMemberReq {
     pub role: TeamMemberRole,
 }
 
+fn team_audit_details(team: &team_service::TeamInfo) -> Option<serde_json::Value> {
+    audit_service::details(audit_service::TeamAuditDetails {
+        description: &team.description,
+        member_count: team.member_count,
+        storage_quota: team.storage_quota,
+        policy_group_id: team.policy_group_id,
+        archived_at: team.archived_at,
+        actor_role: Some(team.my_role),
+    })
+}
+
 #[api_docs_macros::path(
     get,
     path = "/api/v1/teams",
     tag = "teams",
     operation_id = "list_teams",
+    params(ListTeamsQuery),
     responses(
         (status = 200, description = "Teams visible to the signed-in user", body = inline(ApiResponse<Vec<team_service::TeamInfo>>)),
         (status = 401, description = "Unauthorized"),
@@ -84,8 +110,10 @@ pub struct PatchTeamMemberReq {
 pub async fn list_teams(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    query: web::Query<ListTeamsQuery>,
 ) -> Result<HttpResponse> {
-    let teams = team_service::list_teams(&state, claims.user_id).await?;
+    let teams =
+        team_service::list_teams(&state, claims.user_id, query.archived.unwrap_or(false)).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(teams)))
 }
 
@@ -99,14 +127,23 @@ pub async fn list_teams(
         (status = 201, description = "Team created", body = inline(ApiResponse<team_service::TeamInfo>)),
         (status = 400, description = "Validation error"),
         (status = 401, description = "Unauthorized"),
+        (status = 403, description = "System admin required"),
     ),
     security(("bearer" = [])),
 )]
 pub async fn create_team(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     body: web::Json<CreateTeamReq>,
 ) -> Result<HttpResponse> {
+    let snapshot = auth_service::get_auth_snapshot(&state, claims.user_id).await?;
+    if !snapshot.role.is_admin() {
+        return Err(crate::errors::AsterError::auth_forbidden(
+            "team creation is restricted to system admins",
+        ));
+    }
+
     let team = team_service::create_team(
         &state,
         claims.user_id,
@@ -116,6 +153,17 @@ pub async fn create_team(
         },
     )
     .await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::TeamCreate,
+        Some("team"),
+        Some(team.id),
+        Some(&team.name),
+        team_audit_details(&team),
+    )
+    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(team)))
 }
 
@@ -160,6 +208,7 @@ pub async fn get_team(
 pub async fn patch_team(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<PatchTeamReq>,
 ) -> Result<HttpResponse> {
@@ -173,6 +222,17 @@ pub async fn patch_team(
         },
     )
     .await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::TeamUpdate,
+        Some("team"),
+        Some(team.id),
+        Some(&team.name),
+        team_audit_details(&team),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(team)))
 }
 
@@ -193,10 +253,65 @@ pub async fn patch_team(
 pub async fn delete_team(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
+    let team = team_service::get_team(&state, *path, claims.user_id).await?;
     team_service::archive_team(&state, *path, claims.user_id).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::TeamArchive,
+        Some("team"),
+        Some(team.id),
+        Some(&team.name),
+        audit_service::details(audit_service::TeamAuditDetails {
+            description: &team.description,
+            member_count: team.member_count,
+            storage_quota: team.storage_quota,
+            policy_group_id: team.policy_group_id,
+            archived_at: Some(chrono::Utc::now()),
+            actor_role: Some(team.my_role),
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/teams/{id}/restore",
+    tag = "teams",
+    operation_id = "restore_team",
+    params(("id" = i64, Path, description = "Team ID")),
+    responses(
+        (status = 200, description = "Team restored", body = inline(ApiResponse<team_service::TeamInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn restore_team(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let team = team_service::restore_team(&state, *path, claims.user_id).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::TeamRestore,
+        Some("team"),
+        Some(team.id),
+        Some(&team.name),
+        team_audit_details(&team),
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(team)))
 }
 
 #[api_docs_macros::path(

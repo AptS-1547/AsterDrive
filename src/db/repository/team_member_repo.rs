@@ -55,6 +55,21 @@ pub async fn list_by_user_with_team<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
+    list_by_user_with_team_for_archived_state(db, user_id, false).await
+}
+
+pub async fn list_by_user_with_archived_team<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+) -> Result<Vec<(team_member::Model, team::Model)>> {
+    list_by_user_with_team_for_archived_state(db, user_id, true).await
+}
+
+async fn list_by_user_with_team_for_archived_state<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    archived: bool,
+) -> Result<Vec<(team_member::Model, team::Model)>> {
     let memberships = TeamMember::find()
         .filter(team_member::Column::UserId.eq(user_id))
         .order_by_desc(team_member::Column::UpdatedAt)
@@ -70,9 +85,14 @@ pub async fn list_by_user_with_team<C: ConnectionTrait>(
         .iter()
         .map(|membership| membership.team_id)
         .collect();
-    let team_map: HashMap<i64, team::Model> = team::Entity::find()
-        .filter(team::Column::Id.is_in(team_ids.iter().copied()))
-        .filter(team::Column::ArchivedAt.is_null())
+    let mut team_query =
+        team::Entity::find().filter(team::Column::Id.is_in(team_ids.iter().copied()));
+    team_query = if archived {
+        team_query.filter(team::Column::ArchivedAt.is_not_null())
+    } else {
+        team_query.filter(team::Column::ArchivedAt.is_null())
+    };
+    let team_map: HashMap<i64, team::Model> = team_query
         .all(db)
         .await
         .map_err(AsterError::from)?

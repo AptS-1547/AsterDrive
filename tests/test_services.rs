@@ -1340,7 +1340,7 @@ async fn test_team_service_clamps_negative_default_storage_quota() {
 }
 
 #[actix_web::test]
-async fn test_team_service_create_team_without_default_policy_group() {
+async fn test_team_service_rejects_create_without_default_policy_group() {
     use sea_orm::ConnectionTrait;
 
     let state = common::setup().await;
@@ -1360,7 +1360,7 @@ async fn test_team_service_create_team_without_default_policy_group() {
         .unwrap();
     state.policy_snapshot.reload(&state.db).await.unwrap();
 
-    let team = aster_drive::services::team_service::create_team(
+    let err = aster_drive::services::team_service::create_team(
         &state,
         owner.id,
         aster_drive::services::team_service::CreateTeamInput {
@@ -1369,9 +1369,13 @@ async fn test_team_service_create_team_without_default_policy_group() {
         },
     )
     .await
-    .unwrap();
+    .unwrap_err();
 
-    assert_eq!(team.policy_group_id, None);
+    assert_eq!(err.code(), "E005");
+    assert!(
+        err.message()
+            .contains("no system default storage policy group configured")
+    );
 }
 
 #[actix_web::test]
@@ -1444,7 +1448,7 @@ async fn test_team_service_degrades_missing_creator_rows() {
         .unwrap();
     assert_eq!(loaded.created_by_username, "<deleted_user>");
 
-    let teams = aster_drive::services::team_service::list_teams(&state, member.id)
+    let teams = aster_drive::services::team_service::list_teams(&state, member.id, false)
         .await
         .unwrap();
     assert_eq!(teams.len(), 1);
@@ -1709,10 +1713,297 @@ async fn test_team_service_list_teams_for_member() {
     .await
     .unwrap();
 
-    let teams = aster_drive::services::team_service::list_teams(&state, member.id)
+    let teams = aster_drive::services::team_service::list_teams(&state, member.id, false)
         .await
         .unwrap();
     assert_eq!(teams.len(), 1);
     assert_eq!(teams[0].id, team.id);
     assert_eq!(teams[0].my_role, aster_drive::types::TeamMemberRole::Member);
+}
+
+#[actix_web::test]
+async fn test_team_archive_cleanup_deletes_expired_team_data() {
+    use chrono::{Duration, Utc};
+    use sea_orm::{IntoActiveModel, Set};
+
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "cleanup-owner",
+        "cleanup-owner@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "Cleanup Team".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let default_policy_id = aster_drive::db::repository::policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist")
+        .id;
+    let now = Utc::now();
+    let folder = aster_drive::db::repository::folder_repo::create(
+        &state.db,
+        aster_drive::entities::folder::ActiveModel {
+            name: Set("cleanup-folder".to_string()),
+            parent_id: Set(None),
+            team_id: Set(Some(team.id)),
+            user_id: Set(owner.id),
+            policy_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+            is_locked: Set(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let blob = aster_drive::db::repository::file_repo::create_blob(
+        &state.db,
+        aster_drive::entities::file_blob::ActiveModel {
+            hash: Set(format!("cleanup-blob-{}", uuid::Uuid::new_v4())),
+            size: Set(12),
+            policy_id: Set(default_policy_id),
+            storage_path: Set(format!("files/{}", uuid::Uuid::new_v4())),
+            ref_count: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let file = aster_drive::db::repository::file_repo::create(
+        &state.db,
+        aster_drive::entities::file::ActiveModel {
+            name: Set("cleanup.txt".to_string()),
+            folder_id: Set(Some(folder.id)),
+            team_id: Set(Some(team.id)),
+            blob_id: Set(blob.id),
+            size: Set(12),
+            user_id: Set(owner.id),
+            mime_type: Set("text/plain".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+            is_locked: Set(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    aster_drive::db::repository::property_repo::upsert(
+        &state.db,
+        aster_drive::types::EntityType::Folder,
+        folder.id,
+        "test",
+        "label",
+        Some("cleanup"),
+    )
+    .await
+    .unwrap();
+
+    aster_drive::services::lock_service::lock(
+        &state,
+        aster_drive::types::EntityType::Folder,
+        folder.id,
+        Some(owner.id),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    aster_drive::db::repository::share_repo::create(
+        &state.db,
+        aster_drive::entities::share::ActiveModel {
+            token: Set(uuid::Uuid::new_v4().simple().to_string()),
+            user_id: Set(owner.id),
+            team_id: Set(Some(team.id)),
+            file_id: Set(Some(file.id)),
+            folder_id: Set(None),
+            password: Set(None),
+            expires_at: Set(None),
+            max_downloads: Set(0),
+            download_count: Set(0),
+            view_count: Set(0),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let upload_id = uuid::Uuid::new_v4().to_string();
+    aster_drive::db::repository::upload_session_repo::create(
+        &state.db,
+        aster_drive::entities::upload_session::ActiveModel {
+            id: Set(upload_id.clone()),
+            user_id: Set(owner.id),
+            team_id: Set(Some(team.id)),
+            filename: Set("pending.bin".to_string()),
+            total_size: Set(10),
+            chunk_size: Set(10),
+            total_chunks: Set(1),
+            received_count: Set(0),
+            folder_id: Set(Some(folder.id)),
+            policy_id: Set(default_policy_id),
+            status: Set(aster_drive::types::UploadSessionStatus::Uploading),
+            s3_temp_key: Set(Some(format!("files/{upload_id}"))),
+            s3_multipart_id: Set(None),
+            file_id: Set(None),
+            created_at: Set(now),
+            expires_at: Set(now + Duration::hours(1)),
+            updated_at: Set(now),
+        },
+    )
+    .await
+    .unwrap();
+
+    aster_drive::services::team_service::archive_team(&state, team.id, owner.id)
+        .await
+        .unwrap();
+
+    let mut archived_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
+        .await
+        .unwrap()
+        .into_active_model();
+    archived_team.archived_at = Set(Some(Utc::now() - Duration::days(8)));
+    archived_team.updated_at = Set(Utc::now() - Duration::days(8));
+    aster_drive::db::repository::team_repo::update(&state.db, archived_team)
+        .await
+        .unwrap();
+
+    let deleted = aster_drive::services::team_service::cleanup_expired_archived_teams(&state)
+        .await
+        .unwrap();
+    assert_eq!(deleted, 1);
+    assert!(
+        aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
+            .await
+            .is_err()
+    );
+    assert!(
+        aster_drive::db::repository::file_repo::find_by_id(&state.db, file.id)
+            .await
+            .is_err()
+    );
+    assert!(
+        aster_drive::db::repository::folder_repo::find_by_id(&state.db, folder.id)
+            .await
+            .is_err()
+    );
+    assert!(
+        aster_drive::db::repository::team_member_repo::find_by_team_and_user(
+            &state.db, team.id, owner.id
+        )
+        .await
+        .unwrap()
+        .is_none()
+    );
+    assert!(
+        aster_drive::db::repository::share_repo::find_by_team(&state.db, team.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        aster_drive::db::repository::upload_session_repo::find_by_team(&state.db, team.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        aster_drive::db::repository::lock_repo::find_by_path_prefix(
+            &state.db,
+            &format!("/teams/{}/", team.id),
+        )
+        .await
+        .unwrap()
+        .is_empty()
+    );
+    assert!(
+        aster_drive::db::repository::property_repo::find_by_entity(
+            &state.db,
+            aster_drive::types::EntityType::Folder,
+            folder.id,
+        )
+        .await
+        .unwrap()
+        .is_empty()
+    );
+}
+
+#[actix_web::test]
+async fn test_team_archive_cleanup_respects_configured_retention() {
+    use chrono::{Duration, Utc};
+    use sea_orm::{IntoActiveModel, Set};
+
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "clnretainown",
+        "cleanup-retention-owner@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "Retention Team".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut config = aster_drive::db::repository::config_repo::find_by_key(
+        &state.db,
+        "team_archive_retention_days",
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    config.value = "30".to_string();
+    state.runtime_config.apply(config);
+
+    aster_drive::services::team_service::archive_team(&state, team.id, owner.id)
+        .await
+        .unwrap();
+
+    let mut archived_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
+        .await
+        .unwrap()
+        .into_active_model();
+    archived_team.archived_at = Set(Some(Utc::now() - Duration::days(8)));
+    archived_team.updated_at = Set(Utc::now() - Duration::days(8));
+    aster_drive::db::repository::team_repo::update(&state.db, archived_team)
+        .await
+        .unwrap();
+
+    let deleted = aster_drive::services::team_service::cleanup_expired_archived_teams(&state)
+        .await
+        .unwrap();
+    assert_eq!(deleted, 0);
+
+    let archived = aster_drive::db::repository::team_repo::find_archived_by_id(&state.db, team.id)
+        .await
+        .unwrap();
+    assert_eq!(archived.id, team.id);
 }

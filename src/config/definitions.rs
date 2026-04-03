@@ -53,6 +53,15 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Days before soft-deleted items are permanently purged",
     },
     ConfigDef {
+        key: "team_archive_retention_days",
+        value_type: "number",
+        default_fn: || "7".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage",
+        description: "Days before archived teams are permanently deleted",
+    },
+    ConfigDef {
         key: "default_storage_quota",
         value_type: "number",
         default_fn: || "0".to_string(),

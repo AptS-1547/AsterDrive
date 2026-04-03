@@ -323,3 +323,12 @@ pub async fn delete_all_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Res
         .map_err(AsterError::from)?;
     Ok(res.rows_affected)
 }
+
+pub async fn delete_all_by_team<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<u64> {
+    let res = Share::delete_many()
+        .filter(share::Column::TeamId.eq(team_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(res.rows_affected)
+}

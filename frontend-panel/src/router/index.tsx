@@ -19,6 +19,7 @@ const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const FileBrowserPage = lazy(() => import("@/pages/FileBrowserPage"));
 const AdminOverviewPage = lazy(() => import("@/pages/admin/AdminOverviewPage"));
 const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
+const AdminTeamsPage = lazy(() => import("@/pages/admin/AdminTeamsPage"));
 const AdminPoliciesPage = lazy(() => import("@/pages/admin/AdminPoliciesPage"));
 const AdminPolicyGroupsPage = lazy(
 	() => import("@/pages/admin/AdminPolicyGroupsPage"),
@@ -149,6 +150,10 @@ export const router = createBrowserRouter([
 						path: "/settings/security",
 						element: <SettingsPage section="security" />,
 					},
+					{
+						path: "/settings/teams",
+						element: <SettingsPage section="teams" />,
+					},
 				],
 			},
 			{
@@ -180,6 +185,7 @@ export const router = createBrowserRouter([
 			{ path: "/admin", element: <Navigate to="/admin/overview" replace /> },
 			{ path: "/admin/overview", element: <AdminOverviewPage /> },
 			{ path: "/admin/users", element: <AdminUsersPage /> },
+			{ path: "/admin/teams", element: <AdminTeamsPage /> },
 			{ path: "/admin/policies", element: <AdminPoliciesPage /> },
 			{ path: "/admin/policy-groups", element: <AdminPolicyGroupsPage /> },
 			{ path: "/admin/shares", element: <AdminSharesPage /> },

@@ -842,3 +842,14 @@ pub async fn find_all_by_user<C: ConnectionTrait>(
         .await
         .map_err(AsterError::from)
 }
+
+pub async fn find_all_by_team<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+) -> Result<Vec<folder::Model>> {
+    Folder::find()
+        .filter(folder::Column::TeamId.eq(team_id))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}

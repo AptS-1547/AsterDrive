@@ -57,6 +57,11 @@ export type AdminOverview = components["schemas"]["AdminOverview"];
 export type AdminOverviewDailyReport =
 	components["schemas"]["AdminOverviewDailyReport"];
 export type AdminOverviewStats = components["schemas"]["AdminOverviewStats"];
+export type AdminCreateTeamRequest =
+	components["schemas"]["AdminCreateTeamReq"];
+export type AdminTeamInfo = components["schemas"]["AdminTeamInfo"];
+export type AdminTeamPage = components["schemas"]["OffsetPage_AdminTeamInfo"];
+export type AdminUpdateTeamRequest = components["schemas"]["AdminPatchTeamReq"];
 export type CreatePolicyGroupRequest =
 	components["schemas"]["CreatePolicyGroupReq"];
 export type CreatePolicyRequest = components["schemas"]["CreatePolicyReq"];
@@ -96,9 +101,14 @@ export type WebdavAccountPage =
 export type WebdavSettingsInfo = components["schemas"]["WebdavSettingsInfo"];
 
 // Teams
+export type AddTeamMemberRequest = components["schemas"]["AddTeamMemberReq"];
+export type CreateTeamRequest = components["schemas"]["CreateTeamReq"];
 export type TeamInfo = components["schemas"]["TeamInfo"];
 export type TeamMemberInfo = components["schemas"]["TeamMemberInfo"];
 export type TeamMemberRole = components["schemas"]["TeamMemberRole"];
+export type UpdateTeamMemberRequest =
+	components["schemas"]["PatchTeamMemberReq"];
+export type UpdateTeamRequest = components["schemas"]["PatchTeamReq"];
 
 // Upload and batch
 export type BatchItemError = components["schemas"]["BatchItemError"];

@@ -312,17 +312,13 @@ pub(crate) async fn mark_upload_session_completed<C: ConnectionTrait>(
     Ok(())
 }
 
-fn resolve_team_policy_group_id(state: &AppState, team: &team::Model) -> Result<i64> {
-    team.policy_group_id
-        .or_else(|| {
-            state
-                .policy_snapshot
-                .system_default_policy_group()
-                .map(|group| group.id)
-        })
-        .ok_or_else(|| {
-            AsterError::storage_policy_not_found("no storage policy group configured for team")
-        })
+fn resolve_team_policy_group_id(team: &team::Model) -> Result<i64> {
+    team.policy_group_id.ok_or_else(|| {
+        AsterError::storage_policy_not_found(format!(
+            "no storage policy group assigned to team #{}",
+            team.id
+        ))
+    })
 }
 
 pub(crate) async fn resolve_policy_for_size(
@@ -350,7 +346,7 @@ pub(crate) async fn resolve_policy_for_size(
             let team = require_team_access(state, team_id, actor_user_id).await?;
             state
                 .policy_snapshot
-                .resolve_policy_in_group(resolve_team_policy_group_id(state, &team)?, file_size)
+                .resolve_policy_in_group(resolve_team_policy_group_id(&team)?, file_size)
         }
     }
 }

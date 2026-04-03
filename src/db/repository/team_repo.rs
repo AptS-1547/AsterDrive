@@ -1,6 +1,7 @@
+use crate::db::repository::pagination_repo::fetch_offset_page;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
-    QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 use crate::entities::team::{self, Entity as Team};
@@ -26,6 +27,16 @@ pub async fn find_active_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<te
     Team::find()
         .filter(team::Column::Id.eq(id))
         .filter(team::Column::ArchivedAt.is_null())
+        .one(db)
+        .await
+        .map_err(AsterError::from)?
+        .ok_or_else(|| AsterError::record_not_found(format!("team #{id}")))
+}
+
+pub async fn find_archived_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<team::Model> {
+    Team::find()
+        .filter(team::Column::Id.eq(id))
+        .filter(team::Column::ArchivedAt.is_not_null())
         .one(db)
         .await
         .map_err(AsterError::from)?
@@ -64,6 +75,88 @@ pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<team::Model>> {
         .map_err(AsterError::from)
 }
 
+pub async fn find_active_paginated<C: ConnectionTrait>(
+    db: &C,
+    limit: u64,
+    offset: u64,
+    keyword: Option<&str>,
+) -> Result<(Vec<team::Model>, u64)> {
+    find_paginated_by_archived_state(db, limit, offset, keyword, false).await
+}
+
+pub async fn find_archived_paginated<C: ConnectionTrait>(
+    db: &C,
+    limit: u64,
+    offset: u64,
+    keyword: Option<&str>,
+) -> Result<(Vec<team::Model>, u64)> {
+    find_paginated_by_archived_state(db, limit, offset, keyword, true).await
+}
+
+async fn find_paginated_by_archived_state<C: ConnectionTrait>(
+    db: &C,
+    limit: u64,
+    offset: u64,
+    keyword: Option<&str>,
+    archived: bool,
+) -> Result<(Vec<team::Model>, u64)> {
+    let mut q = Team::find().order_by_asc(team::Column::Id);
+
+    q = if archived {
+        q.filter(team::Column::ArchivedAt.is_not_null())
+    } else {
+        q.filter(team::Column::ArchivedAt.is_null())
+    };
+
+    if let Some(keyword) = keyword.filter(|s| !s.trim().is_empty()) {
+        let pattern = format!("%{}%", keyword.trim());
+        q = q.filter(
+            Condition::any()
+                .add(team::Column::Name.like(&pattern))
+                .add(team::Column::Description.like(&pattern)),
+        );
+    }
+
+    fetch_offset_page(db, q, limit, offset).await
+}
+
+pub async fn find_archived_before<C: ConnectionTrait>(
+    db: &C,
+    before: chrono::DateTime<chrono::Utc>,
+) -> Result<Vec<team::Model>> {
+    Team::find()
+        .filter(team::Column::ArchivedAt.is_not_null())
+        .filter(team::Column::ArchivedAt.lt(before))
+        .order_by_asc(team::Column::ArchivedAt)
+        .order_by_asc(team::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    let result = Team::delete_by_id(id)
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    if result.rows_affected == 0 {
+        return Err(AsterError::record_not_found(format!("team #{id}")));
+    }
+    Ok(())
+}
+
+pub async fn count_active_by_policy_group<C: ConnectionTrait>(
+    db: &C,
+    policy_group_id: i64,
+) -> Result<u64> {
+    Team::find()
+        .filter(team::Column::ArchivedAt.is_null())
+        .filter(team::Column::PolicyGroupId.eq(policy_group_id))
+        .count(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn check_quota<C: ConnectionTrait>(db: &C, team_id: i64, needed_size: i64) -> Result<()> {
     let team = find_active_by_id(db, team_id).await?;
     let projected_storage_used = team.storage_used.checked_add(needed_size).ok_or_else(|| {
@@ -93,8 +186,7 @@ pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64
 
     let mut query = Team::update_many()
         .col_expr(team::Column::StorageUsed, expr)
-        .filter(team::Column::Id.eq(id))
-        .filter(team::Column::ArchivedAt.is_null());
+        .filter(team::Column::Id.eq(id));
 
     if delta >= 0 {
         query = query.filter(
@@ -110,7 +202,7 @@ pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64
 
     if result.rows_affected == 0 {
         if delta >= 0 {
-            let team = find_active_by_id(db, id).await?;
+            let team = find_by_id(db, id).await?;
             let projected_storage_used = team.storage_used.checked_add(delta).ok_or_else(|| {
                 AsterError::internal_error(format!(
                     "team storage usage overflow: used {}, delta {}",

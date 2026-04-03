@@ -1,7 +1,11 @@
 import { withQuery } from "@/lib/queryParams";
 import type {
+	AdminCreateTeamRequest,
 	AdminOverview,
 	AdminSharePage,
+	AdminTeamInfo,
+	AdminTeamPage,
+	AdminUpdateTeamRequest,
 	CreatePolicyGroupRequest,
 	CreatePolicyRequest,
 	CreateUserReq,
@@ -88,6 +92,37 @@ export const adminUserService = {
 		api.post<void>(`/admin/users/${id}/sessions/revoke`),
 
 	delete: (id: number) => api.delete<void>(`/admin/users/${id}`),
+};
+
+// --- Teams ---
+
+export const adminTeamService = {
+	list: (params?: {
+		limit?: number;
+		offset?: number;
+		keyword?: string;
+		archived?: boolean;
+	}) =>
+		api.get<AdminTeamPage>(
+			withQuery("/admin/teams", {
+				limit: params?.limit,
+				offset: params?.offset,
+				keyword: params?.keyword,
+				archived: params?.archived,
+			}),
+		),
+
+	get: (id: number) => api.get<AdminTeamInfo>(`/admin/teams/${id}`),
+
+	create: (data: AdminCreateTeamRequest) =>
+		api.post<AdminTeamInfo>("/admin/teams", data),
+
+	update: (id: number, data: AdminUpdateTeamRequest) =>
+		api.patch<AdminTeamInfo>(`/admin/teams/${id}`, data),
+
+	delete: (id: number) => api.delete<void>(`/admin/teams/${id}`),
+	restore: (id: number) =>
+		api.post<AdminTeamInfo>(`/admin/teams/${id}/restore`),
 };
 
 // --- Policies ---

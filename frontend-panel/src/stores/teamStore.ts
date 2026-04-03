@@ -9,6 +9,8 @@ interface TeamState {
 	loading: boolean;
 	loadedForUserId: number | null;
 	ensureLoaded: (userId: number | null) => Promise<void>;
+	reload: (userId: number | null) => Promise<void>;
+	invalidate: () => void;
 	clear: () => void;
 }
 
@@ -16,13 +18,14 @@ export const useTeamStore = create<TeamState>((set, get) => ({
 	teams: [],
 	loading: false,
 	loadedForUserId: null,
-	ensureLoaded: async (userId) => {
+	reload: async (userId) => {
 		if (userId == null) {
 			set({ teams: [], loading: false, loadedForUserId: null });
 			return;
 		}
-		if (get().loadedForUserId === userId) return;
-		if (inFlightEnsure) return inFlightEnsure;
+		if (inFlightEnsure) {
+			await inFlightEnsure;
+		}
 
 		inFlightEnsure = (async () => {
 			set({ loading: true });
@@ -44,6 +47,18 @@ export const useTeamStore = create<TeamState>((set, get) => ({
 		})();
 
 		return inFlightEnsure;
+	},
+	ensureLoaded: async (userId) => {
+		if (userId == null) {
+			set({ teams: [], loading: false, loadedForUserId: null });
+			return;
+		}
+		if (get().loadedForUserId === userId) return;
+		if (inFlightEnsure) return inFlightEnsure;
+		return get().reload(userId);
+	},
+	invalidate: () => {
+		set({ loadedForUserId: null });
 	},
 	clear: () => {
 		inFlightEnsure = null;

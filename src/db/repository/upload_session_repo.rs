@@ -70,10 +70,30 @@ pub async fn find_expired<C: ConnectionTrait>(db: &C) -> Result<Vec<upload_sessi
         .map_err(AsterError::from)
 }
 
+pub async fn find_by_team<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+) -> Result<Vec<upload_session::Model>> {
+    UploadSession::find()
+        .filter(upload_session::Column::TeamId.eq(team_id))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 /// 批量删除用户的所有上传会话
 pub async fn delete_all_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<u64> {
     let res = UploadSession::delete_many()
         .filter(upload_session::Column::UserId.eq(user_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(res.rows_affected)
+}
+
+pub async fn delete_all_by_team<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<u64> {
+    let res = UploadSession::delete_many()
+        .filter(upload_session::Column::TeamId.eq(team_id))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

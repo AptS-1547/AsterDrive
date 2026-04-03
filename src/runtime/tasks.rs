@@ -89,6 +89,21 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
         }
     });
 
+    spawn_periodic(
+        "team-archive-cleanup",
+        hourly,
+        state.clone(),
+        |s| async move {
+            match crate::services::team_service::cleanup_expired_archived_teams(&s).await {
+                Ok(count) if count > 0 => {
+                    tracing::info!("cleaned up {count} expired archived teams")
+                }
+                Err(e) => tracing::warn!("team archive cleanup failed: {e}"),
+                _ => {}
+            }
+        },
+    );
+
     spawn_periodic("lock-cleanup", hourly, state.clone(), |s| async move {
         match crate::services::lock_service::cleanup_expired(&s).await {
             Ok(n) if n > 0 => tracing::info!("cleaned up {n} expired locks"),

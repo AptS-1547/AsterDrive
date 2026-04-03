@@ -276,6 +276,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_list_teams"];
+        put?: never;
+        post: operations["admin_create_team"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/teams/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_get_team"];
+        put?: never;
+        post?: never;
+        delete: operations["admin_delete_team"];
+        options?: never;
+        head?: never;
+        patch: operations["admin_update_team"];
+        trace?: never;
+    };
+    "/api/v1/admin/teams/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_restore_team"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -1257,6 +1305,22 @@ export interface paths {
         patch: operations["patch_team_member"];
         trace?: never;
     };
+    "/api/v1/teams/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restore_team"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teams/{team_id}/batch/copy": {
         parameters: {
             query?: never;
@@ -1923,6 +1987,15 @@ export interface components {
             /** Format: int64 */
             user_id?: number | null;
         };
+        AdminCreateTeamReq: {
+            admin_identifier?: string | null;
+            /** Format: int64 */
+            admin_user_id?: number | null;
+            description?: string | null;
+            name: string;
+            /** Format: int64 */
+            policy_group_id?: number | null;
+        };
         AdminOverview: {
             daily_reports: components["schemas"]["AdminOverviewDailyReport"][];
             /** Format: int32 */
@@ -1972,6 +2045,36 @@ export interface components {
             total_users: number;
             /** Format: int64 */
             uploads_today: number;
+        };
+        AdminPatchTeamReq: {
+            description?: string | null;
+            name?: string | null;
+            /** Format: int64 */
+            policy_group_id?: number | null;
+        };
+        AdminTeamInfo: {
+            archived_at?: string | null;
+            created_at: string;
+            /** Format: int64 */
+            created_by: number;
+            created_by_username: string;
+            description: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            member_count: number;
+            name: string;
+            /** Format: int64 */
+            policy_group_id?: number | null;
+            /** Format: int64 */
+            storage_quota: number;
+            /** Format: int64 */
+            storage_used: number;
+            updated_at: string;
+        };
+        AdminTeamListQuery: {
+            archived?: boolean | null;
+            keyword?: string | null;
         };
         /**
          * @description 统一 API 响应格式
@@ -2406,6 +2509,34 @@ export interface components {
             updated_at: string;
             /** Format: int64 */
             view_count: number;
+        };
+        OffsetPage_AdminTeamInfo: {
+            items: {
+                archived_at?: string | null;
+                created_at: string;
+                /** Format: int64 */
+                created_by: number;
+                created_by_username: string;
+                description: string;
+                /** Format: int64 */
+                id: number;
+                /** Format: int64 */
+                member_count: number;
+                name: string;
+                /** Format: int64 */
+                policy_group_id?: number | null;
+                /** Format: int64 */
+                storage_quota: number;
+                /** Format: int64 */
+                storage_used: number;
+                updated_at: string;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
         };
         OffsetPage_AuditLogEntry: {
             items: {
@@ -4631,6 +4762,398 @@ export interface operations {
                 content?: never;
             };
             /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_list_teams: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+                keyword?: string | null;
+                archived?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List active teams */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            items: {
+                                archived_at?: string | null;
+                                created_at: string;
+                                /** Format: int64 */
+                                created_by: number;
+                                created_by_username: string;
+                                description: string;
+                                /** Format: int64 */
+                                id: number;
+                                /** Format: int64 */
+                                member_count: number;
+                                name: string;
+                                /** Format: int64 */
+                                policy_group_id?: number | null;
+                                /** Format: int64 */
+                                storage_quota: number;
+                                /** Format: int64 */
+                                storage_used: number;
+                                updated_at: string;
+                            }[];
+                            /** Format: int64 */
+                            limit: number;
+                            /** Format: int64 */
+                            offset: number;
+                            /** Format: int64 */
+                            total: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_create_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCreateTeamReq"];
+            };
+        };
+        responses: {
+            /** @description Team created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            archived_at?: string | null;
+                            created_at: string;
+                            /** Format: int64 */
+                            created_by: number;
+                            created_by_username: string;
+                            description: string;
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: int64 */
+                            member_count: number;
+                            name: string;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
+                            /** Format: int64 */
+                            storage_quota: number;
+                            /** Format: int64 */
+                            storage_used: number;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_get_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            archived_at?: string | null;
+                            created_at: string;
+                            /** Format: int64 */
+                            created_by: number;
+                            created_by_username: string;
+                            description: string;
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: int64 */
+                            member_count: number;
+                            name: string;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
+                            /** Format: int64 */
+                            storage_quota: number;
+                            /** Format: int64 */
+                            storage_used: number;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_delete_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team archived */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_update_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPatchTeamReq"];
+            };
+        };
+        responses: {
+            /** @description Team updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            archived_at?: string | null;
+                            created_at: string;
+                            /** Format: int64 */
+                            created_by: number;
+                            created_by_username: string;
+                            description: string;
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: int64 */
+                            member_count: number;
+                            name: string;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
+                            /** Format: int64 */
+                            storage_quota: number;
+                            /** Format: int64 */
+                            storage_used: number;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_restore_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team restored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            archived_at?: string | null;
+                            created_at: string;
+                            /** Format: int64 */
+                            created_by: number;
+                            created_by_username: string;
+                            description: string;
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: int64 */
+                            member_count: number;
+                            name: string;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
+                            /** Format: int64 */
+                            storage_quota: number;
+                            /** Format: int64 */
+                            storage_used: number;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Team not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -8097,7 +8620,9 @@ export interface operations {
     };
     list_teams: {
         parameters: {
-            query?: never;
+            query?: {
+                archived?: boolean | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8201,6 +8726,13 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description System admin required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8599,6 +9131,74 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                             username: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    restore_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team restored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            archived_at?: string | null;
+                            created_at: string;
+                            /** Format: int64 */
+                            created_by: number;
+                            created_by_username: string;
+                            description: string;
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: int64 */
+                            member_count: number;
+                            my_role: components["schemas"]["TeamMemberRole"];
+                            name: string;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
+                            /** Format: int64 */
+                            storage_quota: number;
+                            /** Format: int64 */
+                            storage_used: number;
+                            updated_at: string;
                         };
                         msg: string;
                     };

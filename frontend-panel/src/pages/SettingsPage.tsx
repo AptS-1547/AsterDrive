@@ -5,10 +5,11 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { InterfaceSettingsView } from "@/components/settings/InterfaceSettingsView";
 import { ProfileSettingsView } from "@/components/settings/ProfileSettingsView";
 import { SecuritySettingsView } from "@/components/settings/SecuritySettingsView";
+import { TeamsSettingsView } from "@/components/settings/TeamsSettingsView";
 import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type SettingsTabKey = "profile" | "interface" | "security";
+type SettingsTabKey = "profile" | "interface" | "security" | "teams";
 
 export default function SettingsPage({
 	section = "profile",
@@ -20,7 +21,10 @@ export default function SettingsPage({
 
 	const handleSectionChange = (value: string) => {
 		if (
-			(value === "profile" || value === "interface" || value === "security") &&
+			(value === "profile" ||
+				value === "interface" ||
+				value === "security" ||
+				value === "teams") &&
 			value !== section
 		) {
 			navigate(`/settings/${value}`, { viewTransition: true });
@@ -66,6 +70,13 @@ export default function SettingsPage({
 								<Icon name="Shield" className="h-4 w-4" />
 								<span>{t("settings:settings_security")}</span>
 							</TabsTrigger>
+							<TabsTrigger
+								value="teams"
+								className="h-10 flex-none rounded-none px-0"
+							>
+								<Icon name="Cloud" className="h-4 w-4" />
+								<span>{t("settings:settings_teams")}</span>
+							</TabsTrigger>
 						</TabsList>
 
 						<TabsContent value="profile" className="outline-none">
@@ -78,6 +89,10 @@ export default function SettingsPage({
 
 						<TabsContent value="security" className="outline-none">
 							<SecuritySettingsView />
+						</TabsContent>
+
+						<TabsContent value="teams" className="outline-none">
+							<TeamsSettingsView />
 						</TabsContent>
 					</Tabs>
 				</div>

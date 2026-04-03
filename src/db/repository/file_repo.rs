@@ -989,6 +989,17 @@ pub async fn find_all_by_user<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_all_by_team<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+) -> Result<Vec<file::Model>> {
+    File::find()
+        .filter(file::Column::TeamId.eq(team_id))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
