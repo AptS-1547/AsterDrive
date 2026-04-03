@@ -1150,3 +1150,54 @@ async fn test_driver_registry_invalidate_on_policy_update() {
         "driver should be recreated after policy update"
     );
 }
+
+#[actix_web::test]
+async fn test_share_service_batch_delete_validates_ids_before_scope_work() {
+    let state = common::setup().await;
+    let oversized = vec![1_i64; aster_drive::services::batch_service::MAX_BATCH_ITEMS + 1];
+
+    let err =
+        match aster_drive::services::share_service::batch_delete_shares(&state, 999, &[]).await {
+            Ok(_) => panic!("empty personal batch delete should fail validation"),
+            Err(err) => err,
+        };
+    assert_eq!(err.code(), "E005");
+    assert!(
+        err.to_string()
+            .contains("at least one share ID is required")
+    );
+
+    let err =
+        match aster_drive::services::share_service::batch_delete_shares(&state, 999, &oversized)
+            .await
+        {
+            Ok(_) => panic!("oversized personal batch delete should fail validation"),
+            Err(err) => err,
+        };
+    assert_eq!(err.code(), "E005");
+    assert!(err.to_string().contains("batch size cannot exceed"));
+
+    let err =
+        match aster_drive::services::share_service::batch_delete_team_shares(&state, 999, 999, &[])
+            .await
+        {
+            Ok(_) => panic!("empty team batch delete should fail validation"),
+            Err(err) => err,
+        };
+    assert_eq!(err.code(), "E005");
+    assert!(
+        err.to_string()
+            .contains("at least one share ID is required")
+    );
+
+    let err = match aster_drive::services::share_service::batch_delete_team_shares(
+        &state, 999, 999, &oversized,
+    )
+    .await
+    {
+        Ok(_) => panic!("oversized team batch delete should fail validation"),
+        Err(err) => err,
+    };
+    assert_eq!(err.code(), "E005");
+    assert!(err.to_string().contains("batch size cannot exceed"));
+}

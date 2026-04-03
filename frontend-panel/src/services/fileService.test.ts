@@ -183,4 +183,23 @@ describe("fileService", () => {
 
 		await expect(fileService.updateContent(8, "hello")).rejects.toBe(failure);
 	});
+
+	it("normalizes trailing slashes when building download URLs", async () => {
+		vi.resetModules();
+		vi.doMock("@/config/app", () => ({
+			config: {
+				apiBaseUrl: "/api/v1/",
+				appName: "AsterDrive",
+				appVersion: "test",
+			},
+		}));
+
+		const { createFileService } = await import("@/services/fileService");
+		expect(createFileService().downloadUrl(8)).toBe("/api/v1/files/8/download");
+		expect(createFileService({ kind: "team", teamId: 9 }).downloadUrl(8)).toBe(
+			"/api/v1/teams/9/files/8/download",
+		);
+
+		vi.doUnmock("@/config/app");
+	});
 });

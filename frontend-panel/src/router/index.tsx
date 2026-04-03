@@ -108,11 +108,7 @@ function TeamWorkspaceRoute() {
 	const { teamId } = useParams<{ teamId?: string }>();
 	const parsedTeamId = Number(teamId);
 
-	if (
-		!Number.isInteger(parsedTeamId) ||
-		!Number.isSafeInteger(parsedTeamId) ||
-		parsedTeamId <= 0
-	) {
+	if (!Number.isSafeInteger(parsedTeamId) || parsedTeamId <= 0) {
 		return <Navigate to="/" replace />;
 	}
 

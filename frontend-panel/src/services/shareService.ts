@@ -19,6 +19,13 @@ function workspaceSharesPrefix(workspace: Workspace) {
 	return buildWorkspacePath(workspace, "/shares");
 }
 
+function joinApiUrl(path: string) {
+	const baseUrl = config.apiBaseUrl.endsWith("/")
+		? config.apiBaseUrl.slice(0, -1)
+		: config.apiBaseUrl;
+	return `${baseUrl}${path}`;
+}
+
 export function createShareService(workspace: Workspace = PERSONAL_WORKSPACE) {
 	return {
 		create: (data: {
@@ -65,10 +72,10 @@ export function createShareService(workspace: Workspace = PERSONAL_WORKSPACE) {
 		downloadFolderPath: (token: string, fileId: number) =>
 			`/s/${token}/files/${fileId}/download`,
 
-		downloadUrl: (token: string) => `${config.apiBaseUrl}/s/${token}/download`,
+		downloadUrl: (token: string) => joinApiUrl(`/s/${token}/download`),
 
 		downloadFolderFileUrl: (token: string, fileId: number) =>
-			`${config.apiBaseUrl}/s/${token}/files/${fileId}/download`,
+			joinApiUrl(`/s/${token}/files/${fileId}/download`),
 
 		listContent: (token: string, params?: FolderListParams) =>
 			api.get<FolderContents>(`/s/${token}/content`, { params }),

@@ -56,19 +56,20 @@ pub async fn list_by_user_with_team<C: ConnectionTrait>(
     user_id: i64,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
     let rows = TeamMember::find()
+        .inner_join(team::Entity)
+        .select_also(team::Entity)
         .filter(team_member::Column::UserId.eq(user_id))
+        .filter(team::Column::ArchivedAt.is_null())
         .order_by_desc(team_member::Column::UpdatedAt)
-        .find_also_related(team::Entity)
         .all(db)
         .await
         .map_err(AsterError::from)?;
 
     Ok(rows
         .into_iter()
-        .filter_map(|(membership, maybe_team)| {
-            maybe_team
-                .filter(|team| team.archived_at.is_none())
-                .map(|team| (membership, team))
+        .map(|(membership, maybe_team)| {
+            let team = maybe_team.expect("inner_join(team) must load a team row");
+            (membership, team)
         })
         .collect())
 }
@@ -78,21 +79,28 @@ pub async fn list_by_team_with_user<C: ConnectionTrait>(
     team_id: i64,
 ) -> Result<Vec<(team_member::Model, user::Model)>> {
     let rows = TeamMember::find()
+        .inner_join(user::Entity)
+        .select_also(user::Entity)
         .filter(team_member::Column::TeamId.eq(team_id))
         .order_by_asc(team_member::Column::CreatedAt)
-        .find_also_related(user::Entity)
         .all(db)
         .await
         .map_err(AsterError::from)?;
 
     Ok(rows
         .into_iter()
-        .filter_map(|(membership, maybe_user)| maybe_user.map(|user| (membership, user)))
+        .map(|(membership, maybe_user)| {
+            let user = maybe_user.expect("inner_join(user) must load a user row");
+            (membership, user)
+        })
         .collect())
 }
 
 pub async fn count_by_team<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<u64> {
+    // Keep member counts aligned with list_by_team_with_user by only counting rows
+    // that still join to a user record.
     TeamMember::find()
+        .inner_join(user::Entity)
         .filter(team_member::Column::TeamId.eq(team_id))
         .count(db)
         .await
@@ -111,6 +119,7 @@ pub async fn count_by_team_ids<C: ConnectionTrait>(
         .select_only()
         .column(team_member::Column::TeamId)
         .column_as(Expr::col(team_member::Column::Id).count(), "member_count")
+        .inner_join(user::Entity)
         .filter(team_member::Column::TeamId.is_in(team_ids.iter().copied()))
         .group_by(team_member::Column::TeamId)
         .into_tuple::<(i64, i64)>()

@@ -338,6 +338,15 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 				const { session, progress } = result.value;
 				if (!progress?.status) {
+					if (process.env.NODE_ENV === "development") {
+						console.warn(
+							"skipping restored upload session because progress is missing a status",
+							{
+								progress,
+								uploadId: session.uploadId,
+							},
+						);
+					}
 					continue;
 				}
 				const mode = (session.mode ?? "chunked") as UploadMode;

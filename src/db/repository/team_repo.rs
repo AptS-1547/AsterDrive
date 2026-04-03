@@ -1,6 +1,6 @@
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
+    QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 use crate::entities::team::{self, Entity as Team};
@@ -30,6 +30,30 @@ pub async fn find_active_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<te
         .await
         .map_err(AsterError::from)?
         .ok_or_else(|| AsterError::record_not_found(format!("team #{id}")))
+}
+
+pub async fn lock_active_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<team::Model> {
+    match db.get_database_backend() {
+        DbBackend::Postgres | DbBackend::MySql => Team::find()
+            .filter(team::Column::Id.eq(id))
+            .filter(team::Column::ArchivedAt.is_null())
+            .lock_exclusive()
+            .one(db)
+            .await
+            .map_err(AsterError::from)?
+            .ok_or_else(|| AsterError::record_not_found(format!("team #{id}"))),
+        DbBackend::Sqlite => {
+            Team::update_many()
+                .col_expr(team::Column::UpdatedAt, Expr::col(team::Column::UpdatedAt))
+                .filter(team::Column::Id.eq(id))
+                .filter(team::Column::ArchivedAt.is_null())
+                .exec(db)
+                .await
+                .map_err(AsterError::from)?;
+            find_active_by_id(db, id).await
+        }
+        _ => find_active_by_id(db, id).await,
+    }
 }
 
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<team::Model>> {

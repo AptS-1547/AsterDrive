@@ -194,6 +194,7 @@ pub async fn download_raw(
     download_raw_unchecked_with_file(state, f, if_none_match).await
 }
 
+#[allow(dead_code)]
 pub(crate) async fn download_raw_unchecked(
     state: &AppState,
     id: i64,
@@ -212,7 +213,7 @@ async fn download_raw_unchecked_with_file(
     build_stream_response(state, &f, &blob, if_none_match).await
 }
 
-fn if_none_match_matches(if_none_match: &str, blob_hash: &str) -> bool {
+pub(crate) fn if_none_match_matches(if_none_match: &str, blob_hash: &str) -> bool {
     if_none_match.split(',').any(|value| {
         let candidate = value.trim();
         candidate == "*" || candidate.trim_matches('"').eq_ignore_ascii_case(blob_hash)

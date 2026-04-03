@@ -1,6 +1,6 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TryInsertResult, sea_query::Expr,
 };
 
@@ -79,6 +79,27 @@ pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file::Mod
         .await
         .map_err(AsterError::from)?
         .ok_or_else(|| AsterError::file_not_found(format!("file #{id}")))
+}
+
+pub async fn lock_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file::Model> {
+    match db.get_database_backend() {
+        DbBackend::Postgres | DbBackend::MySql => File::find_by_id(id)
+            .lock_exclusive()
+            .one(db)
+            .await
+            .map_err(AsterError::from)?
+            .ok_or_else(|| AsterError::file_not_found(format!("file #{id}"))),
+        DbBackend::Sqlite => {
+            File::update_many()
+                .col_expr(file::Column::UpdatedAt, Expr::col(file::Column::UpdatedAt))
+                .filter(file::Column::Id.eq(id))
+                .exec(db)
+                .await
+                .map_err(AsterError::from)?;
+            find_by_id(db, id).await
+        }
+        _ => find_by_id(db, id).await,
+    }
 }
 
 pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<file::Model>> {

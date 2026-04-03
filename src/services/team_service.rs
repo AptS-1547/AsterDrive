@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
-use sea_orm::{IntoActiveModel, Set, TransactionTrait};
+use sea_orm::{ConnectionTrait, IntoActiveModel, Set, TransactionTrait};
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -197,9 +197,9 @@ fn ensure_can_manage_team(role: TeamMemberRole) -> Result<()> {
     Ok(())
 }
 
-async fn ensure_not_last_owner(state: &AppState, team_id: i64) -> Result<()> {
+async fn ensure_not_last_owner<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<()> {
     let owner_count =
-        team_member_repo::count_by_team_and_role(&state.db, team_id, TeamMemberRole::Owner).await?;
+        team_member_repo::count_by_team_and_role(db, team_id, TeamMemberRole::Owner).await?;
     if owner_count <= 1 {
         return Err(AsterError::validation_error(
             "team must keep at least one owner",
@@ -413,15 +413,19 @@ pub async fn update_member_role(
     member_user_id: i64,
     role: TeamMemberRole,
 ) -> Result<TeamMemberInfo> {
-    let (_, actor_membership) = require_team_membership(state, team_id, actor_user_id).await?;
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    team_repo::lock_active_by_id(&txn, team_id).await?;
+
+    let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
+        .await?
+        .ok_or_else(|| AsterError::auth_forbidden("not a member of this team"))?;
     ensure_can_manage_team(actor_membership.role)?;
 
-    let target_membership =
-        team_member_repo::find_by_team_and_user(&state.db, team_id, member_user_id)
-            .await?
-            .ok_or_else(|| {
-                AsterError::record_not_found(format!("team member user #{member_user_id}"))
-            })?;
+    let target_membership = team_member_repo::find_by_team_and_user(&txn, team_id, member_user_id)
+        .await?
+        .ok_or_else(|| {
+            AsterError::record_not_found(format!("team member user #{member_user_id}"))
+        })?;
 
     if !actor_membership.role.is_owner() && (target_membership.role.is_owner() || role.is_owner()) {
         return Err(AsterError::auth_forbidden(
@@ -430,14 +434,15 @@ pub async fn update_member_role(
     }
 
     if target_membership.role.is_owner() && !role.is_owner() {
-        ensure_not_last_owner(state, team_id).await?;
+        ensure_not_last_owner(&txn, team_id).await?;
     }
 
     let mut active = target_membership.clone().into_active_model();
     active.role = Set(role);
     active.updated_at = Set(Utc::now());
-    let updated = team_member_repo::update(&state.db, active).await?;
-    let target_user = user_repo::find_by_id(&state.db, member_user_id).await?;
+    let updated = team_member_repo::update(&txn, active).await?;
+    let target_user = user_repo::find_by_id(&txn, member_user_id).await?;
+    txn.commit().await.map_err(AsterError::from)?;
     Ok(build_team_member_info(updated, target_user))
 }
 
@@ -447,13 +452,17 @@ pub async fn remove_member(
     actor_user_id: i64,
     member_user_id: i64,
 ) -> Result<()> {
-    let (_, actor_membership) = require_team_membership(state, team_id, actor_user_id).await?;
-    let target_membership =
-        team_member_repo::find_by_team_and_user(&state.db, team_id, member_user_id)
-            .await?
-            .ok_or_else(|| {
-                AsterError::record_not_found(format!("team member user #{member_user_id}"))
-            })?;
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    team_repo::lock_active_by_id(&txn, team_id).await?;
+
+    let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
+        .await?
+        .ok_or_else(|| AsterError::auth_forbidden("not a member of this team"))?;
+    let target_membership = team_member_repo::find_by_team_and_user(&txn, team_id, member_user_id)
+        .await?
+        .ok_or_else(|| {
+            AsterError::record_not_found(format!("team member user #{member_user_id}"))
+        })?;
 
     if actor_user_id != member_user_id {
         ensure_can_manage_team(actor_membership.role)?;
@@ -465,8 +474,10 @@ pub async fn remove_member(
     }
 
     if target_membership.role.is_owner() {
-        ensure_not_last_owner(state, team_id).await?;
+        ensure_not_last_owner(&txn, team_id).await?;
     }
 
-    team_member_repo::delete(&state.db, target_membership.id).await
+    team_member_repo::delete(&txn, target_membership.id).await?;
+    txn.commit().await.map_err(AsterError::from)?;
+    Ok(())
 }

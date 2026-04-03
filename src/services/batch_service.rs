@@ -316,6 +316,9 @@ pub(crate) async fn batch_move_in_scope(
     let mut result = BatchResult::new();
     let file_map = build_file_map(file_repo::find_by_ids(&state.db, file_ids).await?);
     let folder_map = build_folder_map(folder_repo::find_by_ids(&state.db, folder_ids).await?);
+    let hierarchy = load_folder_hierarchy_map(&state.db, &file_map, &folder_map).await?;
+    let (normalized_file_ids, normalized_folder_ids) =
+        normalize_selection(file_ids, folder_ids, &file_map, &folder_map, &hierarchy);
 
     let (target_folder, target_error) =
         match load_target_folder_in_scope(state, scope, target_folder_id).await {
@@ -346,7 +349,7 @@ pub(crate) async fn batch_move_in_scope(
     let mut file_ids_to_move = HashSet::new();
     let mut folder_ids_to_move = HashSet::new();
 
-    for &id in file_ids {
+    for &id in &normalized_file_ids {
         let Some(file) = file_map.get(&id) else {
             result.record_failure(
                 "file",
@@ -392,7 +395,7 @@ pub(crate) async fn batch_move_in_scope(
         target_file_names.insert(file.name.clone(), file.id);
     }
 
-    for &id in folder_ids {
+    for &id in &normalized_folder_ids {
         let Some(folder) = folder_map.get(&id) else {
             result.record_failure(
                 "folder",

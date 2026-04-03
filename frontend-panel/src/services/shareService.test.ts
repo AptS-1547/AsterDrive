@@ -120,4 +120,24 @@ describe("shareService", () => {
 			"/api/v1/s/token-1/files/42/download",
 		);
 	});
+
+	it("normalizes trailing slashes when building public download URLs", async () => {
+		vi.resetModules();
+		vi.doMock("@/config/app", () => ({
+			config: {
+				apiBaseUrl: "/api/v1/",
+				appName: "AsterDrive",
+				appVersion: "test",
+			},
+		}));
+
+		const { createShareService } = await import("@/services/shareService");
+		const service = createShareService();
+		expect(service.downloadUrl("token-1")).toBe("/api/v1/s/token-1/download");
+		expect(service.downloadFolderFileUrl("token-1", 42)).toBe(
+			"/api/v1/s/token-1/files/42/download",
+		);
+
+		vi.doUnmock("@/config/app");
+	});
 });

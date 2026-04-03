@@ -1,6 +1,6 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
     FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
     entity::prelude::DeriveIden,
     sea_query::{Asterisk, CommonTableExpression, Expr, Order, Query, UnionType, WithClause},
@@ -32,6 +32,30 @@ fn apply_parent_condition(cond: Condition, parent_id: Option<i64>) -> Condition 
     match parent_id {
         Some(parent_id) => cond.add(folder::Column::ParentId.eq(parent_id)),
         None => cond.add(folder::Column::ParentId.is_null()),
+    }
+}
+
+pub async fn lock_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<folder::Model> {
+    match db.get_database_backend() {
+        DbBackend::Postgres | DbBackend::MySql => Folder::find_by_id(id)
+            .lock_exclusive()
+            .one(db)
+            .await
+            .map_err(AsterError::from)?
+            .ok_or_else(|| AsterError::folder_not_found(format!("folder #{id}"))),
+        DbBackend::Sqlite => {
+            Folder::update_many()
+                .col_expr(
+                    folder::Column::UpdatedAt,
+                    Expr::col(folder::Column::UpdatedAt),
+                )
+                .filter(folder::Column::Id.eq(id))
+                .exec(db)
+                .await
+                .map_err(AsterError::from)?;
+            find_by_id(db, id).await
+        }
+        _ => find_by_id(db, id).await,
     }
 }
 

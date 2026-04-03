@@ -70,8 +70,12 @@ export function createFileService(workspace: Workspace = PERSONAL_WORKSPACE) {
 		downloadPath: (id: number) =>
 			buildWorkspacePath(workspace, `/files/${id}/download`),
 
-		downloadUrl: (id: number) =>
-			`${config.apiBaseUrl}${buildWorkspacePath(workspace, `/files/${id}/download`)}`,
+		downloadUrl: (id: number) => {
+			const baseUrl = config.apiBaseUrl.endsWith("/")
+				? config.apiBaseUrl.slice(0, -1)
+				: config.apiBaseUrl;
+			return `${baseUrl}${buildWorkspacePath(workspace, `/files/${id}/download`)}`;
+		},
 
 		thumbnailPath: (id: number) =>
 			buildWorkspacePath(workspace, `/files/${id}/thumbnail`),

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use sea_orm::{DatabaseConnection, Set};
+use sea_orm::{DatabaseConnection, Set, TransactionTrait};
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -110,6 +110,25 @@ fn ensure_share_scope(share: &share::Model, scope: WorkspaceStorageScope) -> Res
     Ok(())
 }
 
+async fn lock_share_resource_in_scope<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    file_id: Option<i64>,
+    folder_id: Option<i64>,
+) -> Result<()> {
+    if let Some(file_id) = file_id {
+        let file = file_repo::lock_by_id(db, file_id).await?;
+        workspace_storage_service::ensure_active_file_scope(&file, scope)?;
+    }
+
+    if let Some(folder_id) = folder_id {
+        let folder = folder_repo::lock_by_id(db, folder_id).await?;
+        workspace_storage_service::ensure_active_folder_scope(&folder, scope)?;
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn create_share_in_scope(
     state: &AppState,
     scope: WorkspaceStorageScope,
@@ -135,12 +154,20 @@ pub(crate) async fn create_share_in_scope(
         ));
     }
 
+    let password_hash = match password {
+        Some(ref p) if !p.is_empty() => Some(hash::hash_password(p)?),
+        _ => None,
+    };
+
+    let txn = db.begin().await.map_err(AsterError::from)?;
+    lock_share_resource_in_scope(&txn, scope, file_id, folder_id).await?;
+
     let existing = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            share_repo::find_active_by_resource(db, user_id, file_id, folder_id).await?
+            share_repo::find_active_by_resource(&txn, user_id, file_id, folder_id).await?
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            share_repo::find_active_by_team_resource(db, team_id, file_id, folder_id).await?
+            share_repo::find_active_by_team_resource(&txn, team_id, file_id, folder_id).await?
         }
     };
 
@@ -151,20 +178,8 @@ pub(crate) async fn create_share_in_scope(
                 "an active share already exists for this resource",
             ));
         }
-        share_repo::delete(db, existing.id).await?;
+        share_repo::delete(&txn, existing.id).await?;
     }
-
-    if let Some(fid) = file_id {
-        workspace_storage_service::verify_file_access(state, scope, fid).await?;
-    }
-    if let Some(folder_id) = folder_id {
-        workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
-    }
-
-    let password_hash = match password {
-        Some(ref p) if !p.is_empty() => Some(hash::hash_password(p)?),
-        _ => None,
-    };
 
     let now = Utc::now();
     let model = share::ActiveModel {
@@ -182,7 +197,9 @@ pub(crate) async fn create_share_in_scope(
         updated_at: Set(now),
         ..Default::default()
     };
-    share_repo::create(db, model).await
+    let created = share_repo::create(&txn, model).await?;
+    txn.commit().await.map_err(AsterError::from)?;
+    Ok(created)
 }
 
 pub async fn create_share(
@@ -358,19 +375,7 @@ pub async fn download_shared_file(
 ) -> Result<actix_web::HttpResponse> {
     let share = load_valid_share(state, token).await?;
     let file = load_share_file_resource(state, &share).await?;
-    let response = file_service::download_raw_unchecked(state, file.id, if_none_match).await?;
-
-    // only count actual downloads, not 304 cache hits
-    if response.status() != actix_web::http::StatusCode::NOT_MODIFIED
-        && let Err(e) = share_repo::increment_download_count(&state.db, share.id).await
-    {
-        tracing::warn!(
-            share_id = share.id,
-            "failed to increment download count: {e}"
-        );
-    }
-
-    Ok(response)
+    download_shared_resource(state, &share, &file, if_none_match).await
 }
 
 pub async fn download_shared_folder_file(
@@ -380,19 +385,7 @@ pub async fn download_shared_folder_file(
     if_none_match: Option<&str>,
 ) -> Result<actix_web::HttpResponse> {
     let (share, file) = load_shared_folder_file_target(state, token, file_id).await?;
-
-    let response = file_service::download_raw_unchecked(state, file.id, if_none_match).await?;
-
-    if response.status() != actix_web::http::StatusCode::NOT_MODIFIED
-        && let Err(e) = share_repo::increment_download_count(&state.db, share.id).await
-    {
-        tracing::warn!(
-            share_id = share.id,
-            "failed to increment download count: {e}"
-        );
-    }
-
-    Ok(response)
+    download_shared_resource(state, &share, &file, if_none_match).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -672,6 +665,7 @@ pub async fn batch_delete_shares(
     user_id: i64,
     share_ids: &[i64],
 ) -> Result<batch_service::BatchResult> {
+    validate_batch_share_ids(share_ids)?;
     batch_delete_shares_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -686,6 +680,7 @@ pub async fn batch_delete_team_shares(
     user_id: i64,
     share_ids: &[i64],
 ) -> Result<batch_service::BatchResult> {
+    validate_batch_share_ids(share_ids)?;
     batch_delete_shares_in_scope(
         state,
         WorkspaceStorageScope::Team {
@@ -949,6 +944,37 @@ async fn load_shared_subfolder_target(
     }
     folder_service::verify_folder_in_scope(&state.db, folder_id, root_folder_id).await?;
     Ok((share, target))
+}
+
+async fn download_shared_resource(
+    state: &AppState,
+    share: &share::Model,
+    file: &crate::entities::file::Model,
+    if_none_match: Option<&str>,
+) -> Result<actix_web::HttpResponse> {
+    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+
+    if let Some(if_none_match) = if_none_match
+        && file_service::if_none_match_matches(if_none_match, &blob.hash)
+    {
+        return file_service::build_stream_response(state, file, &blob, Some(if_none_match)).await;
+    }
+
+    match share_repo::increment_download_count(&state.db, share.id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return Err(AsterError::share_download_limit("download limit reached"));
+        }
+        Err(e) => {
+            tracing::warn!(
+                share_id = share.id,
+                "failed to increment download count: {e}"
+            );
+            return Err(e);
+        }
+    }
+
+    file_service::build_stream_response(state, file, &blob, if_none_match).await
 }
 
 fn validate_share(share: &share::Model) -> Result<()> {
