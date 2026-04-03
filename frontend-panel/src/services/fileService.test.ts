@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PERSONAL_WORKSPACE } from "@/lib/workspace";
 
 const mockState = vi.hoisted(() => {
 	class MockApiError extends Error {
@@ -184,6 +185,14 @@ describe("fileService", () => {
 		await expect(fileService.updateContent(8, "hello")).rejects.toBe(failure);
 	});
 
+	it("rethrows axios-like update failures without a response as-is", async () => {
+		const failure = { response: undefined, message: "network boom" };
+		mockState.clientPut.mockRejectedValue(failure);
+		const { fileService } = await import("@/services/fileService");
+
+		await expect(fileService.updateContent(8, "hello")).rejects.toBe(failure);
+	});
+
 	it("normalizes trailing slashes when building download URLs", async () => {
 		vi.resetModules();
 		vi.doMock("@/config/app", () => ({
@@ -195,7 +204,9 @@ describe("fileService", () => {
 		}));
 
 		const { createFileService } = await import("@/services/fileService");
-		expect(createFileService().downloadUrl(8)).toBe("/api/v1/files/8/download");
+		expect(createFileService(PERSONAL_WORKSPACE).downloadUrl(8)).toBe(
+			"/api/v1/files/8/download",
+		);
 		expect(createFileService({ kind: "team", teamId: 9 }).downloadUrl(8)).toBe(
 			"/api/v1/teams/9/files/8/download",
 		);

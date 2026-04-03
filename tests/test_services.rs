@@ -1340,6 +1340,118 @@ async fn test_team_service_clamps_negative_default_storage_quota() {
 }
 
 #[actix_web::test]
+async fn test_team_service_create_team_without_default_policy_group() {
+    use sea_orm::ConnectionTrait;
+
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "teamnodefault",
+        "teamnodefault@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    state
+        .db
+        .execute_unprepared("UPDATE storage_policy_groups SET is_default = 0;")
+        .await
+        .unwrap();
+    state.policy_snapshot.reload(&state.db).await.unwrap();
+
+    let team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "No Default Policy Group".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(team.policy_group_id, None);
+}
+
+#[actix_web::test]
+async fn test_team_service_degrades_missing_creator_rows() {
+    use sea_orm::{ConnectionTrait, IntoActiveModel, Set};
+
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "missowner",
+        "missowner@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let member = aster_drive::services::auth_service::register(
+        &state,
+        "missmember",
+        "missmember@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "Missing Creator".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    aster_drive::services::team_service::add_member(
+        &state,
+        team.id,
+        owner.id,
+        aster_drive::services::team_service::AddTeamMemberInput {
+            user_id: Some(member.id),
+            identifier: None,
+            role: aster_drive::types::TeamMemberRole::Member,
+        },
+    )
+    .await
+    .unwrap();
+
+    state
+        .db
+        .execute_unprepared("PRAGMA foreign_keys=OFF;")
+        .await
+        .unwrap();
+    let mut broken_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
+        .await
+        .unwrap()
+        .into_active_model();
+    broken_team.created_by = Set(i64::MAX);
+    aster_drive::db::repository::team_repo::update(&state.db, broken_team)
+        .await
+        .unwrap();
+    state
+        .db
+        .execute_unprepared("PRAGMA foreign_keys=ON;")
+        .await
+        .unwrap();
+
+    let loaded = aster_drive::services::team_service::get_team(&state, team.id, owner.id)
+        .await
+        .unwrap();
+    assert_eq!(loaded.created_by_username, "<deleted_user>");
+
+    let teams = aster_drive::services::team_service::list_teams(&state, member.id)
+        .await
+        .unwrap();
+    assert_eq!(teams.len(), 1);
+    assert_eq!(teams[0].created_by_username, "<deleted_user>");
+}
+
+#[actix_web::test]
 async fn test_folder_repo_find_expired_deleted_includes_team_folders() {
     use chrono::{Duration, Utc};
     use sea_orm::Set;

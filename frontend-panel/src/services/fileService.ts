@@ -1,9 +1,5 @@
 import { config } from "@/config/app";
-import {
-	buildWorkspacePath,
-	PERSONAL_WORKSPACE,
-	type Workspace,
-} from "@/lib/workspace";
+import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
 	ErrorCode,
@@ -25,7 +21,7 @@ export interface FolderListParams {
 	sort_order?: "asc" | "desc";
 }
 
-export function createFileService(workspace: Workspace = PERSONAL_WORKSPACE) {
+export function createFileService(workspace: Workspace) {
 	return {
 		listRoot: (params?: FolderListParams) =>
 			api.get<FolderContents>(buildWorkspacePath(workspace, "/folders"), {
@@ -127,21 +123,25 @@ export function createFileService(workspace: Workspace = PERSONAL_WORKSPACE) {
 				);
 				return resp.data.data as FileInfo;
 			} catch (err: unknown) {
-				if (err && typeof err === "object" && "response" in err) {
-					const axiosErr = err as {
-						response: {
-							status: number;
-							data?: { code?: number; msg?: string };
-						};
-					};
-					const status = axiosErr.response.status;
-					const body = axiosErr.response.data;
-					const apiErr = new ApiError(
-						(body?.code ?? status) as ErrorCode,
-						body?.msg ?? `HTTP ${status}`,
-					);
-					(apiErr as ApiError & { status: number }).status = status;
-					throw apiErr;
+				if (err && typeof err === "object") {
+					const response = (
+						err as {
+							response?: {
+								status: number;
+								data?: { code?: number; msg?: string };
+							} | null;
+						}
+					).response;
+					if (response != null) {
+						const status = response.status;
+						const body = response.data;
+						const apiErr = new ApiError(
+							(body?.code ?? status) as ErrorCode,
+							body?.msg ?? `HTTP ${status}`,
+						);
+						(apiErr as ApiError & { status: number }).status = status;
+						throw apiErr;
+					}
 				}
 				throw err;
 			}

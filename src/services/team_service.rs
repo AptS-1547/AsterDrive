@@ -69,6 +69,8 @@ pub struct TeamMemberInfo {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+const MISSING_CREATOR_USERNAME: &str = "<deleted_user>";
+
 fn validate_team_name(name: &str) -> Result<String> {
     let normalized = name.trim();
     if normalized.is_empty() {
@@ -105,18 +107,35 @@ fn default_team_storage_quota(state: &AppState) -> i64 {
     }
 }
 
+fn missing_creator_username(team: &team::Model) -> String {
+    tracing::warn!(
+        team_id = team.id,
+        created_by = team.created_by,
+        "team creator missing; using placeholder username"
+    );
+    MISSING_CREATOR_USERNAME.to_string()
+}
+
+async fn load_creator_username(state: &AppState, team: &team::Model) -> Result<String> {
+    match user_repo::find_by_id(&state.db, team.created_by).await {
+        Ok(creator) => Ok(creator.username),
+        Err(AsterError::RecordNotFound(_)) => Ok(missing_creator_username(team)),
+        Err(err) => Err(err),
+    }
+}
+
 async fn build_team_info(
     state: &AppState,
     team: &team::Model,
     my_role: TeamMemberRole,
 ) -> Result<TeamInfo> {
-    let creator = user_repo::find_by_id(&state.db, team.created_by).await?;
+    let creator_username = load_creator_username(state, team).await?;
     let member_count = team_member_repo::count_by_team(&state.db, team.id).await?;
 
     Ok(build_team_info_with_metadata(
         team,
         my_role,
-        creator.username,
+        creator_username,
         member_count,
     ))
 }
@@ -247,7 +266,7 @@ pub async fn list_teams(state: &AppState, user_id: i64) -> Result<Vec<TeamInfo>>
         let created_by_username = creator_usernames
             .get(&team.created_by)
             .cloned()
-            .ok_or_else(|| AsterError::record_not_found(format!("user #{}", team.created_by)))?;
+            .unwrap_or_else(|| missing_creator_username(&team));
         let member_count = member_counts.get(&team.id).copied().unwrap_or_default();
         teams.push(build_team_info_with_metadata(
             &team,
@@ -269,12 +288,13 @@ pub async fn create_team(
     let policy_group_id = state
         .policy_snapshot
         .system_default_policy_group()
-        .map(|group| group.id)
-        .ok_or_else(|| {
-            AsterError::storage_policy_not_found(
-                "no system default storage policy group configured",
-            )
-        })?;
+        .map(|group| group.id);
+    if policy_group_id.is_none() {
+        tracing::warn!(
+            creator_user_id,
+            "no system default storage policy group configured; creating team without policy group"
+        );
+    }
     let storage_quota = default_team_storage_quota(state);
     let now = Utc::now();
 
@@ -287,7 +307,7 @@ pub async fn create_team(
             created_by: Set(creator_user_id),
             storage_used: Set(0),
             storage_quota: Set(storage_quota),
-            policy_group_id: Set(Some(policy_group_id)),
+            policy_group_id: Set(policy_group_id),
             created_at: Set(now),
             updated_at: Set(now),
             archived_at: Set(None),
@@ -372,14 +392,6 @@ pub async fn add_member(
     actor_user_id: i64,
     input: AddTeamMemberInput,
 ) -> Result<TeamMemberInfo> {
-    let (_, actor_membership) = require_team_membership(state, team_id, actor_user_id).await?;
-    ensure_can_manage_team(actor_membership.role)?;
-    if !actor_membership.role.is_owner() && input.role.is_owner() {
-        return Err(AsterError::auth_forbidden(
-            "only a team owner can assign owner role",
-        ));
-    }
-
     let target_user =
         resolve_target_user(state, input.user_id, input.identifier.as_deref()).await?;
     if !target_user.status.is_active() {
@@ -387,7 +399,22 @@ pub async fn add_member(
             "cannot add a disabled user to a team",
         ));
     }
-    if team_member_repo::find_by_team_and_user(&state.db, team_id, target_user.id)
+
+    let now = Utc::now();
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    team_repo::lock_active_by_id(&txn, team_id).await?;
+
+    let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
+        .await?
+        .ok_or_else(|| AsterError::auth_forbidden("not a member of this team"))?;
+    ensure_can_manage_team(actor_membership.role)?;
+    if !actor_membership.role.is_owner() && input.role.is_owner() {
+        return Err(AsterError::auth_forbidden(
+            "only a team owner can assign owner role",
+        ));
+    }
+
+    if team_member_repo::find_by_team_and_user(&txn, team_id, target_user.id)
         .await?
         .is_some()
     {
@@ -396,9 +423,8 @@ pub async fn add_member(
         ));
     }
 
-    let now = Utc::now();
     let membership = team_member_repo::create(
-        &state.db,
+        &txn,
         team_member::ActiveModel {
             team_id: Set(team_id),
             user_id: Set(target_user.id),
@@ -409,6 +435,7 @@ pub async fn add_member(
         },
     )
     .await?;
+    txn.commit().await.map_err(AsterError::from)?;
 
     Ok(build_team_member_info(membership, target_user))
 }
