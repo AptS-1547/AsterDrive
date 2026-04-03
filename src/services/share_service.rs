@@ -974,7 +974,27 @@ async fn download_shared_resource(
         }
     }
 
-    file_service::build_stream_response(state, file, &blob, if_none_match).await
+    match file_service::build_stream_response(state, file, &blob, None).await {
+        Ok(response) => Ok(response),
+        Err(error) => {
+            match share_repo::decrement_download_count(&state.db, share.id).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    tracing::warn!(
+                        share_id = share.id,
+                        "failed to roll back download count after response build failure"
+                    );
+                }
+                Err(rollback_error) => {
+                    tracing::warn!(
+                        share_id = share.id,
+                        "failed to roll back download count after response build failure: {rollback_error}"
+                    );
+                }
+            }
+            Err(error)
+        }
+    }
 }
 
 fn validate_share(share: &share::Model) -> Result<()> {

@@ -1201,3 +1201,244 @@ async fn test_share_service_batch_delete_validates_ids_before_scope_work() {
     assert_eq!(err.code(), "E005");
     assert!(err.to_string().contains("batch size cannot exceed"));
 }
+
+#[actix_web::test]
+async fn test_share_download_failure_rolls_back_download_quota() {
+    let state = common::setup().await;
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "sharedownload",
+        "sharedownload@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let file_id = store_service_file(&state, user.id, None, "download.txt", "download").await;
+    let share = aster_drive::services::share_service::create_share(
+        &state,
+        user.id,
+        Some(file_id),
+        None,
+        None,
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+
+    let file = aster_drive::db::repository::file_repo::find_by_id(&state.db, file_id)
+        .await
+        .unwrap();
+    let blob = aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file.blob_id)
+        .await
+        .unwrap();
+    let policy = state
+        .policy_snapshot
+        .get_policy_or_err(blob.policy_id)
+        .unwrap();
+    let stored_path = std::path::Path::new(&policy.base_path).join(&blob.storage_path);
+    std::fs::remove_file(&stored_path).unwrap();
+
+    let err =
+        aster_drive::services::share_service::download_shared_file(&state, &share.token, None)
+            .await
+            .unwrap_err();
+    assert_ne!(err.code(), "E053");
+
+    let reloaded = aster_drive::db::repository::share_repo::find_by_id(&state.db, share.id)
+        .await
+        .unwrap();
+    assert_eq!(reloaded.download_count, 0);
+
+    let err =
+        aster_drive::services::share_service::download_shared_file(&state, &share.token, None)
+            .await
+            .unwrap_err();
+    assert_ne!(err.code(), "E053");
+
+    let reloaded = aster_drive::db::repository::share_repo::find_by_id(&state.db, share.id)
+        .await
+        .unwrap();
+    assert_eq!(reloaded.download_count, 0);
+}
+
+#[actix_web::test]
+async fn test_team_service_accepts_128_multibyte_characters_in_name() {
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "teamunicode",
+        "teamunicode@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let valid_name = "你".repeat(128);
+    let team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: valid_name.clone(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(team.name, valid_name);
+
+    let err = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "你".repeat(129),
+            description: None,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.code(), "E005");
+    assert!(
+        err.to_string()
+            .contains("team name must be at most 128 characters")
+    );
+}
+
+#[actix_web::test]
+async fn test_team_service_clamps_negative_default_storage_quota() {
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "teamquota",
+        "teamquota@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let mut updated =
+        aster_drive::db::repository::config_repo::find_by_key(&state.db, "default_storage_quota")
+            .await
+            .unwrap()
+            .unwrap();
+    updated.value = "-1".to_string();
+    state.runtime_config.apply(updated);
+
+    let team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "Quota Clamp".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(team.storage_quota, 0);
+}
+
+#[actix_web::test]
+async fn test_folder_repo_find_expired_deleted_includes_team_folders() {
+    use chrono::{Duration, Utc};
+    use sea_orm::Set;
+
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "trashteamowner",
+        "trashteamowner@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "Trash Team".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let deleted_at = Utc::now() - Duration::days(10);
+    let created = aster_drive::db::repository::folder_repo::create(
+        &state.db,
+        aster_drive::entities::folder::ActiveModel {
+            name: Set("Team Trash".to_string()),
+            parent_id: Set(None),
+            team_id: Set(Some(team.id)),
+            user_id: Set(owner.id),
+            policy_id: Set(None),
+            created_at: Set(deleted_at),
+            updated_at: Set(deleted_at),
+            deleted_at: Set(Some(deleted_at)),
+            is_locked: Set(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let expired =
+        aster_drive::db::repository::folder_repo::find_expired_deleted(&state.db, Utc::now())
+            .await
+            .unwrap();
+
+    assert!(expired.iter().any(|folder| folder.id == created.id));
+}
+
+#[actix_web::test]
+async fn test_team_service_list_teams_for_member() {
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "listteams-owner",
+        "listteams-owner@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let member = aster_drive::services::auth_service::register(
+        &state,
+        "listteams-member",
+        "listteams-member@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "List Teams".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    aster_drive::services::team_service::add_member(
+        &state,
+        team.id,
+        owner.id,
+        aster_drive::services::team_service::AddTeamMemberInput {
+            user_id: Some(member.id),
+            identifier: None,
+            role: aster_drive::types::TeamMemberRole::Member,
+        },
+    )
+    .await
+    .unwrap();
+
+    let teams = aster_drive::services::team_service::list_teams(&state, member.id)
+        .await
+        .unwrap();
+    assert_eq!(teams.len(), 1);
+    assert_eq!(teams[0].id, team.id);
+    assert_eq!(teams[0].my_role, aster_drive::types::TeamMemberRole::Member);
+}

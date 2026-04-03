@@ -74,7 +74,7 @@ fn validate_team_name(name: &str) -> Result<String> {
     if normalized.is_empty() {
         return Err(AsterError::validation_error("team name cannot be empty"));
     }
-    if normalized.len() > 128 {
+    if normalized.chars().count() > 128 {
         return Err(AsterError::validation_error(
             "team name must be at most 128 characters",
         ));
@@ -87,15 +87,22 @@ fn normalize_description(description: Option<&str>) -> String {
 }
 
 fn default_team_storage_quota(state: &AppState) -> i64 {
-    state
-        .runtime_config
-        .get_i64("default_storage_quota")
-        .unwrap_or_else(|| {
-            if let Some(raw) = state.runtime_config.get("default_storage_quota") {
-                tracing::warn!("invalid default_storage_quota value '{}', using 0", raw);
-            }
+    let raw = state.runtime_config.get("default_storage_quota");
+    let Some(raw) = raw.as_deref() else {
+        return 0;
+    };
+
+    match raw.trim().parse::<i64>() {
+        Ok(value) if value >= 0 => value,
+        Ok(_) => {
+            tracing::warn!("invalid default_storage_quota value '{}', using 0", raw);
             0
-        })
+        }
+        Err(_) => {
+            tracing::warn!("invalid default_storage_quota value '{}', using 0", raw);
+            0
+        }
+    }
 }
 
 async fn build_team_info(

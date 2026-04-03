@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PERSONAL_WORKSPACE } from "@/lib/workspace";
 import {
 	bindWorkspaceService,
@@ -7,6 +7,10 @@ import {
 
 describe("bindWorkspaceService", () => {
 	beforeEach(() => {
+		useWorkspaceStore.getState().setWorkspace(PERSONAL_WORKSPACE);
+	});
+
+	afterEach(() => {
 		useWorkspaceStore.getState().setWorkspace(PERSONAL_WORKSPACE);
 	});
 

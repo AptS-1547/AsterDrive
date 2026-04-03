@@ -298,6 +298,22 @@ pub async fn increment_download_count<C: ConnectionTrait>(db: &C, id: i64) -> Re
     Ok(result.rows_affected > 0)
 }
 
+/// 回滚一次 download_count 递增。
+/// 返回 false 表示分享不存在或计数已经是 0。
+pub async fn decrement_download_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<bool> {
+    let result = Share::update_many()
+        .col_expr(
+            share::Column::DownloadCount,
+            Expr::col(share::Column::DownloadCount).sub(1i64),
+        )
+        .filter(share::Column::Id.eq(id))
+        .filter(share::Column::DownloadCount.gt(0))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected > 0)
+}
+
 /// 批量删除用户的所有分享链接
 pub async fn delete_all_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<u64> {
     let res = Share::delete_many()

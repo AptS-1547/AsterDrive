@@ -814,7 +814,6 @@ pub async fn find_expired_deleted<C: ConnectionTrait>(
     before: chrono::DateTime<Utc>,
 ) -> Result<Vec<folder::Model>> {
     Folder::find()
-        .filter(folder::Column::TeamId.is_null())
         .filter(folder::Column::DeletedAt.is_not_null())
         .filter(folder::Column::DeletedAt.lt(before))
         .all(db)

@@ -167,4 +167,7 @@ export function createFileService(workspace: Workspace = PERSONAL_WORKSPACE) {
 	};
 }
 
+// `fileService` is a `bindWorkspaceService(createFileService)` proxy bound on
+// property access to the current workspace. Do not destructure or cache methods
+// from `fileService`; use `createFileService(workspace)` for a stable instance.
 export const fileService = bindWorkspaceService(createFileService);
