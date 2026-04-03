@@ -1,0 +1,106 @@
+use crate::api::middleware::{admin::RequireAdmin, auth::JwtAuth, rate_limit};
+use crate::config::RateLimitConfig;
+use actix_governor::Governor;
+use actix_web::middleware::Condition;
+use actix_web::web;
+
+pub(crate) mod audit_logs;
+mod common;
+pub(crate) mod config;
+pub(crate) mod locks;
+pub(crate) mod overview;
+pub(crate) mod policies;
+pub(crate) mod shares;
+pub(crate) mod teams;
+pub(crate) mod users;
+
+pub use audit_logs::list_audit_logs;
+pub use config::{SetConfigReq, config_schema, delete_config, get_config, list_config, set_config};
+pub use locks::{cleanup_expired_locks, force_unlock, list_locks};
+pub use overview::get_overview;
+pub use policies::{
+    CreatePolicyGroupReq, CreatePolicyReq, MigratePolicyGroupUsersReq, PatchPolicyGroupReq,
+    PatchPolicyReq, PolicyGroupItemReq, TestPolicyParamsReq, create_policy, create_policy_group,
+    delete_policy, delete_policy_group, get_policy, get_policy_group, list_policies,
+    list_policy_groups, migrate_policy_group_users, test_policy_connection, test_policy_params,
+    update_policy, update_policy_group,
+};
+pub use shares::{admin_delete_share, list_all_shares};
+pub use teams::{
+    AdminCreateTeamReq, AdminPatchTeamReq, AdminTeamListQuery, create_team, delete_team, get_team,
+    list_teams, restore_team, update_team,
+};
+pub use users::{
+    AdminUserListQuery, CreateUserReq, PatchUserReq, ResetUserPasswordReq, create_user,
+    force_delete_user, get_user, get_user_avatar, list_users, reset_user_password,
+    revoke_user_sessions, update_user,
+};
+
+pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
+    let limiter = rate_limit::build_governor(&rl.write);
+
+    web::scope("/admin")
+        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
+        .service(
+            web::scope("").wrap(JwtAuth).service(
+                web::scope("")
+                    .wrap(RequireAdmin)
+                    .route("/overview", web::get().to(get_overview))
+                    // policies
+                    .route("/policies", web::get().to(list_policies))
+                    .route("/policies", web::post().to(create_policy))
+                    .route("/policies/{id}", web::get().to(get_policy))
+                    .route("/policies/{id}", web::patch().to(update_policy))
+                    .route("/policies/{id}", web::delete().to(delete_policy))
+                    .route(
+                        "/policies/{id}/test",
+                        web::post().to(test_policy_connection),
+                    )
+                    .route("/policies/test", web::post().to(test_policy_params))
+                    // policy groups
+                    .route("/policy-groups", web::get().to(list_policy_groups))
+                    .route("/policy-groups", web::post().to(create_policy_group))
+                    .route("/policy-groups/{id}", web::get().to(get_policy_group))
+                    .route("/policy-groups/{id}", web::patch().to(update_policy_group))
+                    .route("/policy-groups/{id}", web::delete().to(delete_policy_group))
+                    .route(
+                        "/policy-groups/{id}/migrate-users",
+                        web::post().to(migrate_policy_group_users),
+                    )
+                    // users
+                    .route("/users", web::get().to(list_users))
+                    .route("/users", web::post().to(create_user))
+                    .route("/users/{id}", web::get().to(get_user))
+                    .route("/users/{id}", web::patch().to(update_user))
+                    .route("/users/{id}/password", web::put().to(reset_user_password))
+                    .route(
+                        "/users/{id}/sessions/revoke",
+                        web::post().to(revoke_user_sessions),
+                    )
+                    .route("/users/{id}", web::delete().to(force_delete_user))
+                    .route("/users/{id}/avatar/{size}", web::get().to(get_user_avatar))
+                    // teams
+                    .route("/teams", web::get().to(list_teams))
+                    .route("/teams", web::post().to(create_team))
+                    .route("/teams/{id}", web::get().to(get_team))
+                    .route("/teams/{id}", web::patch().to(update_team))
+                    .route("/teams/{id}", web::delete().to(delete_team))
+                    .route("/teams/{id}/restore", web::post().to(restore_team))
+                    // shares
+                    .route("/shares", web::get().to(list_all_shares))
+                    .route("/shares/{id}", web::delete().to(admin_delete_share))
+                    // config
+                    .route("/config", web::get().to(list_config))
+                    .route("/config/schema", web::get().to(config_schema))
+                    .route("/config/{key}", web::get().to(get_config))
+                    .route("/config/{key}", web::put().to(set_config))
+                    .route("/config/{key}", web::delete().to(delete_config))
+                    // audit logs
+                    .route("/audit-logs", web::get().to(list_audit_logs))
+                    // webdav locks
+                    .route("/locks", web::get().to(list_locks))
+                    .route("/locks/expired", web::delete().to(cleanup_expired_locks))
+                    .route("/locks/{id}", web::delete().to(force_unlock)),
+            ),
+        )
+}
