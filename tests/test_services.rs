@@ -1504,6 +1504,168 @@ async fn test_folder_repo_find_expired_deleted_includes_team_folders() {
 }
 
 #[actix_web::test]
+async fn test_folder_repo_find_all_by_user_includes_team_folders() {
+    use chrono::Utc;
+    use sea_orm::Set;
+
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "foldown",
+        "foldown@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let member = aster_drive::services::auth_service::register(
+        &state,
+        "foldmem",
+        "foldmem@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "Folder Scope".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    aster_drive::services::team_service::add_member(
+        &state,
+        team.id,
+        owner.id,
+        aster_drive::services::team_service::AddTeamMemberInput {
+            user_id: Some(member.id),
+            identifier: None,
+            role: aster_drive::types::TeamMemberRole::Member,
+        },
+    )
+    .await
+    .unwrap();
+
+    let now = Utc::now();
+    let personal = aster_drive::db::repository::folder_repo::create(
+        &state.db,
+        aster_drive::entities::folder::ActiveModel {
+            name: Set("Personal".to_string()),
+            parent_id: Set(None),
+            team_id: Set(None),
+            user_id: Set(member.id),
+            policy_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+            is_locked: Set(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let team_folder = aster_drive::db::repository::folder_repo::create(
+        &state.db,
+        aster_drive::entities::folder::ActiveModel {
+            name: Set("Team".to_string()),
+            parent_id: Set(None),
+            team_id: Set(Some(team.id)),
+            user_id: Set(member.id),
+            policy_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+            is_locked: Set(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let folders = aster_drive::db::repository::folder_repo::find_all_by_user(&state.db, member.id)
+        .await
+        .unwrap();
+    let folder_ids: BTreeSet<i64> = folders.into_iter().map(|folder| folder.id).collect();
+
+    assert!(folder_ids.contains(&personal.id));
+    assert!(folder_ids.contains(&team_folder.id));
+}
+
+#[actix_web::test]
+async fn test_folder_repo_top_level_deleted_pagination_is_stable_for_equal_timestamps() {
+    use chrono::Utc;
+    use sea_orm::Set;
+
+    let state = common::setup().await;
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "trashord",
+        "trashord@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let deleted_at = Utc::now();
+    let first = aster_drive::db::repository::folder_repo::create(
+        &state.db,
+        aster_drive::entities::folder::ActiveModel {
+            name: Set("first".to_string()),
+            parent_id: Set(None),
+            team_id: Set(None),
+            user_id: Set(user.id),
+            policy_id: Set(None),
+            created_at: Set(deleted_at),
+            updated_at: Set(deleted_at),
+            deleted_at: Set(Some(deleted_at)),
+            is_locked: Set(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let second = aster_drive::db::repository::folder_repo::create(
+        &state.db,
+        aster_drive::entities::folder::ActiveModel {
+            name: Set("second".to_string()),
+            parent_id: Set(None),
+            team_id: Set(None),
+            user_id: Set(user.id),
+            policy_id: Set(None),
+            created_at: Set(deleted_at),
+            updated_at: Set(deleted_at),
+            deleted_at: Set(Some(deleted_at)),
+            is_locked: Set(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let (page_one, total) =
+        aster_drive::db::repository::folder_repo::find_top_level_deleted_paginated(
+            &state.db, user.id, 1, 0,
+        )
+        .await
+        .unwrap();
+    let (page_two, _) = aster_drive::db::repository::folder_repo::find_top_level_deleted_paginated(
+        &state.db, user.id, 1, 1,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(total, 2);
+    assert_eq!(page_one.len(), 1);
+    assert_eq!(page_two.len(), 1);
+    assert_eq!(page_one[0].id, second.id);
+    assert_eq!(page_two[0].id, first.id);
+}
+
+#[actix_web::test]
 async fn test_team_service_list_teams_for_member() {
     let state = common::setup().await;
     let owner = aster_drive::services::auth_service::register(

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PERSONAL_WORKSPACE } from "@/lib/workspace";
 import type { FolderListParams } from "@/services/fileService";
 import { createShareService, shareService } from "@/services/shareService";
 
@@ -132,12 +133,22 @@ describe("shareService", () => {
 		}));
 
 		const { createShareService } = await import("@/services/shareService");
-		const service = createShareService();
+		const service = createShareService(PERSONAL_WORKSPACE);
 		expect(service.downloadUrl("token-1")).toBe("/api/v1/s/token-1/download");
 		expect(service.downloadFolderFileUrl("token-1", 42)).toBe(
 			"/api/v1/s/token-1/files/42/download",
 		);
 
 		vi.doUnmock("@/config/app");
+	});
+
+	it("requires an explicit workspace when creating a share service directly", () => {
+		expect(() =>
+			(
+				createShareService as unknown as (
+					workspace?: unknown,
+				) => ReturnType<typeof createShareService>
+			)(),
+		).toThrow("workspace is required");
 	});
 });

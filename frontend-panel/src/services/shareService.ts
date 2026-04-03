@@ -1,10 +1,6 @@
 import { config } from "@/config/app";
 import { joinApiUrl } from "@/lib/apiUrl";
-import {
-	buildWorkspacePath,
-	PERSONAL_WORKSPACE,
-	type Workspace,
-} from "@/lib/workspace";
+import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
 	BatchResult,
@@ -20,7 +16,11 @@ function workspaceSharesPrefix(workspace: Workspace) {
 	return buildWorkspacePath(workspace, "/shares");
 }
 
-export function createShareService(workspace: Workspace = PERSONAL_WORKSPACE) {
+export function createShareService(workspace: Workspace) {
+	if (workspace == null) {
+		throw new Error("workspace is required");
+	}
+
 	return {
 		create: (data: {
 			file_id?: number;

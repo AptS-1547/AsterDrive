@@ -14,7 +14,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
 	workspace: PERSONAL_WORKSPACE,
 	setWorkspace: (workspace) =>
 		set((state) =>
-			workspaceEquals(state.workspace, workspace) ? {} : { workspace },
+			workspaceEquals(state.workspace, workspace) ? state : { workspace },
 		),
 }));
 

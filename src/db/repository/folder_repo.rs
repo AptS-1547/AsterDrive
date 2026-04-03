@@ -492,6 +492,7 @@ async fn find_top_level_deleted_paginated_in_scope<C: ConnectionTrait>(
 
     let items = base
         .order_by_desc(folder::Column::DeletedAt)
+        .order_by_desc(folder::Column::Id)
         .offset(offset)
         .limit(limit)
         .all(db)
@@ -837,7 +838,6 @@ pub async fn find_all_by_user<C: ConnectionTrait>(
 ) -> Result<Vec<folder::Model>> {
     Folder::find()
         .filter(folder::Column::UserId.eq(user_id))
-        .filter(folder::Column::TeamId.is_null())
         .all(db)
         .await
         .map_err(AsterError::from)

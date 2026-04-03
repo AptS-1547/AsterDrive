@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PERSONAL_WORKSPACE } from "@/lib/workspace";
 import {
 	bindWorkspaceService,
@@ -63,5 +63,15 @@ describe("bindWorkspaceService", () => {
 
 		expect(remove(8)).toBe("/teams/7/files/8");
 		expect(deleteFile(9)).toBe("/teams/7/files/9");
+	});
+
+	it("does not notify subscribers when setting an equal workspace", () => {
+		const subscriber = vi.fn();
+		const unsubscribe = useWorkspaceStore.subscribe(subscriber);
+
+		useWorkspaceStore.getState().setWorkspace(PERSONAL_WORKSPACE);
+
+		expect(subscriber).not.toHaveBeenCalled();
+		unsubscribe();
 	});
 });
