@@ -65,6 +65,11 @@ export function bindWorkspaceService<T extends object>(
 			const value = service[prop as keyof T];
 			return typeof value === "function" ? getWrappedMethod(prop) : value;
 		},
+		set(_target, prop, _value) {
+			throw new TypeError(
+				`Cannot set property "${String(prop)}" on workspace-bound service`,
+			);
+		},
 		has(_target, prop) {
 			return prop in getService();
 		},

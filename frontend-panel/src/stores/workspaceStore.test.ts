@@ -74,4 +74,19 @@ describe("bindWorkspaceService", () => {
 		expect(subscriber).not.toHaveBeenCalled();
 		unsubscribe();
 	});
+
+	it("rejects direct property assignment on the proxy", () => {
+		const service = bindWorkspaceService(() => ({
+			workspaceKey: "personal",
+		}));
+
+		expect(() => {
+			(
+				service as unknown as {
+					workspaceKey: string;
+				}
+			).workspaceKey = "mutated";
+		}).toThrow('Cannot set property "workspaceKey" on workspace-bound service');
+		expect(service.workspaceKey).toBe("personal");
+	});
 });
