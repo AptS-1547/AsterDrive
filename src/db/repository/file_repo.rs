@@ -15,6 +15,17 @@ pub struct FindOrCreateBlobResult {
     pub inserted: bool,
 }
 
+// `find_or_create_blob()` only retries short-lived races:
+// 1. another transaction inserted the same (hash, policy_id) row but has not become visible yet;
+// 2. a cleanup worker deleted a zero-ref blob after we read it but before we bumped ref_count.
+//
+// Those windows should resolve after the competing transaction commits, so we use a small
+// exponential backoff budget instead of a fixed 1s spin loop. Total sleep is capped at
+// 5 + 10 + 20 + 40 + 80 + 80 = 235ms across 7 attempts.
+const FIND_OR_CREATE_BLOB_MAX_ATTEMPTS: usize = 7;
+const FIND_OR_CREATE_BLOB_INITIAL_DELAY_MS: u64 = 5;
+const FIND_OR_CREATE_BLOB_MAX_DELAY_MS: u64 = 80;
+
 #[derive(Clone, Copy)]
 enum FileScope {
     Personal { user_id: i64 },
@@ -551,10 +562,7 @@ pub async fn find_or_create_blob<C: ConnectionTrait>(
     policy_id: i64,
     storage_path: &str,
 ) -> Result<FindOrCreateBlobResult> {
-    const MAX_RETRIES: usize = 40;
-    const RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(25);
-
-    for attempt in 0..MAX_RETRIES {
+    for attempt in 0..FIND_OR_CREATE_BLOB_MAX_ATTEMPTS {
         if let Some(existing) = find_active_blob_by_hash(db, hash, policy_id).await? {
             match increment_blob_ref_count(db, existing.id).await {
                 Ok(()) => {
@@ -564,7 +572,10 @@ pub async fn find_or_create_blob<C: ConnectionTrait>(
                     });
                 }
                 Err(e) if e.code() == "E006" => {
-                    tokio::time::sleep(RETRY_DELAY).await;
+                    if attempt + 1 == FIND_OR_CREATE_BLOB_MAX_ATTEMPTS {
+                        break;
+                    }
+                    tokio::time::sleep(find_or_create_blob_retry_delay(attempt)).await;
                     continue;
                 }
                 Err(e) => return Err(e),
@@ -607,15 +618,20 @@ pub async fn find_or_create_blob<C: ConnectionTrait>(
             });
         }
 
-        tokio::time::sleep(RETRY_DELAY).await;
-        if attempt + 1 == MAX_RETRIES {
+        if attempt + 1 == FIND_OR_CREATE_BLOB_MAX_ATTEMPTS {
             break;
         }
+        tokio::time::sleep(find_or_create_blob_retry_delay(attempt)).await;
     }
 
     Err(AsterError::internal_error(format!(
-        "find_or_create_blob exceeded retry budget for hash={hash}, policy_id={policy_id}"
+        "find_or_create_blob exceeded contention retry budget after {FIND_OR_CREATE_BLOB_MAX_ATTEMPTS} attempts for hash={hash}, policy_id={policy_id}"
     )))
+}
+
+fn find_or_create_blob_retry_delay(attempt: usize) -> std::time::Duration {
+    let backoff_ms = FIND_OR_CREATE_BLOB_INITIAL_DELAY_MS.saturating_mul(1_u64 << attempt.min(4));
+    std::time::Duration::from_millis(std::cmp::min(backoff_ms, FIND_OR_CREATE_BLOB_MAX_DELAY_MS))
 }
 
 /// 原子递增 blob ref_count（防止并发丢更新）
@@ -1004,6 +1020,36 @@ pub async fn find_all_by_team<C: ConnectionTrait>(
 mod tests {
     use super::*;
     use sea_orm::{DbBackend, QueryTrait};
+    use std::time::Duration;
+
+    #[test]
+    fn find_or_create_blob_retry_delay_grows_exponentially_and_caps() {
+        assert_eq!(find_or_create_blob_retry_delay(0), Duration::from_millis(5));
+        assert_eq!(
+            find_or_create_blob_retry_delay(1),
+            Duration::from_millis(10)
+        );
+        assert_eq!(
+            find_or_create_blob_retry_delay(2),
+            Duration::from_millis(20)
+        );
+        assert_eq!(
+            find_or_create_blob_retry_delay(3),
+            Duration::from_millis(40)
+        );
+        assert_eq!(
+            find_or_create_blob_retry_delay(4),
+            Duration::from_millis(80)
+        );
+        assert_eq!(
+            find_or_create_blob_retry_delay(5),
+            Duration::from_millis(80)
+        );
+        assert_eq!(
+            find_or_create_blob_retry_delay(99),
+            Duration::from_millis(80)
+        );
+    }
 
     #[test]
     fn postgres_find_or_create_blob_insert_sql_uses_valid_on_conflict() {
