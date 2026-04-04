@@ -3,6 +3,7 @@ use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
+use crate::api::routes::teams::{AddTeamMemberReq, PatchTeamMemberReq};
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{audit_service, auth_service::Claims, team_service};
@@ -268,4 +269,114 @@ pub async fn restore_team(
     )
     .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(team)))
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/admin/teams/{id}/members",
+    tag = "admin",
+    operation_id = "admin_list_team_members",
+    params(("id" = i64, Path, description = "Team ID")),
+    responses(
+        (status = 200, description = "Team members", body = inline(ApiResponse<Vec<crate::services::team_service::TeamMemberInfo>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Team not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_team_members(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let members = team_service::list_admin_members(&state, *path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(members)))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/admin/teams/{id}/members",
+    tag = "admin",
+    operation_id = "admin_add_team_member",
+    params(("id" = i64, Path, description = "Team ID")),
+    request_body = AddTeamMemberReq,
+    responses(
+        (status = 201, description = "Member added", body = inline(ApiResponse<crate::services::team_service::TeamMemberInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Team not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn add_team_member(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+    body: web::Json<AddTeamMemberReq>,
+) -> Result<HttpResponse> {
+    let member = team_service::add_admin_member(
+        &state,
+        *path,
+        team_service::AddTeamMemberInput {
+            user_id: body.user_id,
+            identifier: body.identifier.clone(),
+            role: body.role.unwrap_or(crate::types::TeamMemberRole::Member),
+        },
+    )
+    .await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(member)))
+}
+
+#[api_docs_macros::path(
+    patch,
+    path = "/api/v1/admin/teams/{id}/members/{member_user_id}",
+    tag = "admin",
+    operation_id = "admin_patch_team_member",
+    params(
+        ("id" = i64, Path, description = "Team ID"),
+        ("member_user_id" = i64, Path, description = "Member user ID")
+    ),
+    request_body = PatchTeamMemberReq,
+    responses(
+        (status = 200, description = "Member updated", body = inline(ApiResponse<crate::services::team_service::TeamMemberInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Team or member not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn patch_team_member(
+    state: web::Data<AppState>,
+    path: web::Path<(i64, i64)>,
+    body: web::Json<PatchTeamMemberReq>,
+) -> Result<HttpResponse> {
+    let (team_id, member_user_id) = path.into_inner();
+    let member =
+        team_service::update_admin_member_role(&state, team_id, member_user_id, body.role).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(member)))
+}
+
+#[api_docs_macros::path(
+    delete,
+    path = "/api/v1/admin/teams/{id}/members/{member_user_id}",
+    tag = "admin",
+    operation_id = "admin_delete_team_member",
+    params(
+        ("id" = i64, Path, description = "Team ID"),
+        ("member_user_id" = i64, Path, description = "Member user ID")
+    ),
+    responses(
+        (status = 200, description = "Member removed"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Team or member not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_team_member(
+    state: web::Data<AppState>,
+    path: web::Path<(i64, i64)>,
+) -> Result<HttpResponse> {
+    let (team_id, member_user_id) = path.into_inner();
+    team_service::remove_admin_member(&state, team_id, member_user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

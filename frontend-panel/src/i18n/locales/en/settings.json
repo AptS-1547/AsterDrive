@@ -54,6 +54,8 @@
 	"settings_team_updated": "Team updated.",
 	"settings_team_deleted": "Team archived.",
 	"settings_team_restored": "Team restored.",
+	"settings_team_manage_title": "Manage team",
+	"settings_team_dialog_hint": "Team details and member permissions take effect immediately after saving.",
 	"settings_team_details": "Team details",
 	"settings_team_details_desc": "Review the current team profile, storage usage, and member permissions.",
 	"settings_team_description": "Description",

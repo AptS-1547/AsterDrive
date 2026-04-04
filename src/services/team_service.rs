@@ -708,7 +708,7 @@ pub async fn list_admin_teams(
 }
 
 pub async fn get_admin_team(state: &AppState, team_id: i64) -> Result<AdminTeamInfo> {
-    let team = team_repo::find_active_by_id(&state.db, team_id).await?;
+    let team = team_repo::find_by_id(&state.db, team_id).await?;
     build_admin_team_info(state, &team).await
 }
 
@@ -773,6 +773,115 @@ pub async fn restore_admin_team(state: &AppState, team_id: i64) -> Result<AdminT
     let team = team_repo::find_archived_by_id(&state.db, team_id).await?;
     let restored = restore_team_record(state, team).await?;
     build_admin_team_info(state, &restored).await
+}
+
+pub async fn list_admin_members(state: &AppState, team_id: i64) -> Result<Vec<TeamMemberInfo>> {
+    team_repo::find_by_id(&state.db, team_id).await?;
+    let rows = team_member_repo::list_by_team_with_user(&state.db, team_id).await?;
+    Ok(rows
+        .into_iter()
+        .map(|(membership, user)| build_team_member_info(membership, user))
+        .collect())
+}
+
+pub async fn add_admin_member(
+    state: &AppState,
+    team_id: i64,
+    input: AddTeamMemberInput,
+) -> Result<TeamMemberInfo> {
+    let target_user =
+        resolve_target_user(state, input.user_id, input.identifier.as_deref()).await?;
+    if !target_user.status.is_active() {
+        return Err(AsterError::validation_error(
+            "cannot add a disabled user to a team",
+        ));
+    }
+
+    let now = Utc::now();
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    team_repo::lock_active_by_id(&txn, team_id).await?;
+
+    if team_member_repo::find_by_team_and_user(&txn, team_id, target_user.id)
+        .await?
+        .is_some()
+    {
+        return Err(AsterError::validation_error(
+            "user is already a team member",
+        ));
+    }
+
+    let membership = team_member_repo::create(
+        &txn,
+        team_member::ActiveModel {
+            team_id: Set(team_id),
+            user_id: Set(target_user.id),
+            role: Set(input.role),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await?;
+    txn.commit().await.map_err(AsterError::from)?;
+
+    Ok(build_team_member_info(membership, target_user))
+}
+
+pub async fn update_admin_member_role(
+    state: &AppState,
+    team_id: i64,
+    member_user_id: i64,
+    role: TeamMemberRole,
+) -> Result<TeamMemberInfo> {
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    team_repo::lock_active_by_id(&txn, team_id).await?;
+
+    let target_membership = team_member_repo::find_by_team_and_user(&txn, team_id, member_user_id)
+        .await?
+        .ok_or_else(|| {
+            AsterError::record_not_found(format!("team member user #{member_user_id}"))
+        })?;
+
+    if target_membership.role.is_owner() && !role.is_owner() {
+        ensure_not_last_owner(&txn, team_id).await?;
+    }
+    if target_membership.role.can_manage_team() && !role.can_manage_team() {
+        ensure_not_last_manager(&txn, team_id).await?;
+    }
+
+    let mut active = target_membership.clone().into_active_model();
+    active.role = Set(role);
+    active.updated_at = Set(Utc::now());
+    let updated = team_member_repo::update(&txn, active).await?;
+    let target_user = user_repo::find_by_id(&txn, member_user_id).await?;
+    txn.commit().await.map_err(AsterError::from)?;
+    Ok(build_team_member_info(updated, target_user))
+}
+
+pub async fn remove_admin_member(
+    state: &AppState,
+    team_id: i64,
+    member_user_id: i64,
+) -> Result<()> {
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    team_repo::lock_active_by_id(&txn, team_id).await?;
+
+    let target_membership = team_member_repo::find_by_team_and_user(&txn, team_id, member_user_id)
+        .await?
+        .ok_or_else(|| {
+            AsterError::record_not_found(format!("team member user #{member_user_id}"))
+        })?;
+
+    if target_membership.role.is_owner() {
+        ensure_not_last_owner(&txn, team_id).await?;
+    }
+    if target_membership.role.can_manage_team() {
+        ensure_not_last_manager(&txn, team_id).await?;
+    }
+
+    team_member_repo::delete(&txn, target_membership.id).await?;
+    txn.commit().await.map_err(AsterError::from)?;
+    Ok(())
 }
 
 pub async fn cleanup_expired_archived_teams(state: &AppState) -> Result<u64> {

@@ -54,6 +54,8 @@
 	"settings_team_updated": "团队已更新。",
 	"settings_team_deleted": "团队已归档。",
 	"settings_team_restored": "团队已恢复。",
+	"settings_team_manage_title": "团队管理",
+	"settings_team_dialog_hint": "成员权限和团队资料会在保存后立即生效。",
 	"settings_team_details": "团队详情",
 	"settings_team_details_desc": "查看当前团队的资料、存储占用和成员权限。",
 	"settings_team_description": "描述",

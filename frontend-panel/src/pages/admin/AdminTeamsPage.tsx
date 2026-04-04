@@ -1,8 +1,14 @@
-import { type FormEvent, useDeferredValue, useEffect, useState } from "react";
+import {
+	type FormEvent,
+	useCallback,
+	useDeferredValue,
+	useEffect,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { AdminTeamDetailDialog } from "@/components/admin/AdminTeamDetailDialog";
 import { AdminTableList } from "@/components/common/AdminTableList";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
@@ -34,7 +40,6 @@ import {
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	ADMIN_ICON_BUTTON_CLASS,
@@ -56,12 +61,6 @@ interface CreateTeamFormState {
 	policyGroupId: string;
 }
 
-interface EditTeamFormState {
-	name: string;
-	description: string;
-	policyGroupId: string;
-}
-
 interface PolicyGroupOption {
 	disabled?: boolean;
 	label: string;
@@ -75,11 +74,8 @@ const EMPTY_CREATE_FORM: CreateTeamFormState = {
 	policyGroupId: "",
 };
 
-const EMPTY_EDIT_FORM: EditTeamFormState = {
-	name: "",
-	description: "",
-	policyGroupId: "",
-};
+const INTERACTIVE_TABLE_ROW_CLASS =
+	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
 
 function getDefaultPolicyGroupId(policyGroups: StoragePolicyGroup[]) {
 	return (
@@ -153,10 +149,9 @@ export default function AdminTeamsPage() {
 	const [showArchived, setShowArchived] = useState(false);
 	const deferredKeyword = useDeferredValue(keyword.trim());
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
+	const [detailTeamId, setDetailTeamId] = useState<number | null>(null);
 	const [createForm, setCreateForm] =
 		useState<CreateTeamFormState>(EMPTY_CREATE_FORM);
-	const [editTeam, setEditTeam] = useState<AdminTeamInfo | null>(null);
-	const [editForm, setEditForm] = useState<EditTeamFormState>(EMPTY_EDIT_FORM);
 	const [submitting, setSubmitting] = useState(false);
 	const [policyGroups, setPolicyGroups] = useState<StoragePolicyGroup[]>([]);
 	const [policyGroupsLoading, setPolicyGroupsLoading] = useState(true);
@@ -175,33 +170,22 @@ export default function AdminTeamsPage() {
 		[deferredKeyword, showArchived],
 	);
 
-	useEffect(() => {
-		let cancelled = false;
-
-		void (async () => {
-			try {
-				setPolicyGroupsLoading(true);
-				const groups = await adminPolicyGroupService.listAll(
-					POLICY_GROUP_PAGE_SIZE,
-				);
-				if (!cancelled) {
-					setPolicyGroups(groups);
-				}
-			} catch (error) {
-				if (!cancelled) {
-					handleApiError(error);
-				}
-			} finally {
-				if (!cancelled) {
-					setPolicyGroupsLoading(false);
-				}
-			}
-		})();
-
-		return () => {
-			cancelled = true;
-		};
+	const loadPolicyGroups = useCallback(async () => {
+		setPolicyGroupsLoading(true);
+		try {
+			setPolicyGroups(
+				await adminPolicyGroupService.listAll(POLICY_GROUP_PAGE_SIZE),
+			);
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setPolicyGroupsLoading(false);
+		}
 	}, []);
+
+	useEffect(() => {
+		void loadPolicyGroups();
+	}, [loadPolicyGroups]);
 
 	const defaultPolicyGroupId = getDefaultPolicyGroupId(policyGroups);
 	const createPolicyGroupOptions = buildPolicyGroupOptions(
@@ -209,12 +193,6 @@ export default function AdminTeamsPage() {
 		createForm.policyGroupId
 			? Number(createForm.policyGroupId)
 			: defaultPolicyGroupId,
-	);
-	const editPolicyGroupOptions = buildPolicyGroupOptions(
-		policyGroups,
-		editForm.policyGroupId
-			? Number(editForm.policyGroupId)
-			: (editTeam?.policy_group_id ?? null),
 	);
 	const createPolicyGroupUnavailable =
 		!policyGroupsLoading && createPolicyGroupOptions.length === 0;
@@ -233,19 +211,6 @@ export default function AdminTeamsPage() {
 		}
 	}, [createDialogOpen, createForm.policyGroupId, defaultPolicyGroupId]);
 
-	useEffect(() => {
-		if (!editTeam || editForm.policyGroupId) {
-			return;
-		}
-		const nextPolicyGroupId = editTeam.policy_group_id ?? defaultPolicyGroupId;
-		if (nextPolicyGroupId != null) {
-			setEditForm((prev) => ({
-				...prev,
-				policyGroupId: String(nextPolicyGroupId),
-			}));
-		}
-	}, [defaultPolicyGroupId, editForm.policyGroupId, editTeam]);
-
 	const handleOpenCreateDialog = () => {
 		setCreateForm({
 			...EMPTY_CREATE_FORM,
@@ -253,20 +218,6 @@ export default function AdminTeamsPage() {
 				defaultPolicyGroupId != null ? String(defaultPolicyGroupId) : "",
 		});
 		setCreateDialogOpen(true);
-	};
-
-	const openEditDialog = (team: AdminTeamInfo) => {
-		setEditTeam(team);
-		setEditForm({
-			name: team.name,
-			description: team.description,
-			policyGroupId:
-				team.policy_group_id != null
-					? String(team.policy_group_id)
-					: defaultPolicyGroupId != null
-						? String(defaultPolicyGroupId)
-						: "",
-		});
 	};
 
 	const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
@@ -297,65 +248,6 @@ export default function AdminTeamsPage() {
 		}
 	};
 
-	const handleUpdate = async (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault();
-		if (!editTeam) {
-			return;
-		}
-
-		const name = editForm.name.trim();
-		const policyGroupId = Number(editForm.policyGroupId);
-		if (!name || !Number.isFinite(policyGroupId)) {
-			return;
-		}
-
-		try {
-			setSubmitting(true);
-			await adminTeamService.update(editTeam.id, {
-				name,
-				description: editForm.description.trim() || undefined,
-				policy_group_id: policyGroupId,
-			});
-			setEditTeam(null);
-			setEditForm(EMPTY_EDIT_FORM);
-			toast.success(t("team_updated"));
-			await reload();
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setSubmitting(false);
-		}
-	};
-
-	const handleDelete = async (id: number) => {
-		try {
-			await adminTeamService.delete(id);
-			toast.success(t("team_deleted"));
-			await reload();
-		} catch (error) {
-			handleApiError(error);
-		}
-	};
-
-	const handleRestore = async (id: number) => {
-		try {
-			await adminTeamService.restore(id);
-			toast.success(t("team_restored"));
-			await reload();
-		} catch (error) {
-			handleApiError(error);
-		}
-	};
-
-	const {
-		confirmId: deleteId,
-		requestConfirm,
-		dialogProps,
-	} = useConfirmDialog(handleDelete);
-	const deleteTeamName =
-		deleteId != null
-			? (teams.find((team) => team.id === deleteId)?.name ?? "")
-			: "";
 	const policyGroupNameById = (policyGroupId: number | null | undefined) =>
 		policyGroupId != null
 			? (policyGroups.find((group) => group.id === policyGroupId)?.name ?? null)
@@ -425,7 +317,18 @@ export default function AdminTeamsPage() {
 						</TableHeader>
 					}
 					renderRow={(team) => (
-						<TableRow key={team.id}>
+						<TableRow
+							key={team.id}
+							className={INTERACTIVE_TABLE_ROW_CLASS}
+							onClick={() => setDetailTeamId(team.id)}
+							onKeyDown={(event) => {
+								if (event.key === "Enter" || event.key === " ") {
+									event.preventDefault();
+									setDetailTeamId(team.id);
+								}
+							}}
+							tabIndex={0}
+						>
 							<TableCell>
 								<div className="space-y-1">
 									<div className="flex items-center gap-2">
@@ -460,43 +363,21 @@ export default function AdminTeamsPage() {
 							<TableCell className="text-muted-foreground text-sm">
 								{formatDateShort(team.archived_at ?? team.created_at)}
 							</TableCell>
-							<TableCell>
-								<div className="flex items-center gap-1">
-									{team.archived_at ? (
-										<Button
-											variant="ghost"
-											size="icon"
-											className={ADMIN_ICON_BUTTON_CLASS}
-											onClick={() => void handleRestore(team.id)}
-											title={t("restore")}
-										>
-											<Icon
-												name="ArrowCounterClockwise"
-												className="h-3.5 w-3.5"
-											/>
-										</Button>
-									) : (
-										<>
-											<Button
-												variant="ghost"
-												size="icon"
-												className={ADMIN_ICON_BUTTON_CLASS}
-												onClick={() => openEditDialog(team)}
-												title={t("edit_team")}
-											>
-												<Icon name="PencilSimple" className="h-3.5 w-3.5" />
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-												onClick={() => requestConfirm(team.id)}
-												title={t("delete_team")}
-											>
-												<Icon name="Trash" className="h-3.5 w-3.5" />
-											</Button>
-										</>
-									)}
+							<TableCell
+								onClick={(event) => event.stopPropagation()}
+								onKeyDown={(event) => event.stopPropagation()}
+							>
+								<div className="flex justify-end">
+									<Button
+										variant="ghost"
+										size="icon"
+										className={ADMIN_ICON_BUTTON_CLASS}
+										onClick={() => setDetailTeamId(team.id)}
+										title={t("view_details")}
+										aria-label={t("view_details")}
+									>
+										<Icon name="CaretRight" className="h-3.5 w-3.5" />
+									</Button>
 								</div>
 							</TableCell>
 						</TableRow>
@@ -622,110 +503,18 @@ export default function AdminTeamsPage() {
 				</DialogContent>
 			</Dialog>
 
-			<Dialog
-				open={editTeam !== null}
+			<AdminTeamDetailDialog
+				open={detailTeamId !== null}
+				teamId={detailTeamId}
+				policyGroups={policyGroups}
+				policyGroupsLoading={policyGroupsLoading}
+				onListChange={reload}
 				onOpenChange={(open) => {
 					if (!open) {
-						setEditTeam(null);
-						setEditForm(EMPTY_EDIT_FORM);
+						setDetailTeamId(null);
 					}
 				}}
-			>
-				<DialogContent>
-					<form onSubmit={(event) => void handleUpdate(event)}>
-						<DialogHeader>
-							<DialogTitle>{t("edit_team")}</DialogTitle>
-							<DialogDescription>{editTeam?.name ?? ""}</DialogDescription>
-						</DialogHeader>
-						<div className="space-y-4 py-2">
-							<div className="space-y-2">
-								<Label htmlFor="admin-edit-team-name">{t("core:name")}</Label>
-								<Input
-									id="admin-edit-team-name"
-									value={editForm.name}
-									maxLength={128}
-									disabled={submitting}
-									onChange={(event) =>
-										setEditForm((prev) => ({
-											...prev,
-											name: event.target.value,
-										}))
-									}
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label>{t("team_policy_group")}</Label>
-								<Select
-									items={editPolicyGroupOptions}
-									value={editForm.policyGroupId}
-									onValueChange={(value) =>
-										setEditForm((prev) => ({
-											...prev,
-											policyGroupId: value ?? "",
-										}))
-									}
-								>
-									<SelectTrigger
-										className="w-full"
-										disabled={submitting || policyGroupsLoading}
-									>
-										<SelectValue placeholder={t("select_policy_group")} />
-									</SelectTrigger>
-									<SelectContent>
-										{editPolicyGroupOptions.map((option) => (
-											<SelectItem
-												key={option.value}
-												value={option.value}
-												disabled={option.disabled}
-											>
-												{option.label}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-								<p className="text-xs text-muted-foreground">
-									{t("team_policy_group_desc")}
-								</p>
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor="admin-edit-team-description">
-									{t("description")}
-								</Label>
-								<textarea
-									id="admin-edit-team-description"
-									value={editForm.description}
-									disabled={submitting}
-									rows={4}
-									className="min-h-24 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-									onChange={(event) =>
-										setEditForm((prev) => ({
-											...prev,
-											description: event.target.value,
-										}))
-									}
-								/>
-							</div>
-						</div>
-						<DialogFooter>
-							<Button
-								type="submit"
-								disabled={
-									submitting || !editForm.name.trim() || !editForm.policyGroupId
-								}
-							>
-								{t("save_changes")}
-							</Button>
-						</DialogFooter>
-					</form>
-				</DialogContent>
-			</Dialog>
-
-			<ConfirmDialog
-				{...dialogProps}
-				title={`${t("delete_team")} "${deleteTeamName}"?`}
-				description={t("archive_team_desc")}
-				confirmLabel={t("core:delete")}
-				variant="destructive"
+				onRefreshPolicyGroups={loadPolicyGroups}
 			/>
 		</AdminLayout>
 	);

@@ -286,12 +286,92 @@ async fn test_admin_team_crud() {
     assert_eq!(body["data"]["description"], "Updated by admin");
     assert_eq!(body["data"]["policy_group_id"], alternate_group_id);
 
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "team-analyst",
+            "email": "team-analyst@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/teams/{team_id}/members"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"][0]["username"], "team-admin");
+    assert_eq!(body["data"][0]["role"], "admin");
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/admin/teams/{team_id}/members"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .set_json(serde_json::json!({
+            "identifier": "team-analyst",
+            "role": "member"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let analyst_id = body["data"]["user_id"].as_i64().unwrap();
+    assert_eq!(body["data"]["username"], "team-analyst");
+    assert_eq!(body["data"]["role"], "member");
+
+    let req = test::TestRequest::patch()
+        .uri(&format!(
+            "/api/v1/admin/teams/{team_id}/members/{analyst_id}"
+        ))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .set_json(serde_json::json!({
+            "role": "admin"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["role"], "admin");
+
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1/admin/teams/{team_id}/members/{analyst_id}"
+        ))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/teams/{team_id}"))
         .insert_header(("Cookie", format!("aster_access={admin_token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/teams/{team_id}"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"]["archived_at"].is_string());
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/teams/{team_id}/members"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"][0]["username"], "team-admin");
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/teams")

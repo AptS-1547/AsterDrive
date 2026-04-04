@@ -1,5 +1,6 @@
 import { withQuery } from "@/lib/queryParams";
 import type {
+	AddTeamMemberRequest,
 	AdminCreateTeamRequest,
 	AdminOverview,
 	AdminSharePage,
@@ -22,8 +23,10 @@ import type {
 	StoragePolicyPage,
 	SystemConfig,
 	SystemConfigPage,
+	TeamMemberInfo,
 	UpdatePolicyGroupRequest,
 	UpdatePolicyRequest,
+	UpdateTeamMemberRequest,
 	UpdateUserRequest,
 	UserInfo,
 	UserPage,
@@ -123,6 +126,21 @@ export const adminTeamService = {
 	delete: (id: number) => api.delete<void>(`/admin/teams/${id}`),
 	restore: (id: number) =>
 		api.post<AdminTeamInfo>(`/admin/teams/${id}/restore`),
+	listMembers: (id: number) =>
+		api.get<TeamMemberInfo[]>(`/admin/teams/${id}/members`),
+	addMember: (id: number, data: AddTeamMemberRequest) =>
+		api.post<TeamMemberInfo>(`/admin/teams/${id}/members`, data),
+	updateMember: (
+		id: number,
+		memberUserId: number,
+		data: UpdateTeamMemberRequest,
+	) =>
+		api.patch<TeamMemberInfo>(
+			`/admin/teams/${id}/members/${memberUserId}`,
+			data,
+		),
+	removeMember: (id: number, memberUserId: number) =>
+		api.delete<void>(`/admin/teams/${id}/members/${memberUserId}`),
 };
 
 // --- Policies ---
