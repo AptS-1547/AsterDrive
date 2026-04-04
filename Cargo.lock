@@ -20,21 +20,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "actix-cors"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "daa239b93927be1ff123eebada5a3ff23e89f0124ccb8609234e5103d5a5ae6d"
-dependencies = [
- "actix-utils",
- "actix-web",
- "derive_more 2.1.1",
- "futures-util",
- "log",
- "once_cell",
- "smallvec",
-]
-
-[[package]]
 name = "actix-governor"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -606,7 +591,6 @@ dependencies = [
 name = "aster_drive"
 version = "0.0.1-alpha.13"
 dependencies = [
- "actix-cors",
  "actix-governor",
  "actix-multipart",
  "actix-web",

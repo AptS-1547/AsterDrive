@@ -48,6 +48,7 @@ import {
 import type { SystemConfig } from "@/types/api";
 
 const CATEGORY_LABELS: Record<string, string> = {
+	network: "Network",
 	webdav: "WebDAV",
 	storage: "Storage",
 	custom: "Custom",

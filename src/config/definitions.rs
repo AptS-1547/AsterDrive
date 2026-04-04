@@ -33,6 +33,34 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         category: "webdav",
         description: "Enable or disable WebDAV access",
     },
+    // ── Network ─────────────────────────────────────────────
+    ConfigDef {
+        key: "cors_allowed_origins",
+        value_type: "string",
+        default_fn: || String::new(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "network",
+        description: "Comma-separated CORS origin whitelist. Empty = deny cross-origin, '*' = allow any origin",
+    },
+    ConfigDef {
+        key: "cors_allow_credentials",
+        value_type: "boolean",
+        default_fn: || "false".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "network",
+        description: "Whether CORS responses include Access-Control-Allow-Credentials",
+    },
+    ConfigDef {
+        key: "cors_max_age_secs",
+        value_type: "number",
+        default_fn: || "3600".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "network",
+        description: "CORS preflight cache duration in seconds",
+    },
     // ── Storage ─────────────────────────────────────────────
     ConfigDef {
         key: "max_versions_per_file",

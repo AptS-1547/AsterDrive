@@ -1,43 +1,278 @@
-use actix_cors::Cors;
-use actix_web::http;
+use actix_web::{
+    Error, HttpResponse,
+    body::{EitherBody, MessageBody},
+    dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready},
+    http::{
+        Method,
+        header::{self, HeaderMap, HeaderValue},
+    },
+    web,
+};
+use futures::future::{LocalBoxFuture, Ready, ok};
+use std::collections::BTreeSet;
+use std::rc::Rc;
 
-use crate::api::constants::HOUR_SECS;
+use crate::config::cors::RuntimeCorsPolicy;
+use crate::errors::AsterError;
+use crate::runtime::AppState;
 
-/// 返回 CORS 配置，包含标准 HTTP 和 WebDAV 方法/头部
-pub fn configure_cors() -> Cors {
-    Cors::default()
-        .allow_any_origin()
-        .allowed_methods(vec![
-            "GET",
-            "POST",
-            "PUT",
-            "PATCH",
-            "DELETE",
-            "OPTIONS",
-            // WebDAV methods
-            "PROPFIND",
-            "PROPPATCH",
-            "MKCOL",
-            "COPY",
-            "MOVE",
-            "LOCK",
-            "UNLOCK",
-        ])
-        .allowed_headers(vec![
-            http::header::AUTHORIZATION,
-            http::header::ACCEPT,
-            http::header::CONTENT_TYPE,
-            // WebDAV headers
-            http::header::HeaderName::from_static("depth"),
-            http::header::HeaderName::from_static("destination"),
-            http::header::HeaderName::from_static("if"),
-            http::header::HeaderName::from_static("lock-token"),
-            http::header::HeaderName::from_static("overwrite"),
-            http::header::HeaderName::from_static("timeout"),
-        ])
-        .expose_headers(vec![
-            http::header::HeaderName::from_static("dav"),
-            http::header::HeaderName::from_static("lock-token"),
-        ])
-        .max_age(HOUR_SECS as usize)
+const ALLOWED_METHODS: &[&str] = &[
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+    "PROPFIND",
+    "PROPPATCH",
+    "MKCOL",
+    "COPY",
+    "MOVE",
+    "LOCK",
+    "UNLOCK",
+];
+
+const ALLOWED_HEADERS: &[&str] = &[
+    "authorization",
+    "accept",
+    "content-type",
+    "depth",
+    "destination",
+    "if",
+    "lock-token",
+    "overwrite",
+    "timeout",
+];
+
+const EXPOSE_HEADERS: &[&str] = &["dav", "lock-token"];
+
+pub struct RuntimeCors;
+
+impl<S, B> Transform<S, ServiceRequest> for RuntimeCors
+where
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
+    B: MessageBody + 'static,
+{
+    type Response = ServiceResponse<EitherBody<B>>;
+    type Error = Error;
+    type InitError = ();
+    type Transform = RuntimeCorsMiddleware<S>;
+    type Future = Ready<Result<Self::Transform, Self::InitError>>;
+
+    fn new_transform(&self, service: S) -> Self::Future {
+        ok(RuntimeCorsMiddleware {
+            service: Rc::new(service),
+        })
+    }
+}
+
+pub struct RuntimeCorsMiddleware<S> {
+    service: Rc<S>,
+}
+
+impl<S, B> Service<ServiceRequest> for RuntimeCorsMiddleware<S>
+where
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
+    B: MessageBody + 'static,
+{
+    type Response = ServiceResponse<EitherBody<B>>;
+    type Error = Error;
+    type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    forward_ready!(service);
+
+    fn call(&self, req: ServiceRequest) -> Self::Future {
+        let svc = self.service.clone();
+
+        Box::pin(async move {
+            let state = req
+                .app_data::<web::Data<AppState>>()
+                .ok_or_else(|| AsterError::internal_error("AppState not found"))?;
+
+            let Some(origin_header) = req.headers().get(header::ORIGIN).cloned() else {
+                return Ok(svc.call(req).await?.map_into_left_body());
+            };
+
+            let origin = crate::config::cors::normalize_origin(
+                origin_header
+                    .to_str()
+                    .map_err(|_| AsterError::validation_error("invalid Origin header"))?,
+                false,
+            )?;
+
+            if request_is_same_origin(&req, &origin) {
+                return Ok(svc.call(req).await?.map_into_left_body());
+            }
+
+            let policy = RuntimeCorsPolicy::from_runtime_config(&state.runtime_config);
+            if !policy.allows_origin(&origin) {
+                return Ok(forbidden(req).map_into_right_body());
+            }
+
+            if is_preflight_request(&req) {
+                if !requested_method_is_allowed(&req) || !requested_headers_are_allowed(&req)? {
+                    return Ok(forbidden(req).map_into_right_body());
+                }
+
+                let mut response = HttpResponse::NoContent().finish();
+                apply_origin_headers(response.headers_mut(), &policy, &origin)?;
+                apply_preflight_headers(response.headers_mut(), &policy);
+                return Ok(req.into_response(response).map_into_right_body());
+            }
+
+            let mut response = svc.call(req).await?.map_into_left_body();
+            apply_origin_headers(response.headers_mut(), &policy, &origin)?;
+            apply_actual_headers(response.headers_mut(), &policy);
+            Ok(response)
+        })
+    }
+}
+
+fn is_preflight_request(req: &ServiceRequest) -> bool {
+    req.method() == Method::OPTIONS
+        && req
+            .headers()
+            .contains_key(header::ACCESS_CONTROL_REQUEST_METHOD)
+}
+
+fn request_is_same_origin(req: &ServiceRequest, origin: &str) -> bool {
+    let conn = req.connection_info();
+    let request_origin = format!(
+        "{}://{}",
+        conn.scheme().to_ascii_lowercase(),
+        conn.host().to_ascii_lowercase()
+    );
+    request_origin == origin
+}
+
+fn requested_method_is_allowed(req: &ServiceRequest) -> bool {
+    let Some(method) = req.headers().get(header::ACCESS_CONTROL_REQUEST_METHOD) else {
+        return false;
+    };
+
+    let Ok(method) = method.to_str() else {
+        return false;
+    };
+
+    ALLOWED_METHODS.contains(&method)
+}
+
+fn requested_headers_are_allowed(req: &ServiceRequest) -> Result<bool, AsterError> {
+    let Some(request_headers) = req.headers().get(header::ACCESS_CONTROL_REQUEST_HEADERS) else {
+        return Ok(true);
+    };
+
+    let request_headers = request_headers
+        .to_str()
+        .map_err(|_| AsterError::validation_error("invalid Access-Control-Request-Headers"))?;
+
+    let allowed_headers = ALLOWED_HEADERS
+        .iter()
+        .copied()
+        .collect::<BTreeSet<&'static str>>();
+
+    for requested in request_headers.split(',') {
+        let requested = requested.trim().to_ascii_lowercase();
+        if requested.is_empty() {
+            continue;
+        }
+
+        let _: header::HeaderName = requested
+            .parse()
+            .map_err(|_| AsterError::validation_error("invalid Access-Control-Request-Headers"))?;
+
+        if !allowed_headers.contains(requested.as_str()) {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+fn apply_origin_headers(
+    headers: &mut HeaderMap,
+    policy: &RuntimeCorsPolicy,
+    origin: &str,
+) -> Result<(), AsterError> {
+    let value = if policy.sends_wildcard_origin() {
+        HeaderValue::from_static("*")
+    } else {
+        HeaderValue::from_str(origin).map_err(|_| {
+            AsterError::internal_error("failed to serialize Access-Control-Allow-Origin")
+        })?
+    };
+
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, value);
+
+    if policy.allow_credentials {
+        headers.insert(
+            header::ACCESS_CONTROL_ALLOW_CREDENTIALS,
+            HeaderValue::from_static("true"),
+        );
+    }
+
+    ensure_vary(headers, "Origin")?;
+    Ok(())
+}
+
+fn apply_preflight_headers(headers: &mut HeaderMap, policy: &RuntimeCorsPolicy) {
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static(
+            "GET, POST, PUT, PATCH, DELETE, OPTIONS, PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK, UNLOCK",
+        ),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static(
+            "authorization, accept, content-type, depth, destination, if, lock-token, overwrite, timeout",
+        ),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_MAX_AGE,
+        HeaderValue::from_str(&policy.max_age_secs.to_string())
+            .expect("CORS max age should always be a valid header value"),
+    );
+    ensure_vary(headers, "Access-Control-Request-Method").ok();
+    ensure_vary(headers, "Access-Control-Request-Headers").ok();
+}
+
+fn apply_actual_headers(headers: &mut HeaderMap, _policy: &RuntimeCorsPolicy) {
+    let expose_headers = EXPOSE_HEADERS.join(", ");
+    headers.insert(
+        header::ACCESS_CONTROL_EXPOSE_HEADERS,
+        HeaderValue::from_str(&expose_headers)
+            .expect("CORS expose headers should always be a valid header value"),
+    );
+}
+
+fn ensure_vary(headers: &mut HeaderMap, value: &str) -> Result<(), AsterError> {
+    let mut vary_values = BTreeSet::new();
+
+    if let Some(existing) = headers.get(header::VARY) {
+        let existing = existing
+            .to_str()
+            .map_err(|_| AsterError::internal_error("invalid Vary header"))?;
+        for item in existing.split(',') {
+            let item = item.trim();
+            if !item.is_empty() {
+                vary_values.insert(item.to_string());
+            }
+        }
+    }
+
+    vary_values.insert(value.to_string());
+    let joined = vary_values.into_iter().collect::<Vec<_>>().join(", ");
+    let header_value = HeaderValue::from_str(&joined)
+        .map_err(|_| AsterError::internal_error("failed to serialize Vary header"))?;
+    headers.insert(header::VARY, header_value);
+    Ok(())
+}
+
+fn forbidden(req: ServiceRequest) -> ServiceResponse {
+    let mut response = HttpResponse::Forbidden().finish();
+    let _ = ensure_vary(response.headers_mut(), "Origin");
+    let _ = ensure_vary(response.headers_mut(), "Access-Control-Request-Method");
+    let _ = ensure_vary(response.headers_mut(), "Access-Control-Request-Headers");
+    req.into_response(response)
 }

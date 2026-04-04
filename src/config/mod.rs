@@ -1,3 +1,4 @@
+pub mod cors;
 pub mod definitions;
 mod loader;
 mod runtime_config;

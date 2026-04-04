@@ -1,4 +1,5 @@
 use crate::api::pagination::{OffsetPage, load_offset_page};
+use crate::config::cors;
 use crate::config::definitions::ALL_CONFIGS;
 use crate::db::repository::config_repo;
 use crate::entities::system_config;
@@ -36,12 +37,15 @@ pub async fn set(
     value: &str,
     updated_by: i64,
 ) -> Result<system_config::Model> {
+    let mut normalized_value = value.to_string();
+
     // 系统配置做值类型校验
     if let Some(def) = ALL_CONFIGS.iter().find(|d| d.key == key) {
         validate_value_type(def.value_type, value)?;
+        normalized_value = normalize_system_value(state, key, value)?;
     }
 
-    let config = config_repo::upsert(&state.db, key, value, updated_by).await?;
+    let config = config_repo::upsert(&state.db, key, &normalized_value, updated_by).await?;
     state.runtime_config.apply(config.clone());
     Ok(config)
 }
@@ -75,16 +79,17 @@ pub async fn set_with_audit(
 
 /// 校验值是否匹配声明的类型
 fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
+    let trimmed = value.trim();
     match value_type {
         "boolean" => {
-            if value != "true" && value != "false" {
+            if trimmed != "true" && trimmed != "false" {
                 return Err(AsterError::validation_error(
                     "boolean config must be 'true' or 'false'",
                 ));
             }
         }
         "number" => {
-            if value.parse::<f64>().is_err() {
+            if trimmed.parse::<f64>().is_err() {
                 return Err(AsterError::validation_error(
                     "number config must be a valid number",
                 ));
@@ -93,6 +98,34 @@ fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
         _ => {} // string 不做校验
     }
     Ok(())
+}
+
+fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<String> {
+    match key {
+        cors::CORS_ALLOWED_ORIGINS_KEY => {
+            let normalized = cors::normalize_allowed_origins_config_value(value)?;
+            let parsed = cors::parse_allowed_origins_value(&normalized)?;
+            let allow_credentials = state
+                .runtime_config
+                .get_bool(cors::CORS_ALLOW_CREDENTIALS_KEY)
+                .unwrap_or(cors::DEFAULT_CORS_ALLOW_CREDENTIALS);
+            cors::validate_runtime_cors_combination(&parsed, allow_credentials)?;
+            Ok(normalized)
+        }
+        cors::CORS_ALLOW_CREDENTIALS_KEY => {
+            let normalized = cors::normalize_allow_credentials_config_value(value)?;
+            let allow_credentials = normalized == "true";
+            let current_origins = state
+                .runtime_config
+                .get(cors::CORS_ALLOWED_ORIGINS_KEY)
+                .unwrap_or_default();
+            let parsed = cors::parse_allowed_origins_value(&current_origins)?;
+            cors::validate_runtime_cors_combination(&parsed, allow_credentials)?;
+            Ok(normalized)
+        }
+        cors::CORS_MAX_AGE_SECS_KEY => cors::normalize_max_age_config_value(value),
+        _ => Ok(value.to_string()),
+    }
 }
 
 // ── Config Schema ─────────────────────────────────────────────────────

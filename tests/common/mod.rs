@@ -109,7 +109,7 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
 
 /// 从 Set-Cookie header 提取指定 cookie 的值
 #[allow(dead_code)]
-pub fn extract_cookie(resp: &actix_web::dev::ServiceResponse, name: &str) -> Option<String> {
+pub fn extract_cookie<B>(resp: &actix_web::dev::ServiceResponse<B>, name: &str) -> Option<String> {
     resp.response()
         .cookies()
         .find(|c| c.name() == name)
@@ -180,7 +180,7 @@ macro_rules! register_and_login {
                 "password": "password123"
             }))
             .to_request();
-        let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
+        let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 201, "register should return 201");
 
         // 登录
@@ -192,7 +192,7 @@ macro_rules! register_and_login {
                 "password": "password123"
             }))
             .to_request();
-        let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
+        let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 200, "login should return 200");
         let access =
             common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
@@ -226,7 +226,7 @@ macro_rules! upload_test_file {
             ))
             .set_payload(payload)
             .to_request();
-        let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
+        let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 201, "upload should return 201");
         let body: Value = test::read_body_json(resp).await;
         body["data"]["id"].as_i64().unwrap()
@@ -258,7 +258,7 @@ macro_rules! upload_test_file_named {
             ))
             .set_payload(payload)
             .to_request();
-        let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
+        let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 201, "upload should return 201");
         let body: Value = test::read_body_json(resp).await;
         body["data"]["id"].as_i64().unwrap()
@@ -289,7 +289,7 @@ macro_rules! upload_test_file_to_folder {
             ))
             .set_payload(payload)
             .to_request();
-        let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
+        let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 201, "upload to folder should return 201");
         let body: Value = test::read_body_json(resp).await;
         body["data"]["id"].as_i64().unwrap()

@@ -53,7 +53,6 @@ openapi = ["dep:utoipa", "dep:utoipa-swagger-ui", "api-docs-macros/openapi"]
 full = ["server", "cli", "metrics", "openapi"]
 
 [dependencies]
-actix-cors = "0.7"
 actix-governor = "0.10"
 actix-multipart = "0.7"
 actix-web = { version = "4.13.0", features = ["compress-brotli", "compress-gzip"] }
