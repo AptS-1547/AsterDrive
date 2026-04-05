@@ -190,11 +190,9 @@ export function StoragePolicyDialog({
 			? t("policy_wizard_bucket_required")
 			: null;
 	const s3UploadStrategyLabel =
-		form.s3_upload_strategy === "proxy_tempfile"
-			? t("s3_upload_strategy_proxy_tempfile")
-			: form.s3_upload_strategy === "relay_stream"
-				? t("s3_upload_strategy_relay_stream")
-				: t("s3_upload_strategy_presigned");
+		form.s3_upload_strategy === "relay_stream"
+			? t("s3_upload_strategy_relay_stream")
+			: t("s3_upload_strategy_presigned");
 	const contentDedupLabel = form.content_dedup
 		? t("policy_wizard_enabled")
 		: t("policy_wizard_disabled");
@@ -246,10 +244,6 @@ export function StoragePolicyDialog({
 			: []),
 	];
 	const s3UploadStrategyOptions = [
-		{
-			label: t("s3_upload_strategy_proxy_tempfile"),
-			value: "proxy_tempfile",
-		},
 		{
 			label: t("s3_upload_strategy_relay_stream"),
 			value: "relay_stream",
@@ -395,13 +389,9 @@ export function StoragePolicyDialog({
 			</Select>
 			<p className="text-xs text-muted-foreground">
 				{t(
-					`${
-						form.s3_upload_strategy === "proxy_tempfile"
-							? "s3_upload_strategy_proxy_tempfile_desc"
-							: form.s3_upload_strategy === "relay_stream"
-								? "s3_upload_strategy_relay_stream_desc"
-								: "s3_upload_strategy_presigned_desc"
-					}`,
+					form.s3_upload_strategy === "relay_stream"
+						? "s3_upload_strategy_relay_stream_desc"
+						: "s3_upload_strategy_presigned_desc",
 				)}
 			</p>
 		</div>

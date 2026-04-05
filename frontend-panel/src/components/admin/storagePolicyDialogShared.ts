@@ -9,7 +9,7 @@ import type {
 	UpdatePolicyRequest,
 } from "@/types/api";
 
-export type S3UploadStrategy = "proxy_tempfile" | "relay_stream" | "presigned";
+export type S3UploadStrategy = "relay_stream" | "presigned";
 
 export interface PolicyFormData {
 	name: string;
@@ -33,11 +33,7 @@ interface PolicyOptions {
 }
 
 export function isS3UploadStrategy(value: unknown): value is S3UploadStrategy {
-	return (
-		value === "proxy_tempfile" ||
-		value === "relay_stream" ||
-		value === "presigned"
-	);
+	return value === "relay_stream" || value === "presigned";
 }
 
 export function parsePolicyOptions(options: string): PolicyOptions {
@@ -71,7 +67,7 @@ export function getEffectiveS3UploadStrategy(
 	if (options.s3_upload_strategy) {
 		return options.s3_upload_strategy;
 	}
-	return options.presigned_upload ? "presigned" : "proxy_tempfile";
+	return options.presigned_upload ? "presigned" : "relay_stream";
 }
 
 export function buildPolicyOptions(form: PolicyFormData): string {
@@ -251,5 +247,5 @@ export const emptyForm: PolicyFormData = {
 	chunk_size: "5",
 	is_default: false,
 	content_dedup: false,
-	s3_upload_strategy: "proxy_tempfile",
+	s3_upload_strategy: "relay_stream",
 };

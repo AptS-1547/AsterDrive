@@ -150,6 +150,7 @@ pub async fn upload(
     payload: &mut actix_multipart::Multipart,
     folder_id: Option<i64>,
     relative_path: Option<&str>,
+    declared_size: Option<i64>,
 ) -> Result<file::Model> {
     workspace_storage_service::upload(
         state,
@@ -157,6 +158,7 @@ pub async fn upload(
         payload,
         folder_id,
         relative_path,
+        declared_size,
     )
     .await
 }

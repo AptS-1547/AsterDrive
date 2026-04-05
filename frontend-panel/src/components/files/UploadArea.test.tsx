@@ -111,6 +111,7 @@ vi.mock("@/lib/uploadPersistence", () => ({
 }));
 
 vi.mock("@/services/uploadService", () => ({
+	buildUploadPath: (_workspace: unknown, path: string) => path,
 	isRetryableUploadError: (error: unknown) =>
 		typeof error === "object" &&
 		error !== null &&
@@ -202,7 +203,9 @@ describe("UploadArea", () => {
 		await screen.findByText("hello.txt:Direct:files:upload_success");
 
 		expect(apiClientPost).toHaveBeenCalledTimes(1);
-		expect(apiClientPost.mock.calls[0]?.[0]).toBe("/files/upload?folder_id=42");
+		expect(apiClientPost.mock.calls[0]?.[0]).toBe(
+			"/files/upload?folder_id=42&declared_size=5",
+		);
 		expect(apiClientPost.mock.calls[0]?.[1]).toBeInstanceOf(FormData);
 		expect(completeUpload).not.toHaveBeenCalled();
 		expect(saveSession).not.toHaveBeenCalled();

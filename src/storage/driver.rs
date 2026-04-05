@@ -38,6 +38,19 @@ pub trait StorageDriver: Send + Sync {
         self.put(storage_path, &data).await
     }
 
+    /// 从 reader 流式写入存储，适用于不应先落本地临时文件的上传路径
+    async fn put_reader(
+        &self,
+        storage_path: &str,
+        reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
+        size: i64,
+    ) -> Result<String> {
+        let _ = (storage_path, reader, size);
+        Err(crate::errors::AsterError::storage_driver_error(
+            "stream upload not supported by this driver",
+        ))
+    }
+
     /// 生成临时访问 URL（本地存储返回 None）
     async fn presigned_url(&self, path: &str, expires: Duration) -> Result<Option<String>>;
 

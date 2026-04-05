@@ -10,7 +10,10 @@ use crate::db::repository::{
 use crate::entities::{file, file_blob, folder, team, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::types::{UploadSessionStatus, parse_storage_policy_options};
+use crate::types::{
+    DriverType, S3UploadStrategy, UploadSessionStatus, effective_s3_multipart_chunk_size,
+    parse_storage_policy_options,
+};
 
 const HASH_BUF_SIZE: usize = 65536;
 
@@ -245,6 +248,22 @@ pub(crate) fn local_content_dedup_enabled(policy: &crate::entities::storage_poli
         && parse_storage_policy_options(&policy.options)
             .content_dedup
             .unwrap_or(false)
+}
+
+fn relay_stream_direct_upload_eligible(
+    policy: &crate::entities::storage_policy::Model,
+    declared_size: i64,
+) -> bool {
+    if declared_size <= 0 || policy.driver_type != DriverType::S3 {
+        return false;
+    }
+
+    let options = parse_storage_policy_options(&policy.options);
+    if options.effective_s3_upload_strategy() != S3UploadStrategy::RelayStream {
+        return false;
+    }
+
+    policy.chunk_size == 0 || declared_size <= effective_s3_multipart_chunk_size(policy.chunk_size)
 }
 
 pub(crate) async fn create_nondedup_blob<C: ConnectionTrait>(
@@ -726,13 +745,145 @@ pub(crate) async fn store_from_temp(
     Ok(result)
 }
 
+async fn upload_s3_relay_direct(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    payload: &mut Multipart,
+    folder_id: Option<i64>,
+    relative_path: Option<&str>,
+    resolved_filename: &str,
+    policy: &crate::entities::storage_policy::Model,
+    declared_size: i64,
+) -> Result<file::Model> {
+    const RELAY_DIRECT_BUFFER_SIZE: usize = 64 * 1024;
+
+    if policy.max_file_size > 0 && declared_size > policy.max_file_size {
+        return Err(AsterError::file_too_large(format!(
+            "file size {} exceeds limit {}",
+            declared_size, policy.max_file_size
+        )));
+    }
+
+    check_quota(&state.db, scope, declared_size).await?;
+    let driver = state.driver_registry.get_driver(policy)?;
+
+    while let Some(field) = payload.next().await {
+        let mut field = field.map_aster_err(AsterError::file_upload_failed)?;
+        let is_file = field
+            .content_disposition()
+            .and_then(|content| content.get_filename().map(|name| name.to_string()));
+
+        if let Some(name) = is_file {
+            let filename = if relative_path.is_some() {
+                resolved_filename.to_string()
+            } else {
+                name
+            };
+            crate::utils::validate_name(&filename)?;
+
+            let upload_id = crate::utils::id::new_uuid();
+            let storage_path = format!("files/{upload_id}");
+            let (writer, reader) = tokio::io::duplex(RELAY_DIRECT_BUFFER_SIZE);
+            let upload_driver = driver.clone();
+            let upload_storage_path = storage_path.clone();
+            let (upload_result, relay_result) = tokio::task::LocalSet::new()
+                .run_until(async move {
+                    let relay_task = tokio::task::spawn_local(async move {
+                        let mut writer = writer;
+                        while let Some(chunk) = field.next().await {
+                            let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
+                            writer.write_all(&chunk).await.map_aster_err_ctx(
+                                "relay direct write",
+                                AsterError::file_upload_failed,
+                            )?;
+                        }
+                        writer.shutdown().await.map_aster_err_ctx(
+                            "relay direct shutdown",
+                            AsterError::file_upload_failed,
+                        )?;
+                        Ok::<(), AsterError>(())
+                    });
+
+                    let upload_result = upload_driver
+                        .put_reader(&upload_storage_path, Box::new(reader), declared_size)
+                        .await;
+                    let relay_result = relay_task.await.map_err(|err| {
+                        AsterError::file_upload_failed(format!("relay direct task failed: {err}"))
+                    })?;
+
+                    Ok::<(Result<String>, Result<()>), AsterError>((upload_result, relay_result))
+                })
+                .await?;
+
+            if let Err(err) = upload_result {
+                if let Err(cleanup_err) = driver.delete(&storage_path).await {
+                    tracing::warn!(
+                        "failed to cleanup relay direct object {} after upload error: {cleanup_err}",
+                        storage_path
+                    );
+                }
+                return Err(err);
+            }
+
+            if let Err(err) = relay_result {
+                if let Err(cleanup_err) = driver.delete(&storage_path).await {
+                    tracing::warn!(
+                        "failed to cleanup relay direct object {} after relay error: {cleanup_err}",
+                        storage_path
+                    );
+                }
+                return Err(err);
+            }
+
+            let now = Utc::now();
+            let txn = state.db.begin().await.map_err(AsterError::from)?;
+            let create_result = async {
+                check_quota(&txn, scope, declared_size).await?;
+                let blob =
+                    create_s3_nondedup_blob(&txn, declared_size, policy.id, &upload_id).await?;
+                let created =
+                    create_new_file_from_blob(&txn, scope, folder_id, &filename, &blob, now)
+                        .await?;
+                update_storage_used(&txn, scope, declared_size).await?;
+                txn.commit().await.map_err(AsterError::from)?;
+                Ok::<file::Model, AsterError>(created)
+            }
+            .await;
+
+            return match create_result {
+                Ok(file) => Ok(file),
+                Err(err) => {
+                    if let Err(cleanup_err) = driver.delete(&storage_path).await {
+                        tracing::warn!(
+                            "failed to cleanup relay direct object {} after DB error: {cleanup_err}",
+                            storage_path
+                        );
+                    }
+                    Err(err)
+                }
+            };
+        }
+    }
+
+    Err(AsterError::validation_error("empty file"))
+}
+
 pub(crate) async fn upload(
     state: &AppState,
     scope: WorkspaceStorageScope,
     payload: &mut Multipart,
     folder_id: Option<i64>,
     relative_path: Option<&str>,
+    declared_size: Option<i64>,
 ) -> Result<file::Model> {
+    if let Some(declared_size) = declared_size
+        && declared_size < 0
+    {
+        return Err(AsterError::validation_error(
+            "declared_size cannot be negative",
+        ));
+    }
+
     let (resolved_folder_id, resolved_filename) = match relative_path {
         Some(path) => resolve_upload_path(state, scope, folder_id, path).await?,
         None => {
@@ -748,6 +899,25 @@ pub(crate) async fn upload(
     } else {
         folder_id
     };
+
+    // relay_stream 的真正无暂存 fast path 需要先知道文件大小，避免在未解析策略前就开始写远端对象。
+    if let Some(declared_size) = declared_size {
+        let policy =
+            resolve_policy_for_size(state, scope, effective_folder_id, declared_size).await?;
+        if relay_stream_direct_upload_eligible(&policy, declared_size) {
+            return upload_s3_relay_direct(
+                state,
+                scope,
+                payload,
+                effective_folder_id,
+                relative_path,
+                &resolved_filename,
+                &policy,
+                declared_size,
+            )
+            .await;
+        }
+    }
 
     let mut filename = String::from("unnamed");
     let temp_dir = &state.config.server.temp_dir;

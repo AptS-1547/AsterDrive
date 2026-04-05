@@ -38,7 +38,7 @@ describe("storagePolicyDialogShared", () => {
 			chunk_size: "10",
 			is_default: true,
 			content_dedup: true,
-			s3_upload_strategy: "proxy_tempfile",
+			s3_upload_strategy: "relay_stream",
 		});
 	});
 

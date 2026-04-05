@@ -546,6 +546,9 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				if (task.relativePath) {
 					params.set("relative_path", task.relativePath);
 				}
+				if (task.file) {
+					params.set("declared_size", String(task.file.size));
+				}
 				const basePath = buildUploadPath(workspace, "/files/upload");
 				const query = params.toString();
 				return query ? `${basePath}?${query}` : basePath;

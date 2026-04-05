@@ -922,7 +922,7 @@ describe("AdminPoliciesPage", () => {
 			target: { value: "NEWKEY" },
 		});
 		fireEvent.click(
-			screen.getByRole("button", { name: "select-item:proxy_tempfile" }),
+			screen.getByRole("button", { name: "select-item:relay_stream" }),
 		);
 		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
 
@@ -959,7 +959,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: 4096,
 				name: "Archive S3 Updated",
-				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
+				options: JSON.stringify({ s3_upload_strategy: "relay_stream" }),
 			}),
 		);
 		expect(payload).toHaveProperty("access_key", "NEWKEY");
@@ -1110,7 +1110,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "relay-bucket",
 				base_path: "tenant-relay",
 				max_file_size: 4096,
-				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
+				options: JSON.stringify({ s3_upload_strategy: "relay_stream" }),
 			}),
 		];
 
@@ -1242,7 +1242,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: undefined,
 				name: "Broken S3",
-				options: JSON.stringify({ s3_upload_strategy: "proxy_tempfile" }),
+				options: JSON.stringify({ s3_upload_strategy: "relay_stream" }),
 				secret_key: "",
 			});
 		});

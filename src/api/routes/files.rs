@@ -68,6 +68,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
 pub struct FileQuery {
     pub folder_id: Option<i64>,
     pub relative_path: Option<String>,
+    pub declared_size: Option<i64>,
 }
 
 #[api_docs_macros::path(
@@ -99,6 +100,7 @@ pub async fn upload(
         },
         query.folder_id,
         query.relative_path.as_deref(),
+        query.declared_size,
         &mut payload,
     )
     .await
@@ -638,10 +640,18 @@ pub(crate) async fn upload_response(
     scope: WorkspaceStorageScope,
     folder_id: Option<i64>,
     relative_path: Option<&str>,
+    declared_size: Option<i64>,
     payload: &mut actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
-    let file =
-        workspace_storage_service::upload(state, scope, payload, folder_id, relative_path).await?;
+    let file = workspace_storage_service::upload(
+        state,
+        scope,
+        payload,
+        folder_id,
+        relative_path,
+        declared_size,
+    )
+    .await?;
     let ctx = AuditContext::from_request(req, claims);
     audit_service::log(
         state,

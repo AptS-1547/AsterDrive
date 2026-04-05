@@ -355,6 +355,7 @@ pub async fn upload(
         team_scope(*path, claims.user_id),
         query.folder_id,
         query.relative_path.as_deref(),
+        query.declared_size,
         &mut payload,
     )
     .await

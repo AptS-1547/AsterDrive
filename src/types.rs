@@ -164,8 +164,6 @@ pub enum UploadMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum S3UploadStrategy {
-    /// 先落服务端临时文件，再写入 S3
-    ProxyTempfile,
     /// 服务端将请求体直接中继到 S3，不落本地临时文件
     RelayStream,
     /// 浏览器直传 S3 / MinIO
@@ -187,7 +185,7 @@ impl StoragePolicyOptions {
         match self.s3_upload_strategy {
             Some(strategy) => strategy,
             None if self.presigned_upload => S3UploadStrategy::Presigned,
-            None => S3UploadStrategy::ProxyTempfile,
+            None => S3UploadStrategy::RelayStream,
         }
     }
 }
@@ -238,5 +236,37 @@ impl TokenType {
             Self::Access => "access",
             Self::Refresh => "refresh",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{S3UploadStrategy, StoragePolicyOptions, parse_storage_policy_options};
+
+    #[test]
+    fn s3_strategy_defaults_to_relay_stream() {
+        let options = StoragePolicyOptions::default();
+        assert_eq!(
+            options.effective_s3_upload_strategy(),
+            S3UploadStrategy::RelayStream
+        );
+    }
+
+    #[test]
+    fn legacy_presigned_flag_still_maps_to_presigned() {
+        let options = parse_storage_policy_options(r#"{"presigned_upload":true}"#);
+        assert_eq!(
+            options.effective_s3_upload_strategy(),
+            S3UploadStrategy::Presigned
+        );
+    }
+
+    #[test]
+    fn removed_proxy_tempfile_strategy_falls_back_to_relay_stream() {
+        let options = parse_storage_policy_options(r#"{"s3_upload_strategy":"proxy_tempfile"}"#);
+        assert_eq!(
+            options.effective_s3_upload_strategy(),
+            S3UploadStrategy::RelayStream
+        );
     }
 }

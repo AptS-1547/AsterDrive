@@ -215,7 +215,7 @@ export default function AdminPoliciesPage() {
 						bucket: "",
 						access_key: "",
 						secret_key: "",
-						s3_upload_strategy: "proxy_tempfile",
+						s3_upload_strategy: "relay_stream",
 					},
 		);
 	};
