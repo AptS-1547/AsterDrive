@@ -27,6 +27,8 @@ pub use crate::types::AvatarSource;
 
 const ACCESS_COOKIE: &str = "aster_access";
 const REFRESH_COOKIE: &str = "aster_refresh";
+const ACCESS_COOKIE_PATH: &str = "/";
+const REFRESH_COOKIE_PATH: &str = "/api/v1/auth/refresh";
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.auth);
@@ -116,9 +118,15 @@ pub struct ChangePasswordReq {
 }
 
 /// 构建 HttpOnly cookie
-fn build_cookie(name: &str, value: &str, max_age_secs: i64, secure: bool) -> Cookie<'static> {
+fn build_cookie(
+    name: &str,
+    path: &str,
+    value: &str,
+    max_age_secs: i64,
+    secure: bool,
+) -> Cookie<'static> {
     Cookie::build(name.to_string(), value.to_string())
-        .path("/")
+        .path(path.to_string())
         .http_only(true)
         .same_site(SameSite::Lax)
         .secure(secure)
@@ -127,13 +135,41 @@ fn build_cookie(name: &str, value: &str, max_age_secs: i64, secure: bool) -> Coo
 }
 
 /// 构建清除 cookie
-fn clear_cookie(name: &str, secure: bool) -> Cookie<'static> {
+fn clear_cookie(name: &str, path: &str, secure: bool) -> Cookie<'static> {
     Cookie::build(name.to_string(), "")
-        .path("/")
+        .path(path.to_string())
         .http_only(true)
         .secure(secure)
         .max_age(CookieDuration::ZERO)
         .finish()
+}
+
+fn build_access_cookie(value: &str, max_age_secs: i64, secure: bool) -> Cookie<'static> {
+    build_cookie(
+        ACCESS_COOKIE,
+        ACCESS_COOKIE_PATH,
+        value,
+        max_age_secs,
+        secure,
+    )
+}
+
+fn build_refresh_cookie(value: &str, max_age_secs: i64, secure: bool) -> Cookie<'static> {
+    build_cookie(
+        REFRESH_COOKIE,
+        REFRESH_COOKIE_PATH,
+        value,
+        max_age_secs,
+        secure,
+    )
+}
+
+fn clear_access_cookie(secure: bool) -> Cookie<'static> {
+    clear_cookie(ACCESS_COOKIE, ACCESS_COOKIE_PATH, secure)
+}
+
+fn clear_refresh_cookie(secure: bool) -> Cookie<'static> {
+    clear_cookie(REFRESH_COOKIE, REFRESH_COOKIE_PATH, secure)
 }
 
 fn bearer_token(req: &actix_web::HttpRequest) -> Option<String> {
@@ -293,14 +329,12 @@ pub async fn login(
 
     let secure = state.config.auth.cookie_secure;
     Ok(HttpResponse::Ok()
-        .cookie(build_cookie(
-            ACCESS_COOKIE,
+        .cookie(build_access_cookie(
             &result.access_token,
             state.config.auth.access_token_ttl_secs as i64,
             secure,
         ))
-        .cookie(build_cookie(
-            REFRESH_COOKIE,
+        .cookie(build_refresh_cookie(
             &result.refresh_token,
             state.config.auth.refresh_token_ttl_secs as i64,
             secure,
@@ -333,8 +367,7 @@ pub async fn refresh(
 
     let secure = state.config.auth.cookie_secure;
     Ok(HttpResponse::Ok()
-        .cookie(build_cookie(
-            ACCESS_COOKIE,
+        .cookie(build_access_cookie(
             &access,
             state.config.auth.access_token_ttl_secs as i64,
             secure,
@@ -395,8 +428,8 @@ pub async fn logout(state: web::Data<AppState>, req: actix_web::HttpRequest) -> 
 
     let secure = state.config.auth.cookie_secure;
     HttpResponse::Ok()
-        .cookie(clear_cookie(ACCESS_COOKIE, secure))
-        .cookie(clear_cookie(REFRESH_COOKIE, secure))
+        .cookie(clear_access_cookie(secure))
+        .cookie(clear_refresh_cookie(secure))
         .json(ApiResponse::<()>::ok_empty())
 }
 
@@ -459,14 +492,12 @@ pub async fn put_password(
 
     let secure = state.config.auth.cookie_secure;
     Ok(HttpResponse::Ok()
-        .cookie(build_cookie(
-            ACCESS_COOKIE,
+        .cookie(build_access_cookie(
             &access_token,
             state.config.auth.access_token_ttl_secs as i64,
             secure,
         ))
-        .cookie(build_cookie(
-            REFRESH_COOKIE,
+        .cookie(build_refresh_cookie(
             &refresh_token,
             state.config.auth.refresh_token_ttl_secs as i64,
             secure,

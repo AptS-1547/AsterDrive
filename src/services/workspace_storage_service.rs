@@ -781,6 +781,7 @@ pub(crate) async fn store_from_temp_with_hints(
     Ok(result)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn upload_local_direct(
     state: &AppState,
     scope: WorkspaceStorageScope,
@@ -880,6 +881,7 @@ async fn upload_local_direct(
     Err(AsterError::validation_error("empty file"))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn upload_s3_relay_direct(
     state: &AppState,
     scope: WorkspaceStorageScope,

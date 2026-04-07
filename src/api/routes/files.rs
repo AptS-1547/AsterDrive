@@ -633,6 +633,7 @@ pub async fn copy_file(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn upload_response(
     state: &AppState,
     claims: &Claims,

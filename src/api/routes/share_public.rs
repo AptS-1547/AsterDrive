@@ -13,6 +13,35 @@ use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+const SHARE_COOKIE_PREFIX: &str = "aster_share_";
+
+fn share_cookie_name(token: &str) -> String {
+    format!("{SHARE_COOKIE_PREFIX}{token}")
+}
+
+fn share_cookie_path(token: &str) -> String {
+    format!("/api/v1/s/{token}")
+}
+
+fn build_share_cookie(
+    token: &str,
+    value: String,
+    secure: bool,
+) -> actix_web::cookie::Cookie<'static> {
+    actix_web::cookie::Cookie::build(share_cookie_name(token), value)
+        .path(share_cookie_path(token))
+        .http_only(true)
+        .same_site(actix_web::cookie::SameSite::Lax)
+        .secure(secure)
+        .max_age(actix_web::cookie::time::Duration::hours(1))
+        .finish()
+}
+
+fn share_cookie_value(req: &actix_web::HttpRequest, token: &str) -> Option<String> {
+    req.cookie(&share_cookie_name(token))
+        .map(|cookie| cookie.value().to_string())
+}
+
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.public);
     let verify_limiter = rate_limit::build_governor(&rl.auth);
@@ -87,16 +116,11 @@ pub async fn verify_password(
     body: web::Json<VerifyPasswordReq>,
 ) -> Result<HttpResponse> {
     let result = share_service::verify_password_and_sign(&state, &path, &body.password).await?;
-
-    let cookie = actix_web::cookie::Cookie::build(
-        format!("aster_share_{}", &*path),
+    let cookie = build_share_cookie(
+        path.as_str(),
         result.cookie_signature,
-    )
-    .path("/")
-    .http_only(true)
-    .max_age(actix_web::cookie::time::Duration::hours(1))
-    .same_site(actix_web::cookie::SameSite::Lax)
-    .finish();
+        state.config.auth.cookie_secure,
+    );
 
     Ok(HttpResponse::Ok()
         .cookie(cookie)
@@ -120,9 +144,7 @@ pub async fn download_shared(
     path: web::Path<String>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    let cookie_value = req
-        .cookie(&format!("aster_share_{}", &*path))
-        .map(|c| c.value().to_string());
+    let cookie_value = share_cookie_value(&req, path.as_str());
     share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
 
     share_service::download_shared_file(
@@ -156,9 +178,7 @@ pub async fn download_shared_folder_file(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    let cookie_value = req
-        .cookie(&format!("aster_share_{token}"))
-        .map(|c| c.value().to_string());
+    let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
     share_service::download_shared_folder_file(
@@ -190,9 +210,7 @@ pub async fn list_shared_content(
     query: web::Query<FolderListQuery>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    let cookie_value = req
-        .cookie(&format!("aster_share_{}", &*path))
-        .map(|c| c.value().to_string());
+    let cookie_value = share_cookie_value(&req, path.as_str());
     share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
 
     let contents = share_service::list_shared_folder(
@@ -232,9 +250,7 @@ pub async fn list_shared_subfolder_content(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, folder_id) = path.into_inner();
-    let cookie_value = req
-        .cookie(&format!("aster_share_{token}"))
-        .map(|c| c.value().to_string());
+    let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
     let contents = share_service::list_shared_subfolder(
@@ -273,9 +289,7 @@ pub async fn shared_avatar(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, size) = path.into_inner();
-    let cookie_value = req
-        .cookie(&format!("aster_share_{token}"))
-        .map(|c| c.value().to_string());
+    let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
     let bytes = share_service::get_share_avatar_bytes(&state, &token, size).await?;
@@ -301,9 +315,7 @@ pub async fn shared_thumbnail(
     path: web::Path<String>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    let cookie_value = req
-        .cookie(&format!("aster_share_{}", &*path))
-        .map(|c| c.value().to_string());
+    let cookie_value = share_cookie_value(&req, path.as_str());
     share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
 
     let data = share_service::get_shared_thumbnail(&state, &path).await?;
@@ -340,9 +352,7 @@ pub async fn shared_folder_file_thumbnail(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    let cookie_value = req
-        .cookie(&format!("aster_share_{token}"))
-        .map(|c| c.value().to_string());
+    let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
     let data = share_service::get_shared_folder_file_thumbnail(&state, &token, file_id).await?;

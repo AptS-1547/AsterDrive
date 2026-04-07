@@ -1,9 +1,10 @@
 #[macro_use]
 mod common;
 
+use actix_web::cookie::SameSite;
 use actix_web::test;
 use serde_json::Value;
-use std::io::Cursor;
+use std::{io::Cursor, sync::Arc};
 
 fn avatar_upload_payload() -> (String, Vec<u8>) {
     let boundary = "----AsterShareAvatarBoundary".to_string();
@@ -259,6 +260,49 @@ async fn test_share_password() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert!(resp.status() == 401 || resp.status() == 403);
+}
+
+#[actix_web::test]
+async fn test_share_verify_cookie_scoped_and_secure_when_enabled() {
+    let mut state = common::setup().await;
+    let mut config = (*state.config).clone();
+    config.auth.cookie_secure = true;
+    state.config = Arc::new(config);
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_id": file_id,
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/verify"))
+        .set_json(serde_json::json!({ "password": "secret123" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let expected_path = format!("/api/v1/s/{share_token}");
+    let share_cookie = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == format!("aster_share_{share_token}"))
+        .expect("share verification cookie should be set");
+
+    assert_eq!(share_cookie.path(), Some(expected_path.as_str()));
+    assert_eq!(share_cookie.http_only(), Some(true));
+    assert_eq!(share_cookie.same_site(), Some(SameSite::Lax));
+    assert_eq!(share_cookie.secure(), Some(true));
 }
 
 #[actix_web::test]

@@ -1,6 +1,7 @@
 #[macro_use]
 mod common;
 
+use actix_web::cookie::SameSite;
 use actix_web::test;
 use serde_json::Value;
 use std::io::Cursor;
@@ -78,12 +79,42 @@ async fn test_register_and_login() {
     assert_eq!(resp.status(), 200);
     let access = common::extract_cookie(&resp, "aster_access");
     let refresh = common::extract_cookie(&resp, "aster_refresh");
+    let access_cookie_path = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_access")
+        .expect("access cookie missing")
+        .path()
+        .map(str::to_string);
+    let access_cookie_same_site = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_access")
+        .expect("access cookie missing")
+        .same_site();
+    let refresh_cookie_path = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_refresh")
+        .expect("refresh cookie missing")
+        .path()
+        .map(str::to_string);
+    let refresh_cookie_same_site = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_refresh")
+        .expect("refresh cookie missing")
+        .same_site();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
     assert_eq!(body["data"]["expires_in"], 900);
     // tokens 在 cookie 里
     assert!(access.is_some());
     assert!(refresh.is_some());
+    assert_eq!(access_cookie_path.as_deref(), Some("/"));
+    assert_eq!(access_cookie_same_site, Some(SameSite::Lax));
+    assert_eq!(refresh_cookie_path.as_deref(), Some("/api/v1/auth/refresh"));
+    assert_eq!(refresh_cookie_same_site, Some(SameSite::Lax));
 
     // 错误密码
     let req = test::TestRequest::post()
@@ -149,6 +180,20 @@ async fn test_logout_clears_cookies_without_revoking_existing_tokens() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    let cleared_access_path = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_access")
+        .expect("cleared access cookie missing")
+        .path()
+        .map(str::to_string);
+    let cleared_refresh_path = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_refresh")
+        .expect("cleared refresh cookie missing")
+        .path()
+        .map(str::to_string);
     assert_eq!(
         common::extract_cookie(&resp, "aster_access").as_deref(),
         Some("")
@@ -156,6 +201,11 @@ async fn test_logout_clears_cookies_without_revoking_existing_tokens() {
     assert_eq!(
         common::extract_cookie(&resp, "aster_refresh").as_deref(),
         Some("")
+    );
+    assert_eq!(cleared_access_path.as_deref(), Some("/"));
+    assert_eq!(
+        cleared_refresh_path.as_deref(),
+        Some("/api/v1/auth/refresh")
     );
 
     let req = test::TestRequest::get()
