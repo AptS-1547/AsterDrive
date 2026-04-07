@@ -96,22 +96,16 @@ impl DatabaseConfig {
 pub struct AuthConfig {
     #[serde(default = "AuthConfig::default_jwt_secret")]
     pub jwt_secret: String,
-    #[serde(default = "AuthConfig::default_access_ttl")]
-    pub access_token_ttl_secs: u64,
-    #[serde(default = "AuthConfig::default_refresh_ttl")]
-    pub refresh_token_ttl_secs: u64,
-    /// 为 cookie 设置 Secure 标志（仅 HTTPS 传输）。本地开发需设为 false。
-    #[serde(default = "AuthConfig::default_cookie_secure")]
-    pub cookie_secure: bool,
+    /// 首次初始化 system_config 时，是否把 auth_cookie_secure 设为 false。
+    #[serde(default = "AuthConfig::default_bootstrap_insecure_cookies")]
+    pub bootstrap_insecure_cookies: bool,
 }
 
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
             jwt_secret: Self::default_jwt_secret(),
-            access_token_ttl_secs: Self::default_access_ttl(),
-            refresh_token_ttl_secs: Self::default_refresh_ttl(),
-            cookie_secure: true,
+            bootstrap_insecure_cookies: Self::default_bootstrap_insecure_cookies(),
         }
     }
 }
@@ -123,14 +117,8 @@ impl AuthConfig {
         let bytes: [u8; 32] = rng.random();
         bytes.iter().map(|b| format!("{:02x}", b)).collect()
     }
-    fn default_access_ttl() -> u64 {
-        900
-    } // 15 min
-    fn default_refresh_ttl() -> u64 {
-        604800
-    } // 7 days
-    fn default_cookie_secure() -> bool {
-        true
+    fn default_bootstrap_insecure_cookies() -> bool {
+        false
     }
 }
 

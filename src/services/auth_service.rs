@@ -4,7 +4,7 @@ use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 use serde::{Deserialize, Serialize};
 
 use crate::cache::CacheExt;
-use crate::config::AuthConfig;
+use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::db::repository::user_repo;
 use crate::entities::user;
 use crate::errors::{AsterError, MapAsterErr, Result};
@@ -335,37 +335,41 @@ pub struct LoginResult {
 fn issue_tokens(
     user_id: i64,
     session_version: i64,
-    auth_config: &AuthConfig,
+    jwt_secret: &str,
+    auth_policy: RuntimeAuthPolicy,
 ) -> Result<(String, String)> {
     let access = create_token(
         user_id,
         session_version,
         TokenType::Access,
-        auth_config.access_token_ttl_secs,
-        &auth_config.jwt_secret,
+        auth_policy.access_token_ttl_secs,
+        jwt_secret,
     )?;
     let refresh = create_token(
         user_id,
         session_version,
         TokenType::Refresh,
-        auth_config.refresh_token_ttl_secs,
-        &auth_config.jwt_secret,
+        auth_policy.refresh_token_ttl_secs,
+        jwt_secret,
     )?;
     Ok((access, refresh))
 }
 
-pub fn issue_tokens_for_user(
-    user: &user::Model,
-    auth_config: &AuthConfig,
-) -> Result<(String, String)> {
-    issue_tokens(user.id, user.session_version, auth_config)
+pub fn issue_tokens_for_user(state: &AppState, user: &user::Model) -> Result<(String, String)> {
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    issue_tokens(
+        user.id,
+        user.session_version,
+        &state.config.auth.jwt_secret,
+        auth_policy,
+    )
 }
 
 /// 登录，返回 tokens + user_id
 /// identifier 支持邮箱或用户名
 pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result<LoginResult> {
     let db = &state.db;
-    let auth_config = &state.config.auth;
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
 
     let user = find_user_by_identifier(db, identifier)
         .await?
@@ -379,7 +383,12 @@ pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result
         return Err(AsterError::auth_invalid_credentials("wrong password"));
     }
 
-    let (access, refresh) = issue_tokens(user.id, user.session_version, auth_config)?;
+    let (access, refresh) = issue_tokens(
+        user.id,
+        user.session_version,
+        &state.config.auth.jwt_secret,
+        auth_policy,
+    )?;
 
     Ok(LoginResult {
         access_token: access,
@@ -427,14 +436,14 @@ pub async fn set_password(
 
 /// 用 refresh token 换 access token
 pub async fn refresh_token(state: &AppState, refresh: &str) -> Result<String> {
-    let auth_config = &state.config.auth;
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     let (claims, snapshot) = authenticate_refresh_token(state, refresh).await?;
     create_token(
         claims.user_id,
         snapshot.session_version,
         TokenType::Access,
-        auth_config.access_token_ttl_secs,
-        &auth_config.jwt_secret,
+        auth_policy.access_token_ttl_secs,
+        &state.config.auth.jwt_secret,
     )
 }
 

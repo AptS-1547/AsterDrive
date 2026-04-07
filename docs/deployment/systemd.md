@@ -60,7 +60,8 @@ Environment=RUST_LOG=info
 WantedBy=multi-user.target
 ```
 
-如果你现在还是内网 HTTP 测试，记得在 `config.toml` 里把 `auth.cookie_secure` 设成 `false`。正式切到 HTTPS 后再改回 `true`。
+如果你现在还是内网 HTTP 测试，可以先在 `config.toml` 里把 `auth.bootstrap_insecure_cookies` 设成 `true`。
+它只会影响首次初始化 `auth_cookie_secure` 的默认值。正式切到 HTTPS 后，把后台里的 `auth_cookie_secure` 改回 `true`，再把这个静态引导项去掉。
 
 ## 5. 启动服务
 

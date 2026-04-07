@@ -151,6 +151,81 @@ async fn test_token_refresh() {
 }
 
 #[actix_web::test]
+async fn test_login_uses_runtime_auth_policy() {
+    let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        aster_drive::config::auth_runtime::AUTH_COOKIE_SECURE_KEY,
+        "true",
+    ));
+    state.runtime_config.apply(common::system_config_model(
+        aster_drive::config::auth_runtime::AUTH_ACCESS_TOKEN_TTL_SECS_KEY,
+        "120",
+    ));
+    state.runtime_config.apply(common::system_config_model(
+        aster_drive::config::auth_runtime::AUTH_REFRESH_TOKEN_TTL_SECS_KEY,
+        "3600",
+    ));
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "runtimeauth",
+            "email": "runtimeauth@example.com",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "runtimeauth",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let access_cookie_max_age = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_access")
+        .expect("access cookie missing")
+        .max_age()
+        .map(|duration| duration.whole_seconds());
+    let refresh_cookie_max_age = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_refresh")
+        .expect("refresh cookie missing")
+        .max_age()
+        .map(|duration| duration.whole_seconds());
+    let access_cookie_secure = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_access")
+        .expect("access cookie missing")
+        .secure();
+    let refresh_cookie_secure = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_refresh")
+        .expect("refresh cookie missing")
+        .secure();
+    let body: Value = test::read_body_json(resp).await;
+
+    assert_eq!(body["data"]["expires_in"], 120);
+    assert_eq!(access_cookie_max_age, Some(120));
+    assert_eq!(refresh_cookie_max_age, Some(3600));
+    assert_eq!(access_cookie_secure, Some(true));
+    assert_eq!(refresh_cookie_secure, Some(true));
+}
+
+#[actix_web::test]
 async fn test_refresh_token_cannot_access_protected_routes() {
     let state = common::setup().await;
     let app = create_test_app!(state);

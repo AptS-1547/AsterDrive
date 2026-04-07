@@ -23,6 +23,34 @@ pub struct ConfigDef {
 
 /// 所有运行时配置项
 pub static ALL_CONFIGS: &[ConfigDef] = &[
+    // ── Auth ────────────────────────────────────────────────
+    ConfigDef {
+        key: "auth_cookie_secure",
+        value_type: "boolean",
+        default_fn: || "true".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "auth",
+        description: "Whether auth and share verification cookies require HTTPS",
+    },
+    ConfigDef {
+        key: "auth_access_token_ttl_secs",
+        value_type: "number",
+        default_fn: || "900".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "auth",
+        description: "Access token lifetime in seconds",
+    },
+    ConfigDef {
+        key: "auth_refresh_token_ttl_secs",
+        value_type: "number",
+        default_fn: || "604800".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "auth",
+        description: "Refresh token lifetime in seconds",
+    },
     // ── WebDAV ──────────────────────────────────────────────
     ConfigDef {
         key: "webdav_enabled",

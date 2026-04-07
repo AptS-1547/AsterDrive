@@ -13,6 +13,7 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 use crate::api::middleware::rate_limit;
+use crate::config::auth_runtime::RuntimeAuthPolicy;
 
 // Re-export preference types from user_service for OpenAPI schema registration.
 pub use crate::services::user_service::{
@@ -302,6 +303,7 @@ pub async fn login(
     body: web::Json<LoginReq>,
 ) -> Result<HttpResponse> {
     let result = auth_service::login(&state, &body.identifier, &body.password).await?;
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
 
     // 审计日志 — 直接使用 login 返回的 user_id
     let ctx = audit_service::AuditContext {
@@ -327,20 +329,20 @@ pub async fn login(
     )
     .await;
 
-    let secure = state.config.auth.cookie_secure;
+    let secure = auth_policy.cookie_secure;
     Ok(HttpResponse::Ok()
         .cookie(build_access_cookie(
             &result.access_token,
-            state.config.auth.access_token_ttl_secs as i64,
+            auth_policy.access_token_ttl_secs as i64,
             secure,
         ))
         .cookie(build_refresh_cookie(
             &result.refresh_token,
-            state.config.auth.refresh_token_ttl_secs as i64,
+            auth_policy.refresh_token_ttl_secs as i64,
             secure,
         ))
         .json(ApiResponse::ok(AuthTokenResp {
-            expires_in: state.config.auth.access_token_ttl_secs,
+            expires_in: auth_policy.access_token_ttl_secs,
         })))
 }
 
@@ -358,6 +360,7 @@ pub async fn refresh(
     state: web::Data<AppState>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     let refresh_tok = req
         .cookie(REFRESH_COOKIE)
         .map(|c| c.value().to_string())
@@ -365,15 +368,15 @@ pub async fn refresh(
 
     let access = auth_service::refresh_token(&state, &refresh_tok).await?;
 
-    let secure = state.config.auth.cookie_secure;
+    let secure = auth_policy.cookie_secure;
     Ok(HttpResponse::Ok()
         .cookie(build_access_cookie(
             &access,
-            state.config.auth.access_token_ttl_secs as i64,
+            auth_policy.access_token_ttl_secs as i64,
             secure,
         ))
         .json(ApiResponse::ok(AuthTokenResp {
-            expires_in: state.config.auth.access_token_ttl_secs,
+            expires_in: auth_policy.access_token_ttl_secs,
         })))
 }
 
@@ -426,7 +429,7 @@ pub async fn logout(state: web::Data<AppState>, req: actix_web::HttpRequest) -> 
         break;
     }
 
-    let secure = state.config.auth.cookie_secure;
+    let secure = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config).cookie_secure;
     HttpResponse::Ok()
         .cookie(clear_access_cookie(secure))
         .cookie(clear_refresh_cookie(secure))
@@ -475,8 +478,8 @@ pub async fn put_password(
         &body.new_password,
     )
     .await?;
-    let (access_token, refresh_token) =
-        auth_service::issue_tokens_for_user(&user, &state.config.auth)?;
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    let (access_token, refresh_token) = auth_service::issue_tokens_for_user(&state, &user)?;
 
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
@@ -490,20 +493,20 @@ pub async fn put_password(
     )
     .await;
 
-    let secure = state.config.auth.cookie_secure;
+    let secure = auth_policy.cookie_secure;
     Ok(HttpResponse::Ok()
         .cookie(build_access_cookie(
             &access_token,
-            state.config.auth.access_token_ttl_secs as i64,
+            auth_policy.access_token_ttl_secs as i64,
             secure,
         ))
         .cookie(build_refresh_cookie(
             &refresh_token,
-            state.config.auth.refresh_token_ttl_secs as i64,
+            auth_policy.refresh_token_ttl_secs as i64,
             secure,
         ))
         .json(ApiResponse::ok(AuthTokenResp {
-            expires_in: state.config.auth.access_token_ttl_secs,
+            expires_in: auth_policy.access_token_ttl_secs,
         })))
 }
 

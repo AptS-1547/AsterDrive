@@ -7,6 +7,8 @@
 
 这里负责全站运行规则，例如:
 
+- 认证 Cookie 是否必须通过 HTTPS 发送
+- Access / Refresh Token 的有效期
 - WebDAV 是否开启
 - 回收站保留多久
 - 历史版本保留多少个
@@ -20,6 +22,9 @@
 
 | 设置项 | 默认值 | 说明 |
 | --- | --- | --- |
+| `auth_cookie_secure` | `true` | 是否只允许浏览器通过 HTTPS 发送认证和分享验证 Cookie |
+| `auth_access_token_ttl_secs` | `900` | Access Token 有效期，单位秒 |
+| `auth_refresh_token_ttl_secs` | `604800` | Refresh Token 有效期，单位秒 |
 | `webdav_enabled` | `true` | 控制 WebDAV 是否可用 |
 | `max_versions_per_file` | `10` | 单个文件最多保留多少个历史版本 |
 | `trash_retention_days` | `7` | 回收站项目保留天数 |
@@ -34,6 +39,7 @@
 
 ## 修改后什么时候生效
 
+- 认证 Cookie 安全策略和 Token 有效期: 新登录、刷新和分享密码验证请求会立即按新值生效
 - WebDAV 开关: 修改后立即生效
 - 回收站保留天数: 后台清理任务会按新值清理
 - 历史版本数量: 新版本产生时按新规则处理
@@ -48,6 +54,11 @@
 ### 新用户默认配额
 
 如果你希望每个新用户一开始就有统一空间，在这里设置。
+
+### 认证与会话
+
+如果你已经切到 HTTPS，对外服务时应保持 `auth_cookie_secure = true`。
+如果只是临时纯 HTTP 内网调试，可以先把它关掉，但别把这种状态长期带到正式环境里。
 
 ### 回收站保留天数
 

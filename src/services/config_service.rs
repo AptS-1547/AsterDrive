@@ -1,4 +1,5 @@
 use crate::api::pagination::{OffsetPage, load_offset_page};
+use crate::config::auth_runtime;
 use crate::config::cors;
 use crate::config::definitions::ALL_CONFIGS;
 use crate::db::repository::config_repo;
@@ -102,6 +103,13 @@ fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
 
 fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<String> {
     match key {
+        auth_runtime::AUTH_COOKIE_SECURE_KEY => {
+            auth_runtime::normalize_cookie_secure_config_value(value)
+        }
+        auth_runtime::AUTH_ACCESS_TOKEN_TTL_SECS_KEY
+        | auth_runtime::AUTH_REFRESH_TOKEN_TTL_SECS_KEY => {
+            auth_runtime::normalize_token_ttl_config_value(key, value)
+        }
         cors::CORS_ALLOWED_ORIGINS_KEY => {
             let normalized = cors::normalize_allowed_origins_config_value(value)?;
             let parsed = cors::parse_allowed_origins_value(&normalized)?;

@@ -12,14 +12,14 @@ docker run -d \
   --name asterdrive \
   -p 3000:3000 \
   -e ASTER__SERVER__HOST=0.0.0.0 \
-  -e ASTER__AUTH__COOKIE_SECURE=false \
+  -e ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true \
   -e ASTER__DATABASE__URL="sqlite:///data/asterdrive.db?mode=rwc" \
   -v asterdrive-data:/data \
   ghcr.io/apts-1547/asterdrive:latest
 ```
 
 这条命令适合本地或内网里的纯 HTTP 试跑环境。
-如果你已经准备好用 HTTPS 对外提供服务，把 `ASTER__AUTH__COOKIE_SECURE=false` 去掉，或者在配置文件里保持 `cookie_secure = true`。
+如果你已经准备好用 HTTPS 对外提供服务，把这个环境变量去掉，并在后台系统设置里保持 `auth_cookie_secure = true`。
 
 第一次成功启动后，AsterDrive 会自动完成这些准备工作:
 

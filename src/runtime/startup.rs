@@ -1,5 +1,6 @@
 use super::AppState;
 use crate::config;
+use crate::config::auth_runtime::AUTH_COOKIE_SECURE_KEY;
 use crate::db;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::DriverRegistry;
@@ -22,23 +23,32 @@ pub async fn prepare() -> Result<AppState> {
     ensure_default_policy(&database).await?;
     crate::services::policy_service::ensure_policy_groups_seeded(&database).await?;
 
-    // 4. 确保默认运行时配置存在
+    // 4. 首次初始化认证 cookie 策略，避免纯 HTTP 引导时把自己锁在后台外
+    let bootstrap_cookie_secure = (!cfg.auth.bootstrap_insecure_cookies).to_string();
+    crate::db::repository::config_repo::ensure_system_value_if_missing(
+        &database,
+        AUTH_COOKIE_SECURE_KEY,
+        &bootstrap_cookie_secure,
+    )
+    .await?;
+
+    // 5. 确保默认运行时配置存在
     crate::db::repository::config_repo::ensure_defaults(&database).await?;
 
-    // 5. 初始化运行时快照
+    // 6. 初始化运行时快照
     let runtime_config = Arc::new(crate::config::RuntimeConfig::new());
     runtime_config.reload(&database).await?;
 
     let policy_snapshot = Arc::new(crate::storage::PolicySnapshot::new());
     policy_snapshot.reload(&database).await?;
 
-    // 6. 驱动注册中心
+    // 7. 驱动注册中心
     let driver_registry = Arc::new(DriverRegistry::new());
 
-    // 7. 初始化缓存
+    // 8. 初始化缓存
     let cache = crate::cache::create_cache(&cfg.cache).await;
 
-    // 8. 缩略图后台队列（channel 容量 1024，溢出时 drop）
+    // 9. 缩略图后台队列（channel 容量 1024，溢出时 drop）
     let (thumbnail_tx, thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(1024);
 
     tracing::info!(

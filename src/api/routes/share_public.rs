@@ -3,6 +3,7 @@ use crate::api::middleware::rate_limit;
 use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
+use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{profile_service, share_service};
@@ -116,10 +117,11 @@ pub async fn verify_password(
     body: web::Json<VerifyPasswordReq>,
 ) -> Result<HttpResponse> {
     let result = share_service::verify_password_and_sign(&state, &path, &body.password).await?;
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     let cookie = build_share_cookie(
         path.as_str(),
         result.cookie_signature,
-        state.config.auth.cookie_secure,
+        auth_policy.cookie_secure,
     );
 
     Ok(HttpResponse::Ok()

@@ -12,9 +12,7 @@ retry_count = 3
 
 [auth]
 jwt_secret = "change-me-in-production"
-access_token_ttl_secs = 900       # 15 分钟
-refresh_token_ttl_secs = 604800   # 7 天
-cookie_secure = true              # 自动生成的默认配置为 true；纯 HTTP 测试时可临时改为 false
+bootstrap_insecure_cookies = false  # 仅首次初始化 auth_cookie_secure 时生效；纯 HTTP 首启可临时设为 true
 
 [cache]
 enabled = true

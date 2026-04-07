@@ -38,10 +38,11 @@ AsterDrive 只需要启动一个服务。
 
 ```toml
 [auth]
-cookie_secure = true
+bootstrap_insecure_cookies = false
 ```
 
-如果你只是本地或内网 HTTP 测试，可以临时改成 `false`，等正式切到 HTTPS 再改回。
+如果你只是本地或内网 HTTP 首次引导，可以临时设成 `true`，让系统把运行时配置 `auth_cookie_secure` 初始化成 `false`。
+等正式切到 HTTPS 后，再到后台系统设置里把 `auth_cookie_secure` 改回 `true`。
 
 ### WebDAV
 

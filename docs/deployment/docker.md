@@ -26,13 +26,14 @@ docker run -d \
   --name asterdrive \
   -p 3000:3000 \
   -e ASTER__SERVER__HOST=0.0.0.0 \
-  -e ASTER__AUTH__COOKIE_SECURE=false \
+  -e ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true \
   -e ASTER__DATABASE__URL="sqlite:///data/asterdrive.db?mode=rwc" \
   -v asterdrive-data:/data \
   ghcr.io/apts-1547/asterdrive:latest
 ```
 
-正式切到 HTTPS 后，把 `ASTER__AUTH__COOKIE_SECURE=false` 去掉，或者在配置文件里改回 `true`。
+这只会在首次初始化 `auth_cookie_secure` 时把它写成 `false`。
+正式切到 HTTPS 后，把后台 `管理 -> 系统设置 -> auth_cookie_secure` 改回 `true`，然后把这个环境变量去掉。
 
 ## 长期部署建议挂载配置文件
 
@@ -41,7 +42,7 @@ docker run -d \
 ```toml
 [auth]
 jwt_secret = "replace-with-your-own-random-secret"
-cookie_secure = true
+bootstrap_insecure_cookies = false
 
 [server]
 temp_dir = "/data/.tmp"
@@ -86,7 +87,8 @@ volumes:
 ## 第一次部署最值得先确认的项
 
 - `auth.jwt_secret` 是否已经固定
-- 如果暂时是纯 HTTP 测试，`auth.cookie_secure` 是否是 `false`
+- 如果暂时是纯 HTTP 测试，是否只在首次引导时设置了 `bootstrap_insecure_cookies = true`
+- 切到 HTTPS 后，后台 `auth_cookie_secure` 是否已经改回 `true`
 - 数据库、上传目录和临时目录是否确实落在持久化卷里
 - 默认策略组是否已经创建
 - 如果以后要走 S3 / MinIO，是否已经计划好对象存储的 CORS 和密钥管理

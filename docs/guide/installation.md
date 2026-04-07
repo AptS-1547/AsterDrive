@@ -37,14 +37,14 @@ AsterDrive 只需要启动一个服务。
 
 ```toml
 [auth]
-cookie_secure = true
+bootstrap_insecure_cookies = false
 ```
 
-如果你只是本机或内网 HTTP 测试，可以临时改成:
+如果你只是本机或内网 HTTP 首次引导，可以临时改成:
 
 ```toml
 [auth]
-cookie_secure = false
+bootstrap_insecure_cookies = true
 ```
 
 ### 3. 用户是否允许自行注册
@@ -86,7 +86,7 @@ docker run -d \
 如果你现在还是纯 HTTP 测试环境，额外加上:
 
 ```bash
--e ASTER__AUTH__COOKIE_SECURE=false
+-e ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true
 ```
 
 默认情况下，`/data` 会承载:
@@ -115,7 +115,7 @@ systemd 适合长期运行的 Linux 服务器。
 纯 HTTP 测试环境可以这样临时启动:
 
 ```bash
-ASTER__AUTH__COOKIE_SECURE=false ./aster_drive
+ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true ./aster_drive
 ```
 
 ## 首次启动后会自动完成什么

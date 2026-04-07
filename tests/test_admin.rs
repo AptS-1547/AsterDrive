@@ -94,6 +94,15 @@ async fn test_admin_scope_allows_admin_users() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert!(body["data"].is_array());
+    let keys = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item.get("key").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    assert!(keys.contains(&"auth_cookie_secure"));
+    assert!(keys.contains(&"auth_access_token_ttl_secs"));
+    assert!(keys.contains(&"auth_refresh_token_ttl_secs"));
 }
 
 #[actix_web::test]

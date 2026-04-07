@@ -4,7 +4,7 @@ mod common;
 use actix_web::cookie::SameSite;
 use actix_web::test;
 use serde_json::Value;
-use std::{io::Cursor, sync::Arc};
+use std::io::Cursor;
 
 fn avatar_upload_payload() -> (String, Vec<u8>) {
     let boundary = "----AsterShareAvatarBoundary".to_string();
@@ -264,10 +264,11 @@ async fn test_share_password() {
 
 #[actix_web::test]
 async fn test_share_verify_cookie_scoped_and_secure_when_enabled() {
-    let mut state = common::setup().await;
-    let mut config = (*state.config).clone();
-    config.auth.cookie_secure = true;
-    state.config = Arc::new(config);
+    let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        aster_drive::config::auth_runtime::AUTH_COOKIE_SECURE_KEY,
+        "true",
+    ));
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
     let file_id = upload_test_file!(app, token);

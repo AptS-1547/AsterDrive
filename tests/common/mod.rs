@@ -27,6 +27,19 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::fs::create_dir_all(&upload_temp_dir).unwrap();
 
+    let config = std::sync::Arc::new(aster_drive::config::Config {
+        server: aster_drive::config::ServerConfig {
+            temp_dir,
+            upload_temp_dir,
+            ..Default::default()
+        },
+        auth: aster_drive::config::AuthConfig {
+            jwt_secret: "test-secret-key-for-integration-tests".to_string(),
+            bootstrap_insecure_cookies: true,
+        },
+        ..Default::default()
+    });
+
     // 创建默认本地存储策略
     use chrono::Utc;
     use sea_orm::Set;
@@ -58,6 +71,14 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
         .await
         .unwrap();
 
+    aster_drive::db::repository::config_repo::ensure_system_value_if_missing(
+        &db,
+        aster_drive::config::auth_runtime::AUTH_COOKIE_SECURE_KEY,
+        "false",
+    )
+    .await
+    .unwrap();
+
     aster_drive::db::repository::config_repo::ensure_defaults(&db)
         .await
         .unwrap();
@@ -68,21 +89,6 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
         ..Default::default()
     };
     let cache = aster_drive::cache::create_cache(&cache_config).await;
-
-    let config = std::sync::Arc::new(aster_drive::config::Config {
-        server: aster_drive::config::ServerConfig {
-            temp_dir,
-            upload_temp_dir,
-            ..Default::default()
-        },
-        auth: aster_drive::config::AuthConfig {
-            jwt_secret: "test-secret-key-for-integration-tests".to_string(),
-            access_token_ttl_secs: 900,
-            refresh_token_ttl_secs: 604800,
-            cookie_secure: false,
-        },
-        ..Default::default()
-    });
 
     // 初始化全局 config（WebDAV file.rs 内部调 get_config() 需要）
     // OnceLock 只设置一次，后续调用忽略
@@ -114,6 +120,24 @@ pub fn extract_cookie<B>(resp: &actix_web::dev::ServiceResponse<B>, name: &str) 
         .cookies()
         .find(|c| c.name() == name)
         .map(|c| c.value().to_string())
+}
+
+#[allow(dead_code)]
+pub fn system_config_model(key: &str, value: &str) -> aster_drive::entities::system_config::Model {
+    aster_drive::entities::system_config::Model {
+        id: 0,
+        key: key.to_string(),
+        value: value.to_string(),
+        value_type: "string".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        source: "system".to_string(),
+        namespace: String::new(),
+        category: "test".to_string(),
+        description: "test".to_string(),
+        updated_at: chrono::Utc::now(),
+        updated_by: None,
+    }
 }
 
 /// 创建标准测试 App

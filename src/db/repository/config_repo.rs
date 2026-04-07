@@ -86,6 +86,38 @@ pub async fn delete_by_key<C: ConnectionTrait>(db: &C, key: &str) -> Result<()> 
     Ok(())
 }
 
+pub async fn ensure_system_value_if_missing<C: ConnectionTrait>(
+    db: &C,
+    key: &str,
+    value: &str,
+) -> Result<bool> {
+    if find_by_key(db, key).await?.is_some() {
+        return Ok(false);
+    }
+
+    let def = ALL_CONFIGS
+        .iter()
+        .find(|def| def.key == key)
+        .ok_or_else(|| AsterError::record_not_found(format!("config key '{key}'")))?;
+    let now = Utc::now();
+    let model = system_config::ActiveModel {
+        key: Set(def.key.to_string()),
+        value: Set(value.to_string()),
+        value_type: Set(def.value_type.to_string()),
+        requires_restart: Set(def.requires_restart),
+        is_sensitive: Set(def.is_sensitive),
+        source: Set("system".to_string()),
+        namespace: Set(String::new()),
+        category: Set(def.category.to_string()),
+        description: Set(def.description.to_string()),
+        updated_at: Set(now),
+        updated_by: Set(None),
+        ..Default::default()
+    };
+    model.insert(db).await.map_err(AsterError::from)?;
+    Ok(true)
+}
+
 /// 确保所有系统配置存在，同步元信息（不覆盖用户修改的 value）
 pub async fn ensure_defaults<C: ConnectionTrait>(db: &C) -> Result<usize> {
     let mut count = 0;
