@@ -21,7 +21,7 @@
 - `GET /folders/{id}`：读取指定目录内容
 - `GET /folders/{id}/ancestors`：返回当前目录的祖先链，供前端面包屑使用
 
-目录列表会过滤一批常见系统垃圾文件名，例如 `._*`、`~$*`、`.DS_Store`。
+当前 REST 目录列表按数据库中的真实条目返回，不会在 API 层额外过滤 `._*`、`~$*`、`.DS_Store` 这类名字。
 
 `GET /folders` 和 `GET /folders/{id}` 还支持当前实现的分页 / 排序参数：
 

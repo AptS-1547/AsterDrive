@@ -64,6 +64,7 @@
 | `GET` | `/teams/{team_id}/files/upload/{upload_id}` | 查询团队上传进度 |
 | `DELETE` | `/teams/{team_id}/files/upload/{upload_id}` | 取消团队上传 |
 | `GET` | `/teams/{team_id}/files/{id}` | 获取团队文件元信息 |
+| `GET` | `/teams/{team_id}/files/{id}/direct-link` | 生成团队文件直接下载链接 token |
 | `GET` | `/teams/{team_id}/files/{id}/download` | 下载团队文件 |
 | `GET` | `/teams/{team_id}/files/{id}/thumbnail` | 获取团队文件缩略图 |
 | `PUT` | `/teams/{team_id}/files/{id}/content` | 覆盖团队文件内容 |
@@ -107,5 +108,7 @@
 
 只有两条团队特有语义需要额外记住：
 
-- 团队分享的公开访问仍然走 `/s/{token}`，不是 `/teams/{team_id}/s/{token}`
+- 团队分享的公开 REST 访问仍然走 `/api/v1/s/{token}`，前端公开页面仍然是 `/s/:token`，不是 `/teams/{team_id}/s/{token}`
 - 文件写入时会优先使用目录级 `policy_id`；没有目录覆盖时，再按 `teams.policy_group_id` 的规则解析实际存储策略
+
+团队文件的 `GET /teams/{team_id}/files/{id}/direct-link` 语义和个人空间一致：接口只返回 token，真正下载仍然走根路径 `/d/{token}/{filename}`。

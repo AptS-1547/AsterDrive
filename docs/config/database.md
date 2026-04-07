@@ -1,5 +1,7 @@
 # 数据库配置
 
+`[database]` 决定 AsterDrive 连接哪个数据库，以及启动时数据库连接要重试几次。
+
 ```toml
 [database]
 url = "sqlite://asterdrive.db?mode=rwc"
@@ -9,15 +11,15 @@ retry_count = 3
 
 ## 先选数据库类型
 
-- SQLite: 单机、NAS、个人或小团队部署最省心
-- PostgreSQL: 已经有现成 PostgreSQL，或者希望接入现有运维体系
-- MySQL: 已经在用 MySQL，想保持统一
+- SQLite：单机、NAS、个人或小团队部署最省心
+- PostgreSQL：已经有现成 PostgreSQL，或者希望接入现有运维体系
+- MySQL：已经在用 MySQL，想保持统一
 
 第一次部署，大多数场景都可以先用 SQLite。
 
-## 字段说明
+## 各字段的作用
 
-| 字段 | 默认值 | 说明 |
+| 字段 | 默认值 | 作用 |
 | --- | --- | --- |
 | `url` | `"sqlite://asterdrive.db?mode=rwc"` | 数据库连接字符串 |
 | `pool_size` | `10` | 连接池大小 |
@@ -31,7 +33,7 @@ retry_count = 3
 url = "sqlite://asterdrive.db?mode=rwc"
 ```
 
-Docker 里常见写法:
+Docker 里更常见的写法是：
 
 ```toml
 url = "sqlite:///data/asterdrive.db?mode=rwc"
@@ -51,7 +53,7 @@ url = "mysql://user:password@localhost:3306/asterdrive"
 
 ## 启动时会自动做什么
 
-每次启动时，AsterDrive 都会:
+每次启动时，AsterDrive 都会：
 
 1. 建立数据库连接
 2. 自动更新数据库结构
@@ -63,19 +65,19 @@ url = "mysql://user:password@localhost:3306/asterdrive"
 
 默认 SQLite 使用相对路径，所以数据库文件会落在当前工作目录。
 
-例如:
+例如：
 
-- 本地直接运行: 落在你执行命令的目录
-- systemd: 落在 `WorkingDirectory`
-- Docker: 如果你写成 `sqlite:///data/asterdrive.db?mode=rwc`，数据库会落在 `/data`
+- 本地直接运行：落在你执行命令的目录
+- systemd：落在 `WorkingDirectory`
+- Docker：如果你写成 `sqlite:///data/asterdrive.db?mode=rwc`，数据库会落在 `/data`
 
 长期部署时，建议把 SQLite 放到固定目录或持久化卷里。
 
-## 一般什么时候需要改 `pool_size` 和 `retry_count`
+## 什么时候需要改 `pool_size` 和 `retry_count`
 
-- 单机、小团队: 通常保持默认
-- 外部数据库启动较慢: 可以适当提高 `retry_count`
-- 并发较高、数据库也允许更多连接: 再考虑提高 `pool_size`
+- 单机、小团队：通常保持默认
+- 外部数据库启动较慢：可以适当提高 `retry_count`
+- 并发较高、数据库本身也允许更多连接：再考虑提高 `pool_size`
 
 ## 对应环境变量
 

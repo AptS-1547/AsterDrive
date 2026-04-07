@@ -1,25 +1,25 @@
 # Docker 部署
 
 Docker 适合 NAS、单机和小团队部署。  
-最简单的做法是把数据库、上传目录和临时目录都放到 `/data`，这样升级容器时最不容易丢数据。
+最省心的做法是把数据库、上传目录和临时目录都放到 `/data`，这样升级容器时最不容易丢数据。
 
 ## `/data` 里通常会有什么
 
-如果你使用官方镜像并保持默认相对路径，`/data` 会承载:
+如果你使用官方镜像并把数据库与临时目录都指向 `/data`，卷里通常会看到：
 
 - `asterdrive.db`
 - `uploads/`
 - `.tmp/`
 - `.uploads/`
 
-其中:
+其中：
 
 - `asterdrive.db` 和 `uploads/` 需要长期保留
 - `.tmp/` 和 `.uploads/` 一般不用备份，但会影响本地磁盘占用
 
 ## 先试跑一遍
 
-如果你现在还是纯 HTTP 测试环境，可以先直接运行:
+如果你现在还是纯 HTTP 测试环境，可以先直接运行：
 
 ```bash
 docker run -d \
@@ -32,12 +32,12 @@ docker run -d \
   ghcr.io/apts-1547/asterdrive:latest
 ```
 
-这只会在首次初始化 `auth_cookie_secure` 时把它写成 `false`。
-正式切到 HTTPS 后，把后台 `管理 -> 系统设置 -> auth_cookie_secure` 改回 `true`，然后把这个环境变量去掉。
+这只会在第一次初始化时把浏览器 Cookie 的 HTTPS 要求设成关闭。  
+正式切到 HTTPS 后，到后台把对应系统设置改回开启，然后把这个环境变量去掉。
 
 ## 长期部署建议挂载配置文件
 
-在宿主机准备一个 `config.toml`，只写你要覆盖的项目即可，例如:
+在宿主机准备一个 `config.toml`，只写你要覆盖的项目即可，例如：
 
 ```toml
 [auth]
@@ -49,7 +49,7 @@ temp_dir = "/data/.tmp"
 upload_temp_dir = "/data/.uploads"
 ```
 
-然后把它只读挂载进容器:
+然后把它只读挂载进容器：
 
 ```bash
 docker run -d \
@@ -62,7 +62,7 @@ docker run -d \
   ghcr.io/apts-1547/asterdrive:latest
 ```
 
-如果你不挂载 `config.toml`，容器第一次启动时也会自动生成一份默认配置，但它会留在容器内部，不适合长期正式部署。
+如果不挂载 `config.toml`，容器第一次启动时也会自动生成一份默认配置，但它会留在容器内部，不适合长期正式部署。
 
 ## Compose 示例
 
@@ -88,10 +88,10 @@ volumes:
 
 - `auth.jwt_secret` 是否已经固定
 - 如果暂时是纯 HTTP 测试，是否只在首次引导时设置了 `bootstrap_insecure_cookies = true`
-- 切到 HTTPS 后，后台 `auth_cookie_secure` 是否已经改回 `true`
+- 切到 HTTPS 后，后台系统设置里的 Cookie 安全开关是否已经改回开启
 - 数据库、上传目录和临时目录是否确实落在持久化卷里
 - 默认策略组是否已经创建
-- 如果以后要走 S3 / MinIO，是否已经计划好对象存储的 CORS 和密钥管理
+- 如果以后要走 S3 / MinIO，是否已经计划好对象存储 CORS 和密钥管理
 
 ## 查看运行状态
 
@@ -101,7 +101,7 @@ docker logs -f asterdrive
 
 ## 升级
 
-使用 `docker compose` 时，升级通常就是:
+使用 `docker compose` 时，升级通常就是：
 
 ```bash
 docker compose pull

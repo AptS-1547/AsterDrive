@@ -1,9 +1,9 @@
 # WebDAV 配置
 
-WebDAV 相关配置分成两部分:
+WebDAV 相关设置分成两部分：
 
 - `config.toml` 里的 `[webdav]`
-- `管理 -> 系统设置` 里的 `webdav_enabled`
+- `管理 -> 系统设置` 里的 WebDAV 开关
 
 ## `config.toml` 里的静态配置
 
@@ -13,22 +13,22 @@ prefix = "/webdav"
 payload_limit = 10737418240
 ```
 
-这两项都要在 `config.toml` 里改，改完后需要重启服务。
+这两项改完后都需要重启服务。
 
-## 字段说明
+## 各字段的作用
 
-| 字段 | 默认值 | 说明 |
+| 字段 | 默认值 | 作用 |
 | --- | --- | --- |
-| `prefix` | `"/webdav"` | WebDAV 路径前缀，修改后客户端地址也要一起修改 |
+| `prefix` | `"/webdav"` | WebDAV 路径前缀，改完后客户端地址也要一起改 |
 | `payload_limit` | `10737418240` | WebDAV 上传体积硬上限，默认 10 GiB |
 
 ## 后台里的运行时开关
 
-管理员在系统设置里关闭 `webdav_enabled` 后，WebDAV 会立刻停止对外提供服务。
+管理员在系统设置里关闭 WebDAV 后，WebDAV 会立刻停止对外提供服务。
 
 ## 普通用户一般怎么用
 
-最常见的做法是:
+最常见的做法是：
 
 1. 在左侧 `WebDAV` 页面创建一个专用账号
 2. 给它指定用户名和密码
@@ -43,15 +43,15 @@ payload_limit = 10737418240
 https://你的域名/webdav/
 ```
 
-如果你把 `prefix` 改成了 `/dav`，那客户端地址也要改成:
+如果你把 `prefix` 改成了 `/dav`，那客户端地址也要改成：
 
 ```text
 https://你的域名/dav/
 ```
 
-## 上传大小要看三处
+## WebDAV 上传大小要看三处
 
-如果你预计通过 WebDAV 上传大文件，要同时检查:
+如果你预计通过 WebDAV 上传大文件，要同时检查：
 
 - `webdav.payload_limit`
 - 反向代理的上传大小限制
@@ -61,7 +61,7 @@ https://你的域名/dav/
 
 ## 反向代理时不要丢这些内容
 
-如果 WebDAV 放在反向代理后面，请确保代理层不会丢失:
+如果 WebDAV 放在反向代理后面，请确保代理层不会丢失：
 
 - `Authorization`
 - `Depth`

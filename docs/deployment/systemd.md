@@ -13,7 +13,7 @@ sudo chown -R asterdrive:asterdrive /var/lib/asterdrive
 
 ## 2. 放置可执行文件
 
-把 `aster_drive` 可执行文件放到固定路径，例如:
+把 `aster_drive` 可执行文件放到固定路径，例如：
 
 ```bash
 sudo install -m 0755 ./aster_drive /usr/local/bin/aster_drive
@@ -21,15 +21,16 @@ sudo install -m 0755 ./aster_drive /usr/local/bin/aster_drive
 
 ## 3. 准备配置文件
 
-把 `config.toml` 放进工作目录:
+把 `config.toml` 放进工作目录：
 
 ```bash
 sudo cp config.toml /var/lib/asterdrive/config.toml
 sudo chown asterdrive:asterdrive /var/lib/asterdrive/config.toml
 ```
 
-如果你继续使用默认相对路径，工作目录下通常会出现:
+如果继续使用默认相对路径，工作目录下通常会出现：
 
+- `config.toml`
 - `asterdrive.db`
 - `data/uploads`
 - `data/.tmp`
@@ -39,7 +40,7 @@ sudo chown asterdrive:asterdrive /var/lib/asterdrive/config.toml
 
 ## 4. 写入 Service 文件
 
-创建 `/etc/systemd/system/asterdrive.service`:
+创建 `/etc/systemd/system/asterdrive.service`：
 
 ```ini
 [Unit]
@@ -60,8 +61,8 @@ Environment=RUST_LOG=info
 WantedBy=multi-user.target
 ```
 
-如果你现在还是内网 HTTP 测试，可以先在 `config.toml` 里把 `auth.bootstrap_insecure_cookies` 设成 `true`。
-它只会影响首次初始化 `auth_cookie_secure` 的默认值。正式切到 HTTPS 后，把后台里的 `auth_cookie_secure` 改回 `true`，再把这个静态引导项去掉。
+如果你现在还是内网 HTTP 测试环境，可以先在 `config.toml` 里把 `auth.bootstrap_insecure_cookies` 设成 `true`。  
+它只会影响第一次初始化时 Cookie 的 HTTPS 要求。正式切到 HTTPS 后，把后台对应设置改回开启，再把这个静态引导项去掉。
 
 ## 5. 启动服务
 
@@ -85,7 +86,7 @@ journalctl -u asterdrive -f
 - 管理后台里能看到默认策略组
 - 浏览器可以正常登录
 - 如果启用了 WebDAV，实际挂载路径与 `[webdav].prefix` 一致
-- 如果你把数据库、上传目录或临时目录放到其他磁盘，确认路径和权限没有写错
+- 如果把数据库、上传目录或临时目录放到其他磁盘，确认路径和权限没有写错
 
 ## 8. 常见环境变量写法
 

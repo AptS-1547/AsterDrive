@@ -52,6 +52,7 @@
 
 - REST API：`/api/v1/*`
 - 健康检查：`/health*`
+- 直接下载链接：`/d/{token}/{filename}`
 - WebDAV：默认挂载在 `/webdav`
 - 前端页面：管理面板与公开分享页由后端直接服务
 
@@ -79,6 +80,7 @@
 例外也要记住：
 
 - 下载、缩略图、分享下载、WebDAV 响应、Prometheus 指标不会走统一 JSON 包装
+- 直接下载链接 `/d/{token}/{filename}` 也不会走统一 JSON 包装
 - 前端页面路由是最后注册的兜底路由，所以 API / WebDAV 必须先于它注册
 
 ### WebDAV 请求

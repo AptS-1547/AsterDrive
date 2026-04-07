@@ -21,7 +21,10 @@
 - `limit`：每种资源类型的返回上限，默认 `50`，最大 `100`
 - `offset`：偏移量
 
-当前实现里，非法的 `created_after` / `created_before` 不会报错，而是被忽略。
+当前实现会校验时间参数：
+
+- `created_after` / `created_before` 必须是合法 RFC3339 时间字符串，否则返回 `400`
+- 如果两者都传，要求 `created_after <= created_before`，否则同样返回 `400`
 
 ## 返回结构
 

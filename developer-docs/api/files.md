@@ -15,6 +15,7 @@
 | `GET` | `/files/upload/{upload_id}` | 查询上传进度 |
 | `DELETE` | `/files/upload/{upload_id}` | 取消上传 |
 | `GET` | `/files/{id}` | 获取文件元信息 |
+| `GET` | `/files/{id}/direct-link` | 生成直接下载链接 token |
 | `GET` | `/files/{id}/download` | 下载文件内容 |
 | `GET` | `/files/{id}/thumbnail` | 获取缩略图 |
 | `PUT` | `/files/{id}/content` | 覆盖文件内容并写入版本历史 |
@@ -79,6 +80,7 @@
 ## 文件操作
 
 - `GET /files/{id}`：读取文件元信息；已进回收站的文件会按“找不到”处理
+- `GET /files/{id}/direct-link`：返回一个短 token；真正下载走根路径 `/d/{token}/{filename}`
 - `GET /files/{id}/download`：流式下载文件；支持 `If-None-Match`，命中时返回 `304`
 - `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
@@ -116,6 +118,32 @@
 ### 缩略图
 
 当前缩略图只对支持的图片类型生成，统一返回 WebP，并按 Blob 复用缓存。
+
+### `GET /files/{id}/direct-link`
+
+这个接口只返回：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "token": "..."
+  }
+}
+```
+
+拿到 token 后，实际下载地址是：
+
+```text
+/d/{token}/{filename}
+```
+
+其中：
+
+- `filename` 必须和当前文件名匹配；URL 编码后的同名也可以
+- 这个下载入口不走 `/api/v1`，返回原始文件流，不是 JSON
+- 追加 `?download=1` 可以强制走附件下载；不传时按 inline 处理
 
 ## 锁与复制
 

@@ -1,7 +1,14 @@
 # 部署概览
 
-AsterDrive 只需要启动一个服务。  
-浏览器页面、公开分享页、管理后台和 WebDAV 都在这个进程里，所以部署时最重要的事只有三件:
+AsterDrive 是单服务交付：
+
+- 浏览器页面
+- 公开分享页
+- 管理后台
+- WebDAV
+
+都由同一个进程提供。  
+部署时最重要的事只有三件：
 
 - 让服务稳定运行
 - 把数据保存好
@@ -19,13 +26,13 @@ AsterDrive 只需要启动一个服务。
 
 ### 数据目录
 
-重启或升级后必须保留下来的内容:
+重启或升级后必须保留下来的内容：
 
 - `config.toml`
 - 数据库
 - 本地上传目录
 
-服务运行时还会使用临时目录:
+服务运行时还会使用临时目录：
 
 - `data/.tmp`
 - `data/.uploads`
@@ -34,19 +41,19 @@ AsterDrive 只需要启动一个服务。
 
 ### 访问方式
 
-正式上线时，建议通过 HTTPS 提供服务，并保持:
+正式上线时，建议通过 HTTPS 提供服务，并保持：
 
 ```toml
 [auth]
 bootstrap_insecure_cookies = false
 ```
 
-如果你只是本地或内网 HTTP 首次引导，可以临时设成 `true`，让系统把运行时配置 `auth_cookie_secure` 初始化成 `false`。
-等正式切到 HTTPS 后，再到后台系统设置里把 `auth_cookie_secure` 改回 `true`。
+如果只是本地或内网 HTTP 首次引导，可以临时设成 `true`，让系统把浏览器 Cookie 的 HTTPS 要求初始化成关闭。  
+等正式切到 HTTPS 后，再到后台系统设置里把它改回开启。
 
 ### WebDAV
 
-如果你需要 Finder、Windows 或同步工具接入，部署时就要一起考虑:
+如果你需要 Finder、Windows 或同步工具接入，部署时就要一起考虑：
 
 - WebDAV 路径
 - 反向代理
@@ -54,19 +61,19 @@ bootstrap_insecure_cookies = false
 
 ### 存储位置
 
-- 本地磁盘: 部署最简单
-- S3 / MinIO: 适合对象存储场景
+- 本地磁盘：部署最简单
+- S3 / MinIO：适合对象存储场景
 
 ## 首次启动会自动完成什么
 
-只要服务成功启动，就会自动完成这些准备:
+只要服务成功启动，就会自动完成这些准备：
 
 - 生成默认 `config.toml`
 - 连接数据库并自动更新数据库结构
 - 自动创建默认本地存储策略 `Local Default`
 - 自动创建默认策略组 `Default Policy Group`
 - 初始化系统设置
-- 启动上传清理、回收站清理、锁清理和审计日志清理任务
+- 启动上传清理、回收站清理、团队归档清理、锁清理和审计日志清理任务
 
 ## 上线后先验收这几项
 
@@ -77,3 +84,11 @@ bootstrap_insecure_cookies = false
 5. 分享链接可以打开
 6. `管理 -> 存储策略` 和 `管理 -> 策略组` 能正常打开
 7. 如果启用了 WebDAV，桌面客户端能成功连接
+
+## 下一步看哪里
+
+- 用 Docker：看 [Docker 部署](/deployment/docker)
+- 用 systemd：看 [systemd 部署](/deployment/systemd)
+- 准备挂 HTTPS：看 [反向代理](/deployment/proxy)
+- 想确认首次启动到底自动做了哪些事：看 [首次启动检查](/deployment/runtime-behavior)
+- 准备升级：看 [升级与浏览器缓存](/deployment/frontend-assets)
