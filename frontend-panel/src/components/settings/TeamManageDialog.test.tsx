@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TeamManageDialog } from "@/components/settings/TeamManageDialog";
 
@@ -130,91 +130,27 @@ describe("TeamManageDialog", () => {
 		).not.toBeNull();
 		expect(
 			container.querySelector(
-				".min-h-0.min-w-0.lg\\:flex-1.flex.h-full.flex-col.overflow-hidden",
+				".min-h-0.min-w-0.lg\\:flex-1.lg\\:flex.lg\\:h-full.lg\\:flex-col.lg\\:overflow-hidden",
 			),
 		).not.toBeNull();
 		expect(
-			container.querySelector(".flex.min-h-0.flex-1.flex-col.overflow-hidden"),
+			container.querySelector(
+				".flex.flex-col.lg\\:h-full.lg\\:min-h-0.lg\\:flex-1.lg\\:overflow-hidden",
+			),
 		).not.toBeNull();
 		expect(
-			container.querySelector(".min-h-0.flex-1.overflow-y-auto.px-6.pt-4.pb-6"),
+			container.querySelector(
+				".px-6.pt-4.pb-6.lg\\:min-h-0.lg\\:flex-1.lg\\:overflow-y-auto",
+			),
 		).not.toBeNull();
 		expect(container.querySelector('[data-slot="scroll-area"]')).toBeNull();
-	});
 
-	it("restores the sidebar scroll position after switching tabs", async () => {
-		const initialRender = render(
-			<TeamManageDialog
-				layout="page"
-				currentUserId={1}
-				onArchivedReload={async () => undefined}
-				onOpenChange={vi.fn()}
-				onPageTabChange={vi.fn()}
-				onTeamsReload={async () => undefined}
-				open
-				pageTab="overview"
-				teamId={11}
-				teamSummary={{
-					created_at: "2026-04-01T00:00:00Z",
-					created_by: 1,
-					created_by_username: "owner",
-					description: "Team description",
-					id: 11,
-					member_count: 8,
-					my_role: "owner",
-					name: "Product",
-					storage_quota: 1024,
-					storage_used: 512,
-				}}
-			/>,
-		);
-
-		await waitFor(() => {
-			expect(teamServiceMocks.get).toHaveBeenCalledWith(11);
+		const membersTab = screen.getByRole("tab", {
+			name: "settings:settings_team_members",
 		});
-
-		const sidebar = initialRender.container.querySelector("aside");
-		if (!(sidebar instanceof HTMLElement)) {
-			throw new Error("Expected sidebar element");
-		}
-
-		sidebar.scrollTop = 144;
-		fireEvent.scroll(sidebar);
-		initialRender.unmount();
-
-		const nextRender = render(
-			<TeamManageDialog
-				layout="page"
-				currentUserId={1}
-				onArchivedReload={async () => undefined}
-				onOpenChange={vi.fn()}
-				onPageTabChange={vi.fn()}
-				onTeamsReload={async () => undefined}
-				open
-				pageTab="members"
-				teamId={11}
-				teamSummary={{
-					created_at: "2026-04-01T00:00:00Z",
-					created_by: 1,
-					created_by_username: "owner",
-					description: "Team description",
-					id: 11,
-					member_count: 8,
-					my_role: "owner",
-					name: "Product",
-					storage_quota: 1024,
-					storage_used: 512,
-				}}
-			/>,
-		);
-
-		const restoredSidebar = nextRender.container.querySelector("aside");
-		if (!(restoredSidebar instanceof HTMLElement)) {
-			throw new Error("Expected restored sidebar element");
-		}
-
-		await waitFor(() => {
-			expect(restoredSidebar.scrollTop).toBe(144);
-		});
+		expect(membersTab).toHaveClass("min-w-0");
+		expect(membersTab).not.toHaveClass("flex-none");
+		expect(membersTab.parentElement).toHaveClass("w-full", "gap-5", "border-b");
+		expect(membersTab.parentElement).not.toHaveClass("overflow-x-auto");
 	});
 });

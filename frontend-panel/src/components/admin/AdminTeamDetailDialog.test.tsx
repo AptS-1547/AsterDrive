@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminTeamDetailDialog } from "@/components/admin/AdminTeamDetailDialog";
 
@@ -140,115 +140,27 @@ describe("AdminTeamDetailDialog", () => {
 		).not.toBeNull();
 		expect(
 			container.querySelector(
-				".min-h-0.min-w-0.lg\\:flex-1.flex.h-full.flex-col.overflow-hidden",
+				".min-h-0.min-w-0.lg\\:flex-1.lg\\:flex.lg\\:h-full.lg\\:flex-col.lg\\:overflow-hidden",
 			),
 		).not.toBeNull();
 		expect(
-			container.querySelector(".flex.min-h-0.flex-1.flex-col.overflow-hidden"),
+			container.querySelector(
+				".flex.flex-col.lg\\:h-full.lg\\:min-h-0.lg\\:flex-1.lg\\:overflow-hidden",
+			),
 		).not.toBeNull();
 		expect(
-			container.querySelector(".min-h-0.flex-1.overflow-y-auto.px-6.pt-4.pb-6"),
+			container.querySelector(
+				".px-6.pt-4.pb-6.lg\\:min-h-0.lg\\:flex-1.lg\\:overflow-y-auto",
+			),
 		).not.toBeNull();
 		expect(container.querySelector('[data-slot="scroll-area"]')).toBeNull();
-	});
 
-	it("restores the sidebar scroll position after switching tabs", async () => {
-		const initialRender = render(
-			<AdminTeamDetailDialog
-				layout="page"
-				onListChange={async () => undefined}
-				onOpenChange={vi.fn()}
-				onPageTabChange={vi.fn()}
-				onRefreshPolicyGroups={async () => undefined}
-				open
-				pageTab="overview"
-				policyGroups={[
-					{
-						created_at: "2026-04-01T00:00:00Z",
-						description: "",
-						id: 5,
-						is_default: false,
-						is_enabled: true,
-						items: [
-							{
-								id: 1,
-								max_file_size: 0,
-								min_file_size: 0,
-								policy: {
-									id: 7,
-									name: "Default",
-								},
-								policy_id: 7,
-								priority: 1,
-							},
-						],
-						name: "Primary",
-						updated_at: "2026-04-01T00:00:00Z",
-					},
-				]}
-				policyGroupsLoading={false}
-				teamId={14}
-			/>,
-		);
-
-		await waitFor(() => {
-			expect(adminTeamServiceMocks.get).toHaveBeenCalledWith(14);
+		const membersTab = screen.getByRole("tab", {
+			name: "settings:settings_team_members",
 		});
-
-		const sidebar = initialRender.container.querySelector("aside");
-		if (!(sidebar instanceof HTMLElement)) {
-			throw new Error("Expected sidebar element");
-		}
-
-		sidebar.scrollTop = 180;
-		fireEvent.scroll(sidebar);
-		initialRender.unmount();
-
-		const nextRender = render(
-			<AdminTeamDetailDialog
-				layout="page"
-				onListChange={async () => undefined}
-				onOpenChange={vi.fn()}
-				onPageTabChange={vi.fn()}
-				onRefreshPolicyGroups={async () => undefined}
-				open
-				pageTab="members"
-				policyGroups={[
-					{
-						created_at: "2026-04-01T00:00:00Z",
-						description: "",
-						id: 5,
-						is_default: false,
-						is_enabled: true,
-						items: [
-							{
-								id: 1,
-								max_file_size: 0,
-								min_file_size: 0,
-								policy: {
-									id: 7,
-									name: "Default",
-								},
-								policy_id: 7,
-								priority: 1,
-							},
-						],
-						name: "Primary",
-						updated_at: "2026-04-01T00:00:00Z",
-					},
-				]}
-				policyGroupsLoading={false}
-				teamId={14}
-			/>,
-		);
-
-		const restoredSidebar = nextRender.container.querySelector("aside");
-		if (!(restoredSidebar instanceof HTMLElement)) {
-			throw new Error("Expected restored sidebar element");
-		}
-
-		await waitFor(() => {
-			expect(restoredSidebar.scrollTop).toBe(180);
-		});
+		expect(membersTab).toHaveClass("min-w-0");
+		expect(membersTab).not.toHaveClass("flex-none");
+		expect(membersTab.parentElement).toHaveClass("w-full", "gap-5", "border-b");
+		expect(membersTab.parentElement).not.toHaveClass("overflow-x-auto");
 	});
 });

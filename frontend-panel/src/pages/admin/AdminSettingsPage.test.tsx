@@ -174,9 +174,13 @@ vi.mock("@/components/ui/tabs", async () => {
 				<div>{children}</div>
 			</TabsContext.Provider>
 		),
-		TabsList: ({ children }: { children: React.ReactNode }) => (
-			<div>{children}</div>
-		),
+		TabsList: ({
+			children,
+			className,
+		}: {
+			children: React.ReactNode;
+			className?: string;
+		}) => <div className={className}>{children}</div>,
 		TabsTrigger: ({
 			children,
 			className,
@@ -376,6 +380,21 @@ describe("AdminSettingsPage", () => {
 		).toBeInTheDocument();
 	});
 
+	it("keeps category descriptions in the desktop sidebar without repeating them in content", async () => {
+		Object.defineProperty(window, "innerWidth", {
+			configurable: true,
+			value: 1440,
+			writable: true,
+		});
+
+		render(<AdminSettingsPage section="auth" />);
+
+		await screen.findByDisplayValue("1200");
+
+		expect(screen.getAllByText("settings_category_auth_desc")).toHaveLength(1);
+		expect(screen.getAllByText("Shield")).toHaveLength(1);
+	});
+
 	it("renders category tabs and only saves boolean changes from the bottom action", async () => {
 		render(<AdminSettingsPage section="storage" />);
 
@@ -413,23 +432,33 @@ describe("AdminSettingsPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
 	});
 
-	it("uses background highlighting for compact category tabs instead of border accents", async () => {
+	it("uses the shared underline accent for compact category tabs", async () => {
 		render(<AdminSettingsPage />);
 
 		const storageTab = await screen.findByRole("button", {
 			name: /settings_category_storage/i,
 		});
 
-		expect(storageTab).toHaveClass("group", "border-0", "after:hidden");
-		expect(storageTab.className).not.toContain("border-b-2");
+		expect(storageTab).toHaveClass("h-10", "rounded-none", "px-0");
+		expect(storageTab).not.toHaveClass("after:hidden");
 
 		const tabContent = storageTab.firstElementChild;
 		expect(tabContent).not.toBeNull();
-		expect(tabContent).toHaveClass("group-data-[active]:bg-muted/70");
+		expect(tabContent).not.toHaveClass("group-data-[active]:bg-muted/70");
 
-		const compactNav = storageTab.parentElement?.parentElement;
+		const compactTabList = storageTab.parentElement;
+		expect(compactTabList).not.toBeNull();
+		expect(compactTabList).toHaveClass(
+			"overflow-hidden",
+			"border-b",
+			"border-border/40",
+			"pb-2",
+		);
+		expect(compactTabList).not.toHaveClass("overflow-x-auto");
+
+		const compactNav = compactTabList?.parentElement;
 		expect(compactNav).not.toBeNull();
-		expect(compactNav).toHaveClass("border-b", "border-border/40");
+		expect(compactNav).toHaveClass("items-end");
 	});
 
 	it("adds a vertical divider for the desktop category sidebar", async () => {

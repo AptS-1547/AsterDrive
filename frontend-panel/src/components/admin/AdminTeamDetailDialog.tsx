@@ -82,6 +82,13 @@ export type AdminTeamDetailTab = "overview" | "members" | "audit" | "danger";
 
 const MEMBER_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 10;
+const ADMIN_TEAM_DETAIL_TAB_INDEX: Record<AdminTeamDetailTab, number> = {
+	overview: 0,
+	members: 1,
+	audit: 2,
+	danger: 3,
+};
+const adminTeamDetailContentScrollPositions = new Map<number, number>();
 const adminTeamDetailSidebarScrollPositions = new Map<number, number>();
 
 function buildPolicyGroupOptions(
@@ -127,6 +134,12 @@ export function AdminTeamDetailDialog({
 	const { t } = useTranslation(["admin", "core", "settings"]);
 	const isPageLayout = layout === "page";
 	const [dialogTab, setDialogTab] = useState<AdminTeamDetailTab>("overview");
+	const [pageLayoutTab, setPageLayoutTab] = useState<AdminTeamDetailTab>(
+		pageTab ?? "overview",
+	);
+	const [tabDirection, setTabDirection] = useState<"forward" | "backward">(
+		"forward",
+	);
 	const [archiveConfirmValue, setArchiveConfirmValue] = useState("");
 	const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 	const [archiving, setArchiving] = useState(false);
@@ -158,6 +171,7 @@ export function AdminTeamDetailDialog({
 	const [saving, setSaving] = useState(false);
 	const [team, setTeam] = useState<AdminTeamInfo | null>(null);
 	const auditRequestIdRef = useRef(0);
+	const contentRef = useRef<HTMLDivElement | null>(null);
 	const detailRequestIdRef = useRef(0);
 	const memberRequestIdRef = useRef(0);
 	const sidebarRef = useRef<HTMLElement | null>(null);
@@ -334,14 +348,36 @@ export function AdminTeamDetailDialog({
 			return;
 		}
 
+		const content = contentRef.current;
+		if (content != null) {
+			content.scrollTop =
+				adminTeamDetailContentScrollPositions.get(teamId) ?? 0;
+		}
+
 		const sidebar = sidebarRef.current;
 		if (sidebar == null) {
-			return;
+			return () => {
+				if (contentRef.current == null) {
+					return;
+				}
+
+				adminTeamDetailContentScrollPositions.set(
+					teamId,
+					contentRef.current.scrollTop,
+				);
+			};
 		}
 
 		sidebar.scrollTop = adminTeamDetailSidebarScrollPositions.get(teamId) ?? 0;
 
 		return () => {
+			if (contentRef.current != null) {
+				adminTeamDetailContentScrollPositions.set(
+					teamId,
+					contentRef.current.scrollTop,
+				);
+			}
+
 			if (sidebarRef.current == null) {
 				return;
 			}
@@ -448,6 +484,20 @@ export function AdminTeamDetailDialog({
 
 		setMemberOffset(Math.max(0, (memberTotalPages - 1) * MEMBER_PAGE_SIZE));
 	}, [memberOffset, memberTotal, memberTotalPages]);
+
+	useEffect(() => {
+		if (!isPageLayout || pageTab == null || pageLayoutTab === pageTab) {
+			return;
+		}
+
+		setTabDirection(
+			ADMIN_TEAM_DETAIL_TAB_INDEX[pageTab] >=
+				ADMIN_TEAM_DETAIL_TAB_INDEX[pageLayoutTab]
+				? "forward"
+				: "backward",
+		);
+		setPageLayoutTab(pageTab);
+	}, [isPageLayout, pageLayoutTab, pageTab]);
 
 	const handleSave = async () => {
 		if (!team || !canMutateTeam) {
@@ -637,7 +687,11 @@ export function AdminTeamDetailDialog({
 			</Dialog>
 		);
 
-	const currentTab = isPageLayout ? (pageTab ?? "overview") : dialogTab;
+	const currentTab = isPageLayout ? pageLayoutTab : dialogTab;
+	const panelAnimationClass =
+		tabDirection === "forward"
+			? "animate-in fade-in duration-300 slide-in-from-right-4 motion-reduce:animate-none"
+			: "animate-in fade-in duration-300 slide-in-from-left-4 motion-reduce:animate-none";
 
 	const handleTabChange = (value: string) => {
 		if (
@@ -647,6 +701,17 @@ export function AdminTeamDetailDialog({
 			value === "danger"
 		) {
 			if (isPageLayout) {
+				if (value === currentTab) {
+					return;
+				}
+
+				setTabDirection(
+					ADMIN_TEAM_DETAIL_TAB_INDEX[value] >=
+						ADMIN_TEAM_DETAIL_TAB_INDEX[currentTab]
+						? "forward"
+						: "backward",
+				);
+				setPageLayoutTab(value);
 				onPageTabChange?.(value);
 			} else {
 				setDialogTab(value);
@@ -1351,13 +1416,26 @@ export function AdminTeamDetailDialog({
 						</Button>
 					</div>
 				) : (
-					<DialogHeader className="flex items-center justify-center px-6 pt-5 pb-0 text-center">
+					<DialogHeader className="flex items-center justify-center px-6 pt-5 pb-0 text-center max-lg:px-4 max-lg:pt-4">
 						<DialogTitle className="text-lg">
 							{t("team_details_title")}
 						</DialogTitle>
 					</DialogHeader>
 				)}
-				<div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
+				<div
+					ref={contentRef}
+					className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden"
+					onScroll={() => {
+						if (teamId == null || contentRef.current == null) {
+							return;
+						}
+
+						adminTeamDetailContentScrollPositions.set(
+							teamId,
+							contentRef.current.scrollTop,
+						);
+					}}
+				>
 					<div className="flex min-h-full flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:flex-row">
 						<aside
 							ref={sidebarRef}
@@ -1373,36 +1451,38 @@ export function AdminTeamDetailDialog({
 								);
 							}}
 						>
-							<div className="space-y-5 p-6">
-								<div className="space-y-3">
-									<div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+							<div className="space-y-5 p-6 max-lg:space-y-4 max-lg:p-4">
+								<div className="space-y-3 max-lg:flex max-lg:items-start max-lg:gap-3 max-lg:space-y-0">
+									<div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary max-lg:size-12 max-lg:rounded-xl">
 										<Icon name="Cloud" className="h-7 w-7" />
 									</div>
-									<div className="space-y-1">
-										<h3 className="text-lg font-semibold text-foreground">
-											{team?.name ?? t("core:loading")}
-										</h3>
-										<p className="text-sm text-muted-foreground">
-											{team?.description || t("team_no_description")}
-										</p>
-									</div>
-									<div className="flex flex-wrap gap-2">
-										{team?.archived_at ? (
-											<Badge variant="outline">{t("archived_badge")}</Badge>
-										) : (
-											<Badge variant="outline">{t("core:active")}</Badge>
-										)}
-										{team?.policy_group_id != null ? (
-											<Badge variant="outline">
-												{selectedPolicyGroup?.name ??
-													currentPolicyGroup?.name ??
-													`PG ${team.policy_group_id}`}
-											</Badge>
-										) : null}
+									<div className="space-y-3 max-lg:min-w-0 max-lg:flex-1">
+										<div className="space-y-1">
+											<h3 className="text-lg font-semibold text-foreground">
+												{team?.name ?? t("core:loading")}
+											</h3>
+											<p className="text-sm text-muted-foreground max-lg:line-clamp-2">
+												{team?.description || t("team_no_description")}
+											</p>
+										</div>
+										<div className="flex flex-wrap gap-2">
+											{team?.archived_at ? (
+												<Badge variant="outline">{t("archived_badge")}</Badge>
+											) : (
+												<Badge variant="outline">{t("core:active")}</Badge>
+											)}
+											{team?.policy_group_id != null ? (
+												<Badge variant="outline">
+													{selectedPolicyGroup?.name ??
+														currentPolicyGroup?.name ??
+														`PG ${team.policy_group_id}`}
+												</Badge>
+											) : null}
+										</div>
 									</div>
 								</div>
 
-								<div className="space-y-3 rounded-xl border bg-background/60 p-4">
+								<div className="space-y-3 rounded-xl border bg-background/60 p-4 max-lg:grid max-lg:grid-cols-2 max-lg:gap-3 max-lg:space-y-0 max-lg:p-3">
 									<div className="space-y-1">
 										<p className="text-xs uppercase tracking-wide text-muted-foreground">
 											ID
@@ -1448,7 +1528,7 @@ export function AdminTeamDetailDialog({
 										</div>
 									) : null}
 								</div>
-								<div className="space-y-3 rounded-xl border bg-background/60 p-4">
+								<div className="space-y-3 rounded-xl border bg-background/60 p-4 max-lg:p-3">
 									<div>
 										<p className="text-sm font-medium text-foreground">
 											{t("storage")}
@@ -1485,7 +1565,7 @@ export function AdminTeamDetailDialog({
 							className={cn(
 								"min-h-0 min-w-0 lg:flex-1",
 								isPageLayout
-									? "flex h-full flex-col overflow-hidden"
+									? "lg:flex lg:h-full lg:flex-col lg:overflow-hidden"
 									: "lg:overflow-y-auto",
 							)}
 						>
@@ -1493,51 +1573,75 @@ export function AdminTeamDetailDialog({
 								<Tabs
 									value={currentTab}
 									onValueChange={handleTabChange}
-									className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
+									className="flex flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-hidden"
 								>
-									<div className="shrink-0 px-6 pt-6">
+									<div className="px-6 pt-6 max-lg:px-4 max-lg:pt-4 lg:shrink-0">
 										<TabsList
 											variant="line"
-											className="w-full justify-start gap-5 overflow-x-auto border-b px-0"
+											className="h-auto w-full gap-5 border-b px-0 pb-2"
 										>
 											<TabsTrigger
 												value="overview"
-												className="h-10 flex-none rounded-none px-0"
+												className="h-10 min-w-0 rounded-none px-0"
 											>
 												{t("overview")}
 											</TabsTrigger>
 											<TabsTrigger
 												value="members"
-												className="h-10 flex-none rounded-none px-0"
+												className="h-10 min-w-0 rounded-none px-0"
 											>
 												{t("settings:settings_team_members")}
 											</TabsTrigger>
 											<TabsTrigger
 												value="audit"
-												className="h-10 flex-none rounded-none px-0"
+												className="h-10 min-w-0 rounded-none px-0"
 											>
 												{t("team_audit_title")}
 											</TabsTrigger>
 											<TabsTrigger
 												value="danger"
-												className="h-10 flex-none rounded-none px-0"
+												className="h-10 min-w-0 rounded-none px-0"
 											>
 												{t("team_danger_zone")}
 											</TabsTrigger>
 										</TabsList>
 									</div>
 
-									<div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-6">
-										<TabsContent value="overview" className="outline-none">
+									<div className="px-6 pt-4 pb-6 max-lg:px-4 max-lg:pt-3 max-lg:pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+										<TabsContent
+											value="overview"
+											className={cn(
+												"outline-none",
+												currentTab === "overview" && panelAnimationClass,
+											)}
+										>
 											{overviewSection}
 										</TabsContent>
-										<TabsContent value="members" className="outline-none">
+										<TabsContent
+											value="members"
+											className={cn(
+												"outline-none",
+												currentTab === "members" && panelAnimationClass,
+											)}
+										>
 											{membersSection}
 										</TabsContent>
-										<TabsContent value="audit" className="outline-none">
+										<TabsContent
+											value="audit"
+											className={cn(
+												"outline-none",
+												currentTab === "audit" && panelAnimationClass,
+											)}
+										>
 											{auditSection}
 										</TabsContent>
-										<TabsContent value="danger" className="outline-none">
+										<TabsContent
+											value="danger"
+											className={cn(
+												"outline-none",
+												currentTab === "danger" && panelAnimationClass,
+											)}
+										>
 											{dangerSection}
 										</TabsContent>
 									</div>

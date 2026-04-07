@@ -81,6 +81,13 @@ export type TeamManageTab = "overview" | "members" | "audit" | "danger";
 
 const MEMBER_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 10;
+const TEAM_MANAGE_TAB_INDEX: Record<TeamManageTab, number> = {
+	overview: 0,
+	members: 1,
+	audit: 2,
+	danger: 3,
+};
+const teamManageContentScrollPositions = new Map<number, number>();
 const teamManageSidebarScrollPositions = new Map<number, number>();
 
 export function TeamManageDialog({
@@ -99,6 +106,12 @@ export function TeamManageDialog({
 	const navigate = useNavigate();
 	const isPageLayout = layout === "page";
 	const [dialogTab, setDialogTab] = useState<TeamManageTab>("overview");
+	const [pageLayoutTab, setPageLayoutTab] = useState<TeamManageTab>(
+		pageTab ?? "overview",
+	);
+	const [tabDirection, setTabDirection] = useState<"forward" | "backward">(
+		"forward",
+	);
 	const [archiveConfirmValue, setArchiveConfirmValue] = useState("");
 	const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 	const [auditEntries, setAuditEntries] = useState<TeamAuditEntryInfo[]>([]);
@@ -126,6 +139,7 @@ export function TeamManageDialog({
 	const [teamDetail, setTeamDetail] = useState<TeamInfo | null>(null);
 	const [teamName, setTeamName] = useState("");
 	const auditRequestIdRef = useRef(0);
+	const contentRef = useRef<HTMLDivElement | null>(null);
 	const detailRequestIdRef = useRef(0);
 	const memberRequestIdRef = useRef(0);
 	const sidebarRef = useRef<HTMLElement | null>(null);
@@ -313,14 +327,35 @@ export function TeamManageDialog({
 			return;
 		}
 
+		const content = contentRef.current;
+		if (content != null) {
+			content.scrollTop = teamManageContentScrollPositions.get(teamId) ?? 0;
+		}
+
 		const sidebar = sidebarRef.current;
 		if (sidebar == null) {
-			return;
+			return () => {
+				if (contentRef.current == null) {
+					return;
+				}
+
+				teamManageContentScrollPositions.set(
+					teamId,
+					contentRef.current.scrollTop,
+				);
+			};
 		}
 
 		sidebar.scrollTop = teamManageSidebarScrollPositions.get(teamId) ?? 0;
 
 		return () => {
+			if (contentRef.current != null) {
+				teamManageContentScrollPositions.set(
+					teamId,
+					contentRef.current.scrollTop,
+				);
+			}
+
 			if (sidebarRef.current == null) {
 				return;
 			}
@@ -414,6 +449,19 @@ export function TeamManageDialog({
 
 		setMemberOffset(Math.max(0, (memberTotalPages - 1) * MEMBER_PAGE_SIZE));
 	}, [memberOffset, memberTotal, memberTotalPages]);
+
+	useEffect(() => {
+		if (!isPageLayout || pageTab == null || pageLayoutTab === pageTab) {
+			return;
+		}
+
+		setTabDirection(
+			TEAM_MANAGE_TAB_INDEX[pageTab] >= TEAM_MANAGE_TAB_INDEX[pageLayoutTab]
+				? "forward"
+				: "backward",
+		);
+		setPageLayoutTab(pageTab);
+	}, [isPageLayout, pageLayoutTab, pageTab]);
 
 	useEffect(() => {
 		if (
@@ -614,7 +662,11 @@ export function TeamManageDialog({
 			</Dialog>
 		);
 
-	const currentTab = isPageLayout ? (pageTab ?? "overview") : dialogTab;
+	const currentTab = isPageLayout ? pageLayoutTab : dialogTab;
+	const panelAnimationClass =
+		tabDirection === "forward"
+			? "animate-in fade-in duration-300 slide-in-from-right-4 motion-reduce:animate-none"
+			: "animate-in fade-in duration-300 slide-in-from-left-4 motion-reduce:animate-none";
 
 	const handleTabChange = (value: string) => {
 		if (
@@ -624,6 +676,16 @@ export function TeamManageDialog({
 			value === "danger"
 		) {
 			if (isPageLayout) {
+				if (value === currentTab) {
+					return;
+				}
+
+				setTabDirection(
+					TEAM_MANAGE_TAB_INDEX[value] >= TEAM_MANAGE_TAB_INDEX[currentTab]
+						? "forward"
+						: "backward",
+				);
+				setPageLayoutTab(value);
 				onPageTabChange?.(value);
 			} else {
 				setDialogTab(value);
@@ -1233,13 +1295,26 @@ export function TeamManageDialog({
 						</Button>
 					</div>
 				) : (
-					<DialogHeader className="flex items-center justify-center px-6 pt-5 pb-0 text-center">
+					<DialogHeader className="flex items-center justify-center px-6 pt-5 pb-0 text-center max-lg:px-4 max-lg:pt-4">
 						<DialogTitle className="text-lg">
 							{t("settings:settings_team_manage_title")}
 						</DialogTitle>
 					</DialogHeader>
 				)}
-				<div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
+				<div
+					ref={contentRef}
+					className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden"
+					onScroll={() => {
+						if (teamId == null || contentRef.current == null) {
+							return;
+						}
+
+						teamManageContentScrollPositions.set(
+							teamId,
+							contentRef.current.scrollTop,
+						);
+					}}
+				>
 					<div className="flex min-h-full flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:flex-row">
 						<aside
 							ref={sidebarRef}
@@ -1255,38 +1330,40 @@ export function TeamManageDialog({
 								);
 							}}
 						>
-							<div className="space-y-5 p-6">
-								<div className="space-y-3">
-									<div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+							<div className="space-y-5 p-6 max-lg:space-y-4 max-lg:p-4">
+								<div className="space-y-3 max-lg:flex max-lg:items-start max-lg:gap-3 max-lg:space-y-0">
+									<div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary max-lg:size-12 max-lg:rounded-xl">
 										<Icon name="Cloud" className="h-7 w-7" />
 									</div>
-									<div className="space-y-1">
-										<h3 className="text-lg font-semibold text-foreground">
-											{teamDetail?.name ??
-												teamSummary?.name ??
-												t("core:loading")}
-										</h3>
-										<p className="text-sm text-muted-foreground">
-											{teamDetail?.description ||
-												teamSummary?.description ||
-												t("settings:settings_team_no_description")}
-										</p>
-									</div>
-									<div className="flex flex-wrap gap-2">
-										{viewerRole ? (
-											<Badge
-												className={cn(
-													"border",
-													getTeamRoleBadgeClass(viewerRole),
-												)}
-											>
-												{roleLabel(viewerRole)}
-											</Badge>
-										) : null}
+									<div className="space-y-3 max-lg:min-w-0 max-lg:flex-1">
+										<div className="space-y-1">
+											<h3 className="text-lg font-semibold text-foreground">
+												{teamDetail?.name ??
+													teamSummary?.name ??
+													t("core:loading")}
+											</h3>
+											<p className="text-sm text-muted-foreground max-lg:line-clamp-2">
+												{teamDetail?.description ||
+													teamSummary?.description ||
+													t("settings:settings_team_no_description")}
+											</p>
+										</div>
+										<div className="flex flex-wrap gap-2">
+											{viewerRole ? (
+												<Badge
+													className={cn(
+														"border",
+														getTeamRoleBadgeClass(viewerRole),
+													)}
+												>
+													{roleLabel(viewerRole)}
+												</Badge>
+											) : null}
+										</div>
 									</div>
 								</div>
 
-								<div className="space-y-3 rounded-xl border bg-background/60 p-4">
+								<div className="space-y-3 rounded-xl border bg-background/60 p-4 max-lg:grid max-lg:grid-cols-2 max-lg:gap-3 max-lg:space-y-0 max-lg:p-3">
 									<div className="space-y-1">
 										<p className="text-xs uppercase tracking-wide text-muted-foreground">
 											ID
@@ -1319,7 +1396,7 @@ export function TeamManageDialog({
 									</div>
 								</div>
 
-								<div className="space-y-3 rounded-xl border bg-background/60 p-4">
+								<div className="space-y-3 rounded-xl border bg-background/60 p-4 max-lg:p-3">
 									<div>
 										<p className="text-sm font-medium text-foreground">
 											{t("settings:settings_team_quota")}
@@ -1369,7 +1446,7 @@ export function TeamManageDialog({
 							className={cn(
 								"min-h-0 min-w-0 lg:flex-1",
 								isPageLayout
-									? "flex h-full flex-col overflow-hidden"
+									? "lg:flex lg:h-full lg:flex-col lg:overflow-hidden"
 									: "lg:overflow-y-auto",
 							)}
 						>
@@ -1377,29 +1454,29 @@ export function TeamManageDialog({
 								<Tabs
 									value={currentTab}
 									onValueChange={handleTabChange}
-									className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
+									className="flex flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-hidden"
 								>
-									<div className="shrink-0 px-6 pt-6">
+									<div className="px-6 pt-6 max-lg:px-4 max-lg:pt-4 lg:shrink-0">
 										<TabsList
 											variant="line"
-											className="w-full justify-start gap-5 overflow-x-auto border-b px-0"
+											className="h-auto w-full gap-5 border-b px-0 pb-2"
 										>
 											<TabsTrigger
 												value="overview"
-												className="h-10 flex-none rounded-none px-0"
+												className="h-10 min-w-0 rounded-none px-0"
 											>
 												{t("settings:settings_team_overview")}
 											</TabsTrigger>
 											<TabsTrigger
 												value="members"
-												className="h-10 flex-none rounded-none px-0"
+												className="h-10 min-w-0 rounded-none px-0"
 											>
 												{t("settings:settings_team_members")}
 											</TabsTrigger>
 											{canManageTeam ? (
 												<TabsTrigger
 													value="audit"
-													className="h-10 flex-none rounded-none px-0"
+													className="h-10 min-w-0 rounded-none px-0"
 												>
 													{t("settings:settings_team_audit_title")}
 												</TabsTrigger>
@@ -1407,7 +1484,7 @@ export function TeamManageDialog({
 											{canArchiveTeam ? (
 												<TabsTrigger
 													value="danger"
-													className="h-10 flex-none rounded-none px-0"
+													className="h-10 min-w-0 rounded-none px-0"
 												>
 													{t("settings:settings_team_danger_zone")}
 												</TabsTrigger>
@@ -1415,20 +1492,44 @@ export function TeamManageDialog({
 										</TabsList>
 									</div>
 
-									<div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-6">
-										<TabsContent value="overview" className="outline-none">
+									<div className="px-6 pt-4 pb-6 max-lg:px-4 max-lg:pt-3 max-lg:pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+										<TabsContent
+											value="overview"
+											className={cn(
+												"outline-none",
+												currentTab === "overview" && panelAnimationClass,
+											)}
+										>
 											{overviewSection}
 										</TabsContent>
-										<TabsContent value="members" className="outline-none">
+										<TabsContent
+											value="members"
+											className={cn(
+												"outline-none",
+												currentTab === "members" && panelAnimationClass,
+											)}
+										>
 											{membersSection}
 										</TabsContent>
 										{canManageTeam ? (
-											<TabsContent value="audit" className="outline-none">
+											<TabsContent
+												value="audit"
+												className={cn(
+													"outline-none",
+													currentTab === "audit" && panelAnimationClass,
+												)}
+											>
 												{auditSection}
 											</TabsContent>
 										) : null}
 										{canArchiveTeam ? (
-											<TabsContent value="danger" className="outline-none">
+											<TabsContent
+												value="danger"
+												className={cn(
+													"outline-none",
+													currentTab === "danger" && panelAnimationClass,
+												)}
+											>
 												{dangerSection}
 											</TabsContent>
 										) : null}

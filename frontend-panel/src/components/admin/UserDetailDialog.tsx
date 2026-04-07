@@ -292,90 +292,96 @@ export function UserDetailDialog({
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="flex max-h-[min(860px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1100px,calc(100vw-2rem))]">
-				<DialogHeader className="shrink-0 px-6 pt-5 pb-0 text-center">
+				<DialogHeader className="shrink-0 px-6 pt-5 pb-0 text-center max-lg:px-4 max-lg:pt-4">
 					<DialogTitle className="text-lg">{t("user_details")}</DialogTitle>
 				</DialogHeader>
 				<div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
 					<div className="flex min-h-full flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:flex-row">
 						<aside className="border-b bg-muted/20 lg:min-h-0 lg:w-80 lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0">
-							<div className="space-y-5 p-6">
-								<div className="space-y-3">
+							<div className="space-y-5 p-6 max-lg:space-y-4 max-lg:p-4">
+								<div className="space-y-3 max-lg:flex max-lg:items-start max-lg:gap-3 max-lg:space-y-0">
 									<UserAvatarImage
 										avatar={user.profile.avatar}
 										name={displayName}
 										size="xl"
-										className="aspect-square w-full max-w-[220px]"
+										className="aspect-square w-full max-w-[220px] max-lg:size-20 max-lg:max-w-none max-lg:rounded-xl max-lg:text-2xl"
 									/>
-									<div className="space-y-1">
-										<h3 className="text-lg font-semibold text-foreground">
-											{displayName}
-										</h3>
-										{showUsernameSecondary ? (
-											<p className="text-sm text-muted-foreground">
-												@{user.username}
+									<div className="space-y-3 max-lg:min-w-0 max-lg:flex-1">
+										<div className="space-y-1">
+											<h3 className="text-lg font-semibold text-foreground">
+												{displayName}
+											</h3>
+											{showUsernameSecondary ? (
+												<p className="text-sm text-muted-foreground">
+													@{user.username}
+												</p>
+											) : null}
+											<p className="text-sm text-muted-foreground max-lg:break-all">
+												{user.email}
 											</p>
+										</div>
+										<div className="flex flex-wrap gap-2">
+											<Badge
+												variant="outline"
+												className={getRoleBadgeClass(user.role)}
+											>
+												{user.role === "admin" ? "Admin" : "User"}
+											</Badge>
+											<Badge
+												variant="outline"
+												className={getStatusBadgeClass(user.status)}
+											>
+												{user.status === "active"
+													? t("core:active")
+													: t("core:disabled_status")}
+											</Badge>
+										</div>
+									</div>
+								</div>
+
+								<div className="space-y-3 max-lg:grid max-lg:grid-cols-2 max-lg:gap-3 max-lg:space-y-0">
+									<div className="space-y-3 rounded-xl border bg-background/60 p-4 max-lg:space-y-2 max-lg:p-3">
+										<div className="space-y-1">
+											<p className="text-xs uppercase tracking-wide text-muted-foreground">
+												ID
+											</p>
+											<p className="font-mono text-sm text-foreground">
+												{user.id}
+											</p>
+										</div>
+										<div className="space-y-1">
+											<p className="text-xs uppercase tracking-wide text-muted-foreground">
+												{t("core:created_at")}
+											</p>
+											<p className="text-sm text-foreground">
+												{formatDateAbsolute(user.created_at)}
+											</p>
+										</div>
+									</div>
+
+									<div className="space-y-3 rounded-xl border bg-background/60 p-4 max-lg:space-y-2 max-lg:p-3">
+										<div>
+											<p className="text-sm font-medium text-foreground">
+												{t("storage")}
+											</p>
+											<p className="text-xs text-muted-foreground">
+												{formatBytes(used)}
+												{quota > 0
+													? ` / ${formatBytes(quota)}`
+													: ` / ${t("core:unlimited")}`}
+											</p>
+										</div>
+										{quota > 0 ? (
+											<Progress value={pct} className="h-2" />
 										) : null}
-										<p className="text-sm text-muted-foreground">
-											{user.email}
-										</p>
 									</div>
-									<div className="flex flex-wrap gap-2">
-										<Badge
-											variant="outline"
-											className={getRoleBadgeClass(user.role)}
-										>
-											{user.role === "admin" ? "Admin" : "User"}
-										</Badge>
-										<Badge
-											variant="outline"
-											className={getStatusBadgeClass(user.status)}
-										>
-											{user.status === "active"
-												? t("core:active")
-												: t("core:disabled_status")}
-										</Badge>
-									</div>
-								</div>
-
-								<div className="space-y-3 rounded-xl border bg-background/60 p-4">
-									<div className="space-y-1">
-										<p className="text-xs uppercase tracking-wide text-muted-foreground">
-											ID
-										</p>
-										<p className="font-mono text-sm text-foreground">
-											{user.id}
-										</p>
-									</div>
-									<div className="space-y-1">
-										<p className="text-xs uppercase tracking-wide text-muted-foreground">
-											{t("core:created_at")}
-										</p>
-										<p className="text-sm text-foreground">
-											{formatDateAbsolute(user.created_at)}
-										</p>
-									</div>
-								</div>
-
-								<div className="space-y-3 rounded-xl border bg-background/60 p-4">
-									<div>
-										<p className="text-sm font-medium text-foreground">
-											{t("storage")}
-										</p>
-										<p className="text-xs text-muted-foreground">
-											{formatBytes(used)}
-											{quota > 0
-												? ` / ${formatBytes(quota)}`
-												: ` / ${t("core:unlimited")}`}
-										</p>
-									</div>
-									{quota > 0 ? <Progress value={pct} className="h-2" /> : null}
 								</div>
 							</div>
 						</aside>
 
 						<div className="min-h-0 min-w-0 lg:flex-1 lg:overflow-y-auto">
-							<div className="space-y-4 p-6">
-								<section className="rounded-2xl border bg-background/60 p-6">
+							<div className="space-y-4 p-6 max-lg:p-4">
+								<section className="rounded-2xl border bg-background/60 p-6 max-lg:p-4">
 									<div className="mb-5">
 										<h4 className="text-base font-semibold text-foreground">
 											{t("user_details")}
@@ -516,7 +522,7 @@ export function UserDetailDialog({
 									</div>
 								</section>
 
-								<section className="rounded-2xl border bg-background/60 p-6">
+								<section className="rounded-2xl border bg-background/60 p-6 max-lg:p-4">
 									<div className="mb-4 flex items-start justify-between gap-3">
 										<div>
 											<h4 className="text-base font-semibold text-foreground">
@@ -603,7 +609,7 @@ export function UserDetailDialog({
 									)}
 								</section>
 
-								<section className="rounded-2xl border bg-background/60 p-6">
+								<section className="rounded-2xl border bg-background/60 p-6 max-lg:p-4">
 									<div className="mb-4">
 										<h4 className="text-base font-semibold text-foreground">
 											{t("security_actions")}
@@ -614,7 +620,7 @@ export function UserDetailDialog({
 									</div>
 
 									<div className="space-y-3">
-										<div className="rounded-xl border bg-muted/10 p-5">
+										<div className="rounded-xl border bg-muted/10 p-5 max-lg:p-4">
 											<div className="mb-3">
 												<h5 className="text-sm font-semibold text-foreground">
 													{t("reset_password")}
@@ -701,7 +707,7 @@ export function UserDetailDialog({
 											</div>
 										</div>
 
-										<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+										<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5 max-lg:p-4">
 											<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
 												<div className="max-w-2xl space-y-2">
 													<h5 className="text-sm font-semibold text-foreground">
@@ -739,7 +745,7 @@ export function UserDetailDialog({
 						</div>
 					</div>
 				</div>
-				<DialogFooter className="mx-0 mb-0 w-full shrink-0 border-t bg-muted/10 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+				<DialogFooter className="mx-0 mb-0 w-full shrink-0 border-t bg-muted/10 px-6 py-4 max-lg:px-4 max-lg:py-3 sm:flex-row sm:items-center sm:justify-between">
 					<p className="text-xs text-muted-foreground">
 						{t("user_details_footer_hint")}
 					</p>

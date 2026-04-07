@@ -47,35 +47,41 @@ export default function SettingsPage({
 					>
 						<TabsList
 							variant="line"
-							className="w-full justify-start gap-5 overflow-x-auto border-b px-0"
+							className="h-auto w-full gap-5 border-b px-0 pb-2"
 						>
 							<TabsTrigger
 								value="profile"
-								className="h-10 flex-none rounded-none px-0"
+								className="h-10 min-w-0 rounded-none px-0"
 							>
 								<Icon name="PencilSimple" className="h-4 w-4" />
-								<span>{t("settings:settings_profile")}</span>
+								<span className="truncate">
+									{t("settings:settings_profile")}
+								</span>
 							</TabsTrigger>
 							<TabsTrigger
 								value="interface"
-								className="h-10 flex-none rounded-none px-0"
+								className="h-10 min-w-0 rounded-none px-0"
 							>
 								<Icon name="Monitor" className="h-4 w-4" />
-								<span>{t("settings:settings_interface")}</span>
+								<span className="truncate">
+									{t("settings:settings_interface")}
+								</span>
 							</TabsTrigger>
 							<TabsTrigger
 								value="security"
-								className="h-10 flex-none rounded-none px-0"
+								className="h-10 min-w-0 rounded-none px-0"
 							>
 								<Icon name="Shield" className="h-4 w-4" />
-								<span>{t("settings:settings_security")}</span>
+								<span className="truncate">
+									{t("settings:settings_security")}
+								</span>
 							</TabsTrigger>
 							<TabsTrigger
 								value="teams"
-								className="h-10 flex-none rounded-none px-0"
+								className="h-10 min-w-0 rounded-none px-0"
 							>
 								<Icon name="Cloud" className="h-4 w-4" />
-								<span>{t("settings:settings_teams")}</span>
+								<span className="truncate">{t("settings:settings_teams")}</span>
 							</TabsTrigger>
 						</TabsList>
 

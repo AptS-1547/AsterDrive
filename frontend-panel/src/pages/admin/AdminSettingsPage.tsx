@@ -53,9 +53,9 @@ const DESKTOP_NAV_BREAKPOINT = 1280;
 const COMPACT_NAV_TAB_GAP = 8;
 const COMPACT_NAV_OVERFLOW_GAP = 12;
 const COMPACT_NAV_TAB_TRIGGER_CLASS =
-	"group h-auto flex-none gap-0 rounded-xl border-0 px-0 py-0 text-sm font-medium after:hidden";
+	"h-10 flex-none rounded-none px-0 text-sm font-medium";
 const COMPACT_NAV_TAB_CONTENT_CLASS =
-	"inline-flex items-center gap-2 rounded-xl px-3 py-2";
+	"inline-flex items-center gap-2 px-3 py-2";
 const COMPACT_NAV_OVERFLOW_TRIGGER_CLASS = buttonVariants({
 	variant: "secondary",
 	size: "sm",
@@ -778,26 +778,23 @@ export default function AdminSettingsPage({
 		},
 	) => {
 		const description =
-			options?.description ?? getCategoryDescription(category);
+			options && "description" in options
+				? options.description
+				: getCategoryDescription(category);
 
 		return (
-			<div className="flex max-w-4xl items-start gap-4">
-				<div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-muted/70 text-foreground/70">
-					<Icon name={getCategoryIcon(category)} className="h-5 w-5" />
+			<div className="max-w-4xl space-y-3">
+				<div className="space-y-1">
+					<h3 className="text-xl font-semibold tracking-tight">
+						{getCategoryLabel(category)}
+					</h3>
+					{description ? (
+						<p className="max-w-3xl break-words text-sm leading-6 text-muted-foreground">
+							{description}
+						</p>
+					) : null}
 				</div>
-				<div className="min-w-0 flex-1 space-y-3">
-					<div className="space-y-1">
-						<h3 className="text-xl font-semibold tracking-tight">
-							{getCategoryLabel(category)}
-						</h3>
-						{description ? (
-							<p className="max-w-3xl break-words text-sm leading-6 text-muted-foreground">
-								{description}
-							</p>
-						) : null}
-					</div>
-					{options?.extra}
-				</div>
+				{options?.extra}
 			</div>
 		);
 	};
@@ -974,7 +971,7 @@ export default function AdminSettingsPage({
 				>
 					{showCategoryHeader
 						? renderCategoryHeader(category, {
-								description: t("custom_config_intro"),
+								description: undefined,
 								extra: customCategoryActions,
 							})
 						: customCategoryActions}
@@ -1043,7 +1040,9 @@ export default function AdminSettingsPage({
 				key={`${activeTab}-${tabDirection}`}
 				className={`space-y-10 ${panelAnimationClass}`}
 			>
-				{showCategoryHeader ? renderCategoryHeader(category) : null}
+				{showCategoryHeader
+					? renderCategoryHeader(category, { description: undefined })
+					: null}
 				<div className="max-w-4xl divide-y divide-border/40">
 					{(systemGroups[category] ?? []).map((config) => (
 						<div key={config.key} className="py-6 first:pt-0 last:pb-0">
@@ -1125,22 +1124,19 @@ export default function AdminSettingsPage({
 	const renderCompactNavigation = () => (
 		<div
 			ref={compactNavContainerRef}
-			className="flex flex-none items-center gap-3 border-b border-border/40 pb-4"
+			className="flex flex-none items-end gap-3"
 		>
 			<TabsList
 				variant="line"
-				className="h-auto min-w-0 flex-1 justify-start gap-2 overflow-x-auto bg-transparent p-0"
+				className="h-auto min-w-0 flex-1 justify-start gap-2 overflow-hidden border-b border-border/40 bg-transparent px-0 pb-2"
 			>
 				{compactInlineSummaries.map((summary) => (
 					<TabsTrigger
 						key={summary.category}
 						value={summary.category}
-						className={`${COMPACT_NAV_TAB_TRIGGER_CLASS} text-muted-foreground hover:text-foreground data-active:bg-transparent data-active:text-foreground`}
+						className={`${COMPACT_NAV_TAB_TRIGGER_CLASS} text-muted-foreground hover:text-foreground data-active:text-foreground`}
 					>
-						{renderCompactNavigationTabContent(
-							summary,
-							"transition-colors duration-200 group-hover:bg-muted/50 group-data-[active]:bg-muted/70",
-						)}
+						{renderCompactNavigationTabContent(summary)}
 					</TabsTrigger>
 				))}
 			</TabsList>
@@ -1303,9 +1299,7 @@ export default function AdminSettingsPage({
 
 							<div
 								className={
-									isDesktopNavigation
-										? "min-w-0 flex-1 pr-2"
-										: "min-w-0 pr-2"
+									isDesktopNavigation ? "min-w-0 flex-1 pr-2" : "min-w-0 pr-2"
 								}
 							>
 								{tabCategories.map((category) => (
