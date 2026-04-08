@@ -5,6 +5,7 @@ import { OfflineBootFallback } from "@/components/layout/OfflineBootFallback";
 import { usePwaUpdate } from "@/hooks/usePwaUpdate";
 import { router } from "@/router";
 import { useAuthStore } from "@/stores/authStore";
+import { useBrandingStore } from "@/stores/brandingStore";
 import { useThemeStore } from "@/stores/themeStore";
 
 function shouldSkipInitialAuthCheck(pathname: string) {
@@ -20,6 +21,7 @@ function App() {
 	usePwaUpdate();
 
 	useEffect(() => {
+		void useBrandingStore.getState().load();
 		if (!shouldSkipInitialAuthCheck(window.location.pathname)) {
 			checkAuth();
 		} else {

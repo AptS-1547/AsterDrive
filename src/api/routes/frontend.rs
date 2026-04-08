@@ -1,3 +1,5 @@
+use crate::config::branding;
+use crate::runtime::AppState;
 use actix_web::{HttpRequest, HttpResponse, web};
 use rust_embed::Embed;
 use std::path::PathBuf;
@@ -28,7 +30,7 @@ impl FrontendService {
     }
 
     /// 服务 index.html，替换配置占位符
-    async fn serve_index() -> HttpResponse {
+    async fn serve_index(state: &AppState) -> HttpResponse {
         let html = match Self::load_file("index.html").await {
             Some(data) => String::from_utf8_lossy(&data).into_owned(),
             None => include_str!(concat!(
@@ -38,15 +40,28 @@ impl FrontendService {
             .to_string(),
         };
 
-        let processed = html.replace("%ASTERDRIVE_VERSION%", env!("CARGO_PKG_VERSION"));
+        let processed = html
+            .replace("%ASTERDRIVE_VERSION%", env!("CARGO_PKG_VERSION"))
+            .replace(
+                "%ASTERDRIVE_TITLE%",
+                &escape_html(branding::title_or_default(&state.runtime_config)),
+            )
+            .replace(
+                "%ASTERDRIVE_DESCRIPTION%",
+                &escape_html(branding::description_or_default(&state.runtime_config)),
+            )
+            .replace(
+                "%ASTERDRIVE_FAVICON_URL%",
+                &escape_html(branding::favicon_url_or_default(&state.runtime_config)),
+            );
 
         HttpResponse::Ok()
             .content_type("text/html; charset=utf-8")
             .body(processed)
     }
 
-    pub async fn handle_index(_req: HttpRequest) -> HttpResponse {
-        Self::serve_index().await
+    pub async fn handle_index(state: web::Data<AppState>, _req: HttpRequest) -> HttpResponse {
+        Self::serve_index(state.get_ref()).await
     }
 
     pub async fn handle_assets(req: HttpRequest) -> HttpResponse {
@@ -91,8 +106,11 @@ impl FrontendService {
         }
     }
 
-    pub async fn handle_spa_fallback(_req: HttpRequest) -> HttpResponse {
-        Self::serve_index().await
+    pub async fn handle_spa_fallback(
+        state: web::Data<AppState>,
+        _req: HttpRequest,
+    ) -> HttpResponse {
+        Self::serve_index(state.get_ref()).await
     }
 
     pub async fn handle_pwa_file(req: HttpRequest) -> HttpResponse {
@@ -122,6 +140,15 @@ impl FrontendService {
             _ => "application/octet-stream",
         }
     }
+}
+
+fn escape_html(value: String) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// 前端路由，挂在 `/` 下，必须最后注册

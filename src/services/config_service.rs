@@ -1,5 +1,6 @@
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::config::auth_runtime;
+use crate::config::branding;
 use crate::config::cors;
 use crate::config::definitions::ALL_CONFIGS;
 use crate::db::repository::config_repo;
@@ -132,7 +133,26 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
             Ok(normalized)
         }
         cors::CORS_MAX_AGE_SECS_KEY => cors::normalize_max_age_config_value(value),
+        branding::BRANDING_TITLE_KEY => branding::normalize_title_config_value(value),
+        branding::BRANDING_DESCRIPTION_KEY => branding::normalize_description_config_value(value),
+        branding::BRANDING_FAVICON_URL_KEY => branding::normalize_favicon_url_config_value(value),
         _ => Ok(value.to_string()),
+    }
+}
+
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct PublicBranding {
+    pub title: String,
+    pub description: String,
+    pub favicon_url: String,
+}
+
+pub fn get_public_branding(state: &AppState) -> PublicBranding {
+    PublicBranding {
+        title: branding::title_or_default(&state.runtime_config),
+        description: branding::description_or_default(&state.runtime_config),
+        favicon_url: branding::favicon_url_or_default(&state.runtime_config),
     }
 }
 

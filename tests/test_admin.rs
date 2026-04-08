@@ -103,6 +103,9 @@ async fn test_admin_scope_allows_admin_users() {
     assert!(keys.contains(&"auth_cookie_secure"));
     assert!(keys.contains(&"auth_access_token_ttl_secs"));
     assert!(keys.contains(&"auth_refresh_token_ttl_secs"));
+    assert!(keys.contains(&"branding_title"));
+    assert!(keys.contains(&"branding_description"));
+    assert!(keys.contains(&"branding_favicon_url"));
 
     let auth_ttl = body["data"]
         .as_array()
@@ -117,6 +120,17 @@ async fn test_admin_scope_allows_admin_users() {
     assert_eq!(
         auth_ttl["description_i18n_key"],
         "settings_item_auth_access_token_ttl_secs_desc"
+    );
+
+    let branding_title = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["key"] == "branding_title")
+        .unwrap();
+    assert_eq!(
+        branding_title["label_i18n_key"],
+        "settings_item_branding_title_label"
     );
 }
 

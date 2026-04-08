@@ -2,6 +2,7 @@ import {
 	type ReactNode,
 	useCallback,
 	useEffect,
+	useEffectEvent,
 	useMemo,
 	useRef,
 	useState,
@@ -27,16 +28,17 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { handleApiError } from "@/hooks/useApiError";
+import { cn } from "@/lib/utils";
 import { adminConfigService } from "@/services/adminService";
 import type { ConfigSchemaItem, SystemConfig } from "@/types/api";
 
 const CATEGORY_ORDER = [
+	"general",
 	"auth",
 	"network",
 	"storage",
 	"webdav",
 	"audit",
-	"general",
 	"custom",
 	"other",
 ] as const;
@@ -49,6 +51,8 @@ const MOBILE_BREAKPOINT = 768;
 const DESKTOP_NAV_BREAKPOINT = 1280;
 const COMPACT_NAV_TAB_GAP = 8;
 const COMPACT_NAV_OVERFLOW_GAP = 12;
+const SAVE_BAR_ENTER_DURATION_MS = 180;
+const SAVE_BAR_EXIT_DURATION_MS = 140;
 const COMPACT_NAV_TAB_TRIGGER_CLASS =
 	"h-10 flex-none rounded-none px-0 text-sm font-medium";
 const COMPACT_NAV_TAB_CONTENT_CLASS =
@@ -77,6 +81,7 @@ type CategorySummary = {
 };
 
 export type AdminSettingsTab = (typeof CATEGORY_ORDER)[number];
+type SaveBarPhase = "hidden" | "entering" | "visible" | "exiting";
 
 function getCategoryIcon(category: string): IconName {
 	switch (category) {
@@ -119,6 +124,122 @@ function isNumberType(valueType: string) {
 	return valueType === "number";
 }
 
+function isBrandingFaviconConfig(config: SystemConfig) {
+	return config.key === "branding_favicon_url";
+}
+
+function normalizeAssetPreviewUrl(value: string) {
+	const normalized = value.trim();
+	if (!normalized || normalized.includes(" ")) {
+		return null;
+	}
+	if (normalized.startsWith("/") && !normalized.startsWith("//")) {
+		return normalized;
+	}
+
+	try {
+		const resolved = new URL(normalized);
+		if (resolved.protocol === "http:" || resolved.protocol === "https:") {
+			return resolved.toString();
+		}
+	} catch {
+		return null;
+	}
+
+	return null;
+}
+
+function UrlAssetPreview({ url }: { url: string }) {
+	const [debouncedUrl, setDebouncedUrl] = useState(url);
+
+	useEffect(() => {
+		const timer = window.setTimeout(() => {
+			setDebouncedUrl(url);
+		}, 300);
+		return () => window.clearTimeout(timer);
+	}, [url]);
+
+	const normalizedUrl = useMemo(
+		() => normalizeAssetPreviewUrl(debouncedUrl),
+		[debouncedUrl],
+	);
+	const isInvalid = debouncedUrl.trim().length > 0 && !normalizedUrl;
+	const previewClassName = cn(
+		"group flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-muted/20 transition-colors",
+		normalizedUrl
+			? "border-border/70 hover:border-primary/40 hover:bg-muted/30"
+			: isInvalid
+				? "border-amber-300/70 bg-amber-50/70"
+				: "border-border/70",
+	);
+
+	const previewContent = normalizedUrl ? (
+		<UrlAssetPreviewImage
+			key={normalizedUrl}
+			data-testid="branding-asset-preview-image"
+			url={normalizedUrl}
+		/>
+	) : (
+		<Icon
+			name={isInvalid ? "Warning" : "LinkSimple"}
+			className={cn(
+				"h-4 w-4",
+				isInvalid ? "text-amber-600" : "text-muted-foreground",
+			)}
+		/>
+	);
+
+	return (
+		<div data-testid="branding-asset-preview" className="shrink-0">
+			{normalizedUrl ? (
+				<a
+					href={normalizedUrl}
+					target="_blank"
+					rel="noreferrer"
+					className={previewClassName}
+					title={normalizedUrl}
+					aria-label={normalizedUrl}
+				>
+					{previewContent}
+				</a>
+			) : (
+				<div
+					role="img"
+					className={previewClassName}
+					title={debouncedUrl.trim() || "/favicon.svg"}
+					aria-label={debouncedUrl.trim() || "/favicon.svg"}
+				>
+					{previewContent}
+				</div>
+			)}
+		</div>
+	);
+}
+
+function UrlAssetPreviewImage({
+	url,
+	...props
+}: {
+	url: string;
+	"data-testid"?: string;
+}) {
+	const [hasLoadError, setHasLoadError] = useState(false);
+
+	if (hasLoadError) {
+		return <Icon name="Warning" className="h-5 w-5 text-amber-600" />;
+	}
+
+	return (
+		<img
+			{...props}
+			src={url}
+			alt=""
+			className="max-h-8 max-w-8 object-contain"
+			onError={() => setHasLoadError(true)}
+		/>
+	);
+}
+
 function normalizeCategory(category?: string) {
 	return category || "other";
 }
@@ -158,6 +279,8 @@ export default function AdminSettingsPage({
 	const compactOverflowDefaultMeasureRef = useRef<HTMLButtonElement | null>(
 		null,
 	);
+	const saveBarTimerRef = useRef<number | null>(null);
+	const saveBarPhaseRef = useRef<SaveBarPhase>("hidden");
 	const [configs, setConfigs] = useState<SystemConfig[]>([]);
 	const [schemas, setSchemas] = useState<ConfigSchemaItem[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -165,7 +288,7 @@ export default function AdminSettingsPage({
 	const [viewportWidth, setViewportWidth] = useState(() =>
 		typeof window === "undefined" ? DESKTOP_NAV_BREAKPOINT : window.innerWidth,
 	);
-	const [activeTab, setActiveTab] = useState<string>(CATEGORY_ORDER[0]);
+	const [activeTab, setActiveTab] = useState<string>(section);
 	const [tabDirection, setTabDirection] = useState<"forward" | "backward">(
 		"forward",
 	);
@@ -175,6 +298,7 @@ export default function AdminSettingsPage({
 	const [compactInlineCategories, setCompactInlineCategories] = useState<
 		string[]
 	>([]);
+	const [saveBarPhase, setSaveBarPhase] = useState<SaveBarPhase>("hidden");
 
 	const load = useCallback(async (options?: { showLoading?: boolean }) => {
 		const showLoading = options?.showLoading ?? true;
@@ -308,6 +432,14 @@ export default function AdminSettingsPage({
 		return categories;
 	}, [systemCategories]);
 
+	const resolvedSection = useMemo(() => {
+		if (tabCategories.includes(section)) {
+			return section;
+		}
+
+		return tabCategories[0] ?? section;
+	}, [section, tabCategories]);
+
 	const deletedCustomKeySet = useMemo(
 		() => new Set(deletedCustomKeys),
 		[deletedCustomKeys],
@@ -381,16 +513,36 @@ export default function AdminSettingsPage({
 	const hasValidationError = newCustomRowErrors.size > 0;
 	const hasUnsavedChanges = changedCount > 0;
 	const hasAnyConfig = configs.length > 0;
+	const handleSaveShortcut = useEffectEvent((event: KeyboardEvent) => {
+		const mod = event.metaKey || event.ctrlKey;
+		if (!mod || event.key.toLowerCase() !== "s") {
+			return;
+		}
+
+		event.preventDefault();
+		if (event.repeat) {
+			return;
+		}
+
+		void handleSaveAll();
+	});
 
 	useEffect(() => {
 		if (loading || !hasAnyConfig || tabCategories.length === 0) {
 			return;
 		}
 
-		if (!tabCategories.includes(section)) {
-			navigate(`/admin/settings/${tabCategories[0]}`, { replace: true });
+		if (section !== resolvedSection) {
+			navigate(`/admin/settings/${resolvedSection}`, { replace: true });
 		}
-	}, [hasAnyConfig, loading, navigate, section, tabCategories]);
+	}, [
+		hasAnyConfig,
+		loading,
+		navigate,
+		resolvedSection,
+		section,
+		tabCategories,
+	]);
 
 	const getCategoryLabel = useCallback(
 		(category: string) => {
@@ -506,18 +658,70 @@ export default function AdminSettingsPage({
 	const isCompactNavigation = !isMobileNavigation && !isDesktopNavigation;
 
 	useEffect(() => {
-		if (activeTab === section) {
+		if (activeTab === resolvedSection) {
 			return;
 		}
 
 		setTabDirection(
-			(CATEGORY_INDEX[section] ?? Number.MAX_SAFE_INTEGER) >=
+			(CATEGORY_INDEX[resolvedSection] ?? Number.MAX_SAFE_INTEGER) >=
 				(CATEGORY_INDEX[activeTab] ?? Number.MAX_SAFE_INTEGER)
 				? "forward"
 				: "backward",
 		);
-		setActiveTab(section);
-	}, [activeTab, section]);
+		setActiveTab(resolvedSection);
+	}, [activeTab, resolvedSection]);
+
+	useEffect(() => {
+		document.addEventListener("keydown", handleSaveShortcut);
+		return () => document.removeEventListener("keydown", handleSaveShortcut);
+	}, []);
+
+	useEffect(() => {
+		saveBarPhaseRef.current = saveBarPhase;
+	}, [saveBarPhase]);
+
+	useEffect(() => {
+		if (saveBarTimerRef.current !== null) {
+			window.clearTimeout(saveBarTimerRef.current);
+			saveBarTimerRef.current = null;
+		}
+
+		if (hasUnsavedChanges) {
+			setSaveBarPhase("entering");
+			saveBarTimerRef.current = window.setTimeout(() => {
+				setSaveBarPhase("visible");
+				saveBarTimerRef.current = null;
+			}, SAVE_BAR_ENTER_DURATION_MS);
+			return;
+		}
+
+		if (saveBarPhaseRef.current === "hidden") {
+			return;
+		}
+
+		setSaveBarPhase((previous) =>
+			previous === "hidden" ? previous : "exiting",
+		);
+		saveBarTimerRef.current = window.setTimeout(() => {
+			setSaveBarPhase("hidden");
+			saveBarTimerRef.current = null;
+		}, SAVE_BAR_EXIT_DURATION_MS);
+
+		return () => {
+			if (saveBarTimerRef.current !== null) {
+				window.clearTimeout(saveBarTimerRef.current);
+				saveBarTimerRef.current = null;
+			}
+		};
+	}, [hasUnsavedChanges]);
+
+	useEffect(() => {
+		return () => {
+			if (saveBarTimerRef.current !== null) {
+				window.clearTimeout(saveBarTimerRef.current);
+			}
+		};
+	}, []);
 
 	useEffect(() => {
 		if (!isCompactNavigation) {
@@ -859,6 +1063,27 @@ export default function AdminSettingsPage({
 								? t("settings_value_on")
 								: t("settings_value_off")}
 						</span>
+					</div>
+				) : isBrandingFaviconConfig(config) ? (
+					<div className="flex max-w-4xl items-end gap-3">
+						<div className="w-full max-w-3xl">
+							<Input
+								type={
+									isNumberType(valueType)
+										? "number"
+										: isSensitive
+											? "password"
+											: "text"
+								}
+								inputMode={isNumberType(valueType) ? "decimal" : "text"}
+								value={draftValue}
+								onChange={(event) =>
+									updateDraftValue(config.key, event.target.value)
+								}
+								placeholder={t("config_value")}
+							/>
+						</div>
+						<UrlAssetPreview url={draftValue} />
 					</div>
 				) : (
 					<Input
@@ -1306,6 +1531,75 @@ export default function AdminSettingsPage({
 		);
 	};
 
+	const renderFloatingSaveBar = () => {
+		if (saveBarPhase === "hidden") {
+			return null;
+		}
+
+		return (
+			<div
+				data-testid="settings-save-bar"
+				aria-hidden={!hasUnsavedChanges}
+				className="pointer-events-none fixed right-0 bottom-0 left-0 z-30 px-4 pb-4 md:left-60 md:px-6 md:pb-6"
+			>
+				<div
+					className={cn(
+						"mx-auto w-full max-w-4xl origin-bottom will-change-transform motion-reduce:animate-none",
+						saveBarPhase === "entering"
+							? "pointer-events-auto animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-[180ms] ease-out"
+							: saveBarPhase === "visible"
+								? "pointer-events-auto translate-y-0 opacity-100"
+								: "pointer-events-none animate-out fade-out zoom-out-95 slide-out-to-bottom-4 duration-[140ms] ease-in",
+					)}
+				>
+					<div
+						className={cn(
+							"rounded-2xl border bg-background/95 shadow-xl shadow-black/5 ring-1 backdrop-blur supports-[backdrop-filter]:bg-background/80",
+							hasValidationError
+								? "border-destructive/40 ring-destructive/10"
+								: "border-border/70 ring-border/50",
+						)}
+					>
+						<div className="flex flex-col gap-4 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+							<div className="min-w-0 flex-1 space-y-1">
+								<p className="text-sm font-medium">
+									{t("settings_save_notice", { count: changedCount })}
+								</p>
+								<p
+									className={
+										hasValidationError
+											? "text-sm text-destructive"
+											: "text-sm text-muted-foreground"
+									}
+								>
+									{hasValidationError
+										? t("custom_config_validation_error")
+										: t("settings_save_hint")}
+								</p>
+							</div>
+							<div className="flex flex-wrap items-center gap-3 sm:justify-end">
+								<Button
+									variant="ghost"
+									disabled={saving || !hasUnsavedChanges}
+									onClick={discardChanges}
+								>
+									{t("undo_changes")}
+								</Button>
+								<Button
+									className="w-fit"
+									disabled={saving || hasValidationError || !hasUnsavedChanges}
+									onClick={() => void handleSaveAll()}
+								>
+									{saving ? t("save_changes") : t("save_changes")}
+								</Button>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		);
+	};
+
 	return (
 		<AdminLayout>
 			<AdminPageShell>
@@ -1351,51 +1645,10 @@ export default function AdminSettingsPage({
 								))}
 							</div>
 						</Tabs>
-
-						<div
-							aria-hidden={!hasUnsavedChanges}
-							className={
-								hasUnsavedChanges
-									? "mt-8 max-h-32 translate-y-0 overflow-hidden opacity-100 transition-[max-height,opacity,transform,margin] duration-300 ease-out"
-									: "mt-0 max-h-0 translate-y-2 overflow-hidden opacity-0 transition-[max-height,opacity,transform,margin] duration-200 ease-in pointer-events-none"
-							}
-						>
-							<div className="space-y-2 pb-1">
-								<p className="text-sm font-medium">
-									{t("settings_save_notice", { count: changedCount })}
-								</p>
-								<p
-									className={
-										hasValidationError
-											? "text-sm text-destructive"
-											: "text-sm text-muted-foreground"
-									}
-								>
-									{hasValidationError
-										? t("custom_config_validation_error")
-										: t("settings_save_hint")}
-								</p>
-								<div className="flex flex-wrap items-center gap-3">
-									<Button
-										variant="ghost"
-										disabled={saving}
-										onClick={discardChanges}
-									>
-										{t("undo_changes")}
-									</Button>
-									<Button
-										className="w-fit"
-										disabled={saving || hasValidationError}
-										onClick={() => void handleSaveAll()}
-									>
-										{saving ? t("save_changes") : t("save_changes")}
-									</Button>
-								</div>
-							</div>
-						</div>
 					</div>
 				)}
 			</AdminPageShell>
+			{renderFloatingSaveBar()}
 		</AdminLayout>
 	);
 }

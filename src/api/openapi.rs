@@ -191,6 +191,8 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::share_public::shared_avatar,
         crate::api::routes::share_public::shared_thumbnail,
         crate::api::routes::share_public::shared_folder_file_thumbnail,
+        // public config
+        crate::api::routes::public::get_branding,
     ),
     components(
         schemas(
@@ -279,6 +281,7 @@ use utoipa::{Modify, OpenApi};
             crate::api::routes::admin::SetConfigReq,
             crate::entities::system_config::Model,
             crate::services::config_service::ConfigSchemaItem,
+            crate::services::config_service::PublicBranding,
             crate::services::policy_service::StoragePolicyGroupItemInfo,
             crate::services::policy_service::StoragePolicyGroupInfo,
             crate::services::policy_service::StoragePolicyGroupItemInput,
@@ -346,6 +349,7 @@ use utoipa::{Modify, OpenApi};
         (name = "health", description = "Health checks"),
         (name = "search", description = "Search files and folders"),
         (name = "batch", description = "Batch operations"),
+        (name = "public", description = "Anonymous public endpoints"),
     ),
 )]
 pub struct ApiDoc;

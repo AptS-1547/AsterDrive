@@ -1097,6 +1097,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/branding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_public_branding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/s/{token}": {
         parameters: {
             query?: never;
@@ -3000,6 +3016,11 @@ export interface components {
         PrefViewMode: "list" | "grid";
         PresignPartsReq: {
             part_numbers: number[];
+        };
+        PublicBranding: {
+            description: string;
+            favicon_url: string;
+            title: string;
         };
         PurgedCountResponse: {
             /** Format: int32 */
@@ -8426,6 +8447,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_public_branding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public branding config */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            description: string;
+                            favicon_url: string;
+                            title: string;
+                        };
+                        msg: string;
+                    };
+                };
             };
         };
     };

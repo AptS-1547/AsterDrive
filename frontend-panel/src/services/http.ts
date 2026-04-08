@@ -26,7 +26,7 @@ const SKIP_REFRESH_PATHS = [
 
 function shouldSkipRefresh(url: string) {
 	if (SKIP_REFRESH_PATHS.some((path) => url.endsWith(path))) return true;
-	return url.includes("/s/");
+	return url.includes("/s/") || url.includes("/public/");
 }
 
 let isRefreshing = false;

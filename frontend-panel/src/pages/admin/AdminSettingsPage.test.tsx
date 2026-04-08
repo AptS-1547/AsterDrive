@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	createEvent,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
 
@@ -16,6 +23,8 @@ const translationMap: Record<string, string> = {
 	settings_item_auth_access_token_ttl_secs_desc:
 		"Access token lifetime in seconds",
 	settings_item_auth_access_token_ttl_secs_label: "Access token lifetime",
+	settings_save_hint:
+		"更改会先暂存为草稿，确认无误后再统一保存，⌘/Ctrl + S 保存。",
 };
 
 vi.mock("react-i18next", () => ({
@@ -521,6 +530,55 @@ describe("AdminSettingsPage", () => {
 		});
 	});
 
+	it("renders site settings before the other categories when available", async () => {
+		Object.defineProperty(window, "innerWidth", {
+			configurable: true,
+			value: 1440,
+			writable: true,
+		});
+
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "general",
+					key: "branding_title",
+					value: "AsterDrive",
+					value_type: "string",
+				}),
+				createConfig({
+					category: "auth",
+					key: "auth_access_token_ttl_secs",
+					value: "1200",
+					value_type: "number",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "general",
+				default_value: "AsterDrive",
+				key: "branding_title",
+				value_type: "string",
+			}),
+			createSchemaItem({
+				category: "auth",
+				default_value: "900",
+				key: "auth_access_token_ttl_secs",
+				value_type: "number",
+			}),
+		]);
+
+		const { container } = render(<AdminSettingsPage section="general" />);
+
+		await screen.findByDisplayValue("AsterDrive");
+
+		const categoryButtons = Array.from(
+			container.querySelectorAll("button[data-value]"),
+		).map((button) => button.getAttribute("data-value"));
+
+		expect(categoryButtons.slice(0, 2)).toEqual(["general", "auth"]);
+	});
+
 	it("edits non-boolean values inline and saves them with the shared save button", async () => {
 		render(<AdminSettingsPage />);
 
@@ -544,6 +602,97 @@ describe("AdminSettingsPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
 	});
 
+	it("saves staged changes when Cmd+S is pressed from a focused input", async () => {
+		render(<AdminSettingsPage />);
+
+		const ttlInput = await screen.findByDisplayValue("1200");
+		ttlInput.focus();
+
+		fireEvent.change(ttlInput, {
+			target: { value: "1800" },
+		});
+
+		expect(
+			await screen.findByText("settings_save_notice:1"),
+		).toBeInTheDocument();
+
+		const saveEvent = createEvent.keyDown(ttlInput, {
+			bubbles: true,
+			cancelable: true,
+			key: "s",
+			metaKey: true,
+		});
+
+		fireEvent(ttlInput, saveEvent);
+
+		expect(saveEvent.defaultPrevented).toBe(true);
+
+		await waitFor(() => {
+			expect(mockState.setConfig).toHaveBeenCalledWith(
+				"auth_access_token_ttl_secs",
+				"1800",
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
+	});
+
+	it("shows the combined save hint when valid staged changes are present", async () => {
+		render(<AdminSettingsPage />);
+
+		await screen.findByDisplayValue("1200");
+
+		fireEvent.change(screen.getByDisplayValue("1200"), {
+			target: { value: "1800" },
+		});
+
+		expect(
+			await screen.findByText(
+				"更改会先暂存为草稿，确认无误后再统一保存，⌘/Ctrl + S 保存。",
+			),
+		).toBeInTheDocument();
+	});
+
+	it("renders the save actions in a floating bottom bar", async () => {
+		render(<AdminSettingsPage />);
+
+		await screen.findByDisplayValue("1200");
+
+		fireEvent.change(screen.getByDisplayValue("1200"), {
+			target: { value: "1800" },
+		});
+
+		const saveBar = await screen.findByTestId("settings-save-bar");
+
+		expect(saveBar).toHaveClass("fixed", "bottom-0", "pointer-events-none");
+		expect(saveBar).toHaveAttribute("aria-hidden", "false");
+		expect(saveBar).toHaveTextContent("settings_save_notice:1");
+	});
+
+	it("keeps the floating save bar mounted for the exit animation before unmounting", async () => {
+		render(<AdminSettingsPage />);
+
+		await screen.findByDisplayValue("1200");
+
+		fireEvent.change(screen.getByDisplayValue("1200"), {
+			target: { value: "1800" },
+		});
+
+		const saveBar = await screen.findByTestId("settings-save-bar");
+
+		vi.useFakeTimers();
+		fireEvent.click(screen.getByRole("button", { name: "undo_changes" }));
+
+		expect(saveBar).toBeInTheDocument();
+		expect(saveBar).toHaveAttribute("aria-hidden", "true");
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(140);
+		});
+
+		expect(screen.queryByTestId("settings-save-bar")).not.toBeInTheDocument();
+		vi.useRealTimers();
+	});
+
 	it("renders translated system config metadata without exposing the raw config key", async () => {
 		render(<AdminSettingsPage section="auth" />);
 
@@ -557,6 +706,83 @@ describe("AdminSettingsPage", () => {
 			screen.queryByText("auth_access_token_ttl_secs"),
 		).not.toBeInTheDocument();
 		expect(screen.queryByText("ttl desc")).not.toBeInTheDocument();
+	});
+
+	it("shows a favicon asset preview next to the branding URL field", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "general",
+					description: "favicon desc",
+					key: "branding_favicon_url",
+					value: "/branding/favicon.svg",
+					value_type: "string",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "general",
+				default_value: "/favicon.svg",
+				description: "favicon desc",
+				key: "branding_favicon_url",
+				value_type: "string",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="general" />);
+
+		expect(
+			await screen.findByDisplayValue("/branding/favicon.svg"),
+		).toBeInTheDocument();
+		expect(screen.getByTestId("branding-asset-preview")).toBeInTheDocument();
+		expect(screen.getByTestId("branding-asset-preview-image")).toHaveAttribute(
+			"src",
+			"/branding/favicon.svg",
+		);
+		expect(screen.getByLabelText("/branding/favicon.svg")).toBeInTheDocument();
+	});
+
+	it("debounces favicon asset preview updates while typing", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "general",
+					key: "branding_favicon_url",
+					value: "/branding/favicon.svg",
+					value_type: "string",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "general",
+				default_value: "/favicon.svg",
+				key: "branding_favicon_url",
+				value_type: "string",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="general" />);
+
+		const input = await screen.findByDisplayValue("/branding/favicon.svg");
+		expect(screen.getByLabelText("/branding/favicon.svg")).toBeInTheDocument();
+
+		vi.useFakeTimers();
+		fireEvent.change(input, {
+			target: { value: "/branding/next.svg" },
+		});
+
+		expect(
+			screen.queryByLabelText("/branding/next.svg"),
+		).not.toBeInTheDocument();
+		expect(screen.getByLabelText("/branding/favicon.svg")).toBeInTheDocument();
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(300);
+		});
+
+		expect(screen.getByLabelText("/branding/next.svg")).toBeInTheDocument();
 	});
 
 	it("discards draft changes without sending any requests", async () => {
