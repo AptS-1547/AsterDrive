@@ -52,7 +52,6 @@ struct PreviewUsageState {
 struct ReservedUse {
     cache_key: String,
     previous_used: u32,
-    next_used: u32,
     ttl_secs: u64,
 }
 
@@ -63,12 +62,11 @@ enum ResolvedPreviewTarget {
     },
     Shared {
         payload: PreviewTokenPayload,
-        share: share::Model,
         file: file::Model,
     },
 }
 
-pub async fn create_token_for_file_in_scope(
+pub(crate) async fn create_token_for_file_in_scope(
     state: &AppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
@@ -252,11 +250,7 @@ async fn resolve_token(state: &AppState, token: &str) -> Result<ResolvedPreviewT
                     "preview link token signature mismatch",
                 ));
             }
-            Ok(ResolvedPreviewTarget::Shared {
-                payload,
-                share,
-                file,
-            })
+            Ok(ResolvedPreviewTarget::Shared { payload, file })
         }
         PreviewSubject::ShareFolderFile {
             share_token,
@@ -276,11 +270,7 @@ async fn resolve_token(state: &AppState, token: &str) -> Result<ResolvedPreviewT
                     "preview link token signature mismatch",
                 ));
             }
-            Ok(ResolvedPreviewTarget::Shared {
-                payload,
-                share,
-                file,
-            })
+            Ok(ResolvedPreviewTarget::Shared { payload, file })
         }
     }
 }
@@ -377,7 +367,6 @@ async fn reserve_usage(
     Ok(ReservedUse {
         cache_key,
         previous_used: usage.used,
-        next_used,
         ttl_secs,
     })
 }

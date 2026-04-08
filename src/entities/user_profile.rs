@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -36,6 +38,7 @@ pub enum Relation {
         to = "super::user::Column::Id"
     )]
     User,
+    #[allow(deprecated)]
     #[deprecated(
         since = "0.1.0",
         note = "legacy avatar storage policy compatibility; new avatar uploads always use system_config.avatar_dir local storage"

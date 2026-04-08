@@ -952,10 +952,11 @@ async fn test_avatar_upload_and_source_switch() {
         body["data"]["avatar"]["url_512"],
         "/auth/profile/avatar/512?v=1"
     );
-    let avatar_v1_512 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/512.webp"));
-    let avatar_v1_1024 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/1024.webp"));
+    let avatar_user_dir =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}"));
+    let avatar_v1_dir = avatar_user_dir.join("v1");
+    let avatar_v1_512 = avatar_v1_dir.join("512.webp");
+    let avatar_v1_1024 = avatar_v1_dir.join("1024.webp");
     assert!(avatar_v1_512.exists());
     assert!(avatar_v1_1024.exists());
     assert!(
@@ -997,6 +998,8 @@ async fn test_avatar_upload_and_source_switch() {
     );
     assert!(!avatar_v1_512.exists());
     assert!(!avatar_v1_1024.exists());
+    assert!(!avatar_v1_dir.exists());
+    assert!(!avatar_user_dir.exists());
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/profile/avatar/512")
@@ -1038,10 +1041,11 @@ async fn test_avatar_reupload_replaces_previous_objects() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let avatar_v1_512 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/512.webp"));
-    let avatar_v1_1024 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/1024.webp"));
+    let avatar_user_dir =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}"));
+    let avatar_v1_dir = avatar_user_dir.join("v1");
+    let avatar_v1_512 = avatar_v1_dir.join("512.webp");
+    let avatar_v1_1024 = avatar_v1_dir.join("1024.webp");
     assert!(avatar_v1_512.exists());
     assert!(avatar_v1_1024.exists());
 
@@ -1065,12 +1069,14 @@ async fn test_avatar_reupload_replaces_previous_objects() {
         "/auth/profile/avatar/512?v=2"
     );
 
-    let avatar_v2_512 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v2/512.webp"));
-    let avatar_v2_1024 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v2/1024.webp"));
+    let avatar_v2_dir = avatar_user_dir.join("v2");
+    let avatar_v2_512 = avatar_v2_dir.join("512.webp");
+    let avatar_v2_1024 = avatar_v2_dir.join("1024.webp");
     assert!(!avatar_v1_512.exists());
     assert!(!avatar_v1_1024.exists());
+    assert!(!avatar_v1_dir.exists());
+    assert!(avatar_user_dir.exists());
+    assert!(avatar_v2_dir.exists());
     assert!(avatar_v2_512.exists());
     assert!(avatar_v2_1024.exists());
 }
@@ -1107,10 +1113,11 @@ async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let avatar_v1_512 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/512.webp"));
-    let avatar_v1_1024 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/1024.webp"));
+    let avatar_user_dir =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}"));
+    let avatar_v1_dir = avatar_user_dir.join("v1");
+    let avatar_v1_512 = avatar_v1_dir.join("512.webp");
+    let avatar_v1_1024 = avatar_v1_dir.join("1024.webp");
     assert!(avatar_v1_512.exists());
     assert!(avatar_v1_1024.exists());
 
@@ -1130,6 +1137,8 @@ async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
 
     assert!(!avatar_v1_512.exists());
     assert!(!avatar_v1_1024.exists());
+    assert!(!avatar_v1_dir.exists());
+    assert!(!avatar_user_dir.exists());
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/profile/avatar/512")

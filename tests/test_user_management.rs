@@ -121,10 +121,11 @@ async fn test_force_delete_user() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let avatar_512 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{victim_id}/v1/512.webp"));
-    let avatar_1024 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{victim_id}/v1/1024.webp"));
+    let avatar_user_dir =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{victim_id}"));
+    let avatar_v1_dir = avatar_user_dir.join("v1");
+    let avatar_512 = avatar_v1_dir.join("512.webp");
+    let avatar_1024 = avatar_v1_dir.join("1024.webp");
     assert!(
         avatar_512.exists(),
         "avatar 512 should exist before force delete"
@@ -171,6 +172,14 @@ async fn test_force_delete_user() {
     assert!(
         !avatar_1024.exists(),
         "avatar 1024 should be deleted during force delete"
+    );
+    assert!(
+        !avatar_v1_dir.exists(),
+        "avatar version dir should be deleted during force delete"
+    );
+    assert!(
+        !avatar_user_dir.exists(),
+        "avatar user dir should be deleted during force delete"
     );
 }
 
@@ -273,10 +282,11 @@ async fn test_force_delete_user_tolerates_missing_avatar_object() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let avatar_512 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{victim_id}/v1/512.webp"));
-    let avatar_1024 =
-        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{victim_id}/v1/1024.webp"));
+    let avatar_user_dir =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{victim_id}"));
+    let avatar_v1_dir = avatar_user_dir.join("v1");
+    let avatar_512 = avatar_v1_dir.join("512.webp");
+    let avatar_1024 = avatar_v1_dir.join("1024.webp");
     assert!(avatar_512.exists());
     assert!(avatar_1024.exists());
 
@@ -291,6 +301,8 @@ async fn test_force_delete_user_tolerates_missing_avatar_object() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     assert!(!avatar_1024.exists());
+    assert!(!avatar_v1_dir.exists());
+    assert!(!avatar_user_dir.exists());
 }
 
 // ── 不能删除初始管理员 id=1 ────────────────────────────────

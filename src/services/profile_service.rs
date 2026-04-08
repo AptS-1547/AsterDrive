@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::path::Component;
 use std::path::{Path, PathBuf};
 
 use actix_multipart::Multipart;
@@ -116,6 +117,88 @@ fn legacy_avatar_policy_id(profile: &user_profile::Model) -> Option<i64> {
 
 fn user_avatar_dir(root_dir: &Path, user_id: i64, version: i32) -> PathBuf {
     root_dir.join(user_avatar_prefix(user_id, version))
+}
+
+fn normalize_absolute_path(path: &Path) -> Option<PathBuf> {
+    if !path.is_absolute() {
+        return None;
+    }
+
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return None;
+                }
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+
+    Some(normalized)
+}
+
+async fn cleanup_empty_avatar_dirs(prefix_dir: &Path, root_dir: &Path) {
+    let Some(mut current) = normalize_absolute_path(prefix_dir) else {
+        tracing::warn!(
+            "skip avatar dir cleanup for non-absolute prefix {}",
+            prefix_dir.display()
+        );
+        return;
+    };
+    let Some(root_dir) = normalize_absolute_path(root_dir) else {
+        tracing::warn!(
+            "skip avatar dir cleanup for non-absolute root {}",
+            root_dir.display()
+        );
+        return;
+    };
+
+    if current == root_dir || !current.starts_with(&root_dir) {
+        tracing::warn!(
+            "skip avatar dir cleanup outside avatar root: prefix={}, root={}",
+            current.display(),
+            root_dir.display()
+        );
+        return;
+    }
+
+    while current != root_dir {
+        match tokio::fs::remove_dir(&current).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => break,
+            Err(e) => {
+                tracing::warn!("failed to cleanup avatar dir {}: {e}", current.display());
+                break;
+            }
+        }
+
+        let Some(parent) = current.parent() else {
+            break;
+        };
+        current = parent.to_path_buf();
+    }
+}
+
+async fn delete_local_avatar_files(prefix: &Path) {
+    for size in [AVATAR_SIZE_SM, AVATAR_SIZE_LG] {
+        let path = avatar_variant_file_path(prefix, size);
+        if let Err(e) = tokio::fs::remove_file(&path).await
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("failed to delete avatar file {}: {e}", path.display());
+        }
+    }
+}
+
+async fn cleanup_local_avatar_prefix(prefix: &Path, root_dir: &Path) {
+    delete_local_avatar_files(prefix).await;
+    cleanup_empty_avatar_dirs(prefix, root_dir).await;
 }
 
 fn normalize_display_name(value: &str) -> Result<Option<String>> {
@@ -249,12 +332,16 @@ async fn delete_upload_objects(state: &AppState, profile: &user_profile::Model) 
         return;
     }
 
-    for size in [AVATAR_SIZE_SM, AVATAR_SIZE_LG] {
-        let path = avatar_variant_file_path(Path::new(prefix), size);
-        if let Err(e) = tokio::fs::remove_file(&path).await
-            && e.kind() != std::io::ErrorKind::NotFound
-        {
-            tracing::warn!("failed to delete avatar file {}: {e}", path.display());
+    let prefix = Path::new(prefix);
+    delete_local_avatar_files(prefix).await;
+
+    match avatar::resolve_local_avatar_root_dir(&state.runtime_config) {
+        Ok(root_dir) => cleanup_empty_avatar_dirs(prefix, &root_dir).await,
+        Err(e) => {
+            tracing::warn!(
+                "failed to resolve avatar root for local avatar cleanup {}: {e}",
+                prefix.display()
+            );
         }
     }
 }
@@ -411,18 +498,15 @@ pub async fn upload_avatar(
         .as_ref()
         .map(|profile| profile.avatar_version.saturating_add(1))
         .unwrap_or(1);
-    let prefix = user_avatar_dir(
-        &avatar::resolve_local_avatar_root_dir(&state.runtime_config)?,
-        user_id,
-        version,
-    );
+    let avatar_root_dir = avatar::resolve_local_avatar_root_dir(&state.runtime_config)?;
+    let prefix = user_avatar_dir(&avatar_root_dir, user_id, version);
     let prefix_value = prefix.to_string_lossy().into_owned();
     let small_path = avatar_variant_file_path(&prefix, AVATAR_SIZE_SM);
     let large_path = avatar_variant_file_path(&prefix, AVATAR_SIZE_LG);
 
     write_local_avatar(&small_path, &small_bytes).await?;
     if let Err(e) = write_local_avatar(&large_path, &large_bytes).await {
-        let _ = tokio::fs::remove_file(&small_path).await;
+        cleanup_local_avatar_prefix(&prefix, &avatar_root_dir).await;
         return Err(e);
     }
 
@@ -458,8 +542,7 @@ pub async fn upload_avatar(
     let saved = match saved {
         Ok(model) => model,
         Err(err) => {
-            let _ = tokio::fs::remove_file(&small_path).await;
-            let _ = tokio::fs::remove_file(&large_path).await;
+            cleanup_local_avatar_prefix(&prefix, &avatar_root_dir).await;
             return Err(err);
         }
     };
