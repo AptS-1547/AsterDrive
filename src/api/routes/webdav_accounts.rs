@@ -5,6 +5,7 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
+use crate::config::site_url;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, webdav_account_service};
@@ -33,6 +34,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct WebdavSettingsInfo {
     pub prefix: String,
+    pub endpoint: String,
 }
 
 #[api_docs_macros::path(
@@ -47,8 +49,15 @@ pub struct WebdavSettingsInfo {
     security(("bearer" = [])),
 )]
 pub async fn get_settings(state: web::Data<AppState>) -> Result<HttpResponse> {
+    let endpoint_path = if state.config.webdav.prefix == "/" {
+        "/".to_string()
+    } else {
+        format!("{}/", state.config.webdav.prefix.trim_end_matches('/'))
+    };
+
     Ok(HttpResponse::Ok().json(ApiResponse::ok(WebdavSettingsInfo {
         prefix: state.config.webdav.prefix.clone(),
+        endpoint: site_url::public_app_url_or_path(&state.runtime_config, &endpoint_path),
     })))
 }
 

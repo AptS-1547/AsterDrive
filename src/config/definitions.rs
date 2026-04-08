@@ -75,6 +75,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     // ── Network ─────────────────────────────────────────────
     ConfigDef {
+        key: "cors_enabled",
+        label_i18n_key: "settings_item_cors_enabled_label",
+        description_i18n_key: "settings_item_cors_enabled_desc",
+        value_type: "boolean",
+        default_fn: || "false".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "network",
+        description: "Enable CORS handling for cross-origin browser requests. When disabled, the server skips all CORS headers and enforcement",
+    },
+    ConfigDef {
         key: "cors_allowed_origins",
         label_i18n_key: "settings_item_cors_allowed_origins_label",
         description_i18n_key: "settings_item_cors_allowed_origins_desc",
@@ -83,7 +94,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         requires_restart: false,
         is_sensitive: false,
         category: "network",
-        description: "Comma-separated CORS origin whitelist. Empty = deny cross-origin, '*' = allow any origin",
+        description: "Comma-separated CORS origin whitelist. Empty = skip CORS headers and let the browser block cross-origin access, '*' = allow any origin",
     },
     ConfigDef {
         key: "cors_allow_credentials",
@@ -186,6 +197,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "general",
         description: "Gravatar avatar base URL (change to proxy/mirror if needed)",
+    },
+    ConfigDef {
+        key: "public_site_url",
+        label_i18n_key: "settings_item_public_site_url_label",
+        description_i18n_key: "settings_item_public_site_url_desc",
+        value_type: "string",
+        default_fn: String::new,
+        requires_restart: false,
+        is_sensitive: false,
+        category: "general",
+        description: "Public HTTP(S) site origin used when generating share, preview, and callback URLs",
     },
     ConfigDef {
         key: "branding_title",

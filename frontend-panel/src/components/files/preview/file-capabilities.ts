@@ -321,6 +321,27 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	video: [{ mode: "video", labelKey: "open_with_video", icon: "Monitor" }],
 	audio: [{ mode: "audio", labelKey: "open_with_audio", icon: "FileAudio" }],
 	pdf: [{ mode: "pdf", labelKey: "open_with_pdf", icon: "FileText" }],
+	document: [
+		{
+			mode: "officeOnline",
+			labelKey: "open_with_office_online",
+			icon: "Globe",
+		},
+	],
+	spreadsheet: [
+		{
+			mode: "officeOnline",
+			labelKey: "open_with_office_online",
+			icon: "Globe",
+		},
+	],
+	presentation: [
+		{
+			mode: "officeOnline",
+			labelKey: "open_with_office_online",
+			icon: "Globe",
+		},
+	],
 	markdown: [
 		{ mode: "markdown", labelKey: "open_with_markdown", icon: "Eye" },
 		{ mode: "code", labelKey: "open_with_code", icon: "FileCode" },
@@ -411,6 +432,19 @@ export function getFileTypeInfo(file: PreviewableFileLike): FileTypeInfo {
 	if (ext === "svg") {
 		return { category: "image", icon: "FileText", color: "text-sky-500" };
 	}
+	if (ext === "doc" || ext === "docx" || ext === "odt") {
+		return { category: "document", icon: "FileText", color: "text-blue-500" };
+	}
+	if (ext === "xls" || ext === "xlsx" || ext === "ods") {
+		return { category: "spreadsheet", icon: "Table", color: "text-green-600" };
+	}
+	if (ext === "ppt" || ext === "pptx" || ext === "odp") {
+		return {
+			category: "presentation",
+			icon: "Presentation",
+			color: "text-orange-500",
+		};
+	}
 
 	for (const [prefix, info] of PREFIX_TYPE_INFO) {
 		if (file.mime_type.startsWith(prefix)) return info;
@@ -466,6 +500,36 @@ export function detectFilePreviewProfile(
 			isEditableText: false,
 			defaultMode: "pdf",
 			options: OPEN_WITH_OPTIONS.pdf,
+		};
+	}
+	if (typeInfo.category === "document") {
+		return {
+			category: "document",
+			isBlobPreview: false,
+			isTextBased: false,
+			isEditableText: false,
+			defaultMode: "officeOnline",
+			options: OPEN_WITH_OPTIONS.document,
+		};
+	}
+	if (typeInfo.category === "spreadsheet") {
+		return {
+			category: "spreadsheet",
+			isBlobPreview: false,
+			isTextBased: false,
+			isEditableText: false,
+			defaultMode: "officeOnline",
+			options: OPEN_WITH_OPTIONS.spreadsheet,
+		};
+	}
+	if (typeInfo.category === "presentation") {
+		return {
+			category: "presentation",
+			isBlobPreview: false,
+			isTextBased: false,
+			isEditableText: false,
+			defaultMode: "officeOnline",
+			options: OPEN_WITH_OPTIONS.presentation,
 		};
 	}
 	if (typeInfo.category === "markdown") {

@@ -35,12 +35,14 @@ vi.mock("@/services/http", () => ({
 }));
 
 describe("fileService", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		mockState.clientPut.mockReset();
 		mockState.delete.mockReset();
 		mockState.get.mockReset();
 		mockState.patch.mockReset();
 		mockState.post.mockReset();
+		const { setPublicSiteUrl } = await import("@/lib/publicSiteUrl");
+		setPublicSiteUrl(null);
 	});
 
 	it("uses the expected file and folder endpoints", async () => {
@@ -228,5 +230,21 @@ describe("fileService", () => {
 		);
 
 		vi.doUnmock("@/config/app");
+	});
+
+	it("uses the configured public site URL for direct absolute links", async () => {
+		const { setPublicSiteUrl } = await import("@/lib/publicSiteUrl");
+		const { fileService } = await import("@/services/fileService");
+
+		setPublicSiteUrl("https://drive.example.com");
+
+		expect(fileService.directUrl("token-1", "clip 1.mp4")).toBe(
+			"https://drive.example.com/d/token-1/clip%201.mp4",
+		);
+		expect(fileService.forceDownloadUrl("token-1", "clip 1.mp4")).toBe(
+			"https://drive.example.com/d/token-1/clip%201.mp4?download=1",
+		);
+
+		setPublicSiteUrl(null);
 	});
 });

@@ -300,6 +300,11 @@ export default function ShareViewPage() {
 							: shareService.downloadFolderPath(token, previewFile.id)
 					}
 					editable={false}
+					previewLinkFactory={() =>
+						info?.share_type === "file"
+							? shareService.createPreviewLink(token)
+							: shareService.createFolderFilePreviewLink(token, previewFile.id)
+					}
 				/>
 			</Suspense>
 		) : null;

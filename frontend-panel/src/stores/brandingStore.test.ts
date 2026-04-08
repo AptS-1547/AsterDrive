@@ -35,10 +35,12 @@ async function loadBrandingStoreModule() {
 }
 
 describe("brandingStore", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		mockState.applyBranding.mockReset();
 		mockState.getBranding.mockReset();
 		mockState.loggerWarn.mockReset();
+		const { setPublicSiteUrl } = await import("@/lib/publicSiteUrl");
+		setPublicSiteUrl(null);
 	});
 
 	it("loads public branding once and applies it", async () => {
@@ -46,9 +48,11 @@ describe("brandingStore", () => {
 			title: "Nebula Drive",
 			description: "Team storage",
 			favicon_url: "https://cdn.example.com/icon.png",
+			site_url: "https://drive.example.com",
 		});
 
 		const { useBrandingStore } = await loadBrandingStoreModule();
+		const { getPublicSiteUrl } = await import("@/lib/publicSiteUrl");
 
 		await useBrandingStore.getState().load();
 		await useBrandingStore.getState().load();
@@ -67,13 +71,16 @@ describe("brandingStore", () => {
 				title: "Nebula Drive",
 				description: "Team storage",
 			}),
+			siteUrl: "https://drive.example.com",
 		});
+		expect(getPublicSiteUrl()).toBe("https://drive.example.com");
 	});
 
 	it("falls back to defaults when the public endpoint fails", async () => {
 		mockState.getBranding.mockRejectedValue(new Error("network down"));
 
 		const { useBrandingStore } = await loadBrandingStoreModule();
+		const { getPublicSiteUrl } = await import("@/lib/publicSiteUrl");
 
 		await useBrandingStore.getState().load();
 
@@ -91,6 +98,8 @@ describe("brandingStore", () => {
 				title: "AsterDrive",
 				description: "Self-hosted cloud storage",
 			}),
+			siteUrl: null,
 		});
+		expect(getPublicSiteUrl()).toBeNull();
 	});
 });

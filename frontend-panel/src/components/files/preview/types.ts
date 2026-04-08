@@ -23,6 +23,7 @@ export type OpenWithMode =
 	| "videoBrowser"
 	| "audio"
 	| "pdf"
+	| "officeOnline"
 	| "markdown"
 	| "table"
 	| "structured"

@@ -13,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
-import type { FileInfo, FileListItem } from "@/types/api";
+import type { FileInfo, FileListItem, PreviewLinkInfo } from "@/types/api";
 import { BlobMediaPreview } from "./BlobMediaPreview";
 import { CustomVideoBrowserPreview } from "./CustomVideoBrowserPreview";
 import { detectFilePreviewProfile } from "./file-capabilities";
@@ -42,6 +42,11 @@ const MarkdownPreview = lazy(async () => {
 	return { default: module.MarkdownPreview };
 });
 
+const OfficeOnlinePreview = lazy(async () => {
+	const module = await import("./OfficeOnlinePreview");
+	return { default: module.OfficeOnlinePreview };
+});
+
 const CsvTablePreview = lazy(async () => {
 	const module = await import("./CsvTablePreview");
 	return { default: module.CsvTablePreview };
@@ -68,6 +73,7 @@ interface FilePreviewDialogProps {
 	onFileUpdated?: () => void;
 	downloadPath?: string;
 	editable?: boolean;
+	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 }
 
 export function FilePreviewDialog({
@@ -76,6 +82,7 @@ export function FilePreviewDialog({
 	onFileUpdated,
 	downloadPath,
 	editable = true,
+	previewLinkFactory,
 }: FilePreviewDialogProps) {
 	const { t } = useTranslation(["core", "files"]);
 	const baseProfile = useMemo(() => detectFilePreviewProfile(file), [file]);
@@ -117,6 +124,7 @@ export function FilePreviewDialog({
 	const activeMode = mode ?? preferredMode;
 	const usesInnerScroll =
 		activeMode === "pdf" ||
+		activeMode === "officeOnline" ||
 		activeMode === "table" ||
 		(activeMode === "videoBrowser" && resolvedVideoBrowser?.mode === "iframe");
 	const fillsViewportHeight =
@@ -124,6 +132,7 @@ export function FilePreviewDialog({
 		activeMode === "formatted" ||
 		activeMode === "markdown" ||
 		activeMode === "pdf" ||
+		activeMode === "officeOnline" ||
 		activeMode === "table" ||
 		(activeMode === "videoBrowser" && resolvedVideoBrowser?.mode === "iframe");
 	const previewLoadingState = (
@@ -201,6 +210,20 @@ export function FilePreviewDialog({
 			return (
 				<Suspense fallback={previewLoadingState}>
 					<PdfPreview path={resolvedDownloadPath} fileName={file.name} />
+				</Suspense>
+			);
+		}
+		if (activeMode === "officeOnline") {
+			if (!previewLinkFactory) {
+				return <PreviewUnavailable />;
+			}
+			return (
+				<Suspense fallback={previewLoadingState}>
+					<OfficeOnlinePreview
+						file={file}
+						downloadPath={resolvedDownloadPath}
+						createPreviewLink={previewLinkFactory}
+					/>
 				</Suspense>
 			);
 		}

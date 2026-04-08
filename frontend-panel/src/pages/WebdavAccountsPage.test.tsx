@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setPublicSiteUrl } from "@/lib/publicSiteUrl";
 import WebdavAccountsPage from "@/pages/WebdavAccountsPage";
 
 const mockState = vi.hoisted(() => ({
@@ -301,6 +302,7 @@ describe("WebdavAccountsPage", () => {
 		mockState.testConnection.mockResolvedValue(undefined);
 		mockState.toggle.mockResolvedValue(undefined);
 		mockState.writeText.mockResolvedValue(undefined);
+		setPublicSiteUrl(null);
 
 		Object.defineProperty(navigator, "clipboard", {
 			configurable: true,
@@ -337,6 +339,22 @@ describe("WebdavAccountsPage", () => {
 			expect(mockState.toggle).toHaveBeenCalledWith(11);
 		});
 		expect(mockState.reload).toHaveBeenCalledTimes(1);
+	});
+
+	it("uses the configured public site URL when copying the WebDAV endpoint", async () => {
+		setPublicSiteUrl("https://drive.example.com");
+
+		render(<WebdavAccountsPage />);
+		await screen.findByDisplayValue("https://drive.example.com/dav/");
+
+		fireEvent.click(screen.getByText("webdav:webdav_copy_endpoint"));
+
+		await waitFor(() => {
+			expect(mockState.writeText).toHaveBeenCalledWith(
+				"https://drive.example.com/dav/",
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("copied_to_clipboard");
 	});
 
 	it("creates accounts and tests the returned credentials", async () => {

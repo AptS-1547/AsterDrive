@@ -3,6 +3,7 @@ use crate::config::auth_runtime;
 use crate::config::branding;
 use crate::config::cors;
 use crate::config::definitions::ALL_CONFIGS;
+use crate::config::site_url;
 use crate::db::repository::config_repo;
 use crate::entities::system_config;
 use crate::errors::{AsterError, Result};
@@ -111,6 +112,7 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
         | auth_runtime::AUTH_REFRESH_TOKEN_TTL_SECS_KEY => {
             auth_runtime::normalize_token_ttl_config_value(key, value)
         }
+        cors::CORS_ENABLED_KEY => cors::normalize_enabled_config_value(value),
         cors::CORS_ALLOWED_ORIGINS_KEY => {
             let normalized = cors::normalize_allowed_origins_config_value(value)?;
             let parsed = cors::parse_allowed_origins_value(&normalized)?;
@@ -133,6 +135,7 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
             Ok(normalized)
         }
         cors::CORS_MAX_AGE_SECS_KEY => cors::normalize_max_age_config_value(value),
+        site_url::PUBLIC_SITE_URL_KEY => site_url::normalize_public_site_url_config_value(value),
         branding::BRANDING_TITLE_KEY => branding::normalize_title_config_value(value),
         branding::BRANDING_DESCRIPTION_KEY => branding::normalize_description_config_value(value),
         branding::BRANDING_FAVICON_URL_KEY => branding::normalize_favicon_url_config_value(value),
@@ -146,6 +149,7 @@ pub struct PublicBranding {
     pub title: String,
     pub description: String,
     pub favicon_url: String,
+    pub site_url: Option<String>,
 }
 
 pub fn get_public_branding(state: &AppState) -> PublicBranding {
@@ -153,6 +157,7 @@ pub fn get_public_branding(state: &AppState) -> PublicBranding {
         title: branding::title_or_default(&state.runtime_config),
         description: branding::description_or_default(&state.runtime_config),
         favicon_url: branding::favicon_url_or_default(&state.runtime_config),
+        site_url: site_url::public_site_url(&state.runtime_config),
     }
 }
 

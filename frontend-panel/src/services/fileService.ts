@@ -1,5 +1,6 @@
 import { config } from "@/config/app";
 import { joinApiUrl } from "@/lib/apiUrl";
+import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
@@ -10,6 +11,7 @@ import type {
 	FolderAncestorItem,
 	FolderContents,
 	FolderInfo,
+	PreviewLinkInfo,
 } from "@/types/api";
 import { ApiError, api } from "./http";
 
@@ -21,11 +23,6 @@ export interface FolderListParams {
 	file_after_id?: number;
 	sort_by?: "name" | "size" | "created_at" | "updated_at" | "type";
 	sort_order?: "asc" | "desc";
-}
-
-function absoluteAppUrl(path: string) {
-	if (typeof window === "undefined") return path;
-	return new URL(path, window.location.origin).toString();
 }
 
 function encodeFileName(fileName: string) {
@@ -69,6 +66,11 @@ export function createFileService(workspace: Workspace) {
 		getDirectLinkToken: (id: number) =>
 			api.get<DirectLinkTokenInfo>(
 				buildWorkspacePath(workspace, `/files/${id}/direct-link`),
+			),
+
+		createPreviewLink: (id: number) =>
+			api.post<PreviewLinkInfo>(
+				buildWorkspacePath(workspace, `/files/${id}/preview-link`),
 			),
 
 		deleteFile: (id: number) =>

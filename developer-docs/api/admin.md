@@ -241,6 +241,7 @@
 - `max_versions_per_file`
 - `audit_log_enabled`
 - `audit_log_retention_days`
+- `cors_enabled`
 - `cors_allowed_origins`
 - `cors_allow_credentials`
 - `cors_max_age_secs`

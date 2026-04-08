@@ -220,6 +220,12 @@ vi.mock("@/components/files/preview/MarkdownPreview", () => ({
 	),
 }));
 
+vi.mock("@/components/files/preview/OfficeOnlinePreview", () => ({
+	OfficeOnlinePreview: ({ downloadPath }: { downloadPath: string }) => (
+		<div>{`office:${downloadPath}`}</div>
+	),
+}));
+
 vi.mock("@/components/files/preview/CsvTablePreview", () => ({
 	CsvTablePreview: ({
 		path,
@@ -496,5 +502,73 @@ describe("FilePreviewDialog", () => {
 		expect(
 			screen.getByTestId("dialog-content").className.split(/\s+/),
 		).not.toContain("h-[90vh]");
+	});
+
+	it("renders office previews in the fixed-height workspace when a preview link factory exists", async () => {
+		mockState.profile = {
+			category: "document",
+			defaultMode: "officeOnline",
+			isBlobPreview: false,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{
+					icon: "Globe",
+					labelKey: "open_with_office_online",
+					mode: "officeOnline",
+				},
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type:
+					"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				name: "report.docx",
+				size: 2048,
+			} as never,
+			previewLinkFactory: vi.fn(async () => ({
+				expires_at: "2026-04-08T12:00:00Z",
+				max_uses: 5,
+				path: "/pv/token/report.docx",
+			})),
+		});
+
+		expect(
+			await screen.findByText("office:/files/7/download"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByTestId("dialog-content").className.split(/\s+/),
+		).toContain("h-[90vh]");
+	});
+
+	it("falls back when office preview is selected without a preview link factory", async () => {
+		mockState.profile = {
+			category: "document",
+			defaultMode: "officeOnline",
+			isBlobPreview: false,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{
+					icon: "Globe",
+					labelKey: "open_with_office_online",
+					mode: "officeOnline",
+				},
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type:
+					"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				name: "report.docx",
+				size: 2048,
+			} as never,
+		});
+
+		expect(await screen.findByText("preview-unavailable")).toBeInTheDocument();
 	});
 });

@@ -3,6 +3,9 @@ import type { FileCategory, OpenWithMode } from "./types";
 
 const OPEN_WITH_PREFERENCE_CATEGORIES: FileCategory[] = [
 	"video",
+	"document",
+	"spreadsheet",
+	"presentation",
 	"markdown",
 	"csv",
 	"tsv",

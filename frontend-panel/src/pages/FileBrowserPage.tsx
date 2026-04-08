@@ -749,6 +749,9 @@ export default function FileBrowserPage() {
 						file={previewFile}
 						onClose={() => setPreviewFile(null)}
 						onFileUpdated={() => refresh()}
+						previewLinkFactory={() =>
+							fileService.createPreviewLink(previewFile.id)
+						}
 					/>
 				</Suspense>
 			)}

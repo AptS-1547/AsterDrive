@@ -32,6 +32,12 @@ pub(crate) async fn create_token_in_scope(
     Ok(DirectLinkTokenInfo { token })
 }
 
+pub(crate) async fn load_public_file(state: &AppState, file_id: i64) -> Result<file::Model> {
+    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    validate_file_scope(state, &file).await?;
+    Ok(file)
+}
+
 pub(crate) async fn download_file(
     state: &AppState,
     token: &str,
@@ -40,8 +46,7 @@ pub(crate) async fn download_file(
     if_none_match: Option<&str>,
 ) -> Result<HttpResponse> {
     let (file_id, signature) = parse_token(token)?;
-    let file = file_repo::find_by_id(&state.db, file_id).await?;
-    validate_file_scope(state, &file).await?;
+    let file = load_public_file(state, file_id).await?;
 
     let expected_signature = signature_for_file(&file, &state.config.auth.jwt_secret)?;
     if signature != expected_signature {
@@ -50,7 +55,7 @@ pub(crate) async fn download_file(
         ));
     }
 
-    validate_direct_path(&file, requested_name)?;
+    validate_public_file_name(&file, requested_name)?;
 
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
     let disposition = if force_download {
@@ -171,7 +176,7 @@ fn decode_base62(value: &str) -> Option<u64> {
     Some(decoded)
 }
 
-fn validate_direct_path(file: &file::Model, requested_name: &str) -> Result<()> {
+pub(crate) fn validate_public_file_name(file: &file::Model, requested_name: &str) -> Result<()> {
     if requested_name == file.name {
         return Ok(());
     }

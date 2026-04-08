@@ -668,6 +668,24 @@ describe("AdminSettingsPage", () => {
 		expect(saveBar).toHaveTextContent("settings_save_notice:1");
 	});
 
+	it("reserves bottom space for settings content while the floating save bar is visible", async () => {
+		render(<AdminSettingsPage />);
+
+		await screen.findByDisplayValue("1200");
+
+		fireEvent.change(screen.getByDisplayValue("1200"), {
+			target: { value: "1800" },
+		});
+
+		await screen.findByTestId("settings-save-bar");
+
+		await waitFor(() => {
+			expect(screen.getByTestId("settings-content")).toHaveStyle({
+				paddingBottom: "112px",
+			});
+		});
+	});
+
 	it("keeps the floating save bar mounted for the exit animation before unmounting", async () => {
 		render(<AdminSettingsPage />);
 

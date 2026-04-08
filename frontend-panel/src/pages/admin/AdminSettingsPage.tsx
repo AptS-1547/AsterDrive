@@ -28,8 +28,10 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { handleApiError } from "@/hooks/useApiError";
+import { setPublicSiteUrl } from "@/lib/publicSiteUrl";
 import { cn } from "@/lib/utils";
 import { adminConfigService } from "@/services/adminService";
+import { useBrandingStore } from "@/stores/brandingStore";
 import type { ConfigSchemaItem, SystemConfig } from "@/types/api";
 
 const CATEGORY_ORDER = [
@@ -53,6 +55,8 @@ const COMPACT_NAV_TAB_GAP = 8;
 const COMPACT_NAV_OVERFLOW_GAP = 12;
 const SAVE_BAR_ENTER_DURATION_MS = 180;
 const SAVE_BAR_EXIT_DURATION_MS = 140;
+const SAVE_BAR_MIN_RESERVED_HEIGHT_DESKTOP = 112;
+const SAVE_BAR_MIN_RESERVED_HEIGHT_MOBILE = 152;
 const COMPACT_NAV_TAB_TRIGGER_CLASS =
 	"h-10 flex-none rounded-none px-0 text-sm font-medium";
 const COMPACT_NAV_TAB_CONTENT_CLASS =
@@ -64,6 +68,7 @@ const COMPACT_NAV_OVERFLOW_TRIGGER_CLASS = buttonVariants({
 });
 
 const MASKED_VALUE = "********";
+const PUBLIC_SITE_URL_KEY = "public_site_url";
 
 type DraftValues = Record<string, string>;
 
@@ -82,6 +87,11 @@ type CategorySummary = {
 
 export type AdminSettingsTab = (typeof CATEGORY_ORDER)[number];
 type SaveBarPhase = "hidden" | "entering" | "visible" | "exiting";
+
+function syncPublicSiteUrlRuntime(value: string | null | undefined) {
+	const siteUrl = setPublicSiteUrl(value);
+	useBrandingStore.setState({ siteUrl });
+}
 
 function getCategoryIcon(category: string): IconName {
 	switch (category) {
@@ -281,6 +291,7 @@ export default function AdminSettingsPage({
 	);
 	const saveBarTimerRef = useRef<number | null>(null);
 	const saveBarPhaseRef = useRef<SaveBarPhase>("hidden");
+	const saveBarMeasureRef = useRef<HTMLDivElement | null>(null);
 	const [configs, setConfigs] = useState<SystemConfig[]>([]);
 	const [schemas, setSchemas] = useState<ConfigSchemaItem[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -299,6 +310,7 @@ export default function AdminSettingsPage({
 		string[]
 	>([]);
 	const [saveBarPhase, setSaveBarPhase] = useState<SaveBarPhase>("hidden");
+	const [saveBarReservedHeight, setSaveBarReservedHeight] = useState(0);
 
 	const load = useCallback(async (options?: { showLoading?: boolean }) => {
 		const showLoading = options?.showLoading ?? true;
@@ -724,6 +736,43 @@ export default function AdminSettingsPage({
 	}, []);
 
 	useEffect(() => {
+		if (saveBarPhase === "hidden") {
+			setSaveBarReservedHeight(0);
+			return;
+		}
+
+		const fallbackHeight =
+			viewportWidth < MOBILE_BREAKPOINT
+				? SAVE_BAR_MIN_RESERVED_HEIGHT_MOBILE
+				: SAVE_BAR_MIN_RESERVED_HEIGHT_DESKTOP;
+		const node = saveBarMeasureRef.current;
+		if (!node) {
+			setSaveBarReservedHeight(fallbackHeight);
+			return;
+		}
+
+		const updateReservedHeight = () => {
+			const measuredHeight = Math.ceil(node.getBoundingClientRect().height);
+			setSaveBarReservedHeight(Math.max(measuredHeight, fallbackHeight));
+		};
+
+		updateReservedHeight();
+
+		if (typeof ResizeObserver === "undefined") {
+			return;
+		}
+
+		const resizeObserver = new ResizeObserver(() => {
+			updateReservedHeight();
+		});
+		resizeObserver.observe(node);
+
+		return () => {
+			resizeObserver.disconnect();
+		};
+	}, [saveBarPhase, viewportWidth]);
+
+	useEffect(() => {
 		if (!isCompactNavigation) {
 			setCompactInlineCategories((previous) =>
 				areCategoryListsEqual(previous, tabCategories)
@@ -953,7 +1002,13 @@ export default function AdminSettingsPage({
 				nextConfigsByKey.set(key, savedConfig);
 			}
 
-			setConfigs(Array.from(nextConfigsByKey.values()));
+			const nextConfigs = Array.from(nextConfigsByKey.values());
+			setConfigs(nextConfigs);
+			const nextPublicSiteUrl =
+				nextConfigsByKey.get(PUBLIC_SITE_URL_KEY)?.value;
+			if (nextPublicSiteUrl !== undefined) {
+				syncPublicSiteUrlRuntime(nextPublicSiteUrl);
+			}
 			toast.success(t("settings_saved"));
 		} catch (error) {
 			handleApiError(error);
@@ -1538,6 +1593,7 @@ export default function AdminSettingsPage({
 
 		return (
 			<div
+				ref={saveBarMeasureRef}
 				data-testid="settings-save-bar"
 				aria-hidden={!hasUnsavedChanges}
 				className="pointer-events-none fixed right-0 bottom-0 left-0 z-30 px-4 pb-4 md:left-60 md:px-6 md:pb-6"
@@ -1613,7 +1669,15 @@ export default function AdminSettingsPage({
 				) : !hasAnyConfig ? (
 					<EmptyState title={t("no_config")} />
 				) : (
-					<div className="flex flex-col gap-8">
+					<div
+						data-testid="settings-content"
+						className="flex flex-col gap-8 transition-[padding] duration-200 ease-out"
+						style={
+							saveBarReservedHeight > 0
+								? { paddingBottom: `${saveBarReservedHeight}px` }
+								: undefined
+						}
+					>
 						<Tabs
 							orientation={isDesktopNavigation ? "vertical" : "horizontal"}
 							value={activeTab}

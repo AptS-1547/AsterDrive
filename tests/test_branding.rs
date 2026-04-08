@@ -19,6 +19,7 @@ async fn test_public_branding_returns_defaults() {
     assert_eq!(body["data"]["title"], "AsterDrive");
     assert_eq!(body["data"]["description"], "Self-hosted cloud storage");
     assert_eq!(body["data"]["favicon_url"], "/favicon.svg");
+    assert_eq!(body["data"]["site_url"], Value::Null);
 }
 
 #[actix_web::test]
@@ -28,6 +29,7 @@ async fn test_public_branding_uses_admin_updated_values() {
     let (token, _) = register_and_login!(app);
 
     for (key, value) in [
+        ("public_site_url", "https://drive.example.com"),
         ("branding_title", "Nebula Drive"),
         ("branding_description", "Team storage for the squad"),
         (
@@ -57,6 +59,7 @@ async fn test_public_branding_uses_admin_updated_values() {
         body["data"]["favicon_url"],
         "https://cdn.example.com/branding/favicon.png?v=2"
     );
+    assert_eq!(body["data"]["site_url"], "https://drive.example.com");
 }
 
 #[actix_web::test]

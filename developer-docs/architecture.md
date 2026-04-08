@@ -226,6 +226,7 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 - `audit_log_enabled`
 - `audit_log_retention_days`
 - `default_storage_quota`
+- `cors_enabled`
 - `cors_allowed_origins`
 - `cors_allow_credentials`
 - `cors_max_age_secs`

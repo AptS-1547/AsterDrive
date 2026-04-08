@@ -6,7 +6,7 @@ use crate::config::RateLimitConfig;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{direct_link_service, profile_service, share_service};
+use crate::services::{direct_link_service, preview_link_service, profile_service, share_service};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
@@ -69,10 +69,15 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                 .wrap(Condition::new(rl.enabled, Governor::new(&verify_limiter)))
                 .route(web::post().to(verify_password)),
         )
+        .route("/{token}/preview-link", web::post().to(create_preview_link))
         .route("/{token}/download", web::get().to(download_shared))
         .route(
             "/{token}/files/{file_id}/download",
             web::get().to(download_shared_folder_file),
+        )
+        .route(
+            "/{token}/files/{file_id}/preview-link",
+            web::post().to(create_folder_file_preview_link),
         )
         .route("/{token}/content", web::get().to(list_shared_content))
         .route(
@@ -90,9 +95,14 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
 pub fn direct_routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.public);
 
-    web::scope("/d")
-        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
-        .route("/{token}/{filename}", web::get().to(download_direct))
+    (
+        web::resource("/d/{token}/{filename}")
+            .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
+            .route(web::get().to(download_direct)),
+        web::resource("/pv/{token}/{filename}")
+            .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
+            .route(web::get().to(download_preview)),
+    )
 }
 
 #[api_docs_macros::path(
@@ -152,6 +162,31 @@ pub async fn verify_password(
 }
 
 #[api_docs_macros::path(
+    post,
+    path = "/api/v1/s/{token}/preview-link",
+    tag = "shares",
+    operation_id = "create_shared_file_preview_link",
+    params(("token" = String, Path, description = "Share token")),
+    responses(
+        (status = 200, description = "Preview link", body = inline(ApiResponse<crate::services::preview_link_service::PreviewLinkInfo>)),
+        (status = 403, description = "Password required or download limit"),
+        (status = 404, description = "Share not found"),
+    ),
+)]
+pub async fn create_preview_link(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let token = path.into_inner();
+    let cookie_value = share_cookie_value(&req, &token);
+    share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
+
+    let link = preview_link_service::create_token_for_shared_file(&state, &token).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
+}
+
+#[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}/download",
     tag = "shares",
@@ -200,6 +235,23 @@ pub async fn download_direct(
     .await
 }
 
+pub async fn download_preview(
+    state: web::Data<AppState>,
+    path: web::Path<(String, String)>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let (token, filename) = path.into_inner();
+    preview_link_service::download_file(
+        &state,
+        &token,
+        &filename,
+        req.headers()
+            .get("If-None-Match")
+            .and_then(|v| v.to_str().ok()),
+    )
+    .await
+}
+
 #[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}/files/{file_id}/download",
@@ -233,6 +285,60 @@ pub async fn download_shared_folder_file(
             .and_then(|v| v.to_str().ok()),
     )
     .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/s/{token}/files/{file_id}/preview-link",
+    tag = "shares",
+    operation_id = "create_shared_folder_file_preview_link",
+    params(
+        ("token" = String, Path, description = "Share token"),
+        ("file_id" = i64, Path, description = "File ID inside shared folder")
+    ),
+    responses(
+        (status = 200, description = "Preview link", body = inline(ApiResponse<crate::services::preview_link_service::PreviewLinkInfo>)),
+        (status = 403, description = "Password required or file outside shared folder"),
+        (status = 404, description = "Share or file not found"),
+    )
+)]
+pub async fn create_folder_file_preview_link(
+    state: web::Data<AppState>,
+    path: web::Path<(String, i64)>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let (token, file_id) = path.into_inner();
+    let cookie_value = share_cookie_value(&req, &token);
+    share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
+
+    let link =
+        preview_link_service::create_token_for_shared_folder_file(&state, &token, file_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::direct_routes;
+    use crate::config::RateLimitConfig;
+    use actix_web::{App, HttpResponse, http::StatusCode, test, web};
+
+    #[actix_web::test]
+    async fn direct_routes_do_not_shadow_later_root_services() {
+        let app = test::init_service(
+            App::new()
+                .service(direct_routes(&RateLimitConfig::default()))
+                .route(
+                    "/after",
+                    web::get().to(|| async { HttpResponse::Ok().finish() }),
+                ),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/after").to_request();
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
 }
 
 #[api_docs_macros::path(

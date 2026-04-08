@@ -603,6 +603,119 @@ async fn test_share_folder() {
 }
 
 #[actix_web::test]
+async fn test_password_protected_share_preview_link_requires_cookie_but_does_not_increment_downloads()
+ {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, token, "secret-report.docx");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_id": file_id,
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/preview-link"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/verify"))
+        .set_json(serde_json::json!({ "password": "secret123" }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let signed_cookie = common::extract_cookie(&resp, &format!("aster_share_{share_token}"))
+        .expect("share password cookie should be set");
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/preview-link"))
+        .insert_header((
+            "Cookie",
+            format!("aster_share_{share_token}={signed_cookie}"),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let preview_path = body["data"]["path"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::get().uri(&preview_path).to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("Content-Disposition").unwrap(),
+        r#"inline; filename="secret-report.docx""#
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["download_count"], 0);
+}
+
+#[actix_web::test]
+async fn test_folder_share_file_preview_link_supports_public_inline_access() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Preview Folder" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let file_id = upload_test_file_to_folder!(app, token, folder_id);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "folder_id": folder_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/files/{file_id}/preview-link"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let preview_path = body["data"]["path"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::get().uri(&preview_path).to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("Content-Disposition").unwrap(),
+        r#"inline; filename="test-in-folder.txt""#
+    );
+}
+
+#[actix_web::test]
 async fn test_public_share_info_prefers_display_name_and_exposes_gravatar_avatar() {
     let state = common::setup().await;
     let app = create_test_app!(state);

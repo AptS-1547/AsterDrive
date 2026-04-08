@@ -8,7 +8,9 @@ use crate::errors::{AsterError, Result};
 pub const CORS_ALLOWED_ORIGINS_KEY: &str = "cors_allowed_origins";
 pub const CORS_ALLOW_CREDENTIALS_KEY: &str = "cors_allow_credentials";
 pub const CORS_MAX_AGE_SECS_KEY: &str = "cors_max_age_secs";
+pub const CORS_ENABLED_KEY: &str = "cors_enabled";
 
+pub const DEFAULT_CORS_ENABLED: bool = false;
 pub const DEFAULT_CORS_ALLOW_CREDENTIALS: bool = false;
 pub const DEFAULT_CORS_MAX_AGE_SECS: u64 = 3600;
 
@@ -21,6 +23,7 @@ pub enum CorsAllowedOrigins {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeCorsPolicy {
+    pub enabled: bool,
     pub allowed_origins: CorsAllowedOrigins,
     pub allow_credentials: bool,
     pub max_age_secs: u64,
@@ -28,6 +31,30 @@ pub struct RuntimeCorsPolicy {
 
 impl RuntimeCorsPolicy {
     pub fn from_runtime_config(runtime_config: &RuntimeConfig) -> Self {
+        let enabled = match runtime_config.get(CORS_ENABLED_KEY) {
+            Some(raw) => match parse_bool_str(&raw) {
+                Some(value) => value,
+                None => {
+                    tracing::warn!(
+                        key = CORS_ENABLED_KEY,
+                        value = %raw,
+                        "invalid runtime CORS enabled config; using safe default"
+                    );
+                    DEFAULT_CORS_ENABLED
+                }
+            },
+            None => DEFAULT_CORS_ENABLED,
+        };
+
+        if !enabled {
+            return Self {
+                enabled: false,
+                allowed_origins: CorsAllowedOrigins::None,
+                allow_credentials: false,
+                max_age_secs: DEFAULT_CORS_MAX_AGE_SECS,
+            };
+        }
+
         let allowed_origins_raw = runtime_config
             .get(CORS_ALLOWED_ORIGINS_KEY)
             .unwrap_or_default();
@@ -77,9 +104,10 @@ impl RuntimeCorsPolicy {
         if let Err(err) = validate_runtime_cors_combination(&allowed_origins, allow_credentials) {
             tracing::warn!(
                 error = %err,
-                "invalid runtime CORS policy combination; denying cross-origin requests"
+                "invalid runtime CORS policy combination; disabling CORS enforcement"
             );
             return Self {
+                enabled,
                 allowed_origins: CorsAllowedOrigins::None,
                 allow_credentials: false,
                 max_age_secs,
@@ -87,10 +115,15 @@ impl RuntimeCorsPolicy {
         }
 
         Self {
+            enabled,
             allowed_origins,
             allow_credentials,
             max_age_secs,
         }
+    }
+
+    pub fn enforces_requests(&self) -> bool {
+        self.enabled && !matches!(self.allowed_origins, CorsAllowedOrigins::None)
     }
 
     pub fn allows_origin(&self, origin: &str) -> bool {
@@ -103,6 +136,15 @@ impl RuntimeCorsPolicy {
 
     pub fn sends_wildcard_origin(&self) -> bool {
         matches!(self.allowed_origins, CorsAllowedOrigins::Any) && !self.allow_credentials
+    }
+}
+
+pub fn normalize_enabled_config_value(value: &str) -> Result<String> {
+    match parse_bool_str(value) {
+        Some(value) => Ok(if value { "true" } else { "false" }.to_string()),
+        None => Err(AsterError::validation_error(
+            "cors_enabled must be 'true' or 'false'",
+        )),
     }
 }
 
@@ -255,9 +297,10 @@ mod tests {
     use crate::entities::system_config;
 
     use super::{
-        CORS_ALLOW_CREDENTIALS_KEY, CORS_ALLOWED_ORIGINS_KEY, CORS_MAX_AGE_SECS_KEY,
-        CorsAllowedOrigins, DEFAULT_CORS_MAX_AGE_SECS, RuntimeCorsPolicy,
-        normalize_allow_credentials_config_value, normalize_allowed_origins_config_value,
+        CORS_ALLOW_CREDENTIALS_KEY, CORS_ALLOWED_ORIGINS_KEY, CORS_ENABLED_KEY,
+        CORS_MAX_AGE_SECS_KEY, CorsAllowedOrigins, DEFAULT_CORS_ENABLED, DEFAULT_CORS_MAX_AGE_SECS,
+        RuntimeCorsPolicy, normalize_allow_credentials_config_value,
+        normalize_allowed_origins_config_value, normalize_enabled_config_value,
         normalize_max_age_config_value, normalize_origin, parse_allowed_origins_value,
         validate_runtime_cors_combination,
     };
@@ -353,6 +396,12 @@ mod tests {
     }
 
     #[test]
+    fn normalize_enabled_rejects_invalid_value() {
+        let err = normalize_enabled_config_value("yes").unwrap_err();
+        assert!(err.message().contains("true"));
+    }
+
+    #[test]
     fn normalize_max_age_accepts_zero_and_rejects_negative() {
         assert_eq!(normalize_max_age_config_value(" 0 ").unwrap(), "0");
         let err = normalize_max_age_config_value("-1").unwrap_err();
@@ -362,6 +411,7 @@ mod tests {
     #[test]
     fn runtime_policy_invalid_boolean_uses_safe_default() {
         let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(CORS_ENABLED_KEY, "true"));
         runtime_config.apply(config_model(CORS_ALLOW_CREDENTIALS_KEY, "yes"));
 
         let policy = RuntimeCorsPolicy::from_runtime_config(&runtime_config);
@@ -369,8 +419,19 @@ mod tests {
     }
 
     #[test]
+    fn runtime_policy_invalid_enabled_boolean_uses_safe_default() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(CORS_ENABLED_KEY, "yes"));
+
+        let policy = RuntimeCorsPolicy::from_runtime_config(&runtime_config);
+        assert_eq!(policy.enabled, DEFAULT_CORS_ENABLED);
+        assert!(!policy.enforces_requests());
+    }
+
+    #[test]
     fn runtime_policy_invalid_max_age_uses_default() {
         let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(CORS_ENABLED_KEY, "true"));
         runtime_config.apply(config_model(CORS_MAX_AGE_SECS_KEY, "abc"));
 
         let policy = RuntimeCorsPolicy::from_runtime_config(&runtime_config);
@@ -380,24 +441,30 @@ mod tests {
     #[test]
     fn runtime_policy_invalid_origin_config_fails_closed() {
         let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(CORS_ENABLED_KEY, "true"));
         runtime_config.apply(config_model(
             CORS_ALLOWED_ORIGINS_KEY,
             "https://app.example.com/path",
         ));
 
         let policy = RuntimeCorsPolicy::from_runtime_config(&runtime_config);
+        assert!(policy.enabled);
         assert_eq!(policy.allowed_origins, CorsAllowedOrigins::None);
+        assert!(!policy.enforces_requests());
         assert!(!policy.allows_origin("https://app.example.com"));
     }
 
     #[test]
     fn runtime_policy_wildcard_with_credentials_downgrades_to_safe_policy() {
         let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(CORS_ENABLED_KEY, "true"));
         runtime_config.apply(config_model(CORS_ALLOWED_ORIGINS_KEY, "*"));
         runtime_config.apply(config_model(CORS_ALLOW_CREDENTIALS_KEY, "true"));
 
         let policy = RuntimeCorsPolicy::from_runtime_config(&runtime_config);
+        assert!(policy.enabled);
         assert_eq!(policy.allowed_origins, CorsAllowedOrigins::None);
         assert!(!policy.allow_credentials);
+        assert!(!policy.enforces_requests());
     }
 }

@@ -796,6 +796,23 @@ pub async fn get_shared_folder_file_thumbnail(
     crate::services::thumbnail_service::get_or_generate(state, &blob).await
 }
 
+pub(crate) async fn load_preview_shared_file(
+    state: &AppState,
+    token: &str,
+) -> Result<(share::Model, crate::entities::file::Model)> {
+    let share = load_valid_share(state, token).await?;
+    let file = load_share_file_resource(state, &share).await?;
+    Ok((share, file))
+}
+
+pub(crate) async fn load_preview_shared_folder_file(
+    state: &AppState,
+    token: &str,
+    file_id: i64,
+) -> Result<(share::Model, crate::entities::file::Model)> {
+    load_shared_folder_file_target(state, token, file_id).await
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn list_shared_subfolder(
     state: &AppState,

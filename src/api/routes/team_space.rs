@@ -41,6 +41,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/files/new", web::post().to(create_empty))
         .route("/files/{id}", web::get().to(get_file))
         .route("/files/{id}/direct-link", web::get().to(get_direct_link))
+        .route("/files/{id}/preview-link", web::post().to(get_preview_link))
         .route("/files/{id}/thumbnail", web::get().to(get_thumbnail))
         .route("/files/{id}/content", web::put().to(update_content))
         .route("/files/{id}/lock", web::post().to(set_file_lock))
@@ -647,6 +648,32 @@ pub async fn get_direct_link(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     files::direct_link_response(&state, team_scope(team_id, claims.user_id), file_id).await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/teams/{team_id}/files/{id}/preview-link",
+    tag = "teams",
+    operation_id = "create_team_file_preview_link",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "File ID")
+    ),
+    responses(
+        (status = 200, description = "Team file preview link", body = inline(ApiResponse<crate::services::preview_link_service::PreviewLinkInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_preview_link(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<(i64, i64)>,
+) -> Result<HttpResponse> {
+    let (team_id, file_id) = path.into_inner();
+    files::preview_link_response(&state, team_scope(team_id, claims.user_id), file_id).await
 }
 
 #[api_docs_macros::path(

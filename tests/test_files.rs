@@ -151,6 +151,72 @@ async fn test_file_direct_link_supports_public_access_force_download_and_file_re
 }
 
 #[actix_web::test]
+async fn test_file_preview_link_supports_public_inline_access_and_usage_limit() {
+    let mut state = common::setup().await;
+    state.cache = aster_drive::cache::create_cache(&aster_drive::config::CacheConfig {
+        enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, token, "report 1.docx");
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/{file_id}/preview-link"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let preview_path = body["data"]["path"]
+        .as_str()
+        .expect("preview link path should exist")
+        .to_string();
+    assert!(preview_path.starts_with("/pv/"));
+    assert_eq!(body["data"]["max_uses"], 5);
+
+    for _ in 0..5 {
+        let req = test::TestRequest::get().uri(&preview_path).to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers().get("Content-Disposition").unwrap(),
+            r#"inline; filename="report 1.docx""#
+        );
+    }
+
+    let req = test::TestRequest::get().uri(&preview_path).to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
+async fn test_file_preview_link_uses_configured_public_site_url() {
+    let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
+        "https://drive.example.com",
+    ));
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, token, "report 1.docx");
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/{file_id}/preview-link"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let preview_path = body["data"]["path"].as_str().unwrap();
+
+    assert!(preview_path.starts_with("https://drive.example.com/pv/"));
+}
+
+#[actix_web::test]
 async fn test_file_lock_unlock() {
     let state = common::setup().await;
     let app = create_test_app!(state);

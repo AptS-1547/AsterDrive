@@ -80,6 +80,49 @@ async fn test_webdav_account_crud() {
 }
 
 #[actix_web::test]
+async fn test_webdav_settings_returns_public_endpoint_when_configured() {
+    let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
+        "https://drive.example.com",
+    ));
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/webdav-accounts/settings")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+
+    assert_eq!(body["data"]["prefix"], "/webdav");
+    assert_eq!(
+        body["data"]["endpoint"],
+        "https://drive.example.com/webdav/"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_settings_falls_back_to_relative_endpoint_without_public_site_url() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/webdav-accounts/settings")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+
+    assert_eq!(body["data"]["prefix"], "/webdav");
+    assert_eq!(body["data"]["endpoint"], "/webdav/");
+}
+
+#[actix_web::test]
 async fn test_webdav_account_list_resolves_nested_paths() {
     let state = common::setup().await;
     let app = create_test_app!(state);

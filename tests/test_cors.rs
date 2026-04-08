@@ -31,6 +31,13 @@ macro_rules! set_config {
     }};
 }
 
+macro_rules! enable_cors {
+    ($app:expr, $token:expr) => {{
+        let resp = set_config!($app, $token, "cors_enabled", "true");
+        assert_eq!(resp.status(), 200);
+    }};
+}
+
 fn header_contains<B>(
     resp: &actix_web::dev::ServiceResponse<B>,
     name: header::HeaderName,
@@ -50,19 +57,17 @@ fn header_contains<B>(
 }
 
 #[actix_web::test]
-async fn test_runtime_cors_defaults_block_cross_origin_preflight() {
+async fn test_runtime_cors_defaults_passthrough_cross_origin_actual_request() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
 
-    let req = test::TestRequest::default()
-        .method(actix_web::http::Method::OPTIONS)
+    let req = test::TestRequest::get()
         .uri("/health")
         .insert_header((header::ORIGIN, "https://app.example.com"))
-        .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "GET"))
         .to_request();
     let resp = test::call_service(&app, req).await;
 
-    assert_eq!(resp.status(), 403);
+    assert_eq!(resp.status(), 200);
     assert!(
         resp.headers()
             .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
@@ -95,6 +100,7 @@ async fn test_runtime_cors_hot_reload_updates_whitelist_and_max_age() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/cors_allowed_origins")
@@ -218,6 +224,7 @@ async fn test_runtime_cors_adds_credentials_header_for_allowed_origin() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/cors_allowed_origins")
@@ -323,6 +330,7 @@ async fn test_runtime_cors_wildcard_preflight_returns_star_and_vary_headers() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let resp = set_config!(app, token, "cors_allowed_origins", "*");
     assert_eq!(resp.status(), 200);
@@ -358,6 +366,16 @@ async fn test_runtime_cors_wildcard_preflight_returns_star_and_vary_headers() {
 async fn test_runtime_cors_disallowed_actual_request_returns_403_with_vary() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
+    let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
+
+    let resp = set_config!(
+        app,
+        token,
+        "cors_allowed_origins",
+        "https://allowed.example.com"
+    );
+    assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri("/health")
@@ -373,6 +391,7 @@ async fn test_runtime_cors_preflight_rejects_unknown_method() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let resp = set_config!(
         app,
@@ -397,6 +416,7 @@ async fn test_runtime_cors_preflight_rejects_unknown_header() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let resp = set_config!(
         app,
@@ -422,6 +442,7 @@ async fn test_runtime_cors_preflight_invalid_request_headers_returns_400() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let resp = set_config!(
         app,
@@ -456,6 +477,7 @@ async fn test_runtime_cors_allowed_actual_request_sets_expose_and_vary_headers()
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let resp = set_config!(
         app,
@@ -486,6 +508,15 @@ async fn test_runtime_cors_allowed_actual_request_sets_expose_and_vary_headers()
 async fn test_runtime_cors_invalid_origin_header_returns_400() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
+    let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
+    let resp = set_config!(
+        app,
+        token,
+        "cors_allowed_origins",
+        "https://app.example.com"
+    );
+    assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri("/health")
@@ -504,6 +535,7 @@ async fn test_runtime_cors_wildcard_actual_request_returns_star_and_expose_heade
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let resp = set_config!(app, token, "cors_allowed_origins", "*");
     assert_eq!(resp.status(), 200);
@@ -542,6 +574,7 @@ async fn test_runtime_cors_preflight_max_age_zero_is_reflected() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let resp = set_config!(
         app,
@@ -642,6 +675,14 @@ async fn test_runtime_cors_schema_contains_network_defaults() {
     let body: Value = test::read_body_json(resp).await;
     let items = body["data"].as_array().unwrap();
 
+    let enabled = items
+        .iter()
+        .find(|item| item["key"] == "cors_enabled")
+        .unwrap();
+    assert_eq!(enabled["category"], "network");
+    assert_eq!(enabled["default_value"], "false");
+    assert_eq!(enabled["requires_restart"], false);
+
     let allowed_origins = items
         .iter()
         .find(|item| item["key"] == "cors_allowed_origins")
@@ -668,6 +709,7 @@ async fn test_runtime_cors_clearing_whitelist_disables_cross_origin_immediately(
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let resp = set_config!(
         app,
@@ -696,7 +738,12 @@ async fn test_runtime_cors_clearing_whitelist_disables_cross_origin_immediately(
         .insert_header((header::ORIGIN, "https://app.example.com"))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 403);
+    assert_eq!(resp.status(), 200);
+    assert!(
+        resp.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .is_none()
+    );
 }
 
 #[actix_web::test]
@@ -704,6 +751,7 @@ async fn test_runtime_cors_disabling_credentials_removes_header_immediately() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let resp = set_config!(
         app,
@@ -769,6 +817,7 @@ async fn test_runtime_cors_allows_request_headers_case_insensitively() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
 
     let resp = set_config!(
         app,
@@ -792,4 +841,117 @@ async fn test_runtime_cors_allows_request_headers_case_insensitively() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 204);
+}
+
+#[actix_web::test]
+async fn test_runtime_cors_enabled_without_whitelist_passthrough_has_no_cors_headers() {
+    let state = common::setup().await;
+    let app = create_test_app_with_cors!(state);
+    let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
+
+    let req = test::TestRequest::get()
+        .uri("/health")
+        .insert_header((header::ORIGIN, "https://app.example.com"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), 200);
+    assert!(
+        resp.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .is_none()
+    );
+    assert!(
+        resp.headers()
+            .get(header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .is_none()
+    );
+}
+
+#[actix_web::test]
+async fn test_runtime_cors_public_site_url_is_implicitly_allowed_without_whitelist() {
+    let state = common::setup().await;
+    let app = create_test_app_with_cors!(state);
+    let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
+
+    let resp = set_config!(app, token, "public_site_url", "https://drive.example.com");
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/health")
+        .insert_header((header::HOST, "internal.example.local"))
+        .insert_header((header::ORIGIN, "https://drive.example.com"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "https://drive.example.com"
+    );
+}
+
+#[actix_web::test]
+async fn test_runtime_cors_public_site_url_is_implicitly_allowed_even_if_not_in_whitelist() {
+    let state = common::setup().await;
+    let app = create_test_app_with_cors!(state);
+    let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
+
+    let resp = set_config!(app, token, "public_site_url", "https://drive.example.com");
+    assert_eq!(resp.status(), 200);
+    let resp = set_config!(
+        app,
+        token,
+        "cors_allowed_origins",
+        "https://api.example.com"
+    );
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/health")
+        .insert_header((header::HOST, "internal.example.local"))
+        .insert_header((header::ORIGIN, "https://drive.example.com"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "https://drive.example.com"
+    );
+}
+
+#[actix_web::test]
+async fn test_runtime_cors_public_site_url_header_is_added_to_passthrough_response() {
+    let state = common::setup().await;
+    let app = create_test_app_with_cors!(state);
+    let (token, _) = register_and_login!(app);
+    enable_cors!(app, token);
+
+    let resp = set_config!(app, token, "public_site_url", "https://drive.example.com");
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get().uri("/health").to_request();
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "https://drive.example.com"
+    );
 }

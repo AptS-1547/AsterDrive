@@ -1,21 +1,18 @@
 import { config } from "@/config/app";
 import { joinApiUrl } from "@/lib/apiUrl";
+import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
 	BatchResult,
 	FolderContents,
+	PreviewLinkInfo,
 	ShareInfo,
 	SharePage,
 	SharePublicInfo,
 } from "@/types/api";
 import type { FolderListParams } from "./fileService";
 import { api } from "./http";
-
-function absoluteAppUrl(path: string) {
-	if (typeof window === "undefined") return path;
-	return new URL(path, window.location.origin).toString();
-}
 
 function workspaceSharesPrefix(workspace: Workspace) {
 	return buildWorkspacePath(workspace, "/shares");
@@ -70,10 +67,16 @@ export function createShareService(workspace: Workspace) {
 
 		downloadPath: (token: string) => `/s/${token}/download`,
 
+		createPreviewLink: (token: string) =>
+			api.post<PreviewLinkInfo>(`/s/${token}/preview-link`),
+
 		thumbnailPath: (token: string) => `/s/${token}/thumbnail`,
 
 		downloadFolderPath: (token: string, fileId: number) =>
 			`/s/${token}/files/${fileId}/download`,
+
+		createFolderFilePreviewLink: (token: string, fileId: number) =>
+			api.post<PreviewLinkInfo>(`/s/${token}/files/${fileId}/preview-link`),
 
 		downloadUrl: (token: string) =>
 			joinApiUrl(config.apiBaseUrl, `/s/${token}/download`),

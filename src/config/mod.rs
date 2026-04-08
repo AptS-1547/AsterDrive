@@ -5,6 +5,7 @@ pub mod definitions;
 mod loader;
 mod runtime_config;
 mod schema;
+pub mod site_url;
 
 pub use runtime_config::RuntimeConfig;
 pub use schema::{

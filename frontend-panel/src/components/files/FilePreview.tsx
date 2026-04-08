@@ -1,5 +1,5 @@
 import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog";
-import type { FileInfo, FileListItem } from "@/types/api";
+import type { FileInfo, FileListItem, PreviewLinkInfo } from "@/types/api";
 
 interface FilePreviewProps {
 	file: FileInfo | FileListItem;
@@ -7,6 +7,7 @@ interface FilePreviewProps {
 	onFileUpdated?: () => void;
 	downloadPath?: string;
 	editable?: boolean;
+	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 }
 
 export function FilePreview({
@@ -15,6 +16,7 @@ export function FilePreview({
 	onFileUpdated,
 	downloadPath,
 	editable,
+	previewLinkFactory,
 }: FilePreviewProps) {
 	return (
 		<FilePreviewDialog
@@ -23,6 +25,7 @@ export function FilePreview({
 			onFileUpdated={onFileUpdated}
 			downloadPath={downloadPath}
 			editable={editable}
+			previewLinkFactory={previewLinkFactory}
 		/>
 	);
 }

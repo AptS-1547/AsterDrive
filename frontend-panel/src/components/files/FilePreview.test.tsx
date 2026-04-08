@@ -7,16 +7,19 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 		file,
 		downloadPath,
 		editable,
+		previewLinkFactory,
 	}: {
 		file: { name: string };
 		downloadPath?: string;
 		editable?: boolean;
+		previewLinkFactory?: () => Promise<unknown>;
 	}) => (
 		<div
 			data-testid="preview-dialog"
 			data-file-name={file.name}
 			data-download-path={downloadPath ?? ""}
 			data-editable={String(Boolean(editable))}
+			data-has-preview-link-factory={String(Boolean(previewLinkFactory))}
 		/>
 	),
 }));
@@ -30,6 +33,7 @@ describe("FilePreview", () => {
 				onFileUpdated={vi.fn()}
 				downloadPath="/files/7/download"
 				editable
+				previewLinkFactory={async () => ({})}
 			/>,
 		);
 
@@ -43,6 +47,10 @@ describe("FilePreview", () => {
 		);
 		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
 			"data-editable",
+			"true",
+		);
+		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
+			"data-has-preview-link-factory",
 			"true",
 		);
 	});

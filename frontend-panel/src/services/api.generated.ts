@@ -921,6 +921,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files/{id}/preview-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_file_preview_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/files/{id}/thumbnail": {
         parameters: {
             query?: never;
@@ -1193,6 +1209,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/s/{token}/files/{file_id}/preview-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_shared_folder_file_preview_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/s/{token}/files/{file_id}/thumbnail": {
         parameters: {
             query?: never;
@@ -1219,6 +1251,22 @@ export interface paths {
         get: operations["list_shared_subfolder_content"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/s/{token}/preview-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_shared_file_preview_link"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1667,6 +1715,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["set_team_file_lock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/files/{id}/preview-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_team_file_preview_link"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3017,9 +3081,16 @@ export interface components {
         PresignPartsReq: {
             part_numbers: number[];
         };
+        PreviewLinkInfo: {
+            expires_at: string;
+            /** Format: int32 */
+            max_uses: number;
+            path: string;
+        };
         PublicBranding: {
             description: string;
             favicon_url: string;
+            site_url?: string | null;
             title: string;
         };
         PurgedCountResponse: {
@@ -3571,6 +3642,7 @@ export interface components {
             username: string;
         };
         WebdavSettingsInfo: {
+            endpoint: string;
             prefix: string;
         };
     };
@@ -7654,6 +7726,52 @@ export interface operations {
             };
         };
     };
+    create_file_preview_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Preview link */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            expires_at: string;
+                            /** Format: int32 */
+                            max_uses: number;
+                            path: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_thumbnail: {
         parameters: {
             query?: never;
@@ -8470,6 +8588,7 @@ export interface operations {
                         data?: {
                             description: string;
                             favicon_url: string;
+                            site_url?: string | null;
                             title: string;
                         };
                         msg: string;
@@ -8703,6 +8822,54 @@ export interface operations {
             };
         };
     };
+    create_shared_folder_file_preview_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+                /** @description File ID inside shared folder */
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Preview link */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            expires_at: string;
+                            /** Format: int32 */
+                            max_uses: number;
+                            path: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Password required or file outside shared folder */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share or file not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     shared_folder_file_thumbnail: {
         parameters: {
             query?: never;
@@ -8812,6 +8979,52 @@ export interface operations {
                 content?: never;
             };
             /** @description Share or folder not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_shared_file_preview_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Preview link */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            expires_at: string;
+                            /** Format: int32 */
+                            max_uses: number;
+                            path: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Password required or download limit */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -11104,6 +11317,61 @@ export interface operations {
             };
         };
     };
+    create_team_file_preview_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team file preview link */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            expires_at: string;
+                            /** Format: int32 */
+                            max_uses: number;
+                            path: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_team_thumbnail: {
         parameters: {
             query?: never;
@@ -12708,6 +12976,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            endpoint: string;
                             prefix: string;
                         };
                         msg: string;

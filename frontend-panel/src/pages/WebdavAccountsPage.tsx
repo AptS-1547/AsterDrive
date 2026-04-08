@@ -35,6 +35,7 @@ import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { FOLDER_LIMIT, PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateShort } from "@/lib/format";
+import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { fileService } from "@/services/fileService";
 import { webdavAccountService } from "@/services/webdavAccountService";
 import type { FolderInfo } from "@/types/api";
@@ -128,10 +129,7 @@ export default function WebdavAccountsPage() {
 	}, [fetchWebdavSettings]);
 
 	const endpointPath = webdavPrefix === "/" ? "/" : `${webdavPrefix}/`;
-	const endpointUrl =
-		typeof window === "undefined"
-			? endpointPath
-			: `${window.location.origin}${endpointPath}`;
+	const endpointUrl = absoluteAppUrl(endpointPath);
 	const rootFolderOptions = [
 		{
 			label: t("webdav:all_files_full_access"),

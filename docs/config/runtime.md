@@ -26,6 +26,7 @@
 | `auth_access_token_ttl_secs` | `900` | Access Token 有效期，单位秒 |
 | `auth_refresh_token_ttl_secs` | `604800` | Refresh Token 有效期，单位秒 |
 | `webdav_enabled` | `true` | 控制 WebDAV 是否可用 |
+| `cors_enabled` | `false` | 是否主动处理浏览器跨域请求 |
 | `max_versions_per_file` | `10` | 单个文件最多保留多少个历史版本 |
 | `trash_retention_days` | `7` | 回收站项目保留天数 |
 | `team_archive_retention_days` | `7` | 已归档团队保留天数 |
@@ -33,7 +34,7 @@
 | `audit_log_enabled` | `true` | 是否记录审计日志 |
 | `audit_log_retention_days` | `90` | 审计日志保留天数 |
 | `gravatar_base_url` | `https://www.gravatar.com/avatar` | Gravatar 头像基础地址 |
-| `cors_allowed_origins` | `""` | 允许跨域访问的来源列表 |
+| `cors_allowed_origins` | `""` | 允许跨域访问的来源列表；留空时不返回 CORS 响应头 |
 | `cors_allow_credentials` | `false` | 跨域时是否允许带凭据 |
 | `cors_max_age_secs` | `3600` | 浏览器缓存预检结果的秒数 |
 
@@ -41,13 +42,13 @@
 
 - Cookie 安全策略和 Token 有效期：新登录、刷新和分享密码验证请求会立即按新值生效
 - WebDAV 开关：立即生效
+- CORS 开关和跨域规则：新请求会立即按新规则响应
 - 回收站保留天数：后台清理任务会按新值清理
 - 历史版本数量：新版本产生时按新规则处理
 - 团队归档保留天数：后台清理任务会按新值清理
 - 默认配额：只影响之后新创建的用户和新创建的团队
 - 审计日志开关和保留天数：修改后按新规则生效
 - Gravatar 地址：用户切换到 Gravatar 头像后按新地址加载
-- CORS 设置：新请求会立即按新规则响应
 
 ## 管理员最常改的项目
 
@@ -90,6 +91,14 @@
 - 你需要让别的站点在浏览器里直接调用 AsterDrive
 
 大多数“直接打开同一个站点”的部署，不需要改这里。
+
+如果你根本不需要跨域，保持 `cors_enabled = false` 就行。
+
+如果你开启了 `cors_enabled = true` 但 `cors_allowed_origins` 留空：
+
+- 服务端不会返回 `Access-Control-Allow-Origin`
+- 服务端也不会额外返回 403
+- 浏览器会按标准同源策略自行拦截跨域读取
 
 如果你要填写 `cors_allowed_origins`：
 

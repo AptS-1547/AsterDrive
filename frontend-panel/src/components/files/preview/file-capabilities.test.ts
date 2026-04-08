@@ -101,6 +101,44 @@ describe("file preview capabilities", () => {
 		});
 		expect(
 			getFileTypeInfo({
+				name: "deck.pptx",
+				mime_type:
+					"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+			}),
+		).toMatchObject({
+			category: "presentation",
+			icon: "Presentation",
+		});
+		expect(
+			getFileTypeInfo({
+				name: "sheet.xlsx",
+				mime_type:
+					"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			}),
+		).toMatchObject({
+			category: "spreadsheet",
+			icon: "Table",
+		});
+		expect(
+			getFileTypeInfo({
+				name: "report.docx",
+				mime_type:
+					"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			}),
+		).toMatchObject({
+			category: "document",
+			icon: "FileText",
+		});
+		expect(
+			getFileTypeInfo({
+				name: "report.docx",
+				mime_type: "application/octet-stream",
+			}),
+		).toMatchObject({
+			category: "document",
+		});
+		expect(
+			getFileTypeInfo({
 				name: "archive.bin",
 				mime_type: "application/octet-stream",
 			}),
@@ -114,6 +152,11 @@ describe("file preview capabilities", () => {
 		const markdown = { name: "notes.md", mime_type: "text/markdown" };
 		const json = { name: "data.json", mime_type: "application/json" };
 		const image = { name: "photo.png", mime_type: "image/png" };
+		const document = {
+			name: "report.docx",
+			mime_type:
+				"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		};
 		const tsv = {
 			name: "report.tsv",
 			mime_type: "text/tab-separated-values",
@@ -140,6 +183,12 @@ describe("file preview capabilities", () => {
 			isBlobPreview: true,
 			defaultMode: "image",
 		});
+		expect(detectFilePreviewProfile(document)).toMatchObject({
+			category: "document",
+			isBlobPreview: false,
+			defaultMode: "officeOnline",
+			isEditableText: false,
+		});
 		expect(detectFilePreviewProfile(tsv)).toMatchObject({
 			category: "tsv",
 			defaultMode: "table",
@@ -161,6 +210,7 @@ describe("file preview capabilities", () => {
 			expect.objectContaining({ mode: "code" }),
 		]);
 		expect(getDefaultOpenWith(json)).toBe("formatted");
+		expect(getDefaultOpenWith(document)).toBe("officeOnline");
 		expect(getDefaultOpenWith(tsv)).toBe("table");
 		expect(isEditableTextFile(markdown)).toBe(true);
 		expect(isEditableTextFile(image)).toBe(false);
