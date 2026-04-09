@@ -45,6 +45,7 @@ describe("brandingStore", () => {
 
 	it("loads public branding once and applies it", async () => {
 		mockState.getBranding.mockResolvedValue({
+			allow_user_registration: false,
 			title: "Nebula Drive",
 			description: "Team storage",
 			favicon_url: "https://cdn.example.com/icon.png",
@@ -66,6 +67,7 @@ describe("brandingStore", () => {
 			}),
 		);
 		expect(useBrandingStore.getState()).toMatchObject({
+			allowUserRegistration: false,
 			isLoaded: true,
 			branding: expect.objectContaining({
 				title: "Nebula Drive",
@@ -93,6 +95,7 @@ describe("brandingStore", () => {
 			}),
 		);
 		expect(useBrandingStore.getState()).toMatchObject({
+			allowUserRegistration: true,
 			isLoaded: true,
 			branding: expect.objectContaining({
 				title: "AsterDrive",

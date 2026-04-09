@@ -121,7 +121,7 @@
 如果你就是想要机器可读规范，也还是有两条路：
 
 - `debug` 构建：访问 `/swagger-ui` 与 `/api-docs/openapi.json`
-- 任意构建：运行 `cargo test --test generate_openapi` 导出静态规范到 `frontend-panel/generated/openapi.json`
+- 任意构建：运行 `cargo test --features openapi --test generate_openapi` 导出静态规范到 `frontend-panel/generated/openapi.json`
 
 ## 继续阅读
 

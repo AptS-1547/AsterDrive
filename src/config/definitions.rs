@@ -197,6 +197,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Default storage quota for new users in bytes (0 = unlimited)",
     },
     ConfigDef {
+        key: "auth_allow_user_registration",
+        label_i18n_key: "settings_item_auth_allow_user_registration_label",
+        description_i18n_key: "settings_item_auth_allow_user_registration_desc",
+        value_type: "boolean",
+        default_fn: || "true".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "user",
+        description: "Whether new users can self-register from the public auth flow",
+    },
+    ConfigDef {
         key: "avatar_dir",
         label_i18n_key: "settings_item_avatar_dir_label",
         description_i18n_key: "settings_item_avatar_dir_desc",

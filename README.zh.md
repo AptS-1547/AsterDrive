@@ -120,7 +120,7 @@ docker compose up -d
 - 存储在 `system_config` 中的运行时配置
 - 管理总览、配置 schema 和存储策略连通性测试接口
 - 关键操作审计日志
-- `debug` 构建下提供 Swagger UI，并可通过 `cargo test --test generate_openapi` 导出静态 OpenAPI
+- `debug` 构建下提供 Swagger UI，并可通过 `cargo test --features openapi --test generate_openapi` 导出静态 OpenAPI
 - 每小时自动清理上传残留、已完成上传会话、回收站、锁和过期审计日志，并每 6 小时做一次 Blob 对账
 
 ## 文档导航
@@ -148,7 +148,7 @@ docker compose up -d
 cargo run
 cargo check
 cargo test
-cargo test --test generate_openapi
+cargo test --features openapi --test generate_openapi
 
 # 前端
 cd frontend-panel

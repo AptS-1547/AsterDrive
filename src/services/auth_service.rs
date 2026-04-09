@@ -298,6 +298,26 @@ async fn create_user_with_role<C: ConnectionTrait>(
     Ok(user)
 }
 
+async fn create_first_admin(
+    state: &AppState,
+    username: &str,
+    email: &str,
+    password: &str,
+) -> Result<user::Model> {
+    tracing::info!("first user registered — granting admin role to '{username}'");
+    create_user_with_role(
+        &state.db,
+        state,
+        username,
+        email,
+        password,
+        UserRole::Admin,
+        UserStatus::Active,
+        Some(Utc::now()),
+    )
+    .await
+}
+
 async fn issue_contact_verification_token<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
@@ -435,20 +455,15 @@ pub async fn register(
     email: &str,
     password: &str,
 ) -> Result<user::Model> {
-    let is_first_user = user_repo::count_all(&state.db).await? == 0;
-    if is_first_user {
-        tracing::info!("first user registered — granting admin role to '{username}'");
-        return create_user_with_role(
-            &state.db,
-            state,
-            username,
-            email,
-            password,
-            UserRole::Admin,
-            UserStatus::Active,
-            Some(Utc::now()),
-        )
-        .await;
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    if !auth_policy.allow_user_registration {
+        return Err(AsterError::auth_forbidden(
+            "new user registration is disabled",
+        ));
+    }
+
+    if user_repo::count_all(&state.db).await? == 0 {
+        return create_first_admin(state, username, email, password).await;
     }
 
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
@@ -756,7 +771,7 @@ pub async fn setup(
     if user_repo::count_all(db).await? > 0 {
         return Err(AsterError::validation_error("system already initialized"));
     }
-    register(state, username, email, password).await
+    create_first_admin(state, username, email, password).await
 }
 
 /// 登录结果：access/refresh tokens + user_id（用于审计）

@@ -120,7 +120,7 @@ See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`]
 - runtime config stored in `system_config`
 - admin overview, config schema, and policy connection testing endpoints
 - audit logs for key actions
-- Swagger UI in debug builds and static OpenAPI export via `cargo test --test generate_openapi`
+- Swagger UI in debug builds and static OpenAPI export via `cargo test --features openapi --test generate_openapi`
 - hourly cleanup tasks for uploads, completed upload sessions, trash, locks, and audit log retention, plus 6-hour blob reconciliation
 
 ## Documentation map
@@ -148,7 +148,7 @@ See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`]
 cargo run
 cargo check
 cargo test
-cargo test --test generate_openapi
+cargo test --features openapi --test generate_openapi
 
 # Frontend
 cd frontend-panel

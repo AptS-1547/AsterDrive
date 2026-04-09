@@ -33,7 +33,7 @@ bun run build
 前端依赖静态 OpenAPI 规范生成类型：
 
 ```bash
-cargo test --test generate_openapi
+cargo test --features openapi --test generate_openapi
 cd frontend-panel
 bun run generate-api
 ```

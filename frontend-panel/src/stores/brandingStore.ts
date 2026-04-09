@@ -12,6 +12,7 @@ import { brandingService } from "@/services/brandingService";
 let inFlightLoad: Promise<void> | null = null;
 
 interface BrandingState {
+	allowUserRegistration: boolean;
 	branding: AppliedBranding;
 	isLoaded: boolean;
 	siteUrl: string | null;
@@ -19,6 +20,7 @@ interface BrandingState {
 }
 
 export const useBrandingStore = create<BrandingState>((set, get) => ({
+	allowUserRegistration: true,
 	branding: DEFAULT_BRANDING,
 	isLoaded: false,
 	siteUrl: null,
@@ -31,15 +33,27 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
 			try {
 				const publicBranding = await brandingService.get();
 				const branding = resolveBranding(publicBranding);
+				const allowUserRegistration =
+					publicBranding.allow_user_registration ?? true;
 				const siteUrl = setPublicSiteUrl(publicBranding.site_url);
 				applyBranding(branding);
-				set({ branding, isLoaded: true, siteUrl });
+				set({
+					allowUserRegistration,
+					branding,
+					isLoaded: true,
+					siteUrl,
+				});
 			} catch (error) {
 				const fallbackBranding = resolveBranding(null);
 				setPublicSiteUrl(null);
 				logger.warn("branding bootstrap failed, using defaults", error);
 				applyBranding(fallbackBranding);
-				set({ branding: fallbackBranding, isLoaded: true, siteUrl: null });
+				set({
+					allowUserRegistration: true,
+					branding: fallbackBranding,
+					isLoaded: true,
+					siteUrl: null,
+				});
 			} finally {
 				inFlightLoad = null;
 			}

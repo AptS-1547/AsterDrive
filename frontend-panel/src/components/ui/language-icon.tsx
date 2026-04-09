@@ -51,10 +51,18 @@ export function LanguageIcon({ name, size, className }: LanguageIconProps) {
 			setIconComponent(() => resolved);
 			return;
 		}
-		ensureLoaded().then(() => {
+
+		let cancelled = false;
+
+		void ensureLoaded().then(() => {
+			if (cancelled) return;
 			const loaded = cachedResolve?.(name) ?? null;
 			setIconComponent(() => loaded);
 		});
+
+		return () => {
+			cancelled = true;
+		};
 	}, [name]);
 
 	if (!IconComponent) return null;

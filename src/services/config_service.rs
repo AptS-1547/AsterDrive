@@ -187,6 +187,9 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
         auth_runtime::AUTH_COOKIE_SECURE_KEY => {
             auth_runtime::normalize_cookie_secure_config_value(value)
         }
+        auth_runtime::AUTH_ALLOW_USER_REGISTRATION_KEY => {
+            auth_runtime::normalize_allow_user_registration_config_value(value)
+        }
         auth_runtime::AUTH_ACCESS_TOKEN_TTL_SECS_KEY
         | auth_runtime::AUTH_REFRESH_TOKEN_TTL_SECS_KEY
         | auth_runtime::AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY
@@ -237,14 +240,17 @@ pub struct PublicBranding {
     pub description: String,
     pub favicon_url: String,
     pub site_url: Option<String>,
+    pub allow_user_registration: bool,
 }
 
 pub fn get_public_branding(state: &AppState) -> PublicBranding {
+    let auth_policy = auth_runtime::RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     PublicBranding {
         title: branding::title_or_default(&state.runtime_config),
         description: branding::description_or_default(&state.runtime_config),
         favicon_url: branding::favicon_url_or_default(&state.runtime_config),
         site_url: site_url::public_site_url(&state.runtime_config),
+        allow_user_registration: auth_policy.allow_user_registration,
     }
 }
 

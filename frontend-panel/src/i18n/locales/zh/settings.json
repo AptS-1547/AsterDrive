@@ -119,7 +119,7 @@
 	"settings_team_member_role_filter_all": "全部角色",
 	"settings_team_member_filtered_count": "筛出 {{filtered}} / {{total}} 位成员",
 	"settings_team_member_filtered_empty": "没有匹配的成员",
-	"settings_team_member_filtered_empty_desc": "换个关键词或调整筛选条件试试。",
+	"settings_team_member_filtered_empty_desc": "可尝试更换关键词或调整筛选条件。",
 	"settings_team_entries_page": "共 {{total}} 条，第 {{current}} 页 / 共 {{pages}} 页",
 	"settings_team_clear_filters": "清空筛选",
 	"settings_team_member": "成员",

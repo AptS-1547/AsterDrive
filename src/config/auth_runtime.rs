@@ -2,6 +2,7 @@ use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, Result};
 
 pub const AUTH_COOKIE_SECURE_KEY: &str = "auth_cookie_secure";
+pub const AUTH_ALLOW_USER_REGISTRATION_KEY: &str = "auth_allow_user_registration";
 pub const AUTH_ACCESS_TOKEN_TTL_SECS_KEY: &str = "auth_access_token_ttl_secs";
 pub const AUTH_REFRESH_TOKEN_TTL_SECS_KEY: &str = "auth_refresh_token_ttl_secs";
 pub const AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY: &str = "auth_register_activation_ttl_secs";
@@ -10,6 +11,7 @@ pub const AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY: &str =
     "auth_contact_verification_resend_cooldown_secs";
 
 pub const DEFAULT_AUTH_COOKIE_SECURE: bool = true;
+pub const DEFAULT_AUTH_ALLOW_USER_REGISTRATION: bool = true;
 pub const DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECS: u64 = 900;
 pub const DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECS: u64 = 604800;
 pub const DEFAULT_AUTH_REGISTER_ACTIVATION_TTL_SECS: u64 = 86_400;
@@ -19,6 +21,7 @@ pub const DEFAULT_AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS: u64 = 60;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeAuthPolicy {
     pub cookie_secure: bool,
+    pub allow_user_registration: bool,
     pub access_token_ttl_secs: u64,
     pub refresh_token_ttl_secs: u64,
 }
@@ -45,6 +48,21 @@ impl RuntimeAuthPolicy {
                 }
             },
             None => DEFAULT_AUTH_COOKIE_SECURE,
+        };
+
+        let allow_user_registration = match runtime_config.get(AUTH_ALLOW_USER_REGISTRATION_KEY) {
+            Some(raw) => match parse_bool_str(&raw) {
+                Some(value) => value,
+                None => {
+                    tracing::warn!(
+                        key = AUTH_ALLOW_USER_REGISTRATION_KEY,
+                        value = %raw,
+                        "invalid runtime auth registration config; using default"
+                    );
+                    DEFAULT_AUTH_ALLOW_USER_REGISTRATION
+                }
+            },
+            None => DEFAULT_AUTH_ALLOW_USER_REGISTRATION,
         };
 
         let access_token_ttl_secs = match runtime_config.get(AUTH_ACCESS_TOKEN_TTL_SECS_KEY) {
@@ -79,6 +97,7 @@ impl RuntimeAuthPolicy {
 
         Self {
             cookie_secure,
+            allow_user_registration,
             access_token_ttl_secs,
             refresh_token_ttl_secs,
         }
@@ -116,6 +135,15 @@ pub fn normalize_cookie_secure_config_value(value: &str) -> Result<String> {
         Some(value) => Ok(if value { "true" } else { "false" }.to_string()),
         None => Err(AsterError::validation_error(
             "auth_cookie_secure must be 'true' or 'false'",
+        )),
+    }
+}
+
+pub fn normalize_allow_user_registration_config_value(value: &str) -> Result<String> {
+    match parse_bool_str(value) {
+        Some(value) => Ok(if value { "true" } else { "false" }.to_string()),
+        None => Err(AsterError::validation_error(
+            "auth_allow_user_registration must be 'true' or 'false'",
         )),
     }
 }
@@ -158,8 +186,9 @@ fn read_positive_u64(runtime_config: &RuntimeConfig, key: &str, default: u64) ->
 #[cfg(test)]
 mod tests {
     use super::{
-        AUTH_ACCESS_TOKEN_TTL_SECS_KEY, AUTH_COOKIE_SECURE_KEY, AUTH_REFRESH_TOKEN_TTL_SECS_KEY,
-        DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECS, DEFAULT_AUTH_COOKIE_SECURE,
+        AUTH_ACCESS_TOKEN_TTL_SECS_KEY, AUTH_ALLOW_USER_REGISTRATION_KEY, AUTH_COOKIE_SECURE_KEY,
+        AUTH_REFRESH_TOKEN_TTL_SECS_KEY, DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECS,
+        DEFAULT_AUTH_ALLOW_USER_REGISTRATION, DEFAULT_AUTH_COOKIE_SECURE,
         DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECS, RuntimeAuthPolicy,
     };
     use crate::config::RuntimeConfig;
@@ -190,6 +219,10 @@ mod tests {
 
         assert_eq!(policy.cookie_secure, DEFAULT_AUTH_COOKIE_SECURE);
         assert_eq!(
+            policy.allow_user_registration,
+            DEFAULT_AUTH_ALLOW_USER_REGISTRATION
+        );
+        assert_eq!(
             policy.access_token_ttl_secs,
             DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECS
         );
@@ -203,12 +236,14 @@ mod tests {
     fn runtime_auth_policy_reads_runtime_values() {
         let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(AUTH_COOKIE_SECURE_KEY, "false"));
+        runtime_config.apply(config_model(AUTH_ALLOW_USER_REGISTRATION_KEY, "false"));
         runtime_config.apply(config_model(AUTH_ACCESS_TOKEN_TTL_SECS_KEY, "120"));
         runtime_config.apply(config_model(AUTH_REFRESH_TOKEN_TTL_SECS_KEY, "3600"));
 
         let policy = RuntimeAuthPolicy::from_runtime_config(&runtime_config);
 
         assert!(!policy.cookie_secure);
+        assert!(!policy.allow_user_registration);
         assert_eq!(policy.access_token_ttl_secs, 120);
         assert_eq!(policy.refresh_token_ttl_secs, 3600);
     }

@@ -2455,6 +2455,7 @@ export interface components {
             identifier: string;
         };
         CheckResp: {
+            allow_user_registration: boolean;
             exists: boolean;
             has_users: boolean;
         };
@@ -3182,6 +3183,7 @@ export interface components {
             path: string;
         };
         PublicBranding: {
+            allow_user_registration: boolean;
             description: string;
             favicon_url: string;
             site_url?: string | null;
@@ -6410,6 +6412,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            allow_user_registration: boolean;
                             exists: boolean;
                             has_users: boolean;
                         };
@@ -8945,6 +8948,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            allow_user_registration: boolean;
                             description: string;
                             favicon_url: string;
                             site_url?: string | null;

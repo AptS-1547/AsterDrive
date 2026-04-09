@@ -86,6 +86,7 @@ async fn test_admin_scope_allows_admin_users() {
         .filter_map(|item| item.get("key").and_then(Value::as_str))
         .collect::<Vec<_>>();
     assert!(keys.contains(&"auth_cookie_secure"));
+    assert!(keys.contains(&"auth_allow_user_registration"));
     assert!(keys.contains(&"auth_access_token_ttl_secs"));
     assert!(keys.contains(&"auth_refresh_token_ttl_secs"));
     assert!(keys.contains(&"branding_title"));
@@ -106,6 +107,22 @@ async fn test_admin_scope_allows_admin_users() {
         auth_ttl["description_i18n_key"],
         "settings_item_auth_access_token_ttl_secs_desc"
     );
+
+    let register_toggle = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["key"] == "auth_allow_user_registration")
+        .unwrap();
+    assert_eq!(
+        register_toggle["label_i18n_key"],
+        "settings_item_auth_allow_user_registration_label"
+    );
+    assert_eq!(
+        register_toggle["description_i18n_key"],
+        "settings_item_auth_allow_user_registration_desc"
+    );
+    assert_eq!(register_toggle["category"], "user");
 
     let branding_title = body["data"]
         .as_array()

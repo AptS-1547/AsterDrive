@@ -19,6 +19,7 @@ import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { authService } from "@/services/authService";
 import { ApiError } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
+import { useBrandingStore } from "@/stores/brandingStore";
 import { ErrorCode } from "@/types/api-helpers";
 
 // ── Animated height ─────────────────────────────────────────
@@ -168,6 +169,9 @@ export default function LoginPage() {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const login = useAuthStore((s) => s.login);
+	const allowUserRegistration = useBrandingStore(
+		(state) => state.allowUserRegistration,
+	);
 
 	// The first field is always visible — it doubles as username or email
 	const [identifier, setIdentifier] = useState("");
@@ -180,6 +184,7 @@ export default function LoginPage() {
 	const [checking, setChecking] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [resendingActivation, setResendingActivation] = useState(false);
+	const [registrationClosed, setRegistrationClosed] = useState(false);
 	const [exiting, setExiting] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [pendingActivation, setPendingActivation] =
@@ -273,39 +278,51 @@ export default function LoginPage() {
 
 	// ── Auto check ──
 
-	const runCheck = useCallback(async (value: string) => {
-		const trimmed = value.trim();
-		if (trimmed.length < 2 || trimmed === lastChecked.current) return;
+	const runCheck = useCallback(
+		async (value: string) => {
+			const trimmed = value.trim();
+			if (trimmed.length < 2 || trimmed === lastChecked.current) return;
 
-		const checkId = ++latestCheckId.current;
-		setChecking(true);
-		try {
-			const result = await authService.check(trimmed);
-			if (
-				checkId !== latestCheckId.current ||
-				latestIdentifier.current !== trimmed
-			) {
-				return;
+			const checkId = ++latestCheckId.current;
+			setChecking(true);
+			try {
+				const result = await authService.check(trimmed);
+				if (
+					checkId !== latestCheckId.current ||
+					latestIdentifier.current !== trimmed
+				) {
+					return;
+				}
+				lastChecked.current = trimmed;
+				if (!result.has_users) {
+					setRegistrationClosed(false);
+					setMode("setup");
+				} else if (result.exists) {
+					setRegistrationClosed(false);
+					setMode("login");
+				} else if (
+					(result.allow_user_registration ?? allowUserRegistration) === false
+				) {
+					setRegistrationClosed(true);
+					setMode("login");
+				} else {
+					setRegistrationClosed(false);
+					setMode("register");
+				}
+			} catch {
+				// Silently fail
+			} finally {
+				if (checkId === latestCheckId.current) {
+					setChecking(false);
+				}
 			}
-			lastChecked.current = trimmed;
-			if (!result.has_users) {
-				setMode("setup");
-			} else if (result.exists) {
-				setMode("login");
-			} else {
-				setMode("register");
-			}
-		} catch {
-			// Silently fail
-		} finally {
-			if (checkId === latestCheckId.current) {
-				setChecking(false);
-			}
-		}
-	}, []);
+		},
+		[allowUserRegistration],
+	);
 
 	useEffect(() => {
 		latestIdentifier.current = identifier.trim();
+		setRegistrationClosed(false);
 		if (checkTimer.current) clearTimeout(checkTimer.current);
 		if (identifier.trim().length >= 2) {
 			checkTimer.current = setTimeout(() => runCheck(identifier), 500);
@@ -473,6 +490,7 @@ export default function LoginPage() {
 					});
 		}
 		if (mode === "setup") return t("setup_desc");
+		if (registrationClosed) return t("registration_closed_desc");
 		if (mode === "register") return t("create_new_account");
 		if (mode === "login") return t("enter_password");
 		return t("sign_in_to_account");

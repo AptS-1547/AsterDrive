@@ -22,9 +22,14 @@
 
 ## 初始化与注册
 
-- `POST /auth/check`：提交 `identifier`，返回 `exists` 和 `has_users`，主要给前端初始化流程做预检查
+- `POST /auth/check`：提交 `identifier`，返回 `exists`、`has_users` 和 `allow_user_registration`，主要给前端初始化流程做预检查
 - `POST /auth/setup`：仅在系统还没有任何用户时可用，用来创建首个管理员
-- `POST /auth/register`：普通注册入口；第一个注册用户自动成为 `admin`，新用户默认配额来自 `default_storage_quota`
+- `POST /auth/register`：普通注册入口；当 `auth_allow_user_registration = true` 时可用。第一个注册用户自动成为 `admin`，新用户默认配额来自 `default_storage_quota`
+
+如果运营方关闭了 `auth_allow_user_registration`：
+
+- `/auth/register` 会返回 `403`
+- `/auth/setup` 仍然可以在系统尚未初始化时创建首个管理员
 
 `/auth/setup` 和 `/auth/register` 的请求体相同：
 

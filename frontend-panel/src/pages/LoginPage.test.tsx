@@ -17,6 +17,7 @@ const MockApiError = vi.hoisted(
 const mockState = vi.hoisted(() => ({
 	check: vi.fn(),
 	handleApiError: vi.fn(),
+	allowUserRegistration: true,
 	login: vi.fn(),
 	location: {
 		hash: "",
@@ -160,9 +161,23 @@ vi.mock("@/stores/authStore", () => ({
 	) => selector({ login: mockState.login }),
 }));
 
+vi.mock("@/stores/brandingStore", () => ({
+	useBrandingStore: (
+		selector: (state: {
+			allowUserRegistration: boolean;
+			branding: { title: string };
+		}) => unknown,
+	) =>
+		selector({
+			allowUserRegistration: mockState.allowUserRegistration,
+			branding: { title: "AsterDrive" },
+		}),
+}));
+
 describe("LoginPage", () => {
 	beforeEach(() => {
 		document.documentElement.classList.remove("dark");
+		mockState.allowUserRegistration = true;
 		mockState.check.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.login.mockReset();
@@ -513,5 +528,30 @@ describe("LoginPage", () => {
 
 		expect(mockState.check).toHaveBeenCalledTimes(2);
 		expect(mockState.check).toHaveBeenNthCalledWith(2, "user@example.com");
+	});
+
+	it("falls back to sign-in mode and shows a hint when public registration is disabled", async () => {
+		mockState.check.mockResolvedValueOnce({
+			exists: false,
+			has_users: true,
+			allow_user_registration: false,
+		});
+
+		render(<LoginPage />);
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "new@example.com" },
+		});
+
+		await waitFor(() => {
+			expect(mockState.check).toHaveBeenCalledWith("new@example.com");
+		});
+		expect(
+			await screen.findByRole("button", { name: "sign_in" }),
+		).toBeInTheDocument();
+		expect(screen.queryByLabelText("username")).not.toBeInTheDocument();
+		await waitFor(() => {
+			expect(screen.getByText("registration_closed_desc")).toBeInTheDocument();
+		});
 	});
 });

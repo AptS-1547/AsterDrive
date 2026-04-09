@@ -20,6 +20,7 @@ async fn test_public_branding_returns_defaults() {
     assert_eq!(body["data"]["description"], "Self-hosted cloud storage");
     assert_eq!(body["data"]["favicon_url"], "/favicon.svg");
     assert_eq!(body["data"]["site_url"], Value::Null);
+    assert_eq!(body["data"]["allow_user_registration"], true);
 }
 
 #[actix_web::test]
@@ -30,6 +31,7 @@ async fn test_public_branding_uses_admin_updated_values() {
 
     for (key, value) in [
         ("public_site_url", "https://drive.example.com"),
+        ("auth_allow_user_registration", "false"),
         ("branding_title", "Nebula Drive"),
         ("branding_description", "Team storage for the squad"),
         (
@@ -60,6 +62,7 @@ async fn test_public_branding_uses_admin_updated_values() {
         "https://cdn.example.com/branding/favicon.png?v=2"
     );
     assert_eq!(body["data"]["site_url"], "https://drive.example.com");
+    assert_eq!(body["data"]["allow_user_registration"], false);
 }
 
 #[actix_web::test]

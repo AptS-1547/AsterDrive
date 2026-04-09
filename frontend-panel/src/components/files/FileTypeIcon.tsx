@@ -25,7 +25,18 @@ export function FileTypeIcon({
 
 	useEffect(() => {
 		if (loaded) return;
-		loadLanguageIcons().then(() => setLoaded(true));
+
+		let cancelled = false;
+
+		void loadLanguageIcons().then(() => {
+			if (!cancelled) {
+				setLoaded(true);
+			}
+		});
+
+		return () => {
+			cancelled = true;
+		};
 	}, [loaded]);
 
 	if (loaded && hasLanguageIcon(name)) {
