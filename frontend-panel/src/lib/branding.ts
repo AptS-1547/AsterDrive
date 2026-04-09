@@ -4,12 +4,16 @@ export type AppliedBranding = {
 	title: string;
 	description: string;
 	faviconUrl: string;
+	wordmarkDarkUrl: string;
+	wordmarkLightUrl: string;
 };
 
 export const DEFAULT_BRANDING: AppliedBranding = {
 	title: "AsterDrive",
 	description: "Self-hosted cloud storage",
 	faviconUrl: "/favicon.svg",
+	wordmarkDarkUrl: "/static/asterdrive/asterdrive-dark.svg",
+	wordmarkLightUrl: "/static/asterdrive/asterdrive-light.svg",
 };
 
 export function resolveBranding(
@@ -21,7 +25,18 @@ export function resolveBranding(
 			branding?.description,
 			DEFAULT_BRANDING.description,
 		),
-		faviconUrl: normalizeFaviconUrl(branding?.favicon_url),
+		faviconUrl: normalizeAssetUrl(
+			branding?.favicon_url,
+			DEFAULT_BRANDING.faviconUrl,
+		),
+		wordmarkDarkUrl: normalizeAssetUrl(
+			branding?.wordmark_dark_url,
+			DEFAULT_BRANDING.wordmarkDarkUrl,
+		),
+		wordmarkLightUrl: normalizeAssetUrl(
+			branding?.wordmark_light_url,
+			DEFAULT_BRANDING.wordmarkLightUrl,
+		),
 	};
 }
 
@@ -47,9 +62,12 @@ function normalizeText(
 	return normalized ? normalized : fallback;
 }
 
-function normalizeFaviconUrl(value: string | null | undefined): string {
+function normalizeAssetUrl(
+	value: string | null | undefined,
+	fallback: string,
+): string {
 	const normalized = value?.trim();
-	if (!normalized) return DEFAULT_BRANDING.faviconUrl;
+	if (!normalized) return fallback;
 	if (
 		normalized.startsWith("/") &&
 		!normalized.startsWith("//") &&
@@ -64,10 +82,10 @@ function normalizeFaviconUrl(value: string | null | undefined): string {
 			return resolved.toString();
 		}
 	} catch {
-		// invalid URLs fall back to the default favicon
+		// invalid URLs fall back to the default branding asset
 	}
 
-	return DEFAULT_BRANDING.faviconUrl;
+	return fallback;
 }
 
 export function formatDocumentTitle(

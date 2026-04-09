@@ -19,6 +19,14 @@ async fn test_public_branding_returns_defaults() {
     assert_eq!(body["data"]["title"], "AsterDrive");
     assert_eq!(body["data"]["description"], "Self-hosted cloud storage");
     assert_eq!(body["data"]["favicon_url"], "/favicon.svg");
+    assert_eq!(
+        body["data"]["wordmark_dark_url"],
+        "/static/asterdrive/asterdrive-dark.svg"
+    );
+    assert_eq!(
+        body["data"]["wordmark_light_url"],
+        "/static/asterdrive/asterdrive-light.svg"
+    );
     assert_eq!(body["data"]["site_url"], Value::Null);
     assert_eq!(body["data"]["allow_user_registration"], true);
 }
@@ -37,6 +45,14 @@ async fn test_public_branding_uses_admin_updated_values() {
         (
             "branding_favicon_url",
             "https://cdn.example.com/branding/favicon.png?v=2",
+        ),
+        (
+            "branding_wordmark_dark_url",
+            "https://cdn.example.com/branding/wordmark-dark.svg?v=2",
+        ),
+        (
+            "branding_wordmark_light_url",
+            "https://cdn.example.com/branding/wordmark-light.svg?v=2",
         ),
     ] {
         let req = test::TestRequest::put()
@@ -61,6 +77,14 @@ async fn test_public_branding_uses_admin_updated_values() {
         body["data"]["favicon_url"],
         "https://cdn.example.com/branding/favicon.png?v=2"
     );
+    assert_eq!(
+        body["data"]["wordmark_dark_url"],
+        "https://cdn.example.com/branding/wordmark-dark.svg?v=2"
+    );
+    assert_eq!(
+        body["data"]["wordmark_light_url"],
+        "https://cdn.example.com/branding/wordmark-light.svg?v=2"
+    );
     assert_eq!(body["data"]["site_url"], "https://drive.example.com");
     assert_eq!(body["data"]["allow_user_registration"], false);
 }
@@ -75,6 +99,8 @@ async fn test_public_branding_blank_values_fall_back_to_defaults() {
         ("branding_title", "   "),
         ("branding_description", "   "),
         ("branding_favicon_url", ""),
+        ("branding_wordmark_dark_url", ""),
+        ("branding_wordmark_light_url", ""),
     ] {
         let req = test::TestRequest::put()
             .uri(&format!("/api/v1/admin/config/{key}"))
@@ -95,6 +121,14 @@ async fn test_public_branding_blank_values_fall_back_to_defaults() {
     assert_eq!(body["data"]["title"], "AsterDrive");
     assert_eq!(body["data"]["description"], "Self-hosted cloud storage");
     assert_eq!(body["data"]["favicon_url"], "/favicon.svg");
+    assert_eq!(
+        body["data"]["wordmark_dark_url"],
+        "/static/asterdrive/asterdrive-dark.svg"
+    );
+    assert_eq!(
+        body["data"]["wordmark_light_url"],
+        "/static/asterdrive/asterdrive-light.svg"
+    );
 }
 
 #[actix_web::test]
@@ -109,6 +143,14 @@ async fn test_public_branding_preserves_non_ascii_text() {
         (
             "branding_favicon_url",
             "https://cdn.example.com/branding/favicon.png?v=unicode",
+        ),
+        (
+            "branding_wordmark_dark_url",
+            "https://cdn.example.com/branding/深色.svg?v=unicode",
+        ),
+        (
+            "branding_wordmark_light_url",
+            "https://cdn.example.com/branding/浅色.svg?v=unicode",
         ),
     ] {
         let req = test::TestRequest::put()
@@ -132,6 +174,14 @@ async fn test_public_branding_preserves_non_ascii_text() {
     assert_eq!(
         body["data"]["favicon_url"],
         "https://cdn.example.com/branding/favicon.png?v=unicode"
+    );
+    assert_eq!(
+        body["data"]["wordmark_dark_url"],
+        "https://cdn.example.com/branding/深色.svg?v=unicode"
+    );
+    assert_eq!(
+        body["data"]["wordmark_light_url"],
+        "https://cdn.example.com/branding/浅色.svg?v=unicode"
     );
 }
 

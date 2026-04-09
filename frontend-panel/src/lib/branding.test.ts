@@ -24,21 +24,27 @@ describe("branding helpers", () => {
 				title: "   ",
 				description: "",
 				favicon_url: "javascript:alert(1)",
+				wordmark_dark_url: "wordmark-dark.svg",
+				wordmark_light_url: "javascript:alert(1)",
 			}),
 		).toEqual(DEFAULT_BRANDING);
 	});
 
-	it("normalizes safe favicon URLs against the current origin", () => {
+	it("normalizes safe branding asset URLs against the current origin", () => {
 		expect(
 			resolveBranding({
 				title: "My Drive",
 				description: "Team storage",
 				favicon_url: "/assets/brand/icon.png?v=1",
+				wordmark_dark_url: "/assets/brand/wordmark-dark.svg?v=1",
+				wordmark_light_url: "https://cdn.example.com/brand/wordmark-light.svg",
 			}),
 		).toEqual({
 			title: "My Drive",
 			description: "Team storage",
 			faviconUrl: "/assets/brand/icon.png?v=1",
+			wordmarkDarkUrl: "/assets/brand/wordmark-dark.svg?v=1",
+			wordmarkLightUrl: "https://cdn.example.com/brand/wordmark-light.svg",
 		});
 	});
 
@@ -48,11 +54,15 @@ describe("branding helpers", () => {
 				title: "My Drive",
 				description: "Team storage",
 				favicon_url: "assets/brand/icon.png",
+				wordmark_dark_url: "assets/brand/wordmark-dark.svg",
+				wordmark_light_url: "assets/brand/wordmark-light.svg",
 			}),
 		).toEqual({
 			title: "My Drive",
 			description: "Team storage",
 			faviconUrl: "/favicon.svg",
+			wordmarkDarkUrl: "/static/asterdrive/asterdrive-dark.svg",
+			wordmarkLightUrl: "/static/asterdrive/asterdrive-light.svg",
 		});
 	});
 
@@ -61,6 +71,8 @@ describe("branding helpers", () => {
 			title: "Nebula Drive",
 			description: "Private cloud for the squad",
 			faviconUrl: "https://cdn.example.com/brand/favicon.png",
+			wordmarkDarkUrl: "/static/asterdrive/asterdrive-dark.svg",
+			wordmarkLightUrl: "/static/asterdrive/asterdrive-light.svg",
 		});
 
 		expect(

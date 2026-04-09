@@ -259,6 +259,12 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
         branding::BRANDING_TITLE_KEY => branding::normalize_title_config_value(value),
         branding::BRANDING_DESCRIPTION_KEY => branding::normalize_description_config_value(value),
         branding::BRANDING_FAVICON_URL_KEY => branding::normalize_favicon_url_config_value(value),
+        branding::BRANDING_WORDMARK_DARK_URL_KEY => {
+            branding::normalize_wordmark_dark_url_config_value(value)
+        }
+        branding::BRANDING_WORDMARK_LIGHT_URL_KEY => {
+            branding::normalize_wordmark_light_url_config_value(value)
+        }
         _ => Ok(value.to_string()),
     }
 }
@@ -286,6 +292,8 @@ pub struct PublicBranding {
     pub title: String,
     pub description: String,
     pub favicon_url: String,
+    pub wordmark_dark_url: String,
+    pub wordmark_light_url: String,
     pub site_url: Option<String>,
     pub allow_user_registration: bool,
 }
@@ -296,6 +304,8 @@ pub fn get_public_branding(state: &AppState) -> PublicBranding {
         title: branding::title_or_default(&state.runtime_config),
         description: branding::description_or_default(&state.runtime_config),
         favicon_url: branding::favicon_url_or_default(&state.runtime_config),
+        wordmark_dark_url: branding::wordmark_dark_url_or_default(&state.runtime_config),
+        wordmark_light_url: branding::wordmark_light_url_or_default(&state.runtime_config),
         site_url: site_url::public_site_url(&state.runtime_config),
         allow_user_registration: auth_policy.allow_user_registration,
     }

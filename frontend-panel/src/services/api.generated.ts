@@ -3256,6 +3256,8 @@ export interface components {
             favicon_url: string;
             site_url?: string | null;
             title: string;
+            wordmark_dark_url: string;
+            wordmark_light_url: string;
         };
         PurgedCountResponse: {
             /** Format: int32 */
@@ -9125,6 +9127,8 @@ export interface operations {
                             favicon_url: string;
                             site_url?: string | null;
                             title: string;
+                            wordmark_dark_url: string;
+                            wordmark_light_url: string;
                         };
                         msg: string;
                     };

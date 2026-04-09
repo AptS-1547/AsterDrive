@@ -1,11 +1,17 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { AsterDriveWordmark } from "@/components/common/AsterDriveWordmark";
+import { DEFAULT_BRANDING } from "@/lib/branding";
+import { useBrandingStore } from "@/stores/brandingStore";
 import { useThemeStore } from "@/stores/themeStore";
 
 describe("AsterDriveWordmark", () => {
 	beforeEach(() => {
 		document.documentElement.classList.remove("dark");
+		useBrandingStore.setState((state) => ({
+			...state,
+			branding: DEFAULT_BRANDING,
+		}));
 		useThemeStore.setState({ resolvedTheme: "light" });
 	});
 
@@ -35,6 +41,24 @@ describe("AsterDriveWordmark", () => {
 		expect(screen.getByRole("img", { name: "AsterDrive" })).toHaveAttribute(
 			"src",
 			"/static/asterdrive/asterdrive-light.svg",
+		);
+	});
+
+	it("uses configured branding wordmark URLs", () => {
+		useBrandingStore.setState((state) => ({
+			...state,
+			branding: {
+				...state.branding,
+				wordmarkDarkUrl: "https://cdn.example.com/brand/dark.svg",
+				wordmarkLightUrl: "https://cdn.example.com/brand/light.svg",
+			},
+		}));
+
+		render(<AsterDriveWordmark alt="AsterDrive" />);
+
+		expect(screen.getByRole("img", { name: "AsterDrive" })).toHaveAttribute(
+			"src",
+			"https://cdn.example.com/brand/dark.svg",
 		);
 	});
 });

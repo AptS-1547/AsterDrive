@@ -49,6 +49,8 @@ describe("brandingStore", () => {
 			title: "Nebula Drive",
 			description: "Team storage",
 			favicon_url: "https://cdn.example.com/icon.png",
+			wordmark_dark_url: "https://cdn.example.com/wordmark-dark.svg",
+			wordmark_light_url: "https://cdn.example.com/wordmark-light.svg",
 			site_url: "https://drive.example.com",
 		});
 
@@ -64,6 +66,8 @@ describe("brandingStore", () => {
 				title: "Nebula Drive",
 				description: "Team storage",
 				faviconUrl: "https://cdn.example.com/icon.png",
+				wordmarkDarkUrl: "https://cdn.example.com/wordmark-dark.svg",
+				wordmarkLightUrl: "https://cdn.example.com/wordmark-light.svg",
 			}),
 		);
 		expect(useBrandingStore.getState()).toMatchObject({
@@ -92,6 +96,12 @@ describe("brandingStore", () => {
 				title: "AsterDrive",
 				description: "Self-hosted cloud storage",
 				faviconUrl: expect.stringContaining("/favicon.svg"),
+				wordmarkDarkUrl: expect.stringContaining(
+					"/static/asterdrive/asterdrive-dark.svg",
+				),
+				wordmarkLightUrl: expect.stringContaining(
+					"/static/asterdrive/asterdrive-light.svg",
+				),
 			}),
 		);
 		expect(useBrandingStore.getState()).toMatchObject({

@@ -1,9 +1,7 @@
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
+import { useBrandingStore } from "@/stores/brandingStore";
 import { useThemeStore } from "@/stores/themeStore";
-
-const WORDMARK_DARK_SRC = "/static/asterdrive/asterdrive-dark.svg";
-const WORDMARK_LIGHT_SRC = "/static/asterdrive/asterdrive-light.svg";
 
 type SurfaceTheme = "light" | "dark";
 
@@ -23,6 +21,8 @@ export function AsterDriveWordmark({
 	surfaceTheme,
 	...props
 }: AsterDriveWordmarkProps) {
+	const wordmarkDarkUrl = useBrandingStore((s) => s.branding.wordmarkDarkUrl);
+	const wordmarkLightUrl = useBrandingStore((s) => s.branding.wordmarkLightUrl);
 	const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
 	const effectiveTheme =
 		surfaceTheme ??
@@ -32,7 +32,7 @@ export function AsterDriveWordmark({
 
 	return (
 		<img
-			src={effectiveTheme === "dark" ? WORDMARK_LIGHT_SRC : WORDMARK_DARK_SRC}
+			src={effectiveTheme === "dark" ? wordmarkLightUrl : wordmarkDarkUrl}
 			alt={alt}
 			draggable={draggable}
 			className={cn("block h-auto w-auto", className)}

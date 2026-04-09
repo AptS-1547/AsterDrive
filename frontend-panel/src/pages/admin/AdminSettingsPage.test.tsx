@@ -1037,6 +1037,72 @@ describe("AdminSettingsPage", () => {
 		expect(screen.getByLabelText("/branding/favicon.svg")).toBeInTheDocument();
 	});
 
+	it("shows a site logo asset preview next to the branding wordmark field", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "general",
+					description: "wordmark desc",
+					key: "branding_wordmark_dark_url",
+					value: "/branding/wordmark-dark.svg",
+					value_type: "string",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "general",
+				description: "wordmark desc",
+				key: "branding_wordmark_dark_url",
+				value_type: "string",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="general" />);
+
+		expect(
+			await screen.findByDisplayValue("/branding/wordmark-dark.svg"),
+		).toBeInTheDocument();
+		expect(screen.getByTestId("branding-asset-preview")).toBeInTheDocument();
+		expect(screen.getByTestId("branding-asset-preview-image")).toHaveAttribute(
+			"src",
+			"/branding/wordmark-dark.svg",
+		);
+		expect(
+			screen.getByLabelText("/branding/wordmark-dark.svg"),
+		).toBeInTheDocument();
+		expect(screen.getByLabelText("/branding/wordmark-dark.svg")).toHaveClass(
+			"w-36",
+		);
+	});
+
+	it("uses a dark wider preview frame for the dark-surface wordmark field", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "general",
+					key: "branding_wordmark_light_url",
+					value: "/branding/wordmark-light.svg",
+					value_type: "string",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "general",
+				key: "branding_wordmark_light_url",
+				value_type: "string",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="general" />);
+
+		const preview = await screen.findByLabelText(
+			"/branding/wordmark-light.svg",
+		);
+		expect(preview).toHaveClass("bg-black", "w-36");
+	});
+
 	it("debounces favicon asset preview updates while typing", async () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [

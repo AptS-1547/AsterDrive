@@ -95,6 +95,40 @@ const COMPACT_NAV_OVERFLOW_TRIGGER_CLASS = buttonVariants({
 });
 
 const PUBLIC_SITE_URL_KEY = "public_site_url";
+type BrandingAssetPreviewAppearance = {
+	fallbackLabel: string;
+	frameClassName: string;
+	imageClassName: string;
+	validClassName: string;
+	validHoverClassName: string;
+};
+
+const BRANDING_ASSET_PREVIEW_APPEARANCES: Record<
+	string,
+	BrandingAssetPreviewAppearance
+> = {
+	branding_favicon_url: {
+		fallbackLabel: "/favicon.svg",
+		frameClassName: "w-12",
+		imageClassName: "max-h-8 max-w-8 object-contain",
+		validClassName: "border-border/70 bg-muted/20",
+		validHoverClassName: "hover:border-primary/40 hover:bg-muted/30",
+	},
+	branding_wordmark_dark_url: {
+		fallbackLabel: "/static/asterdrive/asterdrive-dark.svg",
+		frameClassName: "w-36 px-4",
+		imageClassName: "max-h-7 w-full object-contain",
+		validClassName: "border-border/70 bg-background",
+		validHoverClassName: "hover:border-primary/40 hover:bg-muted/20",
+	},
+	branding_wordmark_light_url: {
+		fallbackLabel: "/static/asterdrive/asterdrive-light.svg",
+		frameClassName: "w-36 px-4",
+		imageClassName: "max-h-7 w-full object-contain",
+		validClassName: "border-neutral-700 bg-black",
+		validHoverClassName: "hover:border-primary/50 hover:bg-neutral-950",
+	},
+};
 
 type DraftValues = Record<string, string>;
 
@@ -207,8 +241,12 @@ function isMultilineType(valueType: string) {
 	return valueType === "multiline";
 }
 
-function isBrandingFaviconConfig(config: SystemConfig) {
-	return config.key === "branding_favicon_url";
+function isBrandingAssetConfig(config: SystemConfig) {
+	return config.key in BRANDING_ASSET_PREVIEW_APPEARANCES;
+}
+
+function getBrandingAssetPreviewAppearance(config: SystemConfig) {
+	return BRANDING_ASSET_PREVIEW_APPEARANCES[config.key];
 }
 
 function normalizeAssetPreviewUrl(value: string) {
@@ -232,7 +270,13 @@ function normalizeAssetPreviewUrl(value: string) {
 	return null;
 }
 
-function UrlAssetPreview({ url }: { url: string }) {
+function UrlAssetPreview({
+	url,
+	appearance,
+}: {
+	url: string;
+	appearance: BrandingAssetPreviewAppearance;
+}) {
 	const [debouncedUrl, setDebouncedUrl] = useState(url);
 
 	useEffect(() => {
@@ -248,18 +292,20 @@ function UrlAssetPreview({ url }: { url: string }) {
 	);
 	const isInvalid = debouncedUrl.trim().length > 0 && !normalizedUrl;
 	const previewClassName = cn(
-		"group flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-muted/20 transition-colors",
+		"group flex h-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border transition-colors",
+		appearance.frameClassName,
 		normalizedUrl
-			? "border-border/70 hover:border-primary/40 hover:bg-muted/30"
+			? [appearance.validClassName, appearance.validHoverClassName]
 			: isInvalid
 				? "border-amber-300/70 bg-amber-50/70"
-				: "border-border/70",
+				: appearance.validClassName,
 	);
 
 	const previewContent = normalizedUrl ? (
 		<UrlAssetPreviewImage
 			key={normalizedUrl}
 			data-testid="branding-asset-preview-image"
+			className={appearance.imageClassName}
 			url={normalizedUrl}
 		/>
 	) : (
@@ -289,8 +335,8 @@ function UrlAssetPreview({ url }: { url: string }) {
 				<div
 					role="img"
 					className={previewClassName}
-					title={debouncedUrl.trim() || "/favicon.svg"}
-					aria-label={debouncedUrl.trim() || "/favicon.svg"}
+					title={debouncedUrl.trim() || appearance.fallbackLabel}
+					aria-label={debouncedUrl.trim() || appearance.fallbackLabel}
 				>
 					{previewContent}
 				</div>
@@ -300,9 +346,11 @@ function UrlAssetPreview({ url }: { url: string }) {
 }
 
 function UrlAssetPreviewImage({
+	className,
 	url,
 	...props
 }: {
+	className?: string;
 	url: string;
 	"data-testid"?: string;
 }) {
@@ -317,7 +365,7 @@ function UrlAssetPreviewImage({
 			{...props}
 			src={url}
 			alt=""
-			className="max-h-8 max-w-8 object-contain"
+			className={className}
 			onError={() => setHasLoadError(true)}
 		/>
 	);
@@ -1593,8 +1641,11 @@ export default function AdminSettingsPage({
 		const valueType = getConfigValueType(config);
 		const isSensitive = getConfigIsSensitive(config);
 		const multiline = isMultilineType(valueType);
+		const brandingPreviewAppearance = isBrandingAssetConfig(config)
+			? getBrandingAssetPreviewAppearance(config)
+			: null;
 
-		if (isBrandingFaviconConfig(config)) {
+		if (brandingPreviewAppearance) {
 			return (
 				<div className="flex max-w-4xl items-end gap-3">
 					<div className="w-full max-w-3xl">
@@ -1614,7 +1665,10 @@ export default function AdminSettingsPage({
 							placeholder={t("config_value")}
 						/>
 					</div>
-					<UrlAssetPreview url={draftValue} />
+					<UrlAssetPreview
+						url={draftValue}
+						appearance={brandingPreviewAppearance}
+					/>
 				</div>
 			);
 		}

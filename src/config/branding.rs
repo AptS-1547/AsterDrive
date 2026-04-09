@@ -4,14 +4,18 @@ use crate::errors::{AsterError, Result};
 pub const BRANDING_TITLE_KEY: &str = "branding_title";
 pub const BRANDING_DESCRIPTION_KEY: &str = "branding_description";
 pub const BRANDING_FAVICON_URL_KEY: &str = "branding_favicon_url";
+pub const BRANDING_WORDMARK_DARK_URL_KEY: &str = "branding_wordmark_dark_url";
+pub const BRANDING_WORDMARK_LIGHT_URL_KEY: &str = "branding_wordmark_light_url";
 
 pub const DEFAULT_BRANDING_TITLE: &str = "AsterDrive";
 pub const DEFAULT_BRANDING_DESCRIPTION: &str = "Self-hosted cloud storage";
 pub const DEFAULT_BRANDING_FAVICON_URL: &str = "/favicon.svg";
+pub const DEFAULT_BRANDING_WORDMARK_DARK_URL: &str = "/static/asterdrive/asterdrive-dark.svg";
+pub const DEFAULT_BRANDING_WORDMARK_LIGHT_URL: &str = "/static/asterdrive/asterdrive-light.svg";
 
 const MAX_BRANDING_TITLE_LEN: usize = 120;
 const MAX_BRANDING_DESCRIPTION_LEN: usize = 300;
-const MAX_BRANDING_FAVICON_URL_LEN: usize = 2048;
+const MAX_BRANDING_ASSET_URL_LEN: usize = 2048;
 
 pub fn normalize_title_config_value(value: &str) -> Result<String> {
     normalize_text_value("branding_title", value, MAX_BRANDING_TITLE_LEN)
@@ -22,26 +26,15 @@ pub fn normalize_description_config_value(value: &str) -> Result<String> {
 }
 
 pub fn normalize_favicon_url_config_value(value: &str) -> Result<String> {
-    let normalized = value.trim();
-    if normalized.is_empty() {
-        return Ok(String::new());
-    }
-    if normalized.len() > MAX_BRANDING_FAVICON_URL_LEN {
-        return Err(AsterError::validation_error(format!(
-            "branding_favicon_url exceeds {MAX_BRANDING_FAVICON_URL_LEN} characters",
-        )));
-    }
-    if normalized.chars().any(char::is_whitespace) {
-        return Err(AsterError::validation_error(
-            "branding_favicon_url cannot contain whitespace",
-        ));
-    }
-    if !is_allowed_favicon_url(normalized) {
-        return Err(AsterError::validation_error(
-            "branding_favicon_url must be an absolute http(s) URL or a root-relative path",
-        ));
-    }
-    Ok(normalized.to_string())
+    normalize_asset_url_config_value(BRANDING_FAVICON_URL_KEY, value)
+}
+
+pub fn normalize_wordmark_dark_url_config_value(value: &str) -> Result<String> {
+    normalize_asset_url_config_value(BRANDING_WORDMARK_DARK_URL_KEY, value)
+}
+
+pub fn normalize_wordmark_light_url_config_value(value: &str) -> Result<String> {
+    normalize_asset_url_config_value(BRANDING_WORDMARK_LIGHT_URL_KEY, value)
 }
 
 pub fn title_or_default(runtime_config: &RuntimeConfig) -> String {
@@ -59,12 +52,59 @@ pub fn description_or_default(runtime_config: &RuntimeConfig) -> String {
 }
 
 pub fn favicon_url_or_default(runtime_config: &RuntimeConfig) -> String {
+    asset_url_or_default(
+        runtime_config,
+        BRANDING_FAVICON_URL_KEY,
+        DEFAULT_BRANDING_FAVICON_URL,
+    )
+}
+
+pub fn wordmark_dark_url_or_default(runtime_config: &RuntimeConfig) -> String {
+    asset_url_or_default(
+        runtime_config,
+        BRANDING_WORDMARK_DARK_URL_KEY,
+        DEFAULT_BRANDING_WORDMARK_DARK_URL,
+    )
+}
+
+pub fn wordmark_light_url_or_default(runtime_config: &RuntimeConfig) -> String {
+    asset_url_or_default(
+        runtime_config,
+        BRANDING_WORDMARK_LIGHT_URL_KEY,
+        DEFAULT_BRANDING_WORDMARK_LIGHT_URL,
+    )
+}
+
+fn normalize_asset_url_config_value(field_name: &str, value: &str) -> Result<String> {
+    let normalized = value.trim();
+    if normalized.is_empty() {
+        return Ok(String::new());
+    }
+    if normalized.len() > MAX_BRANDING_ASSET_URL_LEN {
+        return Err(AsterError::validation_error(format!(
+            "{field_name} exceeds {MAX_BRANDING_ASSET_URL_LEN} characters",
+        )));
+    }
+    if normalized.chars().any(char::is_whitespace) {
+        return Err(AsterError::validation_error(format!(
+            "{field_name} cannot contain whitespace",
+        )));
+    }
+    if !is_allowed_branding_asset_url(normalized) {
+        return Err(AsterError::validation_error(format!(
+            "{field_name} must be an absolute http(s) URL or a root-relative path",
+        )));
+    }
+    Ok(normalized.to_string())
+}
+
+fn asset_url_or_default(runtime_config: &RuntimeConfig, key: &str, default: &str) -> String {
     runtime_config
-        .get(BRANDING_FAVICON_URL_KEY)
+        .get(key)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .filter(|value| is_allowed_favicon_url(value))
-        .unwrap_or_else(|| DEFAULT_BRANDING_FAVICON_URL.to_string())
+        .filter(|value| is_allowed_branding_asset_url(value))
+        .unwrap_or_else(|| default.to_string())
 }
 
 fn normalize_text_value(field_name: &str, value: &str, max_len: usize) -> Result<String> {
@@ -89,7 +129,7 @@ fn string_or_default(value: Option<String>, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
-fn is_allowed_favicon_url(value: &str) -> bool {
+fn is_allowed_branding_asset_url(value: &str) -> bool {
     value.starts_with('/') || value.starts_with("https://") || value.starts_with("http://")
 }
 
@@ -97,9 +137,13 @@ fn is_allowed_favicon_url(value: &str) -> bool {
 mod tests {
     use super::{
         BRANDING_DESCRIPTION_KEY, BRANDING_FAVICON_URL_KEY, BRANDING_TITLE_KEY,
+        BRANDING_WORDMARK_DARK_URL_KEY, BRANDING_WORDMARK_LIGHT_URL_KEY,
         DEFAULT_BRANDING_DESCRIPTION, DEFAULT_BRANDING_FAVICON_URL, DEFAULT_BRANDING_TITLE,
+        DEFAULT_BRANDING_WORDMARK_DARK_URL, DEFAULT_BRANDING_WORDMARK_LIGHT_URL,
         description_or_default, favicon_url_or_default, normalize_favicon_url_config_value,
-        normalize_title_config_value, title_or_default,
+        normalize_title_config_value, normalize_wordmark_dark_url_config_value,
+        normalize_wordmark_light_url_config_value, title_or_default, wordmark_dark_url_or_default,
+        wordmark_light_url_or_default,
     };
     use crate::config::RuntimeConfig;
     use crate::entities::system_config;
@@ -136,14 +180,24 @@ mod tests {
     }
 
     #[test]
-    fn favicon_url_rejects_whitespace_and_trims() {
+    fn branding_asset_urls_reject_whitespace_and_trims() {
         assert_eq!(
             normalize_favicon_url_config_value("  /assets/icon.svg?v=1  ").unwrap(),
             "/assets/icon.svg?v=1"
         );
+        assert_eq!(
+            normalize_wordmark_dark_url_config_value("  /assets/wordmark-dark.svg  ").unwrap(),
+            "/assets/wordmark-dark.svg"
+        );
+        assert_eq!(
+            normalize_wordmark_light_url_config_value("  /assets/wordmark-light.svg  ").unwrap(),
+            "/assets/wordmark-light.svg"
+        );
         assert!(normalize_favicon_url_config_value("https://cdn.example.com/icon 1.svg").is_err());
         assert!(normalize_favicon_url_config_value("javascript:alert(1)").is_err());
         assert!(normalize_favicon_url_config_value("icons/favicon.svg").is_err());
+        assert!(normalize_wordmark_dark_url_config_value("assets/wordmark-dark.svg").is_err());
+        assert!(normalize_wordmark_light_url_config_value("javascript:alert(1)").is_err());
     }
 
     #[test]
@@ -158,10 +212,20 @@ mod tests {
             favicon_url_or_default(&runtime_config),
             DEFAULT_BRANDING_FAVICON_URL
         );
+        assert_eq!(
+            wordmark_dark_url_or_default(&runtime_config),
+            DEFAULT_BRANDING_WORDMARK_DARK_URL
+        );
+        assert_eq!(
+            wordmark_light_url_or_default(&runtime_config),
+            DEFAULT_BRANDING_WORDMARK_LIGHT_URL
+        );
 
         runtime_config.apply(config_model(BRANDING_TITLE_KEY, "  "));
         runtime_config.apply(config_model(BRANDING_DESCRIPTION_KEY, "  "));
         runtime_config.apply(config_model(BRANDING_FAVICON_URL_KEY, " "));
+        runtime_config.apply(config_model(BRANDING_WORDMARK_DARK_URL_KEY, " "));
+        runtime_config.apply(config_model(BRANDING_WORDMARK_LIGHT_URL_KEY, " "));
 
         assert_eq!(title_or_default(&runtime_config), DEFAULT_BRANDING_TITLE);
         assert_eq!(
@@ -172,14 +236,38 @@ mod tests {
             favicon_url_or_default(&runtime_config),
             DEFAULT_BRANDING_FAVICON_URL
         );
+        assert_eq!(
+            wordmark_dark_url_or_default(&runtime_config),
+            DEFAULT_BRANDING_WORDMARK_DARK_URL
+        );
+        assert_eq!(
+            wordmark_light_url_or_default(&runtime_config),
+            DEFAULT_BRANDING_WORDMARK_LIGHT_URL
+        );
 
         runtime_config.apply(config_model(
             BRANDING_FAVICON_URL_KEY,
             "javascript:alert(1)",
         ));
+        runtime_config.apply(config_model(
+            BRANDING_WORDMARK_DARK_URL_KEY,
+            "javascript:alert(1)",
+        ));
+        runtime_config.apply(config_model(
+            BRANDING_WORDMARK_LIGHT_URL_KEY,
+            "wordmark-light.svg",
+        ));
         assert_eq!(
             favicon_url_or_default(&runtime_config),
             DEFAULT_BRANDING_FAVICON_URL
+        );
+        assert_eq!(
+            wordmark_dark_url_or_default(&runtime_config),
+            DEFAULT_BRANDING_WORDMARK_DARK_URL
+        );
+        assert_eq!(
+            wordmark_light_url_or_default(&runtime_config),
+            DEFAULT_BRANDING_WORDMARK_LIGHT_URL
         );
     }
 }

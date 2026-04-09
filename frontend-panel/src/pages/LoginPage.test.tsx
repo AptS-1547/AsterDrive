@@ -168,12 +168,20 @@ vi.mock("@/stores/brandingStore", () => ({
 	useBrandingStore: (
 		selector: (state: {
 			allowUserRegistration: boolean;
-			branding: { title: string };
+			branding: {
+				title: string;
+				wordmarkDarkUrl: string;
+				wordmarkLightUrl: string;
+			};
 		}) => unknown,
 	) =>
 		selector({
 			allowUserRegistration: mockState.allowUserRegistration,
-			branding: { title: "AsterDrive" },
+			branding: {
+				title: "AsterDrive",
+				wordmarkDarkUrl: "/static/asterdrive/asterdrive-dark.svg",
+				wordmarkLightUrl: "/static/asterdrive/asterdrive-light.svg",
+			},
 		}),
 }));
 
