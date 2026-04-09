@@ -21,6 +21,7 @@ import {
 	PiCopy,
 	PiDotsThree,
 	PiDownloadSimple,
+	PiEnvelopeSimple,
 	PiEye,
 	PiEyeSlash,
 	PiFile,
@@ -95,6 +96,7 @@ export type IconName =
 	| "Copy"
 	| "DotsThree"
 	| "Download"
+	| "EnvelopeSimple"
 	| "Eye"
 	| "EyeSlash"
 	| "File"
@@ -168,6 +170,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Copy: PiCopy,
 	DotsThree: PiDotsThree,
 	Download: PiDownloadSimple,
+	EnvelopeSimple: PiEnvelopeSimple,
 	Eye: PiEye,
 	EyeSlash: PiEyeSlash,
 	File: PiFile,

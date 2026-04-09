@@ -14,6 +14,7 @@ use tokio::io::AsyncWriteExt;
 use crate::cache::CacheBackend;
 use crate::config::{Config, RuntimeConfig};
 use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
+use crate::services::mail_service::MailSender;
 use crate::services::{file_service, folder_service, webdav_service};
 use crate::storage::{DriverRegistry, PolicySnapshot};
 use crate::types::{EntityType, NullablePatch};
@@ -31,6 +32,7 @@ pub struct AsterDavFs {
     policy_snapshot: Arc<PolicySnapshot>,
     config: Arc<Config>,
     cache: Arc<dyn CacheBackend>,
+    mail_sender: Arc<dyn MailSender>,
     thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
     storage_change_tx:
         tokio::sync::broadcast::Sender<crate::services::storage_change_service::StorageChangeEvent>,
@@ -57,6 +59,7 @@ impl AsterDavFs {
         policy_snapshot: Arc<PolicySnapshot>,
         config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
+        mail_sender: Arc<dyn MailSender>,
         thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
         storage_change_tx: tokio::sync::broadcast::Sender<
             crate::services::storage_change_service::StorageChangeEvent,
@@ -71,6 +74,7 @@ impl AsterDavFs {
             policy_snapshot,
             config,
             cache,
+            mail_sender,
             thumbnail_tx,
             storage_change_tx,
             user_id,
@@ -86,6 +90,7 @@ impl AsterDavFs {
             policy_snapshot: self.policy_snapshot.clone(),
             config: self.config.clone(),
             cache: self.cache.clone(),
+            mail_sender: self.mail_sender.clone(),
             thumbnail_tx: self.thumbnail_tx.clone(),
             storage_change_tx: self.storage_change_tx.clone(),
         }

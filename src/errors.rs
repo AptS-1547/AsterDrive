@@ -63,12 +63,17 @@ define_errors! {
     ValidationError(     "E005", "Validation Error"),
     RecordNotFound(      "E006", "Record Not Found"),
     RateLimited(         "E007", "Rate Limited"),
+    MailNotConfigured(   "E008", "Mail Not Configured"),
+    MailDeliveryFailed(  "E009", "Mail Delivery Failed"),
 
     // ========== E010-E019: 认证错误 ==========
     AuthInvalidCredentials("E010", "Invalid Credentials"),
     AuthTokenExpired(      "E011", "Token Expired"),
     AuthTokenInvalid(      "E012", "Token Invalid"),
     AuthForbidden(         "E013", "Forbidden"),
+    AuthPendingActivation( "E014", "Pending Activation"),
+    ContactVerificationInvalid("E015", "Contact Verification Invalid"),
+    ContactVerificationExpired("E016", "Contact Verification Expired"),
 
     // ========== E020-E029: 文件错误 ==========
     FileNotFound(         "E020", "File Not Found"),
@@ -119,11 +124,13 @@ impl AsterError {
             | Self::FileTypeNotAllowed(_)
             | Self::UnsupportedDriver(_) => StatusCode::BAD_REQUEST,
 
+            Self::ContactVerificationInvalid(_) => StatusCode::BAD_REQUEST,
+
             Self::AuthInvalidCredentials(_)
             | Self::AuthTokenExpired(_)
             | Self::AuthTokenInvalid(_) => StatusCode::UNAUTHORIZED,
 
-            Self::AuthForbidden(_) => StatusCode::FORBIDDEN,
+            Self::AuthForbidden(_) | Self::AuthPendingActivation(_) => StatusCode::FORBIDDEN,
 
             Self::ResourceLocked(_) => StatusCode::LOCKED,
 
@@ -141,11 +148,17 @@ impl AsterError {
 
             Self::UploadSessionExpired(_) => StatusCode::GONE,
 
+            Self::ContactVerificationExpired(_) => StatusCode::GONE,
+
             Self::SharePasswordRequired(_) | Self::ShareDownloadLimit(_) => StatusCode::FORBIDDEN,
 
             Self::StorageQuotaExceeded(_) => StatusCode::INSUFFICIENT_STORAGE,
 
             Self::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
+
+            Self::MailNotConfigured(_) | Self::MailDeliveryFailed(_) => {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
 
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -172,7 +185,9 @@ impl AsterError {
     fn response_log_level(&self) -> ResponseLogLevel {
         match self {
             // 507 在这里表示用户配额耗尽，属于可预期业务限制，不按服务故障记录。
-            Self::StorageQuotaExceeded(_) => ResponseLogLevel::Warn,
+            Self::StorageQuotaExceeded(_)
+            | Self::MailNotConfigured(_)
+            | Self::MailDeliveryFailed(_) => ResponseLogLevel::Warn,
             _ => {
                 let status = self.http_status();
                 if status.is_server_error() {

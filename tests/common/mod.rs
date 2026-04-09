@@ -1,4 +1,5 @@
 use aster_drive::runtime::AppState;
+use std::sync::Arc;
 
 /// 构建一个干净的测试 AppState（内存 SQLite）
 #[allow(dead_code)]
@@ -109,6 +110,7 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
 
     let policy_snapshot = std::sync::Arc::new(aster_drive::storage::PolicySnapshot::new());
     policy_snapshot.reload(&db).await.unwrap();
+    let mail_sender = aster_drive::services::mail_service::memory_sender();
 
     let (thumbnail_tx, _thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(16);
     let (storage_change_tx, _) = tokio::sync::broadcast::channel(
@@ -122,6 +124,7 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
         policy_snapshot,
         config,
         cache,
+        mail_sender,
         thumbnail_tx,
         storage_change_tx,
     }
@@ -134,6 +137,29 @@ pub fn extract_cookie<B>(resp: &actix_web::dev::ServiceResponse<B>, name: &str) 
         .cookies()
         .find(|c| c.name() == name)
         .map(|c| c.value().to_string())
+}
+
+#[allow(dead_code)]
+pub fn extract_verification_token_from_mail_sender(
+    sender: &Arc<dyn aster_drive::services::mail_service::MailSender>,
+) -> Option<String> {
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(sender)
+        .expect("memory mail sender should be available in tests");
+    let message = memory_sender.last_message()?;
+    let link = message
+        .text_body
+        .lines()
+        .find(|line| line.contains("/api/v1/auth/contact-verification/confirm?token="))
+        .expect("verification link missing from mail body");
+    let encoded = link
+        .split("token=")
+        .nth(1)
+        .expect("verification token missing from link");
+    Some(
+        urlencoding::decode(encoded)
+            .expect("verification token should be url-encoded")
+            .into_owned(),
+    )
 }
 
 #[allow(dead_code)]
@@ -237,6 +263,81 @@ macro_rules! register_and_login {
         let refresh =
             common::extract_cookie(&resp, "aster_refresh").expect("refresh cookie missing");
         (access, refresh)
+    }};
+}
+
+/// 管理员创建普通用户，返回 user_id
+#[macro_export]
+macro_rules! admin_create_user {
+    ($app:expr, $admin_token:expr, $username:expr, $email:expr, $password:expr) => {{
+        use actix_web::test;
+        use serde_json::Value;
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/admin/users")
+            .insert_header(("Cookie", format!("aster_access={}", $admin_token)))
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({
+                "username": $username,
+                "email": $email,
+                "password": $password
+            }))
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201, "admin create user should return 201");
+        let body: Value = test::read_body_json(resp).await;
+        body["data"]["id"].as_i64().unwrap()
+    }};
+}
+
+/// 使用用户名/邮箱登录，返回 (access_cookie, refresh_cookie)
+#[macro_export]
+macro_rules! login_user {
+    ($app:expr, $identifier:expr, $password:expr) => {{
+        use actix_web::test;
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/auth/login")
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({
+                "identifier": $identifier,
+                "password": $password
+            }))
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 200, "login should return 200");
+        let access =
+            common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+        let refresh =
+            common::extract_cookie(&resp, "aster_refresh").expect("refresh cookie missing");
+        (access, refresh)
+    }};
+}
+
+#[macro_export]
+macro_rules! confirm_latest_contact_verification {
+    ($app:expr, $mail_sender:expr) => {{
+        use actix_web::test;
+
+        if let Some(token) = common::extract_verification_token_from_mail_sender(&$mail_sender) {
+            let req = test::TestRequest::get()
+                .uri(&format!(
+                    "/api/v1/auth/contact-verification/confirm?token={}",
+                    urlencoding::encode(&token)
+                ))
+                .to_request();
+            let resp = test::call_service(&$app, req).await;
+            assert_eq!(resp.status(), 302, "contact verification should return 302");
+            let location = resp
+                .headers()
+                .get("Location")
+                .and_then(|value| value.to_str().ok())
+                .expect("contact verification redirect location missing")
+                .to_string();
+            Some(location)
+        } else {
+            None
+        }
     }};
 }
 
@@ -356,5 +457,30 @@ macro_rules! setup_with_webdav {
         )
         .await;
         app
+    }};
+}
+
+#[macro_export]
+macro_rules! setup_with_webdav_and_mail {
+    () => {{
+        use actix_web::{App, test, web};
+
+        let state = common::setup().await;
+        let mail_sender = state.mail_sender.clone();
+        let db1 = state.db.clone();
+        let db2 = state.db.clone();
+        let webdav_config = aster_drive::config::WebDavConfig::default();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+                .app_data(web::JsonConfig::default().limit(1024 * 1024))
+                .app_data(web::Data::new(state))
+                .configure(move |cfg| {
+                    aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                    aster_drive::api::configure(cfg, &db1);
+                }),
+        )
+        .await;
+        (app, mail_sender)
     }};
 }

@@ -1,15 +1,18 @@
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+use sea_orm::{
+    ActiveModelTrait, ConnectionTrait, EntityTrait, IntoActiveModel, Set, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::cache::CacheExt;
-use crate::config::auth_runtime::RuntimeAuthPolicy;
-use crate::db::repository::user_repo;
-use crate::entities::user;
+use crate::config::auth_runtime::{RuntimeAuthPolicy, RuntimeContactVerificationPolicy};
+use crate::db::repository::{contact_verification_token_repo, user_repo};
+use crate::entities::{contact_verification_token, user};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::types::{TokenType, UserRole, UserStatus};
+use crate::services::mail_service;
+use crate::types::{TokenType, UserRole, UserStatus, VerificationChannel, VerificationPurpose};
 use crate::utils::hash;
 
 pub const AUTH_SNAPSHOT_TTL: u64 = 30; // 秒
@@ -30,6 +33,13 @@ pub struct AuthSnapshot {
     pub status: UserStatus,
     pub role: UserRole,
     pub session_version: i64,
+}
+
+#[derive(Debug)]
+pub struct ContactVerificationConfirmResult {
+    pub purpose: VerificationPurpose,
+    pub user_id: i64,
+    pub target: String,
 }
 
 impl AuthSnapshot {
@@ -67,6 +77,10 @@ fn ensure_session_current(claims: &Claims, snapshot: AuthSnapshot) -> Result<()>
     }
 
     Ok(())
+}
+
+pub fn is_email_verified(user: &user::Model) -> bool {
+    user.email_verified_at.is_some()
 }
 
 pub async fn get_auth_snapshot(state: &AppState, user_id: i64) -> Result<AuthSnapshot> {
@@ -144,7 +158,6 @@ fn validate_username(username: &str) -> Result<()> {
             "username must be at most 16 characters",
         ));
     }
-    // 只允许字母、数字、下划线、连字符
     if !username
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
@@ -160,7 +173,6 @@ fn validate_email(email: &str) -> Result<()> {
     if email.len() > 254 {
         return Err(AsterError::validation_error("email is too long"));
     }
-    // 基础格式校验：有且仅有一个 @，@ 前后非空，@ 后有点
     let parts: Vec<&str> = email.splitn(2, '@').collect();
     if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
         return Err(AsterError::validation_error("invalid email format"));
@@ -185,26 +197,57 @@ fn validate_password(password: &str) -> Result<()> {
     Ok(())
 }
 
-async fn create_user_with_role(
+fn normalize_username(username: &str) -> Result<String> {
+    let normalized = username.trim();
+    validate_username(normalized)?;
+    Ok(normalized.to_string())
+}
+
+fn normalize_email(email: &str) -> Result<String> {
+    let normalized = email.trim();
+    validate_email(normalized)?;
+    Ok(normalized.to_string())
+}
+
+async fn ensure_email_available<C: ConnectionTrait>(
+    db: &C,
+    email: &str,
+    exclude_user_id: Option<i64>,
+) -> Result<()> {
+    if let Some(existing) = user_repo::find_by_email(db, email).await?
+        && Some(existing.id) != exclude_user_id
+    {
+        return Err(AsterError::validation_error("email already exists"));
+    }
+
+    if let Some(existing) = user_repo::find_by_pending_email(db, email).await?
+        && Some(existing.id) != exclude_user_id
+    {
+        return Err(AsterError::validation_error("email already exists"));
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn create_user_with_role<C: ConnectionTrait>(
+    db: &C,
     state: &AppState,
     username: &str,
     email: &str,
     password: &str,
     role: UserRole,
     status: UserStatus,
+    email_verified_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<user::Model> {
-    let db = &state.db;
-
-    validate_username(username)?;
-    validate_email(email)?;
+    let username = normalize_username(username)?;
+    let email = normalize_email(email)?;
     validate_password(password)?;
 
-    if user_repo::find_by_username(db, username).await?.is_some() {
+    if user_repo::find_by_username(db, &username).await?.is_some() {
         return Err(AsterError::validation_error("username already exists"));
     }
-    if user_repo::find_by_email(db, email).await?.is_some() {
-        return Err(AsterError::validation_error("email already exists"));
-    }
+    ensure_email_available(db, &email, None).await?;
 
     let password_hash = hash::hash_password(password)?;
     let now = Utc::now();
@@ -229,12 +272,14 @@ async fn create_user_with_role(
         })?;
 
     let model = user::ActiveModel {
-        username: Set(username.to_string()),
-        email: Set(email.to_string()),
+        username: Set(username),
+        email: Set(email),
         password_hash: Set(password_hash),
         role: Set(role),
         status: Set(status),
         session_version: Set(INITIAL_SESSION_VERSION),
+        email_verified_at: Set(email_verified_at),
+        pending_email: Set(None),
         storage_used: Set(0),
         storage_quota: Set(default_quota),
         policy_group_id: Set(Some(default_policy_group_id)),
@@ -253,6 +298,117 @@ async fn create_user_with_role(
     Ok(user)
 }
 
+async fn issue_contact_verification_token<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    purpose: VerificationPurpose,
+    target: &str,
+    ttl_secs: u64,
+) -> Result<String> {
+    let now = Utc::now();
+    let token = mail_service::build_verification_token();
+    let token_hash = hash::sha256_hex(token.as_bytes());
+
+    contact_verification_token_repo::delete_active_for_user(
+        db,
+        user_id,
+        VerificationChannel::Email,
+        purpose,
+    )
+    .await?;
+
+    contact_verification_token_repo::create(
+        db,
+        contact_verification_token::ActiveModel {
+            user_id: Set(user_id),
+            channel: Set(VerificationChannel::Email),
+            purpose: Set(purpose),
+            target: Set(target.to_string()),
+            token_hash: Set(token_hash),
+            expires_at: Set(now + Duration::seconds(ttl_secs as i64)),
+            consumed_at: Set(None),
+            created_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await?;
+
+    Ok(token)
+}
+
+async fn ensure_resend_allowed<C: ConnectionTrait>(
+    state: &AppState,
+    db: &C,
+    user_id: i64,
+    purpose: VerificationPurpose,
+) -> Result<()> {
+    let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
+    let Some(latest) = contact_verification_token_repo::find_latest_active_for_user(
+        db,
+        user_id,
+        VerificationChannel::Email,
+        purpose,
+    )
+    .await?
+    else {
+        return Ok(());
+    };
+
+    let allowed_at = latest.created_at + Duration::seconds(policy.resend_cooldown_secs as i64);
+    if allowed_at > Utc::now() {
+        let remaining = (allowed_at - Utc::now()).num_seconds().max(1);
+        return Err(AsterError::rate_limited(format!(
+            "please wait {remaining} seconds before resending",
+        )));
+    }
+
+    Ok(())
+}
+
+async fn cleanup_failed_registration(state: &AppState, user_id: i64) {
+    if let Err(e) = user::Entity::delete_by_id(user_id).exec(&state.db).await {
+        tracing::warn!(user_id, error = %e, "failed to cleanup user after registration mail error");
+    }
+}
+
+async fn clear_pending_email_change(state: &AppState, user_id: i64) {
+    match user_repo::find_by_id(&state.db, user_id).await {
+        Ok(existing) => {
+            let txn = match state.db.begin().await {
+                Ok(txn) => txn,
+                Err(e) => {
+                    tracing::warn!(user_id, error = %e, "failed to begin pending email cleanup transaction");
+                    return;
+                }
+            };
+            let mut active = existing.into_active_model();
+            active.pending_email = Set(None);
+            active.updated_at = Set(Utc::now());
+            if let Err(e) = active.update(&txn).await.map_err(AsterError::from) {
+                tracing::warn!(user_id, error = %e, "failed to clear pending email after mail error");
+                return;
+            }
+            if let Err(e) = contact_verification_token_repo::delete_active_for_user(
+                &txn,
+                user_id,
+                VerificationChannel::Email,
+                VerificationPurpose::ContactChange,
+            )
+            .await
+            {
+                tracing::warn!(user_id, error = %e, "failed to delete stale email change tokens after mail error");
+                return;
+            }
+            if let Err(e) = txn.commit().await.map_err(AsterError::from) {
+                tracing::warn!(user_id, error = %e, "failed to commit pending email cleanup transaction");
+            }
+        }
+        Err(e) => {
+            tracing::warn!(user_id, error = %e, "failed to load user for pending email cleanup");
+        }
+    }
+}
+
 pub async fn create_user_by_admin(
     state: &AppState,
     username: &str,
@@ -260,12 +416,14 @@ pub async fn create_user_by_admin(
     password: &str,
 ) -> Result<user::Model> {
     create_user_with_role(
+        &state.db,
         state,
         username,
         email,
         password,
         UserRole::User,
         UserStatus::Active,
+        Some(Utc::now()),
     )
     .await
 }
@@ -278,17 +436,292 @@ pub async fn register(
     password: &str,
 ) -> Result<user::Model> {
     let is_first_user = user_repo::count_all(&state.db).await? == 0;
-    let role = if is_first_user {
-        UserRole::Admin
-    } else {
-        UserRole::User
-    };
-
     if is_first_user {
         tracing::info!("first user registered — granting admin role to '{username}'");
+        return create_user_with_role(
+            &state.db,
+            state,
+            username,
+            email,
+            password,
+            UserRole::Admin,
+            UserStatus::Active,
+            Some(Utc::now()),
+        )
+        .await;
     }
 
-    create_user_with_role(state, username, email, password, role, UserStatus::Active).await
+    let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let user = create_user_with_role(
+        &txn,
+        state,
+        username,
+        email,
+        password,
+        UserRole::User,
+        UserStatus::Active,
+        None,
+    )
+    .await?;
+    let token = issue_contact_verification_token(
+        &txn,
+        user.id,
+        VerificationPurpose::RegisterActivation,
+        &user.email,
+        policy.register_activation_ttl_secs,
+    )
+    .await?;
+    txn.commit().await.map_err(AsterError::from)?;
+
+    if let Err(error) =
+        mail_service::send_register_activation(state, &user.username, &user.email, &token).await
+    {
+        cleanup_failed_registration(state, user.id).await;
+        return Err(error);
+    }
+
+    Ok(user)
+}
+
+pub async fn resend_register_activation(state: &AppState, identifier: &str) -> Result<user::Model> {
+    let user = find_user_by_identifier(&state.db, identifier)
+        .await?
+        .ok_or_else(|| AsterError::record_not_found("user not found"))?;
+
+    if !user.status.is_active() {
+        return Err(AsterError::auth_forbidden("account is disabled"));
+    }
+    if is_email_verified(&user) {
+        return Err(AsterError::validation_error("account already activated"));
+    }
+
+    ensure_resend_allowed(
+        state,
+        &state.db,
+        user.id,
+        VerificationPurpose::RegisterActivation,
+    )
+    .await?;
+    let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let token = issue_contact_verification_token(
+        &txn,
+        user.id,
+        VerificationPurpose::RegisterActivation,
+        &user.email,
+        policy.register_activation_ttl_secs,
+    )
+    .await?;
+    txn.commit().await.map_err(AsterError::from)?;
+
+    mail_service::send_register_activation(state, &user.username, &user.email, &token).await?;
+    Ok(user)
+}
+
+pub async fn request_email_change(
+    state: &AppState,
+    user_id: i64,
+    new_email: &str,
+) -> Result<user::Model> {
+    let normalized_email = normalize_email(new_email)?;
+    let existing = user_repo::find_by_id(&state.db, user_id).await?;
+
+    if !existing.status.is_active() {
+        return Err(AsterError::auth_forbidden("account is disabled"));
+    }
+    if !is_email_verified(&existing) {
+        return Err(AsterError::auth_pending_activation(
+            "account must be activated before changing email",
+        ));
+    }
+    if existing.email == normalized_email {
+        return Err(AsterError::validation_error(
+            "new email must be different from current email",
+        ));
+    }
+
+    ensure_email_available(&state.db, &normalized_email, Some(existing.id)).await?;
+    if existing.pending_email.as_deref() == Some(normalized_email.as_str()) {
+        ensure_resend_allowed(
+            state,
+            &state.db,
+            existing.id,
+            VerificationPurpose::ContactChange,
+        )
+        .await?;
+    }
+
+    let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let mut active = existing.into_active_model();
+    active.pending_email = Set(Some(normalized_email.clone()));
+    active.updated_at = Set(Utc::now());
+    let updated = active.update(&txn).await.map_err(AsterError::from)?;
+    let token = issue_contact_verification_token(
+        &txn,
+        updated.id,
+        VerificationPurpose::ContactChange,
+        &normalized_email,
+        policy.contact_change_ttl_secs,
+    )
+    .await?;
+    txn.commit().await.map_err(AsterError::from)?;
+
+    if let Err(error) = mail_service::send_contact_change_confirmation(
+        state,
+        &updated.username,
+        &normalized_email,
+        &token,
+    )
+    .await
+    {
+        clear_pending_email_change(state, updated.id).await;
+        return Err(error);
+    }
+
+    Ok(updated)
+}
+
+pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<user::Model> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let pending_email = user
+        .pending_email
+        .clone()
+        .ok_or_else(|| AsterError::validation_error("no pending email change request"))?;
+
+    if !user.status.is_active() {
+        return Err(AsterError::auth_forbidden("account is disabled"));
+    }
+    if !is_email_verified(&user) {
+        return Err(AsterError::auth_pending_activation(
+            "account must be activated before changing email",
+        ));
+    }
+
+    ensure_email_available(&state.db, &pending_email, Some(user.id)).await?;
+    ensure_resend_allowed(
+        state,
+        &state.db,
+        user.id,
+        VerificationPurpose::ContactChange,
+    )
+    .await?;
+    let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let token = issue_contact_verification_token(
+        &txn,
+        user.id,
+        VerificationPurpose::ContactChange,
+        &pending_email,
+        policy.contact_change_ttl_secs,
+    )
+    .await?;
+    txn.commit().await.map_err(AsterError::from)?;
+
+    mail_service::send_contact_change_confirmation(state, &user.username, &pending_email, &token)
+        .await?;
+    Ok(user)
+}
+
+pub async fn confirm_contact_verification(
+    state: &AppState,
+    token: &str,
+) -> Result<ContactVerificationConfirmResult> {
+    let token_hash = hash::sha256_hex(token.as_bytes());
+    let record = contact_verification_token_repo::find_by_token_hash(&state.db, &token_hash)
+        .await?
+        .ok_or_else(|| {
+            AsterError::contact_verification_invalid("contact verification link is invalid")
+        })?;
+
+    if record.consumed_at.is_some() {
+        return Err(AsterError::contact_verification_invalid(
+            "contact verification link has already been used",
+        ));
+    }
+    if record.expires_at <= Utc::now() {
+        return Err(AsterError::contact_verification_expired(
+            "contact verification link has expired",
+        ));
+    }
+
+    let target = record.target.clone();
+    let purpose = record.purpose;
+    let user_id = record.user_id;
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let existing_user = user_repo::find_by_id(&txn, user_id).await?;
+    if !existing_user.status.is_active() {
+        return Err(AsterError::auth_forbidden("account is disabled"));
+    }
+    let username = existing_user.username.clone();
+    let previous_email = (purpose == VerificationPurpose::ContactChange
+        && existing_user.email != target)
+        .then(|| existing_user.email.clone());
+
+    let now = Utc::now();
+    match purpose {
+        VerificationPurpose::RegisterActivation => {
+            if existing_user.email != target {
+                return Err(AsterError::contact_verification_invalid(
+                    "contact verification target mismatch",
+                ));
+            }
+
+            if !is_email_verified(&existing_user) {
+                let mut active = existing_user.into_active_model();
+                active.email_verified_at = Set(Some(now));
+                active.updated_at = Set(now);
+                active.update(&txn).await.map_err(AsterError::from)?;
+            }
+        }
+        VerificationPurpose::ContactChange => {
+            if existing_user.email != target
+                && existing_user.pending_email.as_deref() != Some(target.as_str())
+            {
+                return Err(AsterError::contact_verification_invalid(
+                    "contact change request no longer exists",
+                ));
+            }
+
+            ensure_email_available(&txn, &target, Some(existing_user.id)).await?;
+
+            if existing_user.email != target {
+                let mut active = existing_user.into_active_model();
+                active.email = Set(target.clone());
+                active.pending_email = Set(None);
+                active.email_verified_at = Set(Some(now));
+                active.updated_at = Set(now);
+                active.update(&txn).await.map_err(AsterError::from)?;
+            }
+        }
+    }
+
+    contact_verification_token_repo::mark_consumed(&txn, record).await?;
+    txn.commit().await.map_err(AsterError::from)?;
+
+    if let Some(previous_email) = previous_email.as_deref()
+        && let Err(error) =
+            mail_service::send_contact_change_notice(state, &username, previous_email, &target)
+                .await
+    {
+        tracing::warn!(
+            user_id,
+            previous_email,
+            new_email = %target,
+            error = %error,
+            "failed to send email change notice to previous address"
+        );
+    }
+
+    Ok(ContactVerificationConfirmResult {
+        purpose,
+        user_id,
+        target,
+    })
 }
 
 /// 检查标识符（邮箱或用户名）是否存在，以及系统是否有用户
@@ -300,14 +733,15 @@ pub async fn check_identifier(state: &AppState, identifier: &str) -> Result<(boo
 }
 
 /// 按标识符查找用户（支持邮箱或用户名）
-async fn find_user_by_identifier(
-    db: &sea_orm::DatabaseConnection,
+async fn find_user_by_identifier<C: ConnectionTrait>(
+    db: &C,
     identifier: &str,
 ) -> Result<Option<crate::entities::user::Model>> {
-    if identifier.contains('@') {
-        user_repo::find_by_email(db, identifier).await
+    let normalized = identifier.trim();
+    if normalized.contains('@') {
+        user_repo::find_by_email(db, normalized).await
     } else {
-        user_repo::find_by_username(db, identifier).await
+        user_repo::find_by_username(db, normalized).await
     }
 }
 
@@ -378,6 +812,11 @@ pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result
     if !user.status.is_active() {
         return Err(AsterError::auth_forbidden("account is disabled"));
     }
+    if !is_email_verified(&user) {
+        return Err(AsterError::auth_pending_activation(
+            "account pending activation",
+        ));
+    }
 
     if !hash::verify_password(password, &user.password_hash)? {
         return Err(AsterError::auth_invalid_credentials("wrong password"));
@@ -432,6 +871,10 @@ pub async fn set_password(
     let updated = active.update(&state.db).await.map_err(AsterError::from)?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
     Ok(updated)
+}
+
+pub async fn cleanup_expired_contact_verification_tokens(state: &AppState) -> Result<u64> {
+    contact_verification_token_repo::delete_expired(&state.db).await
 }
 
 /// 用 refresh token 换 access token

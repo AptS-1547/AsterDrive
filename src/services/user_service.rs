@@ -101,6 +101,8 @@ pub struct UserCore {
     pub id: i64,
     pub username: String,
     pub email: String,
+    pub email_verified: bool,
+    pub pending_email: Option<String>,
     pub role: crate::types::UserRole,
     pub status: crate::types::UserStatus,
     pub storage_used: i64,
@@ -119,6 +121,8 @@ pub struct MeResponse {
     pub id: i64,
     pub username: String,
     pub email: String,
+    pub email_verified: bool,
+    pub pending_email: Option<String>,
     pub role: crate::types::UserRole,
     pub status: crate::types::UserStatus,
     pub storage_used: i64,
@@ -140,6 +144,8 @@ pub struct UserInfo {
     pub id: i64,
     pub username: String,
     pub email: String,
+    pub email_verified: bool,
+    pub pending_email: Option<String>,
     pub role: crate::types::UserRole,
     pub status: crate::types::UserStatus,
     pub storage_used: i64,
@@ -157,6 +163,8 @@ fn user_core(user: &user::Model) -> UserCore {
         id: user.id,
         username: user.username.clone(),
         email: user.email.clone(),
+        email_verified: auth_service::is_email_verified(user),
+        pending_email: user.pending_email.clone(),
         role: user.role,
         status: user.status,
         storage_used: user.storage_used,
@@ -177,6 +185,8 @@ pub async fn to_user_info(
         id: core.id,
         username: core.username,
         email: core.email,
+        email_verified: core.email_verified,
+        pending_email: core.pending_email,
         role: core.role,
         status: core.status,
         storage_used: core.storage_used,
@@ -202,6 +212,8 @@ pub async fn to_user_infos(
             id: user.id,
             username: user.username.clone(),
             email: user.email.clone(),
+            email_verified: auth_service::is_email_verified(&user),
+            pending_email: user.pending_email.clone(),
             role: user.role,
             status: user.status,
             storage_used: user.storage_used,
@@ -229,6 +241,8 @@ pub async fn get_me(
         id: core.id,
         username: core.username,
         email: core.email,
+        email_verified: core.email_verified,
+        pending_email: core.pending_email,
         role: core.role,
         status: core.status,
         storage_used: core.storage_used,
@@ -295,6 +309,7 @@ pub async fn create(
 pub async fn update(
     state: &AppState,
     id: i64,
+    email_verified: Option<bool>,
     role: Option<UserRole>,
     status: Option<UserStatus>,
     storage_quota: Option<i64>,
@@ -315,16 +330,28 @@ pub async fn update(
                 "cannot demote the initial admin account",
             ));
         }
+        if email_verified == Some(false) {
+            return Err(AsterError::validation_error(
+                "cannot unverify the initial admin account",
+            ));
+        }
     }
 
     let existing = user_repo::find_by_id(&state.db, id).await?;
     let existing_policy_group_id = existing.policy_group_id;
+    let existing_email_verified = auth_service::is_email_verified(&existing);
+    let email_verified_changed = email_verified.is_some_and(|v| v != existing_email_verified);
     let role_changed = role.is_some_and(|r| r != existing.role);
     let status_changed = status.is_some_and(|s| s != existing.status);
     let policy_group_changed =
         policy_group_id.is_some_and(|group_id| existing_policy_group_id != Some(group_id));
     let current_session_version = existing.session_version;
     let mut active: user::ActiveModel = existing.into();
+    if let Some(is_verified) = email_verified
+        && is_verified != existing_email_verified
+    {
+        active.email_verified_at = Set(is_verified.then_some(Utc::now()));
+    }
     if let Some(r) = role {
         active.role = Set(r);
     }
@@ -351,7 +378,7 @@ pub async fn update(
         }
         active.policy_group_id = Set(Some(group_id));
     }
-    if status_changed {
+    if status_changed || email_verified_changed {
         active.session_version = Set(current_session_version.saturating_add(1));
     }
     active.updated_at = Set(Utc::now());
@@ -365,7 +392,7 @@ pub async fn update(
             state.policy_snapshot.remove_user_policy_group(updated.id);
         }
     }
-    if role_changed || status_changed {
+    if role_changed || status_changed || email_verified_changed {
         auth_service::invalidate_auth_snapshot_cache(state, id).await;
     }
     to_user_info(state, &updated, profile_service::AvatarAudience::AdminUser).await

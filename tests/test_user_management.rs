@@ -76,33 +76,14 @@ async fn test_force_delete_user() {
     // 注册第一个用户（admin，id=1）
     let (admin_token, _) = register_and_login!(app);
 
-    // 注册第二个用户
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "victim",
-            "email": "victim@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let victim_id = body["data"]["id"].as_i64().unwrap();
-
-    // 登录第二个用户
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "victim",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let victim_token =
-        common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+    let victim_id = admin_create_user!(
+        app,
+        admin_token,
+        "victim",
+        "victim@example.com",
+        "password123"
+    );
+    let (victim_token, _) = login_user!(app, "victim", "password123");
 
     // 用第二个用户上传文件
     let _file_id = upload_test_file!(app, victim_token);
@@ -189,31 +170,14 @@ async fn test_force_delete_user_with_gravatar_profile() {
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "gravatar-victim",
-            "email": "gravatar-victim@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let victim_id = body["data"]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "gravatar-victim",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let victim_token =
-        common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+    let victim_id = admin_create_user!(
+        app,
+        admin_token,
+        "gravatar-victim",
+        "gravatar-victim@example.com",
+        "password123"
+    );
+    let (victim_token, _) = login_user!(app, "gravatar-victim", "password123");
 
     let req = test::TestRequest::put()
         .uri("/api/v1/auth/profile/avatar/source")
@@ -243,31 +207,14 @@ async fn test_force_delete_user_tolerates_missing_avatar_object() {
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "missavatar",
-            "email": "missavatar@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let victim_id = body["data"]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "missavatar",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    let victim_token =
-        common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+    let victim_id = admin_create_user!(
+        app,
+        admin_token,
+        "missavatar",
+        "missavatar@example.com",
+        "password123"
+    );
+    let (victim_token, _) = login_user!(app, "missavatar", "password123");
 
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()

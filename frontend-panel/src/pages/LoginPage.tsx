@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import type { z } from "zod/v4";
 import { AsterDriveWordmark } from "@/components/common/AsterDriveWordmark";
@@ -10,10 +10,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import {
+	clearContactVerificationRedirectSearch,
+	getContactVerificationRedirectState,
+} from "@/lib/contactVerificationRedirect";
 import { cn } from "@/lib/utils";
 import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { authService } from "@/services/authService";
+import { ApiError } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
+import { ErrorCode } from "@/types/api-helpers";
 
 // ── Animated height ─────────────────────────────────────────
 
@@ -93,14 +99,73 @@ function AnimateText({
 	);
 }
 
+function AnimateSwap({
+	activeKey,
+	children,
+}: {
+	activeKey: string;
+	children: React.ReactNode;
+}) {
+	const [renderedKey, setRenderedKey] = useState(activeKey);
+	const [renderedChildren, setRenderedChildren] = useState(children);
+	const [visible, setVisible] = useState(true);
+
+	useEffect(() => {
+		if (activeKey === renderedKey) {
+			setRenderedChildren(children);
+			return;
+		}
+
+		setVisible(false);
+		const timer = setTimeout(() => {
+			setRenderedKey(activeKey);
+			setRenderedChildren(children);
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => setVisible(true));
+			});
+		}, 180);
+
+		return () => clearTimeout(timer);
+	}, [activeKey, children, renderedKey]);
+
+	useEffect(() => {
+		if (activeKey === renderedKey) {
+			setRenderedChildren(children);
+		}
+	}, [activeKey, children, renderedKey]);
+
+	return (
+		<div className="overflow-hidden">
+			<div
+				className={cn(
+					"transition-all duration-200 ease-out will-change-transform",
+					visible
+						? "translate-y-0 opacity-100"
+						: "pointer-events-none translate-y-2 opacity-0",
+				)}
+				aria-hidden={!visible}
+			>
+				{renderedChildren}
+			</div>
+		</div>
+	);
+}
+
 // ── Types ───────────────────────────────────────────────────
 
 type AuthMode = "idle" | "login" | "register" | "setup";
 
+interface PendingActivationState {
+	email?: string;
+	identifier: string;
+	username?: string;
+}
+
 // ── Component ───────────────────────────────────────────────
 
 export default function LoginPage() {
-	const { t } = useTranslation("auth");
+	const { t } = useTranslation(["auth", "settings"]);
+	const location = useLocation();
 	const navigate = useNavigate();
 	const login = useAuthStore((s) => s.login);
 
@@ -114,8 +179,11 @@ export default function LoginPage() {
 	const [mode, setMode] = useState<AuthMode>("idle");
 	const [checking, setChecking] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
+	const [resendingActivation, setResendingActivation] = useState(false);
 	const [exiting, setExiting] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
+	const [pendingActivation, setPendingActivation] =
+		useState<PendingActivationState | null>(null);
 
 	const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const lastChecked = useRef("");
@@ -131,8 +199,9 @@ export default function LoginPage() {
 	const extraLabel = isEmail ? t("username") : t("email");
 	const extraPlaceholder = isEmail ? t("choose_username") : "you@example.com";
 	const requiresExtraField = mode === "register" || mode === "setup";
-	const modeActionText =
-		mode === "login"
+	const modeActionText = pendingActivation
+		? t("activation_pending_title")
+		: mode === "login"
 			? t("sign_in")
 			: mode === "register"
 				? t("sign_up")
@@ -146,6 +215,61 @@ export default function LoginPage() {
 		identifier.trim().length === 0 ||
 		password.length === 0 ||
 		(requiresExtraField && extraField.trim().length === 0);
+
+	useEffect(() => {
+		const verification = getContactVerificationRedirectState(location.search);
+		if (!verification) {
+			return;
+		}
+
+		switch (verification.status) {
+			case "email-changed":
+				if (!verification.email) {
+					return;
+				}
+				toast.success(
+					t("settings:settings_email_change_confirmed_login_hint", {
+						email: verification.email,
+					}),
+					{
+						id: `contact-verification-email-changed-login:${verification.email}`,
+					},
+				);
+				break;
+			case "expired":
+				toast.error(t("verify_contact_expired_title"), {
+					description: t("verify_contact_expired_desc"),
+					id: "contact-verification-expired-login",
+				});
+				break;
+			case "invalid":
+				toast.error(t("verify_contact_invalid_title"), {
+					description: t("verify_contact_invalid_desc"),
+					id: "contact-verification-invalid-login",
+				});
+				break;
+			case "missing":
+				toast.error(t("verify_contact_missing_token_title"), {
+					description: t("verify_contact_missing_token_desc"),
+					id: "contact-verification-missing-login",
+				});
+				break;
+			case "register-activated":
+				toast.success(t("activation_confirmed"), {
+					id: "contact-verification-register-activated-login",
+				});
+				break;
+		}
+
+		navigate(
+			{
+				hash: location.hash,
+				pathname: location.pathname,
+				search: clearContactVerificationRedirectSearch(location.search),
+			},
+			{ replace: true },
+		);
+	}, [location.hash, location.pathname, location.search, navigate, t]);
 
 	// ── Auto check ──
 
@@ -242,6 +366,27 @@ export default function LoginPage() {
 		setTimeout(() => navigate("/", { replace: true }), 350);
 	};
 
+	const resetPendingActivation = () => {
+		setPendingActivation(null);
+		setErrors({});
+		setPassword("");
+		setShowPassword(false);
+	};
+
+	const handleResendActivation = async () => {
+		if (!pendingActivation) return;
+
+		try {
+			setResendingActivation(true);
+			await authService.resendRegisterActivation(pendingActivation.identifier);
+			toast.success(t("activation_resent"));
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setResendingActivation(false);
+		}
+	};
+
 	// ── Submit ──
 
 	const handleSubmit = async (e: React.FormEvent) => {
@@ -260,22 +405,47 @@ export default function LoginPage() {
 			if (mode === "login") {
 				await login(id, password);
 				exitAndNavigate();
-			} else {
-				const un = isEmail ? extra : id;
-				const em = isEmail ? id : extra;
+				return;
+			}
 
-				if (mode === "setup") {
-					await authService.setup(un, em, password);
-					toast.success(t("setup_complete"));
-				} else {
-					await authService.register(un, em, password);
-					toast.success(t("register_success"));
-				}
+			const un = isEmail ? extra : id;
+			const em = isEmail ? id : extra;
+
+			if (mode === "setup") {
+				await authService.setup(un, em, password);
+				toast.success(t("setup_complete"));
 				await login(em, password);
 				exitAndNavigate();
+				return;
 			}
+
+			await authService.register(un, em, password);
+			toast.success(t("register_success"));
+			setPendingActivation({
+				email: em,
+				identifier: em,
+				username: un,
+			});
+			setPassword("");
+			setShowPassword(false);
+			setErrors({});
 		} catch (error) {
+			if (
+				error instanceof ApiError &&
+				error.code === ErrorCode.PendingActivation
+			) {
+				setPendingActivation({
+					email: isEmail ? identifier.trim() : undefined,
+					identifier: identifier.trim(),
+					username: isEmail ? undefined : identifier.trim(),
+				});
+				setPassword("");
+				setShowPassword(false);
+				setErrors({});
+				return;
+			}
 			handleApiError(error);
+		} finally {
 			setSubmitting(false);
 		}
 	};
@@ -293,6 +463,15 @@ export default function LoginPage() {
 	};
 
 	const description = () => {
+		if (pendingActivation) {
+			return pendingActivation.email
+				? t("activation_pending_desc_email", {
+						email: pendingActivation.email,
+					})
+				: t("activation_pending_desc_identifier", {
+						identifier: pendingActivation.identifier,
+					});
+		}
 		if (mode === "setup") return t("setup_desc");
 		if (mode === "register") return t("create_new_account");
 		if (mode === "login") return t("enter_password");
@@ -316,6 +495,7 @@ export default function LoginPage() {
 					<AsterDriveWordmark
 						alt="AsterDrive"
 						className="mx-auto h-24 w-auto"
+						surfaceTheme="dark"
 					/>
 					<p className="text-lg text-white/50 leading-relaxed">
 						Your files, your server, your rules.
@@ -339,9 +519,11 @@ export default function LoginPage() {
 						<h2 className="text-xl font-semibold tracking-tight">
 							<AnimateText
 								text={
-									mode === "setup"
-										? t("welcome_setup")
-										: t("sign_in_to_account")
+									pendingActivation
+										? t("activation_pending_title")
+										: mode === "setup"
+											? t("welcome_setup")
+											: t("sign_in_to_account")
 								}
 							/>
 						</h2>
@@ -351,164 +533,237 @@ export default function LoginPage() {
 					</div>
 
 					<form onSubmit={handleSubmit}>
-						{/* Field 1: identifier (email or username) — always visible */}
-						<div className="space-y-1.5">
-							<div className="flex items-center justify-between">
-								<Label htmlFor="identifier" className="text-sm">
-									<AnimateText
-										text={
-											mode === "register" || mode === "setup"
-												? identifierLabel
-												: t("email_or_username")
-										}
-									/>
-								</Label>
-								<div className="flex items-center gap-2">
-									{mode !== "idle" && (
-										<AnimateText
-											text={modeActionText}
+						<AnimateSwap
+							activeKey={pendingActivation ? "pending-activation" : "auth-form"}
+						>
+							{pendingActivation ? (
+								<div className="space-y-4 rounded-2xl border bg-muted/20 p-4">
+									<div className="flex items-start gap-3">
+										<div className="rounded-xl bg-primary/10 p-2 text-primary">
+											<Icon name="Clock" className="h-5 w-5" />
+										</div>
+										<div className="space-y-1">
+											<p className="text-sm font-medium">
+												{t("activation_pending_notice")}
+											</p>
+											<p className="text-sm text-muted-foreground">
+												{t("activation_pending_hint")}
+											</p>
+											{pendingActivation.username ? (
+												<p className="text-xs text-muted-foreground">
+													{t("username")}: {pendingActivation.username}
+												</p>
+											) : null}
+											{pendingActivation.email ? (
+												<p className="text-xs text-muted-foreground">
+													{t("email")}: {pendingActivation.email}
+												</p>
+											) : null}
+										</div>
+									</div>
+
+									<div className="grid gap-2 sm:grid-cols-2">
+										<Button
+											type="button"
+											className="h-10"
+											disabled={resendingActivation}
+											onClick={() => void handleResendActivation()}
+										>
+											{resendingActivation ? (
+												<Icon
+													name="Spinner"
+													className="mr-2 h-4 w-4 animate-spin"
+												/>
+											) : (
+												<Icon name="ArrowClockwise" className="mr-2 h-4 w-4" />
+											)}
+											{resendingActivation
+												? t("resending_activation")
+												: t("resend_activation")}
+										</Button>
+										<Button
+											type="button"
+											variant="outline"
+											className="h-10"
+											onClick={resetPendingActivation}
+										>
+											<Icon name="ArrowLeft" className="mr-2 h-4 w-4" />
+											{t("not_you")}
+										</Button>
+									</div>
+								</div>
+							) : (
+								<>
+									{/* Field 1: identifier (email or username) — always visible */}
+									<div className="space-y-1.5">
+										<div className="flex items-center justify-between">
+											<Label htmlFor="identifier" className="text-sm">
+												<AnimateText
+													text={
+														mode === "register" || mode === "setup"
+															? identifierLabel
+															: t("email_or_username")
+													}
+												/>
+											</Label>
+											<div className="flex items-center gap-2">
+												{mode !== "idle" && (
+													<AnimateText
+														text={modeActionText}
+														className={cn(
+															"text-xs text-muted-foreground/70",
+															checking && "opacity-0",
+														)}
+													/>
+												)}
+												{checking && (
+													<Icon
+														name="Spinner"
+														className="h-3 w-3 animate-spin text-muted-foreground"
+													/>
+												)}
+											</div>
+										</div>
+										<Input
+											id="identifier"
+											placeholder="you@example.com"
+											value={identifier}
+											onChange={(e) => {
+												const v = e.target.value;
+												setIdentifier(v);
+												// Live validate as username if not email
+												if (v.length > 0 && !v.includes("@")) {
+													validateSingle("identifier", v, usernameSchema);
+												} else if (v.includes("@") && v.length > 3) {
+													validateSingle("identifier", v, emailSchema);
+												} else {
+													setErrors((prev) => {
+														const next = { ...prev };
+														delete next.identifier;
+														return next;
+													});
+												}
+											}}
+											required
+											autoFocus
+											autoComplete="username"
 											className={cn(
-												"text-xs text-muted-foreground/70",
-												checking && "opacity-0",
+												"h-10",
+												errors.identifier &&
+													"border-destructive focus-visible:ring-destructive",
 											)}
 										/>
-									)}
-									{checking && (
-										<Icon
-											name="Spinner"
-											className="h-3 w-3 animate-spin text-muted-foreground"
-										/>
-									)}
-								</div>
-							</div>
-							<Input
-								id="identifier"
-								placeholder="you@example.com"
-								value={identifier}
-								onChange={(e) => {
-									const v = e.target.value;
-									setIdentifier(v);
-									// Live validate as username if not email
-									if (v.length > 0 && !v.includes("@")) {
-										validateSingle("identifier", v, usernameSchema);
-									} else if (v.includes("@") && v.length > 3) {
-										validateSingle("identifier", v, emailSchema);
-									} else {
-										setErrors((prev) => {
-											const next = { ...prev };
-											delete next.identifier;
-											return next;
-										});
-									}
-								}}
-								required
-								autoFocus
-								autoComplete="username"
-								className={cn(
-									"h-10",
-									errors.identifier &&
-										"border-destructive focus-visible:ring-destructive",
-								)}
-							/>
-							{errors.identifier && (
-								<p className="text-xs text-destructive">{errors.identifier}</p>
-							)}
-						</div>
+										{errors.identifier && (
+											<p className="text-xs text-destructive">
+												{errors.identifier}
+											</p>
+										)}
+									</div>
 
-						{/* Field 2: extra field — only for register/setup */}
-						<AnimateHeight show={mode === "register" || mode === "setup"}>
-							<div className="space-y-1.5 mt-4">
-								<Label htmlFor="extra" className="text-sm">
-									<AnimateText text={extraLabel} />
-								</Label>
-								<Input
-									id="extra"
-									placeholder={extraPlaceholder}
-									value={extraField}
-									onChange={(e) => {
-										const v = e.target.value;
-										setExtraField(v);
-										const schema = isEmail ? usernameSchema : emailSchema;
-										validateSingle("extra", v, schema);
-									}}
-									required={mode === "register" || mode === "setup"}
-									autoComplete={isEmail ? "off" : "email"}
-									className={cn(
-										"h-10",
-										errors.extra &&
-											"border-destructive focus-visible:ring-destructive",
-									)}
-								/>
-								{errors.extra && (
-									<p className="text-xs text-destructive">{errors.extra}</p>
-								)}
-							</div>
-						</AnimateHeight>
+									{/* Field 2: extra field — only for register/setup */}
+									<AnimateHeight show={mode === "register" || mode === "setup"}>
+										<div className="mt-4 space-y-1.5">
+											<Label htmlFor="extra" className="text-sm">
+												<AnimateText text={extraLabel} />
+											</Label>
+											<Input
+												id="extra"
+												placeholder={extraPlaceholder}
+												value={extraField}
+												onChange={(e) => {
+													const v = e.target.value;
+													setExtraField(v);
+													const schema = isEmail ? usernameSchema : emailSchema;
+													validateSingle("extra", v, schema);
+												}}
+												required={mode === "register" || mode === "setup"}
+												autoComplete={isEmail ? "off" : "email"}
+												className={cn(
+													"h-10",
+													errors.extra &&
+														"border-destructive focus-visible:ring-destructive",
+												)}
+											/>
+											{errors.extra && (
+												<p className="text-xs text-destructive">
+													{errors.extra}
+												</p>
+											)}
+										</div>
+									</AnimateHeight>
 
-						{/* Field 3: password — always visible */}
-						<div className="space-y-1.5 mt-4">
-							<Label htmlFor="password" className="text-sm">
-								{t("password")}
-							</Label>
-							<div className="relative">
-								<Input
-									id="password"
-									type={showPassword ? "text" : "password"}
-									placeholder={t("password")}
-									value={password}
-									onChange={(e) => {
-										setPassword(e.target.value);
-										if (mode !== "login") {
-											validateSingle(
-												"password",
-												e.target.value,
-												passwordSchema,
-											);
-										}
-									}}
-									required
-									autoComplete={
-										mode === "login" ? "current-password" : "new-password"
-									}
-									className={cn(
-										"h-10 pr-10",
-										errors.password &&
-											"border-destructive focus-visible:ring-destructive",
-									)}
-								/>
-								<button
-									type="button"
-									className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-									onClick={() => setShowPassword(!showPassword)}
-									tabIndex={-1}
-									aria-label={
-										showPassword
-											? t("core:hide_password")
-											: t("core:show_password")
-									}
-								>
-									{showPassword ? (
-										<Icon name="EyeSlash" className="h-4 w-4" />
-									) : (
-										<Icon name="Eye" className="h-4 w-4" />
-									)}
-								</button>
-							</div>
-							{errors.password && (
-								<p className="text-xs text-destructive">{errors.password}</p>
-							)}
-						</div>
+									{/* Field 3: password — always visible */}
+									<div className="mt-4 space-y-1.5">
+										<Label htmlFor="password" className="text-sm">
+											{t("password")}
+										</Label>
+										<div className="relative">
+											<Input
+												id="password"
+												type={showPassword ? "text" : "password"}
+												placeholder={t("password")}
+												value={password}
+												onChange={(e) => {
+													setPassword(e.target.value);
+													if (mode !== "login") {
+														validateSingle(
+															"password",
+															e.target.value,
+															passwordSchema,
+														);
+													}
+												}}
+												required
+												autoComplete={
+													mode === "login" ? "current-password" : "new-password"
+												}
+												className={cn(
+													"h-10 pr-10",
+													errors.password &&
+														"border-destructive focus-visible:ring-destructive",
+												)}
+											/>
+											<button
+												type="button"
+												className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+												onClick={() => setShowPassword(!showPassword)}
+												tabIndex={-1}
+												aria-label={
+													showPassword
+														? t("core:hide_password")
+														: t("core:show_password")
+												}
+											>
+												{showPassword ? (
+													<Icon name="EyeSlash" className="h-4 w-4" />
+												) : (
+													<Icon name="Eye" className="h-4 w-4" />
+												)}
+											</button>
+										</div>
+										{errors.password && (
+											<p className="text-xs text-destructive">
+												{errors.password}
+											</p>
+										)}
+									</div>
 
-						<Button
-							type="submit"
-							className="w-full h-10 mt-4"
-							disabled={isSubmitDisabled}
-						>
-							{submitting && (
-								<Icon name="Spinner" className="h-4 w-4 animate-spin mr-2" />
+									<Button
+										type="submit"
+										className="mt-4 h-10 w-full"
+										disabled={isSubmitDisabled}
+									>
+										{submitting && (
+											<Icon
+												name="Spinner"
+												className="mr-2 h-4 w-4 animate-spin"
+											/>
+										)}
+										{submitLabel()}
+									</Button>
+								</>
 							)}
-							{submitLabel()}
-						</Button>
+						</AnimateSwap>
 					</form>
 
 					<p className="mt-8 text-center text-xs text-muted-foreground/50">

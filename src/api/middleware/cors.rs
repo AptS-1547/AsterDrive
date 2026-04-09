@@ -441,10 +441,11 @@ mod tests {
         AppState {
             db,
             driver_registry: Arc::new(crate::storage::DriverRegistry::new()),
-            runtime_config,
+            runtime_config: runtime_config.clone(),
             policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
             config: Arc::new(Config::default()),
             cache,
+            mail_sender: crate::services::mail_service::runtime_sender(runtime_config.clone()),
             thumbnail_tx,
             storage_change_tx,
         }

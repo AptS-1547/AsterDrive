@@ -254,28 +254,19 @@ async fn test_locked_file_blocks_other_users_delete_and_rename() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    // 用户 B 注册 + 登录
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .set_json(serde_json::json!({
-            "username": "intruder",
-            "email": "intruder@test.com",
-            "password": "pass5678"
-        }))
-        .to_request();
-    test::call_service(&app, req).await;
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .set_json(serde_json::json!({"identifier": "intruder", "password": "pass5678"}))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let cookies_b = extract_cookies(&resp);
+    admin_create_user!(
+        app,
+        &cookies_a[0],
+        "intruder",
+        "intruder@test.com",
+        "pass5678"
+    );
+    let (intruder_access, _intruder_refresh) = login_user!(app, "intruder", "pass5678");
 
     // 用户 B 尝试删除 → 403
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", &cookies_b[0])))
+        .insert_header(("Cookie", format!("aster_access={intruder_access}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
@@ -283,7 +274,7 @@ async fn test_locked_file_blocks_other_users_delete_and_rename() {
     // 用户 B 尝试重命名 → 403
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", &cookies_b[0])))
+        .insert_header(("Cookie", format!("aster_access={intruder_access}")))
         .set_json(serde_json::json!({ "name": "hacked.txt" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -332,27 +323,18 @@ async fn test_locked_folder_blocks_other_users_delete() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    // 用户 B 尝试删除被锁定的文件夹
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .set_json(serde_json::json!({
-            "username": "folderintruder",
-            "email": "folderintruder@test.com",
-            "password": "pass5678"
-        }))
-        .to_request();
-    test::call_service(&app, req).await;
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .set_json(serde_json::json!({"identifier": "folderintruder", "password": "pass5678"}))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let cookies_b = extract_cookies(&resp);
+    admin_create_user!(
+        app,
+        &cookies_a[0],
+        "folderintruder",
+        "folderintruder@test.com",
+        "pass5678"
+    );
+    let (intruder_access, _intruder_refresh) = login_user!(app, "folderintruder", "pass5678");
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", &cookies_b[0])))
+        .insert_header(("Cookie", format!("aster_access={intruder_access}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);

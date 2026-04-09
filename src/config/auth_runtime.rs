@@ -4,16 +4,30 @@ use crate::errors::{AsterError, Result};
 pub const AUTH_COOKIE_SECURE_KEY: &str = "auth_cookie_secure";
 pub const AUTH_ACCESS_TOKEN_TTL_SECS_KEY: &str = "auth_access_token_ttl_secs";
 pub const AUTH_REFRESH_TOKEN_TTL_SECS_KEY: &str = "auth_refresh_token_ttl_secs";
+pub const AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY: &str = "auth_register_activation_ttl_secs";
+pub const AUTH_CONTACT_CHANGE_TTL_SECS_KEY: &str = "auth_contact_change_ttl_secs";
+pub const AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY: &str =
+    "auth_contact_verification_resend_cooldown_secs";
 
 pub const DEFAULT_AUTH_COOKIE_SECURE: bool = true;
 pub const DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECS: u64 = 900;
 pub const DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECS: u64 = 604800;
+pub const DEFAULT_AUTH_REGISTER_ACTIVATION_TTL_SECS: u64 = 86_400;
+pub const DEFAULT_AUTH_CONTACT_CHANGE_TTL_SECS: u64 = 86_400;
+pub const DEFAULT_AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS: u64 = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeAuthPolicy {
     pub cookie_secure: bool,
     pub access_token_ttl_secs: u64,
     pub refresh_token_ttl_secs: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeContactVerificationPolicy {
+    pub register_activation_ttl_secs: u64,
+    pub contact_change_ttl_secs: u64,
+    pub resend_cooldown_secs: u64,
 }
 
 impl RuntimeAuthPolicy {
@@ -71,6 +85,32 @@ impl RuntimeAuthPolicy {
     }
 }
 
+impl RuntimeContactVerificationPolicy {
+    pub fn from_runtime_config(runtime_config: &RuntimeConfig) -> Self {
+        let register_activation_ttl_secs = read_positive_u64(
+            runtime_config,
+            AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY,
+            DEFAULT_AUTH_REGISTER_ACTIVATION_TTL_SECS,
+        );
+        let contact_change_ttl_secs = read_positive_u64(
+            runtime_config,
+            AUTH_CONTACT_CHANGE_TTL_SECS_KEY,
+            DEFAULT_AUTH_CONTACT_CHANGE_TTL_SECS,
+        );
+        let resend_cooldown_secs = read_positive_u64(
+            runtime_config,
+            AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY,
+            DEFAULT_AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS,
+        );
+
+        Self {
+            register_activation_ttl_secs,
+            contact_change_ttl_secs,
+            resend_cooldown_secs,
+        }
+    }
+}
+
 pub fn normalize_cookie_secure_config_value(value: &str) -> Result<String> {
     match parse_bool_str(value) {
         Some(value) => Ok(if value { "true" } else { "false" }.to_string()),
@@ -100,6 +140,19 @@ fn parse_bool_str(value: &str) -> Option<bool> {
 fn parse_positive_u64(value: &str) -> Option<u64> {
     let parsed = value.trim().parse::<u64>().ok()?;
     (parsed > 0).then_some(parsed)
+}
+
+fn read_positive_u64(runtime_config: &RuntimeConfig, key: &str, default: u64) -> u64 {
+    match runtime_config.get(key) {
+        Some(raw) => match parse_positive_u64(&raw) {
+            Some(value) => value,
+            None => {
+                tracing::warn!(key, value = %raw, "invalid runtime auth contact config; using default");
+                default
+            }
+        },
+        None => default,
+    }
 }
 
 #[cfg(test)]

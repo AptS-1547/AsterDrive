@@ -1,18 +1,21 @@
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
+use crate::config::site_url;
 use crate::db::repository::team_member_repo;
-use crate::errors::Result;
+use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{audit_service, auth_service, profile_service, storage_change_service};
+use crate::types::VerificationPurpose;
 use actix_governor::Governor;
 use actix_web::cookie::time::Duration as CookieDuration;
 use actix_web::cookie::{Cookie, SameSite};
+use actix_web::http::header;
 use actix_web::middleware::Condition;
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use bytes::Bytes;
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::api::middleware::rate_limit;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
@@ -41,7 +44,15 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
         .route("/check", web::post().to(check))
         .route("/register", web::post().to(register))
+        .route(
+            "/register/resend",
+            web::post().to(resend_register_activation),
+        )
         .route("/setup", web::post().to(setup))
+        .route(
+            "/contact-verification/confirm",
+            web::get().to(confirm_contact_verification),
+        )
         .route("/login", web::post().to(login))
         .route("/refresh", web::post().to(refresh))
         .route("/logout", web::post().to(logout))
@@ -51,6 +62,8 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                 .wrap(crate::api::middleware::auth::JwtAuth)
                 .route("/me", web::get().to(me))
                 .route("/password", web::put().to(put_password))
+                .route("/email/change", web::post().to(request_email_change))
+                .route("/email/change/resend", web::post().to(resend_email_change))
                 .route("/preferences", web::patch().to(patch_preferences))
                 .route("/profile", web::patch().to(patch_profile))
                 .route("/profile/avatar/upload", web::post().to(upload_avatar))
@@ -66,6 +79,12 @@ pub struct RegisterReq {
     pub username: String,
     pub email: String,
     pub password: String,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ResendRegisterActivationReq {
+    pub identifier: String,
 }
 
 #[derive(Deserialize)]
@@ -96,10 +115,22 @@ pub struct LoginReq {
     pub password: String,
 }
 
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
+pub struct ContactVerificationConfirmQuery {
+    pub token: Option<String>,
+}
+
 #[derive(serde::Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AuthTokenResp {
     pub expires_in: u64,
+}
+
+#[derive(serde::Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ActionMessageResp {
+    pub message: String,
 }
 
 #[derive(Deserialize)]
@@ -119,6 +150,12 @@ pub struct UpdateProfileReq {
 pub struct ChangePasswordReq {
     pub current_password: String,
     pub new_password: String,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RequestEmailChangeReq {
+    pub new_email: String,
 }
 
 /// 构建 HttpOnly cookie
@@ -182,6 +219,72 @@ fn bearer_token(req: &actix_web::HttpRequest) -> Option<String> {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(str::to_string)
+}
+
+#[derive(Clone, Copy)]
+enum ContactVerificationRedirectStatus {
+    EmailChanged,
+    Expired,
+    Invalid,
+    Missing,
+    RegisterActivated,
+}
+
+impl ContactVerificationRedirectStatus {
+    fn as_query_value(self) -> &'static str {
+        match self {
+            Self::EmailChanged => "email-changed",
+            Self::Expired => "expired",
+            Self::Invalid => "invalid",
+            Self::Missing => "missing",
+            Self::RegisterActivated => "register-activated",
+        }
+    }
+}
+
+async fn request_has_active_access_session(state: &AppState, req: &HttpRequest) -> bool {
+    let token = req
+        .cookie(ACCESS_COOKIE)
+        .map(|cookie| cookie.value().to_string())
+        .or_else(|| bearer_token(req));
+
+    let Some(token) = token else {
+        return false;
+    };
+
+    auth_service::authenticate_access_token(state, &token)
+        .await
+        .is_ok()
+}
+
+fn contact_verification_redirect_url(
+    state: &AppState,
+    path: &str,
+    status: ContactVerificationRedirectStatus,
+    email: Option<&str>,
+) -> String {
+    let mut redirect_path = format!("{path}?contact_verification={}", status.as_query_value());
+
+    if let Some(email) = email {
+        redirect_path.push_str("&email=");
+        redirect_path.push_str(&urlencoding::encode(email));
+    }
+
+    site_url::public_app_url_or_path(&state.runtime_config, &redirect_path)
+}
+
+fn contact_verification_redirect_response(
+    state: &AppState,
+    path: &str,
+    status: ContactVerificationRedirectStatus,
+    email: Option<&str>,
+) -> HttpResponse {
+    HttpResponse::Found()
+        .append_header((
+            header::LOCATION,
+            contact_verification_redirect_url(state, path, status, email),
+        ))
+        .finish()
 }
 
 fn storage_event_frame(event: &storage_change_service::StorageChangeEvent) -> Option<Bytes> {
@@ -350,6 +453,168 @@ pub async fn register(
     )
     .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/auth/register/resend",
+    tag = "auth",
+    operation_id = "resend_register_activation",
+    request_body = ResendRegisterActivationReq,
+    responses(
+        (status = 200, description = "Activation email resent", body = inline(ApiResponse<ActionMessageResp>)),
+        (status = 404, description = "User not found"),
+        (status = 429, description = "Resend cooldown not reached"),
+    ),
+)]
+pub async fn resend_register_activation(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    body: web::Json<ResendRegisterActivationReq>,
+) -> Result<HttpResponse> {
+    let user = auth_service::resend_register_activation(&state, &body.identifier).await?;
+    let ctx = audit_service::AuditContext {
+        user_id: user.id,
+        ip_address: req
+            .connection_info()
+            .realip_remote_addr()
+            .map(|s| s.to_string()),
+        user_agent: req
+            .headers()
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()),
+    };
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserResendRegistration,
+        Some("user"),
+        Some(user.id),
+        Some(&user.username),
+        None,
+    )
+    .await;
+
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
+        message: "Activation email sent".to_string(),
+    })))
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/auth/contact-verification/confirm",
+    tag = "auth",
+    operation_id = "confirm_contact_verification",
+    params(ContactVerificationConfirmQuery),
+    responses(
+        (status = 302, description = "Verification consumed and browser redirected to the frontend"),
+    ),
+)]
+pub async fn confirm_contact_verification(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    query: web::Query<ContactVerificationConfirmQuery>,
+) -> Result<HttpResponse> {
+    let has_active_session = request_has_active_access_session(&state, &req).await;
+    let fallback_path = if has_active_session {
+        "/settings/security"
+    } else {
+        "/login"
+    };
+    let Some(token) = query
+        .token
+        .as_deref()
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+    else {
+        return Ok(contact_verification_redirect_response(
+            &state,
+            fallback_path,
+            ContactVerificationRedirectStatus::Missing,
+            None,
+        ));
+    };
+
+    let result = match auth_service::confirm_contact_verification(&state, token).await {
+        Ok(result) => result,
+        Err(AsterError::ContactVerificationInvalid(_)) => {
+            return Ok(contact_verification_redirect_response(
+                &state,
+                fallback_path,
+                ContactVerificationRedirectStatus::Invalid,
+                None,
+            ));
+        }
+        Err(AsterError::ContactVerificationExpired(_)) => {
+            return Ok(contact_verification_redirect_response(
+                &state,
+                fallback_path,
+                ContactVerificationRedirectStatus::Expired,
+                None,
+            ));
+        }
+        Err(error) => return Err(error),
+    };
+
+    let action = match result.purpose {
+        VerificationPurpose::RegisterActivation => {
+            audit_service::AuditAction::UserConfirmRegistration
+        }
+        VerificationPurpose::ContactChange => audit_service::AuditAction::UserConfirmEmailChange,
+    };
+    let ctx = audit_service::AuditContext {
+        user_id: result.user_id,
+        ip_address: req
+            .connection_info()
+            .realip_remote_addr()
+            .map(|s| s.to_string()),
+        user_agent: req
+            .headers()
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()),
+    };
+    audit_service::log(
+        &state,
+        &ctx,
+        action,
+        Some("user"),
+        Some(result.user_id),
+        None,
+        None,
+    )
+    .await;
+
+    let (redirect_path, redirect_status, email) = match result.purpose {
+        VerificationPurpose::RegisterActivation if has_active_session => (
+            "/settings/security",
+            ContactVerificationRedirectStatus::RegisterActivated,
+            None,
+        ),
+        VerificationPurpose::RegisterActivation => (
+            "/login",
+            ContactVerificationRedirectStatus::RegisterActivated,
+            None,
+        ),
+        VerificationPurpose::ContactChange if has_active_session => (
+            "/settings/security",
+            ContactVerificationRedirectStatus::EmailChanged,
+            Some(result.target.as_str()),
+        ),
+        VerificationPurpose::ContactChange => (
+            "/login",
+            ContactVerificationRedirectStatus::EmailChanged,
+            Some(result.target.as_str()),
+        ),
+    };
+
+    Ok(contact_verification_redirect_response(
+        &state,
+        redirect_path,
+        redirect_status,
+        email,
+    ))
 }
 
 #[api_docs_macros::path(
@@ -574,6 +839,77 @@ pub async fn put_password(
         .json(ApiResponse::ok(AuthTokenResp {
             expires_in: auth_policy.access_token_ttl_secs,
         })))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/auth/email/change",
+    tag = "auth",
+    operation_id = "request_email_change",
+    request_body = RequestEmailChangeReq,
+    responses(
+        (status = 200, description = "Email change requested", body = inline(ApiResponse<UserInfo>)),
+        (status = 400, description = "Validation error"),
+        (status = 403, description = "Account pending activation"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn request_email_change(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    claims: web::ReqData<Claims>,
+    body: web::Json<RequestEmailChangeReq>,
+) -> Result<HttpResponse> {
+    let user = auth_service::request_email_change(&state, claims.user_id, &body.new_email).await?;
+    let user_info =
+        user_service::to_user_info(&state, &user, profile_service::AvatarAudience::SelfUser)
+            .await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserRequestEmailChange,
+        Some("user"),
+        Some(user.id),
+        Some(&user.username),
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(user_info)))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/auth/email/change/resend",
+    tag = "auth",
+    operation_id = "resend_email_change",
+    responses(
+        (status = 200, description = "Email change confirmation resent", body = inline(ApiResponse<ActionMessageResp>)),
+        (status = 400, description = "No pending email change"),
+        (status = 429, description = "Resend cooldown not reached"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn resend_email_change(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
+    let user = auth_service::resend_email_change(&state, claims.user_id).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserResendEmailChange,
+        Some("user"),
+        Some(user.id),
+        Some(&user.username),
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
+        message: "Email change confirmation sent".to_string(),
+    })))
 }
 
 /// Update the current user's preferences.

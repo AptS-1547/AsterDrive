@@ -90,6 +90,7 @@ pub async fn webdav_handler(
         state.policy_snapshot.clone(),
         state.config.clone(),
         state.cache.clone(),
+        state.mail_sender.clone(),
         state.thumbnail_tx.clone(),
         state.storage_change_tx.clone(),
         auth_result.user_id,

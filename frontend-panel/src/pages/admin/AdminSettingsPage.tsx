@@ -17,6 +17,14 @@ import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuRadioGroup,
@@ -29,9 +37,16 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import {
+	ADMIN_SETTINGS_CONTENT_BASE_BOTTOM_PADDING_DESKTOP_PX,
+	ADMIN_SETTINGS_CONTENT_BASE_BOTTOM_PADDING_MOBILE_PX,
+	ADMIN_SETTINGS_SAVE_BAR_MIN_RESERVED_HEIGHT_DESKTOP_PX,
+	ADMIN_SETTINGS_SAVE_BAR_MIN_RESERVED_HEIGHT_MOBILE_PX,
+} from "@/lib/constants";
 import { setPublicSiteUrl } from "@/lib/publicSiteUrl";
 import { cn } from "@/lib/utils";
 import { adminConfigService } from "@/services/adminService";
+import { useAuthStore } from "@/stores/authStore";
 import { useBrandingStore } from "@/stores/brandingStore";
 import type { ConfigSchemaItem, SystemConfig } from "@/types/api";
 
@@ -39,6 +54,7 @@ const CATEGORY_ORDER = [
 	"general",
 	"user",
 	"auth",
+	"mail",
 	"network",
 	"storage",
 	"webdav",
@@ -57,8 +73,6 @@ const COMPACT_NAV_TAB_GAP = 8;
 const COMPACT_NAV_OVERFLOW_GAP = 12;
 const SAVE_BAR_ENTER_DURATION_MS = 180;
 const SAVE_BAR_EXIT_DURATION_MS = 140;
-const SAVE_BAR_MIN_RESERVED_HEIGHT_DESKTOP = 112;
-const SAVE_BAR_MIN_RESERVED_HEIGHT_MOBILE = 152;
 const COMPACT_NAV_TAB_TRIGGER_CLASS =
 	"h-10 flex-none rounded-none px-0 text-sm font-medium";
 const COMPACT_NAV_TAB_CONTENT_CLASS =
@@ -103,6 +117,8 @@ function getCategoryIcon(category: string): IconName {
 			return "Shield";
 		case "network":
 			return "Globe";
+		case "mail":
+			return "EnvelopeSimple";
 		case "storage":
 			return "HardDrive";
 		case "webdav":
@@ -129,6 +145,8 @@ function getAdminSettingsSectionTitle(
 			return t("settings_category_auth");
 		case "network":
 			return t("settings_category_network");
+		case "mail":
+			return t("settings_category_mail");
 		case "storage":
 			return t("settings_category_storage");
 		case "webdav":
@@ -309,6 +327,7 @@ export default function AdminSettingsPage({
 	const { t } = useTranslation("admin");
 	usePageTitle(getAdminSettingsSectionTitle(section, t));
 	const navigate = useNavigate();
+	const currentUserEmail = useAuthStore((state) => state.user?.email ?? "");
 	const customDraftIdRef = useRef(0);
 	const compactNavContainerRef = useRef<HTMLDivElement | null>(null);
 	const compactTabMeasureRefs = useRef<
@@ -342,6 +361,33 @@ export default function AdminSettingsPage({
 	>([]);
 	const [saveBarPhase, setSaveBarPhase] = useState<SaveBarPhase>("hidden");
 	const [saveBarReservedHeight, setSaveBarReservedHeight] = useState(0);
+	const [testEmailDialogOpen, setTestEmailDialogOpen] = useState(false);
+	const [testEmailTarget, setTestEmailTarget] = useState("");
+	const [sendingTestEmail, setSendingTestEmail] = useState(false);
+	const settingsContentBaseBottomPadding =
+		viewportWidth < MOBILE_BREAKPOINT
+			? ADMIN_SETTINGS_CONTENT_BASE_BOTTOM_PADDING_MOBILE_PX
+			: ADMIN_SETTINGS_CONTENT_BASE_BOTTOM_PADDING_DESKTOP_PX;
+
+	const openTestEmailDialog = useCallback(() => {
+		setTestEmailTarget(currentUserEmail);
+		setTestEmailDialogOpen(true);
+	}, [currentUserEmail]);
+
+	const handleSendTestEmail = useCallback(async () => {
+		setSendingTestEmail(true);
+		try {
+			const response = await adminConfigService.sendTestEmail(
+				testEmailTarget.trim() || undefined,
+			);
+			toast.success(response.message);
+			setTestEmailDialogOpen(false);
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setSendingTestEmail(false);
+		}
+	}, [testEmailTarget]);
 
 	const load = useCallback(async (options?: { showLoading?: boolean }) => {
 		const showLoading = options?.showLoading ?? true;
@@ -596,6 +642,8 @@ export default function AdminSettingsPage({
 					return t("settings_category_auth");
 				case "network":
 					return t("settings_category_network");
+				case "mail":
+					return t("settings_category_mail");
 				case "storage":
 					return t("settings_category_storage");
 				case "webdav":
@@ -624,6 +672,8 @@ export default function AdminSettingsPage({
 					return t("settings_category_auth_desc");
 				case "network":
 					return t("settings_category_network_desc");
+				case "mail":
+					return t("settings_category_mail_desc");
 				case "storage":
 					return t("settings_category_storage_desc");
 				case "webdav":
@@ -778,8 +828,8 @@ export default function AdminSettingsPage({
 
 		const fallbackHeight =
 			viewportWidth < MOBILE_BREAKPOINT
-				? SAVE_BAR_MIN_RESERVED_HEIGHT_MOBILE
-				: SAVE_BAR_MIN_RESERVED_HEIGHT_DESKTOP;
+				? ADMIN_SETTINGS_SAVE_BAR_MIN_RESERVED_HEIGHT_MOBILE_PX
+				: ADMIN_SETTINGS_SAVE_BAR_MIN_RESERVED_HEIGHT_DESKTOP_PX;
 		const node = saveBarMeasureRef.current;
 		if (!node) {
 			setSaveBarReservedHeight(fallbackHeight);
@@ -1315,6 +1365,17 @@ export default function AdminSettingsPage({
 				</Button>
 			</div>
 		);
+		const mailCategoryActions = (
+			<div className="flex flex-wrap items-center gap-3 border-t border-border/40 pt-6">
+				<Button variant="outline" size="sm" onClick={openTestEmailDialog}>
+					<Icon name="EnvelopeSimple" className="h-4 w-4" />
+					{t("mail_send_test_email")}
+				</Button>
+				<p className="text-xs text-muted-foreground">
+					{t("mail_send_test_email_hint")}
+				</p>
+			</div>
+		);
 
 		if (category === "custom") {
 			return (
@@ -1384,6 +1445,27 @@ export default function AdminSettingsPage({
 							</div>
 						</div>
 					) : null}
+				</div>
+			);
+		}
+
+		if (category === "mail") {
+			return (
+				<div
+					key={`${activeTab}-${tabDirection}`}
+					className={`space-y-10 ${panelAnimationClass}`}
+				>
+					{showCategoryHeader
+						? renderCategoryHeader(category, { description: undefined })
+						: null}
+					<div className="max-w-4xl divide-y divide-border/40">
+						{(systemGroups[category] ?? []).map((config) => (
+							<div key={config.key} className="py-6 first:pt-0 last:pb-0">
+								{renderSystemConfigRow(config)}
+							</div>
+						))}
+					</div>
+					<div className="max-w-4xl">{mailCategoryActions}</div>
 				</div>
 			);
 		}
@@ -1693,7 +1775,7 @@ export default function AdminSettingsPage({
 
 	return (
 		<AdminLayout>
-			<AdminPageShell>
+			<AdminPageShell className="pb-0 md:pb-0">
 				<AdminPageHeader
 					title={t("system_settings")}
 					description={t("settings_intro")}
@@ -1706,12 +1788,10 @@ export default function AdminSettingsPage({
 				) : (
 					<div
 						data-testid="settings-content"
-						className="flex flex-col gap-8 transition-[padding] duration-200 ease-out"
-						style={
-							saveBarReservedHeight > 0
-								? { paddingBottom: `${saveBarReservedHeight}px` }
-								: undefined
-						}
+						className="flex flex-col gap-8 transition-[padding-bottom] duration-200 ease-out"
+						style={{
+							paddingBottom: `${settingsContentBaseBottomPadding + saveBarReservedHeight}px`,
+						}}
 					>
 						<Tabs
 							orientation={isDesktopNavigation ? "vertical" : "horizontal"}
@@ -1747,6 +1827,49 @@ export default function AdminSettingsPage({
 					</div>
 				)}
 			</AdminPageShell>
+			<Dialog
+				open={testEmailDialogOpen}
+				onOpenChange={(open) => {
+					if (!sendingTestEmail) {
+						setTestEmailDialogOpen(open);
+					}
+				}}
+			>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>{t("mail_test_email_dialog_title")}</DialogTitle>
+						<DialogDescription>
+							{t("mail_test_email_dialog_desc")}
+						</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-2 py-2">
+						<p className="text-sm font-medium">
+							{t("mail_test_email_recipient_label")}
+						</p>
+						<Input
+							type="email"
+							value={testEmailTarget}
+							onChange={(event) => setTestEmailTarget(event.target.value)}
+							placeholder={t("mail_test_email_recipient_placeholder")}
+						/>
+					</div>
+					<DialogFooter>
+						<Button
+							variant="outline"
+							disabled={sendingTestEmail}
+							onClick={() => setTestEmailDialogOpen(false)}
+						>
+							{t("core:cancel")}
+						</Button>
+						<Button
+							disabled={sendingTestEmail}
+							onClick={() => void handleSendTestEmail()}
+						>
+							{t("mail_send_test_email")}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 			{renderFloatingSaveBar()}
 		</AdminLayout>
 	);

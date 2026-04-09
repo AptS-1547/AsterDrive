@@ -97,6 +97,7 @@ async fn test_thumbnail_returns_200_after_generation() {
         policy_snapshot: state.policy_snapshot,
         config: state.config,
         cache: state.cache,
+        mail_sender: state.mail_sender,
         thumbnail_tx: tx,
         storage_change_tx: state.storage_change_tx,
     };
@@ -190,6 +191,7 @@ async fn test_thumbnail_dedup_same_blob() {
         policy_snapshot: state.policy_snapshot,
         config: state.config,
         cache: state.cache,
+        mail_sender: state.mail_sender,
         thumbnail_tx: tx,
         storage_change_tx: state.storage_change_tx,
     };

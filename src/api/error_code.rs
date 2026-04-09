@@ -32,12 +32,17 @@ pub enum ErrorCode {
     ConfigError = 1004,
     EndpointNotFound = 1005,
     RateLimited = 1006,
+    MailNotConfigured = 1007,
+    MailDeliveryFailed = 1008,
 
     // 认证错误 2000-2099
     AuthFailed = 2000,
     TokenExpired = 2001,
     TokenInvalid = 2002,
     Forbidden = 2003,
+    PendingActivation = 2004,
+    ContactVerificationInvalid = 2005,
+    ContactVerificationExpired = 2006,
 
     // 文件错误 3000-3099
     FileNotFound = 3000,
@@ -80,12 +85,17 @@ impl From<&AsterError> for ErrorCode {
             AsterError::InternalError(_) => ErrorCode::InternalServerError,
             AsterError::ValidationError(_) => ErrorCode::BadRequest,
             AsterError::RecordNotFound(_) => ErrorCode::NotFound,
+            AsterError::MailNotConfigured(_) => ErrorCode::MailNotConfigured,
+            AsterError::MailDeliveryFailed(_) => ErrorCode::MailDeliveryFailed,
 
             // 认证
             AsterError::AuthInvalidCredentials(_) => ErrorCode::AuthFailed,
             AsterError::AuthTokenExpired(_) => ErrorCode::TokenExpired,
             AsterError::AuthTokenInvalid(_) => ErrorCode::TokenInvalid,
             AsterError::AuthForbidden(_) => ErrorCode::Forbidden,
+            AsterError::AuthPendingActivation(_) => ErrorCode::PendingActivation,
+            AsterError::ContactVerificationInvalid(_) => ErrorCode::ContactVerificationInvalid,
+            AsterError::ContactVerificationExpired(_) => ErrorCode::ContactVerificationExpired,
             AsterError::RateLimited(_) => ErrorCode::RateLimited,
 
             // 文件

@@ -4,6 +4,7 @@ pub mod branding;
 pub mod cors;
 pub mod definitions;
 mod loader;
+pub mod mail;
 mod runtime_config;
 mod schema;
 pub mod site_url;

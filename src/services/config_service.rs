@@ -4,15 +4,42 @@ use crate::config::avatar;
 use crate::config::branding;
 use crate::config::cors;
 use crate::config::definitions::ALL_CONFIGS;
+use crate::config::mail;
 use crate::config::site_url;
-use crate::db::repository::config_repo;
+use crate::db::repository::{config_repo, user_repo};
 use crate::entities::system_config;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::audit_service::{self, AuditContext};
-use serde::Serialize;
+use crate::services::{
+    audit_service::{self, AuditContext},
+    mail_service,
+};
+use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
+
+pub const MAIL_CONFIG_ACTION_KEY: &str = "mail";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub enum ConfigActionType {
+    SendTestEmail,
+}
+
+impl ConfigActionType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SendTestEmail => "send_test_email",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigActionResult {
+    pub message: String,
+    pub target_email: Option<String>,
+}
 
 pub async fn list_all(state: &AppState) -> Result<Vec<system_config::Model>> {
     config_repo::find_all(&state.db).await
@@ -81,6 +108,56 @@ pub async fn set_with_audit(
     Ok(config)
 }
 
+pub async fn execute_action(
+    state: &AppState,
+    key: &str,
+    action: ConfigActionType,
+    actor_user_id: i64,
+    target_email: Option<&str>,
+) -> Result<ConfigActionResult> {
+    match key {
+        MAIL_CONFIG_ACTION_KEY => {
+            execute_mail_action(state, action, actor_user_id, target_email).await
+        }
+        _ => Err(AsterError::record_not_found(format!(
+            "config action target '{key}'"
+        ))),
+    }
+}
+
+async fn execute_mail_action(
+    state: &AppState,
+    action: ConfigActionType,
+    actor_user_id: i64,
+    target_email: Option<&str>,
+) -> Result<ConfigActionResult> {
+    match action {
+        ConfigActionType::SendTestEmail => {
+            let actor = user_repo::find_by_id(&state.db, actor_user_id).await?;
+            let requested_target = target_email.unwrap_or(&actor.email);
+            let normalized_target = mail::normalize_mail_address_config_value(requested_target)?;
+            if normalized_target.is_empty() {
+                return Err(AsterError::validation_error("target_email is required"));
+            }
+
+            tracing::debug!(
+                actor_user_id,
+                actor_username = %actor.username,
+                target_email = %normalized_target,
+                action = %action.as_str(),
+                "config: executing mail action"
+            );
+
+            mail_service::send_test_email(state, &normalized_target, Some(&actor.username)).await?;
+
+            Ok(ConfigActionResult {
+                message: format!("Test email sent to {normalized_target}"),
+                target_email: Some(normalized_target),
+            })
+        }
+    }
+}
+
 /// 校验值是否匹配声明的类型
 fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
     let trimmed = value.trim();
@@ -111,7 +188,10 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
             auth_runtime::normalize_cookie_secure_config_value(value)
         }
         auth_runtime::AUTH_ACCESS_TOKEN_TTL_SECS_KEY
-        | auth_runtime::AUTH_REFRESH_TOKEN_TTL_SECS_KEY => {
+        | auth_runtime::AUTH_REFRESH_TOKEN_TTL_SECS_KEY
+        | auth_runtime::AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY
+        | auth_runtime::AUTH_CONTACT_CHANGE_TTL_SECS_KEY
+        | auth_runtime::AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY => {
             auth_runtime::normalize_token_ttl_config_value(key, value)
         }
         cors::CORS_ENABLED_KEY => cors::normalize_enabled_config_value(value),
@@ -137,6 +217,11 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
             Ok(normalized)
         }
         cors::CORS_MAX_AGE_SECS_KEY => cors::normalize_max_age_config_value(value),
+        mail::MAIL_SMTP_HOST_KEY => mail::normalize_smtp_host_config_value(value),
+        mail::MAIL_SMTP_PORT_KEY => mail::normalize_smtp_port_config_value(value),
+        mail::MAIL_FROM_ADDRESS_KEY => mail::normalize_mail_address_config_value(value),
+        mail::MAIL_FROM_NAME_KEY => mail::normalize_mail_name_config_value(value),
+        mail::MAIL_SECURITY_KEY => mail::normalize_mail_security_config_value(value),
         site_url::PUBLIC_SITE_URL_KEY => site_url::normalize_public_site_url_config_value(value),
         branding::BRANDING_TITLE_KEY => branding::normalize_title_config_value(value),
         branding::BRANDING_DESCRIPTION_KEY => branding::normalize_description_config_value(value),

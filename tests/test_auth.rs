@@ -8,24 +8,6 @@ use serde_json::Value;
 use std::io::Cursor;
 use std::time::Duration;
 
-macro_rules! register_user_with_credentials {
-    ($app:expr, $username:expr, $email:expr, $password:expr) => {{
-        let req = test::TestRequest::post()
-            .uri("/api/v1/auth/register")
-            .peer_addr("127.0.0.1:12345".parse().unwrap())
-            .set_json(serde_json::json!({
-                "username": $username,
-                "email": $email,
-                "password": $password
-            }))
-            .to_request();
-        let resp = test::call_service(&$app, req).await;
-        assert_eq!(resp.status(), 201);
-        let body: Value = test::read_body_json(resp).await;
-        body["data"]["id"].as_i64().unwrap()
-    }};
-}
-
 macro_rules! login_user_with_credentials {
     ($app:expr, $identifier:expr, $password:expr) => {{
         let req = test::TestRequest::post()
@@ -39,6 +21,25 @@ macro_rules! login_user_with_credentials {
         let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 200);
         common::extract_cookie(&resp, "aster_access").unwrap()
+    }};
+}
+
+macro_rules! admin_create_user_with_credentials {
+    ($app:expr, $admin_token:expr, $username:expr, $email:expr, $password:expr) => {{
+        let req = test::TestRequest::post()
+            .uri("/api/v1/admin/users")
+            .insert_header(("Cookie", format!("aster_access={}", $admin_token)))
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({
+                "username": $username,
+                "email": $email,
+                "password": $password
+            }))
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201);
+        let body: Value = test::read_body_json(resp).await;
+        body["data"]["id"].as_i64().unwrap()
     }};
 }
 
@@ -89,6 +90,23 @@ fn avatar_upload_payload() -> (String, Vec<u8>) {
     body.extend_from_slice(&png.into_inner());
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
     (boundary, body)
+}
+
+fn extract_verification_token(
+    message: &aster_drive::services::mail_service::MailMessage,
+) -> String {
+    let link = message
+        .text_body
+        .lines()
+        .find(|line| line.contains("/api/v1/auth/contact-verification/confirm?token="))
+        .expect("verification link missing from mail body");
+    let encoded = link
+        .split("token=")
+        .nth(1)
+        .expect("verification token missing from link");
+    urlencoding::decode(encoded)
+        .expect("verification token should be url-encoded")
+        .into_owned()
 }
 
 async fn read_next_sse_json<B>(body: &mut B) -> Value
@@ -251,6 +269,123 @@ async fn test_register_and_login() {
 }
 
 #[actix_web::test]
+async fn test_register_requires_activation_until_confirmed() {
+    let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+
+    let _ = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "pendinguser",
+            "email": "pendinguser@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "pendinguser",
+            "password": "password123"
+        }))
+        .to_request();
+    assert_service_status!(app, req, 403);
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    let token = extract_verification_token(
+        &memory_sender
+            .last_message()
+            .expect("activation email should be sent"),
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/auth/contact-verification/confirm?token={}",
+            urlencoding::encode(&token)
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 302);
+    let location = resp
+        .headers()
+        .get("Location")
+        .and_then(|value| value.to_str().ok())
+        .expect("contact verification redirect location missing");
+    assert_eq!(location, "/login?contact_verification=register-activated");
+
+    let (_access, _refresh) = login_user!(app, "pendinguser", "password123");
+}
+
+#[actix_web::test]
+async fn test_email_change_confirmation_redirects_and_notifies_previous_email() {
+    let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+
+    let (access, _refresh) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/email/change")
+        .insert_header(("Cookie", format!("aster_access={access}")))
+        .set_json(serde_json::json!({
+            "new_email": "updated@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    let token = extract_verification_token(
+        &memory_sender
+            .last_message()
+            .expect("email change confirmation should be sent"),
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/auth/contact-verification/confirm?token={}",
+            urlencoding::encode(&token)
+        ))
+        .insert_header(("Cookie", format!("aster_access={access}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 302);
+    let location = resp
+        .headers()
+        .get("Location")
+        .and_then(|value| value.to_str().ok())
+        .expect("contact verification redirect location missing");
+    assert_eq!(
+        location,
+        "/settings/security?contact_verification=email-changed&email=updated%40example.com"
+    );
+
+    let messages = memory_sender.messages();
+    let previous_email_notice = messages
+        .last()
+        .expect("email change notice should be sent to previous address");
+    assert_eq!(previous_email_notice.to.address, "test@example.com");
+    assert_eq!(
+        previous_email_notice.subject,
+        "Your AsterDrive email was changed"
+    );
+    assert!(
+        previous_email_notice
+            .text_body
+            .contains("updated@example.com")
+    );
+}
+
+#[actix_web::test]
 async fn test_token_refresh() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -405,11 +540,14 @@ async fn test_storage_events_stream_receives_team_file_change_frames_for_member(
     let state = common::setup().await;
     let app = create_test_app!(state);
 
-    let _owner_id =
-        register_user_with_credentials!(app, "teamowner", "teamowner@example.com", "password123");
-    let member_id =
-        register_user_with_credentials!(app, "teammember", "teammember@example.com", "password123");
-    let owner_token = login_user_with_credentials!(app, "teamowner", "password123");
+    let (owner_token, _) = register_and_login!(app);
+    let member_id = admin_create_user_with_credentials!(
+        app,
+        owner_token,
+        "teammember",
+        "teammember@example.com",
+        "password123"
+    );
     let member_token = login_user_with_credentials!(app, "teammember", "password123");
 
     let req = test::TestRequest::post()
@@ -461,15 +599,14 @@ async fn test_storage_events_stream_hides_team_frames_from_non_members() {
     let state = common::setup().await;
     let app = create_test_app!(state);
 
-    let _owner_id =
-        register_user_with_credentials!(app, "teamowner2", "teamowner2@example.com", "password123");
-    let _outsider_id = register_user_with_credentials!(
+    let (owner_token, _) = register_and_login!(app);
+    let _outsider_id = admin_create_user_with_credentials!(
         app,
+        owner_token,
         "teamoutsider",
         "teamoutsider@example.com",
         "password123"
     );
-    let owner_token = login_user_with_credentials!(app, "teamowner2", "password123");
     let outsider_token = login_user_with_credentials!(app, "teamoutsider", "password123");
 
     let req = test::TestRequest::post()
@@ -660,6 +797,7 @@ async fn test_user_status_cached_in_auth_middleware() {
         policy_snapshot: base.policy_snapshot,
         config: base.config,
         cache,
+        mail_sender: base.mail_sender,
         thumbnail_tx: base.thumbnail_tx,
         storage_change_tx: base.storage_change_tx,
     };
@@ -702,27 +840,20 @@ async fn test_disable_user_invalidates_status_cache() {
         policy_snapshot: base.policy_snapshot,
         config: base.config,
         cache,
+        mail_sender: base.mail_sender,
         thumbnail_tx: base.thumbnail_tx,
         storage_change_tx: base.storage_change_tx,
     };
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
-    // 注册第二个用户
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "bobuser",
-            "email": "bob@example.com",
-            "password": "password456"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let status = resp.status();
-    let body: Value = test::read_body_json(resp).await;
-    assert_eq!(status, 201, "register bob failed: {body}");
-    let bob_id = body["data"]["id"].as_i64().unwrap();
+    let bob_id = admin_create_user_with_credentials!(
+        app,
+        admin_token,
+        "bobuser",
+        "bob@example.com",
+        "password456"
+    );
 
     // bob 登录
     let req = test::TestRequest::post()

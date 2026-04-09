@@ -9,6 +9,7 @@ import { TeamsSettingsView } from "@/components/settings/TeamsSettingsView";
 import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { SETTINGS_PAGE_CONTENT_PADDING_CLASS } from "@/lib/constants";
 
 type SettingsTabKey = "profile" | "interface" | "security" | "teams";
 
@@ -52,7 +53,9 @@ export default function SettingsPage({
 	return (
 		<AppLayout>
 			<div className="min-h-0 flex-1 overflow-auto">
-				<div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 md:p-6">
+				<div
+					className={`mx-auto flex w-full max-w-6xl flex-col gap-5 ${SETTINGS_PAGE_CONTENT_PADDING_CLASS}`}
+				>
 					<SettingsPageIntro
 						title={t("settings")}
 						description={t("settings:settings_page_desc")}

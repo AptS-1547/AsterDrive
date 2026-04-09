@@ -1,6 +1,8 @@
 // Re-export generated types for convenience
 import type { components } from "@/services/api.generated";
 
+export type { operations, paths } from "@/services/api.generated";
+
 // Core responses
 export type ErrorCode = components["schemas"]["ErrorCode"];
 export type HealthResponse = components["schemas"]["HealthResponse"];
@@ -9,11 +11,16 @@ export type MemoryStatsResponse = components["schemas"]["MemoryStatsResponse"];
 // Auth and user
 export type AvatarInfo = components["schemas"]["AvatarInfo"];
 export type AvatarSource = components["schemas"]["AvatarSource"];
+export type ActionMessageResp = components["schemas"]["ActionMessageResp"];
 export type AuthTokenResp = components["schemas"]["AuthTokenResp"];
 export type CheckResp = components["schemas"]["CheckResp"];
 export type ChangePasswordRequest = components["schemas"]["ChangePasswordReq"];
 export type CreateUserReq = components["schemas"]["CreateUserReq"];
 export type MeResponse = components["schemas"]["MeResponse"];
+export type RequestEmailChangeRequest =
+	components["schemas"]["RequestEmailChangeReq"];
+export type ResendRegisterActivationRequest =
+	components["schemas"]["ResendRegisterActivationReq"];
 export type UpdateAvatarSourceRequest =
 	components["schemas"]["UpdateAvatarSourceReq"];
 export type UpdatePreferencesRequest =
@@ -25,6 +32,7 @@ export type UserPreferences = components["schemas"]["UserPreferences"];
 export type UserProfileInfo = components["schemas"]["UserProfileInfo"];
 export type UserRole = components["schemas"]["UserRole"];
 export type UserStatus = components["schemas"]["UserStatus"];
+export type VerificationPurpose = components["schemas"]["VerificationPurpose"];
 
 // Files, folders, and trash
 export type FileInfo = components["schemas"]["FileInfo"];
@@ -96,7 +104,10 @@ export type PolicyGroupUserMigrationResult =
 	components["schemas"]["PolicyGroupUserMigrationResult"];
 export type StoragePolicyGroupPage =
 	components["schemas"]["OffsetPage_StoragePolicyGroupInfo"];
+export type ConfigActionType = components["schemas"]["ConfigActionType"];
 export type ConfigSchemaItem = components["schemas"]["ConfigSchemaItem"];
+export type ExecuteConfigActionRequest =
+	components["schemas"]["ExecuteConfigActionReq"];
 export type PublicBranding = components["schemas"]["PublicBranding"];
 export type SystemConfig = components["schemas"]["SystemConfig"];
 export type SystemConfigPage = components["schemas"]["OffsetPage_SystemConfig"];

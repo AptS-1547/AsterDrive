@@ -68,9 +68,17 @@ async fn test_user_default_policy_switch_updates_snapshot_immediately() {
     .await
     .unwrap();
 
-    user_service::update(&state, user.id, None, None, None, Some(alternate_group.id))
-        .await
-        .unwrap();
+    user_service::update(
+        &state,
+        user.id,
+        None,
+        None,
+        None,
+        None,
+        Some(alternate_group.id),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         state.policy_snapshot.resolve_default_policy_id(user.id),

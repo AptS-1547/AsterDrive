@@ -6,6 +6,7 @@ pub mod tasks;
 
 use crate::cache::CacheBackend;
 use crate::config::{Config, RuntimeConfig};
+use crate::services::mail_service::MailSender;
 use crate::services::storage_change_service::StorageChangeEvent;
 use crate::storage::{DriverRegistry, PolicySnapshot};
 use sea_orm::DatabaseConnection;
@@ -18,6 +19,7 @@ pub struct AppState {
     pub policy_snapshot: Arc<PolicySnapshot>,
     pub config: Arc<Config>,
     pub cache: Arc<dyn CacheBackend>,
+    pub mail_sender: Arc<dyn MailSender>,
     /// 缩略图生成队列（blob_id），后台 worker 消费
     pub thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
     /// 文件/文件夹变更广播（SSE 消费）

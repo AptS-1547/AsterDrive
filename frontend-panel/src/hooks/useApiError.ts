@@ -7,10 +7,16 @@ import {
 } from "@/types/api-helpers";
 
 const errorMessageKeys: Partial<Record<ErrorCodeType, string>> = {
+	[ErrorCode.RateLimited]: "errors:rate_limited",
+	[ErrorCode.MailNotConfigured]: "errors:mail_not_configured",
+	[ErrorCode.MailDeliveryFailed]: "errors:mail_delivery_failed",
 	[ErrorCode.AuthFailed]: "errors:auth_failed",
 	[ErrorCode.TokenExpired]: "errors:token_expired",
 	[ErrorCode.TokenInvalid]: "errors:token_invalid",
 	[ErrorCode.Forbidden]: "errors:forbidden",
+	[ErrorCode.PendingActivation]: "errors:pending_activation",
+	[ErrorCode.ContactVerificationInvalid]: "errors:contact_verification_invalid",
+	[ErrorCode.ContactVerificationExpired]: "errors:contact_verification_expired",
 	[ErrorCode.FileNotFound]: "errors:file_not_found",
 	[ErrorCode.FileTooLarge]: "errors:file_too_large",
 	[ErrorCode.FileTypeNotAllowed]: "errors:file_type_not_allowed",

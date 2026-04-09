@@ -762,7 +762,7 @@ async fn test_webdav_bearer_rejects_refresh_token() {
 
 #[actix_web::test]
 async fn test_webdav_bearer_respects_session_revocation() {
-    let app = setup_with_webdav!();
+    let (app, mail_sender) = setup_with_webdav_and_mail!();
     let (admin_token, _) = register_and_login!(app);
 
     let req = test::TestRequest::post()
@@ -778,6 +778,8 @@ async fn test_webdav_bearer_respects_session_revocation() {
     assert_eq!(resp.status(), 201);
     let body: serde_json::Value = test::read_body_json(resp).await;
     let user_id = body["data"]["id"].as_i64().unwrap();
+
+    let _ = confirm_latest_contact_verification!(app, mail_sender);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/login")

@@ -1,4 +1,5 @@
 import type {
+	ActionMessageResp,
 	AuthTokenResp,
 	AvatarSource,
 	ChangePasswordRequest,
@@ -37,6 +38,9 @@ export const authService = {
 	register: (username: string, email: string, password: string) =>
 		api.post<UserInfo>("/auth/register", { username, email, password }),
 
+	resendRegisterActivation: (identifier: string) =>
+		api.post<ActionMessageResp>("/auth/register/resend", { identifier }),
+
 	setup: (username: string, email: string, password: string) =>
 		api.post<UserInfo>("/auth/setup", { username, email, password }),
 
@@ -65,6 +69,12 @@ export const authService = {
 
 	updateProfile: (profile: UpdateProfileRequest) =>
 		api.patch<UserProfileInfo>("/auth/profile", profile),
+
+	requestEmailChange: (newEmail: string) =>
+		api.post<UserInfo>("/auth/email/change", { new_email: newEmail }),
+
+	resendEmailChange: () =>
+		api.post<ActionMessageResp>("/auth/email/change/resend"),
 
 	setAvatarSource: (source: Extract<AvatarSource, "none" | "gravatar">) =>
 		api.put<UserProfileInfo>("/auth/profile/avatar/source", { source }),

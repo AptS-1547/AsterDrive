@@ -151,33 +151,15 @@ async fn test_audit_log_admin_only() {
     let state = common::setup().await;
     let app = create_test_app!(state);
 
-    // First registered user is admin
-    let (_admin_token, _) = register_and_login!(app);
-
-    // Register a second non-admin user
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "user2",
-            "email": "user2@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-
-    // Login as the non-admin user
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "user2",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let token2 = common::extract_cookie(&resp, "aster_access").unwrap();
+    let (admin_token, _) = register_and_login!(app);
+    admin_create_user!(
+        app,
+        admin_token,
+        "user2",
+        "user2@example.com",
+        "password123"
+    );
+    let (token2, _) = login_user!(app, "user2", "password123");
 
     // Non-admin tries to access audit logs — should get 403
     let req = test::TestRequest::get()
@@ -546,6 +528,34 @@ async fn test_audit_log_recorded_on_admin_team_lifecycle() {
     let restore_entry = assert_action_present(&items, "admin_restore_team");
     assert_eq!(restore_entry["entity_type"], "team");
     assert_eq!(restore_entry["entity_name"], "Admin Audit Team Updated");
+}
+
+#[actix_web::test]
+async fn test_audit_log_recorded_on_config_action_execute() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/config/mail/action")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "action": "send_test_email",
+            "target_email": "audit-mail@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let items = fetch_audit_items!(app, token);
+    let entry = assert_action_present(&items, "config_action_execute");
+    assert_eq!(entry["entity_name"], "mail");
+    assert!(
+        entry["details"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("\"target_email\":\"audit-mail@example.com\"")
+    );
 }
 
 #[actix_web::test]

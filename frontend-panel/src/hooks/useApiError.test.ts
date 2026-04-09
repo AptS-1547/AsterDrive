@@ -44,10 +44,19 @@ describe("handleApiError", () => {
 		const { handleApiError } = await import("@/hooks/useApiError");
 
 		handleApiError(new mockState.ApiError(ErrorCode.Forbidden, "raw message"));
+		handleApiError(
+			new mockState.ApiError(ErrorCode.PendingActivation, "pending"),
+		);
 
 		expect(mockState.translate).toHaveBeenCalledWith("errors:forbidden");
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:pending_activation",
+		);
 		expect(mockState.toastError).toHaveBeenCalledWith(
 			"translated:errors:forbidden",
+		);
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"translated:errors:pending_activation",
 		);
 	});
 

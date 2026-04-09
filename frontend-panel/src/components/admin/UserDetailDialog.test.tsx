@@ -326,7 +326,9 @@ function createUser(overrides: Record<string, unknown> = {}) {
 	return {
 		created_at: "2026-03-28T00:00:00Z",
 		email: "alice@example.com",
+		email_verified: true,
 		id: 2,
+		pending_email: null,
 		policy_group_id: 1,
 		profile: {
 			avatar: {
@@ -434,6 +436,9 @@ describe("UserDetailDialog", () => {
 		await waitForPolicyLoad();
 
 		fireEvent.click(
+			screen.getByRole("button", { name: "select-item:unverified" }),
+		);
+		fireEvent.click(
 			screen.getByRole("button", { name: "select-item:disabled" }),
 		);
 		fireEvent.click(screen.getByRole("button", { name: "select-item:admin" }));
@@ -446,12 +451,29 @@ describe("UserDetailDialog", () => {
 
 		await waitFor(() => {
 			expect(mockState.onUpdate).toHaveBeenCalledWith(2, {
+				email_verified: false,
 				role: "admin",
 				status: "disabled",
 				storage_quota: 20 * 1024 * 1024,
 				policy_group_id: 2,
 			});
 		});
+	});
+
+	it("renders email verification details from the user model", async () => {
+		renderDialog({
+			email_verified: false,
+			pending_email: "alice+next@example.com",
+		});
+
+		await waitForPolicyLoad();
+
+		expect(
+			screen.getByRole("button", { name: "select-item:unverified" }),
+		).toHaveAttribute("data-selected", "true");
+		expect(
+			screen.getByDisplayValue("alice+next@example.com"),
+		).toBeInTheDocument();
 	});
 
 	it("shows the invalid assignment warning when the current policy group is unavailable", async () => {
@@ -517,6 +539,7 @@ describe("UserDetailDialog", () => {
 
 		renderDialog({
 			id: 1,
+			email_verified: true,
 			policy_group_id: null,
 			role: "admin",
 			username: "root",
@@ -524,7 +547,10 @@ describe("UserDetailDialog", () => {
 
 		await waitForPolicyLoad("select_policy_group");
 
-		expect(screen.getAllByText("initial_admin_protected")).toHaveLength(2);
+		expect(screen.getAllByText("initial_admin_protected")).toHaveLength(3);
+		expect(
+			screen.getByRole("button", { name: "select-item:unverified" }),
+		).toBeDisabled();
 		expect(
 			screen.getByRole("button", { name: "select-item:disabled" }),
 		).toBeDisabled();

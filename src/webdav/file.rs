@@ -267,6 +267,7 @@ impl DavFile for AsterDavFile {
                 policy_snapshot: policy_snapshot.clone(),
                 config: config.clone(),
                 cache: cache.clone(),
+                mail_sender: crate::services::mail_service::runtime_sender(runtime_config.clone()),
                 thumbnail_tx: thumbnail_tx.clone(),
                 storage_change_tx: storage_change_tx.clone(),
             };

@@ -1,5 +1,6 @@
 import { withQuery } from "@/lib/queryParams";
 import type {
+	ActionMessageResp,
 	AddTeamMemberRequest,
 	AdminCreateTeamRequest,
 	AdminOverview,
@@ -7,11 +8,13 @@ import type {
 	AdminTeamInfo,
 	AdminTeamPage,
 	AdminUpdateTeamRequest,
+	ConfigActionType,
 	ConfigSchemaItem,
 	CreatePolicyGroupRequest,
 	CreatePolicyRequest,
 	CreateUserReq,
 	DriverType,
+	ExecuteConfigActionRequest,
 	LockPage,
 	MigratePolicyGroupUsersRequest,
 	PolicyGroupUserMigrationResult,
@@ -340,4 +343,13 @@ export const adminConfigService = {
 		api.put<SystemConfig>(`/admin/config/${key}`, { value }),
 
 	delete: (key: string) => api.delete<void>(`/admin/config/${key}`),
+
+	action: (key: string, data: ExecuteConfigActionRequest) =>
+		api.post<ActionMessageResp>(`/admin/config/${key}/action`, data),
+
+	sendTestEmail: (targetEmail?: string) =>
+		api.post<ActionMessageResp>("/admin/config/mail/action", {
+			action: "send_test_email" satisfies ConfigActionType,
+			target_email: targetEmail,
+		}),
 };

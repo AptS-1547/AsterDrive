@@ -7,7 +7,7 @@ use actix_web::test;
 use serde_json::Value;
 
 macro_rules! register_user {
-    ($app:expr, $username:expr, $email:expr, $password:expr) => {{
+    ($app:expr, $mail_sender:expr, $username:expr, $email:expr, $password:expr) => {{
         let req = test::TestRequest::post()
             .uri("/api/v1/auth/register")
             .peer_addr("127.0.0.1:12345".parse().unwrap())
@@ -20,7 +20,9 @@ macro_rules! register_user {
         let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 201);
         let body: Value = test::read_body_json(resp).await;
-        body["data"]["id"].as_i64().unwrap()
+        let user_id = body["data"]["id"].as_i64().unwrap();
+        let _ = confirm_latest_contact_verification!($app, $mail_sender);
+        user_id
     }};
 }
 
@@ -43,10 +45,23 @@ macro_rules! login_user {
 #[actix_web::test]
 async fn test_team_crud_and_member_lifecycle() {
     let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
-    let owner_id = register_user!(app, "owner1", "owner1@example.com", "password123");
-    let member_id = register_user!(app, "member1", "member1@example.com", "password123");
+    let owner_id = register_user!(
+        app,
+        mail_sender,
+        "owner1",
+        "owner1@example.com",
+        "password123"
+    );
+    let member_id = register_user!(
+        app,
+        mail_sender,
+        "member1",
+        "member1@example.com",
+        "password123"
+    );
     let owner_token = login_user!(app, "owner1", "password123");
     let member_token = login_user!(app, "member1", "password123");
 
@@ -147,11 +162,30 @@ async fn test_team_crud_and_member_lifecycle() {
 #[actix_web::test]
 async fn test_team_permissions_for_member_and_admin() {
     let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
-    let owner_id = register_user!(app, "owner2", "owner2@example.com", "password123");
-    let member_id = register_user!(app, "member2", "member2@example.com", "password123");
-    let extra_id = register_user!(app, "extra2", "extra2@example.com", "password123");
+    let owner_id = register_user!(
+        app,
+        mail_sender,
+        "owner2",
+        "owner2@example.com",
+        "password123"
+    );
+    let member_id = register_user!(
+        app,
+        mail_sender,
+        "member2",
+        "member2@example.com",
+        "password123"
+    );
+    let extra_id = register_user!(
+        app,
+        mail_sender,
+        "extra2",
+        "extra2@example.com",
+        "password123"
+    );
     let owner_token = login_user!(app, "owner2", "password123");
     let member_token = login_user!(app, "member2", "password123");
 
@@ -217,16 +251,19 @@ async fn test_team_permissions_for_member_and_admin() {
 #[actix_web::test]
 async fn test_only_system_admin_can_create_team() {
     let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _admin_id = register_user!(
         app,
+        mail_sender,
         "teamadminroot",
         "teamadminroot@example.com",
         "password123"
     );
     let _user_id = register_user!(
         app,
+        mail_sender,
         "plainteamuser",
         "plainteamuser@example.com",
         "password123"
@@ -247,10 +284,23 @@ async fn test_only_system_admin_can_create_team() {
 #[actix_web::test]
 async fn test_team_owner_protection_and_archive() {
     let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
-    let owner_id = register_user!(app, "owner3", "owner3@example.com", "password123");
-    let co_owner_id = register_user!(app, "owner4", "owner4@example.com", "password123");
+    let owner_id = register_user!(
+        app,
+        mail_sender,
+        "owner3",
+        "owner3@example.com",
+        "password123"
+    );
+    let co_owner_id = register_user!(
+        app,
+        mail_sender,
+        "owner4",
+        "owner4@example.com",
+        "password123"
+    );
     let owner_token = login_user!(app, "owner3", "password123");
     let co_owner_token = login_user!(app, "owner4", "password123");
 
@@ -330,22 +380,26 @@ async fn test_team_owner_protection_and_archive() {
 #[actix_web::test]
 async fn test_team_admin_can_restore_archived_team() {
     let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let owner_id = register_user!(
         app,
+        mail_sender,
         "restore-owner",
         "restore-owner@example.com",
         "password123"
     );
     let admin_id = register_user!(
         app,
+        mail_sender,
         "restore-admin",
         "restore-admin@example.com",
         "password123"
     );
     let member_id = register_user!(
         app,
+        mail_sender,
         "restore-member",
         "restore-member@example.com",
         "password123"

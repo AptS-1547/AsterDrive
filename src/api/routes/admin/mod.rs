@@ -15,7 +15,10 @@ pub(crate) mod teams;
 pub(crate) mod users;
 
 pub use audit_logs::list_audit_logs;
-pub use config::{SetConfigReq, config_schema, delete_config, get_config, list_config, set_config};
+pub use config::{
+    ExecuteConfigActionReq, SetConfigReq, config_schema, delete_config, execute_config_action,
+    get_config, list_config, set_config,
+};
 pub use locks::{cleanup_expired_locks, force_unlock, list_locks};
 pub use overview::get_overview;
 pub use policies::{
@@ -110,6 +113,10 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                     .route("/config/{key}", web::get().to(get_config))
                     .route("/config/{key}", web::put().to(set_config))
                     .route("/config/{key}", web::delete().to(delete_config))
+                    .route(
+                        "/config/{key}/action",
+                        web::post().to(execute_config_action),
+                    )
                     // audit logs
                     .route("/audit-logs", web::get().to(list_audit_logs))
                     // webdav locks

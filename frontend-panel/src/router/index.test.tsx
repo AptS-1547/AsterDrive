@@ -38,7 +38,7 @@ describe("router", () => {
 		expect(fallbackRoute?.element?.props?.replace).toBe(true);
 	});
 
-	it("registers the dedicated user settings route", async () => {
+	it("registers admin mail settings routes without the removed verify-contact page", async () => {
 		await import("./index");
 
 		const routes = createBrowserRouterMock.mock.calls[0]?.[0] as Array<{
@@ -95,6 +95,12 @@ describe("router", () => {
 		expect(
 			allRoutes.some((route) => route.path === "/admin/settings/user"),
 		).toBe(true);
+		expect(
+			allRoutes.some((route) => route.path === "/admin/settings/mail"),
+		).toBe(true);
+		expect(allRoutes.some((route) => route.path === "/verify-contact")).toBe(
+			false,
+		);
 		expect(
 			allRoutes.find((route) => route.path === "/admin/settings")?.element
 				?.props?.to,

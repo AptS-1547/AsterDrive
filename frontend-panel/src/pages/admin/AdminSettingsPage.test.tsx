@@ -5,6 +5,7 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
@@ -15,6 +16,7 @@ const mockState = vi.hoisted(() => ({
 	listConfigs: vi.fn(),
 	navigate: vi.fn(),
 	schema: vi.fn(),
+	sendTestEmail: vi.fn(),
 	setConfig: vi.fn(),
 	toastSuccess: vi.fn(),
 }));
@@ -23,6 +25,13 @@ const translationMap: Record<string, string> = {
 	settings_item_auth_access_token_ttl_secs_desc:
 		"Access token lifetime in seconds",
 	settings_item_auth_access_token_ttl_secs_label: "Access token lifetime",
+	mail_send_test_email: "mail_send_test_email",
+	mail_send_test_email_hint: "mail_send_test_email_hint",
+	mail_test_email_dialog_desc: "mail_test_email_dialog_desc",
+	mail_test_email_dialog_title: "mail_test_email_dialog_title",
+	mail_test_email_recipient_label: "mail_test_email_recipient_label",
+	mail_test_email_recipient_placeholder:
+		"mail_test_email_recipient_placeholder",
 	settings_save_hint:
 		"更改会先暂存为草稿，确认无误后再统一保存，⌘/Ctrl + S 保存。",
 };
@@ -39,6 +48,12 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("react-router-dom", () => ({
 	useNavigate: () => mockState.navigate,
+}));
+
+vi.mock("@/stores/authStore", () => ({
+	useAuthStore: (
+		selector: (state: { user: { email: string } | null }) => unknown,
+	) => selector({ user: { email: "admin@example.com" } }),
 }));
 
 vi.mock("sonner", () => ({
@@ -146,6 +161,31 @@ vi.mock("@/components/ui/input", () => ({
 			type={type}
 			value={value}
 		/>
+	),
+}));
+
+vi.mock("@/components/ui/dialog", () => ({
+	Dialog: ({
+		children,
+		open,
+	}: {
+		children: React.ReactNode;
+		open?: boolean;
+	}) => (open ? <div>{children}</div> : null),
+	DialogContent: ({ children }: { children: React.ReactNode }) => (
+		<div role="dialog">{children}</div>
+	),
+	DialogDescription: ({ children }: { children: React.ReactNode }) => (
+		<p>{children}</p>
+	),
+	DialogFooter: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	DialogHeader: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	DialogTitle: ({ children }: { children: React.ReactNode }) => (
+		<h2>{children}</h2>
 	),
 }));
 
@@ -260,6 +300,7 @@ vi.mock("@/services/adminService", () => ({
 	adminConfigService: {
 		delete: (...args: unknown[]) => mockState.deleteConfig(...args),
 		list: (...args: unknown[]) => mockState.listConfigs(...args),
+		sendTestEmail: (...args: unknown[]) => mockState.sendTestEmail(...args),
 		schema: (...args: unknown[]) => mockState.schema(...args),
 		set: (...args: unknown[]) => mockState.setConfig(...args),
 	},
@@ -307,6 +348,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockReset();
 		mockState.navigate.mockReset();
 		mockState.schema.mockReset();
+		mockState.sendTestEmail.mockReset();
 		mockState.setConfig.mockReset();
 		mockState.toastSuccess.mockReset();
 
@@ -348,6 +390,9 @@ describe("AdminSettingsPage", () => {
 				value_type: "number",
 			}),
 		]);
+		mockState.sendTestEmail.mockResolvedValue({
+			message: "Test email sent to admin@example.com",
+		});
 		mockState.setConfig.mockImplementation((key: string, value: string) =>
 			Promise.resolve(
 				createConfig({
@@ -449,6 +494,58 @@ describe("AdminSettingsPage", () => {
 		expect(mockState.listConfigs).toHaveBeenCalledTimes(1);
 		expect(mockState.schema).toHaveBeenCalledTimes(1);
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
+	});
+
+	it("opens the mail test dialog with the current user email and sends to the edited recipient", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "mail",
+					key: "mail_smtp_host",
+					value: "smtp.example.com",
+					value_type: "string",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "mail",
+				key: "mail_smtp_host",
+				value_type: "string",
+			}),
+		]);
+		mockState.sendTestEmail.mockResolvedValueOnce({
+			message: "Test email sent to deliver@example.com",
+		});
+
+		render(<AdminSettingsPage section="mail" />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /mail_send_test_email/i }),
+		);
+
+		const dialog = screen.getByRole("dialog");
+		expect(
+			within(dialog).getByDisplayValue("admin@example.com"),
+		).toBeInTheDocument();
+
+		fireEvent.change(within(dialog).getByDisplayValue("admin@example.com"), {
+			target: { value: "deliver@example.com" },
+		});
+		fireEvent.click(
+			within(dialog).getAllByRole("button", {
+				name: /mail_send_test_email/i,
+			})[0],
+		);
+
+		await waitFor(() => {
+			expect(mockState.sendTestEmail).toHaveBeenCalledWith(
+				"deliver@example.com",
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"Test email sent to deliver@example.com",
+		);
 	});
 
 	it("uses the shared underline accent for compact category tabs", async () => {
@@ -681,7 +778,7 @@ describe("AdminSettingsPage", () => {
 
 		await waitFor(() => {
 			expect(screen.getByTestId("settings-content")).toHaveStyle({
-				paddingBottom: "112px",
+				paddingBottom: "160px",
 			});
 		});
 	});

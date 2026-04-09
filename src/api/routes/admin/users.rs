@@ -35,6 +35,7 @@ pub struct CreateUserReq {
 #[derive(Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PatchUserReq {
+    pub email_verified: Option<bool>,
     pub role: Option<UserRole>,
     pub status: Option<UserStatus>,
     pub storage_quota: Option<i64>,
@@ -86,6 +87,7 @@ pub async fn create_user(
         Some(&user.username),
         audit_service::details(audit_service::AdminCreateUserDetails {
             email: &user.email,
+            email_verified: user.email_verified,
             role: user.role,
             status: user.status,
             storage_quota: user.storage_quota,
@@ -209,6 +211,7 @@ pub async fn update_user(
     let user = user_service::update(
         &state,
         target_id,
+        body.email_verified,
         body.role,
         body.status,
         body.storage_quota,
@@ -223,6 +226,7 @@ pub async fn update_user(
         Some(user.id),
         Some(&user.username),
         audit_service::details(audit_service::AdminUpdateUserDetails {
+            email_verified: user.email_verified,
             role: user.role,
             status: user.status,
             storage_quota: user.storage_quota,

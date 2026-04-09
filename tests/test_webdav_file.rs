@@ -165,6 +165,7 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
         state.policy_snapshot.clone(),
         state.config.clone(),
         state.cache.clone(),
+        state.mail_sender.clone(),
         state.thumbnail_tx.clone(),
         state.storage_change_tx.clone(),
         user.id,

@@ -1,14 +1,33 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "@/pages/LoginPage";
+import { useThemeStore } from "@/stores/themeStore";
+
+const MockApiError = vi.hoisted(
+	() =>
+		class MockApiError extends Error {
+			code: number;
+			constructor(code: number, message: string) {
+				super(message);
+				this.code = code;
+			}
+		},
+);
 
 const mockState = vi.hoisted(() => ({
 	check: vi.fn(),
 	handleApiError: vi.fn(),
 	login: vi.fn(),
+	location: {
+		hash: "",
+		pathname: "/login",
+		search: "",
+	},
 	navigate: vi.fn(),
 	register: vi.fn(),
+	resendRegisterActivation: vi.fn(),
 	setup: vi.fn(),
+	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
 }));
 
@@ -19,11 +38,23 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("react-router-dom", () => ({
+	useLocation: () => mockState.location,
 	useNavigate: () => mockState.navigate,
+}));
+
+vi.mock("@/services/http", () => ({
+	ApiError: MockApiError,
+}));
+
+vi.mock("@/types/api-helpers", () => ({
+	ErrorCode: {
+		PendingActivation: 2004,
+	},
 }));
 
 vi.mock("sonner", () => ({
 	toast: {
+		error: (...args: unknown[]) => mockState.toastError(...args),
 		success: (...args: unknown[]) => mockState.toastSuccess(...args),
 	},
 }));
@@ -117,6 +148,8 @@ vi.mock("@/services/authService", () => ({
 	authService: {
 		check: (...args: unknown[]) => mockState.check(...args),
 		register: (...args: unknown[]) => mockState.register(...args),
+		resendRegisterActivation: (...args: unknown[]) =>
+			mockState.resendRegisterActivation(...args),
 		setup: (...args: unknown[]) => mockState.setup(...args),
 	},
 }));
@@ -129,17 +162,27 @@ vi.mock("@/stores/authStore", () => ({
 
 describe("LoginPage", () => {
 	beforeEach(() => {
+		document.documentElement.classList.remove("dark");
 		mockState.check.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.login.mockReset();
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search: "",
+		};
 		mockState.navigate.mockReset();
 		mockState.register.mockReset();
+		mockState.resendRegisterActivation.mockReset();
 		mockState.setup.mockReset();
+		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
 		mockState.login.mockResolvedValue(undefined);
 		mockState.register.mockResolvedValue(undefined);
+		mockState.resendRegisterActivation.mockResolvedValue(undefined);
 		mockState.setup.mockResolvedValue(undefined);
 		mockState.check.mockResolvedValue({ exists: true, has_users: true });
+		useThemeStore.setState({ resolvedTheme: "light" });
 	});
 
 	afterEach(() => {
@@ -174,6 +217,78 @@ describe("LoginPage", () => {
 		await waitFor(() => {
 			expect(mockState.navigate).toHaveBeenCalledWith("/", { replace: true });
 		});
+	});
+
+	it("shows a query toast passed from the verification redirect", async () => {
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search: "?contact_verification=email-changed&email=changed%40example.com",
+		};
+
+		render(<LoginPage />);
+
+		await waitFor(() =>
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"settings:settings_email_change_confirmed_login_hint",
+				{
+					id: "contact-verification-email-changed-login:changed@example.com",
+				},
+			),
+		);
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			{
+				hash: "",
+				pathname: "/login",
+				search: "",
+			},
+			{ replace: true },
+		);
+	});
+
+	it("shows an error toast for expired verification redirects", async () => {
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search: "?contact_verification=expired",
+		};
+
+		render(<LoginPage />);
+
+		await waitFor(() =>
+			expect(mockState.toastError).toHaveBeenCalledWith(
+				"verify_contact_expired_title",
+				{
+					description: "verify_contact_expired_desc",
+					id: "contact-verification-expired-login",
+				},
+			),
+		);
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			{
+				hash: "",
+				pathname: "/login",
+				search: "",
+			},
+			{ replace: true },
+		);
+	});
+
+	it("keeps the desktop brand logo matched to the dark hero surface", () => {
+		render(<LoginPage />);
+
+		const [desktopLogo, mobileLogo] = screen.getAllByRole("img", {
+			name: "AsterDrive",
+		});
+
+		expect(desktopLogo).toHaveAttribute(
+			"src",
+			"/static/asterdrive/asterdrive-light.svg",
+		);
+		expect(mobileLogo).toHaveAttribute(
+			"src",
+			"/static/asterdrive/asterdrive-dark.svg",
+		);
 	});
 
 	it("runs initial setup for the first user and then signs them in", async () => {
@@ -212,6 +327,78 @@ describe("LoginPage", () => {
 		);
 		await waitFor(() => {
 			expect(mockState.navigate).toHaveBeenCalledWith("/", { replace: true });
+		});
+	});
+
+	it("shows an activation waiting state after register instead of logging in", async () => {
+		mockState.check.mockResolvedValueOnce({ exists: false, has_users: true });
+
+		render(<LoginPage />);
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "new@example.com" },
+		});
+
+		fireEvent.change(await screen.findByLabelText("username"), {
+			target: { value: "newuser" },
+		});
+		fireEvent.change(screen.getByLabelText("password"), {
+			target: { value: "secret123" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "sign_up" }));
+
+		await waitFor(() => {
+			expect(mockState.register).toHaveBeenCalledWith(
+				"newuser",
+				"new@example.com",
+				"secret123",
+			);
+		});
+		expect(mockState.login).not.toHaveBeenCalled();
+		expect(
+			await screen.findByText("activation_pending_notice"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /resend_activation/ }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.resendRegisterActivation).toHaveBeenCalledWith(
+				"new@example.com",
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("register_success");
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("activation_resent");
+	});
+
+	it("switches pending-activation login failures into the activation state", async () => {
+		mockState.login.mockRejectedValueOnce(new MockApiError(2004, "pending"));
+
+		render(<LoginPage />);
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "user@example.com" },
+		});
+		fireEvent.change(screen.getByLabelText("password"), {
+			target: { value: "secret123" },
+		});
+
+		await screen.findByRole("button", { name: "sign_in" });
+		fireEvent.click(screen.getByRole("button", { name: "sign_in" }));
+
+		expect(
+			await screen.findByText("activation_pending_notice"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /resend_activation/ }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.resendRegisterActivation).toHaveBeenCalledWith(
+				"user@example.com",
+			);
 		});
 	});
 

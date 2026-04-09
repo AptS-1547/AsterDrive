@@ -4,7 +4,7 @@ import { ErrorCode } from "@/types/api-helpers";
 type MockAxiosError = {
 	config?: { _retry?: boolean; url?: string };
 	isAxiosError?: boolean;
-	response?: { status: number };
+	response?: { data?: unknown; status: number };
 };
 
 const mockState = vi.hoisted(() => {
@@ -173,5 +173,40 @@ describe("http refresh edge cases", () => {
 			}),
 		]);
 		expect(mockState.client).toHaveBeenCalledTimes(2);
+	});
+
+	it("converts non-2xx API payloads into ApiError instances", async () => {
+		const { ApiError } = await loadHttpModule();
+		const errorHandler = mockState.getErrorHandler();
+
+		await expect(
+			errorHandler({
+				config: { url: "/auth/login" },
+				response: {
+					status: 403,
+					data: {
+						code: ErrorCode.PendingActivation,
+						msg: "pending activation",
+					},
+				},
+			}),
+		).rejects.toEqual(
+			expect.objectContaining({
+				code: ErrorCode.PendingActivation,
+				message: "pending activation",
+			}),
+		);
+		await expect(
+			errorHandler({
+				config: { url: "/auth/login" },
+				response: {
+					status: 403,
+					data: {
+						code: ErrorCode.PendingActivation,
+						msg: "pending activation",
+					},
+				},
+			}),
+		).rejects.toBeInstanceOf(ApiError);
 	});
 });

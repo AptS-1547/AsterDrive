@@ -5,24 +5,30 @@ import { useThemeStore } from "@/stores/themeStore";
 const WORDMARK_DARK_SRC = "/static/asterdrive/asterdrive-dark.svg";
 const WORDMARK_LIGHT_SRC = "/static/asterdrive/asterdrive-light.svg";
 
+type SurfaceTheme = "light" | "dark";
+
 function resolveDocumentTheme() {
 	if (typeof document === "undefined") return "light";
 	return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
-type AsterDriveWordmarkProps = Omit<ComponentProps<"img">, "src">;
+type AsterDriveWordmarkProps = Omit<ComponentProps<"img">, "src"> & {
+	surfaceTheme?: SurfaceTheme;
+};
 
 export function AsterDriveWordmark({
 	alt,
 	className,
 	draggable = false,
+	surfaceTheme,
 	...props
 }: AsterDriveWordmarkProps) {
 	const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
 	const effectiveTheme =
-		resolvedTheme === "dark" || resolveDocumentTheme() === "dark"
+		surfaceTheme ??
+		(resolvedTheme === "dark" || resolveDocumentTheme() === "dark"
 			? "dark"
-			: "light";
+			: "light");
 
 	return (
 		<img

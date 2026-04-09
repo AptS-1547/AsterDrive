@@ -41,6 +41,7 @@ pub enum AuditAction {
     BatchCopy,
     BatchDelete,
     BatchMove,
+    ConfigActionExecute,
     ConfigUpdate,
     FileCopy,
     FileDelete,
@@ -69,9 +70,14 @@ pub enum AuditAction {
     TeamRestore,
     TeamUpdate,
     UserChangePassword,
+    UserConfirmEmailChange,
+    UserConfirmRegistration,
     UserLogin,
     UserLogout,
+    UserRequestEmailChange,
     UserRegister,
+    UserResendEmailChange,
+    UserResendRegistration,
 }
 
 impl AuditAction {
@@ -92,6 +98,7 @@ impl AuditAction {
             Self::BatchCopy => "batch_copy",
             Self::BatchDelete => "batch_delete",
             Self::BatchMove => "batch_move",
+            Self::ConfigActionExecute => "config_action_execute",
             Self::ConfigUpdate => "config_update",
             Self::FileCopy => "file_copy",
             Self::FileDelete => "file_delete",
@@ -120,9 +127,14 @@ impl AuditAction {
             Self::TeamRestore => "team_restore",
             Self::TeamUpdate => "team_update",
             Self::UserChangePassword => "user_change_password",
+            Self::UserConfirmEmailChange => "user_confirm_email_change",
+            Self::UserConfirmRegistration => "user_confirm_registration",
             Self::UserLogin => "user_login",
             Self::UserLogout => "user_logout",
+            Self::UserRequestEmailChange => "user_request_email_change",
             Self::UserRegister => "user_register",
+            Self::UserResendEmailChange => "user_resend_email_change",
+            Self::UserResendRegistration => "user_resend_registration",
         }
     }
 }
@@ -186,8 +198,16 @@ pub struct ConfigUpdateDetails<'a> {
 }
 
 #[derive(Serialize)]
+pub struct ConfigActionDetails<'a> {
+    pub action: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_email: Option<&'a str>,
+}
+
+#[derive(Serialize)]
 pub struct AdminCreateUserDetails<'a> {
     pub email: &'a str,
+    pub email_verified: bool,
     pub role: UserRole,
     pub status: UserStatus,
     pub storage_quota: i64,
@@ -196,6 +216,7 @@ pub struct AdminCreateUserDetails<'a> {
 
 #[derive(Serialize)]
 pub struct AdminUpdateUserDetails {
+    pub email_verified: bool,
     pub role: UserRole,
     pub status: UserStatus,
     pub storage_quota: i64,
@@ -555,6 +576,7 @@ mod tests {
             (AuditAction::BatchCopy, "batch_copy"),
             (AuditAction::BatchDelete, "batch_delete"),
             (AuditAction::BatchMove, "batch_move"),
+            (AuditAction::ConfigActionExecute, "config_action_execute"),
             (AuditAction::ConfigUpdate, "config_update"),
             (AuditAction::FileCopy, "file_copy"),
             (AuditAction::FileDelete, "file_delete"),

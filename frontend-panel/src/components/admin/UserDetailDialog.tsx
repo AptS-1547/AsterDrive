@@ -101,6 +101,7 @@ export function UserDetailDialog({
 }: UserDetailDialogProps) {
 	const { t } = useTranslation("admin");
 	const [confirmPasswordValue, setConfirmPasswordValue] = useState("");
+	const [draftEmailVerified, setDraftEmailVerified] = useState(false);
 	const [quotaValue, setQuotaValue] = useState("");
 	const [draftRole, setDraftRole] = useState<UserRole>("user");
 	const [draftStatus, setDraftStatus] = useState<UserStatus>("active");
@@ -121,6 +122,7 @@ export function UserDetailDialog({
 	useEffect(() => {
 		if (!user) {
 			setConfirmPasswordValue("");
+			setDraftEmailVerified(false);
 			setDraftPolicyGroupId(null);
 			setDraftRole("user");
 			setDraftStatus("active");
@@ -136,6 +138,7 @@ export function UserDetailDialog({
 		}
 
 		setConfirmPasswordValue("");
+		setDraftEmailVerified(user.email_verified);
 		setDraftPolicyGroupId(user.policy_group_id ?? null);
 		setDraftRole(user.role);
 		setDraftStatus(user.status);
@@ -188,6 +191,7 @@ export function UserDetailDialog({
 		draftPolicyGroupId != null &&
 		draftPolicyGroupId !== (user.policy_group_id ?? null);
 	const hasProfileChanges =
+		draftEmailVerified !== user.email_verified ||
 		draftRole !== user.role ||
 		draftStatus !== user.status ||
 		quotaValue !== currentQuotaMb ||
@@ -215,6 +219,13 @@ export function UserDetailDialog({
 		{ label: t("role_admin"), value: "admin" },
 		{ label: t("role_user"), value: "user" },
 	] satisfies ReadonlyArray<{ label: string; value: UserRole }>;
+	const emailVerificationOptions = [
+		{ label: t("email_verified"), value: "verified" },
+		{ label: t("email_unverified"), value: "unverified" },
+	] satisfies ReadonlyArray<{
+		label: string;
+		value: "verified" | "unverified";
+	}>;
 
 	const runDialogAction = async (
 		setLoading: (loading: boolean) => void,
@@ -237,6 +248,9 @@ export function UserDetailDialog({
 		const newQuota = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
 		const data: UpdateUserRequest = {};
 
+		if (draftEmailVerified !== user.email_verified) {
+			data.email_verified = draftEmailVerified;
+		}
 		if (draftRole !== user.role) data.role = draftRole;
 		if (draftStatus !== user.status) data.status = draftStatus;
 		if (newQuota !== (user.storage_quota ?? 0)) data.storage_quota = newQuota;
@@ -400,9 +414,69 @@ export function UserDetailDialog({
 											/>
 										</div>
 										<div className="space-y-2">
+											<div className="flex items-center justify-between gap-2">
+												<Label>{t("email_verification")}</Label>
+												{isInitialAdmin ? (
+													<span className="text-xs text-muted-foreground">
+														{t("initial_admin_protected")}
+													</span>
+												) : null}
+											</div>
+											<TooltipProvider>
+												<Tooltip>
+													<TooltipTrigger>
+														<div>
+															<Select
+																value={
+																	draftEmailVerified ? "verified" : "unverified"
+																}
+																onValueChange={(value) =>
+																	setDraftEmailVerified(value === "verified")
+																}
+																disabled={isInitialAdmin || savingProfile}
+															>
+																<SelectTrigger
+																	className={ADMIN_CONTROL_HEIGHT_CLASS}
+																>
+																	<SelectValue>
+																		{draftEmailVerified
+																			? t("email_verified")
+																			: t("email_unverified")}
+																	</SelectValue>
+																</SelectTrigger>
+																<SelectContent>
+																	{emailVerificationOptions.map((option) => (
+																		<SelectItem
+																			key={option.value}
+																			value={option.value}
+																		>
+																			{option.label}
+																		</SelectItem>
+																	))}
+																</SelectContent>
+															</Select>
+														</div>
+													</TooltipTrigger>
+													{isInitialAdmin ? (
+														<TooltipContent>
+															{t("initial_admin_email_verification_blocked")}
+														</TooltipContent>
+													) : null}
+												</Tooltip>
+											</TooltipProvider>
+										</div>
+										<div className="space-y-2">
 											<Label>{t("username")}</Label>
 											<Input
 												value={user.username}
+												readOnly
+												className={ADMIN_CONTROL_HEIGHT_CLASS}
+											/>
+										</div>
+										<div className="space-y-2">
+											<Label>{t("pending_email")}</Label>
+											<Input
+												value={user.pending_email ?? t("pending_email_none")}
 												readOnly
 												className={ADMIN_CONTROL_HEIGHT_CLASS}
 											/>

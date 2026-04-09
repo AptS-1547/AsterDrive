@@ -68,6 +68,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/config/{key}/action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["execute_config_action"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/locks": {
         parameters: {
             query?: never;
@@ -468,6 +484,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/contact-verification/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["confirm_contact_verification"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/email/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["request_email_change"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/email/change/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resend_email_change"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -643,6 +707,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resend_register_activation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2157,6 +2237,9 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ActionMessageResp: {
+            message: string;
+        };
         AddTeamMemberReq: {
             identifier?: string | null;
             role?: null | components["schemas"]["TeamMemberRole"];
@@ -2394,6 +2477,8 @@ export interface components {
             /** Format: int32 */
             part_number: number;
         };
+        /** @enum {string} */
+        ConfigActionType: "send_test_email";
         /** @description 系统配置的 schema 信息（从 ALL_CONFIGS 生成） */
         ConfigSchemaItem: {
             category: string;
@@ -2505,7 +2590,11 @@ export interface components {
          * @example 0
          * @enum {integer}
          */
-        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 1006 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 3011 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
+        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 1006 | 1007 | 1008 | 2000 | 2001 | 2002 | 2003 | 2004 | 2005 | 2006 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 3011 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
+        ExecuteConfigActionReq: {
+            action: components["schemas"]["ConfigActionType"];
+            target_email?: string | null;
+        };
         FileCursor: {
             /** Format: int64 */
             id: number;
@@ -2678,8 +2767,10 @@ export interface components {
             access_token_expires_at: number;
             created_at: string;
             email: string;
+            email_verified: boolean;
             /** Format: int64 */
             id: number;
+            pending_email?: string | null;
             /** Format: int64 */
             policy_group_id?: number | null;
             preferences?: null | components["schemas"]["UserPreferences"];
@@ -2959,8 +3050,10 @@ export interface components {
             items: {
                 created_at: string;
                 email: string;
+                email_verified: boolean;
                 /** Format: int64 */
                 id: number;
+                pending_email?: string | null;
                 /** Format: int64 */
                 policy_group_id?: number | null;
                 profile: components["schemas"]["UserProfileInfo"];
@@ -3041,6 +3134,7 @@ export interface components {
             name?: string | null;
         };
         PatchUserReq: {
+            email_verified?: boolean | null;
             /**
              * Format: int64
              * @description Omitted means "leave unchanged". Explicit `null` is rejected because this
@@ -3105,6 +3199,12 @@ export interface components {
         RemovedCountResponse: {
             /** Format: int64 */
             removed: number;
+        };
+        RequestEmailChangeReq: {
+            new_email: string;
+        };
+        ResendRegisterActivationReq: {
+            identifier: string;
         };
         ResetUserPasswordReq: {
             password: string;
@@ -3548,8 +3648,10 @@ export interface components {
         UserCore: {
             created_at: string;
             email: string;
+            email_verified: boolean;
             /** Format: int64 */
             id: number;
+            pending_email?: string | null;
             /** Format: int64 */
             policy_group_id?: number | null;
             role: components["schemas"]["UserRole"];
@@ -3565,8 +3667,10 @@ export interface components {
         UserInfo: {
             created_at: string;
             email: string;
+            email_verified: boolean;
             /** Format: int64 */
             id: number;
+            pending_email?: string | null;
             /** Format: int64 */
             policy_group_id?: number | null;
             profile: components["schemas"]["UserProfileInfo"];
@@ -3606,6 +3710,11 @@ export interface components {
          * @enum {string}
          */
         UserStatus: "active" | "disabled";
+        /**
+         * @description 联系方式验证用途
+         * @enum {string}
+         */
+        VerificationPurpose: "register_activation" | "contact_change";
         VerifyPasswordReq: {
             password: string;
         };
@@ -4002,6 +4111,74 @@ export interface operations {
             };
             /** @description Config key not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    execute_config_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Config action target key */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteConfigActionReq"];
+            };
+        };
+        responses: {
+            /** @description Config action executed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            message: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Config action target not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Mail service unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5767,8 +5944,10 @@ export interface operations {
                             items: {
                                 created_at: string;
                                 email: string;
+                                email_verified: boolean;
                                 /** Format: int64 */
                                 id: number;
+                                pending_email?: string | null;
                                 /** Format: int64 */
                                 policy_group_id?: number | null;
                                 profile: components["schemas"]["UserProfileInfo"];
@@ -5833,8 +6012,10 @@ export interface operations {
                         data?: {
                             created_at: string;
                             email: string;
+                            email_verified: boolean;
                             /** Format: int64 */
                             id: number;
+                            pending_email?: string | null;
                             /** Format: int64 */
                             policy_group_id?: number | null;
                             profile: components["schemas"]["UserProfileInfo"];
@@ -5898,8 +6079,10 @@ export interface operations {
                         data?: {
                             created_at: string;
                             email: string;
+                            email_verified: boolean;
                             /** Format: int64 */
                             id: number;
+                            pending_email?: string | null;
                             /** Format: int64 */
                             policy_group_id?: number | null;
                             profile: components["schemas"]["UserProfileInfo"];
@@ -6016,8 +6199,10 @@ export interface operations {
                         data?: {
                             created_at: string;
                             email: string;
+                            email_verified: boolean;
                             /** Format: int64 */
                             id: number;
+                            pending_email?: string | null;
                             /** Format: int64 */
                             policy_group_id?: number | null;
                             profile: components["schemas"]["UserProfileInfo"];
@@ -6234,6 +6419,127 @@ export interface operations {
             };
         };
     };
+    confirm_contact_verification: {
+        parameters: {
+            query?: {
+                token?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verification consumed and browser redirected to the frontend */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    request_email_change: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestEmailChangeReq"];
+            };
+        };
+        responses: {
+            /** @description Email change requested */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        /** @description 通用用户响应：核心字段 + profile */
+                        data?: {
+                            created_at: string;
+                            email: string;
+                            email_verified: boolean;
+                            /** Format: int64 */
+                            id: number;
+                            pending_email?: string | null;
+                            /** Format: int64 */
+                            policy_group_id?: number | null;
+                            profile: components["schemas"]["UserProfileInfo"];
+                            role: components["schemas"]["UserRole"];
+                            status: components["schemas"]["UserStatus"];
+                            /** Format: int64 */
+                            storage_quota: number;
+                            /** Format: int64 */
+                            storage_used: number;
+                            updated_at: string;
+                            username: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Account pending activation */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resend_email_change: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Email change confirmation resent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            message: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description No pending email change */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Resend cooldown not reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -6313,8 +6619,10 @@ export interface operations {
                             access_token_expires_at: number;
                             created_at: string;
                             email: string;
+                            email_verified: boolean;
                             /** Format: int64 */
                             id: number;
+                            pending_email?: string | null;
                             /** Format: int64 */
                             policy_group_id?: number | null;
                             preferences?: null | components["schemas"]["UserPreferences"];
@@ -6663,8 +6971,10 @@ export interface operations {
                         data?: {
                             created_at: string;
                             email: string;
+                            email_verified: boolean;
                             /** Format: int64 */
                             id: number;
+                            pending_email?: string | null;
                             /** Format: int64 */
                             policy_group_id?: number | null;
                             profile: components["schemas"]["UserProfileInfo"];
@@ -6683,6 +6993,50 @@ export interface operations {
             };
             /** @description Validation error */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resend_register_activation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResendRegisterActivationReq"];
+            };
+        };
+        responses: {
+            /** @description Activation email resent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            message: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Resend cooldown not reached */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6715,8 +7069,10 @@ export interface operations {
                         data?: {
                             created_at: string;
                             email: string;
+                            email_verified: boolean;
                             /** Format: int64 */
                             id: number;
+                            pending_email?: string | null;
                             /** Format: int64 */
                             policy_group_id?: number | null;
                             profile: components["schemas"]["UserProfileInfo"];

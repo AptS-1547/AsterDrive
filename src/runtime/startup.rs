@@ -47,6 +47,7 @@ pub async fn prepare() -> Result<AppState> {
 
     // 8. 初始化缓存
     let cache = crate::cache::create_cache(&cfg.cache).await;
+    let mail_sender = crate::services::mail_service::runtime_sender(runtime_config.clone());
 
     // 9. 缩略图后台队列（channel 容量 1024，溢出时 drop）
     let (thumbnail_tx, thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(1024);
@@ -67,6 +68,7 @@ pub async fn prepare() -> Result<AppState> {
         policy_snapshot,
         config: cfg,
         cache,
+        mail_sender,
         thumbnail_tx,
         storage_change_tx,
     };

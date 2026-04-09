@@ -1,5 +1,6 @@
 pub mod audit_log_repo;
 pub mod config_repo;
+pub mod contact_verification_token_repo;
 pub mod file_repo;
 pub mod folder_repo;
 pub mod lock_repo;

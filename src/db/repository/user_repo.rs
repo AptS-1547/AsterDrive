@@ -46,6 +46,17 @@ pub async fn find_by_email<C: ConnectionTrait>(db: &C, email: &str) -> Result<Op
         .map_err(AsterError::from)
 }
 
+pub async fn find_by_pending_email<C: ConnectionTrait>(
+    db: &C,
+    email: &str,
+) -> Result<Option<user::Model>> {
+    User::find()
+        .filter(user::Column::PendingEmail.eq(email))
+        .one(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<user::Model>> {
     User::find()
         .order_by_asc(user::Column::Id)

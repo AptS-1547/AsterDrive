@@ -2,6 +2,7 @@ import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiResponse, createMeResponse } from "@/test/fixtures";
 import { server } from "@/test/server";
+import { ErrorCode } from "@/types/api-helpers";
 
 const changeLanguage = vi.fn(async () => undefined);
 
@@ -77,6 +78,39 @@ describe("useAuthStore", () => {
 			sortOrder: "desc",
 		});
 		expect(changeLanguage).toHaveBeenCalledWith("zh");
+	});
+
+	it("rethrows pending-activation login responses as ApiError", async () => {
+		server.use(
+			http.post("*/api/v1/auth/login", () =>
+				HttpResponse.json(
+					{
+						code: ErrorCode.PendingActivation,
+						msg: "account pending activation",
+						data: null,
+					},
+					{ status: 403 },
+				),
+			),
+		);
+
+		const { useAuthStore } = await loadStores();
+
+		await expect(
+			useAuthStore.getState().login("alice@example.com", "secret"),
+		).rejects.toEqual(
+			expect.objectContaining({
+				code: ErrorCode.PendingActivation,
+				message: "account pending activation",
+			}),
+		);
+		expect(useAuthStore.getState()).toMatchObject({
+			isAuthenticated: false,
+			isChecking: true,
+			isAuthStale: false,
+			bootOffline: false,
+			user: null,
+		});
 	});
 
 	it("keeps the cached user when auth check fails offline", async () => {

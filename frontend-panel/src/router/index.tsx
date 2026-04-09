@@ -216,6 +216,10 @@ export const router = createBrowserRouter([
 				element: <AdminSettingsPage section="auth" />,
 			},
 			{
+				path: "/admin/settings/mail",
+				element: <AdminSettingsPage section="mail" />,
+			},
+			{
 				path: "/admin/settings/user",
 				element: <AdminSettingsPage section="user" />,
 			},

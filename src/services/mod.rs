@@ -7,6 +7,7 @@ pub mod direct_link_service;
 pub mod file_service;
 pub mod folder_service;
 pub mod lock_service;
+pub mod mail_service;
 pub mod maintenance_service;
 pub mod policy_service;
 pub mod preview_link_service;

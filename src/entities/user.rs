@@ -22,6 +22,9 @@ pub struct Model {
     pub status: UserStatus,
     #[serde(skip_serializing)]
     pub session_version: i64,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub email_verified_at: Option<DateTimeUtc>,
+    pub pending_email: Option<String>,
     pub storage_used: i64,
     pub storage_quota: i64, // 0 = unlimited
     pub policy_group_id: Option<i64>,
@@ -42,6 +45,8 @@ pub enum Relation {
     /// Legacy compatibility relation to the deprecated `user_storage_policies` table.
     #[sea_orm(has_many = "super::user_storage_policy::Entity")]
     UserStoragePolicies,
+    #[sea_orm(has_many = "super::contact_verification_token::Entity")]
+    ContactVerificationTokens,
     #[sea_orm(
         belongs_to = "super::storage_policy_group::Entity",
         from = "Column::PolicyGroupId",
@@ -65,6 +70,12 @@ impl Related<super::folder::Entity> for Entity {
 impl Related<super::user_storage_policy::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::UserStoragePolicies.def()
+    }
+}
+
+impl Related<super::contact_verification_token::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ContactVerificationTokens.def()
     }
 }
 

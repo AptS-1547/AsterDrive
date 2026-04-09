@@ -2,6 +2,7 @@ use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
+use crate::api::routes::auth::ActionMessageResp;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{audit_service, auth_service::Claims, config_service};
@@ -14,6 +15,13 @@ use utoipa::ToSchema;
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SetConfigReq {
     pub value: String,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ExecuteConfigActionReq {
+    pub action: config_service::ConfigActionType,
+    pub target_email: Option<String>,
 }
 
 #[api_docs_macros::path(
@@ -124,4 +132,58 @@ pub async fn delete_config(
 ) -> Result<HttpResponse> {
     config_service::delete(&state, &path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/admin/config/{key}/action",
+    tag = "admin",
+    operation_id = "execute_config_action",
+    params(("key" = String, Path, description = "Config action target key")),
+    request_body = ExecuteConfigActionReq,
+    responses(
+        (status = 200, description = "Config action executed", body = inline(ApiResponse<ActionMessageResp>)),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Config action target not found"),
+        (status = 503, description = "Mail service unavailable"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn execute_config_action(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    body: web::Json<ExecuteConfigActionReq>,
+) -> Result<HttpResponse> {
+    let key = path.into_inner();
+    let action_result = config_service::execute_action(
+        &state,
+        &key,
+        body.action,
+        claims.user_id,
+        body.target_email.as_deref(),
+    )
+    .await?;
+
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::ConfigActionExecute,
+        None,
+        None,
+        Some(&key),
+        audit_service::details(audit_service::ConfigActionDetails {
+            action: body.action.as_str(),
+            target_email: action_result.target_email.as_deref(),
+        }),
+    )
+    .await;
+
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
+        message: action_result.message,
+    })))
 }

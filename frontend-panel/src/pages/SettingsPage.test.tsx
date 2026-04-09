@@ -6,6 +6,8 @@ import SettingsPage from "@/pages/SettingsPage";
 const mockState = vi.hoisted(() => ({
 	authService: {
 		changePassword: vi.fn(),
+		requestEmailChange: vi.fn(),
+		resendEmailChange: vi.fn(),
 		updateProfile: vi.fn(),
 		setAvatarSource: vi.fn(),
 		uploadAvatar: vi.fn(),
@@ -47,7 +49,13 @@ const mockState = vi.hoisted(() => ({
 		mode: "dark" as "light" | "dark" | "system",
 		setMode: vi.fn(),
 	},
+	toastSuccess: vi.fn(),
 	translationLanguage: "zh-CN",
+	location: {
+		hash: "",
+		pathname: "/settings/security",
+		search: "",
+	},
 }));
 
 vi.mock("react-i18next", () => ({
@@ -56,11 +64,13 @@ vi.mock("react-i18next", () => ({
 			changeLanguage: mockState.changeLanguage,
 			language: mockState.translationLanguage,
 		},
-		t: (key: string) => key,
+		t: (key: string, vars?: Record<string, unknown>) =>
+			vars ? `${key}:${JSON.stringify(vars)}` : key,
 	}),
 }));
 
 vi.mock("react-router-dom", () => ({
+	useLocation: () => mockState.location,
 	useNavigate: () => mockState.navigate,
 }));
 
@@ -247,10 +257,21 @@ vi.mock("@/hooks/useApiError", () => ({
 	handleApiError: vi.fn(),
 }));
 
+vi.mock("sonner", () => ({
+	toast: {
+		error: vi.fn(),
+		success: (...args: unknown[]) => mockState.toastSuccess(...args),
+	},
+}));
+
 vi.mock("@/services/authService", () => ({
 	authService: {
 		changePassword: (...args: unknown[]) =>
 			mockState.authService.changePassword(...args),
+		requestEmailChange: (...args: unknown[]) =>
+			mockState.authService.requestEmailChange(...args),
+		resendEmailChange: (...args: unknown[]) =>
+			mockState.authService.resendEmailChange(...args),
 		updateProfile: (...args: unknown[]) =>
 			mockState.authService.updateProfile(...args),
 		setAvatarSource: (...args: unknown[]) =>
@@ -278,6 +299,8 @@ describe("SettingsPage", () => {
 	beforeEach(() => {
 		mockState.authService.changePassword.mockReset();
 		mockState.authService.changePassword.mockResolvedValue({ expiresIn: 900 });
+		mockState.authService.requestEmailChange.mockReset();
+		mockState.authService.resendEmailChange.mockReset();
 		mockState.authService.setAvatarSource.mockReset();
 		mockState.authService.uploadAvatar.mockReset();
 		mockState.authService.updateProfile.mockReset();
@@ -292,7 +315,14 @@ describe("SettingsPage", () => {
 		mockState.preferenceSync.mockReset();
 		mockState.themeStore.mode = "dark";
 		mockState.themeStore.setMode.mockReset();
+		mockState.toastSuccess.mockReset();
 		mockState.translationLanguage = "zh-CN";
+		mockState.location = {
+			hash: "",
+			pathname: "/settings/security",
+			search: "",
+			state: null,
+		};
 	});
 
 	it("renders current descriptions from the selected theme, language, and browser mode", () => {
@@ -396,6 +426,33 @@ describe("SettingsPage", () => {
 			}),
 		);
 		expect(mockState.authStore.syncSession).toHaveBeenCalledWith(900);
+	});
+
+	it("shows a query toast after redirecting into security settings", async () => {
+		mockState.location = {
+			hash: "",
+			pathname: "/settings/security",
+			search: "?contact_verification=email-changed&email=updated%40example.com",
+		};
+
+		render(<SettingsPage section="security" />);
+
+		await waitFor(() =>
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				'settings:settings_email_change_confirmed:{"email":"updated@example.com"}',
+				{
+					id: "contact-verification-email-changed-settings:updated@example.com",
+				},
+			),
+		);
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			{
+				hash: "",
+				pathname: "/settings/security",
+				search: "",
+			},
+			{ replace: true },
+		);
 	});
 
 	it("saves the display name through the profile endpoint", async () => {

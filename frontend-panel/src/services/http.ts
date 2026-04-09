@@ -19,8 +19,10 @@ const SKIP_REFRESH_PATHS = [
 	"/auth/refresh",
 	"/auth/login",
 	"/auth/register",
+	"/auth/register/resend",
 	"/auth/logout",
 	"/auth/check",
+	"/auth/contact-verification/confirm",
 	"/auth/setup",
 ];
 
@@ -70,7 +72,7 @@ client.interceptors.response.use(
 				return Promise.reject(error);
 			}
 		}
-		return Promise.reject(error);
+		return Promise.reject(extractApiError(error) ?? error);
 	},
 );
 
@@ -80,6 +82,33 @@ export class ApiError extends Error {
 		super(message);
 		this.code = code;
 	}
+}
+
+function extractApiError(error: unknown): ApiError | null {
+	if (typeof error !== "object" || error === null) {
+		return null;
+	}
+
+	const response =
+		"response" in error && typeof error.response === "object"
+			? error.response
+			: null;
+	if (response === null || response === undefined) {
+		return null;
+	}
+
+	const data = "data" in response ? response.data : null;
+	if (typeof data !== "object" || data === null) {
+		return null;
+	}
+
+	const code = "code" in data ? data.code : null;
+	const message = "msg" in data ? data.msg : null;
+	if (typeof code !== "number" || typeof message !== "string") {
+		return null;
+	}
+
+	return new ApiError(code as ErrorCodeType, message);
 }
 
 async function unwrap<T>(

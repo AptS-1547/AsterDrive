@@ -28,4 +28,13 @@ describe("AsterDriveWordmark", () => {
 			"/static/asterdrive/asterdrive-light.svg",
 		);
 	});
+
+	it("allows overriding the surrounding surface theme", () => {
+		render(<AsterDriveWordmark alt="AsterDrive" surfaceTheme="dark" />);
+
+		expect(screen.getByRole("img", { name: "AsterDrive" })).toHaveAttribute(
+			"src",
+			"/static/asterdrive/asterdrive-light.svg",
+		);
+	});
 });

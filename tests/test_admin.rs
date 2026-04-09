@@ -46,30 +46,15 @@ async fn test_admin_scope_requires_authentication() {
 async fn test_admin_scope_rejects_non_admin_users() {
     let state = common::setup().await;
     let app = create_test_app!(state);
-    let (_admin_token, _) = register_and_login!(app);
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "plainadminscope",
-            "email": "plainadminscope@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "plainadminscope",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let token = common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+    let (admin_token, _) = register_and_login!(app);
+    admin_create_user!(
+        app,
+        admin_token,
+        "plainadminscope",
+        "plainadminscope@example.com",
+        "password123"
+    );
+    let (token, _) = login_user!(app, "plainadminscope", "password123");
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/config/schema")
@@ -243,29 +228,14 @@ async fn test_admin_team_crud() {
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "team-admin",
-            "email": "team-admin@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "team-admin",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let team_admin_token = common::extract_cookie(&resp, "aster_access").unwrap();
+    admin_create_user!(
+        app,
+        admin_token,
+        "team-admin",
+        "team-admin@example.com",
+        "password123"
+    );
+    let (team_admin_token, _) = login_user!(app, "team-admin", "password123");
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/teams")
@@ -648,30 +618,14 @@ async fn test_admin_can_read_uploaded_user_avatar() {
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "avatar-user",
-            "email": "avatar-user@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "avatar-user",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let user_token = common::extract_cookie(&resp, "aster_access").unwrap();
+    let user_id = admin_create_user!(
+        app,
+        admin_token,
+        "avatar-user",
+        "avatar-user@example.com",
+        "password123"
+    );
+    let (user_token, _) = login_user!(app, "avatar-user", "password123");
 
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()
@@ -714,30 +668,14 @@ async fn test_admin_can_read_user_display_name() {
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "named-user",
-            "email": "named-user@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "named-user",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let user_token = common::extract_cookie(&resp, "aster_access").unwrap();
+    let user_id = admin_create_user!(
+        app,
+        admin_token,
+        "named-user",
+        "named-user@example.com",
+        "password123"
+    );
+    let (user_token, _) = login_user!(app, "named-user", "password123");
 
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/profile")
@@ -816,30 +754,15 @@ async fn test_admin_create_user() {
 async fn test_non_admin_cannot_create_user() {
     let state = common::setup().await;
     let app = create_test_app!(state);
-    let (_admin_token, _) = register_and_login!(app);
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "plainuser",
-            "email": "plainuser@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "plainuser",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let token = common::extract_cookie(&resp, "aster_access").unwrap();
+    let (admin_token, _) = register_and_login!(app);
+    admin_create_user!(
+        app,
+        admin_token,
+        "plainuser",
+        "plainuser@example.com",
+        "password123"
+    );
+    let (token, _) = login_user!(app, "plainuser", "password123");
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/users")
@@ -1036,6 +959,64 @@ async fn test_admin_config() {
 }
 
 #[actix_web::test]
+async fn test_admin_config_action_sends_test_email() {
+    let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/config/mail/action")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "action": "send_test_email",
+            "target_email": "deliver@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["data"]["message"],
+        "Test email sent to deliver@example.com"
+    );
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    let message = memory_sender
+        .last_message()
+        .expect("test email should be sent");
+    assert_eq!(message.to.address, "deliver@example.com");
+    assert_eq!(message.subject, "AsterDrive SMTP test");
+    assert!(message.text_body.contains("Triggered by: testuser"));
+}
+
+#[actix_web::test]
+async fn test_admin_config_action_defaults_to_admin_email() {
+    let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/config/mail/action")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "action": "send_test_email"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    let message = memory_sender
+        .last_message()
+        .expect("test email should be sent");
+    assert_eq!(message.to.address, "test@example.com");
+}
+
+#[actix_web::test]
 async fn test_admin_shares() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -1141,12 +1122,14 @@ async fn test_admin_batch_update_user() {
     assert_eq!(body["data"]["role"], "user");
     assert_eq!(body["data"]["status"], "active");
     assert_eq!(body["data"]["storage_quota"], 0);
+    assert_eq!(body["data"]["email_verified"], false);
 
-    // 单次 PATCH 同时更新 role + status + storage_quota
+    // 单次 PATCH 同时更新 email_verified + role + status + storage_quota
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{user_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
+            "email_verified": true,
             "role": "admin",
             "status": "disabled",
             "storage_quota": 1073741824
@@ -1156,6 +1139,7 @@ async fn test_admin_batch_update_user() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     let user = &body["data"];
+    assert_eq!(user["email_verified"], true);
     assert_eq!(user["role"], "admin");
     assert_eq!(user["status"], "disabled");
     assert_eq!(user["storage_quota"], 1073741824);
@@ -1168,9 +1152,29 @@ async fn test_admin_batch_update_user() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["email_verified"], true);
     assert_eq!(body["data"]["role"], "admin");
     assert_eq!(body["data"]["status"], "disabled");
     assert_eq!(body["data"]["storage_quota"], 1073741824);
+}
+
+#[actix_web::test]
+async fn test_admin_cannot_unverify_initial_admin() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/admin/users/1")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "email_verified": false
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "cannot unverify the initial admin account");
 }
 
 #[actix_web::test]
@@ -1179,31 +1183,14 @@ async fn test_admin_can_reset_user_password() {
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "resetuser",
-            "email": "resetuser@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "resetuser",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let old_access = common::extract_cookie(&resp, "aster_access").unwrap();
-    let old_refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
+    let user_id = admin_create_user!(
+        app,
+        admin_token,
+        "resetuser",
+        "resetuser@example.com",
+        "password123"
+    );
+    let (old_access, old_refresh) = login_user!(app, "resetuser", "password123");
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/admin/users/{user_id}/password"))
@@ -1270,31 +1257,14 @@ async fn test_admin_can_revoke_user_sessions() {
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "revokeuser",
-            "email": "revokeuser@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "revokeuser",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let user_access = common::extract_cookie(&resp, "aster_access").unwrap();
-    let user_refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
+    let user_id = admin_create_user!(
+        app,
+        admin_token,
+        "revokeuser",
+        "revokeuser@example.com",
+        "password123"
+    );
+    let (user_access, user_refresh) = login_user!(app, "revokeuser", "password123");
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/users/{user_id}/sessions/revoke"))
@@ -1322,19 +1292,13 @@ async fn test_admin_role_change_removes_admin_access_without_revoking_session() 
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "managedadmin",
-            "email": "managedadmin@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["id"].as_i64().unwrap();
+    let user_id = admin_create_user!(
+        app,
+        admin_token,
+        "managedadmin",
+        "managedadmin@example.com",
+        "password123"
+    );
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{user_id}"))
@@ -1344,17 +1308,7 @@ async fn test_admin_role_change_removes_admin_access_without_revoking_session() 
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "managedadmin",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let elevated_access = common::extract_cookie(&resp, "aster_access").unwrap();
-    let elevated_refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
+    let (elevated_access, elevated_refresh) = login_user!(app, "managedadmin", "password123");
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/config/schema")
@@ -1405,42 +1359,21 @@ async fn test_non_admin_cannot_reset_user_password() {
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "victimreset",
-            "email": "victimreset@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["id"].as_i64().unwrap();
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "plainuser",
-            "email": "plainuser@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "plainuser",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let user_token = common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+    let user_id = admin_create_user!(
+        app,
+        admin_token,
+        "victimreset",
+        "victimreset@example.com",
+        "password123"
+    );
+    admin_create_user!(
+        app,
+        admin_token,
+        "plainuser",
+        "plainuser@example.com",
+        "password123"
+    );
+    let (user_token, _) = login_user!(app, "plainuser", "password123");
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/admin/users/{user_id}/password"))
