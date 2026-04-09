@@ -211,6 +211,12 @@ describe("TextCodePreview", () => {
 		expect(screen.getByTestId("editor")).toHaveTextContent(
 			"editor:typescript:vs:true:const value = 1;",
 		);
+		expect(mockState.editorProps).toMatchObject({
+			options: expect.objectContaining({
+				readOnly: true,
+				wordWrap: "off",
+			}),
+		});
 
 		fireEvent.click(screen.getByText("edit"));
 
@@ -242,6 +248,12 @@ describe("TextCodePreview", () => {
 		expect(screen.getByTestId("editor")).toHaveTextContent(
 			"editor:typescript:vs-dark:false:draft content",
 		);
+		expect(mockState.editorProps).toMatchObject({
+			options: expect.objectContaining({
+				readOnly: false,
+				wordWrap: "off",
+			}),
+		});
 
 		fireEvent.click(screen.getByText("save"));
 		fireEvent.click(screen.getByText("cancel"));

@@ -30,6 +30,7 @@ import type {
 	TeamAuditPage,
 	TeamMemberPage,
 	TeamMemberRole,
+	TemplateVariableGroup,
 	UpdatePolicyGroupRequest,
 	UpdatePolicyRequest,
 	UpdateTeamMemberRequest,
@@ -336,6 +337,9 @@ export const adminConfigService = {
 		),
 
 	schema: () => api.get<ConfigSchemaItem[]>("/admin/config/schema"),
+
+	templateVariables: () =>
+		api.get<TemplateVariableGroup[]>("/admin/config/template-variables"),
 
 	get: (key: string) => api.get<SystemConfig>(`/admin/config/${key}`),
 

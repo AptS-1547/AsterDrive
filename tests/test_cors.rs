@@ -680,7 +680,7 @@ async fn test_runtime_cors_schema_contains_network_defaults() {
         .find(|item| item["key"] == "cors_enabled")
         .unwrap();
     assert_eq!(enabled["category"], "network");
-    assert_eq!(enabled["default_value"], "false");
+    assert!(enabled.get("default_value").is_none());
     assert_eq!(enabled["requires_restart"], false);
 
     let allowed_origins = items
@@ -688,20 +688,20 @@ async fn test_runtime_cors_schema_contains_network_defaults() {
         .find(|item| item["key"] == "cors_allowed_origins")
         .unwrap();
     assert_eq!(allowed_origins["category"], "network");
-    assert_eq!(allowed_origins["default_value"], "");
+    assert!(allowed_origins.get("default_value").is_none());
     assert_eq!(allowed_origins["requires_restart"], false);
 
     let allow_credentials = items
         .iter()
         .find(|item| item["key"] == "cors_allow_credentials")
         .unwrap();
-    assert_eq!(allow_credentials["default_value"], "false");
+    assert!(allow_credentials.get("default_value").is_none());
 
     let max_age = items
         .iter()
         .find(|item| item["key"] == "cors_max_age_secs")
         .unwrap();
-    assert_eq!(max_age["default_value"], "3600");
+    assert!(max_age.get("default_value").is_none());
 }
 
 #[actix_web::test]

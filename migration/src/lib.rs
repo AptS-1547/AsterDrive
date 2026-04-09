@@ -32,6 +32,8 @@ mod m20260331_000002_create_storage_policy_groups;
 mod m20260402_000001_create_teams;
 mod m20260403_000001_add_team_scope_to_shares;
 mod m20260408_000001_add_contact_verification_tokens;
+mod m20260409_000001_create_mail_outbox;
+mod m20260409_000002_drop_mail_template_text_configs;
 
 pub struct Migrator;
 
@@ -71,6 +73,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260402_000001_create_teams::Migration),
             Box::new(m20260403_000001_add_team_scope_to_shares::Migration),
             Box::new(m20260408_000001_add_contact_verification_tokens::Migration),
+            Box::new(m20260409_000001_create_mail_outbox::Migration),
+            Box::new(m20260409_000002_drop_mail_template_text_configs::Migration),
         ]
     }
 }

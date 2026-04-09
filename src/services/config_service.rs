@@ -42,7 +42,11 @@ pub struct ConfigActionResult {
 }
 
 pub async fn list_all(state: &AppState) -> Result<Vec<system_config::Model>> {
-    config_repo::find_all(&state.db).await
+    Ok(config_repo::find_all(&state.db)
+        .await?
+        .into_iter()
+        .map(apply_system_config_definition)
+        .collect())
 }
 
 pub async fn list_paginated(
@@ -50,15 +54,22 @@ pub async fn list_paginated(
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<system_config::Model>> {
-    load_offset_page(limit, offset, 100, |limit, offset| async move {
+    let mut page = load_offset_page(limit, offset, 100, |limit, offset| async move {
         config_repo::find_paginated(&state.db, limit, offset).await
     })
-    .await
+    .await?;
+    page.items = page
+        .items
+        .into_iter()
+        .map(apply_system_config_definition)
+        .collect();
+    Ok(page)
 }
 
 pub async fn get_by_key(state: &AppState, key: &str) -> Result<system_config::Model> {
     config_repo::find_by_key(&state.db, key)
         .await?
+        .map(apply_system_config_definition)
         .ok_or_else(|| AsterError::record_not_found(format!("config key '{key}'")))
 }
 
@@ -76,7 +87,9 @@ pub async fn set(
         normalized_value = normalize_system_value(state, key, value)?;
     }
 
-    let config = config_repo::upsert(&state.db, key, &normalized_value, updated_by).await?;
+    let config = apply_system_config_definition(
+        config_repo::upsert(&state.db, key, &normalized_value, updated_by).await?,
+    );
     state.runtime_config.apply(config.clone());
     Ok(config)
 }
@@ -176,7 +189,8 @@ fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
                 ));
             }
         }
-        _ => {} // string 不做校验
+        "string" | "multiline" => {}
+        _ => {} // 其他类型按 string 处理
     }
     Ok(())
 }
@@ -227,12 +241,43 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
         mail::MAIL_FROM_ADDRESS_KEY => mail::normalize_mail_address_config_value(value),
         mail::MAIL_FROM_NAME_KEY => mail::normalize_mail_name_config_value(value),
         mail::MAIL_SECURITY_KEY => mail::normalize_mail_security_config_value(value),
+        mail::MAIL_TEMPLATE_REGISTER_ACTIVATION_SUBJECT_KEY
+        | mail::MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_SUBJECT_KEY
+        | mail::MAIL_TEMPLATE_PASSWORD_RESET_SUBJECT_KEY
+        | mail::MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_SUBJECT_KEY
+        | mail::MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_SUBJECT_KEY => {
+            mail::normalize_mail_template_subject_config_value(key, value)
+        }
+        mail::MAIL_TEMPLATE_REGISTER_ACTIVATION_HTML_KEY
+        | mail::MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_HTML_KEY
+        | mail::MAIL_TEMPLATE_PASSWORD_RESET_HTML_KEY
+        | mail::MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_HTML_KEY
+        | mail::MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_HTML_KEY => {
+            mail::normalize_mail_template_body_config_value(key, value)
+        }
         site_url::PUBLIC_SITE_URL_KEY => site_url::normalize_public_site_url_config_value(value),
         branding::BRANDING_TITLE_KEY => branding::normalize_title_config_value(value),
         branding::BRANDING_DESCRIPTION_KEY => branding::normalize_description_config_value(value),
         branding::BRANDING_FAVICON_URL_KEY => branding::normalize_favicon_url_config_value(value),
         _ => Ok(value.to_string()),
     }
+}
+
+fn apply_system_config_definition(mut config: system_config::Model) -> system_config::Model {
+    if config.source != "system" {
+        return config;
+    }
+
+    let Some(def) = ALL_CONFIGS.iter().find(|def| def.key == config.key) else {
+        return config;
+    };
+
+    config.value_type = def.value_type.to_string();
+    config.requires_restart = def.requires_restart;
+    config.is_sensitive = def.is_sensitive;
+    config.category = def.category.to_string();
+    config.description = def.description.to_string();
+    config
 }
 
 #[derive(Serialize)]
@@ -266,11 +311,27 @@ pub struct ConfigSchemaItem {
     pub label_i18n_key: String,
     pub description_i18n_key: String,
     pub value_type: String,
-    pub default_value: String,
     pub category: String,
     pub description: String,
     pub requires_restart: bool,
     pub is_sensitive: bool,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct TemplateVariableItem {
+    pub token: String,
+    pub label_i18n_key: String,
+    pub description_i18n_key: String,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct TemplateVariableGroup {
+    pub category: String,
+    pub template_code: String,
+    pub label_i18n_key: String,
+    pub variables: Vec<TemplateVariableItem>,
 }
 
 /// 返回所有系统配置的 schema 信息
@@ -282,11 +343,30 @@ pub fn get_schema() -> Vec<ConfigSchemaItem> {
             label_i18n_key: def.label_i18n_key.to_string(),
             description_i18n_key: def.description_i18n_key.to_string(),
             value_type: def.value_type.to_string(),
-            default_value: (def.default_fn)(),
             category: def.category.to_string(),
             description: def.description.to_string(),
             requires_restart: def.requires_restart,
             is_sensitive: def.is_sensitive,
+        })
+        .collect()
+}
+
+pub fn list_template_variable_groups() -> Vec<TemplateVariableGroup> {
+    crate::services::mail_template::list_template_variable_groups()
+        .into_iter()
+        .map(|group| TemplateVariableGroup {
+            category: group.category,
+            template_code: group.template_code,
+            label_i18n_key: group.label_i18n_key,
+            variables: group
+                .variables
+                .into_iter()
+                .map(|variable| TemplateVariableItem {
+                    token: variable.token,
+                    label_i18n_key: variable.label_i18n_key,
+                    description_i18n_key: variable.description_i18n_key,
+                })
+                .collect(),
         })
         .collect()
 }

@@ -65,6 +65,23 @@ pub async fn config_schema() -> Result<HttpResponse> {
 
 #[api_docs_macros::path(
     get,
+    path = "/api/v1/admin/config/template-variables",
+    tag = "admin",
+    operation_id = "config_template_variables",
+    responses(
+        (status = 200, description = "Template variables", body = ApiResponse<Vec<config_service::TemplateVariableGroup>>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn config_template_variables() -> Result<HttpResponse> {
+    let groups = config_service::list_template_variable_groups();
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(groups)))
+}
+
+#[api_docs_macros::path(
+    get,
     path = "/api/v1/admin/config/{key}",
     tag = "admin",
     operation_id = "get_config",

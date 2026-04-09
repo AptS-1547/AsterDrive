@@ -608,6 +608,7 @@ export function CodePreviewEditor({
 							autoCorrect="off"
 							className="code-preview-editor-input absolute inset-0 h-full w-full resize-none border-0 bg-transparent outline-none"
 							spellCheck={false}
+							wrap={wrap ? "soft" : "off"}
 							value={value}
 							onChange={(event) => onChange?.(event.currentTarget.value)}
 							onKeyDown={(event) => {

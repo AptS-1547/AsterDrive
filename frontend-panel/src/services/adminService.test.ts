@@ -197,6 +197,7 @@ describe("adminService", () => {
 		adminLockService.cleanupExpired();
 
 		adminConfigService.schema();
+		adminConfigService.templateVariables();
 		adminConfigService.get("mail.host");
 		adminConfigService.set("mail.host", "smtp.example.com");
 		adminConfigService.delete("mail.host");
@@ -272,7 +273,11 @@ describe("adminService", () => {
 		expect(mockState.delete).toHaveBeenNthCalledWith(6, "/admin/locks/expired");
 
 		expect(mockState.get).toHaveBeenNthCalledWith(5, "/admin/config/schema");
-		expect(mockState.get).toHaveBeenNthCalledWith(6, "/admin/config/mail.host");
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			6,
+			"/admin/config/template-variables",
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(7, "/admin/config/mail.host");
 		expect(mockState.put).toHaveBeenCalledWith("/admin/config/mail.host", {
 			value: "smtp.example.com",
 		});

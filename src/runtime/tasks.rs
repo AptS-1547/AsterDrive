@@ -33,8 +33,32 @@ fn spawn_periodic<F, Fut>(
 
 /// Spawn all periodic background cleanup tasks.
 pub fn spawn_background_tasks(state: web::Data<AppState>) {
+    let mail_dispatch_interval = Duration::from_secs(
+        crate::services::mail_outbox_service::MAIL_OUTBOX_DISPATCH_INTERVAL_SECS,
+    );
     let hourly = Duration::from_secs(3600);
     let every_six_hours = Duration::from_secs(6 * 3600);
+
+    spawn_periodic(
+        "mail-outbox-dispatch",
+        mail_dispatch_interval,
+        state.clone(),
+        |s| async move {
+            match crate::services::mail_outbox_service::dispatch_due(&s).await {
+                Ok(stats) if stats.claimed > 0 || stats.failed > 0 => {
+                    tracing::info!(
+                        claimed = stats.claimed,
+                        sent = stats.sent,
+                        retried = stats.retried,
+                        failed = stats.failed,
+                        "processed mail outbox batch"
+                    );
+                }
+                Err(error) => tracing::warn!("mail outbox dispatch failed: {error}"),
+                _ => {}
+            }
+        },
+    );
 
     spawn_periodic("upload-cleanup", hourly, state.clone(), |s| async move {
         if let Err(e) = crate::services::upload_service::cleanup_expired(&s).await {

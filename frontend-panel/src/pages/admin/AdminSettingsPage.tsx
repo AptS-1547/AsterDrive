@@ -3,6 +3,7 @@ import {
 	useCallback,
 	useEffect,
 	useEffectEvent,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -12,6 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { CodePreviewEditor } from "@/components/files/preview/CodePreviewEditor";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
@@ -48,7 +50,12 @@ import { cn } from "@/lib/utils";
 import { adminConfigService } from "@/services/adminService";
 import { useAuthStore } from "@/stores/authStore";
 import { useBrandingStore } from "@/stores/brandingStore";
-import type { ConfigSchemaItem, SystemConfig } from "@/types/api";
+import { useThemeStore } from "@/stores/themeStore";
+import type {
+	ConfigSchemaItem,
+	SystemConfig,
+	TemplateVariableGroup,
+} from "@/types/api";
 
 const CATEGORY_ORDER = [
 	"general",
@@ -73,6 +80,10 @@ const COMPACT_NAV_TAB_GAP = 8;
 const COMPACT_NAV_OVERFLOW_GAP = 12;
 const SAVE_BAR_ENTER_DURATION_MS = 180;
 const SAVE_BAR_EXIT_DURATION_MS = 140;
+const TEMPLATE_GROUP_EXPAND_DURATION_MS = 280;
+const TEMPLATE_GROUP_COLLAPSE_DURATION_MS = 240;
+const TEMPLATE_GROUP_EXPAND_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+const TEMPLATE_GROUP_COLLAPSE_EASING = "cubic-bezier(0.32, 0, 0.67, 0.96)";
 const COMPACT_NAV_TAB_TRIGGER_CLASS =
 	"h-10 flex-none rounded-none px-0 text-sm font-medium";
 const COMPACT_NAV_TAB_CONTENT_CLASS =
@@ -83,7 +94,6 @@ const COMPACT_NAV_OVERFLOW_TRIGGER_CLASS = buttonVariants({
 	className: "shrink-0 rounded-full px-3",
 });
 
-const MASKED_VALUE = "********";
 const PUBLIC_SITE_URL_KEY = "public_site_url";
 
 type DraftValues = Record<string, string>;
@@ -99,6 +109,17 @@ type CategorySummary = {
 	description?: string;
 	icon: IconName;
 	label: string;
+};
+
+type CategoryPath = {
+	category: string;
+	subcategory?: string;
+};
+
+type SystemSubcategoryGroup = {
+	category: string;
+	subcategory?: string;
+	configs: SystemConfig[];
 };
 
 export type AdminSettingsTab = (typeof CATEGORY_ORDER)[number];
@@ -180,6 +201,10 @@ function getConfigValueType(config: SystemConfig) {
 
 function isNumberType(valueType: string) {
 	return valueType === "number";
+}
+
+function isMultilineType(valueType: string) {
+	return valueType === "multiline";
 }
 
 function isBrandingFaviconConfig(config: SystemConfig) {
@@ -298,8 +323,243 @@ function UrlAssetPreviewImage({
 	);
 }
 
+function splitCategoryPath(category?: string): CategoryPath {
+	const normalized = category?.trim() || "other";
+	const [root, ...rest] = normalized.split(".");
+	const subcategory = rest.join(".").trim();
+
+	return {
+		category: root || "other",
+		subcategory: subcategory || undefined,
+	};
+}
+
 function normalizeCategory(category?: string) {
-	return category || "other";
+	return splitCategoryPath(category).category;
+}
+
+function normalizeSubcategory(category?: string) {
+	return splitCategoryPath(category).subcategory;
+}
+
+function formatSubcategoryLabel(segment: string) {
+	return segment
+		.split(/[._-]+/)
+		.filter(Boolean)
+		.map((part) => part[0]?.toUpperCase() + part.slice(1))
+		.join(" ");
+}
+
+function getSubcategoryGroupKey(category: string, subcategory?: string) {
+	return `${category}:${subcategory ?? "__default__"}`;
+}
+
+const MAIL_TEMPLATE_GROUP_ORDER = [
+	"register_activation",
+	"contact_change_confirmation",
+	"password_reset",
+	"password_reset_notice",
+	"contact_change_notice",
+] as const;
+
+function getMailTemplateGroupOrderIndex(groupId: string) {
+	const index = MAIL_TEMPLATE_GROUP_ORDER.indexOf(
+		groupId as (typeof MAIL_TEMPLATE_GROUP_ORDER)[number],
+	);
+	return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
+
+function getMailTemplateGroupId(configKey: string) {
+	return configKey
+		.replace(/^mail_template_/, "")
+		.replace(/_(subject|html)$/, "");
+}
+
+function getMailTemplateFieldOrder(configKey: string) {
+	if (configKey.endsWith("_subject")) {
+		return 0;
+	}
+	if (configKey.endsWith("_html")) {
+		return 1;
+	}
+	return 2;
+}
+
+function getConfigEditorLanguage(config: SystemConfig) {
+	if (config.key.endsWith("_html")) {
+		return "html";
+	}
+	if (config.key.endsWith("_json") || config.key.endsWith(".json")) {
+		return "json";
+	}
+	return "plaintext";
+}
+
+function getEditorLanguageLabel(language: string) {
+	switch (language) {
+		case "html":
+			return "HTML";
+		case "json":
+			return "JSON";
+		default:
+			return "TEXT";
+	}
+}
+
+function ConfigCodeEditor({
+	language,
+	onChange,
+	theme,
+	value,
+}: {
+	language: string;
+	onChange: (value: string) => void;
+	theme: "vs" | "vs-dark";
+	value: string;
+}) {
+	return (
+		<div className="max-w-5xl overflow-hidden rounded-xl border bg-background shadow-sm">
+			<div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-2">
+				<Icon name="FileCode" className="h-4 w-4 text-muted-foreground" />
+				<span className="text-sm font-medium">
+					{getEditorLanguageLabel(language)}
+				</span>
+			</div>
+			<div className="h-80 min-h-80 bg-background">
+				<CodePreviewEditor
+					language={language}
+					theme={theme}
+					value={value}
+					onChange={onChange}
+					options={{
+						domReadOnly: false,
+						fontSize: 13,
+						lineNumbers: "on",
+						padding: { top: 12 },
+						readOnly: false,
+						renderLineHighlight: "line",
+						scrollBeyondLastLine: false,
+						wordWrap: "off",
+					}}
+				/>
+			</div>
+		</div>
+	);
+}
+
+function AnimatedCollapsible({
+	children,
+	className,
+	contentClassName,
+	open,
+}: {
+	children: ReactNode;
+	className?: string;
+	contentClassName?: string;
+	open: boolean;
+}) {
+	const containerRef = useRef<HTMLDivElement | null>(null);
+	const contentRef = useRef<HTMLDivElement | null>(null);
+	const [mounted, setMounted] = useState(open);
+
+	useEffect(() => {
+		if (typeof window === "undefined") {
+			setMounted(open);
+			return;
+		}
+
+		if (open) {
+			setMounted(true);
+		}
+	}, [open]);
+
+	useLayoutEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+		if (!mounted) {
+			return;
+		}
+
+		const container = containerRef.current;
+		const content = contentRef.current;
+		if (!container || !content) {
+			return;
+		}
+
+		const prefersReducedMotion =
+			typeof window.matchMedia === "function" &&
+			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+		const duration = prefersReducedMotion
+			? 0
+			: open
+				? TEMPLATE_GROUP_EXPAND_DURATION_MS
+				: TEMPLATE_GROUP_COLLAPSE_DURATION_MS;
+		let frameA: number | null = null;
+		let frameB: number | null = null;
+		let timer: number | null = null;
+		const fullHeight = `${content.scrollHeight}px`;
+
+		container.style.overflow = "hidden";
+		container.style.transitionProperty = "max-height, opacity";
+		container.style.transitionDuration = `${duration}ms`;
+		container.style.transitionTimingFunction = open
+			? TEMPLATE_GROUP_EXPAND_EASING
+			: TEMPLATE_GROUP_COLLAPSE_EASING;
+
+		if (open) {
+			container.style.maxHeight = "0px";
+			container.style.opacity = "0";
+			frameA = window.requestAnimationFrame(() => {
+				frameB = window.requestAnimationFrame(() => {
+					container.style.maxHeight = fullHeight;
+					container.style.opacity = "1";
+				});
+			});
+			timer = window.setTimeout(() => {
+				container.style.maxHeight = "none";
+				container.style.opacity = "1";
+			}, duration);
+		} else {
+			container.style.maxHeight = fullHeight;
+			container.style.opacity = "1";
+			frameA = window.requestAnimationFrame(() => {
+				container.style.maxHeight = "0px";
+				container.style.opacity = "0";
+			});
+			timer = window.setTimeout(() => {
+				setMounted(false);
+			}, duration);
+		}
+
+		return () => {
+			if (frameA !== null) {
+				window.cancelAnimationFrame(frameA);
+			}
+			if (frameB !== null) {
+				window.cancelAnimationFrame(frameB);
+			}
+			if (timer !== null) {
+				window.clearTimeout(timer);
+			}
+		};
+	}, [mounted, open]);
+
+	if (!mounted) {
+		return null;
+	}
+
+	return (
+		<div
+			ref={containerRef}
+			aria-hidden={!open}
+			className={cn("overflow-hidden", className)}
+		>
+			<div ref={contentRef} className={cn("min-h-0", contentClassName)}>
+				{children}
+			</div>
+		</div>
+	);
 }
 
 function sortConfigsByKey(a: SystemConfig, b: SystemConfig) {
@@ -328,6 +588,9 @@ export default function AdminSettingsPage({
 	usePageTitle(getAdminSettingsSectionTitle(section, t));
 	const navigate = useNavigate();
 	const currentUserEmail = useAuthStore((state) => state.user?.email ?? "");
+	const editorTheme = useThemeStore((state) =>
+		state.resolvedTheme === "dark" ? "vs-dark" : "vs",
+	);
 	const customDraftIdRef = useRef(0);
 	const compactNavContainerRef = useRef<HTMLDivElement | null>(null);
 	const compactTabMeasureRefs = useRef<
@@ -344,6 +607,9 @@ export default function AdminSettingsPage({
 	const saveBarMeasureRef = useRef<HTMLDivElement | null>(null);
 	const [configs, setConfigs] = useState<SystemConfig[]>([]);
 	const [schemas, setSchemas] = useState<ConfigSchemaItem[]>([]);
+	const [templateVariableGroups, setTemplateVariableGroups] = useState<
+		TemplateVariableGroup[]
+	>([]);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [viewportWidth, setViewportWidth] = useState(() =>
@@ -359,9 +625,17 @@ export default function AdminSettingsPage({
 	const [compactInlineCategories, setCompactInlineCategories] = useState<
 		string[]
 	>([]);
+	const [expandedSubcategoryGroups, setExpandedSubcategoryGroups] = useState<
+		Record<string, boolean>
+	>({});
+	const [expandedTemplateGroups, setExpandedTemplateGroups] = useState<
+		Record<string, boolean>
+	>({});
 	const [saveBarPhase, setSaveBarPhase] = useState<SaveBarPhase>("hidden");
 	const [saveBarReservedHeight, setSaveBarReservedHeight] = useState(0);
 	const [testEmailDialogOpen, setTestEmailDialogOpen] = useState(false);
+	const [activeTemplateVariableGroupCode, setActiveTemplateVariableGroupCode] =
+		useState<string | null>(null);
 	const [testEmailTarget, setTestEmailTarget] = useState("");
 	const [sendingTestEmail, setSendingTestEmail] = useState(false);
 	const settingsContentBaseBottomPadding =
@@ -396,12 +670,17 @@ export default function AdminSettingsPage({
 			if (showLoading) {
 				setLoading(true);
 			}
-			const [cfgs, schemaList] = await Promise.all([
+			const [cfgs, schemaList, nextTemplateVariableGroups] = await Promise.all([
 				adminConfigService.list({ limit: 200, offset: 0 }),
 				adminConfigService.schema(),
+				adminConfigService.templateVariables().catch((error) => {
+					handleApiError(error);
+					return [];
+				}),
 			]);
 			setConfigs(cfgs.items);
 			setSchemas(schemaList);
+			setTemplateVariableGroups(nextTemplateVariableGroups);
 		} catch (error) {
 			handleApiError(error);
 		} finally {
@@ -473,6 +752,55 @@ export default function AdminSettingsPage({
 		[resolveSchemaTranslation, schemaMap],
 	);
 
+	const mailTemplateVariableGroups = useMemo(
+		() =>
+			[...templateVariableGroups]
+				.filter((group) => group.category === "mail.template")
+				.sort(
+					(left, right) =>
+						getMailTemplateGroupOrderIndex(left.template_code) -
+							getMailTemplateGroupOrderIndex(right.template_code) ||
+						left.template_code.localeCompare(right.template_code),
+				),
+		[templateVariableGroups],
+	);
+
+	const activeTemplateVariableGroup = useMemo(
+		() =>
+			activeTemplateVariableGroupCode
+				? (mailTemplateVariableGroups.find(
+						(group) => group.template_code === activeTemplateVariableGroupCode,
+					) ?? null)
+				: null,
+		[activeTemplateVariableGroupCode, mailTemplateVariableGroups],
+	);
+
+	const getTemplateVariableGroupLabel = useCallback(
+		(group: TemplateVariableGroup) =>
+			resolveSchemaTranslation(
+				group.label_i18n_key,
+				formatSubcategoryLabel(group.template_code),
+			) ?? formatSubcategoryLabel(group.template_code),
+		[resolveSchemaTranslation],
+	);
+
+	const getTemplateVariableLabel = useCallback(
+		(variable: TemplateVariableGroup["variables"][number]) =>
+			resolveSchemaTranslation(variable.label_i18n_key, variable.token) ??
+			variable.token,
+		[resolveSchemaTranslation],
+	);
+
+	const getTemplateVariableDescription = useCallback(
+		(variable: TemplateVariableGroup["variables"][number]) =>
+			resolveSchemaTranslation(variable.description_i18n_key),
+		[resolveSchemaTranslation],
+	);
+
+	const openTemplateVariablesDialog = useCallback((config: SystemConfig) => {
+		setActiveTemplateVariableGroupCode(getMailTemplateGroupId(config.key));
+	}, []);
+
 	const systemConfigs = useMemo(
 		() =>
 			configs
@@ -512,6 +840,39 @@ export default function AdminSettingsPage({
 			}),
 		[systemGroups],
 	);
+
+	const systemSubcategoryGroups = useMemo(() => {
+		const groups: Record<string, SystemSubcategoryGroup[]> = {};
+
+		for (const category of systemCategories) {
+			const grouped = new Map<string, SystemSubcategoryGroup>();
+
+			for (const config of systemGroups[category] ?? []) {
+				const subcategory = normalizeSubcategory(config.category);
+				const groupKey = getSubcategoryGroupKey(category, subcategory);
+				const existingGroup = grouped.get(groupKey);
+				if (existingGroup) {
+					existingGroup.configs.push(config);
+					continue;
+				}
+
+				grouped.set(groupKey, {
+					category,
+					subcategory,
+					configs: [config],
+				});
+			}
+
+			groups[category] = Array.from(grouped.values()).sort((left, right) => {
+				if (!left.subcategory && !right.subcategory) return 0;
+				if (!left.subcategory) return -1;
+				if (!right.subcategory) return 1;
+				return left.subcategory.localeCompare(right.subcategory);
+			});
+		}
+
+		return groups;
+	}, [systemCategories, systemGroups]);
 
 	const tabCategories = useMemo(() => {
 		const categories = [...systemCategories];
@@ -955,29 +1316,6 @@ export default function AdminSettingsPage({
 		};
 	}, [isCompactNavigation, tabCategories]);
 
-	const formatDisplayValue = useCallback(
-		(value: string, isSensitive: boolean) => {
-			if (isSensitive) {
-				return MASKED_VALUE;
-			}
-
-			return value.length > 0 ? value : t("settings_value_empty");
-		},
-		[t],
-	);
-
-	const getDefaultDisplayValue = useCallback(
-		(config: SystemConfig) => {
-			const schema = schemaMap.get(config.key);
-			if (!schema) {
-				return null;
-			}
-
-			return formatDisplayValue(schema.default_value, false);
-		},
-		[formatDisplayValue, schemaMap],
-	);
-
 	const getDraftValue = useCallback(
 		(config: SystemConfig) => draftValues[config.key] ?? config.value,
 		[draftValues],
@@ -1007,6 +1345,26 @@ export default function AdminSettingsPage({
 	const updateDraftValue = (key: string, value: string) => {
 		setDraftValues((previous) => ({ ...previous, [key]: value }));
 	};
+
+	const toggleSubcategoryGroup = useCallback(
+		(groupKey: string, nextExpanded: boolean) => {
+			setExpandedSubcategoryGroups((previous) => ({
+				...previous,
+				[groupKey]: nextExpanded,
+			}));
+		},
+		[],
+	);
+
+	const toggleTemplateGroup = useCallback(
+		(groupKey: string, nextExpanded: boolean) => {
+			setExpandedTemplateGroups((previous) => ({
+				...previous,
+				[groupKey]: nextExpanded,
+			}));
+		},
+		[],
+	);
 
 	const discardChanges = () => {
 		setDraftValues(buildDraftValues(configs));
@@ -1108,12 +1466,13 @@ export default function AdminSettingsPage({
 	};
 
 	const renderFieldMeta = (config: SystemConfig) => {
-		const defaultValue = getDefaultDisplayValue(config);
 		const draftChanged = getDraftValue(config) !== config.value;
 		const requiresRestart = getConfigRequiresRestart(config);
 		const configLabel = getSystemConfigLabel(config);
 		const configDescription = getSystemConfigDescription(config);
 		const showRawKey = configLabel !== config.key;
+		const showTemplateVariableLink =
+			config.category === "mail.template" && config.key.endsWith("_html");
 
 		return (
 			<div className="space-y-1">
@@ -1143,10 +1502,14 @@ export default function AdminSettingsPage({
 						{configDescription}
 					</p>
 				) : null}
-				{defaultValue ? (
-					<p className="break-words text-xs text-muted-foreground">
-						{t("settings_default_value", { value: defaultValue })}
-					</p>
+				{showTemplateVariableLink ? (
+					<button
+						type="button"
+						className="w-fit text-sm text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline"
+						onClick={() => openTemplateVariablesDialog(config)}
+					>
+						{t("mail_template_variable_link")}
+					</button>
 				) : null}
 			</div>
 		);
@@ -1181,10 +1544,109 @@ export default function AdminSettingsPage({
 		);
 	};
 
+	const getSubcategoryLabel = useCallback(
+		(category: string, subcategory?: string) => {
+			if (!subcategory) {
+				return getCategoryLabel(category);
+			}
+
+			const translationKey = `settings_subcategory_${category}_${subcategory.replaceAll(".", "_")}`;
+			const translated = t(translationKey);
+			return translated === translationKey
+				? formatSubcategoryLabel(subcategory)
+				: translated;
+		},
+		[getCategoryLabel, t],
+	);
+
+	const getSubcategoryDescription = useCallback(
+		(category: string, subcategory?: string) => {
+			if (!subcategory) {
+				return undefined;
+			}
+
+			const translationKey = `settings_subcategory_${category}_${subcategory.replaceAll(".", "_")}_desc`;
+			const translated = t(translationKey);
+			return translated === translationKey ? undefined : translated;
+		},
+		[t],
+	);
+
+	const getMailTemplateGroupLabel = useCallback(
+		(groupId: string) => {
+			const translationKey = `settings_mail_template_group_${groupId}`;
+			const translated = t(translationKey);
+			return translated === translationKey
+				? formatSubcategoryLabel(groupId)
+				: translated;
+		},
+		[t],
+	);
+
+	const renderConfigInputControl = (
+		config: SystemConfig,
+		draftValue: string,
+		options?: {
+			fullWidth?: boolean;
+		},
+	) => {
+		const valueType = getConfigValueType(config);
+		const isSensitive = getConfigIsSensitive(config);
+		const multiline = isMultilineType(valueType);
+
+		if (isBrandingFaviconConfig(config)) {
+			return (
+				<div className="flex max-w-4xl items-end gap-3">
+					<div className="w-full max-w-3xl">
+						<Input
+							type={
+								isNumberType(valueType)
+									? "number"
+									: isSensitive
+										? "password"
+										: "text"
+							}
+							inputMode={isNumberType(valueType) ? "decimal" : "text"}
+							value={draftValue}
+							onChange={(event) =>
+								updateDraftValue(config.key, event.target.value)
+							}
+							placeholder={t("config_value")}
+						/>
+					</div>
+					<UrlAssetPreview url={draftValue} />
+				</div>
+			);
+		}
+
+		if (multiline) {
+			return (
+				<ConfigCodeEditor
+					language={getConfigEditorLanguage(config)}
+					theme={editorTheme}
+					value={draftValue}
+					onChange={(value) => updateDraftValue(config.key, value)}
+				/>
+			);
+		}
+
+		return (
+			<Input
+				type={
+					isNumberType(valueType) ? "number" : isSensitive ? "password" : "text"
+				}
+				inputMode={isNumberType(valueType) ? "decimal" : "text"}
+				className={options?.fullWidth ? "w-full max-w-2xl" : "max-w-2xl"}
+				value={draftValue}
+				onChange={(event) => updateDraftValue(config.key, event.target.value)}
+				placeholder={t("config_value")}
+			/>
+		);
+	};
+
 	const renderSystemConfigRow = (config: SystemConfig) => {
 		const draftValue = getDraftValue(config);
 		const valueType = getConfigValueType(config);
-		const isSensitive = getConfigIsSensitive(config);
 
 		return (
 			<div className="space-y-3">
@@ -1204,44 +1666,8 @@ export default function AdminSettingsPage({
 								: t("settings_value_off")}
 						</span>
 					</div>
-				) : isBrandingFaviconConfig(config) ? (
-					<div className="flex max-w-4xl items-end gap-3">
-						<div className="w-full max-w-3xl">
-							<Input
-								type={
-									isNumberType(valueType)
-										? "number"
-										: isSensitive
-											? "password"
-											: "text"
-								}
-								inputMode={isNumberType(valueType) ? "decimal" : "text"}
-								value={draftValue}
-								onChange={(event) =>
-									updateDraftValue(config.key, event.target.value)
-								}
-								placeholder={t("config_value")}
-							/>
-						</div>
-						<UrlAssetPreview url={draftValue} />
-					</div>
 				) : (
-					<Input
-						type={
-							isNumberType(valueType)
-								? "number"
-								: isSensitive
-									? "password"
-									: "text"
-						}
-						inputMode={isNumberType(valueType) ? "decimal" : "text"}
-						className="max-w-2xl"
-						value={draftValue}
-						onChange={(event) =>
-							updateDraftValue(config.key, event.target.value)
-						}
-						placeholder={t("config_value")}
-					/>
+					renderConfigInputControl(config, draftValue)
 				)}
 			</div>
 		);
@@ -1250,8 +1676,8 @@ export default function AdminSettingsPage({
 	const renderCustomConfigRow = (config: SystemConfig) => {
 		const draftValue = getDraftValue(config);
 		const valueType = getConfigValueType(config);
-		const isSensitive = getConfigIsSensitive(config);
 		const draftChanged = draftValue !== config.value;
+		const multiline = isMultilineType(valueType);
 
 		return (
 			<div className="space-y-3">
@@ -1273,23 +1699,14 @@ export default function AdminSettingsPage({
 					) : null}
 				</div>
 
-				<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-					<Input
-						type={
-							isNumberType(valueType)
-								? "number"
-								: isSensitive
-									? "password"
-									: "text"
-						}
-						inputMode={isNumberType(valueType) ? "decimal" : "text"}
-						className="max-w-2xl"
-						value={draftValue}
-						onChange={(event) =>
-							updateDraftValue(config.key, event.target.value)
-						}
-						placeholder={t("config_value")}
-					/>
+				<div
+					className={
+						multiline
+							? "space-y-3"
+							: "flex flex-col gap-3 sm:flex-row sm:items-center"
+					}
+				>
+					{renderConfigInputControl(config, draftValue, { fullWidth: true })}
 					<Button
 						variant="ghost"
 						size="sm"
@@ -1349,6 +1766,10 @@ export default function AdminSettingsPage({
 				? "animate-in fade-in duration-300 slide-in-from-right-4 motion-reduce:animate-none"
 				: "animate-in fade-in duration-300 slide-in-from-left-4 motion-reduce:animate-none";
 		const showCategoryHeader = !isMobileNavigation;
+		const systemConfigGroups = systemSubcategoryGroups[category] ?? [];
+		const hasSubcategorySections =
+			systemConfigGroups.length > 1 ||
+			systemConfigGroups.some((group) => group.subcategory);
 		const customCategoryActions = (
 			<div className="space-y-3">
 				<p className="text-xs text-muted-foreground">
@@ -1365,17 +1786,232 @@ export default function AdminSettingsPage({
 				</Button>
 			</div>
 		);
-		const mailCategoryActions = (
-			<div className="flex flex-wrap items-center gap-3 border-t border-border/40 pt-6">
+		const mailConfigActions = (
+			<div className="flex flex-col items-start gap-2 lg:items-end">
 				<Button variant="outline" size="sm" onClick={openTestEmailDialog}>
 					<Icon name="EnvelopeSimple" className="h-4 w-4" />
 					{t("mail_send_test_email")}
 				</Button>
-				<p className="text-xs text-muted-foreground">
+				<p className="max-w-xs text-xs text-muted-foreground lg:text-right">
 					{t("mail_send_test_email_hint")}
 				</p>
 			</div>
 		);
+		const renderSystemConfigGroups = () => {
+			if (!hasSubcategorySections) {
+				return (
+					<div className="max-w-4xl divide-y divide-border/40">
+						{(systemGroups[category] ?? []).map((config) => (
+							<div key={config.key} className="py-6 first:pt-0 last:pb-0">
+								{renderSystemConfigRow(config)}
+							</div>
+						))}
+					</div>
+				);
+			}
+
+			return (
+				<div className="max-w-5xl space-y-4">
+					{systemConfigGroups.map((group) => {
+						const groupKey = getSubcategoryGroupKey(
+							category,
+							group.subcategory,
+						);
+						const isMailTemplateSection =
+							category === "mail" && group.subcategory === "template";
+						const collapsible =
+							!isMailTemplateSection &&
+							group.configs.some((config) =>
+								isMultilineType(getConfigValueType(config)),
+							);
+						const defaultExpanded = !collapsible;
+						const expanded =
+							expandedSubcategoryGroups[groupKey] ?? defaultExpanded;
+						const groupDescription = getSubcategoryDescription(
+							category,
+							group.subcategory,
+						);
+						const extra =
+							category === "mail" && group.subcategory === "config"
+								? mailConfigActions
+								: null;
+						const mailTemplateGroups = isMailTemplateSection
+							? Array.from(
+									group.configs.reduce((map, config) => {
+										const templateGroupId = getMailTemplateGroupId(config.key);
+										const existingGroup = map.get(templateGroupId);
+										if (existingGroup) {
+											existingGroup.push(config);
+											return map;
+										}
+
+										map.set(templateGroupId, [config]);
+										return map;
+									}, new Map<string, SystemConfig[]>()),
+								)
+									.sort(([left], [right]) => {
+										return (
+											getMailTemplateGroupOrderIndex(left) -
+												getMailTemplateGroupOrderIndex(right) ||
+											left.localeCompare(right)
+										);
+									})
+									.map(([templateGroupId, configs]) => ({
+										configs: [...configs].sort(
+											(left, right) =>
+												getMailTemplateFieldOrder(left.key) -
+													getMailTemplateFieldOrder(right.key) ||
+												left.key.localeCompare(right.key),
+										),
+										groupKey: `${groupKey}:${templateGroupId}`,
+										templateGroupId,
+									}))
+							: [];
+
+						return (
+							<section
+								key={groupKey}
+								className="overflow-hidden rounded-2xl border border-border/60 bg-card/40"
+							>
+								<div className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+									<div className="min-w-0 flex-1 space-y-1">
+										<h4 className="text-base font-semibold tracking-tight">
+											{getSubcategoryLabel(category, group.subcategory)}
+										</h4>
+										{groupDescription ? (
+											<p className="max-w-3xl break-words text-sm leading-6 text-muted-foreground">
+												{groupDescription}
+											</p>
+										) : null}
+									</div>
+									<div className="flex flex-col items-start gap-3 lg:items-end">
+										{extra}
+										{collapsible ? (
+											<Button
+												variant="ghost"
+												size="sm"
+												className="justify-start px-0 lg:px-3"
+												aria-expanded={expanded}
+												onClick={() =>
+													toggleSubcategoryGroup(groupKey, !expanded)
+												}
+											>
+												{expanded
+													? t("settings_section_collapse")
+													: t("settings_section_expand")}
+												<Icon
+													name="CaretDown"
+													className={cn(
+														"h-4 w-4 transition-transform",
+														expanded ? "rotate-180" : "",
+													)}
+												/>
+											</Button>
+										) : null}
+									</div>
+								</div>
+								{!collapsible || expanded ? (
+									<div className="border-t border-border/40 px-5">
+										{isMailTemplateSection ? (
+											<div className="space-y-4 py-5">
+												{mailTemplateGroups.map((templateGroup) => {
+													const templateExpanded =
+														expandedTemplateGroups[templateGroup.groupKey] ??
+														false;
+													const changedCount = templateGroup.configs.filter(
+														(config) => getDraftValue(config) !== config.value,
+													).length;
+
+													return (
+														<section
+															key={templateGroup.groupKey}
+															className="overflow-hidden rounded-xl border border-border/50 bg-background/80"
+														>
+															<Button
+																variant="ghost"
+																size="sm"
+																className="flex h-auto w-full items-center justify-between gap-3 rounded-none px-4 py-3 text-left"
+																aria-expanded={templateExpanded}
+																onClick={() =>
+																	toggleTemplateGroup(
+																		templateGroup.groupKey,
+																		!templateExpanded,
+																	)
+																}
+															>
+																<span className="min-w-0 space-y-1">
+																	<span className="block text-sm font-medium">
+																		{getMailTemplateGroupLabel(
+																			templateGroup.templateGroupId,
+																		)}
+																	</span>
+																	{changedCount > 0 ? (
+																		<span className="block text-xs text-primary">
+																			{t("settings_save_notice", {
+																				count: changedCount,
+																			})}
+																		</span>
+																	) : null}
+																</span>
+																<span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+																	<span>
+																		{templateExpanded
+																			? t("settings_section_collapse")
+																			: t("settings_section_expand")}
+																	</span>
+																	<Icon
+																		name="CaretDown"
+																		className={cn(
+																			"h-4 w-4 transition-transform",
+																			templateExpanded ? "rotate-180" : "",
+																		)}
+																	/>
+																</span>
+															</Button>
+															<AnimatedCollapsible
+																open={templateExpanded}
+																contentClassName={cn(
+																	"px-4 transition-colors duration-[180ms] ease-out motion-reduce:transition-none",
+																	templateExpanded
+																		? "border-t border-border/40"
+																		: "border-t border-transparent",
+																)}
+															>
+																<div className="divide-y divide-border/40">
+																	{templateGroup.configs.map((config) => (
+																		<div
+																			key={config.key}
+																			className="py-5 first:pt-5 last:pb-5"
+																		>
+																			{renderSystemConfigRow(config)}
+																		</div>
+																	))}
+																</div>
+															</AnimatedCollapsible>
+														</section>
+													);
+												})}
+											</div>
+										) : (
+											<div className="divide-y divide-border/40">
+												{group.configs.map((config) => (
+													<div
+														key={config.key}
+														className="py-6 first:pt-6 last:pb-6"
+													>
+														{renderSystemConfigRow(config)}
+													</div>
+												))}
+											</div>
+										)}
+									</div>
+								) : null}
+							</section>
+						);
+					})}
+				</div>
+			);
+		};
 
 		if (category === "custom") {
 			return (
@@ -1458,14 +2094,7 @@ export default function AdminSettingsPage({
 					{showCategoryHeader
 						? renderCategoryHeader(category, { description: undefined })
 						: null}
-					<div className="max-w-4xl divide-y divide-border/40">
-						{(systemGroups[category] ?? []).map((config) => (
-							<div key={config.key} className="py-6 first:pt-0 last:pb-0">
-								{renderSystemConfigRow(config)}
-							</div>
-						))}
-					</div>
-					<div className="max-w-4xl">{mailCategoryActions}</div>
+					{renderSystemConfigGroups()}
 				</div>
 			);
 		}
@@ -1478,13 +2107,7 @@ export default function AdminSettingsPage({
 				{showCategoryHeader
 					? renderCategoryHeader(category, { description: undefined })
 					: null}
-				<div className="max-w-4xl divide-y divide-border/40">
-					{(systemGroups[category] ?? []).map((config) => (
-						<div key={config.key} className="py-6 first:pt-0 last:pb-0">
-							{renderSystemConfigRow(config)}
-						</div>
-					))}
-				</div>
+				{renderSystemConfigGroups()}
 			</div>
 		);
 	};
@@ -1773,6 +2396,63 @@ export default function AdminSettingsPage({
 		);
 	};
 
+	const renderTemplateVariablesDialog = () => (
+		<Dialog
+			open={activeTemplateVariableGroupCode !== null}
+			onOpenChange={(open) => {
+				if (!open) {
+					setActiveTemplateVariableGroupCode(null);
+				}
+			}}
+		>
+			<DialogContent className="max-w-[calc(100%-1.5rem)] sm:max-w-[min(72rem,calc(100vw-2rem))]">
+				<DialogHeader>
+					<DialogTitle>
+						{t("mail_template_variables_dialog_title", {
+							name: activeTemplateVariableGroup
+								? getTemplateVariableGroupLabel(activeTemplateVariableGroup)
+								: "",
+						})}
+					</DialogTitle>
+					<DialogDescription>
+						{t("mail_template_variables_dialog_desc")}
+					</DialogDescription>
+				</DialogHeader>
+				<div className="max-h-[min(70vh,40rem)] space-y-4 overflow-y-auto py-2 pr-1">
+					{activeTemplateVariableGroup ? (
+						<div className="space-y-3">
+							{activeTemplateVariableGroup.variables.map((variable) => (
+								<div
+									key={`${activeTemplateVariableGroup.template_code}:${variable.token}`}
+									className="rounded-xl border border-border/60 bg-card/40 px-4 py-4"
+								>
+									<div className="flex flex-wrap items-center gap-2">
+										<code className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">
+											{variable.token}
+										</code>
+										<span className="text-sm font-medium">
+											{getTemplateVariableLabel(variable)}
+										</span>
+									</div>
+									{getTemplateVariableDescription(variable) ? (
+										<p className="mt-2 break-words text-sm leading-6 text-muted-foreground">
+											{getTemplateVariableDescription(variable)}
+										</p>
+									) : null}
+								</div>
+							))}
+						</div>
+					) : (
+						<p className="text-sm text-muted-foreground">
+							{t("mail_template_variables_dialog_empty")}
+						</p>
+					)}
+				</div>
+				<DialogFooter showCloseButton />
+			</DialogContent>
+		</Dialog>
+	);
+
 	return (
 		<AdminLayout>
 			<AdminPageShell className="pb-0 md:pb-0">
@@ -1827,6 +2507,7 @@ export default function AdminSettingsPage({
 					</div>
 				)}
 			</AdminPageShell>
+			{renderTemplateVariablesDialog()}
 			<Dialog
 				open={testEmailDialogOpen}
 				onOpenChange={(open) => {

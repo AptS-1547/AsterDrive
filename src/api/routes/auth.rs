@@ -13,6 +13,7 @@ use actix_web::http::header;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 use bytes::Bytes;
+use rand::RngExt;
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
@@ -35,6 +36,8 @@ const ACCESS_COOKIE: &str = "aster_access";
 const REFRESH_COOKIE: &str = "aster_refresh";
 const ACCESS_COOKIE_PATH: &str = "/";
 const REFRESH_COOKIE_PATH: &str = "/api/v1/auth/refresh";
+const AUTH_MAIL_RESPONSE_FLOOR_MS: u64 = 350;
+const AUTH_MAIL_RESPONSE_JITTER_MS: u64 = 125;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.auth);
@@ -232,6 +235,16 @@ fn clear_access_cookie(secure: bool) -> Cookie<'static> {
 
 fn clear_refresh_cookie(secure: bool) -> Cookie<'static> {
     clear_cookie(REFRESH_COOKIE, REFRESH_COOKIE_PATH, secure)
+}
+
+async fn apply_auth_mail_response_floor(started_at: tokio::time::Instant) {
+    let mut rng = rand::rng();
+    let jitter_ms = rng.random_range(0..=AUTH_MAIL_RESPONSE_JITTER_MS);
+    let target = std::time::Duration::from_millis(AUTH_MAIL_RESPONSE_FLOOR_MS + jitter_ms);
+    let elapsed = started_at.elapsed();
+    if elapsed < target {
+        tokio::time::sleep(target - elapsed).await;
+    }
 }
 
 fn bearer_token(req: &actix_web::HttpRequest) -> Option<String> {
@@ -489,9 +502,7 @@ pub async fn register(
     operation_id = "resend_register_activation",
     request_body = ResendRegisterActivationReq,
     responses(
-        (status = 200, description = "Activation email resent", body = inline(ApiResponse<ActionMessageResp>)),
-        (status = 404, description = "User not found"),
-        (status = 429, description = "Resend cooldown not reached"),
+        (status = 200, description = "Activation resend request accepted", body = inline(ApiResponse<ActionMessageResp>)),
     ),
 )]
 pub async fn resend_register_activation(
@@ -499,32 +510,43 @@ pub async fn resend_register_activation(
     req: actix_web::HttpRequest,
     body: web::Json<ResendRegisterActivationReq>,
 ) -> Result<HttpResponse> {
-    let user = auth_service::resend_register_activation(&state, &body.identifier).await?;
-    let ctx = audit_service::AuditContext {
-        user_id: user.id,
-        ip_address: req
-            .connection_info()
-            .realip_remote_addr()
-            .map(|s| s.to_string()),
-        user_agent: req
-            .headers()
-            .get("user-agent")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string()),
+    let started_at = tokio::time::Instant::now();
+    let result = auth_service::resend_register_activation(&state, &body.identifier).await;
+    let user = match result {
+        Ok(user) => user,
+        Err(error) => {
+            apply_auth_mail_response_floor(started_at).await;
+            return Err(error);
+        }
     };
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::UserResendRegistration,
-        Some("user"),
-        Some(user.id),
-        Some(&user.username),
-        None,
-    )
-    .await;
+    if let Some(user) = user {
+        let ctx = audit_service::AuditContext {
+            user_id: user.id,
+            ip_address: req
+                .connection_info()
+                .realip_remote_addr()
+                .map(|s| s.to_string()),
+            user_agent: req
+                .headers()
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string()),
+        };
+        audit_service::log(
+            &state,
+            &ctx,
+            audit_service::AuditAction::UserResendRegistration,
+            Some("user"),
+            Some(user.id),
+            Some(&user.username),
+            None,
+        )
+        .await;
+    }
+    apply_auth_mail_response_floor(started_at).await;
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
-        message: "Activation email sent".to_string(),
+        message: "If the account can be reactivated, an activation email will be sent".to_string(),
     })))
 }
 
@@ -662,7 +684,15 @@ pub async fn request_password_reset(
     req: actix_web::HttpRequest,
     body: web::Json<PasswordResetRequestReq>,
 ) -> Result<HttpResponse> {
-    let result = auth_service::request_password_reset(&state, &body.email).await?;
+    let started_at = tokio::time::Instant::now();
+    let result = auth_service::request_password_reset(&state, &body.email).await;
+    let result = match result {
+        Ok(result) => result,
+        Err(error) => {
+            apply_auth_mail_response_floor(started_at).await;
+            return Err(error);
+        }
+    };
     if let Some(user) = result.user.as_ref() {
         let ctx = audit_service::AuditContext {
             user_id: user.id,
@@ -687,6 +717,7 @@ pub async fn request_password_reset(
         )
         .await;
     }
+    apply_auth_mail_response_floor(started_at).await;
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
         message: "If the account is eligible, a password reset email will be sent".to_string(),
@@ -1008,9 +1039,8 @@ pub async fn request_email_change(
     tag = "auth",
     operation_id = "resend_email_change",
     responses(
-        (status = 200, description = "Email change confirmation resent", body = inline(ApiResponse<ActionMessageResp>)),
+        (status = 200, description = "Email change confirmation resend request accepted", body = inline(ApiResponse<ActionMessageResp>)),
         (status = 400, description = "No pending email change"),
-        (status = 429, description = "Resend cooldown not reached"),
     ),
     security(("bearer" = [])),
 )]
@@ -1019,20 +1049,31 @@ pub async fn resend_email_change(
     req: actix_web::HttpRequest,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
-    let user = auth_service::resend_email_change(&state, claims.user_id).await?;
-    let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::UserResendEmailChange,
-        Some("user"),
-        Some(user.id),
-        Some(&user.username),
-        None,
-    )
-    .await;
+    let started_at = tokio::time::Instant::now();
+    let result = auth_service::resend_email_change(&state, claims.user_id).await;
+    let user = match result {
+        Ok(user) => user,
+        Err(error) => {
+            apply_auth_mail_response_floor(started_at).await;
+            return Err(error);
+        }
+    };
+    if let Some(user) = user {
+        let ctx = audit_service::AuditContext::from_request(&req, &claims);
+        audit_service::log(
+            &state,
+            &ctx,
+            audit_service::AuditAction::UserResendEmailChange,
+            Some("user"),
+            Some(user.id),
+            Some(&user.username),
+            None,
+        )
+        .await;
+    }
+    apply_auth_mail_response_floor(started_at).await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
-        message: "Email change confirmation sent".to_string(),
+        message: "If an email change is pending, a confirmation email will be sent".to_string(),
     })))
 }
 

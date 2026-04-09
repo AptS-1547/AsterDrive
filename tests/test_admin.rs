@@ -137,6 +137,40 @@ async fn test_admin_scope_allows_admin_users() {
 }
 
 #[actix_web::test]
+async fn test_admin_template_variables_returns_mail_template_metadata() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/config/template-variables")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let groups = body["data"].as_array().unwrap();
+
+    let password_reset = groups
+        .iter()
+        .find(|item| item["template_code"] == "password_reset")
+        .unwrap();
+    assert_eq!(password_reset["category"], "mail.template");
+    assert_eq!(
+        password_reset["label_i18n_key"],
+        "settings_mail_template_group_password_reset"
+    );
+
+    let variables = password_reset["variables"].as_array().unwrap();
+    assert!(variables.iter().any(|item| item["token"] == "{{username}}"));
+    assert!(
+        variables
+            .iter()
+            .any(|item| item["token"] == "{{reset_url}}")
+    );
+}
+
+#[actix_web::test]
 async fn test_admin_locks() {
     let state = common::setup().await;
     let app = create_test_app!(state);

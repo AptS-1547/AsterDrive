@@ -13,6 +13,7 @@ use crate::config::RuntimeConfig;
 use crate::config::{mail, site_url};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
+use crate::services::mail_template::RenderedMail;
 use crate::utils::id;
 
 const SMTP_SEND_TIMEOUT_SECS: u64 = 15;
@@ -171,136 +172,41 @@ impl MailSender for RuntimeMailSender {
     }
 }
 
-pub async fn send_register_activation(
+pub async fn send_rendered(
     state: &AppState,
-    username: &str,
-    email: &str,
-    token: &str,
+    to: MailRecipient,
+    rendered: RenderedMail,
 ) -> Result<()> {
-    let verification_link = verification_link(&state.runtime_config, token);
-    let subject = "Activate your AsterDrive account".to_string();
-    let text_body = format!(
-        "Hi {username},\n\nActivate your AsterDrive account by opening this link:\n{verification_link}\n\nIf you did not request this account, you can ignore this email."
-    );
-    let html_body = format!(
-        "<p>Hi {username},</p><p>Activate your AsterDrive account by opening this link:</p><p><a href=\"{verification_link}\">{verification_link}</a></p><p>If you did not request this account, you can ignore this email.</p>"
-    );
-    send_message(
-        state,
-        MailRecipient {
-            address: email.to_string(),
-            display_name: Some(username.to_string()),
-        },
-        subject,
-        text_body,
-        html_body,
-    )
-    .await
+    send_rendered_with(&state.runtime_config, &state.mail_sender, to, rendered).await
 }
 
-pub async fn send_contact_change_confirmation(
-    state: &AppState,
-    username: &str,
-    email: &str,
-    token: &str,
+pub async fn send_rendered_with(
+    runtime_config: &RuntimeConfig,
+    mail_sender: &Arc<dyn MailSender>,
+    to: MailRecipient,
+    rendered: RenderedMail,
 ) -> Result<()> {
-    let verification_link = verification_link(&state.runtime_config, token);
-    let subject = "Confirm your AsterDrive email change".to_string();
-    let text_body = format!(
-        "Hi {username},\n\nConfirm your new contact email by opening this link:\n{verification_link}\n\nIf you did not request this change, you can ignore this email."
+    let settings = mail::RuntimeMailSettings::from_runtime_config(runtime_config);
+    let from = MailRecipient {
+        address: settings.from_address,
+        display_name: (!settings.from_name.is_empty()).then_some(settings.from_name),
+    };
+    tracing::debug!(
+        from = %from.address,
+        to = %to.address,
+        subject = %rendered.subject,
+        "mail: dispatching rendered message through configured sender"
     );
-    let html_body = format!(
-        "<p>Hi {username},</p><p>Confirm your new contact email by opening this link:</p><p><a href=\"{verification_link}\">{verification_link}</a></p><p>If you did not request this change, you can ignore this email.</p>"
-    );
-    send_message(
-        state,
-        MailRecipient {
-            address: email.to_string(),
-            display_name: Some(username.to_string()),
-        },
-        subject,
-        text_body,
-        html_body,
-    )
-    .await
-}
 
-pub async fn send_password_reset(
-    state: &AppState,
-    username: &str,
-    email: &str,
-    token: &str,
-) -> Result<()> {
-    let reset_link = password_reset_link(&state.runtime_config, token);
-    let subject = "Reset your AsterDrive password".to_string();
-    let text_body = format!(
-        "Hi {username},\n\nReset your AsterDrive password by opening this link:\n{reset_link}\n\nIf you did not request a password reset, you can ignore this email."
-    );
-    let html_body = format!(
-        "<p>Hi {username},</p><p>Reset your AsterDrive password by opening this link:</p><p><a href=\"{reset_link}\">{reset_link}</a></p><p>If you did not request a password reset, you can ignore this email.</p>"
-    );
-    send_message(
-        state,
-        MailRecipient {
-            address: email.to_string(),
-            display_name: Some(username.to_string()),
-        },
-        subject,
-        text_body,
-        html_body,
-    )
-    .await
-}
-
-pub async fn send_password_reset_notice(
-    state: &AppState,
-    username: &str,
-    email: &str,
-) -> Result<()> {
-    let subject = "Your AsterDrive password was reset".to_string();
-    let text_body = format!(
-        "Hi {username},\n\nThis is a confirmation that your AsterDrive password was just reset.\n\nIf you did not make this change, contact your administrator immediately."
-    );
-    let html_body = format!(
-        "<p>Hi {username},</p><p>This is a confirmation that your AsterDrive password was just reset.</p><p>If you did not make this change, contact your administrator immediately.</p>"
-    );
-    send_message(
-        state,
-        MailRecipient {
-            address: email.to_string(),
-            display_name: Some(username.to_string()),
-        },
-        subject,
-        text_body,
-        html_body,
-    )
-    .await
-}
-
-pub async fn send_contact_change_notice(
-    state: &AppState,
-    username: &str,
-    previous_email: &str,
-    new_email: &str,
-) -> Result<()> {
-    let subject = "Your AsterDrive email was changed".to_string();
-    let text_body = format!(
-        "Hi {username},\n\nThis is a confirmation that your AsterDrive email was changed from {previous_email} to {new_email}.\n\nIf you did not make this change, contact your administrator immediately."
-    );
-    let html_body = format!(
-        "<p>Hi {username},</p><p>This is a confirmation that your AsterDrive email was changed from {previous_email} to {new_email}.</p><p>If you did not make this change, contact your administrator immediately.</p>"
-    );
-    send_message(
-        state,
-        MailRecipient {
-            address: previous_email.to_string(),
-            display_name: Some(username.to_string()),
-        },
-        subject,
-        text_body,
-        html_body,
-    )
-    .await
+    mail_sender
+        .send(MailMessage {
+            from,
+            to,
+            subject: rendered.subject,
+            text_body: rendered.text_body,
+            html_body: rendered.html_body,
+        })
+        .await
 }
 
 pub async fn send_test_email(
@@ -312,82 +218,33 @@ pub async fn send_test_email(
     let site_url = site_url::public_site_url(&state.runtime_config)
         .unwrap_or_else(|| "(not configured)".to_string());
     let triggered_by = triggered_by.unwrap_or("admin");
-    let subject = "AsterDrive SMTP test".to_string();
     tracing::debug!(
         to = %email,
         triggered_by = %triggered_by,
         "mail: building test email"
     );
-    let text_body = format!(
-        "This is a test email from AsterDrive.\n\nTriggered by: {triggered_by}\nSent at (UTC): {timestamp}\nPublic site URL: {site_url}\n\nIf you received this email, your SMTP settings are working."
-    );
-    let html_body = format!(
-        "<p>This is a test email from AsterDrive.</p><p><strong>Triggered by:</strong> {triggered_by}<br /><strong>Sent at (UTC):</strong> {timestamp}<br /><strong>Public site URL:</strong> {site_url}</p><p>If you received this email, your SMTP settings are working.</p>"
-    );
 
-    send_message(
+    send_rendered(
         state,
         MailRecipient {
             address: email.to_string(),
             display_name: None,
         },
-        subject,
-        text_body,
-        html_body,
+        RenderedMail {
+            subject: "AsterDrive SMTP test".to_string(),
+            text_body: format!(
+                "This is a test email from AsterDrive.\n\nTriggered by: {triggered_by}\nSent at (UTC): {timestamp}\nPublic site URL: {site_url}\n\nIf you received this email, your SMTP settings are working."
+            ),
+            html_body: format!(
+                "<p>This is a test email from AsterDrive.</p><p><strong>Triggered by:</strong> {triggered_by}<br /><strong>Sent at (UTC):</strong> {timestamp}<br /><strong>Public site URL:</strong> {site_url}</p><p>If you received this email, your SMTP settings are working.</p>"
+            ),
+        },
     )
     .await
 }
 
 pub fn build_verification_token() -> String {
     format!("cv_{}", id::new_short_token())
-}
-
-pub fn verification_link(runtime_config: &RuntimeConfig, token: &str) -> String {
-    site_url::public_app_url_or_path(
-        runtime_config,
-        &format!(
-            "/api/v1/auth/contact-verification/confirm?token={}",
-            urlencoding::encode(token)
-        ),
-    )
-}
-
-pub fn password_reset_link(runtime_config: &RuntimeConfig, token: &str) -> String {
-    site_url::public_app_url_or_path(
-        runtime_config,
-        &format!("/reset-password?token={}", urlencoding::encode(token)),
-    )
-}
-
-async fn send_message(
-    state: &AppState,
-    to: MailRecipient,
-    subject: String,
-    text_body: String,
-    html_body: String,
-) -> Result<()> {
-    let settings = mail::RuntimeMailSettings::from_runtime_config(&state.runtime_config);
-    let from = MailRecipient {
-        address: settings.from_address,
-        display_name: (!settings.from_name.is_empty()).then_some(settings.from_name),
-    };
-    tracing::debug!(
-        from = %from.address,
-        to = %to.address,
-        subject = %subject,
-        "mail: dispatching message through configured sender"
-    );
-
-    state
-        .mail_sender
-        .send(MailMessage {
-            from,
-            to,
-            subject,
-            text_body,
-            html_body,
-        })
-        .await
 }
 
 fn build_transport(

@@ -5,6 +5,7 @@ pub mod file;
 pub mod file_blob;
 pub mod file_version;
 pub mod folder;
+pub mod mail_outbox;
 pub mod resource_lock;
 pub mod share;
 pub mod storage_policy;

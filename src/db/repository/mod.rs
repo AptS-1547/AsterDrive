@@ -4,6 +4,7 @@ pub mod contact_verification_token_repo;
 pub mod file_repo;
 pub mod folder_repo;
 pub mod lock_repo;
+pub mod mail_outbox_repo;
 pub mod pagination_repo;
 pub mod policy_group_repo;
 pub mod policy_repo;

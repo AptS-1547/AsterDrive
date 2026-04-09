@@ -170,7 +170,7 @@ export function TextCodePreview({
 					options={{
 						readOnly: !editing,
 						minimap: { enabled: true },
-						wordWrap: "on",
+						wordWrap: "off",
 						fontSize: 13,
 						lineNumbers: "on",
 						scrollBeyondLastLine: false,

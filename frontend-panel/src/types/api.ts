@@ -112,6 +112,10 @@ export type ConfigActionType = components["schemas"]["ConfigActionType"];
 export type ConfigSchemaItem = components["schemas"]["ConfigSchemaItem"];
 export type ExecuteConfigActionRequest =
 	components["schemas"]["ExecuteConfigActionReq"];
+export type TemplateVariableGroup =
+	components["schemas"]["TemplateVariableGroup"];
+export type TemplateVariableItem =
+	components["schemas"]["TemplateVariableItem"];
 export type PublicBranding = components["schemas"]["PublicBranding"];
 export type SystemConfig = components["schemas"]["SystemConfig"];
 export type SystemConfigPage = components["schemas"]["OffsetPage_SystemConfig"];

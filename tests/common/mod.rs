@@ -130,6 +130,22 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
     }
 }
 
+#[allow(dead_code)]
+pub async fn flush_mail_outbox(state: &AppState) {
+    flush_mail_outbox_with(&state.db, &state.runtime_config, &state.mail_sender).await;
+}
+
+#[allow(dead_code)]
+pub async fn flush_mail_outbox_with(
+    db: &sea_orm::DatabaseConnection,
+    runtime_config: &std::sync::Arc<aster_drive::config::RuntimeConfig>,
+    mail_sender: &std::sync::Arc<dyn aster_drive::services::mail_service::MailSender>,
+) {
+    aster_drive::services::mail_outbox_service::drain_with(db, runtime_config, mail_sender)
+        .await
+        .expect("mail outbox drain should succeed");
+}
+
 /// 从 Set-Cookie header 提取指定 cookie 的值
 #[allow(dead_code)]
 pub fn extract_cookie<B>(resp: &actix_web::dev::ServiceResponse<B>, name: &str) -> Option<String> {

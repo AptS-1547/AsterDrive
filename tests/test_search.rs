@@ -335,7 +335,9 @@ async fn test_search_excludes_deleted() {
 #[actix_web::test]
 async fn test_search_only_own_files() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
 
     // Register user1 (first user = admin)
@@ -369,6 +371,7 @@ async fn test_search_only_own_files() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
     let _ = confirm_latest_contact_verification!(app, mail_sender);
 

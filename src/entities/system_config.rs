@@ -13,7 +13,7 @@ pub struct Model {
     #[sea_orm(unique)]
     pub key: String,
     pub value: String,
-    /// 值类型：string / number / boolean
+    /// 值类型：string / multiline / number / boolean
     #[serde(default = "default_value_type")]
     pub value_type: String,
     /// 修改后是否需要重启才生效

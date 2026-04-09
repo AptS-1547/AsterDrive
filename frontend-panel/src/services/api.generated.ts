@@ -52,6 +52,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/config/template-variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["config_template_variables"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/config/{key}": {
         parameters: {
             query?: never;
@@ -2399,7 +2415,6 @@ export interface components {
             code: components["schemas"]["ErrorCode"];
             data?: {
                 category: string;
-                default_value: string;
                 description: string;
                 description_i18n_key: string;
                 is_sensitive: boolean;
@@ -2407,6 +2422,22 @@ export interface components {
                 label_i18n_key: string;
                 requires_restart: boolean;
                 value_type: string;
+            }[];
+            msg: string;
+        };
+        /**
+         * @description 统一 API 响应格式
+         *
+         *     成功: `{ "code": 0, "msg": "", "data": {...} }`
+         *     失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+         */
+        ApiResponse_Vec_TemplateVariableGroup: {
+            code: components["schemas"]["ErrorCode"];
+            data?: {
+                category: string;
+                label_i18n_key: string;
+                template_code: string;
+                variables: components["schemas"]["TemplateVariableItem"][];
             }[];
             msg: string;
         };
@@ -2514,7 +2545,6 @@ export interface components {
         /** @description 系统配置的 schema 信息（从 ALL_CONFIGS 生成） */
         ConfigSchemaItem: {
             category: string;
-            default_value: string;
             description: string;
             description_i18n_key: string;
             is_sensitive: boolean;
@@ -3049,7 +3079,7 @@ export interface components {
                 /** Format: int64 */
                 updated_by?: number | null;
                 value: string;
-                /** @description 值类型：string / number / boolean */
+                /** @description 值类型：string / multiline / number / boolean */
                 value_type?: string;
             }[];
             /** Format: int64 */
@@ -3481,7 +3511,7 @@ export interface components {
             /** Format: int64 */
             updated_by?: number | null;
             value: string;
-            /** @description 值类型：string / number / boolean */
+            /** @description 值类型：string / multiline / number / boolean */
             value_type?: string;
         };
         TeamAuditEntryInfo: {
@@ -3548,6 +3578,17 @@ export interface components {
          * @enum {string}
          */
         TeamMemberRole: "owner" | "admin" | "member";
+        TemplateVariableGroup: {
+            category: string;
+            label_i18n_key: string;
+            template_code: string;
+            variables: components["schemas"]["TemplateVariableItem"][];
+        };
+        TemplateVariableItem: {
+            description_i18n_key: string;
+            label_i18n_key: string;
+            token: string;
+        };
         TestConnectionReq: {
             password: string;
             username: string;
@@ -3915,7 +3956,7 @@ export interface operations {
                                 /** Format: int64 */
                                 updated_by?: number | null;
                                 value: string;
-                                /** @description 值类型：string / number / boolean */
+                                /** @description 值类型：string / multiline / number / boolean */
                                 value_type?: string;
                             }[];
                             /** Format: int64 */
@@ -3979,6 +4020,40 @@ export interface operations {
             };
         };
     };
+    config_template_variables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Template variables */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_Vec_TemplateVariableGroup"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_config: {
         parameters: {
             query?: never;
@@ -4019,7 +4094,7 @@ export interface operations {
                             /** Format: int64 */
                             updated_by?: number | null;
                             value: string;
-                            /** @description 值类型：string / number / boolean */
+                            /** @description 值类型：string / multiline / number / boolean */
                             value_type?: string;
                         };
                         msg: string;
@@ -4093,7 +4168,7 @@ export interface operations {
                             /** Format: int64 */
                             updated_by?: number | null;
                             value: string;
-                            /** @description 值类型：string / number / boolean */
+                            /** @description 值类型：string / multiline / number / boolean */
                             value_type?: string;
                         };
                         msg: string;
@@ -6549,7 +6624,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Email change confirmation resent */
+            /** @description Email change confirmation resend request accepted */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6566,13 +6641,6 @@ export interface operations {
             };
             /** @description No pending email change */
             400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Resend cooldown not reached */
-            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7134,7 +7202,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Activation email resent */
+            /** @description Activation resend request accepted */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7148,20 +7216,6 @@ export interface operations {
                         msg: string;
                     };
                 };
-            };
-            /** @description User not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Resend cooldown not reached */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };

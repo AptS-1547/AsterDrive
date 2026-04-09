@@ -272,7 +272,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: String::new,
         requires_restart: false,
         is_sensitive: false,
-        category: "mail",
+        category: "mail.config",
         description: "SMTP server hostname used for transactional email delivery",
     },
     ConfigDef {
@@ -283,7 +283,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "587".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "mail",
+        category: "mail.config",
         description: "SMTP server port used for transactional email delivery",
     },
     ConfigDef {
@@ -294,7 +294,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: String::new,
         requires_restart: false,
         is_sensitive: false,
-        category: "mail",
+        category: "mail.config",
         description: "SMTP username for authenticated mail delivery",
     },
     ConfigDef {
@@ -305,7 +305,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: String::new,
         requires_restart: false,
         is_sensitive: true,
-        category: "mail",
+        category: "mail.config",
         description: "SMTP password for authenticated mail delivery",
     },
     ConfigDef {
@@ -316,7 +316,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: String::new,
         requires_restart: false,
         is_sensitive: false,
-        category: "mail",
+        category: "mail.config",
         description: "From address used for account activation and contact verification email",
     },
     ConfigDef {
@@ -327,7 +327,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "AsterDrive".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "mail",
+        category: "mail.config",
         description: "Display name used for account activation and contact verification email",
     },
     ConfigDef {
@@ -338,8 +338,168 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "true".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "mail",
+        category: "mail.config",
         description: "Whether SMTP uses encryption. Port 465 uses implicit SSL/TLS; other ports use STARTTLS when enabled",
+    },
+    ConfigDef {
+        key: "mail_template_register_activation_subject",
+        label_i18n_key: "settings_item_mail_template_register_activation_subject_label",
+        description_i18n_key: "settings_item_mail_template_register_activation_subject_desc",
+        value_type: "string",
+        default_fn: || {
+            crate::config::mail::default_template_subject(
+                crate::types::MailTemplateCode::RegisterActivation,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "Subject template for registration activation emails",
+    },
+    ConfigDef {
+        key: "mail_template_register_activation_html",
+        label_i18n_key: "settings_item_mail_template_register_activation_html_label",
+        description_i18n_key: "settings_item_mail_template_register_activation_html_desc",
+        value_type: "multiline",
+        default_fn: || {
+            crate::config::mail::default_template_html(
+                crate::types::MailTemplateCode::RegisterActivation,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "HTML template for registration activation emails. Prefer a complete HTML document for best client compatibility",
+    },
+    ConfigDef {
+        key: "mail_template_contact_change_confirmation_subject",
+        label_i18n_key: "settings_item_mail_template_contact_change_confirmation_subject_label",
+        description_i18n_key: "settings_item_mail_template_contact_change_confirmation_subject_desc",
+        value_type: "string",
+        default_fn: || {
+            crate::config::mail::default_template_subject(
+                crate::types::MailTemplateCode::ContactChangeConfirmation,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "Subject template for email change confirmation emails",
+    },
+    ConfigDef {
+        key: "mail_template_contact_change_confirmation_html",
+        label_i18n_key: "settings_item_mail_template_contact_change_confirmation_html_label",
+        description_i18n_key: "settings_item_mail_template_contact_change_confirmation_html_desc",
+        value_type: "multiline",
+        default_fn: || {
+            crate::config::mail::default_template_html(
+                crate::types::MailTemplateCode::ContactChangeConfirmation,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "HTML template for email change confirmation emails. Prefer a complete HTML document for best client compatibility",
+    },
+    ConfigDef {
+        key: "mail_template_password_reset_subject",
+        label_i18n_key: "settings_item_mail_template_password_reset_subject_label",
+        description_i18n_key: "settings_item_mail_template_password_reset_subject_desc",
+        value_type: "string",
+        default_fn: || {
+            crate::config::mail::default_template_subject(
+                crate::types::MailTemplateCode::PasswordReset,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "Subject template for password reset emails",
+    },
+    ConfigDef {
+        key: "mail_template_password_reset_html",
+        label_i18n_key: "settings_item_mail_template_password_reset_html_label",
+        description_i18n_key: "settings_item_mail_template_password_reset_html_desc",
+        value_type: "multiline",
+        default_fn: || {
+            crate::config::mail::default_template_html(
+                crate::types::MailTemplateCode::PasswordReset,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "HTML template for password reset emails. Prefer a complete HTML document for best client compatibility",
+    },
+    ConfigDef {
+        key: "mail_template_password_reset_notice_subject",
+        label_i18n_key: "settings_item_mail_template_password_reset_notice_subject_label",
+        description_i18n_key: "settings_item_mail_template_password_reset_notice_subject_desc",
+        value_type: "string",
+        default_fn: || {
+            crate::config::mail::default_template_subject(
+                crate::types::MailTemplateCode::PasswordResetNotice,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "Subject template for password reset confirmation emails",
+    },
+    ConfigDef {
+        key: "mail_template_password_reset_notice_html",
+        label_i18n_key: "settings_item_mail_template_password_reset_notice_html_label",
+        description_i18n_key: "settings_item_mail_template_password_reset_notice_html_desc",
+        value_type: "multiline",
+        default_fn: || {
+            crate::config::mail::default_template_html(
+                crate::types::MailTemplateCode::PasswordResetNotice,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "HTML template for password reset confirmation emails. Prefer a complete HTML document for best client compatibility",
+    },
+    ConfigDef {
+        key: "mail_template_contact_change_notice_subject",
+        label_i18n_key: "settings_item_mail_template_contact_change_notice_subject_label",
+        description_i18n_key: "settings_item_mail_template_contact_change_notice_subject_desc",
+        value_type: "string",
+        default_fn: || {
+            crate::config::mail::default_template_subject(
+                crate::types::MailTemplateCode::ContactChangeNotice,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "Subject template for previous-address email change notices",
+    },
+    ConfigDef {
+        key: "mail_template_contact_change_notice_html",
+        label_i18n_key: "settings_item_mail_template_contact_change_notice_html_label",
+        description_i18n_key: "settings_item_mail_template_contact_change_notice_html_desc",
+        value_type: "multiline",
+        default_fn: || {
+            crate::config::mail::default_template_html(
+                crate::types::MailTemplateCode::ContactChangeNotice,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "HTML template for previous-address email change notices. Prefer a complete HTML document for best client compatibility",
     },
     // ── General ─────────────────────────────────────────────
     ConfigDef {

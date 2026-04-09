@@ -107,6 +107,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::admin::locks::cleanup_expired_locks,
         crate::api::routes::admin::audit_logs::list_audit_logs,
         crate::api::routes::admin::config::config_schema,
+        crate::api::routes::admin::config::config_template_variables,
         crate::api::routes::admin::users::force_delete_user,
         // search
         crate::api::routes::search::search,
@@ -300,6 +301,8 @@ use utoipa::{Modify, OpenApi};
             crate::api::routes::admin::ExecuteConfigActionReq,
             crate::entities::system_config::Model,
             crate::services::config_service::ConfigSchemaItem,
+            crate::services::config_service::TemplateVariableItem,
+            crate::services::config_service::TemplateVariableGroup,
             crate::services::config_service::ConfigActionType,
             crate::services::config_service::PublicBranding,
             crate::services::policy_service::StoragePolicyGroupItemInfo,

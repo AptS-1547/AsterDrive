@@ -1,8 +1,6 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, EntityTrait, IntoActiveModel, Set, TransactionTrait,
-};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, IntoActiveModel, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 
 use crate::cache::CacheExt;
@@ -11,7 +9,7 @@ use crate::db::repository::{contact_verification_token_repo, user_repo};
 use crate::entities::{contact_verification_token, user};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::services::mail_service;
+use crate::services::{mail_outbox_service, mail_service, mail_template::MailTemplatePayload};
 use crate::types::{TokenType, UserRole, UserStatus, VerificationChannel, VerificationPurpose};
 use crate::utils::hash;
 
@@ -367,6 +365,23 @@ async fn ensure_resend_allowed<C: ConnectionTrait>(
     user_id: i64,
     purpose: VerificationPurpose,
 ) -> Result<()> {
+    if resend_allowed(state, db, user_id, purpose).await? {
+        return Ok(());
+    }
+
+    let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
+    let remaining = policy.resend_cooldown_secs.max(1);
+    Err(AsterError::rate_limited(format!(
+        "please wait {remaining} seconds before resending",
+    )))
+}
+
+async fn resend_allowed<C: ConnectionTrait>(
+    state: &AppState,
+    db: &C,
+    user_id: i64,
+    purpose: VerificationPurpose,
+) -> Result<bool> {
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
     let Some(latest) = contact_verification_token_repo::find_latest_active_for_user(
         db,
@@ -376,18 +391,11 @@ async fn ensure_resend_allowed<C: ConnectionTrait>(
     )
     .await?
     else {
-        return Ok(());
+        return Ok(true);
     };
 
     let allowed_at = latest.created_at + Duration::seconds(policy.resend_cooldown_secs as i64);
-    if allowed_at > Utc::now() {
-        let remaining = (allowed_at - Utc::now()).num_seconds().max(1);
-        return Err(AsterError::rate_limited(format!(
-            "please wait {remaining} seconds before resending",
-        )));
-    }
-
-    Ok(())
+    Ok(allowed_at <= Utc::now())
 }
 
 async fn password_reset_request_allowed<C: ConnectionTrait>(
@@ -412,28 +420,6 @@ async fn password_reset_request_allowed<C: ConnectionTrait>(
     Ok(allowed_at <= Utc::now())
 }
 
-async fn clear_active_contact_verification_tokens(
-    state: &AppState,
-    user_id: i64,
-    purpose: VerificationPurpose,
-) {
-    if let Err(error) = contact_verification_token_repo::delete_active_for_user(
-        &state.db,
-        user_id,
-        VerificationChannel::Email,
-        purpose,
-    )
-    .await
-    {
-        tracing::warn!(
-            user_id,
-            purpose = ?purpose,
-            error = %error,
-            "failed to cleanup active verification tokens"
-        );
-    }
-}
-
 async fn update_password_in_connection<C: ConnectionTrait>(
     db: &C,
     user: user::Model,
@@ -447,50 +433,6 @@ async fn update_password_in_connection<C: ConnectionTrait>(
     active.session_version = Set(next_session_version);
     active.updated_at = Set(Utc::now());
     active.update(db).await.map_err(AsterError::from)
-}
-
-async fn cleanup_failed_registration(state: &AppState, user_id: i64) {
-    if let Err(e) = user::Entity::delete_by_id(user_id).exec(&state.db).await {
-        tracing::warn!(user_id, error = %e, "failed to cleanup user after registration mail error");
-    }
-}
-
-async fn clear_pending_email_change(state: &AppState, user_id: i64) {
-    match user_repo::find_by_id(&state.db, user_id).await {
-        Ok(existing) => {
-            let txn = match state.db.begin().await {
-                Ok(txn) => txn,
-                Err(e) => {
-                    tracing::warn!(user_id, error = %e, "failed to begin pending email cleanup transaction");
-                    return;
-                }
-            };
-            let mut active = existing.into_active_model();
-            active.pending_email = Set(None);
-            active.updated_at = Set(Utc::now());
-            if let Err(e) = active.update(&txn).await.map_err(AsterError::from) {
-                tracing::warn!(user_id, error = %e, "failed to clear pending email after mail error");
-                return;
-            }
-            if let Err(e) = contact_verification_token_repo::delete_active_for_user(
-                &txn,
-                user_id,
-                VerificationChannel::Email,
-                VerificationPurpose::ContactChange,
-            )
-            .await
-            {
-                tracing::warn!(user_id, error = %e, "failed to delete stale email change tokens after mail error");
-                return;
-            }
-            if let Err(e) = txn.commit().await.map_err(AsterError::from) {
-                tracing::warn!(user_id, error = %e, "failed to commit pending email cleanup transaction");
-            }
-        }
-        Err(e) => {
-            tracing::warn!(user_id, error = %e, "failed to load user for pending email cleanup");
-        }
-    }
 }
 
 pub async fn create_user_by_admin(
@@ -551,37 +493,44 @@ pub async fn register(
         policy.register_activation_ttl_secs,
     )
     .await?;
+    mail_outbox_service::enqueue(
+        &txn,
+        &user.email,
+        Some(&user.username),
+        MailTemplatePayload::register_activation(&user.username, &token),
+    )
+    .await?;
     txn.commit().await.map_err(AsterError::from)?;
-
-    if let Err(error) =
-        mail_service::send_register_activation(state, &user.username, &user.email, &token).await
-    {
-        cleanup_failed_registration(state, user.id).await;
-        return Err(error);
-    }
 
     Ok(user)
 }
 
-pub async fn resend_register_activation(state: &AppState, identifier: &str) -> Result<user::Model> {
-    let user = find_user_by_identifier(&state.db, identifier)
-        .await?
-        .ok_or_else(|| AsterError::record_not_found("user not found"))?;
+pub async fn resend_register_activation(
+    state: &AppState,
+    identifier: &str,
+) -> Result<Option<user::Model>> {
+    let Some(user) = find_user_by_identifier(&state.db, identifier).await? else {
+        return Ok(None);
+    };
 
-    if !user.status.is_active() {
-        return Err(AsterError::auth_forbidden("account is disabled"));
-    }
-    if is_email_verified(&user) {
-        return Err(AsterError::validation_error("account already activated"));
+    if !user.status.is_active() || is_email_verified(&user) {
+        return Ok(None);
     }
 
-    ensure_resend_allowed(
+    if !resend_allowed(
         state,
         &state.db,
         user.id,
         VerificationPurpose::RegisterActivation,
     )
-    .await?;
+    .await?
+    {
+        tracing::info!(
+            user_id = user.id,
+            "register activation resend skipped due to cooldown"
+        );
+        return Ok(None);
+    }
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
 
     let txn = state.db.begin().await.map_err(AsterError::from)?;
@@ -593,10 +542,16 @@ pub async fn resend_register_activation(state: &AppState, identifier: &str) -> R
         policy.register_activation_ttl_secs,
     )
     .await?;
+    mail_outbox_service::enqueue(
+        &txn,
+        &user.email,
+        Some(&user.username),
+        MailTemplatePayload::register_activation(&user.username, &token),
+    )
+    .await?;
     txn.commit().await.map_err(AsterError::from)?;
 
-    mail_service::send_register_activation(state, &user.username, &user.email, &token).await?;
-    Ok(user)
+    Ok(Some(user))
 }
 
 pub async fn request_email_change(
@@ -646,24 +601,19 @@ pub async fn request_email_change(
         policy.contact_change_ttl_secs,
     )
     .await?;
-    txn.commit().await.map_err(AsterError::from)?;
-
-    if let Err(error) = mail_service::send_contact_change_confirmation(
-        state,
-        &updated.username,
+    mail_outbox_service::enqueue(
+        &txn,
         &normalized_email,
-        &token,
+        Some(&updated.username),
+        MailTemplatePayload::contact_change_confirmation(&updated.username, &token),
     )
-    .await
-    {
-        clear_pending_email_change(state, updated.id).await;
-        return Err(error);
-    }
+    .await?;
+    txn.commit().await.map_err(AsterError::from)?;
 
     Ok(updated)
 }
 
-pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<user::Model> {
+pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<Option<user::Model>> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let pending_email = user
         .pending_email
@@ -680,13 +630,20 @@ pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<user:
     }
 
     ensure_email_available(&state.db, &pending_email, Some(user.id)).await?;
-    ensure_resend_allowed(
+    if !resend_allowed(
         state,
         &state.db,
         user.id,
         VerificationPurpose::ContactChange,
     )
-    .await?;
+    .await?
+    {
+        tracing::info!(
+            user_id = user.id,
+            "email change resend skipped due to cooldown"
+        );
+        return Ok(None);
+    }
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
 
     let txn = state.db.begin().await.map_err(AsterError::from)?;
@@ -698,11 +655,16 @@ pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<user:
         policy.contact_change_ttl_secs,
     )
     .await?;
+    mail_outbox_service::enqueue(
+        &txn,
+        &pending_email,
+        Some(&user.username),
+        MailTemplatePayload::contact_change_confirmation(&user.username, &token),
+    )
+    .await?;
     txn.commit().await.map_err(AsterError::from)?;
 
-    mail_service::send_contact_change_confirmation(state, &user.username, &pending_email, &token)
-        .await?;
-    Ok(user)
+    Ok(Some(user))
 }
 
 pub async fn request_password_reset(
@@ -736,23 +698,14 @@ pub async fn request_password_reset(
         policy.password_reset_ttl_secs,
     )
     .await?;
+    mail_outbox_service::enqueue(
+        &txn,
+        &user.email,
+        Some(&user.username),
+        MailTemplatePayload::password_reset(&user.username, &token),
+    )
+    .await?;
     txn.commit().await.map_err(AsterError::from)?;
-
-    if let Err(error) =
-        mail_service::send_password_reset(state, &user.username, &user.email, &token).await
-    {
-        tracing::warn!(
-            user_id = user.id,
-            error = %error,
-            "failed to send password reset email"
-        );
-        clear_active_contact_verification_tokens(
-            state,
-            user.id,
-            VerificationPurpose::PasswordReset,
-        )
-        .await;
-    }
 
     Ok(PasswordResetRequestResult { user: Some(user) })
 }
@@ -807,18 +760,15 @@ pub async fn confirm_password_reset(
     }
 
     let updated = update_password_in_connection(&txn, existing_user, new_password).await?;
+    mail_outbox_service::enqueue(
+        &txn,
+        &updated.email,
+        Some(&updated.username),
+        MailTemplatePayload::password_reset_notice(&updated.username),
+    )
+    .await?;
     txn.commit().await.map_err(AsterError::from)?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
-    if let Err(error) =
-        mail_service::send_password_reset_notice(state, &updated.username, &updated.email).await
-    {
-        tracing::warn!(
-            user_id = updated.id,
-            email = %updated.email,
-            error = %error,
-            "failed to send password reset notice"
-        );
-    }
     Ok(updated)
 }
 
@@ -905,25 +855,24 @@ pub async fn confirm_contact_verification(
                 active.email_verified_at = Set(Some(now));
                 active.updated_at = Set(now);
                 active.update(&txn).await.map_err(AsterError::from)?;
+                if let Some(previous_email) = previous_email.as_deref() {
+                    mail_outbox_service::enqueue(
+                        &txn,
+                        previous_email,
+                        Some(&username),
+                        MailTemplatePayload::contact_change_notice(
+                            &username,
+                            previous_email,
+                            &target,
+                        ),
+                    )
+                    .await?;
+                }
             }
         }
         VerificationPurpose::PasswordReset => unreachable!("handled above"),
     }
     txn.commit().await.map_err(AsterError::from)?;
-
-    if let Some(previous_email) = previous_email.as_deref()
-        && let Err(error) =
-            mail_service::send_contact_change_notice(state, &username, previous_email, &target)
-                .await
-    {
-        tracing::warn!(
-            user_id,
-            previous_email,
-            new_email = %target,
-            error = %error,
-            "failed to send email change notice to previous address"
-        );
-    }
 
     Ok(ContactVerificationConfirmResult {
         purpose,

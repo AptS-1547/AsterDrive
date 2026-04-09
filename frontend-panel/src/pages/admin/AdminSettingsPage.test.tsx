@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
 
 const mockState = vi.hoisted(() => ({
+	codeEditorProps: null as null | Record<string, unknown>,
 	deleteConfig: vi.fn(),
 	handleApiError: vi.fn(),
 	listConfigs: vi.fn(),
@@ -18,6 +19,7 @@ const mockState = vi.hoisted(() => ({
 	schema: vi.fn(),
 	sendTestEmail: vi.fn(),
 	setConfig: vi.fn(),
+	templateVariables: vi.fn(),
 	toastSuccess: vi.fn(),
 }));
 
@@ -32,8 +34,24 @@ const translationMap: Record<string, string> = {
 	mail_test_email_recipient_label: "mail_test_email_recipient_label",
 	mail_test_email_recipient_placeholder:
 		"mail_test_email_recipient_placeholder",
+	mail_template_variable_link: "mail_template_variable_link",
+	mail_template_variables_dialog_desc: "mail_template_variables_dialog_desc",
+	mail_template_variables_dialog_empty: "mail_template_variables_dialog_empty",
+	mail_template_variables_dialog_title: "mail_template_variables_dialog_title",
+	settings_section_collapse: "settings_section_collapse",
+	settings_section_expand: "settings_section_expand",
+	settings_subcategory_mail_config: "settings_subcategory_mail_config",
+	settings_subcategory_mail_template: "settings_subcategory_mail_template",
 	settings_save_hint:
 		"更改会先暂存为草稿，确认无误后再统一保存，⌘/Ctrl + S 保存。",
+	settings_template_variable_reset_url_desc:
+		"settings_template_variable_reset_url_desc",
+	settings_template_variable_reset_url_label:
+		"settings_template_variable_reset_url_label",
+	settings_template_variable_username_desc:
+		"settings_template_variable_username_desc",
+	settings_template_variable_username_label:
+		"settings_template_variable_username_label",
 };
 
 vi.mock("react-i18next", () => ({
@@ -162,6 +180,28 @@ vi.mock("@/components/ui/input", () => ({
 			value={value}
 		/>
 	),
+}));
+
+vi.mock("@/components/files/preview/CodePreviewEditor", () => ({
+	CodePreviewEditor: ({
+		options,
+		onChange,
+		value,
+	}: {
+		options?: Record<string, unknown>;
+		onChange?: (value: string) => void;
+		value: string;
+	}) => {
+		mockState.codeEditorProps = { options, value };
+
+		return (
+			<textarea
+				aria-label="Code editor"
+				value={value}
+				onChange={(event) => onChange?.(event.target.value)}
+			/>
+		);
+	},
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
@@ -303,7 +343,15 @@ vi.mock("@/services/adminService", () => ({
 		sendTestEmail: (...args: unknown[]) => mockState.sendTestEmail(...args),
 		schema: (...args: unknown[]) => mockState.schema(...args),
 		set: (...args: unknown[]) => mockState.setConfig(...args),
+		templateVariables: (...args: unknown[]) =>
+			mockState.templateVariables(...args),
 	},
+}));
+
+vi.mock("@/stores/themeStore", () => ({
+	useThemeStore: (
+		selector: (state: { resolvedTheme: "light" | "dark" }) => unknown,
+	) => selector({ resolvedTheme: "light" }),
 }));
 
 function createConfig(overrides: Record<string, unknown> = {}) {
@@ -323,7 +371,6 @@ function createConfig(overrides: Record<string, unknown> = {}) {
 function createSchemaItem(overrides: Record<string, unknown> = {}) {
 	return {
 		category: "storage",
-		default_value: "true",
 		description: "desc",
 		description_i18n_key: undefined,
 		is_sensitive: false,
@@ -335,14 +382,38 @@ function createSchemaItem(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function createTemplateVariableGroup(overrides: Record<string, unknown> = {}) {
+	return {
+		category: "mail.template",
+		label_i18n_key: "settings_mail_template_group_password_reset",
+		template_code: "password_reset",
+		variables: [
+			{
+				description_i18n_key: "settings_template_variable_username_desc",
+				label_i18n_key: "settings_template_variable_username_label",
+				token: "{{username}}",
+			},
+			{
+				description_i18n_key: "settings_template_variable_reset_url_desc",
+				label_i18n_key: "settings_template_variable_reset_url_label",
+				token: "{{reset_url}}",
+			},
+		],
+		...overrides,
+	};
+}
+
 function getMockConfigCategory(key: string) {
 	if (key.startsWith("auth")) return "auth";
 	if (key.startsWith("custom")) return "custom";
+	if (key.startsWith("mail_template_")) return "mail.template";
+	if (key.startsWith("mail_")) return "mail.config";
 	return "storage";
 }
 
 describe("AdminSettingsPage", () => {
 	beforeEach(() => {
+		mockState.codeEditorProps = null;
 		mockState.deleteConfig.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.listConfigs.mockReset();
@@ -350,6 +421,7 @@ describe("AdminSettingsPage", () => {
 		mockState.schema.mockReset();
 		mockState.sendTestEmail.mockReset();
 		mockState.setConfig.mockReset();
+		mockState.templateVariables.mockReset();
 		mockState.toastSuccess.mockReset();
 
 		Object.defineProperty(window, "innerWidth", {
@@ -382,7 +454,6 @@ describe("AdminSettingsPage", () => {
 			createSchemaItem(),
 			createSchemaItem({
 				category: "auth",
-				default_value: "900",
 				description: "ttl desc",
 				description_i18n_key: "settings_item_auth_access_token_ttl_secs_desc",
 				key: "auth_access_token_ttl_secs",
@@ -393,6 +464,9 @@ describe("AdminSettingsPage", () => {
 		mockState.sendTestEmail.mockResolvedValue({
 			message: "Test email sent to admin@example.com",
 		});
+		mockState.templateVariables.mockResolvedValue([
+			createTemplateVariableGroup(),
+		]);
 		mockState.setConfig.mockImplementation((key: string, value: string) =>
 			Promise.resolve(
 				createConfig({
@@ -500,7 +574,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "mail",
+					category: "mail.config",
 					key: "mail_smtp_host",
 					value: "smtp.example.com",
 					value_type: "string",
@@ -509,7 +583,7 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "mail",
+				category: "mail.config",
 				key: "mail_smtp_host",
 				value_type: "string",
 			}),
@@ -653,13 +727,11 @@ describe("AdminSettingsPage", () => {
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
 				category: "general",
-				default_value: "AsterDrive",
 				key: "branding_title",
 				value_type: "string",
 			}),
 			createSchemaItem({
 				category: "auth",
-				default_value: "900",
 				key: "auth_access_token_ttl_secs",
 				value_type: "number",
 			}),
@@ -686,8 +758,8 @@ describe("AdminSettingsPage", () => {
 		});
 
 		expect(
-			await screen.findByText("settings_save_notice:1"),
-		).toBeInTheDocument();
+			(await screen.findAllByText("settings_save_notice:1")).length,
+		).toBeGreaterThan(0);
 		fireEvent.click(screen.getByRole("button", { name: "save_changes" }));
 
 		await waitFor(() => {
@@ -697,6 +769,114 @@ describe("AdminSettingsPage", () => {
 			);
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
+	});
+
+	it("renders multiline config values in a textarea and saves the edited template body", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "mail.config",
+					key: "mail_smtp_host",
+					value: "smtp.example.com",
+					value_type: "string",
+				}),
+				createConfig({
+					category: "mail.template",
+					key: "mail_template_password_reset_html",
+					value: "<p>old body</p>",
+					value_type: "multiline",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "mail.config",
+				key: "mail_smtp_host",
+				value_type: "string",
+			}),
+			createSchemaItem({
+				category: "mail.template",
+				key: "mail_template_password_reset_html",
+				value_type: "multiline",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="mail" />);
+
+		expect(await screen.findByText("Config")).toBeInTheDocument();
+		expect(screen.getByText("Template")).toBeInTheDocument();
+		expect(
+			screen.queryByDisplayValue("<p>old body</p>"),
+		).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: /password reset/i }));
+
+		const textarea = await screen.findByDisplayValue("<p>old body</p>");
+		expect(textarea.tagName).toBe("TEXTAREA");
+		expect(mockState.codeEditorProps).toMatchObject({
+			options: expect.objectContaining({
+				wordWrap: "off",
+			}),
+			value: "<p>old body</p>",
+		});
+
+		fireEvent.change(textarea, {
+			target: { value: "<p>new body</p>" },
+		});
+
+		expect(
+			(await screen.findAllByText("settings_save_notice:1")).length,
+		).toBeGreaterThan(0);
+		fireEvent.click(screen.getByRole("button", { name: "save_changes" }));
+
+		await waitFor(() => {
+			expect(mockState.setConfig).toHaveBeenCalledWith(
+				"mail_template_password_reset_html",
+				"<p>new body</p>",
+			);
+		});
+	});
+
+	it("opens the template variables dialog from the matching html template field", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "mail.template",
+					key: "mail_template_password_reset_html",
+					value: "<p>Reset</p>",
+					value_type: "multiline",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "mail.template",
+				key: "mail_template_password_reset_html",
+				value_type: "multiline",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="mail" />);
+
+		await screen.findByText("Template");
+		fireEvent.click(
+			await screen.findByRole("button", { name: /password reset/i }),
+		);
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "mail_template_variable_link",
+			}),
+		);
+
+		expect(
+			await screen.findByText("mail_template_variables_dialog_title"),
+		).toBeInTheDocument();
+		expect((await screen.findAllByText("{{username}}")).length).toBeGreaterThan(
+			0,
+		);
+		expect(
+			(await screen.findAllByText("{{reset_url}}")).length,
+		).toBeGreaterThan(0);
 	});
 
 	it("saves staged changes when Cmd+S is pressed from a focused input", async () => {
@@ -838,7 +1018,6 @@ describe("AdminSettingsPage", () => {
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
 				category: "general",
-				default_value: "/favicon.svg",
 				description: "favicon desc",
 				key: "branding_favicon_url",
 				value_type: "string",
@@ -872,7 +1051,6 @@ describe("AdminSettingsPage", () => {
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
 				category: "general",
-				default_value: "/favicon.svg",
 				key: "branding_favicon_url",
 				value_type: "string",
 			}),

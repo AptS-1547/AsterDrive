@@ -381,7 +381,9 @@ async fn test_register_is_blocked_when_public_registration_is_disabled() {
 #[actix_web::test]
 async fn test_register_requires_activation_until_confirmed() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
 
     let _ = register_and_login!(app);
@@ -397,6 +399,7 @@ async fn test_register_requires_activation_until_confirmed() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/login")
@@ -424,6 +427,7 @@ async fn test_register_requires_activation_until_confirmed() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 302);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
     let location = resp
         .headers()
         .get("Location")
@@ -435,9 +439,59 @@ async fn test_register_requires_activation_until_confirmed() {
 }
 
 #[actix_web::test]
+async fn test_register_resend_is_generic_for_unknown_identifier_and_cooldown() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
+    let app = create_test_app!(state);
+
+    let _ = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "pendinguser",
+            "email": "pendinguser@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
+
+    let resend = |identifier: &str| {
+        test::TestRequest::post()
+            .uri("/api/v1/auth/register/resend")
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({ "identifier": identifier }))
+            .to_request()
+    };
+
+    let resp = test::call_service(&app, resend("missing@example.com")).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["data"]["message"],
+        "If the account can be reactivated, an activation email will be sent"
+    );
+
+    let resp = test::call_service(&app, resend("pendinguser")).await;
+    assert_eq!(resp.status(), 200);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    assert_eq!(memory_sender.messages().len(), 1);
+}
+
+#[actix_web::test]
 async fn test_email_change_confirmation_redirects_and_notifies_previous_email() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
 
     let (access, _refresh) = register_and_login!(app);
@@ -451,6 +505,7 @@ async fn test_email_change_confirmation_redirects_and_notifies_previous_email() 
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
     let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
@@ -469,6 +524,7 @@ async fn test_email_change_confirmation_redirects_and_notifies_previous_email() 
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 302);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
     let location = resp
         .headers()
         .get("Location")
@@ -493,6 +549,45 @@ async fn test_email_change_confirmation_redirects_and_notifies_previous_email() 
             .text_body
             .contains("updated@example.com")
     );
+}
+
+#[actix_web::test]
+async fn test_email_change_resend_returns_generic_success_during_cooldown() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
+    let app = create_test_app!(state);
+
+    let (access, _refresh) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/email/change")
+        .insert_header(("Cookie", format!("aster_access={access}")))
+        .set_json(serde_json::json!({
+            "new_email": "updated@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/email/change/resend")
+        .insert_header(("Cookie", format!("aster_access={access}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["data"]["message"],
+        "If an email change is pending, a confirmation email will be sent"
+    );
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    assert_eq!(memory_sender.messages().len(), 1);
 }
 
 #[actix_web::test]
@@ -526,6 +621,7 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
     let state = common::setup().await;
     let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
     let (access, refresh) = register_and_login!(app);
 
@@ -538,6 +634,7 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
     let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
@@ -557,6 +654,7 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
     let messages = memory_sender.messages();
     let password_reset_notice = messages
@@ -621,7 +719,9 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
 #[actix_web::test]
 async fn test_password_reset_confirm_rejects_reused_token() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
     let _ = register_and_login!(app);
 
@@ -634,6 +734,7 @@ async fn test_password_reset_confirm_rejects_reused_token() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
     let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
@@ -676,6 +777,7 @@ async fn test_password_reset_confirm_rejects_expired_token() {
     let state = common::setup().await;
     let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
     let _ = register_and_login!(app);
 
@@ -688,6 +790,7 @@ async fn test_password_reset_confirm_rejects_expired_token() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
     let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
@@ -725,7 +828,9 @@ async fn test_password_reset_confirm_rejects_expired_token() {
 #[actix_web::test]
 async fn test_password_reset_request_cooldown_returns_generic_success() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
     let _ = register_and_login!(app);
 
@@ -744,6 +849,7 @@ async fn test_password_reset_request_cooldown_returns_generic_success() {
 
     let resp = test::call_service(&app, request()).await;
     assert_eq!(resp.status(), 200);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
     let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
