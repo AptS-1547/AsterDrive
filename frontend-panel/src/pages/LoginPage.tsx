@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -23,7 +23,6 @@ import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { authService } from "@/services/authService";
 import { ApiError } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
-import { useBrandingStore } from "@/stores/brandingStore";
 import { ErrorCode } from "@/types/api-helpers";
 
 // ── Animated height ─────────────────────────────────────────
@@ -225,9 +224,6 @@ export default function LoginPage() {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const login = useAuthStore((s) => s.login);
-	const allowUserRegistration = useBrandingStore(
-		(state) => state.allowUserRegistration,
-	);
 
 	// The first field is always visible — it doubles as username or email
 	const [identifier, setIdentifier] = useState("");
@@ -237,7 +233,7 @@ export default function LoginPage() {
 	const [showPassword, setShowPassword] = useState(false);
 
 	const [mode, setMode] = useState<AuthMode>("idle");
-	const [checking, setChecking] = useState(false);
+	const [checking, setChecking] = useState(true);
 	const [submitting, setSubmitting] = useState(false);
 	const [resendingActivation, setResendingActivation] = useState(false);
 	const [requestingPasswordReset, setRequestingPasswordReset] = useState(false);
@@ -250,11 +246,6 @@ export default function LoginPage() {
 		useState(false);
 	const [passwordResetEmail, setPasswordResetEmail] = useState("");
 	const [passwordResetError, setPasswordResetError] = useState("");
-
-	const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const lastChecked = useRef("");
-	const latestCheckId = useRef(0);
-	const latestIdentifier = useRef("");
 
 	// Is the identifier an email address?
 	const isEmail = identifier.includes("@");
@@ -355,64 +346,37 @@ export default function LoginPage() {
 		);
 	}, [location.hash, location.pathname, location.search, navigate, t]);
 
-	// ── Auto check ──
+	useEffect(() => {
+		let cancelled = false;
 
-	const runCheck = useCallback(
-		async (value: string) => {
-			const trimmed = value.trim();
-			if (trimmed.length < 2 || trimmed === lastChecked.current) return;
-
-			const checkId = ++latestCheckId.current;
-			setChecking(true);
-			try {
-				const result = await authService.check(trimmed);
-				if (
-					checkId !== latestCheckId.current ||
-					latestIdentifier.current !== trimmed
-				) {
-					return;
-				}
-				lastChecked.current = trimmed;
+		void authService
+			.check("")
+			.then((result) => {
+				if (cancelled) return;
 				if (!result.has_users) {
 					setRegistrationClosed(false);
 					setMode("setup");
-				} else if (result.exists) {
-					setRegistrationClosed(false);
-					setMode("login");
-				} else if (
-					(result.allow_user_registration ?? allowUserRegistration) === false
-				) {
-					setRegistrationClosed(true);
-					setMode("login");
-				} else {
-					setRegistrationClosed(false);
-					setMode("register");
+					return;
 				}
-			} catch {
-				// Silently fail
-			} finally {
-				if (checkId === latestCheckId.current) {
+
+				setRegistrationClosed(result.allow_user_registration === false);
+				setMode("login");
+			})
+			.catch(() => {
+				if (cancelled) return;
+				setRegistrationClosed(false);
+				setMode("login");
+			})
+			.finally(() => {
+				if (!cancelled) {
 					setChecking(false);
 				}
-			}
-		},
-		[allowUserRegistration],
-	);
+			});
 
-	useEffect(() => {
-		latestIdentifier.current = identifier.trim();
-		setRegistrationClosed(false);
-		if (checkTimer.current) clearTimeout(checkTimer.current);
-		if (identifier.trim().length >= 2) {
-			checkTimer.current = setTimeout(() => runCheck(identifier), 500);
-		} else {
-			setMode("idle");
-			lastChecked.current = "";
-		}
 		return () => {
-			if (checkTimer.current) clearTimeout(checkTimer.current);
+			cancelled = true;
 		};
-	}, [identifier, runCheck]);
+	}, []);
 
 	// ── Live validation ──
 
@@ -474,6 +438,13 @@ export default function LoginPage() {
 		setPasswordResetError("");
 	};
 
+	const switchAuthMode = (
+		nextMode: Extract<AuthMode, "login" | "register">,
+	) => {
+		setErrors({});
+		setMode(nextMode);
+	};
+
 	const handleResendActivation = async () => {
 		if (!pendingActivation) return;
 
@@ -519,10 +490,7 @@ export default function LoginPage() {
 			return;
 		}
 		if (!validate()) return;
-		if (mode === "idle") {
-			await runCheck(identifier);
-			return;
-		}
+		if (mode === "idle") return;
 
 		setSubmitting(true);
 		try {
@@ -1009,6 +977,27 @@ export default function LoginPage() {
 							)}
 						</AnimateSwap>
 					</form>
+
+					{!pendingActivation &&
+					!showPasswordResetRequest &&
+					mode !== "setup" &&
+					!checking &&
+					!registrationClosed ? (
+						<p className="mt-6 text-center text-sm text-muted-foreground">
+							{mode === "register"
+								? t("already_have_account")
+								: t("dont_have_account")}{" "}
+							<button
+								type="button"
+								className="font-medium text-foreground transition-colors hover:text-primary"
+								onClick={() =>
+									switchAuthMode(mode === "register" ? "login" : "register")
+								}
+							>
+								{mode === "register" ? t("sign_in") : t("sign_up")}
+							</button>
+						</p>
+					) : null}
 
 					<p className="mt-8 text-center text-xs text-muted-foreground/50">
 						Self-hosted cloud storage

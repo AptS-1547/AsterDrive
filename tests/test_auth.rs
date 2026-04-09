@@ -338,7 +338,6 @@ async fn test_check_reports_public_registration_flag() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["exists"], false);
     assert_eq!(body["data"]["has_users"], true);
     assert_eq!(body["data"]["allow_user_registration"], false);
 }

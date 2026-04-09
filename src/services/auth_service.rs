@@ -932,12 +932,9 @@ pub async fn confirm_contact_verification(
     })
 }
 
-/// 检查标识符（邮箱或用户名）是否存在，以及系统是否有用户
-pub async fn check_identifier(state: &AppState, identifier: &str) -> Result<(bool, bool)> {
-    let db = &state.db;
-    let has_users = user_repo::count_all(db).await? > 0;
-    let exists = find_user_by_identifier(db, identifier).await?.is_some();
-    Ok((exists, has_users))
+/// 检查公开认证状态（仅返回实例级状态，不暴露标识符是否存在）
+pub async fn check_auth_state(state: &AppState) -> Result<bool> {
+    Ok(user_repo::count_all(&state.db).await? > 0)
 }
 
 /// 按标识符查找用户（支持邮箱或用户名）

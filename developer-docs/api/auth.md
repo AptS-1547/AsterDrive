@@ -6,7 +6,7 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/auth/check` | 检查用户名或邮箱是否已存在，并返回系统是否已初始化 |
+| `POST` | `/auth/check` | 返回公开认证状态（系统是否已初始化、是否允许公开注册） |
 | `POST` | `/auth/setup` | 初始化系统并创建首个管理员 |
 | `POST` | `/auth/register` | 注册用户；第一个用户自动成为管理员 |
 | `POST` | `/auth/login` | 登录并写入认证 Cookie |
@@ -22,7 +22,7 @@
 
 ## 初始化与注册
 
-- `POST /auth/check`：提交 `identifier`，返回 `exists`、`has_users` 和 `allow_user_registration`，主要给前端初始化流程做预检查
+- `POST /auth/check`：返回 `has_users` 和 `allow_user_registration`，只用于判断实例处于初始化、登录还是“关闭公开注册”的大状态，不会公开暴露账号是否存在
 - `POST /auth/setup`：仅在系统还没有任何用户时可用，用来创建首个管理员
 - `POST /auth/register`：普通注册入口；当 `auth_allow_user_registration = true` 时可用。第一个注册用户自动成为 `admin`，新用户默认配额来自 `default_storage_quota`
 

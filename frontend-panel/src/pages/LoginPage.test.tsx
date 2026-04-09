@@ -201,7 +201,10 @@ describe("LoginPage", () => {
 		mockState.requestPasswordReset.mockResolvedValue(undefined);
 		mockState.resendRegisterActivation.mockResolvedValue(undefined);
 		mockState.setup.mockResolvedValue(undefined);
-		mockState.check.mockResolvedValue({ exists: true, has_users: true });
+		mockState.check.mockResolvedValue({
+			has_users: true,
+			allow_user_registration: true,
+		});
 		useThemeStore.setState({ resolvedTheme: "light" });
 	});
 
@@ -209,19 +212,19 @@ describe("LoginPage", () => {
 		vi.useRealTimers();
 	});
 
-	it("auto-detects login mode and signs existing users in", async () => {
+	it("loads public auth state and signs users in from the default login mode", async () => {
 		render(<LoginPage />);
 
-		fireEvent.change(screen.getByLabelText("email_or_username"), {
-			target: { value: "user@example.com" },
-		});
-
 		await waitFor(() => {
-			expect(mockState.check).toHaveBeenCalledWith("user@example.com");
+			expect(mockState.check).toHaveBeenCalledWith("");
 		});
 		expect(
 			await screen.findByRole("button", { name: "sign_in" }),
 		).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "user@example.com" },
+		});
 
 		fireEvent.change(screen.getByLabelText("password"), {
 			target: { value: "secret123" },
@@ -339,7 +342,10 @@ describe("LoginPage", () => {
 	});
 
 	it("runs initial setup for the first user and then signs them in", async () => {
-		mockState.check.mockResolvedValueOnce({ exists: false, has_users: false });
+		mockState.check.mockResolvedValueOnce({
+			has_users: false,
+			allow_user_registration: true,
+		});
 
 		render(<LoginPage />);
 
@@ -378,10 +384,14 @@ describe("LoginPage", () => {
 	});
 
 	it("shows an activation waiting state after register instead of logging in", async () => {
-		mockState.check.mockResolvedValueOnce({ exists: false, has_users: true });
+		mockState.check.mockResolvedValueOnce({
+			has_users: true,
+			allow_user_registration: true,
+		});
 
 		render(<LoginPage />);
 
+		fireEvent.click(await screen.findByRole("button", { name: "sign_up" }));
 		fireEvent.change(screen.getByLabelText("email_or_username"), {
 			target: { value: "new@example.com" },
 		});
@@ -474,10 +484,14 @@ describe("LoginPage", () => {
 	});
 
 	it("keeps forgot password visible in register mode and prefills the email field", async () => {
-		mockState.check.mockResolvedValueOnce({ exists: false, has_users: true });
+		mockState.check.mockResolvedValueOnce({
+			has_users: true,
+			allow_user_registration: true,
+		});
 
 		render(<LoginPage />);
 
+		fireEvent.click(await screen.findByRole("button", { name: "sign_up" }));
 		fireEvent.change(screen.getByLabelText("email_or_username"), {
 			target: { value: "newuser" },
 		});
@@ -495,11 +509,14 @@ describe("LoginPage", () => {
 	});
 
 	it("shows validation errors and reports submit failures without navigating", async () => {
-		mockState.check.mockResolvedValueOnce({ exists: true, has_users: true });
 		const error = new Error("login failed");
 		mockState.login.mockRejectedValueOnce(error);
 
 		render(<LoginPage />);
+
+		await waitFor(() => {
+			expect(mockState.check).toHaveBeenCalledWith("");
+		});
 
 		fireEvent.change(screen.getByLabelText("email_or_username"), {
 			target: { value: "bad" },
@@ -507,21 +524,16 @@ describe("LoginPage", () => {
 		fireEvent.change(screen.getByLabelText("password"), {
 			target: { value: "123" },
 		});
-		fireEvent.click(screen.getByRole("button", { name: "continue" }));
+		fireEvent.click(screen.getByRole("button", { name: "sign_in" }));
 
 		expect(screen.getByText("invalid-username")).toBeInTheDocument();
 		expect(screen.getByText("invalid-password")).toBeInTheDocument();
-		expect(mockState.check).not.toHaveBeenCalled();
 
 		fireEvent.change(screen.getByLabelText("email_or_username"), {
 			target: { value: "user@example.com" },
 		});
 		fireEvent.change(screen.getByLabelText("password"), {
 			target: { value: "secret123" },
-		});
-
-		await waitFor(() => {
-			expect(mockState.check).toHaveBeenCalledWith("user@example.com");
 		});
 		await screen.findByRole("button", { name: "sign_in" });
 
@@ -554,10 +566,14 @@ describe("LoginPage", () => {
 	});
 
 	it("keeps submit disabled until register fields are filled", async () => {
-		mockState.check.mockResolvedValueOnce({ exists: false, has_users: true });
+		mockState.check.mockResolvedValueOnce({
+			has_users: true,
+			allow_user_registration: true,
+		});
 
 		render(<LoginPage />);
 
+		fireEvent.click(await screen.findByRole("button", { name: "sign_up" }));
 		fireEvent.change(screen.getByLabelText("email_or_username"), {
 			target: { value: "new@example.com" },
 		});
@@ -578,54 +594,36 @@ describe("LoginPage", () => {
 		});
 	});
 
-	it("retries auth checks for the same identifier after a failed precheck", async () => {
-		vi.useFakeTimers();
-		mockState.check
-			.mockRejectedValueOnce(new Error("network error"))
-			.mockResolvedValueOnce({ exists: true, has_users: true });
+	it("falls back to sign-in mode when the initial auth-state check fails", async () => {
+		mockState.check.mockRejectedValueOnce(new Error("network error"));
 
 		render(<LoginPage />);
 
-		const identifierInput = screen.getByLabelText("email_or_username");
-
-		fireEvent.change(identifierInput, {
-			target: { value: "user@example.com" },
+		await waitFor(() => {
+			expect(mockState.check).toHaveBeenCalledWith("");
 		});
-		await vi.advanceTimersByTimeAsync(500);
-		expect(mockState.check).toHaveBeenCalledTimes(1);
-		expect(mockState.check).toHaveBeenNthCalledWith(1, "user@example.com");
-
-		fireEvent.change(identifierInput, {
-			target: { value: "user@example.co" },
-		});
-		fireEvent.change(identifierInput, {
-			target: { value: "user@example.com" },
-		});
-		await vi.advanceTimersByTimeAsync(500);
-
-		expect(mockState.check).toHaveBeenCalledTimes(2);
-		expect(mockState.check).toHaveBeenNthCalledWith(2, "user@example.com");
+		expect(
+			await screen.findByRole("button", { name: "sign_in" }),
+		).toBeInTheDocument();
 	});
 
 	it("falls back to sign-in mode and shows a hint when public registration is disabled", async () => {
 		mockState.check.mockResolvedValueOnce({
-			exists: false,
 			has_users: true,
 			allow_user_registration: false,
 		});
 
 		render(<LoginPage />);
 
-		fireEvent.change(screen.getByLabelText("email_or_username"), {
-			target: { value: "new@example.com" },
-		});
-
 		await waitFor(() => {
-			expect(mockState.check).toHaveBeenCalledWith("new@example.com");
+			expect(mockState.check).toHaveBeenCalledWith("");
 		});
 		expect(
 			await screen.findByRole("button", { name: "sign_in" }),
 		).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: "sign_up" }),
+		).not.toBeInTheDocument();
 		expect(screen.queryByLabelText("username")).not.toBeInTheDocument();
 		await waitFor(() => {
 			expect(screen.getByText("registration_closed_desc")).toBeInTheDocument();

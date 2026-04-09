@@ -104,7 +104,6 @@ pub struct CheckReq {
 #[derive(serde::Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CheckResp {
-    pub exists: bool,
     pub has_users: bool,
     pub allow_user_registration: bool,
 }
@@ -327,11 +326,11 @@ fn storage_event_frame(event: &storage_change_service::StorageChangeEvent) -> Op
     ),
 )]
 pub async fn check(state: web::Data<AppState>, body: web::Json<CheckReq>) -> Result<HttpResponse> {
-    let (exists, has_users) = auth_service::check_identifier(&state, &body.identifier).await?;
+    let _ = body;
+    let has_users = auth_service::check_auth_state(&state).await?;
     let allow_user_registration =
         RuntimeAuthPolicy::from_runtime_config(&state.runtime_config).allow_user_registration;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(CheckResp {
-        exists,
         has_users,
         allow_user_registration,
     })))

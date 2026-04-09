@@ -2488,7 +2488,6 @@ export interface components {
         };
         CheckResp: {
             allow_user_registration: boolean;
-            exists: boolean;
             has_users: boolean;
         };
         ChunkUploadResponse: {
@@ -6452,7 +6451,6 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             allow_user_registration: boolean;
-                            exists: boolean;
                             has_users: boolean;
                         };
                         msg: string;
