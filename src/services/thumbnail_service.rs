@@ -15,6 +15,7 @@ use crate::storage::{DriverRegistry, PolicySnapshot};
 
 const THUMB_MAX_DIM: u32 = 200;
 const THUMB_PREFIX: &str = "_thumb";
+const THUMB_VERSION: &str = "v2";
 /// 单次解码最大内存分配（防止恶意/超大图 OOM）
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
 /// 在解码前限制源文件大小，避免原始字节和像素 buffer 双重叠峰。
@@ -42,12 +43,27 @@ pub fn ensure_supported_mime(mime: &str) -> Result<()> {
 /// 计算缩略图在存储驱动中的路径
 fn thumb_path(blob_hash: &str) -> String {
     format!(
+        "{}/{}/{}/{}/{}.webp",
+        THUMB_PREFIX,
+        THUMB_VERSION,
+        &blob_hash[..2],
+        &blob_hash[2..4],
+        blob_hash
+    )
+}
+
+fn legacy_thumb_path(blob_hash: &str) -> String {
+    format!(
         "{}/{}/{}/{}.webp",
         THUMB_PREFIX,
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
     )
+}
+
+pub(crate) fn thumbnail_etag_value(blob_hash: &str) -> String {
+    format!("thumb-{THUMB_VERSION}-{blob_hash}")
 }
 
 /// 尝试获取已有缩略图，如果不存在则入队后台生成并返回 None
@@ -105,10 +121,11 @@ pub async fn get_or_generate(state: &AppState, blob: &file_blob::Model) -> Resul
 pub async fn delete_thumbnail(state: &AppState, blob: &file_blob::Model) -> Result<()> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
-    let path = thumb_path(&blob.hash);
 
-    if driver.exists(&path).await.unwrap_or(false) {
-        driver.delete(&path).await?;
+    for path in [thumb_path(&blob.hash), legacy_thumb_path(&blob.hash)] {
+        if driver.exists(&path).await.unwrap_or(false) {
+            driver.delete(&path).await?;
+        }
     }
     Ok(())
 }
@@ -255,7 +272,7 @@ fn ensure_source_size_supported(blob: &file_blob::Model) -> Result<()> {
 mod tests {
     use super::{
         MAX_THUMB_SOURCE_BYTES, MAX_THUMB_WORKERS, ensure_source_size_supported,
-        max_concurrent_thumbnails,
+        max_concurrent_thumbnails, thumb_path, thumbnail_etag_value,
     };
     use crate::entities::file_blob;
     use chrono::Utc;
@@ -287,5 +304,17 @@ mod tests {
     fn thumbnail_worker_concurrency_is_memory_bounded() {
         assert!(max_concurrent_thumbnails() <= MAX_THUMB_WORKERS);
         assert!(max_concurrent_thumbnails() >= 1);
+    }
+
+    #[test]
+    fn thumbnail_paths_are_versioned() {
+        let hash = "abc".repeat(21) + "a";
+        assert_eq!(thumb_path(&hash), format!("_thumb/v2/ab/ca/{hash}.webp"));
+    }
+
+    #[test]
+    fn thumbnail_etag_uses_thumbnail_version_namespace() {
+        let hash = "abc".repeat(21) + "a";
+        assert_eq!(thumbnail_etag_value(&hash), format!("thumb-v2-{hash}"));
     }
 }

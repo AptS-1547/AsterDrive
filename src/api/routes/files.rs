@@ -7,7 +7,8 @@ use crate::runtime::AppState;
 use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
-    direct_link_service, file_service, preview_link_service, upload_service, version_service,
+    direct_link_service, file_service, preview_link_service, thumbnail_service, upload_service,
+    version_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::types::NullablePatch;
@@ -819,9 +820,10 @@ pub(crate) fn thumbnail_response(
     if_none_match: Option<&str>,
     cache_control: String,
 ) -> HttpResponse {
-    let etag = format!("\"{}\"", result.blob_hash);
+    let etag_value = thumbnail_service::thumbnail_etag_value(&result.blob_hash);
+    let etag = format!("\"{etag_value}\"");
     if let Some(if_none_match) = if_none_match
-        && file_service::if_none_match_matches(if_none_match, &result.blob_hash)
+        && file_service::if_none_match_matches_value(if_none_match, &etag_value)
     {
         return HttpResponse::NotModified()
             .insert_header(("ETag", etag))

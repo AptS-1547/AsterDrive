@@ -1,4 +1,3 @@
-use crate::api::constants::YEAR_SECS;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
@@ -478,7 +477,7 @@ pub async fn shared_thumbnail(
     Ok(files::thumbnail_response(
         result,
         if_none_match,
-        format!("public, max-age={YEAR_SECS}, immutable"),
+        "public, max-age=0, must-revalidate".to_string(),
     ))
 }
 
@@ -518,6 +517,6 @@ pub async fn shared_folder_file_thumbnail(
     Ok(files::thumbnail_response(
         result,
         if_none_match,
-        format!("public, max-age={YEAR_SECS}, immutable"),
+        "public, max-age=0, must-revalidate".to_string(),
     ))
 }

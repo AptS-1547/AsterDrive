@@ -201,6 +201,7 @@ async fn test_thumbnail_returns_304_for_matching_if_none_match() {
         .and_then(|value| value.to_str().ok())
         .expect("thumbnail response should include ETag")
         .to_string();
+    assert!(etag.contains("thumb-v2-"));
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/thumbnail"))

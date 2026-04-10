@@ -172,11 +172,12 @@ async fn test_shared_thumbnail_returns_304_for_matching_if_none_match() {
         .and_then(|value| value.to_str().ok())
         .expect("shared thumbnail response should include ETag")
         .to_string();
+    assert!(etag.contains("thumb-v2-"));
     assert_eq!(
         resp.headers()
             .get("Cache-Control")
             .and_then(|value| value.to_str().ok()),
-        Some("public, max-age=31536000, immutable")
+        Some("public, max-age=0, must-revalidate")
     );
 
     let req = test::TestRequest::get()
@@ -195,7 +196,7 @@ async fn test_shared_thumbnail_returns_304_for_matching_if_none_match() {
         resp.headers()
             .get("Cache-Control")
             .and_then(|value| value.to_str().ok()),
-        Some("public, max-age=31536000, immutable")
+        Some("public, max-age=0, must-revalidate")
     );
 }
 

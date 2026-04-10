@@ -255,11 +255,15 @@ async fn download_raw_unchecked_with_file(
     build_stream_response(state, &f, &blob, if_none_match).await
 }
 
-pub(crate) fn if_none_match_matches(if_none_match: &str, blob_hash: &str) -> bool {
+pub(crate) fn if_none_match_matches_value(if_none_match: &str, etag_value: &str) -> bool {
     if_none_match.split(',').any(|value| {
         let candidate = value.trim();
-        candidate == "*" || candidate.trim_matches('"').eq_ignore_ascii_case(blob_hash)
+        candidate == "*" || candidate.trim_matches('"').eq_ignore_ascii_case(etag_value)
     })
+}
+
+pub(crate) fn if_none_match_matches(if_none_match: &str, blob_hash: &str) -> bool {
+    if_none_match_matches_value(if_none_match, blob_hash)
 }
 
 /// 构建流式下载响应
