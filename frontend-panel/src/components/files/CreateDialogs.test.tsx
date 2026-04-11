@@ -114,17 +114,21 @@ describe("Create dialogs", () => {
 
 		render(<CreateFileDialog open onOpenChange={onOpenChange} />);
 
-		fireEvent.change(screen.getByPlaceholderText("file_name"), {
+		const input = screen.getByPlaceholderText("file_name");
+
+		fireEvent.change(input, {
 			target: { value: "  notes.md  " },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "create_file" }));
 
 		await waitFor(() => {
 			expect(mockState.createFile).toHaveBeenCalledWith("notes.md");
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"create_file_success",
+			);
+			expect(onOpenChange).toHaveBeenCalledWith(false);
+			expect(input).toHaveValue("");
 		});
-		expect(mockState.toastSuccess).toHaveBeenCalledWith("create_file_success");
-		expect(onOpenChange).toHaveBeenCalledWith(false);
-		expect(screen.getByPlaceholderText("file_name")).toHaveValue("");
 	});
 
 	it("reports file creation failures and keeps the dialog open", async () => {
@@ -167,19 +171,21 @@ describe("Create dialogs", () => {
 
 		render(<CreateFolderDialog open onOpenChange={onOpenChange} />);
 
-		fireEvent.change(screen.getByPlaceholderText("folder_name"), {
+		const input = screen.getByPlaceholderText("folder_name");
+
+		fireEvent.change(input, {
 			target: { value: "  Projects  " },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "create_folder" }));
 
 		await waitFor(() => {
 			expect(mockState.createFolder).toHaveBeenCalledWith("Projects");
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"create_folder_success",
+			);
+			expect(onOpenChange).toHaveBeenCalledWith(false);
+			expect(input).toHaveValue("");
 		});
-		expect(mockState.toastSuccess).toHaveBeenCalledWith(
-			"create_folder_success",
-		);
-		expect(onOpenChange).toHaveBeenCalledWith(false);
-		expect(screen.getByPlaceholderText("folder_name")).toHaveValue("");
 	});
 
 	it("reports folder creation failures and keeps the dialog open", async () => {

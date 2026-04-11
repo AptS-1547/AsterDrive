@@ -5,6 +5,94 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.17] - 2026-04-12
+
+### Release Highlights
+
+- **WOPI 协议支持** — 完整实现 WOPI (Web Application Open Platform Interface) 协议，可与 Collabora Online、OnlyOffice 等 WOPI 兼容办公套件集成，实现文档在线编辑。包含 CheckFileInfo、GetFile/PutFile、完整锁机制、Discovery 缓存、Access Token 管理
+- **预览应用系统重构** — 将硬编码的文件预览逻辑重构为基于规则引擎的可配置"预览应用"系统。支持三种 Provider（Builtin/UrlTemplate/Wopi），管理后台提供可视化配置编辑器，内置 12 个默认预览应用
+- **后台任务系统与打包下载** — 新增通用后台任务框架（状态机、自动重试、指数退避、过期清理），首个任务类型为打包下载——支持多文件/文件夹递归打包为 ZIP 流式下载
+- **缩略图系统优化** — 引入缩略图版本控制（v2）、源文件大小限制、视口懒加载、并发 worker 优化，降低内存峰值并提升加载体验
+- **运行与调度配置** — 新增 operations 配置分类，邮件发送间隔、任务调度间隔、维护清理周期等均可在管理后台热改。设置页新增时间/大小单位选择器
+
+
+### Added
+
+- **WOPI 协议**
+  - 新增 `wopi_service`：CheckFileInfo、GetFile/PutFile、完整锁机制（lock/unlock/refresh）、Discovery XML 缓存
+  - WOPI 端点路由：`/api/v1/wopi/files/{id}` 及 `/contents` 子路由
+  - `wopi_sessions` 数据表：Access Token 存储（SHA-256 哈希）、过期清理
+  - 运行时配置：`wopi_access_token_ttl_secs`、`wopi_lock_ttl_secs`、`wopi_discovery_cache_ttl_secs`
+  - 前端 `WopiPreview` 组件：通过隐藏 form POST 提交 token 到 WOPI action_url，支持 iframe/new_tab 模式
+  - CORS 中间件新增 WOPI 相关请求/响应头
+  - 完整集成测试覆盖（1400+ 行）
+- **预览应用系统**
+  - 新增 `preview_app_service`：三种 Provider 类型、规则引擎按 extensions/mime_types/categories 匹配文件到预览应用
+  - `PublicPreviewAppsConfig` 存储于 `system_config` 表，含 12 个内置应用（image, video, audio, pdf, markdown, table, formatted_json, formatted_xml, code, try_text, office_google, office_microsoft）
+  - `UrlTemplatePreview` / `EmbeddedWebAppPreview` 通用预览组件
+  - 管理后台 `PreviewAppsConfigEditor` 可视化编辑器（2700+ 行），支持应用增删改、规则编辑、校验
+  - 14 个 SVG 预览应用图标
+  - `/api/v1/public/preview-apps` 公开端点
+- **后台任务框架**
+  - 新增 `task_service`：任务调度（批量认领）、状态机（pending→processing→succeeded/failed/retry）、自动重试（指数退避）、过期清理
+  - `background_tasks` 数据表：含 kind, status, progress, payload_json, attempt_count 等字段
+  - 任务 API：`GET /api/v1/tasks`（分页列表）、`GET /api/v1/tasks/{id}`（详情）、`POST /api/v1/tasks/{id}/retry`（手动重试）
+  - 团队空间任务 API（同结构）
+- **打包下载**
+  - `archive_download` 任务类型：递归收集目录树文件，流式写入 ZIP
+  - `stream_ticket_service`：一次性下载凭证（5 分钟有效），支持 moka 缓存
+  - `POST /api/v1/batch/archive-download` + `GET /api/v1/batch/archive-download/{token}` 端点
+  - 团队空间打包下载路由
+  - 前端任务页面（分页列表、状态徽章、进度条、自动轮询、重试按钮）
+  - 文件右键菜单/批量操作栏新增"打包下载"选项
+- **运行与调度配置**
+  - `operations` 配置分类：`mail_outbox_dispatch_interval_secs`、`background_task_dispatch_interval_secs`、`maintenance_cleanup_interval_secs`、`blob_reconcile_interval_secs`、`team_member_list_max_limit`、`task_list_max_limit`、`avatar_max_upload_size_bytes`、`thumbnail_max_source_bytes`
+  - 设置页新增时间单位选择器（秒/分钟/小时/天/周）和大小单位选择器（字节/KB/MB/GB/TB），自动检测最合适单位
+  - 新增 `auth_register_activation_enabled` 配置项（注册后是否需要邮箱激活）
+  - 设置分类细化：`user` 拆分为 `user.registration_and_login` + `user.avatar`，新增 `general.preview` 子分类
+
+
+### Changed
+
+- **缩略图系统**
+  - 存储路径引入版本号：`_thumb/v2/{hash...}.webp`，旧路径缩略图自动清理
+  - ETag 格式改为 `thumb-v2-{blob_hash}`，分享页缓存策略改为 `must-revalidate`
+  - 最大并发 worker 数从 `min(cpu, 4)` 降为 `min(cpu, 2)`
+  - worker 接收 `runtime_config` 参数以读取动态配置
+  - 前端缩略图支持视口懒加载（`IntersectionObserver`）和加载状态指示
+- **后台定时任务调度**
+  - `spawn_periodic()` 间隔从固定 Duration 改为从运行时配置动态读取的闭包
+  - 所有定时任务（upload/trash/lock/audit cleanup 等）统一使用 `maintenance_cleanup_interval` 配置
+- **文件预览架构**
+  - `OpenWithMode` 从受限枚举改为开放 string 类型，支持服务端定义任意打开方式
+  - `formatted` 预览模式拆分为 `formatted_json` 和 `formatted_xml`
+  - 删除 `OfficeOnlinePreview`、`OpenWithChooser`、`PreviewModeSwitch` 等旧组件
+- **CORS 中间件**
+  - 允许头列表从硬编码字符串改为 `ALLOWED_HEADERS` 常量数组动态拼接
+
+
+### Fixed
+
+- **管理设置页面** — 桌面端导航栏改为 sticky 定位，解决长页面滚动时导航不跟随的问题
+- **品牌资源预览** — favicon 和深色 wordmark 预览框背景统一为白色，确保不同主题下效果一致
+
+
+### Breaking Changes
+
+- **数据库 Schema**：新增 `background_tasks` 和 `wopi_sessions` 表，需运行数据库迁移
+- **缩略图路径**：存储路径从 `_thumb/{hash...}` 变为 `_thumb/v2/{hash...}`，升级后旧缩略图访问时自动清理重新生成
+- **缩略图 ETag**：格式加入 `thumb-v2-` 前缀，客户端缓存的旧 ETag 将失效
+- **预览应用配置**：`frontend_preview_apps_json` 格式已完全重构（新增 version, provider, config 等字段），自定义配置需重新设置
+- **设置分类键**：`user` 分类拆分为子分类，`general` 新增 `general.preview`，可能影响依赖分类名的自动化脚本
+
+
+---
+
+**统计数据**：
+- 191 files changed, 19,997 insertions(+), 2,048 deletions(-)
+- 7 commits
+
+
 ## [v0.0.1-alpha.16] - 2026-04-09
 
 ### Release Highlights
@@ -1336,7 +1424,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.16...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.17...HEAD
+[v0.0.1-alpha.17]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.16...v0.0.1-alpha.17
 [v0.0.1-alpha.16]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.15...v0.0.1-alpha.16
 [v0.0.1-alpha.15]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.14...v0.0.1-alpha.15
 [v0.0.1-alpha.14]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.13...v0.0.1-alpha.14
