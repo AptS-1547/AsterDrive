@@ -32,6 +32,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, db: &sea_orm::DatabaseConnection)
             .service(routes::tasks::routes(&rl))
             .service(routes::teams::routes(&rl))
             .service(routes::public::routes())
+            .service(routes::wopi::routes())
             .default_service(web::to(api_not_found)),
     )
     .service(routes::health::routes())

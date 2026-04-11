@@ -1161,6 +1161,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files/{id}/wopi/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["open_file_with_wopi"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/folders": {
         parameters: {
             query?: never;
@@ -2073,6 +2089,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/teams/{team_id}/files/{id}/wopi/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["open_team_file_with_wopi"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teams/{team_id}/folders": {
         parameters: {
             query?: never;
@@ -2451,6 +2483,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["toggle_webdav_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/wopi/files/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["wopi_check_file_info"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3410,6 +3458,9 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        OpenWopiRequest: {
+            app_key: string;
+        };
         PasswordResetConfirmReq: {
             new_password: string;
             token: string;
@@ -3499,12 +3550,16 @@ export interface components {
         PresignPartsReq: {
             part_numbers: number[];
         };
+        /** @enum {string} */
+        PreviewAppProvider: "builtin" | "url_template" | "wopi";
         PreviewLinkInfo: {
             expires_at: string;
             /** Format: int32 */
             max_uses: number;
             path: string;
         };
+        /** @enum {string} */
+        PreviewOpenMode: "iframe" | "new_tab";
         PublicBranding: {
             allow_user_registration: boolean;
             description: string;
@@ -3514,10 +3569,30 @@ export interface components {
             wordmark_dark_url: string;
             wordmark_light_url: string;
         };
-        PublicPreviewAppDefinition: {
-            config?: {
-                [key: string]: unknown;
+        PublicPreviewAppConfig: {
+            /** @default null */
+            action: string | null;
+            /** @default null */
+            action_url: string | null;
+            /** @default null */
+            action_url_template: string | null;
+            /** @default [] */
+            allowed_origins: string[];
+            /** @default null */
+            delimiter: string | null;
+            /** @default null */
+            discovery_url: string | null;
+            /** @default {} */
+            form_fields: {
+                [key: string]: string;
             };
+            /** @default null */
+            mode: null | components["schemas"]["PreviewOpenMode"];
+            /** @default null */
+            url_template: string | null;
+        };
+        PublicPreviewAppDefinition: {
+            config?: components["schemas"]["PublicPreviewAppConfig"];
             enabled?: boolean;
             icon: string;
             key: string;
@@ -3525,6 +3600,7 @@ export interface components {
             labels?: {
                 [key: string]: string;
             };
+            provider: components["schemas"]["PreviewAppProvider"];
         };
         PublicPreviewAppMatch: {
             categories?: string[];
@@ -4162,6 +4238,16 @@ export interface components {
         WebdavSettingsInfo: {
             endpoint: string;
             prefix: string;
+        };
+        WopiLaunchSession: {
+            access_token: string;
+            /** Format: int64 */
+            access_token_ttl: number;
+            action_url: string;
+            form_fields?: {
+                [key: string]: string;
+            };
+            mode?: null | components["schemas"]["PreviewOpenMode"];
         };
     };
     responses: never;
@@ -8922,6 +9008,60 @@ export interface operations {
             };
         };
     };
+    open_file_with_wopi: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenWopiRequest"];
+            };
+        };
+        responses: {
+            /** @description WOPI launch session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            access_token: string;
+                            /** Format: int64 */
+                            access_token_ttl: number;
+                            action_url: string;
+                            form_fields?: {
+                                [key: string]: string;
+                            };
+                            mode?: null | components["schemas"]["PreviewOpenMode"];
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_root: {
         parameters: {
             query?: {
@@ -12995,6 +13135,69 @@ export interface operations {
             };
         };
     };
+    open_team_file_with_wopi: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenWopiRequest"];
+            };
+        };
+        responses: {
+            /** @description Team WOPI launch session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            access_token: string;
+                            /** Format: int64 */
+                            access_token_ttl: number;
+                            action_url: string;
+                            form_fields?: {
+                                [key: string]: string;
+                            };
+                            mode?: null | components["schemas"]["PreviewOpenMode"];
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_team_root: {
         parameters: {
             query?: {
@@ -14808,6 +15011,30 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    wopi_check_file_info: {
+        parameters: {
+            query: {
+                /** @description WOPI access token */
+                access_token: string;
+            };
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description WOPI CheckFileInfo response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

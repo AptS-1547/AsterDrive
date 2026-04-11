@@ -120,6 +120,10 @@ export type TemplateVariableGroup =
 export type TemplateVariableItem =
 	components["schemas"]["TemplateVariableItem"];
 export type PublicBranding = components["schemas"]["PublicBranding"];
+export type PreviewAppProvider = components["schemas"]["PreviewAppProvider"];
+export type PreviewOpenMode = components["schemas"]["PreviewOpenMode"];
+export type PublicPreviewAppConfig =
+	components["schemas"]["PublicPreviewAppConfig"];
 export type PublicPreviewAppDefinition =
 	components["schemas"]["PublicPreviewAppDefinition"];
 export type PublicPreviewAppMatch =
@@ -137,6 +141,8 @@ export type WebdavAccountInfo = components["schemas"]["WebdavAccountInfo"];
 export type WebdavAccountPage =
 	components["schemas"]["OffsetPage_WebdavAccountInfo"];
 export type WebdavSettingsInfo = components["schemas"]["WebdavSettingsInfo"];
+export type OpenWopiRequest = components["schemas"]["OpenWopiRequest"];
+export type WopiLaunchSession = components["schemas"]["WopiLaunchSession"];
 
 // Teams
 export type AddTeamMemberRequest = components["schemas"]["AddTeamMemberReq"];

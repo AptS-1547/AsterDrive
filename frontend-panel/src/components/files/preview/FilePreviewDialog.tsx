@@ -22,10 +22,16 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatBytes } from "@/lib/format";
+import { normalizeTablePreviewDelimiter } from "@/lib/tablePreview";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
-import type { FileInfo, FileListItem, PreviewLinkInfo } from "@/types/api";
+import type {
+	FileInfo,
+	FileListItem,
+	PreviewLinkInfo,
+	WopiLaunchSession,
+} from "@/types/api";
 import { BlobMediaPreview } from "./BlobMediaPreview";
 import { detectFilePreviewProfile } from "./file-capabilities";
 import { resolveOpenWithOptionLabel } from "./openWithLabel";
@@ -36,6 +42,7 @@ import { UnsavedChangesGuard } from "./UnsavedChangesGuard";
 import { UrlTemplatePreview } from "./UrlTemplatePreview";
 import { VideoPreview } from "./VideoPreview";
 import { getVideoBrowserOpenWithOption } from "./video-browser-config";
+import { WopiPreview } from "./WopiPreview";
 
 const PdfPreview = lazy(async () => {
 	const module = await import("./PdfPreview");
@@ -194,7 +201,20 @@ interface FilePreviewDialogProps {
 	downloadPath?: string;
 	editable?: boolean;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
+	wopiSessionFactory?: (appKey: string) => Promise<WopiLaunchSession>;
 	openMode?: "auto" | "direct" | "picker";
+}
+
+function getEmbeddedOptionMode(option: OpenWithOption | null) {
+	if (!option) {
+		return "new_tab";
+	}
+
+	if (option.mode !== "url_template" && option.mode !== "wopi") {
+		return "iframe";
+	}
+
+	return option.config?.mode === "new_tab" ? "new_tab" : "iframe";
 }
 
 export function FilePreviewDialog({
@@ -204,6 +224,7 @@ export function FilePreviewDialog({
 	downloadPath,
 	editable = true,
 	previewLinkFactory,
+	wopiSessionFactory,
 	openMode = "auto",
 }: FilePreviewDialogProps) {
 	const { i18n, t } = useTranslation(["core", "files"]);
@@ -250,15 +271,25 @@ export function FilePreviewDialog({
 		};
 	}, [baseProfile, customVideoBrowserOption]);
 
+	const isOptionAvailable = useCallback(
+		(option: OpenWithOption) =>
+			option.mode !== "wopi" || Boolean(wopiSessionFactory),
+		[wopiSessionFactory],
+	);
+
 	const allOptions = useMemo(
-		() => profile?.allOptions ?? profile?.options ?? [],
-		[profile],
-	);
-	const visibleOptions = useMemo(
 		() =>
-			profile && profile.options.length > 0 ? profile.options : allOptions,
-		[allOptions, profile],
+			(profile?.allOptions ?? profile?.options ?? []).filter(isOptionAvailable),
+		[isOptionAvailable, profile],
 	);
+	const visibleOptions = useMemo(() => {
+		if (!profile || profile.options.length === 0) {
+			return allOptions;
+		}
+
+		const nextVisibleOptions = profile.options.filter(isOptionAvailable);
+		return nextVisibleOptions.length > 0 ? nextVisibleOptions : allOptions;
+	}, [allOptions, isOptionAvailable, profile]);
 	const hiddenOptions = useMemo(
 		() =>
 			allOptions.filter(
@@ -270,7 +301,13 @@ export function FilePreviewDialog({
 
 	const preferredMode = useMemo(() => {
 		if (!profile) return null;
-		return profile.defaultMode ?? allOptions[0]?.key ?? null;
+		if (
+			profile.defaultMode &&
+			allOptions.some((option) => option.key === profile.defaultMode)
+		) {
+			return profile.defaultMode;
+		}
+		return allOptions[0]?.key ?? null;
 	}, [allOptions, profile]);
 
 	const [mode, setMode] = useState<OpenWithMode | null>(null);
@@ -308,6 +345,13 @@ export function FilePreviewDialog({
 			),
 		[i18n?.language, t],
 	);
+	const activeWopiSessionFactory = useCallback(() => {
+		if (!activeOption || activeOption.mode !== "wopi" || !wopiSessionFactory) {
+			return Promise.reject(new Error("wopi session factory unavailable"));
+		}
+
+		return wopiSessionFactory(activeOption.key);
+	}, [activeOption, wopiSessionFactory]);
 	const showOpenMethodChooser =
 		previewAppsLoaded &&
 		(openMode === "picker"
@@ -320,8 +364,8 @@ export function FilePreviewDialog({
 	const usesInnerScroll =
 		activeOption?.mode === "pdf" ||
 		activeOption?.mode === "table" ||
-		(activeOption?.mode === "url_template" &&
-			activeOption.config?.mode !== "new_tab");
+		((activeOption?.mode === "url_template" || activeOption?.mode === "wopi") &&
+			getEmbeddedOptionMode(activeOption) !== "new_tab");
 	const fillsViewportHeight =
 		activeOption?.mode === "code" ||
 		activeOption?.mode === "formatted_json" ||
@@ -329,8 +373,8 @@ export function FilePreviewDialog({
 		activeOption?.mode === "markdown" ||
 		activeOption?.mode === "pdf" ||
 		activeOption?.mode === "table" ||
-		(activeOption?.mode === "url_template" &&
-			activeOption.config?.mode !== "new_tab");
+		((activeOption?.mode === "url_template" || activeOption?.mode === "wopi") &&
+			getEmbeddedOptionMode(activeOption) !== "new_tab");
 	const previewLoadingState = (
 		<PreviewLoadingState
 			text={t("files:loading_preview")}
@@ -346,13 +390,10 @@ export function FilePreviewDialog({
 		onClose();
 	}, [isDirty, onClose]);
 
-	const handleOpenMethodSelect = useCallback(
-		(nextMode: OpenWithMode) => {
-			setMode(nextMode);
-			setHasConfirmedInitialMode(true);
-		},
-		[],
-	);
+	const handleOpenMethodSelect = useCallback((nextMode: OpenWithMode) => {
+		setMode(nextMode);
+		setHasConfirmedInitialMode(true);
+	}, []);
 
 	const handleDiscardChanges = useCallback(() => {
 		setConfirmOpen(false);
@@ -396,6 +437,18 @@ export function FilePreviewDialog({
 				/>
 			);
 		}
+		if (activeOption.mode === "wopi") {
+			if (!wopiSessionFactory) {
+				return <PreviewUnavailable />;
+			}
+			return (
+				<WopiPreview
+					label={getOptionLabel(activeOption)}
+					rawConfig={activeOption.config ?? null}
+					createSession={activeWopiSessionFactory}
+				/>
+			);
+		}
 		if (activeOption.mode === "markdown") {
 			return (
 				<Suspense fallback={previewLoadingState}>
@@ -404,10 +457,9 @@ export function FilePreviewDialog({
 			);
 		}
 		if (activeOption.mode === "table") {
-			const delimiter: "," | "\t" =
-				activeOption.config?.delimiter === "\t" || profile.category === "tsv"
-					? "\t"
-					: ",";
+			const delimiter = normalizeTablePreviewDelimiter(
+				activeOption.config?.delimiter,
+			);
 
 			return (
 				<Suspense fallback={previewLoadingState}>
@@ -553,10 +605,7 @@ export function FilePreviewDialog({
 													{t("files:more_open_methods")}
 												</div>
 											</div>
-											<Icon
-												name="CaretDown"
-												className="h-4 w-4"
-											/>
+											<Icon name="CaretDown" className="h-4 w-4" />
 										</div>
 									</Button>
 								) : null}

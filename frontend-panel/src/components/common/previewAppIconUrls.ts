@@ -38,8 +38,7 @@ export function getBuiltinPreviewAppIconUrl(key: string) {
 			return PREVIEW_APP_ICON_URLS.microsoftOnedrive;
 		case "builtin.pdf":
 			return PREVIEW_APP_ICON_URLS.pdf;
-		case "builtin.table_csv":
-		case "builtin.table_tsv":
+		case "builtin.table":
 			return PREVIEW_APP_ICON_URLS.table;
 		case "builtin.video":
 			return PREVIEW_APP_ICON_URLS.video;

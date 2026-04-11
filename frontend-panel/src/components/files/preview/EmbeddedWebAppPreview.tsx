@@ -8,6 +8,7 @@ interface EmbeddedWebAppPreviewProps {
 	iframeAllow?: string;
 	iframeClassName?: string;
 	iframeHidden?: boolean;
+	iframeName?: string;
 	iframeReferrerPolicy?: ComponentProps<"iframe">["referrerPolicy"];
 	loadingOverlay?: ReactNode;
 	onLoad?: () => void;
@@ -22,6 +23,7 @@ export function EmbeddedWebAppPreview({
 	iframeAllow,
 	iframeClassName,
 	iframeHidden = false,
+	iframeName,
 	iframeReferrerPolicy = "same-origin",
 	loadingOverlay,
 	onLoad,
@@ -51,6 +53,7 @@ export function EmbeddedWebAppPreview({
 						key={src}
 						title={title}
 						src={src}
+						name={iframeName}
 						className={cn(
 							"h-full w-full bg-background",
 							iframeHidden && "pointer-events-none opacity-0",

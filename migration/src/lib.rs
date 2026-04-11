@@ -34,6 +34,7 @@ mod m20260403_000001_add_team_scope_to_shares;
 mod m20260408_000001_add_contact_verification_tokens;
 mod m20260409_000001_create_mail_outbox;
 mod m20260410_000001_create_background_tasks;
+mod m20260412_000001_create_wopi_sessions;
 
 pub struct Migrator;
 
@@ -75,6 +76,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260408_000001_add_contact_verification_tokens::Migration),
             Box::new(m20260409_000001_create_mail_outbox::Migration),
             Box::new(m20260410_000001_create_background_tasks::Migration),
+            Box::new(m20260412_000001_create_wopi_sessions::Migration),
         ]
     }
 }

@@ -29,4 +29,5 @@ pub mod user_service;
 pub mod version_service;
 pub mod webdav_account_service;
 pub mod webdav_service;
+pub mod wopi_service;
 pub mod workspace_storage_service;

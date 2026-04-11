@@ -95,6 +95,30 @@ describe("CsvTablePreview", () => {
 		expect(screen.getByText("admin")).toBeInTheDocument();
 	});
 
+	it("auto-detects delimiters for the default table preview mode", () => {
+		mockState.useTextContent.mockReturnValue({
+			content: "name;role\nAster;admin",
+			loading: false,
+			error: false,
+			reload: mockState.reload,
+		});
+		const parseSpy = vi.spyOn(Papa, "parse");
+
+		render(<CsvTablePreview path="/files/table.csv" delimiter="auto" />);
+
+		expect(parseSpy).toHaveBeenCalledWith(
+			"name;role\nAster;admin",
+			expect.objectContaining({
+				delimitersToGuess: [",", "\t", ";", "|"],
+				skipEmptyLines: true,
+			}),
+		);
+		expect(screen.getByText("Aster")).toBeInTheDocument();
+		expect(screen.getByText("admin")).toBeInTheDocument();
+
+		parseSpy.mockRestore();
+	});
+
 	it("supports tab-delimited content and truncates very large tables", () => {
 		const rows = ["name\trole"];
 		rows.push(

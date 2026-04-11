@@ -3,7 +3,16 @@ import {
 	PREVIEW_APP_ICON_URLS,
 } from "@/components/common/previewAppIconUrls";
 import type { IconName } from "@/components/ui/icon";
-import type { PublicPreviewAppsConfig } from "@/types/api";
+import {
+	BUILTIN_TABLE_PREVIEW_APP_KEY,
+	DEFAULT_TABLE_PREVIEW_DELIMITER,
+} from "@/lib/tablePreview";
+import type {
+	PreviewAppProvider,
+	PublicPreviewAppDefinition,
+	PublicPreviewAppRule,
+	PublicPreviewAppsConfig,
+} from "@/types/api";
 import type {
 	FilePreviewProfile,
 	FileTypeInfo,
@@ -432,11 +441,11 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	csv: [
 		{
-			key: "table_csv",
+			key: "table",
 			mode: "table",
 			labelKey: "open_with_table",
 			icon: PREVIEW_APP_ICON_URLS.table,
-			config: { delimiter: "," },
+			config: { delimiter: DEFAULT_TABLE_PREVIEW_DELIMITER },
 		},
 		{
 			key: "code",
@@ -447,11 +456,11 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	tsv: [
 		{
-			key: "table_tsv",
+			key: "table",
 			mode: "table",
 			labelKey: "open_with_table",
 			icon: PREVIEW_APP_ICON_URLS.table,
-			config: { delimiter: "\t" },
+			config: { delimiter: DEFAULT_TABLE_PREVIEW_DELIMITER },
 		},
 		{
 			key: "code",
@@ -508,18 +517,13 @@ const BUILTIN_KEY_BY_LEGACY_OPTION_KEY: Partial<Record<string, string>> = {
 	office_google: "builtin.office_google",
 	office_microsoft: "builtin.office_microsoft",
 	pdf: "builtin.pdf",
-	table_csv: "builtin.table_csv",
-	table_tsv: "builtin.table_tsv",
+	table: BUILTIN_TABLE_PREVIEW_APP_KEY,
 	try_text: "builtin.try_text",
 	video: "builtin.video",
 };
 
-type ConfiguredPreviewApp = NonNullable<
-	PublicPreviewAppsConfig["apps"]
->[number];
-type ConfiguredPreviewRule = NonNullable<
-	PublicPreviewAppsConfig["rules"]
->[number];
+type ConfiguredPreviewApp = PublicPreviewAppDefinition;
+type ConfiguredPreviewRule = PublicPreviewAppRule;
 
 function mergeOpenWithOptions(...groups: OpenWithOption[][]): OpenWithOption[] {
 	const merged: OpenWithOption[] = [];
@@ -731,7 +735,7 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "table_csv",
+			defaultMode: "table",
 			options: OPEN_WITH_OPTIONS.csv,
 		};
 	}
@@ -741,7 +745,7 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "table_tsv",
+			defaultMode: "table",
 			options: OPEN_WITH_OPTIONS.tsv,
 		};
 	}
@@ -805,10 +809,22 @@ function detectLegacyFilePreviewProfile(
 	};
 }
 
-function normalizeConfiguredOption(app: ConfiguredPreviewApp): OpenWithOption {
+function normalizeConfiguredOption(
+	app: ConfiguredPreviewApp,
+): OpenWithOption | null {
+	const provider = getConfiguredPreviewProvider(app);
+	if (!provider) {
+		return null;
+	}
+
+	const mode = getConfiguredPreviewMode(app.key, provider);
+	if (!mode) {
+		return null;
+	}
+
 	return {
 		key: app.key,
-		mode: getConfiguredPreviewMode(app.key),
+		mode,
 		labelKey: app.label_i18n_key ?? "",
 		labels: app.labels ?? undefined,
 		icon: app.icon?.trim() || getConfiguredPreviewIcon(app.key),
@@ -819,10 +835,15 @@ function normalizeConfiguredOption(app: ConfiguredPreviewApp): OpenWithOption {
 function normalizeLegacyOptionForConfiguredProfile(
 	option: OpenWithOption,
 	appMap: Map<string, OpenWithOption>,
+	disabledKeys = new Set<string>(),
 ) {
 	const builtinKey = BUILTIN_KEY_BY_LEGACY_OPTION_KEY[option.key];
 	if (!builtinKey) {
 		return option;
+	}
+
+	if (disabledKeys.has(builtinKey)) {
+		return null;
 	}
 
 	return appMap.get(builtinKey) ?? option;
@@ -832,7 +853,38 @@ function getConfiguredPreviewIcon(key: string): string {
 	return getBuiltinPreviewAppIconUrl(key);
 }
 
-function getConfiguredPreviewMode(key: string): OpenWithOption["mode"] {
+function getConfiguredPreviewProvider(
+	app: ConfiguredPreviewApp,
+): PreviewAppProvider | null {
+	const provider = app.provider.trim().toLowerCase();
+	if (provider === "builtin") {
+		return "builtin";
+	}
+	if (provider === "wopi") {
+		return "wopi";
+	}
+	if (provider === "url_template") {
+		return "url_template";
+	}
+	return null;
+}
+
+function isConfiguredPreviewAppEnabled(app: ConfiguredPreviewApp) {
+	return app.enabled !== false;
+}
+
+function getConfiguredPreviewMode(
+	key: string,
+	provider: PreviewAppProvider,
+): OpenWithOption["mode"] | null {
+	if (provider === "url_template") {
+		return "url_template";
+	}
+
+	if (provider === "wopi") {
+		return "wopi";
+	}
+
 	switch (key) {
 		case "builtin.image":
 			return "image";
@@ -844,8 +896,7 @@ function getConfiguredPreviewMode(key: string): OpenWithOption["mode"] {
 			return "pdf";
 		case "builtin.markdown":
 			return "markdown";
-		case "builtin.table_csv":
-		case "builtin.table_tsv":
+		case BUILTIN_TABLE_PREVIEW_APP_KEY:
 			return "table";
 		case "builtin.formatted_json":
 			return "formatted_json";
@@ -855,7 +906,7 @@ function getConfiguredPreviewMode(key: string): OpenWithOption["mode"] {
 		case "builtin.try_text":
 			return "code";
 		default:
-			return "url_template";
+			return null;
 	}
 }
 
@@ -902,11 +953,28 @@ function detectConfiguredFilePreviewProfile(
 	previewApps: PublicPreviewAppsConfig,
 ): FilePreviewProfile {
 	const legacyProfile = detectLegacyFilePreviewProfile(file);
-	const configuredApps = previewApps.apps ?? [];
-	const configuredRules = previewApps.rules ?? [];
-	const appMap = new Map(
-		configuredApps.map((app) => [app.key, normalizeConfiguredOption(app)]),
+	const allConfiguredApps = previewApps.apps ?? [];
+	const disabledAppKeys = new Set(
+		allConfiguredApps
+			.filter((app) => !isConfiguredPreviewAppEnabled(app))
+			.map((app) => app.key),
 	);
+	const configuredApps = allConfiguredApps.filter(
+		isConfiguredPreviewAppEnabled,
+	);
+	const configuredRules = previewApps.rules ?? [];
+	const configuredOptions = configuredApps
+		.map((app) => {
+			const option = normalizeConfiguredOption(app);
+			return option ? ([app.key, option] as const) : null;
+		})
+		.filter(
+			(
+				entry,
+			): entry is readonly [ConfiguredPreviewApp["key"], OpenWithOption] =>
+				entry !== null,
+		);
+	const appMap = new Map(configuredOptions);
 	const options: OpenWithOption[] = [];
 	let defaultMode: string | null = null;
 
@@ -927,12 +995,16 @@ function detectConfiguredFilePreviewProfile(
 		}
 	}
 
-	const fallbackOptions = legacyProfile.options.map((option) =>
-		normalizeLegacyOptionForConfiguredProfile(option, appMap),
-	);
-	const registeredOptions = configuredApps
-		.map((app) => appMap.get(app.key))
-		.filter((option): option is OpenWithOption => option !== undefined);
+	const fallbackOptions = legacyProfile.options
+		.map((option) =>
+			normalizeLegacyOptionForConfiguredProfile(
+				option,
+				appMap,
+				disabledAppKeys,
+			),
+		)
+		.filter((option): option is OpenWithOption => option !== null);
+	const registeredOptions = configuredOptions.map(([, option]) => option);
 	const allOptions = mergeOpenWithOptions(
 		options,
 		registeredOptions,

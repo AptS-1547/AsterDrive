@@ -155,6 +155,33 @@ async fn create_blob(
     .unwrap()
 }
 
+async fn create_wopi_session(
+    state: &aster_drive::runtime::AppState,
+    actor_user_id: i64,
+    file_id: i64,
+    token: &str,
+    expires_at: chrono::DateTime<chrono::Utc>,
+) {
+    use aster_drive::db::repository::wopi_session_repo;
+
+    wopi_session_repo::create(
+        &state.db,
+        aster_drive::entities::wopi_session::ActiveModel {
+            token_hash: Set(aster_drive::utils::hash::sha256_hex(token.as_bytes())),
+            actor_user_id: Set(actor_user_id),
+            session_version: Set(1),
+            team_id: Set(None),
+            file_id: Set(file_id),
+            app_key: Set("onlyoffice".to_string()),
+            expires_at: Set(expires_at),
+            created_at: Set(Utc::now()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+}
+
 #[actix_web::test]
 async fn test_cleanup_expired_completed_upload_sessions_removes_broken_temp_object() {
     use aster_drive::db::repository::upload_session_repo;
@@ -284,6 +311,63 @@ async fn test_cleanup_expired_completed_upload_sessions_keeps_live_blob() {
     assert!(file_repo::find_by_id(&state.db, file.id).await.is_ok());
     assert!(file_repo::find_blob_by_id(&state.db, blob.id).await.is_ok());
     assert!(driver.exists(&blob.storage_path).await.unwrap());
+}
+
+#[actix_web::test]
+async fn test_cleanup_expired_wopi_sessions_removes_only_expired_rows() {
+    use aster_drive::db::repository::wopi_session_repo;
+    use aster_drive::entities::wopi_session;
+    use aster_drive::services::{auth_service, wopi_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "wopimaint1", "wopimaint1@test.com", "password123")
+        .await
+        .unwrap();
+    let file = store_test_file(&state, user.id, "wopi-cleanup.txt", b"cleanup").await;
+
+    create_wopi_session(
+        &state,
+        user.id,
+        file.id,
+        "expired-wopi-token",
+        Utc::now() - Duration::minutes(10),
+    )
+    .await;
+    create_wopi_session(
+        &state,
+        user.id,
+        file.id,
+        "live-wopi-token",
+        Utc::now() + Duration::minutes(10),
+    )
+    .await;
+
+    let count = wopi_service::cleanup_expired(&state).await.unwrap();
+    assert_eq!(count, 1);
+
+    assert!(
+        wopi_session_repo::find_by_token_hash(
+            &state.db,
+            &aster_drive::utils::hash::sha256_hex(b"expired-wopi-token"),
+        )
+        .await
+        .unwrap()
+        .is_none()
+    );
+    assert!(
+        wopi_session_repo::find_by_token_hash(
+            &state.db,
+            &aster_drive::utils::hash::sha256_hex(b"live-wopi-token"),
+        )
+        .await
+        .unwrap()
+        .is_some()
+    );
+
+    assert_eq!(
+        wopi_session::Entity::find().count(&state.db).await.unwrap(),
+        1
+    );
 }
 
 #[actix_web::test]

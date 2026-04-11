@@ -20,3 +20,4 @@ pub mod user_profile_repo;
 pub mod user_repo;
 pub mod version_repo;
 pub mod webdav_account_repo;
+pub mod wopi_session_repo;

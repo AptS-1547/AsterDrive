@@ -152,6 +152,22 @@ vi.mock("@/components/files/preview/UrlTemplatePreview", () => ({
 	),
 }));
 
+vi.mock("@/components/files/preview/WopiPreview", () => ({
+	WopiPreview: ({
+		createSession,
+		label,
+		rawConfig,
+	}: {
+		createSession: () => Promise<unknown>;
+		label: string;
+		rawConfig: Record<string, unknown> | null | undefined;
+	}) => (
+		<div>
+			{`wopi:${label}:${String(rawConfig?.mode ?? "")}:${String(Boolean(createSession))}`}
+		</div>
+	),
+}));
+
 vi.mock("@/components/files/preview/file-capabilities", () => ({
 	detectFilePreviewProfile: () => mockState.profile,
 }));
@@ -586,6 +602,40 @@ describe("FilePreviewDialog", () => {
 		).toContain("h-[90vh]");
 	});
 
+	it("passes the configured table delimiter strategy through to the preview", async () => {
+		mockState.profile = {
+			category: "csv",
+			defaultMode: "table",
+			isBlobPreview: false,
+			isEditableText: true,
+			isTextBased: true,
+			options: [
+				{
+					config: {
+						delimiter: "auto",
+					},
+					icon: "Table",
+					key: "table",
+					labelKey: "open_with_table",
+					mode: "table",
+				},
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type: "text/csv",
+				name: "people.csv",
+				size: 512,
+			} as never,
+		});
+
+		expect(
+			await screen.findByText("table:auto:/files/7/download"),
+		).toBeInTheDocument();
+	});
+
 	it("passes url-template previews through even without a preview link factory", async () => {
 		mockState.profile = {
 			category: "document",
@@ -624,5 +674,90 @@ describe("FilePreviewDialog", () => {
 				"url-template:files:open_with_office_microsoft:/files/7/download:https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}:false",
 			),
 		).toBeInTheDocument();
+	});
+
+	it("renders wopi previews in the fixed-height workspace when a session factory is available", async () => {
+		mockState.profile = {
+			category: "document",
+			defaultMode: "custom.onlyoffice",
+			isBlobPreview: false,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{
+					config: {
+						mode: "iframe",
+						provider: "wopi",
+					},
+					icon: "Globe",
+					key: "custom.onlyoffice",
+					labels: {
+						zh: "OnlyOffice",
+					},
+					labelKey: "",
+					mode: "wopi",
+				},
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type:
+					"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				name: "report.docx",
+				size: 2048,
+			} as never,
+			wopiSessionFactory: vi.fn(async () => ({
+				access_token: "token-1",
+				access_token_ttl: 600,
+				action_url: "https://office.example.com/wopi/files/7",
+			})),
+		});
+
+		expect(
+			await screen.findByText("wopi:OnlyOffice:iframe:true"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByTestId("dialog-content").className.split(/\s+/),
+		).toContain("h-[90vh]");
+	});
+
+	it("hides wopi open methods when no session factory is available", () => {
+		mockState.profile = {
+			category: "document",
+			defaultMode: "custom.onlyoffice",
+			isBlobPreview: false,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{
+					config: {
+						mode: "iframe",
+						provider: "wopi",
+					},
+					icon: "Globe",
+					key: "custom.onlyoffice",
+					labels: {
+						zh: "OnlyOffice",
+					},
+					labelKey: "",
+					mode: "wopi",
+				},
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type:
+					"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+				name: "report.docx",
+				size: 2048,
+			} as never,
+		});
+
+		expect(screen.queryByText("OnlyOffice")).not.toBeInTheDocument();
+		expect(screen.getByText("preview-unavailable")).toBeInTheDocument();
 	});
 });

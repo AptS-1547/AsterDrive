@@ -20,3 +20,4 @@ pub mod team_trash;
 pub mod teams;
 pub mod trash;
 pub mod webdav_accounts;
+pub mod wopi;

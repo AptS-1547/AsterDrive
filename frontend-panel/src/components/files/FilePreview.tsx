@@ -1,5 +1,10 @@
 import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog";
-import type { FileInfo, FileListItem, PreviewLinkInfo } from "@/types/api";
+import type {
+	FileInfo,
+	FileListItem,
+	PreviewLinkInfo,
+	WopiLaunchSession,
+} from "@/types/api";
 
 interface FilePreviewProps {
 	file: FileInfo | FileListItem;
@@ -8,6 +13,7 @@ interface FilePreviewProps {
 	downloadPath?: string;
 	editable?: boolean;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
+	wopiSessionFactory?: (appKey: string) => Promise<WopiLaunchSession>;
 	openMode?: "auto" | "direct" | "picker";
 }
 
@@ -18,6 +24,7 @@ export function FilePreview({
 	downloadPath,
 	editable,
 	previewLinkFactory,
+	wopiSessionFactory,
 	openMode,
 }: FilePreviewProps) {
 	return (
@@ -28,6 +35,7 @@ export function FilePreview({
 			downloadPath={downloadPath}
 			editable={editable}
 			previewLinkFactory={previewLinkFactory}
+			wopiSessionFactory={wopiSessionFactory}
 			openMode={openMode}
 		/>
 	);

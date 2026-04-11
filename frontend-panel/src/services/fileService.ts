@@ -12,6 +12,7 @@ import type {
 	FolderContents,
 	FolderInfo,
 	PreviewLinkInfo,
+	WopiLaunchSession,
 } from "@/types/api";
 import { ApiError, api } from "./http";
 
@@ -74,6 +75,14 @@ export function createFileService(workspace: Workspace) {
 		createPreviewLink: (id: number) =>
 			api.post<PreviewLinkInfo>(
 				buildWorkspacePath(workspace, `/files/${id}/preview-link`),
+			),
+
+		createWopiSession: (id: number, appKey: string) =>
+			api.post<WopiLaunchSession>(
+				buildWorkspacePath(workspace, `/files/${id}/wopi/open`),
+				{
+					app_key: appKey,
+				},
 			),
 
 		deleteFile: (id: number) =>

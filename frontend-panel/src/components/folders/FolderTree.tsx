@@ -317,7 +317,9 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 	);
 	const [rootDragOver, setRootDragOver] = useState(false);
 
-	const childrenCacheRef = useRef<Map<number | null, FolderListItem[]>>(new Map());
+	const childrenCacheRef = useRef<Map<number | null, FolderListItem[]>>(
+		new Map(),
+	);
 	const inflightLoadsRef = useRef<Map<number | null, Promise<void>>>(new Map());
 	const expandingPathRef = useRef<string>("");
 	const hoverExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(

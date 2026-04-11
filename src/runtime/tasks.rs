@@ -185,13 +185,28 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
     spawn_periodic(
         "task-cleanup",
         maintenance_cleanup_interval,
-        state,
+        state.clone(),
         |s| async move {
             match crate::services::task_service::cleanup_expired(&s).await {
                 Ok(count) if count > 0 => {
                     tracing::info!("cleaned up {count} expired task artifacts")
                 }
                 Err(e) => tracing::warn!("background task cleanup failed: {e}"),
+                _ => {}
+            }
+        },
+    );
+
+    spawn_periodic(
+        "wopi-session-cleanup",
+        maintenance_cleanup_interval,
+        state,
+        |s| async move {
+            match crate::services::wopi_service::cleanup_expired(&s).await {
+                Ok(count) if count > 0 => {
+                    tracing::info!("cleaned up {count} expired WOPI sessions")
+                }
+                Err(e) => tracing::warn!("WOPI session cleanup failed: {e}"),
                 _ => {}
             }
         },

@@ -88,6 +88,7 @@ prometheus = { version = "0.14", optional = true, default-features = false }
 sysinfo = { version = "0.38", optional = true, default-features = false, features = ["system"] }
 rand = { version = "0.10.0", default-features = false, features = ["std", "std_rng", "thread_rng"] }
 redis = { version = "1.2.0", features = ["connection-manager", "tokio-comp", "tokio-rustls-comp"] }
+reqwest = "0.13"
 rust-embed = "8"
 sea-orm = { version = "~2.0.0-rc.38", features = ["sqlx-mysql", "sqlx-postgres", "sqlx-sqlite", "macros", "runtime-tokio-rustls"] }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -112,7 +113,6 @@ aws-smithy-http-client = { version = "1.1.12", features = ["test-util"] }
 aws-smithy-types = "1.4.7"
 testcontainers = "0.27"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-reqwest = "0.13"
 
 [build-dependencies]
 chrono = "0.4"

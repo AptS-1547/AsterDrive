@@ -64,6 +64,7 @@ async fn test_public_preview_apps_uses_admin_config_and_filters_disabled_apps() 
     }
     apps.push(json!({
         "key": "custom.viewer",
+        "provider": "url_template",
         "icon": "Globe",
         "enabled": false,
         "labels": {
@@ -150,6 +151,7 @@ async fn test_admin_preview_apps_config_rejects_builtin_removal() {
                 "apps": [
                     {
                         "key": "custom.viewer",
+                        "provider": "url_template",
                         "icon": "Globe",
                         "labels": {
                             "en": "Viewer"

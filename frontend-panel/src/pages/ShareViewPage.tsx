@@ -101,9 +101,9 @@ export default function ShareViewPage() {
 		null,
 	);
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-	const [previewFile, setPreviewFile] = useState<FileInfo | FileListItem | null>(
-		null,
-	);
+	const [previewFile, setPreviewFile] = useState<
+		FileInfo | FileListItem | null
+	>(null);
 	const [breadcrumb, setBreadcrumb] = useState<ShareBreadcrumbItem[]>([]);
 	const [navigating, setNavigating] = useState(false);
 	const [loadingMore, setLoadingMore] = useState(false);

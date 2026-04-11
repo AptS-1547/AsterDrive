@@ -266,9 +266,7 @@ describe("FileGrid", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "open:Docs" }));
 		fireEvent.click(screen.getByRole("button", { name: "open:report.pdf" }));
-		fireEvent.click(
-			screen.getByRole("button", { name: "open-double:Docs" }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: "open-double:Docs" }));
 		fireEvent.click(
 			screen.getByRole("button", { name: "open-double:report.pdf" }),
 		);

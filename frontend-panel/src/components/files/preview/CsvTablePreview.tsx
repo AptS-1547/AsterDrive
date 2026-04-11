@@ -11,12 +11,13 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { useTextContent } from "@/hooks/useTextContent";
+import type { TablePreviewDelimiterValue } from "@/lib/tablePreview";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 
 interface CsvTablePreviewProps {
 	path: string;
-	delimiter: "," | "\t";
+	delimiter: TablePreviewDelimiterValue;
 }
 
 const MAX_ROWS = 500;
@@ -28,7 +29,9 @@ export function CsvTablePreview({ path, delimiter }: CsvTablePreviewProps) {
 	const parsed = useMemo(() => {
 		if (!content) return null;
 		return Papa.parse<string[]>(content, {
-			delimiter,
+			...(delimiter === "auto"
+				? { delimitersToGuess: [",", "\t", ";", "|"] }
+				: { delimiter }),
 			skipEmptyLines: true,
 		});
 	}, [content, delimiter]);

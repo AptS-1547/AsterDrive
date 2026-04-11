@@ -29,6 +29,7 @@ export type PreviewProviderKind =
 	| "formatted_json"
 	| "formatted_xml"
 	| "code"
+	| "wopi"
 	| "url_template";
 
 export interface OpenWithOption {

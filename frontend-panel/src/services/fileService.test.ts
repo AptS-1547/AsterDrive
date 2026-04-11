@@ -58,6 +58,7 @@ describe("fileService", () => {
 		fileService.renameFolder(7, "Renamed");
 		fileService.getFile(8);
 		fileService.getDirectLinkToken(8);
+		fileService.createWopiSession(8, "custom.onlyoffice");
 		fileService.deleteFile(8);
 		fileService.renameFile(8, "notes.md");
 		fileService.setFileLock(8, true);
@@ -86,29 +87,32 @@ describe("fileService", () => {
 		});
 		expect(mockState.get).toHaveBeenNthCalledWith(5, "/files/8");
 		expect(mockState.get).toHaveBeenNthCalledWith(6, "/files/8/direct-link");
+		expect(mockState.post).toHaveBeenNthCalledWith(2, "/files/8/wopi/open", {
+			app_key: "custom.onlyoffice",
+		});
 		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/files/8");
 		expect(mockState.patch).toHaveBeenNthCalledWith(2, "/files/8", {
 			name: "notes.md",
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(2, "/files/8/lock", {
+		expect(mockState.post).toHaveBeenNthCalledWith(3, "/files/8/lock", {
 			locked: true,
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(3, "/folders/7/lock", {
+		expect(mockState.post).toHaveBeenNthCalledWith(4, "/folders/7/lock", {
 			locked: false,
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(4, "/files/new", {
+		expect(mockState.post).toHaveBeenNthCalledWith(5, "/files/new", {
 			name: "draft.md",
 			folder_id: 7,
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(5, "/files/8/copy", {
+		expect(mockState.post).toHaveBeenNthCalledWith(6, "/files/8/copy", {
 			folder_id: null,
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(6, "/folders/7/copy", {
+		expect(mockState.post).toHaveBeenNthCalledWith(7, "/folders/7/copy", {
 			parent_id: 3,
 		});
 		expect(mockState.get).toHaveBeenNthCalledWith(7, "/files/8/versions");
 		expect(mockState.post).toHaveBeenNthCalledWith(
-			7,
+			8,
 			"/files/8/versions/2/restore",
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(2, "/files/8/versions/2");

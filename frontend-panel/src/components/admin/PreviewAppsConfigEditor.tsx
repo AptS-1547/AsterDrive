@@ -39,6 +39,11 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { pickLocalizedLabel } from "@/lib/localizedLabel";
+import {
+	getTablePreviewDelimiterLabelKey,
+	normalizeTablePreviewDelimiter,
+	type TablePreviewDelimiterValue,
+} from "@/lib/tablePreview";
 import { cn } from "@/lib/utils";
 import {
 	createPreviewAppDraft,
@@ -46,13 +51,16 @@ import {
 	formatPreviewAppsDelimitedInput,
 	getPreviewAppDefaultIcon,
 	getPreviewAppKindLabelKey,
+	getPreviewAppProvider,
 	getPreviewAppsConfigIssues,
 	isExternalPreviewAppKey,
 	isProtectedBuiltinPreviewAppKey,
 	isTablePreviewAppKey,
-	isUrlTemplatePreviewAppKey,
+	isUrlTemplatePreviewApp,
+	isWopiPreviewApp,
 	movePreviewEditorItem,
 	PREVIEW_APPS_CONFIG_VERSION,
+	type PreviewAppProviderValue,
 	type PreviewAppsEditorApp,
 	type PreviewAppsEditorConfig,
 	type PreviewAppsEditorRule,
@@ -141,12 +149,19 @@ const URL_TEMPLATE_MAGIC_VARIABLES: UrlTemplateMagicVariable[] = [
 	},
 ];
 
-function getProviderDefaultIcon(key: string) {
-	return getPreviewAppDefaultIcon(key);
+function getProviderDefaultIcon(
+	key: string,
+	provider?: PreviewAppProviderValue | null,
+) {
+	return getPreviewAppDefaultIcon(key, provider);
 }
 
-function getProviderLabel(key: string, t: Translate) {
-	return t(getPreviewAppKindLabelKey(key));
+function getProviderLabel(
+	key: string,
+	provider: PreviewAppProviderValue | undefined,
+	t: Translate,
+) {
+	return t(getPreviewAppKindLabelKey(key, provider));
 }
 
 function getTranslatedLegacyAppLabel(app: PreviewAppsEditorApp, t: Translate) {
@@ -191,18 +206,20 @@ function isInternalPreviewApp(app: PreviewAppsEditorApp) {
 	return !isExternalPreviewAppKey(app.key);
 }
 
+function getTablePreviewDelimiterLabel(
+	delimiter: TablePreviewDelimiterValue,
+	t: Translate,
+) {
+	return t(getTablePreviewDelimiterLabelKey(delimiter));
+}
+
 function getAppSummary(app: PreviewAppsEditorApp, t: Translate) {
 	if (isTablePreviewAppKey(app.key)) {
-		const delimiter =
-			typeof app.config.delimiter === "string"
-				? app.config.delimiter.trim()
-				: "";
-		return delimiter
-			? `${t("preview_apps_table_delimiter")}: ${delimiter}`
-			: getProviderLabel(app.key, t);
+		const delimiter = normalizeTablePreviewDelimiter(app.config.delimiter);
+		return `${t("preview_apps_table_delimiter")}: ${getTablePreviewDelimiterLabel(delimiter, t)}`;
 	}
 
-	if (isUrlTemplatePreviewAppKey(app.key)) {
+	if (isUrlTemplatePreviewApp(app)) {
 		const mode =
 			typeof app.config.mode === "string" && app.config.mode === "new_tab"
 				? t("preview_apps_url_template_mode_new_tab")
@@ -214,7 +231,26 @@ function getAppSummary(app: PreviewAppsEditorApp, t: Translate) {
 		return urlTemplate ? `${mode} · ${urlTemplate}` : mode;
 	}
 
-	return getProviderLabel(app.key, t);
+	if (isWopiPreviewApp(app)) {
+		const mode =
+			typeof app.config.mode === "string" && app.config.mode === "new_tab"
+				? t("preview_apps_wopi_mode_new_tab")
+				: t("preview_apps_wopi_mode_iframe");
+		const actionUrl =
+			typeof app.config.action_url === "string"
+				? app.config.action_url.trim()
+				: "";
+		const discoveryUrl =
+			typeof app.config.discovery_url === "string"
+				? app.config.discovery_url.trim()
+				: "";
+		const target = actionUrl || discoveryUrl;
+		return target
+			? `${t("preview_apps_provider_wopi")} · ${mode} · ${target}`
+			: `${t("preview_apps_provider_wopi")} · ${mode}`;
+	}
+
+	return getProviderLabel(app.key, app.provider, t);
 }
 
 function getRuleMatchGroups(
@@ -762,7 +798,10 @@ export function PreviewAppsConfigEditor({
 														<div className="flex size-9 items-center justify-center rounded-xl border border-border/50 bg-muted/25">
 															<PreviewAppIcon
 																icon={app.icon}
-																fallback={getProviderDefaultIcon(app.key)}
+																fallback={getProviderDefaultIcon(
+																	app.key,
+																	app.provider,
+																)}
 																className="h-4 w-4"
 															/>
 														</div>
@@ -991,6 +1030,68 @@ export function PreviewAppsConfigEditor({
 																		}
 																	/>
 																</EditorField>
+																{!protectedBuiltin ? (
+																	<EditorField
+																		label={t("preview_apps_provider_label")}
+																	>
+																		<Select
+																			items={[
+																				{
+																					label: t(
+																						"preview_apps_provider_url_template",
+																					),
+																					value: "url_template",
+																				},
+																				{
+																					label: t(
+																						"preview_apps_provider_wopi",
+																					),
+																					value: "wopi",
+																				},
+																			]}
+																			value={
+																				getPreviewAppProvider(app.provider) ||
+																				"url_template"
+																			}
+																			onValueChange={(provider) =>
+																				updateApp(index, (current) => ({
+																					...current,
+																					provider:
+																						provider === "wopi"
+																							? "wopi"
+																							: "url_template",
+																					config: {
+																						...current.config,
+																						mode:
+																							typeof current.config.mode ===
+																							"string"
+																								? current.config.mode
+																								: "iframe",
+																					},
+																				}))
+																			}
+																		>
+																			<SelectTrigger
+																				size="sm"
+																				aria-label={t(
+																					"preview_apps_provider_label",
+																				)}
+																			>
+																				<SelectValue />
+																			</SelectTrigger>
+																			<SelectContent>
+																				<SelectItem value="url_template">
+																					{t(
+																						"preview_apps_provider_url_template",
+																					)}
+																				</SelectItem>
+																				<SelectItem value="wopi">
+																					{t("preview_apps_provider_wopi")}
+																				</SelectItem>
+																			</SelectContent>
+																		</Select>
+																	</EditorField>
+																) : null}
 																<EditorField
 																	label={t("preview_apps_label_zh_label")}
 																>
@@ -1027,25 +1128,87 @@ export function PreviewAppsConfigEditor({
 																	<EditorField
 																		label={t("preview_apps_table_delimiter")}
 																	>
-																		<Input
-																			value={
-																				typeof app.config.delimiter === "string"
-																					? app.config.delimiter
-																					: ""
-																			}
-																			onChange={(event) =>
+																		<Select
+																			items={[
+																				{
+																					label: getTablePreviewDelimiterLabel(
+																						"auto",
+																						t,
+																					),
+																					value: "auto",
+																				},
+																				{
+																					label: getTablePreviewDelimiterLabel(
+																						",",
+																						t,
+																					),
+																					value: ",",
+																				},
+																				{
+																					label: getTablePreviewDelimiterLabel(
+																						"\t",
+																						t,
+																					),
+																					value: "\t",
+																				},
+																				{
+																					label: getTablePreviewDelimiterLabel(
+																						";",
+																						t,
+																					),
+																					value: ";",
+																				},
+																				{
+																					label: getTablePreviewDelimiterLabel(
+																						"|",
+																						t,
+																					),
+																					value: "|",
+																				},
+																			]}
+																			value={normalizeTablePreviewDelimiter(
+																				app.config.delimiter,
+																			)}
+																			onValueChange={(delimiter) =>
 																				updateApp(index, (current) => ({
 																					...current,
 																					config: {
 																						...current.config,
-																						delimiter: event.target.value,
+																						delimiter:
+																							normalizeTablePreviewDelimiter(
+																								delimiter,
+																							),
 																					},
 																				}))
 																			}
-																		/>
+																		>
+																			<SelectTrigger
+																				size="sm"
+																				aria-label={t(
+																					"preview_apps_table_delimiter",
+																				)}
+																			>
+																				<SelectValue />
+																			</SelectTrigger>
+																			<SelectContent>
+																				{(
+																					["auto", ",", "\t", ";", "|"] as const
+																				).map((delimiter) => (
+																					<SelectItem
+																						key={delimiter}
+																						value={delimiter}
+																					>
+																						{getTablePreviewDelimiterLabel(
+																							delimiter,
+																							t,
+																						)}
+																					</SelectItem>
+																				))}
+																			</SelectContent>
+																		</Select>
 																	</EditorField>
 																) : null}
-																{isUrlTemplatePreviewAppKey(app.key) ? (
+																{isUrlTemplatePreviewApp(app) ? (
 																	<>
 																		<EditorField
 																			label={t(
@@ -1178,6 +1341,129 @@ export function PreviewAppsConfigEditor({
 																					}))
 																				}
 																			/>
+																		</EditorField>
+																	</>
+																) : null}
+																{isWopiPreviewApp(app) ? (
+																	<>
+																		<EditorField
+																			label={t("preview_apps_wopi_mode")}
+																			description={t(
+																				"preview_apps_wopi_mode_desc",
+																			)}
+																		>
+																			<Select
+																				items={[
+																					{
+																						label: t(
+																							"preview_apps_wopi_mode_iframe",
+																						),
+																						value: "iframe",
+																					},
+																					{
+																						label: t(
+																							"preview_apps_wopi_mode_new_tab",
+																						),
+																						value: "new_tab",
+																					},
+																				]}
+																				value={
+																					typeof app.config.mode === "string"
+																						? app.config.mode
+																						: "iframe"
+																				}
+																				onValueChange={(mode) =>
+																					updateApp(index, (current) => ({
+																						...current,
+																						config: {
+																							...current.config,
+																							mode: mode ?? "iframe",
+																						},
+																					}))
+																				}
+																			>
+																				<SelectTrigger
+																					size="sm"
+																					aria-label={t(
+																						"preview_apps_wopi_mode",
+																					)}
+																				>
+																					<SelectValue />
+																				</SelectTrigger>
+																				<SelectContent>
+																					<SelectItem value="iframe">
+																						{t("preview_apps_wopi_mode_iframe")}
+																					</SelectItem>
+																					<SelectItem value="new_tab">
+																						{t(
+																							"preview_apps_wopi_mode_new_tab",
+																						)}
+																					</SelectItem>
+																				</SelectContent>
+																			</Select>
+																		</EditorField>
+																		<EditorField
+																			className="md:col-span-2 xl:col-span-2"
+																			label={t("preview_apps_wopi_action_url")}
+																			description={t(
+																				"preview_apps_wopi_action_url_desc",
+																			)}
+																		>
+																			<Input
+																				value={
+																					typeof app.config.action_url ===
+																					"string"
+																						? app.config.action_url
+																						: ""
+																				}
+																				onChange={(event) =>
+																					updateApp(index, (current) => ({
+																						...current,
+																						config: {
+																							...current.config,
+																							action_url: event.target.value,
+																						},
+																					}))
+																				}
+																			/>
+																		</EditorField>
+																		<EditorField
+																			className="md:col-span-2 xl:col-span-2"
+																			label={t(
+																				"preview_apps_wopi_discovery_url",
+																			)}
+																			description={t(
+																				"preview_apps_wopi_discovery_url_desc",
+																			)}
+																		>
+																			<Input
+																				value={
+																					typeof app.config.discovery_url ===
+																					"string"
+																						? app.config.discovery_url
+																						: ""
+																				}
+																				onChange={(event) =>
+																					updateApp(index, (current) => ({
+																						...current,
+																						config: {
+																							...current.config,
+																							discovery_url: event.target.value,
+																						},
+																					}))
+																				}
+																			/>
+																		</EditorField>
+																		<EditorField
+																			className="md:col-span-2 xl:col-span-2"
+																			label={t("preview_apps_wopi_hint_title")}
+																			description={t(
+																				"preview_apps_wopi_hint_desc",
+																			)}
+																		>
+																			<div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+																				{t("preview_apps_wopi_hint_body")}
+																			</div>
 																		</EditorField>
 																	</>
 																) : null}
@@ -1631,7 +1917,10 @@ export function PreviewAppsConfigEditor({
 																>
 																	<PreviewAppIcon
 																		icon={app.icon}
-																		fallback={getProviderDefaultIcon(app.key)}
+																		fallback={getProviderDefaultIcon(
+																			app.key,
+																			app.provider,
+																		)}
 																		className="h-3.5 w-3.5"
 																	/>
 																	<span className="truncate">

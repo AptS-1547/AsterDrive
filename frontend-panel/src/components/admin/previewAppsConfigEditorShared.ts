@@ -1,4 +1,12 @@
 import { PREVIEW_APP_ICON_URLS } from "@/components/common/previewAppIconUrls";
+import {
+	BUILTIN_TABLE_PREVIEW_APP_KEY,
+	isTablePreviewAppKey,
+	normalizeTablePreviewDelimiter,
+} from "@/lib/tablePreview";
+import type { PreviewAppProvider } from "@/types/api";
+
+export { isTablePreviewAppKey } from "@/lib/tablePreview";
 
 export const PREVIEW_APPS_CONFIG_KEY = "frontend_preview_apps_json";
 export const PREVIEW_APPS_CONFIG_VERSION = 1;
@@ -8,8 +16,7 @@ export const PREVIEW_APP_PROTECTED_BUILTIN_KEYS = [
 	"builtin.audio",
 	"builtin.pdf",
 	"builtin.markdown",
-	"builtin.table_csv",
-	"builtin.table_tsv",
+	BUILTIN_TABLE_PREVIEW_APP_KEY,
 	"builtin.formatted_json",
 	"builtin.formatted_xml",
 	"builtin.code",
@@ -36,6 +43,7 @@ export interface PreviewAppsEditorApp {
 	key: string;
 	label_i18n_key: string;
 	labels: Record<string, string>;
+	provider: PreviewAppProviderValue;
 }
 
 export interface PreviewAppsEditorConfig {
@@ -48,6 +56,8 @@ export interface PreviewAppsValidationIssue {
 	key: string;
 	values?: Record<string, number | string>;
 }
+
+export type PreviewAppProviderValue = PreviewAppProvider | "";
 
 const PREVIEW_APP_KEY_META: Record<string, { icon: string; labelKey: string }> =
 	{
@@ -87,11 +97,7 @@ const PREVIEW_APP_KEY_META: Record<string, { icon: string; labelKey: string }> =
 			icon: PREVIEW_APP_ICON_URLS.pdf,
 			labelKey: "preview_apps_provider_pdf",
 		},
-		"builtin.table_csv": {
-			icon: PREVIEW_APP_ICON_URLS.table,
-			labelKey: "preview_apps_provider_table",
-		},
-		"builtin.table_tsv": {
+		[BUILTIN_TABLE_PREVIEW_APP_KEY]: {
 			icon: PREVIEW_APP_ICON_URLS.table,
 			labelKey: "preview_apps_provider_table",
 		},
@@ -120,8 +126,7 @@ const PREVIEW_APP_LEGACY_LABELS: Record<string, Record<string, string>> = {
 		zh: "Microsoft 预览器",
 	},
 	"builtin.pdf": { en: "PDF preview", zh: "PDF 预览" },
-	"builtin.table_csv": { en: "Table preview", zh: "表格预览" },
-	"builtin.table_tsv": { en: "Table preview", zh: "表格预览" },
+	[BUILTIN_TABLE_PREVIEW_APP_KEY]: { en: "Table preview", zh: "表格预览" },
 	"builtin.try_text": { en: "Open as text", zh: "以文本方式打开" },
 	"builtin.video": { en: "Video preview", zh: "视频预览" },
 	open_with_audio: { en: "Audio preview", zh: "音频预览" },
@@ -153,15 +158,22 @@ function isProtectedBuiltinPreviewApp(key: string) {
 	);
 }
 
-export function isTablePreviewAppKey(key: string) {
-	const normalized = key.trim();
-	return (
-		normalized === "builtin.table_csv" || normalized === "builtin.table_tsv"
-	);
-}
-
 function readString(value: unknown) {
 	return typeof value === "string" ? value : "";
+}
+
+function readPreviewAppProvider(value: unknown): PreviewAppProviderValue {
+	const normalized = readString(value).trim().toLowerCase();
+	if (normalized === "builtin") {
+		return "builtin";
+	}
+	if (normalized === "url_template") {
+		return "url_template";
+	}
+	if (normalized === "wopi") {
+		return "wopi";
+	}
+	return "";
 }
 
 function readBoolean(value: unknown, fallback = false) {
@@ -213,11 +225,25 @@ function cloneConfigMap(value: unknown) {
 	return { ...value };
 }
 
-export function getPreviewAppDefaultIcon(key: string) {
+export function getPreviewAppProvider(
+	provider?: unknown,
+): PreviewAppProviderValue {
+	return readPreviewAppProvider(provider);
+}
+
+export function getPreviewAppDefaultIcon(key: string, provider?: unknown) {
+	if (getPreviewAppProvider(provider) === "wopi") {
+		return PREVIEW_APP_ICON_URLS.web;
+	}
+
 	return PREVIEW_APP_KEY_META[key.trim()]?.icon ?? PREVIEW_APP_ICON_URLS.web;
 }
 
-function normalizePreviewAppIconOverride(key: string, value: unknown) {
+function normalizePreviewAppIconOverride(
+	key: string,
+	value: unknown,
+	provider?: unknown,
+) {
 	const icon = readString(value).trim();
 	if (!icon) {
 		return "";
@@ -227,10 +253,15 @@ function normalizePreviewAppIconOverride(key: string, value: unknown) {
 		return "";
 	}
 
-	return icon === getPreviewAppDefaultIcon(key) ? "" : icon;
+	return icon === getPreviewAppDefaultIcon(key, provider) ? "" : icon;
 }
 
-export function getPreviewAppKindLabelKey(key: string) {
+export function getPreviewAppKindLabelKey(key: string, provider?: unknown) {
+	const resolvedProvider = getPreviewAppProvider(provider);
+	if (resolvedProvider === "wopi") {
+		return "preview_apps_provider_wopi";
+	}
+
 	return (
 		PREVIEW_APP_KEY_META[key.trim()]?.labelKey ??
 		"preview_apps_provider_url_template"
@@ -256,23 +287,31 @@ function normalizeApp(value: unknown): PreviewAppsEditorApp {
 			key: "",
 			label_i18n_key: "",
 			labels: {},
+			provider: "",
 		};
 	}
 
 	const key = readString(value.key);
+	const provider = getPreviewAppProvider(value.provider);
 	const labelI18nKey = readString(value.label_i18n_key);
 	const labels = readStringMap(value.labels);
+	const config = cloneConfigMap(value.config);
+
+	if (isTablePreviewAppKey(key)) {
+		config.delimiter = normalizeTablePreviewDelimiter(config.delimiter);
+	}
 
 	return {
-		config: cloneConfigMap(value.config),
+		config,
 		enabled: readBoolean(value.enabled, true),
-		icon: normalizePreviewAppIconOverride(key, value.icon),
+		icon: normalizePreviewAppIconOverride(key, value.icon, provider),
 		key,
 		label_i18n_key: labelI18nKey,
 		labels:
 			Object.keys(labels).length > 0
 				? labels
 				: getLegacyPreviewAppLabels(key, labelI18nKey),
+		provider,
 	};
 }
 
@@ -331,8 +370,12 @@ export function isExternalPreviewAppKey(key: string) {
 	return !isProtectedBuiltinPreviewApp(key);
 }
 
-export function isUrlTemplatePreviewAppKey(key: string) {
-	return isExternalPreviewAppKey(key);
+export function isUrlTemplatePreviewApp(app: PreviewAppsEditorApp) {
+	return app.provider === "url_template";
+}
+
+export function isWopiPreviewApp(app: PreviewAppsEditorApp) {
+	return app.provider === "wopi";
 }
 
 export function parsePreviewAppsConfig(value: string): PreviewAppsEditorConfig {
@@ -406,13 +449,18 @@ export function serializePreviewAppsConfig(config: PreviewAppsEditorConfig) {
 			apps: config.apps.map((app) => {
 				const key = app.key.trim();
 				const nextConfig = pruneConfigMap(app.config);
-				const nextIcon = normalizePreviewAppIconOverride(key, app.icon);
+				const nextIcon = normalizePreviewAppIconOverride(
+					key,
+					app.icon,
+					app.provider,
+				);
 				const nextLabels = pruneStringMap(app.labels);
 				return {
 					...(Object.keys(nextConfig).length > 0 ? { config: nextConfig } : {}),
 					enabled: app.enabled,
 					icon: nextIcon,
 					key,
+					provider: app.provider,
 					...(Object.keys(nextLabels).length > 0 ? { labels: nextLabels } : {}),
 					...(app.label_i18n_key.trim()
 						? { label_i18n_key: app.label_i18n_key.trim() }
@@ -491,7 +539,14 @@ export function getPreviewAppsConfigIssues(
 			});
 		}
 
-		if (isUrlTemplatePreviewAppKey(key)) {
+		const provider = getPreviewAppProvider(app.provider);
+		if (!provider) {
+			issues.push({
+				key: "preview_apps_error_app_provider_required",
+				values: { index: appNumber },
+			});
+		}
+		if (provider === "url_template") {
 			const mode =
 				typeof app.config.mode === "string" ? app.config.mode.trim() : "";
 			if (!mode) {
@@ -508,6 +563,36 @@ export function getPreviewAppsConfigIssues(
 			if (!urlTemplate) {
 				issues.push({
 					key: "preview_apps_error_url_template_required",
+					values: { index: appNumber },
+				});
+			}
+		}
+
+		if (provider === "wopi") {
+			const mode =
+				typeof app.config.mode === "string" ? app.config.mode.trim() : "";
+			if (!mode) {
+				issues.push({
+					key: "preview_apps_error_wopi_mode_required",
+					values: { index: appNumber },
+				});
+			}
+
+			const actionUrl =
+				typeof app.config.action_url === "string"
+					? app.config.action_url.trim()
+					: "";
+			const actionUrlTemplate =
+				typeof app.config.action_url_template === "string"
+					? app.config.action_url_template.trim()
+					: "";
+			const discoveryUrl =
+				typeof app.config.discovery_url === "string"
+					? app.config.discovery_url.trim()
+					: "";
+			if (!actionUrl && !actionUrlTemplate && !discoveryUrl) {
+				issues.push({
+					key: "preview_apps_error_wopi_target_required",
 					values: { index: appNumber },
 				});
 			}
@@ -592,6 +677,7 @@ export function createPreviewAppDraft(
 		key: getNextCustomKey(existingKeys),
 		label_i18n_key: "",
 		labels: {},
+		provider: "url_template",
 	};
 }
 

@@ -135,8 +135,7 @@ function applyServerPreferences(prefs: UserPreferences): void {
 	fileStore._applyFromServer({
 		viewMode: (prefs.view_mode as ViewMode) ?? fileStore.viewMode,
 		browserOpenMode:
-			(prefs.browser_open_mode as BrowserOpenMode) ??
-			fileStore.browserOpenMode,
+			(prefs.browser_open_mode as BrowserOpenMode) ?? fileStore.browserOpenMode,
 		sortBy: (prefs.sort_by as SortBy) ?? fileStore.sortBy,
 		sortOrder: (prefs.sort_order as SortOrder) ?? fileStore.sortOrder,
 	});

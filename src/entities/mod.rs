@@ -22,3 +22,4 @@ pub mod user_profile;
 /// Legacy compatibility entity for the deprecated `user_storage_policies` table.
 pub mod user_storage_policy;
 pub mod webdav_account;
+pub mod wopi_session;

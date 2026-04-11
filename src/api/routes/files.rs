@@ -8,7 +8,7 @@ use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
     direct_link_service, file_service, preview_link_service, thumbnail_service, upload_service,
-    version_service,
+    version_service, wopi_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::types::NullablePatch;
@@ -47,6 +47,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{id}", web::get().to(get_file))
         .route("/{id}/direct-link", web::get().to(get_direct_link))
         .route("/{id}/preview-link", web::post().to(get_preview_link))
+        .route("/{id}/wopi/open", web::post().to(open_wopi))
         .route("/{id}/download", web::get().to(download))
         .route("/{id}/thumbnail", web::get().to(get_thumbnail))
         .route("/{id}/content", web::put().to(update_content))
@@ -224,6 +225,43 @@ pub async fn get_preview_link(
             user_id: claims.user_id,
         },
         *path,
+    )
+    .await
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct OpenWopiRequest {
+    pub app_key: String,
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/files/{id}/wopi/open",
+    tag = "files",
+    operation_id = "open_file_with_wopi",
+    params(("id" = i64, Path, description = "File ID")),
+    request_body = OpenWopiRequest,
+    responses(
+        (status = 200, description = "WOPI launch session", body = inline(ApiResponse<wopi_service::WopiLaunchSession>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn open_wopi(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<OpenWopiRequest>,
+) -> Result<HttpResponse> {
+    open_wopi_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+        &body.app_key,
     )
     .await
 }
@@ -764,6 +802,17 @@ pub(crate) async fn preview_link_response(
 ) -> Result<HttpResponse> {
     let link = preview_link_service::create_token_for_file_in_scope(state, scope, file_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
+}
+
+pub(crate) async fn open_wopi_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    app_key: &str,
+) -> Result<HttpResponse> {
+    let session =
+        wopi_service::create_launch_session_in_scope(state, scope, file_id, app_key).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(session)))
 }
 
 pub(crate) async fn download_response(

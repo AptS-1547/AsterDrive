@@ -9,6 +9,7 @@ pub mod operations;
 mod runtime_config;
 mod schema;
 pub mod site_url;
+pub mod wopi;
 
 pub use runtime_config::RuntimeConfig;
 pub use schema::{

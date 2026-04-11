@@ -214,7 +214,9 @@ describe("FileInfoDialog", () => {
 		);
 
 		expect(mockState.getFile).toHaveBeenCalledWith(1);
-		expect(await screen.findByText("date:2026-01-01T00:00:00Z")).toBeInTheDocument();
+		expect(
+			await screen.findByText("date:2026-01-01T00:00:00Z"),
+		).toBeInTheDocument();
 		expect(await screen.findByText("88")).toBeInTheDocument();
 	});
 });

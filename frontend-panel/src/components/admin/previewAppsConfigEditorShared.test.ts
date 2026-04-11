@@ -20,6 +20,7 @@ describe("previewAppsConfigEditorShared", () => {
 					"key": "builtin.image",
 					"icon": "https://cdn.example.com/image.svg",
 					"enabled": true,
+					"provider": "builtin",
 					"labels": {
 						"en": "Image preview",
 						"zh": "图片预览"
@@ -29,6 +30,7 @@ describe("previewAppsConfigEditorShared", () => {
 					"key": "custom.viewer",
 					"icon": "https://cdn.example.com/jellyfin.svg",
 					"enabled": false,
+					"provider": "url_template",
 					"labels": {
 						"en": "Jellyfin"
 					},
@@ -56,6 +58,7 @@ describe("previewAppsConfigEditorShared", () => {
 						zh: "图片预览",
 					},
 					key: "builtin.image",
+					provider: "builtin",
 				},
 				{
 					config: {
@@ -69,6 +72,7 @@ describe("previewAppsConfigEditorShared", () => {
 					labels: {
 						en: "Jellyfin",
 					},
+					provider: "url_template",
 				},
 			],
 			rules: [
@@ -91,6 +95,7 @@ describe("previewAppsConfigEditorShared", () => {
 						en: "Image preview",
 						zh: "图片预览",
 					},
+					provider: "builtin",
 				},
 				{
 					config: {
@@ -105,6 +110,7 @@ describe("previewAppsConfigEditorShared", () => {
 					labels: {
 						en: "Jellyfin",
 					},
+					provider: "url_template",
 				},
 			]),
 			version: 1,
@@ -119,6 +125,7 @@ describe("previewAppsConfigEditorShared", () => {
 					"key": "builtin.image",
 					"icon": "${PREVIEW_APP_ICON_URLS.image}",
 					"enabled": true,
+					"provider": "builtin",
 					"labels": {
 						"zh": "图片预览"
 					}
@@ -127,6 +134,7 @@ describe("previewAppsConfigEditorShared", () => {
 					"key": "custom.viewer",
 					"icon": "${PREVIEW_APP_ICON_URLS.web}",
 					"enabled": true,
+					"provider": "url_template",
 					"labels": {
 						"zh": "外部查看器"
 					},
@@ -172,6 +180,7 @@ describe("previewAppsConfigEditorShared", () => {
 					"key": "custom.viewer",
 					"icon": "Globe",
 					"enabled": true,
+					"provider": "url_template",
 					"labels": {
 						"zh": "外部查看器"
 					},
@@ -196,6 +205,34 @@ describe("previewAppsConfigEditorShared", () => {
 				icon: "",
 				key: "custom.viewer",
 			}),
+		]);
+	});
+
+	it("does not infer provider from the app key when parsing drafts", () => {
+		const draft = parsePreviewAppsConfig(`{
+			"version": 1,
+			"apps": [
+				{
+					"key": "custom.viewer",
+					"icon": "",
+					"enabled": true,
+					"labels": {
+						"zh": "外部查看器"
+					},
+					"config": {
+						"mode": "iframe",
+						"url_template": "https://viewer.example.com/embed?src={{file_preview_url}}"
+					}
+				}
+			],
+			"rules": []
+		}`);
+
+		expect(draft.apps).toMatchObject([
+			{
+				key: "custom.viewer",
+				provider: "",
+			},
 		]);
 	});
 
@@ -253,6 +290,7 @@ describe("previewAppsConfigEditorShared", () => {
 			icon: "",
 			key: "custom.app_2",
 			labels: {},
+			provider: "url_template",
 		});
 
 		expect(
@@ -264,6 +302,7 @@ describe("previewAppsConfigEditorShared", () => {
 					key: "builtin.image",
 					label_i18n_key: "open_with_image",
 					labels: {},
+					provider: "builtin",
 				},
 			]),
 		).toEqual({
@@ -293,6 +332,7 @@ describe("previewAppsConfigEditorShared", () => {
 						key: "",
 						label_i18n_key: "",
 						labels: {},
+						provider: "",
 					},
 					{
 						config: {},
@@ -301,6 +341,20 @@ describe("previewAppsConfigEditorShared", () => {
 						key: "",
 						label_i18n_key: "",
 						labels: {},
+						provider: "url_template",
+					},
+					{
+						config: {
+							mode: "",
+						},
+						enabled: true,
+						icon: "",
+						key: "custom.onlyoffice",
+						label_i18n_key: "",
+						labels: {
+							zh: "OnlyOffice",
+						},
+						provider: "wopi",
 					},
 				],
 				rules: [
@@ -322,11 +376,14 @@ describe("previewAppsConfigEditorShared", () => {
 				"preview_apps_error_version_mismatch",
 				"preview_apps_error_app_key_required",
 				"preview_apps_error_app_label_required",
+				"preview_apps_error_app_provider_required",
 				"preview_apps_error_url_template_mode_required",
 				"preview_apps_error_url_template_required",
 				"preview_apps_error_builtin_required",
 				"preview_apps_error_rule_unknown_app",
 				"preview_apps_error_rule_default_missing",
+				"preview_apps_error_wopi_mode_required",
+				"preview_apps_error_wopi_target_required",
 			]),
 		);
 	});

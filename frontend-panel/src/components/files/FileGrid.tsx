@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileCard } from "@/components/files/FileCard";
 import { FileContextMenu } from "@/components/files/FileContextMenu";
-import { useFileStore, type BrowserOpenMode } from "@/stores/fileStore";
+import { type BrowserOpenMode, useFileStore } from "@/stores/fileStore";
 import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface FileGridProps {

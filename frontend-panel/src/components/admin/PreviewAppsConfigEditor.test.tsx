@@ -28,6 +28,7 @@ function createPreviewAppsConfig() {
 			apps: [
 				{
 					key: "custom.viewer",
+					provider: "url_template",
 					icon: "https://viewer.example.com/icon.svg",
 					enabled: true,
 					labels: {
@@ -56,6 +57,7 @@ function createPreviewAppsConfigWithRule() {
 			apps: [
 				{
 					key: "custom.viewer",
+					provider: "url_template",
 					icon: "https://viewer.example.com/icon.svg",
 					enabled: true,
 					labels: {
@@ -97,6 +99,7 @@ function createPreviewAppsConfigWithDefaultIcon() {
 			apps: [
 				{
 					key: "builtin.image",
+					provider: "builtin",
 					icon: PREVIEW_APP_ICON_URLS.image,
 					enabled: true,
 					labels: {

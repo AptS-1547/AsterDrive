@@ -8,11 +8,13 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 		downloadPath,
 		editable,
 		previewLinkFactory,
+		wopiSessionFactory,
 	}: {
 		file: { name: string };
 		downloadPath?: string;
 		editable?: boolean;
 		previewLinkFactory?: () => Promise<unknown>;
+		wopiSessionFactory?: (appKey: string) => Promise<unknown>;
 	}) => (
 		<div
 			data-testid="preview-dialog"
@@ -20,6 +22,7 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 			data-download-path={downloadPath ?? ""}
 			data-editable={String(Boolean(editable))}
 			data-has-preview-link-factory={String(Boolean(previewLinkFactory))}
+			data-has-wopi-session-factory={String(Boolean(wopiSessionFactory))}
 		/>
 	),
 }));
@@ -34,6 +37,7 @@ describe("FilePreview", () => {
 				downloadPath="/files/7/download"
 				editable
 				previewLinkFactory={async () => ({})}
+				wopiSessionFactory={async () => ({})}
 			/>,
 		);
 
@@ -51,6 +55,10 @@ describe("FilePreview", () => {
 		);
 		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
 			"data-has-preview-link-factory",
+			"true",
+		);
+		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
+			"data-has-wopi-session-factory",
 			"true",
 		);
 	});

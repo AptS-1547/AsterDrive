@@ -42,9 +42,19 @@ const ALLOWED_HEADERS: &[&str] = &[
     "lock-token",
     "overwrite",
     "timeout",
+    "x-wopi-lock",
+    "x-wopi-oldlock",
+    "x-wopi-override",
+    "x-wopi-validatetarget",
 ];
 
-const EXPOSE_HEADERS: &[&str] = &["dav", "lock-token"];
+const EXPOSE_HEADERS: &[&str] = &[
+    "dav",
+    "lock-token",
+    "x-wopi-itemversion",
+    "x-wopi-lock",
+    "x-wopi-lockfailurereason",
+];
 
 pub struct RuntimeCors;
 
@@ -286,6 +296,8 @@ fn apply_origin_headers(
 }
 
 fn apply_preflight_headers(headers: &mut HeaderMap, policy: &RuntimeCorsPolicy) {
+    let allow_headers = ALLOWED_HEADERS.join(", ");
+
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_METHODS,
         HeaderValue::from_static(
@@ -294,9 +306,8 @@ fn apply_preflight_headers(headers: &mut HeaderMap, policy: &RuntimeCorsPolicy) 
     );
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_HEADERS,
-        HeaderValue::from_static(
-            "authorization, accept, content-type, depth, destination, if, lock-token, overwrite, timeout",
-        ),
+        HeaderValue::from_str(&allow_headers)
+            .expect("CORS allow headers should always be a valid header value"),
     );
     headers.insert(
         header::ACCESS_CONTROL_MAX_AGE,
@@ -528,13 +539,15 @@ mod tests {
         let req = actix_test::TestRequest::default()
             .insert_header((
                 header::ACCESS_CONTROL_REQUEST_HEADERS,
-                "Authorization, Content-Type, LOCK-TOKEN",
+                "Authorization, Content-Type, LOCK-TOKEN, X-WOPI-Override, X-WOPI-Lock",
             ))
             .to_srv_request();
 
         assert!(requested_headers_are_allowed(&req).unwrap());
         assert!(ALLOWED_HEADERS.contains(&"authorization"));
         assert!(ALLOWED_HEADERS.contains(&"lock-token"));
+        assert!(ALLOWED_HEADERS.contains(&"x-wopi-override"));
+        assert!(ALLOWED_HEADERS.contains(&"x-wopi-lock"));
     }
 
     #[actix_web::test]

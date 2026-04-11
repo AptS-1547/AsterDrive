@@ -4,6 +4,10 @@ mod common;
 use actix_web::{App, body::to_bytes, http::header, test, web};
 use serde_json::Value;
 
+const EXPECTED_ALLOW_HEADERS: &str = "authorization, accept, content-type, depth, destination, if, lock-token, overwrite, timeout, x-wopi-lock, x-wopi-oldlock, x-wopi-override, x-wopi-validatetarget";
+const EXPECTED_EXPOSE_HEADERS: &str =
+    "dav, lock-token, x-wopi-itemversion, x-wopi-lock, x-wopi-lockfailurereason";
+
 macro_rules! create_test_app_with_cors {
     ($state:expr) => {{
         let state = $state;
@@ -340,7 +344,10 @@ async fn test_runtime_cors_wildcard_preflight_returns_star_and_vary_headers() {
         .uri("/health")
         .insert_header((header::ORIGIN, "https://wildcard.example.com"))
         .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "GET"))
-        .insert_header((header::ACCESS_CONTROL_REQUEST_HEADERS, "authorization"))
+        .insert_header((
+            header::ACCESS_CONTROL_REQUEST_HEADERS,
+            "authorization, x-wopi-override, x-wopi-lock",
+        ))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 204);
@@ -356,6 +363,14 @@ async fn test_runtime_cors_wildcard_preflight_returns_star_and_vary_headers() {
         resp.headers()
             .get(header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
             .is_none()
+    );
+    assert_eq!(
+        resp.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_HEADERS)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        EXPECTED_ALLOW_HEADERS
     );
     header_contains(&resp, header::VARY, "Origin");
     header_contains(&resp, header::VARY, "Access-Control-Request-Method");
@@ -499,7 +514,7 @@ async fn test_runtime_cors_allowed_actual_request_sets_expose_and_vary_headers()
             .unwrap()
             .to_str()
             .unwrap(),
-        "dav, lock-token"
+        EXPECTED_EXPOSE_HEADERS
     );
     header_contains(&resp, header::VARY, "Origin");
 }
@@ -565,7 +580,7 @@ async fn test_runtime_cors_wildcard_actual_request_returns_star_and_expose_heade
             .unwrap()
             .to_str()
             .unwrap(),
-        "dav, lock-token"
+        EXPECTED_EXPOSE_HEADERS
     );
 }
 

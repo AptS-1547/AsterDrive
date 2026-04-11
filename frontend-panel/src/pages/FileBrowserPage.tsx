@@ -798,6 +798,9 @@ export default function FileBrowserPage() {
 						previewLinkFactory={() =>
 							fileService.createPreviewLink(previewState.file.id)
 						}
+						wopiSessionFactory={(appKey) =>
+							fileService.createWopiSession(previewState.file.id, appKey)
+						}
 					/>
 				</Suspense>
 			)}

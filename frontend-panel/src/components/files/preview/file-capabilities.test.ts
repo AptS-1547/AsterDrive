@@ -191,7 +191,7 @@ describe("file preview capabilities", () => {
 		});
 		expect(detectFilePreviewProfile(tsv)).toMatchObject({
 			category: "tsv",
-			defaultMode: "table_tsv",
+			defaultMode: "table",
 			isEditableText: true,
 		});
 		expect(detectFilePreviewProfile(shell)).toMatchObject({
@@ -216,7 +216,7 @@ describe("file preview capabilities", () => {
 		]);
 		expect(getDefaultOpenWith(json)).toBe("formatted_json");
 		expect(getDefaultOpenWith(document)).toBe("office_microsoft");
-		expect(getDefaultOpenWith(tsv)).toBe("table_tsv");
+		expect(getDefaultOpenWith(tsv)).toBe("table");
 		expect(isEditableTextFile(markdown)).toBe(true);
 		expect(isEditableTextFile(image)).toBe(false);
 		expect(isEditableTextFile(shell)).toBe(true);
@@ -249,11 +249,13 @@ describe("file preview capabilities", () => {
 					icon: "Scroll",
 					key: "builtin.markdown",
 					label_i18n_key: "open_with_markdown",
+					provider: "builtin",
 				},
 				{
 					icon: "FileCode",
 					key: "builtin.code",
 					label_i18n_key: "open_with_code",
+					provider: "builtin",
 				},
 				{
 					config: {
@@ -268,6 +270,7 @@ describe("file preview capabilities", () => {
 						en: "External Viewer",
 						zh: "外部查看器",
 					},
+					provider: "url_template",
 				},
 			],
 			rules: [
@@ -325,6 +328,7 @@ describe("file preview capabilities", () => {
 						en: "Microsoft Viewer",
 						zh: "Microsoft 预览器",
 					},
+					provider: "url_template",
 				},
 				{
 					config: {
@@ -339,6 +343,7 @@ describe("file preview capabilities", () => {
 						en: "Google Viewer",
 						zh: "Google 预览器",
 					},
+					provider: "url_template",
 				},
 			],
 			rules: [
@@ -381,11 +386,13 @@ describe("file preview capabilities", () => {
 					icon: "/static/preview-apps/markdown.svg",
 					key: "builtin.markdown",
 					label_i18n_key: "open_with_markdown",
+					provider: "builtin",
 				},
 				{
 					icon: "/static/preview-apps/code.svg",
 					key: "builtin.code",
 					label_i18n_key: "open_with_code",
+					provider: "builtin",
 				},
 				{
 					config: {
@@ -400,11 +407,13 @@ describe("file preview capabilities", () => {
 						en: "External Viewer",
 						zh: "外部查看器",
 					},
+					provider: "url_template",
 				},
 				{
 					icon: "/static/preview-apps/pdf.svg",
 					key: "builtin.pdf",
 					label_i18n_key: "open_with_pdf",
+					provider: "builtin",
 				},
 			],
 			rules: [
@@ -474,11 +483,13 @@ describe("file preview capabilities", () => {
 					icon: "BracketsCurly",
 					key: "builtin.formatted_json",
 					label_i18n_key: "open_with_formatted",
+					provider: "builtin",
 				},
 				{
 					icon: "FileCode",
 					key: "builtin.code",
 					label_i18n_key: "open_with_code",
+					provider: "builtin",
 				},
 			],
 			rules: [
@@ -492,5 +503,139 @@ describe("file preview capabilities", () => {
 		expect(getDefaultOpenWith(json, previewApps)).toBe(
 			"builtin.formatted_json",
 		);
+	});
+
+	it("recognizes configured wopi providers without treating them as url templates", () => {
+		const document = {
+			name: "proposal.docx",
+			mime_type:
+				"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		};
+		const previewApps = {
+			version: 1,
+			apps: [
+				{
+					config: {
+						mode: "iframe",
+					},
+					icon: "/static/preview-apps/file.svg",
+					key: "custom.onlyoffice",
+					labels: {
+						en: "OnlyOffice",
+						zh: "OnlyOffice",
+					},
+					provider: "wopi",
+				},
+			],
+			rules: [
+				{
+					apps: ["custom.onlyoffice"],
+					default_app: "custom.onlyoffice",
+					matches: { extensions: ["docx"] },
+				},
+			],
+		};
+
+		expect(detectFilePreviewProfile(document, previewApps)).toMatchObject({
+			category: "document",
+			defaultMode: "custom.onlyoffice",
+			options: [
+				expect.objectContaining({
+					key: "custom.onlyoffice",
+					mode: "wopi",
+				}),
+			],
+		});
+	});
+
+	it("does not infer a runtime provider from the app key when provider is missing", () => {
+		const markdown = { name: "notes.md", mime_type: "text/markdown" };
+		const previewApps = {
+			version: 1,
+			apps: [
+				{
+					config: {
+						mode: "iframe",
+						url_template:
+							"https://viewer.example.com/open?src={{file_preview_url}}",
+					},
+					icon: "https://cdn.example.com/icons/external-viewer.svg",
+					key: "custom.viewer",
+					labels: {
+						en: "External Viewer",
+						zh: "外部查看器",
+					},
+					provider: "",
+				},
+			],
+			rules: [
+				{
+					apps: ["custom.viewer"],
+					default_app: "custom.viewer",
+					matches: { categories: ["markdown"] },
+				},
+			],
+		};
+
+		const profile = detectFilePreviewProfile(markdown, previewApps);
+		expect(profile.defaultMode).not.toBe("custom.viewer");
+		expect(profile.options).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					key: "custom.viewer",
+				}),
+			]),
+		);
+		expect(profile.allOptions).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					key: "custom.viewer",
+				}),
+			]),
+		);
+	});
+
+	it("skips disabled configured apps, including disabled builtin fallbacks", () => {
+		const markdown = { name: "notes.md", mime_type: "text/markdown" };
+		const previewApps = {
+			version: 1,
+			apps: [
+				{
+					enabled: false,
+					icon: "/static/preview-apps/markdown.svg",
+					key: "builtin.markdown",
+					label_i18n_key: "open_with_markdown",
+					provider: "builtin",
+				},
+				{
+					icon: "/static/preview-apps/code.svg",
+					key: "builtin.code",
+					label_i18n_key: "open_with_code",
+					provider: "builtin",
+				},
+			],
+			rules: [
+				{
+					apps: ["builtin.markdown", "builtin.code"],
+					default_app: "builtin.markdown",
+					matches: { categories: ["markdown"] },
+				},
+			],
+		};
+
+		expect(detectFilePreviewProfile(markdown, previewApps)).toMatchObject({
+			defaultMode: "builtin.code",
+			options: [
+				expect.objectContaining({
+					key: "builtin.code",
+					mode: "code",
+				}),
+			],
+		});
+		expect(getAvailableOpenWithOptions(markdown, previewApps)).toEqual([
+			expect.objectContaining({
+				key: "builtin.code",
+			}),
+		]);
 	});
 });

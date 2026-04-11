@@ -32,7 +32,9 @@ function hasFileDetails(file: FileInfo | FileListItem): file is FileInfo {
 	return "blob_id" in file && "created_at" in file;
 }
 
-function hasFolderDetails(folder: FolderInfo | FolderListItem): folder is FolderInfo {
+function hasFolderDetails(
+	folder: FolderInfo | FolderListItem,
+): folder is FolderInfo {
 	return "created_at" in folder;
 }
 
@@ -159,11 +161,7 @@ export function FileInfoDialog({
 			.catch(() => setChildCount(null));
 	}, [open, folder]);
 
-	const activeFile = file
-		? hasFileDetails(file)
-			? file
-			: resolvedFile
-		: null;
+	const activeFile = file ? (hasFileDetails(file) ? file : resolvedFile) : null;
 	const activeFolder = folder
 		? hasFolderDetails(folder)
 			? folder
@@ -174,7 +172,10 @@ export function FileInfoDialog({
 	const rows: InfoRow[] = file
 		? [
 				{ label: t("info_name"), value: (activeFile ?? file).name },
-				{ label: t("info_size"), value: formatBytes((activeFile ?? file).size) },
+				{
+					label: t("info_size"),
+					value: formatBytes((activeFile ?? file).size),
+				},
 				{ label: t("info_mime"), value: (activeFile ?? file).mime_type },
 				{
 					label: t("info_created"),

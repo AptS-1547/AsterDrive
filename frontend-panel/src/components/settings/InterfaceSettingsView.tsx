@@ -9,7 +9,7 @@ import type { IconName } from "@/components/ui/icon";
 import { Switch } from "@/components/ui/switch";
 import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { useAuthStore } from "@/stores/authStore";
-import { useFileStore, type BrowserOpenMode } from "@/stores/fileStore";
+import { type BrowserOpenMode, useFileStore } from "@/stores/fileStore";
 import { useThemeStore } from "@/stores/themeStore";
 
 type ThemeMode = "light" | "dark" | "system";

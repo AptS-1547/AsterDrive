@@ -7,6 +7,7 @@ use crate::config::definitions::ALL_CONFIGS;
 use crate::config::mail;
 use crate::config::operations;
 use crate::config::site_url;
+use crate::config::wopi;
 use crate::db::repository::{config_repo, user_repo};
 use crate::entities::system_config;
 use crate::errors::{AsterError, Result};
@@ -285,6 +286,9 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
         preview_app_service::PREVIEW_APPS_CONFIG_KEY => {
             preview_app_service::normalize_public_preview_apps_config_value(value)
         }
+        wopi::WOPI_ACCESS_TOKEN_TTL_SECS_KEY
+        | wopi::WOPI_LOCK_TTL_SECS_KEY
+        | wopi::WOPI_DISCOVERY_CACHE_TTL_SECS_KEY => wopi::normalize_ttl_config_value(key, value),
         _ => Ok(value.to_string()),
     }
 }
