@@ -248,6 +248,12 @@
 - `cors_allow_credentials`
 - `cors_max_age_secs`
 - `gravatar_base_url`
+- `task_list_max_limit`
+- `task_retention_hours`
+- `wopi_access_token_ttl_secs`
+- `wopi_lock_ttl_secs`
+- `wopi_discovery_cache_ttl_secs`
+- `frontend_preview_apps_json`
 
 `GET /admin/config` 当前也支持：
 

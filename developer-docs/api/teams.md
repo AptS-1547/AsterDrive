@@ -50,6 +50,7 @@
 | `GET` | `/teams/{team_id}/folders` | 列出团队根目录 |
 | `POST` | `/teams/{team_id}/folders` | 在团队空间创建文件夹 |
 | `GET` | `/teams/{team_id}/folders/{id}` | 列出团队子目录内容 |
+| `GET` | `/teams/{team_id}/folders/{id}/info` | 读取团队文件夹完整信息 |
 | `GET` | `/teams/{team_id}/folders/{id}/ancestors` | 读取团队面包屑祖先链 |
 | `PATCH` | `/teams/{team_id}/folders/{id}` | 重命名、移动、设置目录策略 |
 | `DELETE` | `/teams/{team_id}/folders/{id}` | 软删除团队文件夹 |
@@ -66,6 +67,7 @@
 | `GET` | `/teams/{team_id}/files/{id}` | 获取团队文件元信息 |
 | `GET` | `/teams/{team_id}/files/{id}/direct-link` | 生成团队文件直接下载链接 token |
 | `POST` | `/teams/{team_id}/files/{id}/preview-link` | 生成团队文件短期预览链接 |
+| `POST` | `/teams/{team_id}/files/{id}/wopi/open` | 为团队文件创建 WOPI 启动会话 |
 | `GET` | `/teams/{team_id}/files/{id}/download` | 下载团队文件 |
 | `GET` | `/teams/{team_id}/files/{id}/thumbnail` | 获取团队文件缩略图 |
 | `PUT` | `/teams/{team_id}/files/{id}/content` | 覆盖团队文件内容 |
@@ -89,6 +91,8 @@
 | `POST` | `/teams/{team_id}/batch/delete` | 批量删除团队文件和文件夹 |
 | `POST` | `/teams/{team_id}/batch/move` | 批量移动团队文件和文件夹 |
 | `POST` | `/teams/{team_id}/batch/copy` | 批量复制团队文件和文件夹 |
+| `POST` | `/teams/{team_id}/batch/archive-download` | 创建团队空间 ZIP 下载 ticket |
+| `GET` | `/teams/{team_id}/batch/archive-download/{token}` | 下载团队空间 ZIP |
 | `GET` | `/teams/{team_id}/search` | 搜索团队工作空间 |
 | `POST` | `/teams/{team_id}/shares` | 为团队文件或文件夹创建分享 |
 | `GET` | `/teams/{team_id}/shares` | 列出当前用户在该团队创建的分享 |
@@ -99,6 +103,9 @@
 | `POST` | `/teams/{team_id}/trash/{entity_type}/{id}/restore` | 恢复团队回收站条目 |
 | `DELETE` | `/teams/{team_id}/trash/{entity_type}/{id}` | 彻底删除团队回收站条目 |
 | `DELETE` | `/teams/{team_id}/trash` | 清空团队回收站 |
+| `GET` | `/teams/{team_id}/tasks` | 查看该团队作用域下的后台任务 |
+| `GET` | `/teams/{team_id}/tasks/{id}` | 读取单个团队任务 |
+| `POST` | `/teams/{team_id}/tasks/{id}/retry` | 重试失败的团队任务 |
 
 这几组能力同样复用个人空间契约：
 
@@ -106,11 +113,15 @@
 - [搜索 API](/api/search)
 - [分享 API](/api/shares)
 - [回收站 API](/api/trash)
+- [后台任务 API](/api/tasks)
+- [WOPI](/api/wopi)
 
 只有两条团队特有语义需要额外记住：
 
 - 团队分享的公开 REST 访问仍然走 `/api/v1/s/{token}`，前端公开页面仍然是 `/s/:token`，不是 `/teams/{team_id}/s/{token}`
 - 文件写入时会优先使用目录级 `policy_id`；没有目录覆盖时，再按 `teams.policy_group_id` 的规则解析实际存储策略
+- 团队文件的 WOPI 启动入口虽然是 `/teams/{team_id}/files/{id}/wopi/open`，但真正回调时仍然走统一的 `/api/v1/wopi/files/{id}`；团队作用域信息保存在 access token 里
+- 团队批量打包下载 ticket 只能在对应团队路由下消费，不能拿去个人 `/batch/archive-download/{token}` 复用
 
 团队文件的 `GET /teams/{team_id}/files/{id}/direct-link` 语义和个人空间一致：接口只返回 token，真正下载仍然走根路径 `/d/{token}/{filename}`。
 

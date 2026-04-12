@@ -102,7 +102,7 @@ Environment=ASTER__DATABASE__URL=sqlite:///srv/asterdrive/asterdrive.db?mode=rwc
 Environment=ASTER__SERVER__HOST=0.0.0.0
 ```
 
-### 固定 JWT 密钥
+### 固定登录签名密钥
 
 ```ini
 Environment=ASTER__AUTH__JWT_SECRET=replace-with-your-own-secret

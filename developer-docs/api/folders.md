@@ -9,6 +9,7 @@
 | `GET` | `/folders` | 列出根目录内容 |
 | `POST` | `/folders` | 创建文件夹 |
 | `GET` | `/folders/{id}` | 列出指定文件夹内容 |
+| `GET` | `/folders/{id}/info` | 读取单个文件夹完整信息 |
 | `GET` | `/folders/{id}/ancestors` | 读取面包屑祖先链 |
 | `PATCH` | `/folders/{id}` | 重命名、移动、设置策略 |
 | `DELETE` | `/folders/{id}` | 软删除文件夹 |
@@ -19,6 +20,7 @@
 
 - `GET /folders`：读取根目录内容
 - `GET /folders/{id}`：读取指定目录内容
+- `GET /folders/{id}/info`：读取单个目录的完整模型
 - `GET /folders/{id}/ancestors`：返回当前目录的祖先链，供前端面包屑使用
 
 当前 REST 目录列表按数据库中的真实条目返回，不会在 API 层额外过滤 `._*`、`~$*`、`.DS_Store` 这类名字。
@@ -36,6 +38,7 @@
 
 - `folder_limit = 0` 或 `file_limit = 0` 可以显式跳过其中一类查询
 - 返回体里会带 `next_file_cursor`；只要它非空，就可以继续翻下一页文件
+- 列表接口里的 `folders` / `files` 条目会刻意裁掉一部分不必要字段；如果你需要某个目录自己的完整信息，应改用 `/folders/{id}/info`
 
 ## 创建与修改
 

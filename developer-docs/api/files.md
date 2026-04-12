@@ -17,6 +17,7 @@
 | `GET` | `/files/{id}` | 获取文件元信息 |
 | `GET` | `/files/{id}/direct-link` | 生成直接下载链接 token |
 | `POST` | `/files/{id}/preview-link` | 生成短期预览链接 |
+| `POST` | `/files/{id}/wopi/open` | 为指定 WOPI 预览器创建启动会话 |
 | `GET` | `/files/{id}/download` | 下载文件内容 |
 | `GET` | `/files/{id}/thumbnail` | 获取缩略图 |
 | `PUT` | `/files/{id}/content` | 覆盖文件内容并写入版本历史 |
@@ -83,6 +84,7 @@
 - `GET /files/{id}`：读取文件元信息；已进回收站的文件会按“找不到”处理
 - `GET /files/{id}/direct-link`：返回一个短 token；真正下载走根路径 `/d/{token}/{filename}`
 - `POST /files/{id}/preview-link`：返回一个短期预览链接；真正读取内容走根路径 `/pv/{token}/{filename}`
+- `POST /files/{id}/wopi/open`：为配置成 `provider = "wopi"` 的预览器创建一次 WOPI 启动会话
 - `GET /files/{id}/download`：流式下载文件；支持 `If-None-Match`，命中时返回 `304`
 - `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
@@ -169,6 +171,40 @@
 - 真实预览内容不走 `/api/v1`，而是走根路径 `/pv/{token}/{filename}`
 - 当前预览链接默认 5 分钟过期，且最多使用 5 次
 - 这个能力主要给内联预览器、Office 在线预览桥接和只读浏览场景使用，不等价于长期分享链接
+
+### `POST /files/{id}/wopi/open`
+
+请求体很简单：
+
+```json
+{
+  "app_key": "custom.onlyoffice"
+}
+```
+
+成功后返回 `WopiLaunchSession`：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "access_token": "...",
+    "access_token_ttl": 1775995200000,
+    "action_url": "https://office.example.com/...&WOPISrc=https%3A%2F%2Fdrive.example.com%2Fapi%2Fv1%2Fwopi%2Ffiles%2F1",
+    "form_fields": {},
+    "mode": "iframe"
+  }
+}
+```
+
+要点：
+
+- `app_key` 必须指向 `/public/preview-apps` 里当前启用、且 `provider = "wopi"` 的预览器
+- `action_url` 会带上实际回调入口 `WOPISrc`
+- 当前实现里的 `access_token_ttl` 实际返回的是“过期时间的 Unix 毫秒时间戳”，不是“剩余多少秒”
+- 生成 WOPI 启动会话时要求系统已配置 `public_site_url`
+- 真实 WOPI 回调不走这条路径，而是走 `/api/v1/wopi/files/{id}` 及其 `/contents` 变体，详细见 [WOPI](/api/wopi)
 
 ## 锁与复制
 

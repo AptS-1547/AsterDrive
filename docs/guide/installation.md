@@ -87,7 +87,7 @@ bootstrap_insecure_cookies = true
 - Endpoint
 - Bucket
 - Access Key / Secret Key
-- 如果要使用浏览器直传，再准备对象存储的 CORS 配置
+- 如果要使用浏览器直传，再准备对象存储的浏览器上传放行规则（CORS）
 
 ## Docker 部署
 
@@ -144,8 +144,8 @@ ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true ./aster_drive
 - 连接数据库并自动更新数据库结构
 - 创建默认本地存储策略 `Local Default`
 - 创建默认策略组 `Default Policy Group`
-- 初始化系统设置
-- 启动上传清理、回收站清理、团队归档清理、锁清理和审计日志清理任务
+- 初始化系统设置默认项
+- 启动邮件派发、后台任务派发、周期清理和底层文件一致性检查任务
 
 之后在浏览器打开：
 

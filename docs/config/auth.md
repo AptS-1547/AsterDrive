@@ -9,13 +9,14 @@
 
 ```toml
 [auth]
-jwt_secret = "<随机生成的 32 字节十六进制字符串>"
+jwt_secret = "<首次生成的一串随机密钥>"
 bootstrap_insecure_cookies = false
 ```
 
 ### `jwt_secret`
 
 首次自动生成配置时，服务会写入一个随机密钥。  
+你可以把它理解成“全站登录签名密钥”。  
 正式环境里要固定它，不要来回改。
 
 一旦修改：

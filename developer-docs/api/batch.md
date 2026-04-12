@@ -9,6 +9,8 @@
 | `POST` | `/batch/delete` | 批量删除文件和文件夹 |
 | `POST` | `/batch/move` | 批量移动文件和文件夹 |
 | `POST` | `/batch/copy` | 批量复制文件和文件夹 |
+| `POST` | `/batch/archive-download` | 创建批量打包下载 ticket |
+| `GET` | `/batch/archive-download/{token}` | 根据 ticket 流式下载 ZIP |
 
 ## 请求体结构
 
@@ -80,6 +82,53 @@
 - 文件复制不会物理复制 Blob，只增加引用计数
 - 文件夹复制会递归复制目录树
 - 与单项复制一样，目标位置同名时会自动生成副本名
+
+## 打包下载
+
+### `POST /batch/archive-download`
+
+请求体和其他批量接口一样，也支持混合资源，并可额外指定压缩包名：
+
+```json
+{
+  "file_ids": [1, 2],
+  "folder_ids": [10],
+  "archive_name": "workspace-export"
+}
+```
+
+成功后返回的不是文件流，而是一张短期 stream ticket：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "token": "st_xxxxx",
+    "download_path": "/api/v1/batch/archive-download/st_xxxxx",
+    "expires_at": "2026-04-12T12:00:00Z"
+  }
+}
+```
+
+当前语义：
+
+- `archive_name` 为空时会自动推导；最终文件名总是 `.zip`
+- ticket 默认 5 分钟过期
+- `download_path` 可能是相对路径，也可能在配置了 `public_site_url` 后直接返回绝对 URL
+- ticket 绑定当前用户和当前工作空间，不能拿个人空间 ticket 去团队接口下载，也不能换人复用
+- 这条链路当前是“短期 ticket + 直接流式压缩下载”，不会创建 `/tasks` 里的后台任务记录
+
+### `GET /batch/archive-download/{token}`
+
+拿着上一步返回的 `download_path` 发起 `GET`，返回原始 `application/zip` 流。
+
+当前实现细节：
+
+- 空目录会被保留在 ZIP 里
+- 多选文件夹时会按当前目录树打包
+- 同级重名根项会在 ZIP 根目录内自动避让命名
+- 只会打包当前仍处于活动状态、且属于当前工作空间可见范围内的文件和文件夹
 
 ## 使用场景
 

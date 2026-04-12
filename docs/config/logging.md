@@ -15,9 +15,9 @@ max_backups = 5
 - systemd：通常交给 journald
 - 裸机单进程：可以写入单独的日志文件
 
-## 各字段的作用
+## 这些选项怎么理解
 
-| 字段 | 默认值 | 作用 |
+| 选项 | 默认值 | 作用 |
 | --- | --- | --- |
 | `level` | `"info"` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
 | `format` | `"text"` | 输出格式：`text` 或 `json` |

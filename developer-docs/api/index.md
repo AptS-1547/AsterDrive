@@ -46,6 +46,7 @@
 - 管理员读取用户已上传头像
 - 分享拥有者已上传头像
 - 当前用户存储变更事件流
+- WOPI `CheckFileInfo` 与内容回调
 - WebDAV 协议响应
 - Prometheus 指标
 
@@ -103,6 +104,8 @@
 - [分享](/api/shares)
 - [回收站](/api/trash)
 - [搜索](/api/search)
+- [后台任务](/api/tasks)
+- [WOPI](/api/wopi)
 - [WebDAV](/api/webdav)
 - [属性](/api/properties)
 - [公共接口](/api/public)
@@ -115,8 +118,10 @@
 - 批量删除 / 移动 / 复制：见 [批量操作](/api/batch)
 - 回收站恢复与清理：见 [回收站](/api/trash)
 - 搜索与筛选：见 [搜索](/api/search)
+- 后台任务列表与重试：见 [后台任务](/api/tasks)
 - 团队管理与团队工作空间：见 [团队与团队空间](/api/teams)
 - 公开分享：见 [分享](/api/shares)
+- Office / WOPI 预览与回调：见 [WOPI](/api/wopi)
 - WebDAV 协议、账号与 DeltaV：见 [WebDAV](/api/webdav)
 - 登录页与公开页启动配置：见 [公共接口](/api/public)
 - 后台策略、锁、运行时配置与审计：见 [管理](/api/admin)
@@ -134,6 +139,8 @@
 - [文件](/api/files)
 - [团队与团队空间](/api/teams)
 - [搜索](/api/search)
+- [后台任务](/api/tasks)
+- [WOPI](/api/wopi)
 - [分享](/api/shares)
 - [公共接口](/api/public)
 - [管理](/api/admin)
