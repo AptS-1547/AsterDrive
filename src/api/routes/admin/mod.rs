@@ -16,8 +16,9 @@ pub(crate) mod users;
 
 pub use audit_logs::list_audit_logs;
 pub use config::{
-    ExecuteConfigActionReq, SetConfigReq, config_schema, config_template_variables, delete_config,
-    execute_config_action, get_config, list_config, set_config,
+    ExecuteConfigActionReq, ExecuteConfigActionResp, SetConfigReq, config_schema,
+    config_template_variables, delete_config, execute_config_action, get_config, list_config,
+    set_config,
 };
 pub use locks::{cleanup_expired_locks, force_unlock, list_locks};
 pub use overview::get_overview;

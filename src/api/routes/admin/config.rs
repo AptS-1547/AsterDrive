@@ -2,7 +2,6 @@ use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
-use crate::api::routes::auth::ActionMessageResp;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{audit_service, auth_service::Claims, config_service};
@@ -21,7 +20,17 @@ pub struct SetConfigReq {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ExecuteConfigActionReq {
     pub action: config_service::ConfigActionType,
+    pub discovery_url: Option<String>,
     pub target_email: Option<String>,
+    pub value: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ExecuteConfigActionResp {
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
 }
 
 #[api_docs_macros::path(
@@ -159,7 +168,7 @@ pub async fn delete_config(
     params(("key" = String, Path, description = "Config action target key")),
     request_body = ExecuteConfigActionReq,
     responses(
-        (status = 200, description = "Config action executed", body = inline(ApiResponse<ActionMessageResp>)),
+        (status = 200, description = "Config action executed", body = inline(ApiResponse<ExecuteConfigActionResp>)),
         (status = 400, description = "Invalid request"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
@@ -182,6 +191,8 @@ pub async fn execute_config_action(
         body.action,
         claims.user_id,
         body.target_email.as_deref(),
+        body.value.as_deref(),
+        body.discovery_url.as_deref(),
     )
     .await?;
 
@@ -200,7 +211,10 @@ pub async fn execute_config_action(
     )
     .await;
 
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
-        message: action_result.message,
-    })))
+    Ok(
+        HttpResponse::Ok().json(ApiResponse::ok(ExecuteConfigActionResp {
+            message: action_result.message,
+            value: action_result.value,
+        })),
+    )
 }

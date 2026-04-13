@@ -739,6 +739,6 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         requires_restart: false,
         is_sensitive: false,
         category: "general.preview",
-        description: "Public preview app registry and matching rules used by the web frontend",
+        description: "Public preview app registry used by the web frontend, including extension bindings",
     },
 ];

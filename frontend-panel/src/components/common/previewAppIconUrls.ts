@@ -24,10 +24,8 @@ export function getBuiltinPreviewAppIconUrl(key: string) {
 			return PREVIEW_APP_ICON_URLS.code;
 		case "builtin.try_text":
 			return PREVIEW_APP_ICON_URLS.file;
-		case "builtin.formatted_json":
+		case "builtin.formatted":
 			return PREVIEW_APP_ICON_URLS.json;
-		case "builtin.formatted_xml":
-			return PREVIEW_APP_ICON_URLS.xml;
 		case "builtin.image":
 			return PREVIEW_APP_ICON_URLS.image;
 		case "builtin.markdown":

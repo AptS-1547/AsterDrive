@@ -14,24 +14,29 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{
     audit_service::{self, AuditContext},
-    mail_service, preview_app_service,
+    mail_service, preview_app_service, wopi_service,
 };
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 pub const MAIL_CONFIG_ACTION_KEY: &str = "mail";
+const PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT: &str = "__wopi_discovery__";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub enum ConfigActionType {
+    BuildWopiDiscoveryPreviewConfig,
     SendTestEmail,
 }
 
 impl ConfigActionType {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::BuildWopiDiscoveryPreviewConfig => "build_wopi_discovery_preview_config",
             Self::SendTestEmail => "send_test_email",
         }
     }
@@ -41,6 +46,7 @@ impl ConfigActionType {
 pub struct ConfigActionResult {
     pub message: String,
     pub target_email: Option<String>,
+    pub value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,15 +84,6 @@ impl From<system_config::Model> for SystemConfig {
             updated_by: model.updated_by,
         }
     }
-}
-
-pub async fn list_all(state: &AppState) -> Result<Vec<SystemConfig>> {
-    Ok(config_repo::find_all(&state.db)
-        .await?
-        .into_iter()
-        .map(apply_system_config_definition)
-        .map(Into::into)
-        .collect())
 }
 
 pub async fn list_paginated(
@@ -169,10 +166,15 @@ pub async fn execute_action(
     action: ConfigActionType,
     actor_user_id: i64,
     target_email: Option<&str>,
+    value: Option<&str>,
+    discovery_url: Option<&str>,
 ) -> Result<ConfigActionResult> {
     match key {
         MAIL_CONFIG_ACTION_KEY => {
             execute_mail_action(state, action, actor_user_id, target_email).await
+        }
+        preview_app_service::PREVIEW_APPS_CONFIG_KEY => {
+            execute_preview_app_action(state, action, actor_user_id, value, discovery_url).await
         }
         _ => Err(AsterError::record_not_found(format!(
             "config action target '{key}'"
@@ -208,8 +210,262 @@ async fn execute_mail_action(
             Ok(ConfigActionResult {
                 message: format!("Test email sent to {normalized_target}"),
                 target_email: Some(normalized_target),
+                value: None,
             })
         }
+        _ => Err(AsterError::validation_error(format!(
+            "action '{}' is not supported for '{MAIL_CONFIG_ACTION_KEY}'",
+            action.as_str()
+        ))),
+    }
+}
+
+async fn execute_preview_app_action(
+    state: &AppState,
+    action: ConfigActionType,
+    actor_user_id: i64,
+    value: Option<&str>,
+    discovery_url: Option<&str>,
+) -> Result<ConfigActionResult> {
+    match action {
+        ConfigActionType::BuildWopiDiscoveryPreviewConfig => {
+            let raw_value = value.map(str::to_string).unwrap_or_else(|| {
+                state
+                    .runtime_config
+                    .get(preview_app_service::PREVIEW_APPS_CONFIG_KEY)
+                    .unwrap_or_else(preview_app_service::default_public_preview_apps_json)
+            });
+            let normalized =
+                preview_app_service::normalize_public_preview_apps_config_value(&raw_value)?;
+            let mut config: preview_app_service::PublicPreviewAppsConfig =
+                serde_json::from_str(&normalized).map_err(|error| {
+                    AsterError::internal_error(format!(
+                        "failed to parse normalized preview apps config: {error}"
+                    ))
+                })?;
+
+            let requested_discovery_url =
+                discovery_url.map(str::trim).filter(|url| !url.is_empty());
+            let Some(discovery_url) = requested_discovery_url else {
+                return Err(AsterError::validation_error("discovery_url is required"));
+            };
+            build_wopi_discovery_preview_apps_into_config(state, &mut config, discovery_url)
+                .await?;
+            let serialized = serde_json::to_string_pretty(&config).map_err(|error| {
+                AsterError::internal_error(format!(
+                    "failed to serialize imported preview apps config: {error}"
+                ))
+            })?;
+
+            if value.is_none() {
+                set(
+                    state,
+                    preview_app_service::PREVIEW_APPS_CONFIG_KEY,
+                    &serialized,
+                    actor_user_id,
+                )
+                .await?;
+            }
+
+            Ok(ConfigActionResult {
+                message: format!(
+                    "Built WOPI preview apps from {discovery_url} into the preview app draft"
+                ),
+                target_email: None,
+                value: Some(serialized),
+            })
+        }
+        _ => Err(AsterError::validation_error(format!(
+            "action '{}' is not supported for '{}'",
+            action.as_str(),
+            preview_app_service::PREVIEW_APPS_CONFIG_KEY
+        ))),
+    }
+}
+
+async fn build_wopi_discovery_preview_apps_into_config(
+    state: &AppState,
+    config: &mut preview_app_service::PublicPreviewAppsConfig,
+    discovery_url: &str,
+) -> Result<()> {
+    let discovery_url = discovery_url.trim();
+    if discovery_url.is_empty() {
+        return Err(AsterError::validation_error("discovery_url is required"));
+    }
+
+    let discovered_apps = wopi_service::discover_preview_apps(state, discovery_url).await?;
+    let existing_generated_apps = config
+        .apps
+        .iter()
+        .filter(|app| is_generated_wopi_discovery_app(app, discovery_url))
+        .filter_map(|app| {
+            generated_preview_app_suffix(&app.key).map(|suffix| (suffix.to_string(), app.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let imported_apps =
+        build_imported_wopi_preview_apps(discovery_url, &existing_generated_apps, discovered_apps)?;
+
+    let mut next_apps = Vec::with_capacity(config.apps.len() + imported_apps.len());
+    for app in &config.apps {
+        if is_generated_wopi_discovery_app(app, discovery_url)
+            || is_legacy_wopi_discovery_seed_app(app, discovery_url)
+        {
+            continue;
+        }
+        next_apps.push(app.clone());
+    }
+
+    next_apps.extend(imported_apps);
+
+    config.apps = next_apps;
+    Ok(())
+}
+
+fn build_imported_wopi_preview_apps(
+    discovery_url: &str,
+    existing_generated_apps: &BTreeMap<String, preview_app_service::PublicPreviewAppDefinition>,
+    discovered_apps: Vec<wopi_service::DiscoveredWopiPreviewApp>,
+) -> Result<Vec<preview_app_service::PublicPreviewAppDefinition>> {
+    let mut imported = Vec::new();
+
+    for discovered_app in discovered_apps {
+        let key = format!(
+            "{}{}",
+            generated_preview_app_key_prefix(discovery_url),
+            discovered_app.key_suffix
+        );
+        let enabled = existing_generated_apps
+            .get(&discovered_app.key_suffix)
+            .map(|app| app.enabled)
+            .unwrap_or(true);
+
+        imported.push(preview_app_service::PublicPreviewAppDefinition {
+            key,
+            provider: preview_app_service::PreviewAppProvider::Wopi,
+            icon: discovered_app
+                .icon_url
+                .unwrap_or_else(|| "/static/preview-apps/file.svg".to_string()),
+            enabled,
+            label_i18n_key: None,
+            labels: BTreeMap::from([
+                ("en".to_string(), discovered_app.label.clone()),
+                ("zh".to_string(), discovered_app.label.clone()),
+            ]),
+            extensions: discovered_app.extensions,
+            config: preview_app_service::PublicPreviewAppConfig {
+                delimiter: None,
+                mode: Some(preview_app_service::PreviewOpenMode::Iframe),
+                url_template: None,
+                allowed_origins: Vec::new(),
+                action: Some(discovered_app.action),
+                action_url: None,
+                action_url_template: None,
+                discovery_url: Some(discovery_url.to_string()),
+                form_fields: BTreeMap::new(),
+            },
+        });
+    }
+
+    if imported.is_empty() {
+        return Err(AsterError::validation_error(format!(
+            "WOPI discovery '{discovery_url}' did not produce any importable apps"
+        )));
+    }
+
+    Ok(imported)
+}
+
+fn is_generated_wopi_discovery_app(
+    app: &preview_app_service::PublicPreviewAppDefinition,
+    discovery_url: &str,
+) -> bool {
+    app.provider == preview_app_service::PreviewAppProvider::Wopi
+        && app.key.contains(PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT)
+        && app.config.discovery_url.as_deref() == Some(discovery_url)
+}
+
+fn is_legacy_wopi_discovery_seed_app(
+    app: &preview_app_service::PublicPreviewAppDefinition,
+    discovery_url: &str,
+) -> bool {
+    app.provider == preview_app_service::PreviewAppProvider::Wopi
+        && app.config.discovery_url.as_deref() == Some(discovery_url)
+        && app.extensions.is_empty()
+        && app.config.action.is_none()
+        && app.config.action_url.is_none()
+        && app.config.action_url_template.is_none()
+        && app.key.starts_with("custom.wopi.")
+        && !app.key.contains(PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT)
+}
+
+fn generated_preview_app_key_prefix(discovery_url: &str) -> String {
+    format!(
+        "custom.wopi.{}{PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT}",
+        discovery_key_segment(discovery_url)
+    )
+}
+
+fn generated_preview_app_suffix(key: &str) -> Option<&str> {
+    key.split_once(PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT)
+        .map(|(_, suffix)| suffix)
+        .filter(|suffix| !suffix.trim().is_empty())
+}
+
+fn discovery_key_segment(discovery_url: &str) -> String {
+    let value = Url::parse(discovery_url)
+        .ok()
+        .map(|url| {
+            let mut next = url.host_str().unwrap_or_default().to_string();
+            if let Some(port) = url.port() {
+                if !next.is_empty() {
+                    next.push('.');
+                }
+                next.push_str(&port.to_string());
+            }
+            let path = url
+                .path_segments()
+                .map(|segments| {
+                    segments
+                        .filter(|segment| !segment.trim().is_empty())
+                        .collect::<Vec<_>>()
+                        .join(".")
+                })
+                .unwrap_or_default();
+            if !path.is_empty() {
+                if !next.is_empty() {
+                    next.push('.');
+                }
+                next.push_str(&path);
+            }
+            next
+        })
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| discovery_url.trim().to_string());
+    slugify_preview_app_key_segment(&value)
+}
+
+fn slugify_preview_app_key_segment(value: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_separator = false;
+
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+            continue;
+        }
+
+        if !last_was_separator {
+            slug.push('.');
+            last_was_separator = true;
+        }
+    }
+
+    let trimmed = slug.trim_matches('.');
+    if trimmed.is_empty() {
+        "discovery".to_string()
+    } else {
+        trimmed.to_string()
     }
 }
 
@@ -447,4 +703,101 @@ pub fn list_template_variable_groups() -> Vec<TemplateVariableGroup> {
                 .collect(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT, build_imported_wopi_preview_apps,
+        generated_preview_app_key_prefix, generated_preview_app_suffix,
+    };
+    use crate::services::{preview_app_service, wopi_service};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn generated_preview_app_key_prefix_uses_reserved_segment() {
+        assert_eq!(
+            generated_preview_app_key_prefix("https://office.esaps.net/hosting/discovery"),
+            format!(
+                "custom.wopi.office.esaps.net.hosting.discovery{PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT}"
+            )
+        );
+    }
+
+    #[test]
+    fn build_imported_wopi_preview_apps_preserves_existing_enabled_state() {
+        let discovery_url = "http://localhost:8080/hosting/discovery";
+        let existing_key = "legacy.onlyoffice__wopi_discovery__word".to_string();
+        let existing_generated = BTreeMap::from([(
+            "word".to_string(),
+            preview_app_service::PublicPreviewAppDefinition {
+                key: existing_key,
+                provider: preview_app_service::PreviewAppProvider::Wopi,
+                icon: "http://localhost:8080/word.ico".to_string(),
+                enabled: false,
+                label_i18n_key: None,
+                labels: BTreeMap::from([("en".to_string(), "Word".to_string())]),
+                extensions: vec!["docx".to_string()],
+                config: preview_app_service::PublicPreviewAppConfig {
+                    mode: Some(preview_app_service::PreviewOpenMode::Iframe),
+                    action: Some("view".to_string()),
+                    discovery_url: Some(discovery_url.to_string()),
+                    ..Default::default()
+                },
+            },
+        )]);
+
+        let imported = build_imported_wopi_preview_apps(
+            discovery_url,
+            &existing_generated,
+            vec![wopi_service::DiscoveredWopiPreviewApp {
+                action: "view".to_string(),
+                extensions: vec!["doc".to_string(), "docx".to_string()],
+                icon_url: Some("http://localhost:8080/word.ico".to_string()),
+                key_suffix: "word".to_string(),
+                label: "Word".to_string(),
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(imported.len(), 1);
+        assert_eq!(
+            imported[0].key,
+            "custom.wopi.localhost.8080.hosting.discovery__wopi_discovery__word"
+        );
+        assert!(!imported[0].enabled);
+        assert_eq!(imported[0].config.action.as_deref(), Some("view"));
+        assert_eq!(
+            imported[0].config.discovery_url.as_deref(),
+            Some(discovery_url)
+        );
+        assert_eq!(imported[0].extensions, vec!["doc", "docx"]);
+    }
+
+    #[test]
+    fn build_imported_wopi_preview_apps_enables_new_entries_by_default() {
+        let imported = build_imported_wopi_preview_apps(
+            "http://localhost:8080/hosting/discovery",
+            &BTreeMap::new(),
+            vec![wopi_service::DiscoveredWopiPreviewApp {
+                action: "view".to_string(),
+                extensions: vec!["docx".to_string()],
+                icon_url: Some("http://localhost:8080/word.ico".to_string()),
+                key_suffix: "word".to_string(),
+                label: "Word".to_string(),
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(imported.len(), 1);
+        assert!(imported[0].enabled);
+    }
+
+    #[test]
+    fn generated_preview_app_suffix_extracts_suffix() {
+        assert_eq!(
+            generated_preview_app_suffix("custom.wopi.office.esaps.net__wopi_discovery__word"),
+            Some("word")
+        );
+    }
 }

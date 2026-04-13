@@ -26,8 +26,7 @@ export type PreviewProviderKind =
 	| "pdf"
 	| "markdown"
 	| "table"
-	| "formatted_json"
-	| "formatted_xml"
+	| "formatted"
 	| "code"
 	| "wopi"
 	| "url_template";

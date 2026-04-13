@@ -122,6 +122,8 @@ struct ActiveWopiLock {
 #[derive(Debug, Clone)]
 struct WopiDiscoveryAction {
     action: String,
+    app_icon_url: Option<String>,
+    app_name: Option<String>,
     ext: Option<String>,
     mime: Option<String>,
     urlsrc: String,
@@ -136,6 +138,15 @@ struct WopiDiscovery {
 struct CachedWopiDiscovery {
     discovery: WopiDiscovery,
     cached_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveredWopiPreviewApp {
+    pub action: String,
+    pub extensions: Vec<String>,
+    pub icon_url: Option<String>,
+    pub key_suffix: String,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -497,7 +508,7 @@ fn parse_discovery_xml(xml: &str) -> Result<WopiDiscovery> {
         AsterError::validation_error(format!("invalid WOPI discovery XML: {error}"))
     })?;
     let mut actions = Vec::new();
-    collect_discovery_actions(&root, None, &mut actions);
+    collect_discovery_actions(&root, None, None, &mut actions);
     if actions.is_empty() {
         return Err(AsterError::validation_error(
             "WOPI discovery did not expose any actions",
@@ -510,34 +521,27 @@ fn parse_discovery_xml(xml: &str) -> Result<WopiDiscovery> {
 fn collect_discovery_actions(
     element: &Element,
     app_name: Option<&str>,
+    app_icon_url: Option<&str>,
     out: &mut Vec<WopiDiscoveryAction>,
 ) {
-    let next_app_name = if element.name.eq_ignore_ascii_case("app") {
-        element
-            .attributes
-            .get("name")
-            .map(String::as_str)
-            .or(app_name)
+    let (next_app_name, next_app_icon_url) = if element.name.eq_ignore_ascii_case("app") {
+        (
+            element_attribute(element, "name").or(app_name),
+            element_attribute(element, "favIconUrl").or(app_icon_url),
+        )
     } else {
-        app_name
+        (app_name, app_icon_url)
     };
 
     if element.name.eq_ignore_ascii_case("action") {
-        let action = element
-            .attributes
-            .get("name")
-            .map(|value| value.trim().to_ascii_lowercase());
-        let urlsrc = element
-            .attributes
-            .get("urlsrc")
-            .map(|value| value.trim().to_string());
+        let action =
+            element_attribute(element, "name").map(|value| value.trim().to_ascii_lowercase());
+        let urlsrc = element_attribute(element, "urlsrc").map(|value| value.trim().to_string());
         if let (Some(action), Some(urlsrc)) = (action, urlsrc)
             && !action.is_empty()
             && !urlsrc.is_empty()
         {
-            let ext = element
-                .attributes
-                .get("ext")
+            let ext = element_attribute(element, "ext")
                 .map(|value| value.trim().trim_start_matches('.').to_ascii_lowercase())
                 .filter(|value| !value.is_empty());
             let mime = next_app_name
@@ -546,6 +550,8 @@ fn collect_discovery_actions(
                 .map(|value| value.to_ascii_lowercase());
             out.push(WopiDiscoveryAction {
                 action,
+                app_icon_url: next_app_icon_url.map(str::trim).map(ToString::to_string),
+                app_name: next_app_name.map(str::trim).map(ToString::to_string),
                 ext,
                 mime,
                 urlsrc,
@@ -555,9 +561,19 @@ fn collect_discovery_actions(
 
     for child in &element.children {
         if let XMLNode::Element(child) = child {
-            collect_discovery_actions(child, next_app_name, out);
+            collect_discovery_actions(child, next_app_name, next_app_icon_url, out);
         }
     }
+}
+
+fn element_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a str> {
+    element.attributes.iter().find_map(|(key, value)| {
+        if key.eq_ignore_ascii_case(name) {
+            Some(value.as_str())
+        } else {
+            None
+        }
+    })
 }
 
 impl WopiDiscovery {
@@ -588,6 +604,158 @@ impl WopiDiscovery {
     }
 }
 
+pub async fn discover_preview_apps(
+    state: &AppState,
+    discovery_url: &str,
+) -> Result<Vec<DiscoveredWopiPreviewApp>> {
+    let discovery = load_discovery(state, discovery_url).await?;
+    let apps = build_discovered_preview_apps(&discovery);
+    if apps.is_empty() {
+        return Err(AsterError::validation_error(
+            "WOPI discovery did not expose any importable preview apps",
+        ));
+    }
+    Ok(apps)
+}
+
+fn build_discovered_preview_apps(discovery: &WopiDiscovery) -> Vec<DiscoveredWopiPreviewApp> {
+    const ACTION_PRIORITY: &[&str] = &[
+        "view",
+        "embedview",
+        "mobileview",
+        "edit",
+        "embededit",
+        "mobileedit",
+    ];
+
+    #[derive(Debug, Clone)]
+    struct DiscoveryGroup {
+        icon_url: Option<String>,
+        label: String,
+        actions: Vec<WopiDiscoveryAction>,
+    }
+
+    let mut groups = Vec::<DiscoveryGroup>::new();
+    for action in &discovery.actions {
+        let label = action
+            .app_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("WOPI");
+
+        if let Some(group) = groups.iter_mut().find(|group| group.label == label) {
+            group.actions.push(action.clone());
+            if group.icon_url.is_none() {
+                group.icon_url = action.app_icon_url.clone();
+            }
+            continue;
+        }
+
+        groups.push(DiscoveryGroup {
+            icon_url: action.app_icon_url.clone(),
+            label: label.to_string(),
+            actions: vec![action.clone()],
+        });
+    }
+
+    let mut results = Vec::new();
+    let mut used_suffixes = std::collections::HashSet::new();
+
+    for group in groups {
+        let action_name = ACTION_PRIORITY
+            .iter()
+            .find_map(|candidate| {
+                let has_extensions = group.actions.iter().any(|action| {
+                    action.action == *candidate
+                        && action
+                            .ext
+                            .as_deref()
+                            .is_some_and(|ext| !ext.is_empty() && ext != "*")
+                });
+                has_extensions.then_some((*candidate).to_string())
+            })
+            .or_else(|| {
+                group.actions.iter().find_map(|action| {
+                    action
+                        .ext
+                        .as_deref()
+                        .is_some_and(|ext| !ext.is_empty() && ext != "*")
+                        .then(|| action.action.clone())
+                })
+            });
+
+        let Some(action_name) = action_name else {
+            continue;
+        };
+
+        let mut extensions = Vec::new();
+        for action in &group.actions {
+            if action.action != action_name {
+                continue;
+            }
+            if let Some(ext) = action.ext.as_deref()
+                && !ext.is_empty()
+                && ext != "*"
+            {
+                push_unique(&mut extensions, ext.to_string());
+            }
+        }
+
+        if extensions.is_empty() {
+            continue;
+        }
+
+        let mut key_suffix = slugify_discovery_app_name(&group.label);
+        if key_suffix.is_empty() {
+            key_suffix = "app".to_string();
+        }
+
+        if !used_suffixes.insert(key_suffix.clone()) {
+            let base = key_suffix.clone();
+            let mut index = 2;
+            loop {
+                let candidate = format!("{base}_{index}");
+                if used_suffixes.insert(candidate.clone()) {
+                    key_suffix = candidate;
+                    break;
+                }
+                index += 1;
+            }
+        }
+
+        results.push(DiscoveredWopiPreviewApp {
+            action: action_name,
+            extensions,
+            icon_url: group.icon_url,
+            key_suffix,
+            label: group.label,
+        });
+    }
+
+    results
+}
+
+fn slugify_discovery_app_name(value: &str) -> String {
+    let mut slug = String::new();
+    let mut previous_was_separator = false;
+
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            previous_was_separator = false;
+            continue;
+        }
+
+        if !previous_was_separator && !slug.is_empty() {
+            slug.push('_');
+            previous_was_separator = true;
+        }
+    }
+
+    slug.trim_matches('_').to_string()
+}
+
 fn expand_action_url(raw: &str, wopi_src: &str) -> Result<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -606,6 +774,13 @@ fn expand_action_url(raw: &str, wopi_src: &str) -> Result<String> {
         ));
     }
 
+    let resolved = expand_discovery_url_placeholders(&resolved, &wopi_src_encoded);
+    if resolved.contains('<') || resolved.contains('>') {
+        return Err(AsterError::validation_error(
+            "WOPI action_url contains unresolved discovery placeholders",
+        ));
+    }
+
     if resolved == trimmed {
         return append_wopi_src(trimmed, wopi_src);
     }
@@ -613,7 +788,61 @@ fn expand_action_url(raw: &str, wopi_src: &str) -> Result<String> {
     Url::parse(&resolved).map_err(|error| {
         AsterError::validation_error(format!("invalid WOPI action_url: {error}"))
     })?;
-    Ok(resolved)
+    append_wopi_src_if_missing(&resolved, wopi_src)
+}
+
+fn expand_discovery_url_placeholders(raw: &str, wopi_src_encoded: &str) -> String {
+    let mut output = String::with_capacity(raw.len() + wopi_src_encoded.len());
+    let mut index = 0;
+
+    while let Some(start_offset) = raw[index..].find('<') {
+        let start = index + start_offset;
+        output.push_str(&raw[index..start]);
+
+        let Some(end_offset) = raw[start + 1..].find('>') else {
+            output.push_str(&raw[start..]);
+            return output;
+        };
+        let end = start + 1 + end_offset;
+        let placeholder = &raw[start + 1..end];
+        if let Some(replacement) = resolve_discovery_placeholder(placeholder, wopi_src_encoded) {
+            output.push_str(&replacement);
+        }
+        index = end + 1;
+    }
+
+    output.push_str(&raw[index..]);
+    output
+}
+
+fn resolve_discovery_placeholder(placeholder: &str, wopi_src_encoded: &str) -> Option<String> {
+    let trimmed = placeholder.trim();
+    let (key, value) = trimmed.split_once('=')?;
+    let key = key.trim();
+    let value = value.trim().trim_end_matches('&').trim();
+    if key.is_empty() {
+        return None;
+    }
+
+    if key.eq_ignore_ascii_case("wopisrc") || value.eq_ignore_ascii_case("wopi_source") {
+        return Some(format!("{key}={wopi_src_encoded}&"));
+    }
+
+    None
+}
+
+fn append_wopi_src_if_missing(url: &str, wopi_src: &str) -> Result<String> {
+    let parsed = Url::parse(url).map_err(|error| {
+        AsterError::validation_error(format!("invalid WOPI action URL: {error}"))
+    })?;
+    let has_wopi_src = parsed
+        .query_pairs()
+        .any(|(key, _)| key.as_ref().eq_ignore_ascii_case("wopisrc"));
+    if has_wopi_src {
+        return Ok(parsed.to_string());
+    }
+
+    append_wopi_src(url, wopi_src)
 }
 
 fn append_wopi_src(url: &str, wopi_src: &str) -> Result<String> {
@@ -958,7 +1187,8 @@ fn push_unique(values: &mut Vec<String>, value: String) {
 mod tests {
     use super::{
         WopiCheckFileInfo, WopiRequestSource, access_token_hash, append_wopi_src,
-        ensure_request_source_allowed, parse_discovery_xml, trusted_origins_for_app,
+        build_discovered_preview_apps, ensure_request_source_allowed, expand_action_url,
+        parse_discovery_xml, trusted_origins_for_app,
     };
     use crate::services::preview_app_service::{
         PreviewAppProvider, PreviewOpenMode, PublicPreviewAppConfig, PublicPreviewAppDefinition,
@@ -974,6 +1204,7 @@ mod tests {
             enabled: true,
             label_i18n_key: None,
             labels: BTreeMap::new(),
+            extensions: vec!["docx".to_string()],
             config: PublicPreviewAppConfig {
                 mode: Some(PreviewOpenMode::Iframe),
                 action_url: Some(
@@ -997,6 +1228,22 @@ mod tests {
         assert!(
             url.contains("WOPISrc=https%3A%2F%2Fdrive.example.com%2Fapi%2Fv1%2Fwopi%2Ffiles%2F7")
         );
+    }
+
+    #[test]
+    fn expand_action_url_resolves_discovery_placeholders() {
+        let url = expand_action_url(
+            "https://office.example.com/hosting/wopi/word/view?mobile=1&<ui=UI_LLCC&><rs=DC_LLCC&><wopisrc=WOPI_SOURCE&>",
+            "https://drive.example.com/api/v1/wopi/files/7",
+        )
+        .unwrap();
+
+        assert!(url.contains("mobile=1"));
+        assert!(
+            url.contains("wopisrc=https%3A%2F%2Fdrive.example.com%2Fapi%2Fv1%2Fwopi%2Ffiles%2F7")
+        );
+        assert!(!url.contains("<ui="));
+        assert!(!url.contains("<wopisrc="));
     }
 
     #[test]
@@ -1024,6 +1271,65 @@ mod tests {
                 )
                 .as_deref(),
             Some("https://office.example.com/word/edit?")
+        );
+    }
+
+    #[test]
+    fn build_discovered_preview_apps_groups_actions_by_app_name() {
+        let discovery = parse_discovery_xml(
+            r#"
+            <wopi-discovery>
+              <net-zone name="external-http">
+                <app name="Word" favIconUrl="https://office.example.com/word.ico">
+                  <action name="view" ext="doc" urlsrc="https://office.example.com/word/view?" />
+                  <action name="view" ext="docx" urlsrc="https://office.example.com/word/view?" />
+                  <action name="edit" ext="docx" urlsrc="https://office.example.com/word/edit?" />
+                </app>
+                <app name="Excel" favIconUrl="https://office.example.com/excel.ico">
+                  <action name="view" ext="xls" urlsrc="https://office.example.com/excel/view?" />
+                  <action name="view" ext="xlsx" urlsrc="https://office.example.com/excel/view?" />
+                </app>
+                <app name="Pdf" favIconUrl="https://office.example.com/pdf.ico">
+                  <action name="view" ext="pdf" urlsrc="https://office.example.com/pdf/view?" />
+                </app>
+              </net-zone>
+            </wopi-discovery>
+            "#,
+        )
+        .unwrap();
+
+        let apps = build_discovered_preview_apps(&discovery);
+
+        assert_eq!(apps.len(), 3);
+        assert_eq!(
+            apps[0],
+            super::DiscoveredWopiPreviewApp {
+                action: "view".to_string(),
+                extensions: vec!["doc".to_string(), "docx".to_string()],
+                icon_url: Some("https://office.example.com/word.ico".to_string()),
+                key_suffix: "word".to_string(),
+                label: "Word".to_string(),
+            }
+        );
+        assert_eq!(
+            apps[1],
+            super::DiscoveredWopiPreviewApp {
+                action: "view".to_string(),
+                extensions: vec!["xls".to_string(), "xlsx".to_string()],
+                icon_url: Some("https://office.example.com/excel.ico".to_string()),
+                key_suffix: "excel".to_string(),
+                label: "Excel".to_string(),
+            }
+        );
+        assert_eq!(
+            apps[2],
+            super::DiscoveredWopiPreviewApp {
+                action: "view".to_string(),
+                extensions: vec!["pdf".to_string()],
+                icon_url: Some("https://office.example.com/pdf.ico".to_string()),
+                key_suffix: "pdf".to_string(),
+                label: "Pdf".to_string(),
+            }
         );
     }
 

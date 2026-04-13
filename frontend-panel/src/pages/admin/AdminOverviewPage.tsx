@@ -48,11 +48,23 @@ const OVERVIEW_TREND_DAYS = 7;
 const DEFAULT_EVENT_LIMIT = 10;
 
 type DailyReport = AdminOverview["daily_reports"][number];
+type TrendSeriesKey = "newUsers" | "shareCreations" | "totalEvents" | "uploads";
 
 interface TrendPoint {
 	date: string;
 	label: string;
+	newUsers: number;
+	shareCreations: number;
 	totalEvents: number;
+	uploads: number;
+}
+
+interface TrendSeries {
+	badgeClass: string;
+	key: TrendSeriesKey;
+	label: string;
+	stroke: string;
+	strokeWidth: number;
 }
 
 function resolveBrowserTimeZone() {
@@ -136,36 +148,60 @@ function createTrendData(reports: DailyReport[]): TrendPoint[] {
 	return reports.map((report) => ({
 		date: report.date,
 		label: formatTrendDayLabel(report.date),
+		newUsers: report.new_users,
+		shareCreations: report.share_creations,
 		totalEvents: report.total_events,
+		uploads: report.uploads,
 	}));
 }
 
-interface TrendTooltipCardProps extends TooltipContentProps {
-	valueLabel: string;
-}
-
-function TrendTooltipCard({
-	active,
-	payload,
-	valueLabel,
-}: TrendTooltipCardProps) {
-	if (!active || !payload?.length) return null;
-
-	const point = payload[0]?.payload as TrendPoint | undefined;
-	const rawValue = payload[0]?.value;
+function resolveTooltipValue(rawValue: unknown) {
 	const numericValue = Array.isArray(rawValue)
 		? Number(rawValue[0] ?? 0)
 		: Number(rawValue ?? 0);
 
+	return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
+interface TrendTooltipCardProps extends TooltipContentProps {
+	series: TrendSeries[];
+}
+
+function TrendTooltipCard({ active, payload, series }: TrendTooltipCardProps) {
+	if (!active || !payload?.length) return null;
+
+	const point = payload[0]?.payload as TrendPoint | undefined;
+
 	return (
 		<div className="rounded-xl border bg-background/95 px-3 py-2 shadow-lg backdrop-blur">
 			<p className="text-xs text-muted-foreground">{point?.date ?? "---"}</p>
-			<p className="mt-1 text-xs text-muted-foreground">{valueLabel}</p>
-			<p className="text-lg font-semibold tracking-tight">
-				{COUNT_FORMATTER.format(
-					Number.isFinite(numericValue) ? numericValue : 0,
-				)}
-			</p>
+			<div className="mt-2 space-y-1.5">
+				{series.map((seriesItem) => {
+					const currentPayload = payload.find(
+						(entry) => entry.dataKey === seriesItem.key,
+					);
+
+					return (
+						<div
+							key={seriesItem.key}
+							className="flex items-center justify-between gap-4 text-xs"
+						>
+							<div className="flex items-center gap-2 text-muted-foreground">
+								<span
+									className="inline-flex size-2 rounded-full"
+									style={{ backgroundColor: seriesItem.stroke }}
+								/>
+								<span>{seriesItem.label}</span>
+							</div>
+							<span className="font-semibold text-foreground">
+								{COUNT_FORMATTER.format(
+									resolveTooltipValue(currentPayload?.value),
+								)}
+							</span>
+						</div>
+					);
+				})}
+			</div>
 		</div>
 	);
 }
@@ -178,7 +214,7 @@ interface OverviewTrendChartProps {
 	averageLabel: string;
 	latestLabel: string;
 	peakLabel: string;
-	valueLabel: string;
+	series: TrendSeries[];
 }
 
 function OverviewTrendChart({
@@ -189,7 +225,7 @@ function OverviewTrendChart({
 	averageLabel,
 	latestLabel,
 	peakLabel,
-	valueLabel,
+	series,
 }: OverviewTrendChartProps) {
 	if (!reports.length) {
 		return (
@@ -216,9 +252,20 @@ function OverviewTrendChart({
 	return (
 		<div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
 			<div className="overflow-hidden rounded-2xl border bg-linear-to-br from-primary/5 via-background to-background p-4">
-				<div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-					<span className="inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
-					<span>{valueLabel}</span>
+				<div className="mb-3 flex flex-wrap items-center gap-2">
+					{series.map((seriesItem) => (
+						<Badge
+							key={seriesItem.key}
+							variant="outline"
+							className={cn("gap-2 border", seriesItem.badgeClass)}
+						>
+							<span
+								className="inline-flex size-2 rounded-full"
+								style={{ backgroundColor: seriesItem.stroke }}
+							/>
+							{seriesItem.label}
+						</Badge>
+					))}
 				</div>
 				<div className="h-[280px] min-w-0">
 					<ResponsiveContainer width="100%" height="100%">
@@ -252,28 +299,35 @@ function OverviewTrendChart({
 							<Tooltip
 								cursor={{ stroke: "var(--border)", strokeDasharray: "4 6" }}
 								content={(props) => (
-									<TrendTooltipCard {...props} valueLabel={valueLabel} />
+									<TrendTooltipCard {...props} series={series} />
 								)}
 							/>
-							<Line
-								type="monotone"
-								dataKey="totalEvents"
-								name={valueLabel}
-								stroke="var(--primary)"
-								strokeWidth={3}
-								dot={{
-									r: 4,
-									fill: "var(--background)",
-									stroke: "var(--primary)",
-									strokeWidth: 3,
-								}}
-								activeDot={{
-									r: 6,
-									fill: "var(--background)",
-									stroke: "var(--primary)",
-									strokeWidth: 3,
-								}}
-							/>
+							{series.map((seriesItem) => (
+								<Line
+									key={seriesItem.key}
+									type="monotone"
+									dataKey={seriesItem.key}
+									name={seriesItem.label}
+									stroke={seriesItem.stroke}
+									strokeWidth={seriesItem.strokeWidth}
+									dot={
+										seriesItem.key === "totalEvents"
+											? {
+													r: 4,
+													fill: "var(--background)",
+													stroke: seriesItem.stroke,
+													strokeWidth: 3,
+												}
+											: false
+									}
+									activeDot={{
+										r: seriesItem.key === "totalEvents" ? 6 : 4,
+										fill: "var(--background)",
+										stroke: seriesItem.stroke,
+										strokeWidth: seriesItem.key === "totalEvents" ? 3 : 2,
+									}}
+								/>
+							))}
 						</LineChart>
 					</ResponsiveContainer>
 				</div>
@@ -319,6 +373,39 @@ export default function AdminOverviewPage() {
 	const { t } = useTranslation("admin");
 	usePageTitle(t("overview"));
 	const timezone = resolveBrowserTimeZone();
+	const trendSeries: TrendSeries[] = [
+		{
+			badgeClass: "border-primary/20 bg-primary/10 text-primary",
+			key: "totalEvents",
+			label: t("overview_report_total_events"),
+			stroke: "var(--primary)",
+			strokeWidth: 3,
+		},
+		{
+			badgeClass:
+				"border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+			key: "uploads",
+			label: t("overview_report_uploads"),
+			stroke: "#10b981",
+			strokeWidth: 2.5,
+		},
+		{
+			badgeClass:
+				"border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+			key: "shareCreations",
+			label: t("overview_report_shares"),
+			stroke: "#0ea5e9",
+			strokeWidth: 2.5,
+		},
+		{
+			badgeClass:
+				"border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+			key: "newUsers",
+			label: t("overview_report_new_users"),
+			stroke: "#f59e0b",
+			strokeWidth: 2.5,
+		},
+	];
 	const [overview, setOverview] = useState<AdminOverview | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [refreshing, setRefreshing] = useState(false);
@@ -494,7 +581,7 @@ export default function AdminOverviewPage() {
 									averageLabel={t("overview_daily_trend_average")}
 									latestLabel={t("overview_daily_trend_latest")}
 									peakLabel={t("overview_daily_trend_peak")}
-									valueLabel={t("overview_report_total_events")}
+									series={trendSeries}
 								/>
 							</div>
 							<div

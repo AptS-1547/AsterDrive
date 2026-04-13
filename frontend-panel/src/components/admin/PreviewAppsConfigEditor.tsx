@@ -1,11 +1,8 @@
 import {
-	Fragment,
 	type ReactNode,
 	useCallback,
 	useEffect,
-	useLayoutEffect,
 	useMemo,
-	useRef,
 	useState,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -47,10 +44,8 @@ import {
 import { cn } from "@/lib/utils";
 import {
 	createPreviewAppDraft,
-	createPreviewRuleDraft,
 	formatPreviewAppsDelimitedInput,
 	getPreviewAppDefaultIcon,
-	getPreviewAppKindLabelKey,
 	getPreviewAppProvider,
 	getPreviewAppsConfigIssues,
 	isExternalPreviewAppKey,
@@ -63,15 +58,16 @@ import {
 	type PreviewAppProviderValue,
 	type PreviewAppsEditorApp,
 	type PreviewAppsEditorConfig,
-	type PreviewAppsEditorRule,
 	parsePreviewAppsConfig,
 	parsePreviewAppsDelimitedInput,
-	removePreviewRuleAppKey,
-	renamePreviewRuleAppKey,
 	serializePreviewAppsConfig,
 } from "./previewAppsConfigEditorShared";
 
 interface PreviewAppsConfigEditorProps {
+	onBuildWopiDiscoveryPreviewConfig?: (input: {
+		discoveryUrl: string;
+		value: string;
+	}) => Promise<string>;
 	onChange: (value: string) => void;
 	value: string;
 }
@@ -87,30 +83,6 @@ type UrlTemplateMagicVariable = {
 	token: string;
 };
 
-type RuleMatchGroup = {
-	key: string;
-	label: string;
-	values: string[];
-};
-
-type RuleMatchSummaryItem = {
-	key: string;
-	label: string;
-	text: string;
-};
-
-type SelectedRuleApp = {
-	app: PreviewAppsEditorApp;
-	index: number;
-	key: string;
-};
-
-const DETAIL_EXPAND_DURATION_MS = 280;
-const DETAIL_COLLAPSE_DURATION_MS = 240;
-const DETAIL_EXPAND_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
-const DETAIL_COLLAPSE_EASING = "cubic-bezier(0.32, 0, 0.67, 0.96)";
-const RULE_APP_SUMMARY_LIMIT = 2;
-const RULE_MATCH_SUMMARY_VALUE_LIMIT = 2;
 const URL_TEMPLATE_MAGIC_VARIABLES: UrlTemplateMagicVariable[] = [
 	{
 		token: "{{file_id}}",
@@ -154,14 +126,6 @@ function getProviderDefaultIcon(
 	provider?: PreviewAppProviderValue | null,
 ) {
 	return getPreviewAppDefaultIcon(key, provider);
-}
-
-function getProviderLabel(
-	key: string,
-	provider: PreviewAppProviderValue | undefined,
-	t: Translate,
-) {
-	return t(getPreviewAppKindLabelKey(key, provider));
 }
 
 function getTranslatedLegacyAppLabel(app: PreviewAppsEditorApp, t: Translate) {
@@ -214,145 +178,18 @@ function getTablePreviewDelimiterLabel(
 }
 
 function getAppSummary(app: PreviewAppsEditorApp, t: Translate) {
-	if (isTablePreviewAppKey(app.key)) {
-		const delimiter = normalizeTablePreviewDelimiter(app.config.delimiter);
-		return `${t("preview_apps_table_delimiter")}: ${getTablePreviewDelimiterLabel(delimiter, t)}`;
-	}
-
-	if (isUrlTemplatePreviewApp(app)) {
-		const mode =
-			typeof app.config.mode === "string" && app.config.mode === "new_tab"
-				? t("preview_apps_url_template_mode_new_tab")
-				: t("preview_apps_url_template_mode_iframe");
-		const urlTemplate =
-			typeof app.config.url_template === "string"
-				? app.config.url_template.trim()
-				: "";
-		return urlTemplate ? `${mode} · ${urlTemplate}` : mode;
-	}
-
-	if (isWopiPreviewApp(app)) {
-		const mode =
-			typeof app.config.mode === "string" && app.config.mode === "new_tab"
-				? t("preview_apps_wopi_mode_new_tab")
-				: t("preview_apps_wopi_mode_iframe");
-		const actionUrl =
-			typeof app.config.action_url === "string"
-				? app.config.action_url.trim()
-				: "";
-		const discoveryUrl =
-			typeof app.config.discovery_url === "string"
-				? app.config.discovery_url.trim()
-				: "";
-		const target = actionUrl || discoveryUrl;
-		return target
-			? `${t("preview_apps_provider_wopi")} · ${mode} · ${target}`
-			: `${t("preview_apps_provider_wopi")} · ${mode}`;
-	}
-
-	return getProviderLabel(app.key, app.provider, t);
+	return getExtensionSummary(app, t);
 }
 
-function getRuleMatchGroups(
-	rule: PreviewAppsEditorRule,
-	t: Translate,
-): RuleMatchGroup[] {
-	return [
-		{
-			key: "categories",
-			label: t("preview_apps_matches_categories"),
-			values: rule.matches.categories,
-		},
-		{
-			key: "extensions",
-			label: t("preview_apps_matches_extensions"),
-			values: rule.matches.extensions,
-		},
-		{
-			key: "mime_types",
-			label: t("preview_apps_matches_mime_types"),
-			values: rule.matches.mime_types,
-		},
-		{
-			key: "mime_prefixes",
-			label: t("preview_apps_matches_mime_prefixes"),
-			values: rule.matches.mime_prefixes,
-		},
-	].filter((group) => group.values.length > 0);
-}
-
-function formatRuleMatchSummaryValue(values: string[]) {
-	const visibleValues = values.slice(0, RULE_MATCH_SUMMARY_VALUE_LIMIT);
-	const summary = visibleValues.join(", ");
-	if (values.length <= RULE_MATCH_SUMMARY_VALUE_LIMIT) {
-		return summary;
+function getExtensionSummary(app: PreviewAppsEditorApp, t: Translate) {
+	if (app.extensions.length === 0) {
+		return t("preview_apps_extensions_any");
 	}
 
-	return `${summary} +${values.length - RULE_MATCH_SUMMARY_VALUE_LIMIT}`;
+	return formatPreviewAppsDelimitedInput(app.extensions);
 }
 
-function getRuleMatchSummaryItems(
-	rule: PreviewAppsEditorRule,
-	t: Translate,
-): RuleMatchSummaryItem[] {
-	return getRuleMatchGroups(rule, t).map((group) => ({
-		key: group.key,
-		label: group.label,
-		text: formatRuleMatchSummaryValue(group.values),
-	}));
-}
-
-function getSelectedRuleApps(
-	rule: PreviewAppsEditorRule,
-	apps: PreviewAppsEditorApp[],
-): SelectedRuleApp[] {
-	return apps.flatMap((app, index) => {
-		const key = app.key.trim();
-		if (!key || !rule.apps.includes(key)) {
-			return [];
-		}
-
-		return [{ app, index, key }];
-	});
-}
-
-function formatRuleAppSummary(
-	selectedApps: SelectedRuleApp[],
-	language: string | undefined,
-	t: Translate,
-) {
-	if (selectedApps.length === 0) {
-		return t("preview_apps_no_selected_apps");
-	}
-
-	const names = selectedApps
-		.slice(0, RULE_APP_SUMMARY_LIMIT)
-		.map((selectedApp) =>
-			getAppHeading(selectedApp.app, selectedApp.index, language, t),
-		);
-	const summary = names.join(", ");
-
-	if (selectedApps.length <= RULE_APP_SUMMARY_LIMIT) {
-		return summary;
-	}
-
-	return `${summary} +${selectedApps.length - RULE_APP_SUMMARY_LIMIT}`;
-}
-
-function normalizeRuleDefault(
-	rule: PreviewAppsEditorRule,
-): PreviewAppsEditorRule {
-	if (!rule.apps.includes(rule.default_app)) {
-		return {
-			...rule,
-			default_app: rule.apps[0] ?? "",
-		};
-	}
-
-	return rule;
-}
-
-function moveExpandedIndex(
+function moveActiveAppIndex(
 	current: number | null,
 	index: number,
 	direction: -1 | 1,
@@ -400,131 +237,430 @@ function EditorField({
 	);
 }
 
-function AnimatedCollapsible({
-	children,
-	className,
-	contentClassName,
-	open,
+function PreviewAppEditorFields({
+	app,
+	index,
+	protectedBuiltin,
+	t,
+	updateApp,
+	updateDraft,
+	onOpenUrlTemplateVariables,
 }: {
-	children: ReactNode;
-	className?: string;
-	contentClassName?: string;
-	open: boolean;
+	app: PreviewAppsEditorApp;
+	index: number;
+	protectedBuiltin: boolean;
+	t: Translate;
+	updateApp: (
+		index: number,
+		updater: (app: PreviewAppsEditorApp) => PreviewAppsEditorApp,
+	) => void;
+	updateDraft: (
+		updater: (current: PreviewAppsEditorConfig) => PreviewAppsEditorConfig,
+	) => void;
+	onOpenUrlTemplateVariables: () => void;
 }) {
-	const containerRef = useRef<HTMLDivElement | null>(null);
-	const contentRef = useRef<HTMLDivElement | null>(null);
-	const [mounted, setMounted] = useState(open);
-
-	useEffect(() => {
-		if (typeof window === "undefined") {
-			setMounted(open);
-			return;
-		}
-
-		if (open) {
-			setMounted(true);
-		}
-	}, [open]);
-
-	useLayoutEffect(() => {
-		if (typeof window === "undefined" || !mounted) {
-			return;
-		}
-
-		const container = containerRef.current;
-		const content = contentRef.current;
-		if (!container || !content) {
-			return;
-		}
-
-		const prefersReducedMotion =
-			typeof window.matchMedia === "function" &&
-			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-		const duration = prefersReducedMotion
-			? 0
-			: open
-				? DETAIL_EXPAND_DURATION_MS
-				: DETAIL_COLLAPSE_DURATION_MS;
-		let frameA: number | null = null;
-		let frameB: number | null = null;
-		let timer: number | null = null;
-		const fullHeight = `${content.scrollHeight}px`;
-
-		container.style.overflow = "hidden";
-		container.style.transitionProperty = "max-height, opacity";
-		container.style.transitionDuration = `${duration}ms`;
-		container.style.transitionTimingFunction = open
-			? DETAIL_EXPAND_EASING
-			: DETAIL_COLLAPSE_EASING;
-
-		if (open) {
-			container.style.maxHeight = "0px";
-			container.style.opacity = "0";
-			frameA = window.requestAnimationFrame(() => {
-				frameB = window.requestAnimationFrame(() => {
-					container.style.maxHeight = fullHeight;
-					container.style.opacity = "1";
-				});
-			});
-			timer = window.setTimeout(() => {
-				container.style.maxHeight = "none";
-				container.style.opacity = "1";
-			}, duration);
-		} else {
-			container.style.maxHeight = fullHeight;
-			container.style.opacity = "1";
-			frameA = window.requestAnimationFrame(() => {
-				container.style.maxHeight = "0px";
-				container.style.opacity = "0";
-			});
-			timer = window.setTimeout(() => {
-				setMounted(false);
-			}, duration);
-		}
-
-		return () => {
-			if (frameA !== null) {
-				window.cancelAnimationFrame(frameA);
-			}
-			if (frameB !== null) {
-				window.cancelAnimationFrame(frameB);
-			}
-			if (timer !== null) {
-				window.clearTimeout(timer);
-			}
-		};
-	}, [mounted, open]);
-
-	if (!mounted) {
-		return null;
-	}
-
 	return (
-		<div
-			ref={containerRef}
-			aria-hidden={!open}
-			className={cn("overflow-hidden", className)}
-		>
-			<div ref={contentRef} className={cn("min-h-0", contentClassName)}>
-				{children}
-			</div>
+		<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+			<EditorField label={t("preview_apps_key_label")}>
+				<Input
+					disabled={protectedBuiltin}
+					value={app.key}
+					onChange={(event) => {
+						const nextKey = event.target.value;
+						updateDraft((current) => {
+							return {
+								...current,
+								apps: current.apps.map((candidate, appIndex) =>
+									appIndex === index
+										? { ...candidate, key: nextKey }
+										: candidate,
+								),
+							};
+						});
+					}}
+				/>
+				{protectedBuiltin ? (
+					<p className="text-xs text-muted-foreground">
+						{t("preview_apps_builtin_key_locked")}
+					</p>
+				) : null}
+			</EditorField>
+			<EditorField
+				label={t("preview_apps_icon_label")}
+				description={t("preview_apps_icon_hint")}
+			>
+				<Input
+					value={app.icon}
+					onChange={(event) =>
+						updateApp(index, (current) => ({
+							...current,
+							icon: event.target.value,
+						}))
+					}
+				/>
+			</EditorField>
+			{!protectedBuiltin ? (
+				<EditorField label={t("preview_apps_provider_label")}>
+					<Select
+						items={[
+							{
+								label: t("preview_apps_provider_url_template"),
+								value: "url_template",
+							},
+							{
+								label: t("preview_apps_provider_wopi"),
+								value: "wopi",
+							},
+						]}
+						value={getPreviewAppProvider(app.provider) || "url_template"}
+						onValueChange={(provider) =>
+							updateApp(index, (current) => ({
+								...current,
+								provider: provider === "wopi" ? "wopi" : "url_template",
+								config: {
+									...current.config,
+									mode:
+										typeof current.config.mode === "string"
+											? current.config.mode
+											: "iframe",
+								},
+							}))
+						}
+					>
+						<SelectTrigger
+							size="sm"
+							aria-label={t("preview_apps_provider_label")}
+						>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="url_template">
+								{t("preview_apps_provider_url_template")}
+							</SelectItem>
+							<SelectItem value="wopi">
+								{t("preview_apps_provider_wopi")}
+							</SelectItem>
+						</SelectContent>
+					</Select>
+				</EditorField>
+			) : null}
+			<EditorField label={t("preview_apps_label_zh_label")}>
+				<Input
+					value={app.labels.zh ?? ""}
+					onChange={(event) =>
+						updateApp(index, (current) => ({
+							...current,
+							labels: {
+								...current.labels,
+								zh: event.target.value,
+							},
+						}))
+					}
+				/>
+			</EditorField>
+			<EditorField label={t("preview_apps_label_en_label")}>
+				<Input
+					value={app.labels.en ?? ""}
+					onChange={(event) =>
+						updateApp(index, (current) => ({
+							...current,
+							labels: {
+								...current.labels,
+								en: event.target.value,
+							},
+						}))
+					}
+				/>
+			</EditorField>
+			<EditorField
+				className="md:col-span-2 xl:col-span-2"
+				label={t("preview_apps_matches_extensions")}
+				description={t("preview_apps_list_input_hint")}
+			>
+				<Input
+					placeholder={t("preview_apps_matches_extensions_placeholder")}
+					value={formatPreviewAppsDelimitedInput(app.extensions)}
+					onChange={(event) =>
+						updateApp(index, (current) => ({
+							...current,
+							extensions: parsePreviewAppsDelimitedInput(event.target.value),
+						}))
+					}
+				/>
+			</EditorField>
+			{isTablePreviewAppKey(app.key) ? (
+				<EditorField label={t("preview_apps_table_delimiter")}>
+					<Select
+						items={[
+							{
+								label: getTablePreviewDelimiterLabel("auto", t),
+								value: "auto",
+							},
+							{
+								label: getTablePreviewDelimiterLabel(",", t),
+								value: ",",
+							},
+							{
+								label: getTablePreviewDelimiterLabel("\t", t),
+								value: "\t",
+							},
+							{
+								label: getTablePreviewDelimiterLabel(";", t),
+								value: ";",
+							},
+							{
+								label: getTablePreviewDelimiterLabel("|", t),
+								value: "|",
+							},
+						]}
+						value={normalizeTablePreviewDelimiter(app.config.delimiter)}
+						onValueChange={(delimiter) =>
+							updateApp(index, (current) => ({
+								...current,
+								config: {
+									...current.config,
+									delimiter: normalizeTablePreviewDelimiter(delimiter),
+								},
+							}))
+						}
+					>
+						<SelectTrigger
+							size="sm"
+							aria-label={t("preview_apps_table_delimiter")}
+						>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{(["auto", ",", "\t", ";", "|"] as const).map((delimiter) => (
+								<SelectItem key={delimiter} value={delimiter}>
+									{getTablePreviewDelimiterLabel(delimiter, t)}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</EditorField>
+			) : null}
+			{isUrlTemplatePreviewApp(app) ? (
+				<>
+					<EditorField label={t("preview_apps_url_template_mode")}>
+						<Select
+							items={[
+								{
+									label: t("preview_apps_url_template_mode_iframe"),
+									value: "iframe",
+								},
+								{
+									label: t("preview_apps_url_template_mode_new_tab"),
+									value: "new_tab",
+								},
+							]}
+							value={
+								typeof app.config.mode === "string" ? app.config.mode : "iframe"
+							}
+							onValueChange={(mode) =>
+								updateApp(index, (current) => ({
+									...current,
+									config: {
+										...current.config,
+										mode: mode ?? "iframe",
+									},
+								}))
+							}
+						>
+							<SelectTrigger
+								size="sm"
+								aria-label={t("preview_apps_url_template_mode")}
+							>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="iframe">
+									{t("preview_apps_url_template_mode_iframe")}
+								</SelectItem>
+								<SelectItem value="new_tab">
+									{t("preview_apps_url_template_mode_new_tab")}
+								</SelectItem>
+							</SelectContent>
+						</Select>
+					</EditorField>
+					<EditorField
+						className="md:col-span-2 xl:col-span-2"
+						label={t("preview_apps_url_template_url")}
+						description={
+							<div className="space-y-2">
+								<p>{t("preview_apps_url_template_variables_hint")}</p>
+								<button
+									type="button"
+									className="w-fit text-left text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline"
+									onClick={onOpenUrlTemplateVariables}
+								>
+									{t("preview_apps_url_template_variables_link")}
+								</button>
+							</div>
+						}
+					>
+						<Input
+							value={
+								typeof app.config.url_template === "string"
+									? app.config.url_template
+									: ""
+							}
+							onChange={(event) =>
+								updateApp(index, (current) => ({
+									...current,
+									config: {
+										...current.config,
+										url_template: event.target.value,
+									},
+								}))
+							}
+						/>
+					</EditorField>
+					<EditorField
+						className="md:col-span-2 xl:col-span-3"
+						label={t("preview_apps_url_template_allowed_origins")}
+					>
+						<Input
+							value={formatPreviewAppsDelimitedInput(
+								Array.isArray(app.config.allowed_origins)
+									? app.config.allowed_origins.filter(
+											(value): value is string => typeof value === "string",
+										)
+									: [],
+							)}
+							onChange={(event) =>
+								updateApp(index, (current) => ({
+									...current,
+									config: {
+										...current.config,
+										allowed_origins: parsePreviewAppsDelimitedInput(
+											event.target.value,
+										),
+									},
+								}))
+							}
+						/>
+					</EditorField>
+				</>
+			) : null}
+			{isWopiPreviewApp(app) ? (
+				<>
+					<EditorField
+						label={t("preview_apps_wopi_mode")}
+						description={t("preview_apps_wopi_mode_desc")}
+					>
+						<Select
+							items={[
+								{
+									label: t("preview_apps_wopi_mode_iframe"),
+									value: "iframe",
+								},
+								{
+									label: t("preview_apps_wopi_mode_new_tab"),
+									value: "new_tab",
+								},
+							]}
+							value={
+								typeof app.config.mode === "string" ? app.config.mode : "iframe"
+							}
+							onValueChange={(mode) =>
+								updateApp(index, (current) => ({
+									...current,
+									config: {
+										...current.config,
+										mode: mode ?? "iframe",
+									},
+								}))
+							}
+						>
+							<SelectTrigger size="sm" aria-label={t("preview_apps_wopi_mode")}>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="iframe">
+									{t("preview_apps_wopi_mode_iframe")}
+								</SelectItem>
+								<SelectItem value="new_tab">
+									{t("preview_apps_wopi_mode_new_tab")}
+								</SelectItem>
+							</SelectContent>
+						</Select>
+					</EditorField>
+					<EditorField
+						className="md:col-span-2 xl:col-span-2"
+						label={t("preview_apps_wopi_action_url")}
+						description={t("preview_apps_wopi_action_url_desc")}
+					>
+						<Input
+							value={
+								typeof app.config.action_url === "string"
+									? app.config.action_url
+									: ""
+							}
+							onChange={(event) =>
+								updateApp(index, (current) => ({
+									...current,
+									config: {
+										...current.config,
+										action_url: event.target.value,
+									},
+								}))
+							}
+						/>
+					</EditorField>
+					<EditorField
+						className="md:col-span-2 xl:col-span-2"
+						label={t("preview_apps_wopi_discovery_url")}
+						description={t("preview_apps_wopi_discovery_url_desc")}
+					>
+						<Input
+							value={
+								typeof app.config.discovery_url === "string"
+									? app.config.discovery_url
+									: ""
+							}
+							onChange={(event) =>
+								updateApp(index, (current) => ({
+									...current,
+									config: {
+										...current.config,
+										discovery_url: event.target.value,
+									},
+								}))
+							}
+						/>
+					</EditorField>
+					<EditorField
+						className="md:col-span-2 xl:col-span-2"
+						label={t("preview_apps_wopi_hint_title")}
+						description={t("preview_apps_wopi_hint_desc")}
+					>
+						<div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+							{t("preview_apps_wopi_hint_body")}
+						</div>
+					</EditorField>
+				</>
+			) : null}
 		</div>
 	);
 }
 
 export function PreviewAppsConfigEditor({
+	onBuildWopiDiscoveryPreviewConfig,
 	onChange,
 	value,
 }: PreviewAppsConfigEditorProps) {
 	const { i18n, t } = useTranslation(["admin", "files"]);
-	const [expandedAppIndex, setExpandedAppIndex] = useState<number | null>(null);
-	const [expandedRuleIndex, setExpandedRuleIndex] = useState<number | null>(
-		null,
-	);
+	const [addAppDialogOpen, setAddAppDialogOpen] = useState(false);
+	const [buildingWopiDiscoveryConfig, setBuildingWopiDiscoveryConfig] =
+		useState(false);
+	const [editingAppIndex, setEditingAppIndex] = useState<number | null>(null);
 	const [
 		activeUrlTemplateVariableAppIndex,
 		setActiveUrlTemplateVariableAppIndex,
 	] = useState<number | null>(null);
+	const [wopiDiscoveryDialogOpen, setWopiDiscoveryDialogOpen] = useState(false);
+	const [wopiDiscoveryUrl, setWopiDiscoveryUrl] = useState("");
 
 	const parsed = useMemo(() => {
 		try {
@@ -563,19 +699,18 @@ export function PreviewAppsConfigEditor({
 	const recoverDraft = useCallback(() => {
 		replaceDraft({
 			apps: [createPreviewAppDraft([])],
-			rules: [],
 			version: PREVIEW_APPS_CONFIG_VERSION,
 		});
-		setExpandedAppIndex(0);
-		setExpandedRuleIndex(null);
+		setEditingAppIndex(0);
 	}, [replaceDraft]);
 
-	const addApp = useCallback(() => {
+	const addEmbedApp = useCallback(() => {
 		if (!parsed.draft) {
 			return;
 		}
 
-		setExpandedAppIndex(parsed.draft.apps.length);
+		setAddAppDialogOpen(false);
+		setEditingAppIndex(parsed.draft.apps.length);
 		updateDraft((current) => ({
 			...current,
 			apps: [
@@ -585,17 +720,31 @@ export function PreviewAppsConfigEditor({
 		}));
 	}, [parsed.draft, updateDraft]);
 
-	const addRule = useCallback(() => {
-		if (!parsed.draft) {
+	const buildWopiDiscoveryConfig = useCallback(async () => {
+		if (!onBuildWopiDiscoveryPreviewConfig) {
 			return;
 		}
 
-		setExpandedRuleIndex(parsed.draft.rules.length);
-		updateDraft((current) => ({
-			...current,
-			rules: [...current.rules, createPreviewRuleDraft(current.apps)],
-		}));
-	}, [parsed.draft, updateDraft]);
+		const discoveryUrl = wopiDiscoveryUrl.trim();
+		if (!discoveryUrl) {
+			return;
+		}
+
+		setBuildingWopiDiscoveryConfig(true);
+		try {
+			const nextValue = await onBuildWopiDiscoveryPreviewConfig({
+				discoveryUrl,
+				value,
+			});
+			onChange(nextValue);
+			setWopiDiscoveryDialogOpen(false);
+			setWopiDiscoveryUrl("");
+		} catch {
+			// Errors are handled by the caller so the dialog can stay open for retry.
+		} finally {
+			setBuildingWopiDiscoveryConfig(false);
+		}
+	}, [onBuildWopiDiscoveryPreviewConfig, onChange, value, wopiDiscoveryUrl]);
 
 	const updateApp = useCallback(
 		(
@@ -612,40 +761,21 @@ export function PreviewAppsConfigEditor({
 		[updateDraft],
 	);
 
-	const updateRule = useCallback(
-		(
-			index: number,
-			updater: (rule: PreviewAppsEditorRule) => PreviewAppsEditorRule,
-		) => {
-			updateDraft((current) => ({
-				...current,
-				rules: current.rules.map((rule, ruleIndex) =>
-					ruleIndex === index ? normalizeRuleDefault(updater(rule)) : rule,
-				),
-			}));
-		},
-		[updateDraft],
-	);
-
 	useEffect(() => {
 		if (!parsed.draft) {
-			setExpandedAppIndex(null);
-			setExpandedRuleIndex(null);
+			setAddAppDialogOpen(false);
+			setEditingAppIndex(null);
 			setActiveUrlTemplateVariableAppIndex(null);
+			setWopiDiscoveryDialogOpen(false);
+			setWopiDiscoveryUrl("");
 			return;
 		}
 
-		setExpandedAppIndex((current) => {
+		setEditingAppIndex((current) => {
 			if (current === null) {
 				return null;
 			}
 			return current < parsed.draft.apps.length ? current : null;
-		});
-		setExpandedRuleIndex((current) => {
-			if (current === null) {
-				return null;
-			}
-			return current < parsed.draft.rules.length ? current : null;
 		});
 		setActiveUrlTemplateVariableAppIndex((current) => {
 			if (current === null) {
@@ -682,11 +812,18 @@ export function PreviewAppsConfigEditor({
 		(issue, issueIndex) => `${issue.key}::${issueIndex}`,
 	);
 	const appRowKeys = draft.apps.map((_app, index) => `app-row-${index}`);
-	const ruleRowKeys = draft.rules.map((_rule, index) => `rule-row-${index}`);
 	const activeUrlTemplateVariableApp =
 		activeUrlTemplateVariableAppIndex === null
 			? null
 			: (draft.apps[activeUrlTemplateVariableAppIndex] ?? null);
+	const activeEditingApp =
+		editingAppIndex === null ? null : (draft.apps[editingAppIndex] ?? null);
+	const activeEditingAppName = activeEditingApp
+		? getAppHeading(activeEditingApp, editingAppIndex ?? 0, i18n?.language, t)
+		: "";
+	const activeEditingAppProtectedBuiltin = activeEditingApp
+		? isProtectedBuiltinPreviewAppKey(activeEditingApp.key)
+		: false;
 	const activeUrlTemplateVariableAppName = activeUrlTemplateVariableApp
 		? getAppHeading(
 				activeUrlTemplateVariableApp,
@@ -716,10 +853,6 @@ export function PreviewAppsConfigEditor({
 						<span>
 							{t("preview_apps_app_count", { count: draft.apps.length })}
 						</span>
-						<span>·</span>
-						<span>
-							{t("preview_apps_rule_count", { count: draft.rules.length })}
-						</span>
 					</div>
 				</div>
 
@@ -748,7 +881,11 @@ export function PreviewAppsConfigEditor({
 								{t("preview_apps_apps_section_desc")}
 							</p>
 						</div>
-						<Button variant="outline" size="sm" onClick={addApp}>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => setAddAppDialogOpen(true)}
+						>
 							<Icon name="Plus" className="h-4 w-4" />
 							{t("preview_apps_add_app")}
 						</Button>
@@ -776,7 +913,7 @@ export function PreviewAppsConfigEditor({
 								</TableHeader>
 								<TableBody>
 									{draft.apps.map((app, index) => {
-										const rowExpanded = expandedAppIndex === index;
+										const rowEditing = editingAppIndex === index;
 										const rowKey = appRowKeys[index] ?? app.key;
 										const internalApp = isInternalPreviewApp(app);
 										const protectedBuiltin = isProtectedBuiltinPreviewAppKey(
@@ -790,688 +927,160 @@ export function PreviewAppsConfigEditor({
 										);
 
 										return (
-											<Fragment key={rowKey}>
-												<TableRow
-													className={cn(rowExpanded ? "bg-muted/20" : "")}
-												>
-													<TableCell>
-														<div className="flex size-9 items-center justify-center rounded-xl border border-border/50 bg-muted/25">
-															<PreviewAppIcon
-																icon={app.icon}
-																fallback={getProviderDefaultIcon(
-																	app.key,
-																	app.provider,
-																)}
-																className="h-4 w-4"
-															/>
+											<TableRow
+												key={rowKey}
+												className={cn(rowEditing ? "bg-muted/20" : "")}
+											>
+												<TableCell>
+													<div className="flex size-9 items-center justify-center rounded-xl border border-border/50 bg-muted/25">
+														<PreviewAppIcon
+															icon={app.icon}
+															fallback={getProviderDefaultIcon(
+																app.key,
+																app.provider,
+															)}
+															className="h-4 w-4"
+														/>
+													</div>
+												</TableCell>
+												<TableCell className="whitespace-normal">
+													<div className="space-y-1">
+														<div className="flex flex-wrap items-center gap-2">
+															<span className="font-medium">{appHeading}</span>
+															<Badge variant="outline">
+																{internalApp
+																	? t("preview_apps_internal_badge")
+																	: t("preview_apps_external_badge")}
+															</Badge>
 														</div>
-													</TableCell>
-													<TableCell className="whitespace-normal">
-														<div className="space-y-1">
-															<div className="flex flex-wrap items-center gap-2">
-																<span className="font-medium">
-																	{appHeading}
-																</span>
-																<Badge variant="outline">
-																	{internalApp
-																		? t("preview_apps_internal_badge")
-																		: t("preview_apps_external_badge")}
-																</Badge>
-															</div>
-														</div>
-													</TableCell>
-													<TableCell className="whitespace-normal">
-														<p className="line-clamp-2 text-sm text-muted-foreground break-all">
-															{getAppSummary(app, t)}
-														</p>
-													</TableCell>
-													<TableCell>
-														<div className="flex items-center gap-2">
-															<Switch
-																size="sm"
-																checked={app.enabled}
-																onCheckedChange={(enabled) =>
-																	updateApp(index, (current) => ({
-																		...current,
-																		enabled,
-																	}))
-																}
-															/>
-															<span className="text-xs text-muted-foreground">
-																{app.enabled
-																	? t("preview_apps_enabled")
-																	: t("preview_apps_disabled")}
-															</span>
-														</div>
-													</TableCell>
-													<TableCell>
-														<div className="flex items-center justify-end gap-1">
-															<Button
-																variant="ghost"
-																size="icon-sm"
-																disabled={index === 0}
-																aria-label={t("preview_apps_move_up")}
-																onClick={() => {
-																	setExpandedAppIndex((current) =>
-																		moveExpandedIndex(
-																			current,
-																			index,
-																			-1,
-																			draft.apps.length,
-																		),
-																	);
-																	updateDraft((current) => ({
-																		...current,
-																		apps: movePreviewEditorItem(
-																			current.apps,
-																			index,
-																			-1,
-																		),
-																	}));
-																}}
-															>
-																<Icon name="ArrowUp" className="h-4 w-4" />
-															</Button>
-															<Button
-																variant="ghost"
-																size="icon-sm"
-																disabled={index === draft.apps.length - 1}
-																aria-label={t("preview_apps_move_down")}
-																onClick={() => {
-																	setExpandedAppIndex((current) =>
-																		moveExpandedIndex(
-																			current,
-																			index,
-																			1,
-																			draft.apps.length,
-																		),
-																	);
-																	updateDraft((current) => ({
-																		...current,
-																		apps: movePreviewEditorItem(
-																			current.apps,
-																			index,
-																			1,
-																		),
-																	}));
-																}}
-															>
-																<Icon name="ArrowDown" className="h-4 w-4" />
-															</Button>
-															<Button
-																variant="ghost"
-																size="icon-sm"
-																aria-label={
-																	rowExpanded
-																		? t("preview_apps_collapse")
-																		: t("preview_apps_expand")
-																}
-																onClick={() =>
-																	setExpandedAppIndex((current) =>
-																		current === index ? null : index,
-																	)
-																}
-															>
-																<Icon
-																	name="CaretDown"
-																	className={cn(
-																		"h-4 w-4 transition-transform duration-200 ease-out motion-reduce:transition-none",
-																		rowExpanded ? "rotate-180" : "",
-																	)}
-																/>
-															</Button>
-															<Button
-																variant="ghost"
-																size="icon-sm"
-																className="text-destructive"
-																disabled={protectedBuiltin}
-																aria-label={
-																	protectedBuiltin
-																		? t("preview_apps_builtin_delete_disabled")
-																		: t("core:delete")
-																}
-																onClick={() => {
-																	if (protectedBuiltin) {
-																		return;
-																	}
-																	setExpandedAppIndex((current) => {
-																		if (current === null) {
-																			return null;
-																		}
-																		if (current === index) {
-																			return null;
-																		}
-																		return current > index
-																			? current - 1
-																			: current;
-																	});
-																	updateDraft((current) => {
-																		const removedKey =
-																			current.apps[index]?.key ?? "";
-																		return {
-																			...current,
-																			apps: current.apps.filter(
-																				(_app, appIndex) => appIndex !== index,
-																			),
-																			rules: removedKey
-																				? removePreviewRuleAppKey(
-																						current.rules,
-																						removedKey,
-																					)
-																				: current.rules,
-																		};
-																	});
-																}}
-															>
-																<Icon name="Trash" className="h-4 w-4" />
-															</Button>
-														</div>
-													</TableCell>
-												</TableRow>
-												<TableRow className="border-b-0 hover:bg-transparent">
-													<TableCell
-														colSpan={5}
-														className="whitespace-normal bg-muted/10 p-0 first:pl-0 last:pr-0 md:first:pl-0 md:last:pr-0"
-													>
-														<AnimatedCollapsible
-															open={rowExpanded}
-															contentClassName="px-4 py-3 md:px-6"
+													</div>
+												</TableCell>
+												<TableCell className="whitespace-normal">
+													<p className="line-clamp-2 text-sm text-muted-foreground break-all">
+														{getAppSummary(app, t)}
+													</p>
+												</TableCell>
+												<TableCell>
+													<div className="flex items-center gap-2">
+														<Switch
+															size="sm"
+															checked={app.enabled}
+															onCheckedChange={(enabled) =>
+																updateApp(index, (current) => ({
+																	...current,
+																	enabled,
+																}))
+															}
+														/>
+														<span className="text-xs text-muted-foreground">
+															{app.enabled
+																? t("preview_apps_enabled")
+																: t("preview_apps_disabled")}
+														</span>
+													</div>
+												</TableCell>
+												<TableCell>
+													<div className="flex items-center justify-end gap-1">
+														<Button
+															variant="ghost"
+															size="icon-sm"
+															disabled={index === 0}
+															aria-label={t("preview_apps_move_up")}
+															onClick={() => {
+																setEditingAppIndex((current) =>
+																	moveActiveAppIndex(
+																		current,
+																		index,
+																		-1,
+																		draft.apps.length,
+																	),
+																);
+																updateDraft((current) => ({
+																	...current,
+																	apps: movePreviewEditorItem(
+																		current.apps,
+																		index,
+																		-1,
+																	),
+																}));
+															}}
 														>
-															<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-																<EditorField
-																	label={t("preview_apps_key_label")}
-																>
-																	<Input
-																		disabled={protectedBuiltin}
-																		value={app.key}
-																		onChange={(event) => {
-																			const nextKey = event.target.value;
-																			updateDraft((current) => {
-																				const previousKey =
-																					current.apps[index]?.key ?? "";
-																				return {
-																					...current,
-																					apps: current.apps.map(
-																						(candidate, appIndex) =>
-																							appIndex === index
-																								? { ...candidate, key: nextKey }
-																								: candidate,
-																					),
-																					rules:
-																						previousKey &&
-																						previousKey !== nextKey
-																							? renamePreviewRuleAppKey(
-																									current.rules,
-																									previousKey,
-																									nextKey,
-																								)
-																							: current.rules,
-																				};
-																			});
-																		}}
-																	/>
-																	{protectedBuiltin ? (
-																		<p className="text-xs text-muted-foreground">
-																			{t("preview_apps_builtin_key_locked")}
-																		</p>
-																	) : null}
-																</EditorField>
-																<EditorField
-																	label={t("preview_apps_icon_label")}
-																	description={t("preview_apps_icon_hint")}
-																>
-																	<Input
-																		value={app.icon}
-																		onChange={(event) =>
-																			updateApp(index, (current) => ({
-																				...current,
-																				icon: event.target.value,
-																			}))
-																		}
-																	/>
-																</EditorField>
-																{!protectedBuiltin ? (
-																	<EditorField
-																		label={t("preview_apps_provider_label")}
-																	>
-																		<Select
-																			items={[
-																				{
-																					label: t(
-																						"preview_apps_provider_url_template",
-																					),
-																					value: "url_template",
-																				},
-																				{
-																					label: t(
-																						"preview_apps_provider_wopi",
-																					),
-																					value: "wopi",
-																				},
-																			]}
-																			value={
-																				getPreviewAppProvider(app.provider) ||
-																				"url_template"
-																			}
-																			onValueChange={(provider) =>
-																				updateApp(index, (current) => ({
-																					...current,
-																					provider:
-																						provider === "wopi"
-																							? "wopi"
-																							: "url_template",
-																					config: {
-																						...current.config,
-																						mode:
-																							typeof current.config.mode ===
-																							"string"
-																								? current.config.mode
-																								: "iframe",
-																					},
-																				}))
-																			}
-																		>
-																			<SelectTrigger
-																				size="sm"
-																				aria-label={t(
-																					"preview_apps_provider_label",
-																				)}
-																			>
-																				<SelectValue />
-																			</SelectTrigger>
-																			<SelectContent>
-																				<SelectItem value="url_template">
-																					{t(
-																						"preview_apps_provider_url_template",
-																					)}
-																				</SelectItem>
-																				<SelectItem value="wopi">
-																					{t("preview_apps_provider_wopi")}
-																				</SelectItem>
-																			</SelectContent>
-																		</Select>
-																	</EditorField>
-																) : null}
-																<EditorField
-																	label={t("preview_apps_label_zh_label")}
-																>
-																	<Input
-																		value={app.labels.zh ?? ""}
-																		onChange={(event) =>
-																			updateApp(index, (current) => ({
-																				...current,
-																				labels: {
-																					...current.labels,
-																					zh: event.target.value,
-																				},
-																			}))
-																		}
-																	/>
-																</EditorField>
-																<EditorField
-																	label={t("preview_apps_label_en_label")}
-																>
-																	<Input
-																		value={app.labels.en ?? ""}
-																		onChange={(event) =>
-																			updateApp(index, (current) => ({
-																				...current,
-																				labels: {
-																					...current.labels,
-																					en: event.target.value,
-																				},
-																			}))
-																		}
-																	/>
-																</EditorField>
-																{isTablePreviewAppKey(app.key) ? (
-																	<EditorField
-																		label={t("preview_apps_table_delimiter")}
-																	>
-																		<Select
-																			items={[
-																				{
-																					label: getTablePreviewDelimiterLabel(
-																						"auto",
-																						t,
-																					),
-																					value: "auto",
-																				},
-																				{
-																					label: getTablePreviewDelimiterLabel(
-																						",",
-																						t,
-																					),
-																					value: ",",
-																				},
-																				{
-																					label: getTablePreviewDelimiterLabel(
-																						"\t",
-																						t,
-																					),
-																					value: "\t",
-																				},
-																				{
-																					label: getTablePreviewDelimiterLabel(
-																						";",
-																						t,
-																					),
-																					value: ";",
-																				},
-																				{
-																					label: getTablePreviewDelimiterLabel(
-																						"|",
-																						t,
-																					),
-																					value: "|",
-																				},
-																			]}
-																			value={normalizeTablePreviewDelimiter(
-																				app.config.delimiter,
-																			)}
-																			onValueChange={(delimiter) =>
-																				updateApp(index, (current) => ({
-																					...current,
-																					config: {
-																						...current.config,
-																						delimiter:
-																							normalizeTablePreviewDelimiter(
-																								delimiter,
-																							),
-																					},
-																				}))
-																			}
-																		>
-																			<SelectTrigger
-																				size="sm"
-																				aria-label={t(
-																					"preview_apps_table_delimiter",
-																				)}
-																			>
-																				<SelectValue />
-																			</SelectTrigger>
-																			<SelectContent>
-																				{(
-																					["auto", ",", "\t", ";", "|"] as const
-																				).map((delimiter) => (
-																					<SelectItem
-																						key={delimiter}
-																						value={delimiter}
-																					>
-																						{getTablePreviewDelimiterLabel(
-																							delimiter,
-																							t,
-																						)}
-																					</SelectItem>
-																				))}
-																			</SelectContent>
-																		</Select>
-																	</EditorField>
-																) : null}
-																{isUrlTemplatePreviewApp(app) ? (
-																	<>
-																		<EditorField
-																			label={t(
-																				"preview_apps_url_template_mode",
-																			)}
-																		>
-																			<Select
-																				items={[
-																					{
-																						label: t(
-																							"preview_apps_url_template_mode_iframe",
-																						),
-																						value: "iframe",
-																					},
-																					{
-																						label: t(
-																							"preview_apps_url_template_mode_new_tab",
-																						),
-																						value: "new_tab",
-																					},
-																				]}
-																				value={
-																					typeof app.config.mode === "string"
-																						? app.config.mode
-																						: "iframe"
-																				}
-																				onValueChange={(mode) =>
-																					updateApp(index, (current) => ({
-																						...current,
-																						config: {
-																							...current.config,
-																							mode: mode ?? "iframe",
-																						},
-																					}))
-																				}
-																			>
-																				<SelectTrigger
-																					size="sm"
-																					aria-label={t(
-																						"preview_apps_url_template_mode",
-																					)}
-																				>
-																					<SelectValue />
-																				</SelectTrigger>
-																				<SelectContent>
-																					<SelectItem value="iframe">
-																						{t(
-																							"preview_apps_url_template_mode_iframe",
-																						)}
-																					</SelectItem>
-																					<SelectItem value="new_tab">
-																						{t(
-																							"preview_apps_url_template_mode_new_tab",
-																						)}
-																					</SelectItem>
-																				</SelectContent>
-																			</Select>
-																		</EditorField>
-																		<EditorField
-																			className="md:col-span-2 xl:col-span-2"
-																			label={t("preview_apps_url_template_url")}
-																			description={
-																				<div className="space-y-2">
-																					<p>
-																						{t(
-																							"preview_apps_url_template_variables_hint",
-																						)}
-																					</p>
-																					<button
-																						type="button"
-																						className="w-fit text-left text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline"
-																						onClick={() =>
-																							setActiveUrlTemplateVariableAppIndex(
-																								index,
-																							)
-																						}
-																					>
-																						{t(
-																							"preview_apps_url_template_variables_link",
-																						)}
-																					</button>
-																				</div>
-																			}
-																		>
-																			<Input
-																				value={
-																					typeof app.config.url_template ===
-																					"string"
-																						? app.config.url_template
-																						: ""
-																				}
-																				onChange={(event) =>
-																					updateApp(index, (current) => ({
-																						...current,
-																						config: {
-																							...current.config,
-																							url_template: event.target.value,
-																						},
-																					}))
-																				}
-																			/>
-																		</EditorField>
-																		<EditorField
-																			className="md:col-span-2 xl:col-span-3"
-																			label={t(
-																				"preview_apps_url_template_allowed_origins",
-																			)}
-																		>
-																			<Input
-																				value={formatPreviewAppsDelimitedInput(
-																					Array.isArray(
-																						app.config.allowed_origins,
-																					)
-																						? app.config.allowed_origins.filter(
-																								(value): value is string =>
-																									typeof value === "string",
-																							)
-																						: [],
-																				)}
-																				onChange={(event) =>
-																					updateApp(index, (current) => ({
-																						...current,
-																						config: {
-																							...current.config,
-																							allowed_origins:
-																								parsePreviewAppsDelimitedInput(
-																									event.target.value,
-																								),
-																						},
-																					}))
-																				}
-																			/>
-																		</EditorField>
-																	</>
-																) : null}
-																{isWopiPreviewApp(app) ? (
-																	<>
-																		<EditorField
-																			label={t("preview_apps_wopi_mode")}
-																			description={t(
-																				"preview_apps_wopi_mode_desc",
-																			)}
-																		>
-																			<Select
-																				items={[
-																					{
-																						label: t(
-																							"preview_apps_wopi_mode_iframe",
-																						),
-																						value: "iframe",
-																					},
-																					{
-																						label: t(
-																							"preview_apps_wopi_mode_new_tab",
-																						),
-																						value: "new_tab",
-																					},
-																				]}
-																				value={
-																					typeof app.config.mode === "string"
-																						? app.config.mode
-																						: "iframe"
-																				}
-																				onValueChange={(mode) =>
-																					updateApp(index, (current) => ({
-																						...current,
-																						config: {
-																							...current.config,
-																							mode: mode ?? "iframe",
-																						},
-																					}))
-																				}
-																			>
-																				<SelectTrigger
-																					size="sm"
-																					aria-label={t(
-																						"preview_apps_wopi_mode",
-																					)}
-																				>
-																					<SelectValue />
-																				</SelectTrigger>
-																				<SelectContent>
-																					<SelectItem value="iframe">
-																						{t("preview_apps_wopi_mode_iframe")}
-																					</SelectItem>
-																					<SelectItem value="new_tab">
-																						{t(
-																							"preview_apps_wopi_mode_new_tab",
-																						)}
-																					</SelectItem>
-																				</SelectContent>
-																			</Select>
-																		</EditorField>
-																		<EditorField
-																			className="md:col-span-2 xl:col-span-2"
-																			label={t("preview_apps_wopi_action_url")}
-																			description={t(
-																				"preview_apps_wopi_action_url_desc",
-																			)}
-																		>
-																			<Input
-																				value={
-																					typeof app.config.action_url ===
-																					"string"
-																						? app.config.action_url
-																						: ""
-																				}
-																				onChange={(event) =>
-																					updateApp(index, (current) => ({
-																						...current,
-																						config: {
-																							...current.config,
-																							action_url: event.target.value,
-																						},
-																					}))
-																				}
-																			/>
-																		</EditorField>
-																		<EditorField
-																			className="md:col-span-2 xl:col-span-2"
-																			label={t(
-																				"preview_apps_wopi_discovery_url",
-																			)}
-																			description={t(
-																				"preview_apps_wopi_discovery_url_desc",
-																			)}
-																		>
-																			<Input
-																				value={
-																					typeof app.config.discovery_url ===
-																					"string"
-																						? app.config.discovery_url
-																						: ""
-																				}
-																				onChange={(event) =>
-																					updateApp(index, (current) => ({
-																						...current,
-																						config: {
-																							...current.config,
-																							discovery_url: event.target.value,
-																						},
-																					}))
-																				}
-																			/>
-																		</EditorField>
-																		<EditorField
-																			className="md:col-span-2 xl:col-span-2"
-																			label={t("preview_apps_wopi_hint_title")}
-																			description={t(
-																				"preview_apps_wopi_hint_desc",
-																			)}
-																		>
-																			<div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-																				{t("preview_apps_wopi_hint_body")}
-																			</div>
-																		</EditorField>
-																	</>
-																) : null}
-															</div>
-														</AnimatedCollapsible>
-													</TableCell>
-												</TableRow>
-											</Fragment>
+															<Icon name="ArrowUp" className="h-4 w-4" />
+														</Button>
+														<Button
+															variant="ghost"
+															size="icon-sm"
+															disabled={index === draft.apps.length - 1}
+															aria-label={t("preview_apps_move_down")}
+															onClick={() => {
+																setEditingAppIndex((current) =>
+																	moveActiveAppIndex(
+																		current,
+																		index,
+																		1,
+																		draft.apps.length,
+																	),
+																);
+																updateDraft((current) => ({
+																	...current,
+																	apps: movePreviewEditorItem(
+																		current.apps,
+																		index,
+																		1,
+																	),
+																}));
+															}}
+														>
+															<Icon name="ArrowDown" className="h-4 w-4" />
+														</Button>
+														<Button
+															variant="ghost"
+															size="icon-sm"
+															aria-label={t("preview_apps_edit")}
+															onClick={() => setEditingAppIndex(index)}
+														>
+															<Icon name="PencilSimple" className="h-4 w-4" />
+														</Button>
+														<Button
+															variant="ghost"
+															size="icon-sm"
+															className="text-destructive"
+															disabled={protectedBuiltin}
+															aria-label={
+																protectedBuiltin
+																	? t("preview_apps_builtin_delete_disabled")
+																	: t("core:delete")
+															}
+															onClick={() => {
+																if (protectedBuiltin) {
+																	return;
+																}
+																setEditingAppIndex((current) => {
+																	if (current === null) {
+																		return null;
+																	}
+																	if (current === index) {
+																		return null;
+																	}
+																	return current > index
+																		? current - 1
+																		: current;
+																});
+																updateDraft((current) => {
+																	return {
+																		...current,
+																		apps: current.apps.filter(
+																			(_app, appIndex) => appIndex !== index,
+																		),
+																	};
+																});
+															}}
+														>
+															<Icon name="Trash" className="h-4 w-4" />
+														</Button>
+													</div>
+												</TableCell>
+											</TableRow>
 										);
 									})}
 								</TableBody>
@@ -1479,478 +1088,152 @@ export function PreviewAppsConfigEditor({
 						</div>
 					)}
 				</section>
-
-				<section className="space-y-4">
-					<div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-						<div className="space-y-1">
-							<h4 className="text-sm font-semibold">
-								{t("preview_apps_rules_section")}
-							</h4>
-							<p className="text-sm text-muted-foreground">
-								{t("preview_apps_rules_section_desc")}
-							</p>
-						</div>
-						<Button variant="outline" size="sm" onClick={addRule}>
-							<Icon name="Plus" className="h-4 w-4" />
-							{t("preview_apps_add_rule")}
-						</Button>
-					</div>
-
-					{draft.rules.length === 0 ? (
-						<p className="text-sm text-muted-foreground">
-							{t("preview_apps_no_rules")}
-						</p>
-					) : (
-						<div className="grid gap-3 xl:grid-cols-2">
-							{draft.rules.map((rule, index) => {
-								const rowExpanded = expandedRuleIndex === index;
-								const rowKey = ruleRowKeys[index] ?? `rule-${index}`;
-								const defaultValue = rule.default_app || "__none__";
-								const selectedApps = getSelectedRuleApps(rule, draft.apps);
-								const defaultApp =
-									selectedApps.find(
-										(candidate) => candidate.key === rule.default_app.trim(),
-									) ?? null;
-								const matchSummaryItems = getRuleMatchSummaryItems(rule, t);
-
-								return (
-									<div
-										key={rowKey}
-										className={cn(
-											"self-start overflow-hidden rounded-2xl border border-border/60 bg-background transition-colors",
-											rowExpanded
-												? "border-border bg-muted/10 xl:col-span-2"
-												: "",
-										)}
-									>
-										<div className="space-y-3 p-4 md:p-5">
-											<div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-												<div className="flex min-w-0 flex-wrap items-center gap-2">
-													<span className="text-sm font-semibold">
-														{t("preview_apps_rule_title", {
-															index: index + 1,
-														})}
-													</span>
-													{defaultApp ? (
-														<Badge variant="secondary">
-															{t("preview_apps_rule_default_badge", {
-																name: getAppHeading(
-																	defaultApp.app,
-																	defaultApp.index,
-																	i18n?.language,
-																	t,
-																),
-															})}
-														</Badge>
-													) : (
-														<Badge variant="outline">
-															{t("preview_apps_rule_default_none_badge")}
-														</Badge>
-													)}
-												</div>
-												<div className="flex flex-wrap items-center gap-1 self-start md:justify-end">
-													<Button
-														variant="ghost"
-														size="icon-sm"
-														disabled={index === 0}
-														aria-label={t("preview_apps_move_up")}
-														onClick={() => {
-															setExpandedRuleIndex((current) =>
-																moveExpandedIndex(
-																	current,
-																	index,
-																	-1,
-																	draft.rules.length,
-																),
-															);
-															updateDraft((current) => ({
-																...current,
-																rules: movePreviewEditorItem(
-																	current.rules,
-																	index,
-																	-1,
-																),
-															}));
-														}}
-													>
-														<Icon name="ArrowUp" className="h-4 w-4" />
-													</Button>
-													<Button
-														variant="ghost"
-														size="icon-sm"
-														disabled={index === draft.rules.length - 1}
-														aria-label={t("preview_apps_move_down")}
-														onClick={() => {
-															setExpandedRuleIndex((current) =>
-																moveExpandedIndex(
-																	current,
-																	index,
-																	1,
-																	draft.rules.length,
-																),
-															);
-															updateDraft((current) => ({
-																...current,
-																rules: movePreviewEditorItem(
-																	current.rules,
-																	index,
-																	1,
-																),
-															}));
-														}}
-													>
-														<Icon name="ArrowDown" className="h-4 w-4" />
-													</Button>
-													<Button
-														variant="ghost"
-														size="icon-sm"
-														aria-label={
-															rowExpanded
-																? t("preview_apps_collapse")
-																: t("preview_apps_expand")
-														}
-														onClick={() =>
-															setExpandedRuleIndex((current) =>
-																current === index ? null : index,
-															)
-														}
-													>
-														<Icon
-															name="CaretDown"
-															className={cn(
-																"h-4 w-4 transition-transform duration-200 ease-out motion-reduce:transition-none",
-																rowExpanded ? "rotate-180" : "",
-															)}
-														/>
-													</Button>
-													<Button
-														variant="ghost"
-														size="icon-sm"
-														className="text-destructive"
-														aria-label={t("core:delete")}
-														onClick={() => {
-															setExpandedRuleIndex((current) => {
-																if (current === null) {
-																	return null;
-																}
-																if (current === index) {
-																	return null;
-																}
-																return current > index ? current - 1 : current;
-															});
-															updateDraft((current) => ({
-																...current,
-																rules: current.rules.filter(
-																	(_rule, ruleIndex) => ruleIndex !== index,
-																),
-															}));
-														}}
-													>
-														<Icon name="Trash" className="h-4 w-4" />
-													</Button>
-												</div>
-											</div>
-
-											<div className="flex flex-wrap gap-2">
-												{matchSummaryItems.length > 0 ? (
-													matchSummaryItems.map((item) => (
-														<div
-															key={item.key}
-															className="inline-flex max-w-full items-baseline gap-1.5 rounded-full border border-border/50 bg-muted/20 px-3 py-1.5 text-sm"
-														>
-															<span className="shrink-0 text-muted-foreground">
-																{item.label}
-															</span>
-															<span className="break-all font-medium text-foreground/90">
-																{item.text}
-															</span>
-														</div>
-													))
-												) : (
-													<Badge variant="outline">
-														{t("preview_apps_rule_no_matches")}
-													</Badge>
-												)}
-												<div className="inline-flex max-w-full items-baseline gap-1.5 rounded-full border border-border/50 bg-muted/20 px-3 py-1.5 text-sm">
-													<span className="shrink-0 text-muted-foreground">
-														{t("preview_apps_rule_apps_short_label")}
-													</span>
-													<span className="break-all font-medium text-foreground/90">
-														{formatRuleAppSummary(
-															selectedApps,
-															i18n?.language,
-															t,
-														)}
-													</span>
-												</div>
-											</div>
-										</div>
-
-										<AnimatedCollapsible
-											open={rowExpanded}
-											contentClassName="border-t border-border/50 bg-muted/10 px-4 py-4 md:px-5"
-										>
-											<div className="grid gap-4 xl:grid-cols-2">
-												<div className="rounded-xl border border-border/50 bg-background/80 p-4">
-													<div className="space-y-1">
-														<p className="text-sm font-medium">
-															{t("preview_apps_column_matches")}
-														</p>
-														<p className="text-xs text-muted-foreground">
-															{t("preview_apps_rule_matches_help")}
-														</p>
-													</div>
-													<div className="mt-4 grid gap-4 md:grid-cols-2">
-														<EditorField
-															label={t("preview_apps_matches_categories")}
-															description={t(
-																"preview_apps_matches_categories_desc",
-															)}
-														>
-															<Input
-																placeholder={t(
-																	"preview_apps_matches_categories_placeholder",
-																)}
-																value={formatPreviewAppsDelimitedInput(
-																	rule.matches.categories,
-																)}
-																onChange={(event) =>
-																	updateRule(index, (current) => ({
-																		...current,
-																		matches: {
-																			...current.matches,
-																			categories:
-																				parsePreviewAppsDelimitedInput(
-																					event.target.value,
-																				),
-																		},
-																	}))
-																}
-															/>
-														</EditorField>
-														<EditorField
-															label={t("preview_apps_matches_extensions")}
-														>
-															<Input
-																placeholder={t(
-																	"preview_apps_matches_extensions_placeholder",
-																)}
-																value={formatPreviewAppsDelimitedInput(
-																	rule.matches.extensions,
-																)}
-																onChange={(event) =>
-																	updateRule(index, (current) => ({
-																		...current,
-																		matches: {
-																			...current.matches,
-																			extensions:
-																				parsePreviewAppsDelimitedInput(
-																					event.target.value,
-																				),
-																		},
-																	}))
-																}
-															/>
-														</EditorField>
-														<EditorField
-															label={t("preview_apps_matches_mime_types")}
-														>
-															<Input
-																placeholder={t(
-																	"preview_apps_matches_mime_types_placeholder",
-																)}
-																value={formatPreviewAppsDelimitedInput(
-																	rule.matches.mime_types,
-																)}
-																onChange={(event) =>
-																	updateRule(index, (current) => ({
-																		...current,
-																		matches: {
-																			...current.matches,
-																			mime_types:
-																				parsePreviewAppsDelimitedInput(
-																					event.target.value,
-																				),
-																		},
-																	}))
-																}
-															/>
-														</EditorField>
-														<EditorField
-															label={t("preview_apps_matches_mime_prefixes")}
-														>
-															<Input
-																placeholder={t(
-																	"preview_apps_matches_mime_prefixes_placeholder",
-																)}
-																value={formatPreviewAppsDelimitedInput(
-																	rule.matches.mime_prefixes,
-																)}
-																onChange={(event) =>
-																	updateRule(index, (current) => ({
-																		...current,
-																		matches: {
-																			...current.matches,
-																			mime_prefixes:
-																				parsePreviewAppsDelimitedInput(
-																					event.target.value,
-																				),
-																		},
-																	}))
-																}
-															/>
-														</EditorField>
-													</div>
-												</div>
-
-												<div className="rounded-xl border border-border/50 bg-background/80 p-4">
-													<div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-														<div className="space-y-1">
-															<p className="text-sm font-medium">
-																{t("preview_apps_rule_apps_label")}
-															</p>
-															<p className="text-xs text-muted-foreground">
-																{t("preview_apps_rule_apps_help")}
-															</p>
-														</div>
-														<EditorField
-															className="xl:w-72"
-															label={t("preview_apps_rule_default_label")}
-														>
-															<Select
-																items={[
-																	{
-																		label: t("preview_apps_default_none"),
-																		value: "__none__",
-																	},
-																	...selectedApps.map((selectedApp) => ({
-																		label: getAppHeading(
-																			selectedApp.app,
-																			selectedApp.index,
-																			i18n?.language,
-																			t,
-																		),
-																		value: selectedApp.key,
-																	})),
-																]}
-																value={defaultValue}
-																onValueChange={(nextValue) =>
-																	updateRule(index, (current) => ({
-																		...current,
-																		default_app:
-																			nextValue == null ||
-																			nextValue === "__none__"
-																				? ""
-																				: nextValue,
-																	}))
-																}
-															>
-																<SelectTrigger
-																	size="sm"
-																	className="w-full"
-																	aria-label={t(
-																		"preview_apps_rule_default_label",
-																	)}
-																>
-																	<SelectValue />
-																</SelectTrigger>
-																<SelectContent>
-																	<SelectItem value="__none__">
-																		{t("preview_apps_default_none")}
-																	</SelectItem>
-																	{selectedApps.map((selectedApp) => (
-																		<SelectItem
-																			key={selectedApp.key}
-																			value={selectedApp.key}
-																		>
-																			{getAppHeading(
-																				selectedApp.app,
-																				selectedApp.index,
-																				i18n?.language,
-																				t,
-																			)}
-																		</SelectItem>
-																	))}
-																</SelectContent>
-															</Select>
-														</EditorField>
-													</div>
-													<div className="mt-3 flex flex-wrap gap-2">
-														{draft.apps.map((app, appIndex) => {
-															const appKey = app.key.trim();
-															const selected =
-																appKey.length > 0 && rule.apps.includes(appKey);
-
-															return (
-																<Button
-																	key={appRowKeys[appIndex] ?? app.key}
-																	type="button"
-																	variant="outline"
-																	size="sm"
-																	className={cn(
-																		"max-w-full gap-2 rounded-full px-3",
-																		selected
-																			? "border-primary/40 bg-primary/5 text-primary hover:bg-primary/10"
-																			: "",
-																	)}
-																	onClick={() => {
-																		if (!appKey) {
-																			return;
-																		}
-																		updateRule(index, (current) => {
-																			const apps = current.apps.includes(appKey)
-																				? current.apps.filter(
-																						(candidate) => candidate !== appKey,
-																					)
-																				: [...current.apps, appKey];
-																			return {
-																				...current,
-																				apps,
-																				default_app: apps.includes(
-																					current.default_app,
-																				)
-																					? current.default_app
-																					: (apps[0] ?? ""),
-																			};
-																		});
-																	}}
-																>
-																	<PreviewAppIcon
-																		icon={app.icon}
-																		fallback={getProviderDefaultIcon(
-																			app.key,
-																			app.provider,
-																		)}
-																		className="h-3.5 w-3.5"
-																	/>
-																	<span className="truncate">
-																		{getAppHeading(
-																			app,
-																			appIndex,
-																			i18n?.language,
-																			t,
-																		)}
-																	</span>
-																	{selected ? (
-																		<Icon
-																			name="Check"
-																			className="h-3.5 w-3.5"
-																		/>
-																	) : null}
-																</Button>
-															);
-														})}
-													</div>
-												</div>
-											</div>
-										</AnimatedCollapsible>
-									</div>
-								);
-							})}
-						</div>
-					)}
-				</section>
 			</div>
+
+			<Dialog
+				open={addAppDialogOpen}
+				onOpenChange={(open) => {
+					setAddAppDialogOpen(open);
+				}}
+			>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>{t("preview_apps_add_dialog_title")}</DialogTitle>
+						<DialogDescription>
+							{t("preview_apps_add_dialog_desc")}
+						</DialogDescription>
+					</DialogHeader>
+					<div className="grid gap-3 py-2">
+						<Button
+							variant="outline"
+							className="h-auto w-full min-w-0 items-start justify-start px-4 py-4 text-left whitespace-normal"
+							onClick={addEmbedApp}
+						>
+							<div className="min-w-0 space-y-1">
+								<p className="break-words font-medium">
+									{t("preview_apps_add_dialog_embed_title")}
+								</p>
+								<p className="break-words text-sm text-muted-foreground">
+									{t("preview_apps_add_dialog_embed_desc")}
+								</p>
+							</div>
+						</Button>
+						{onBuildWopiDiscoveryPreviewConfig ? (
+							<Button
+								variant="outline"
+								className="h-auto w-full min-w-0 items-start justify-start px-4 py-4 text-left whitespace-normal"
+								onClick={() => {
+									setAddAppDialogOpen(false);
+									setWopiDiscoveryDialogOpen(true);
+								}}
+							>
+								<div className="min-w-0 space-y-1">
+									<p className="break-words font-medium">
+										{t("preview_apps_add_dialog_wopi_title")}
+									</p>
+									<p className="break-words text-sm text-muted-foreground">
+										{t("preview_apps_add_dialog_wopi_desc")}
+									</p>
+								</div>
+							</Button>
+						) : null}
+					</div>
+					<DialogFooter showCloseButton />
+				</DialogContent>
+			</Dialog>
+
+			<Dialog
+				open={wopiDiscoveryDialogOpen}
+				onOpenChange={(open) => {
+					setWopiDiscoveryDialogOpen(open);
+					if (!open) {
+						setWopiDiscoveryUrl("");
+					}
+				}}
+			>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>
+							{t("preview_apps_wopi_discovery_dialog_title")}
+						</DialogTitle>
+						<DialogDescription>
+							{t("preview_apps_wopi_discovery_dialog_desc")}
+						</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-2 py-2">
+						<p className="text-xs font-medium text-muted-foreground">
+							{t("preview_apps_wopi_discovery_dialog_label")}
+						</p>
+						<Input
+							aria-label={t("preview_apps_wopi_discovery_dialog_label")}
+							placeholder={t("preview_apps_wopi_discovery_dialog_placeholder")}
+							value={wopiDiscoveryUrl}
+							onChange={(event) => setWopiDiscoveryUrl(event.target.value)}
+						/>
+					</div>
+					<DialogFooter>
+						<Button
+							variant="outline"
+							onClick={() => {
+								setWopiDiscoveryDialogOpen(false);
+								setWopiDiscoveryUrl("");
+							}}
+						>
+							{t("core:cancel")}
+						</Button>
+						<Button
+							disabled={
+								buildingWopiDiscoveryConfig ||
+								wopiDiscoveryUrl.trim().length === 0
+							}
+							onClick={() => void buildWopiDiscoveryConfig()}
+						>
+							{buildingWopiDiscoveryConfig
+								? t("preview_apps_wopi_discovery_dialog_loading")
+								: t("preview_apps_wopi_discovery_dialog_submit")}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog
+				open={activeEditingApp !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setEditingAppIndex(null);
+						setActiveUrlTemplateVariableAppIndex(null);
+					}
+				}}
+			>
+				<DialogContent className="max-w-[calc(100%-1.5rem)] sm:max-w-[min(72rem,calc(100vw-2rem))]">
+					<DialogHeader>
+						<DialogTitle>
+							{t("preview_apps_dialog_title", {
+								name: activeEditingAppName,
+							})}
+						</DialogTitle>
+						<DialogDescription>
+							{t("preview_apps_dialog_desc")}
+						</DialogDescription>
+					</DialogHeader>
+					{activeEditingApp ? (
+						<div className="max-h-[min(72vh,46rem)] overflow-y-auto py-2 pr-1">
+							<PreviewAppEditorFields
+								app={activeEditingApp}
+								index={editingAppIndex ?? 0}
+								protectedBuiltin={activeEditingAppProtectedBuiltin}
+								t={t}
+								updateApp={updateApp}
+								updateDraft={updateDraft}
+								onOpenUrlTemplateVariables={() =>
+									setActiveUrlTemplateVariableAppIndex(editingAppIndex ?? 0)
+								}
+							/>
+						</div>
+					) : null}
+					<DialogFooter showCloseButton />
+				</DialogContent>
+			</Dialog>
 
 			<Dialog
 				open={activeUrlTemplateVariableAppIndex !== null}

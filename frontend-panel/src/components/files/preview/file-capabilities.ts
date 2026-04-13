@@ -10,7 +10,6 @@ import {
 import type {
 	PreviewAppProvider,
 	PublicPreviewAppDefinition,
-	PublicPreviewAppRule,
 	PublicPreviewAppsConfig,
 } from "@/types/api";
 import type {
@@ -471,8 +470,8 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	json: [
 		{
-			key: "formatted_json",
-			mode: "formatted_json",
+			key: "formatted",
+			mode: "formatted",
 			labelKey: "open_with_formatted",
 			icon: PREVIEW_APP_ICON_URLS.json,
 		},
@@ -485,8 +484,8 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	xml: [
 		{
-			key: "formatted_xml",
-			mode: "formatted_xml",
+			key: "formatted",
+			mode: "formatted",
 			labelKey: "open_with_formatted",
 			icon: PREVIEW_APP_ICON_URLS.xml,
 		},
@@ -510,8 +509,7 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 const BUILTIN_KEY_BY_LEGACY_OPTION_KEY: Partial<Record<string, string>> = {
 	audio: "builtin.audio",
 	code: "builtin.code",
-	formatted_json: "builtin.formatted_json",
-	formatted_xml: "builtin.formatted_xml",
+	formatted: "builtin.formatted",
 	image: "builtin.image",
 	markdown: "builtin.markdown",
 	office_google: "builtin.office_google",
@@ -523,7 +521,6 @@ const BUILTIN_KEY_BY_LEGACY_OPTION_KEY: Partial<Record<string, string>> = {
 };
 
 type ConfiguredPreviewApp = PublicPreviewAppDefinition;
-type ConfiguredPreviewRule = PublicPreviewAppRule;
 
 function mergeOpenWithOptions(...groups: OpenWithOption[][]): OpenWithOption[] {
 	const merged: OpenWithOption[] = [];
@@ -755,7 +752,7 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "formatted_json",
+			defaultMode: "formatted",
 			options: OPEN_WITH_OPTIONS.json,
 		};
 	}
@@ -765,7 +762,7 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "formatted_xml",
+			defaultMode: "formatted",
 			options: OPEN_WITH_OPTIONS.xml,
 		};
 	}
@@ -811,6 +808,7 @@ function detectLegacyFilePreviewProfile(
 
 function normalizeConfiguredOption(
 	app: ConfiguredPreviewApp,
+	category: FilePreviewProfile["category"],
 ): OpenWithOption | null {
 	const provider = getConfiguredPreviewProvider(app);
 	if (!provider) {
@@ -827,7 +825,7 @@ function normalizeConfiguredOption(
 		mode,
 		labelKey: app.label_i18n_key ?? "",
 		labels: app.labels ?? undefined,
-		icon: app.icon?.trim() || getConfiguredPreviewIcon(app.key),
+		icon: getConfiguredPreviewIcon(app, category),
 		config: (app.config as Record<string, unknown> | undefined) ?? {},
 	};
 }
@@ -835,22 +833,46 @@ function normalizeConfiguredOption(
 function normalizeLegacyOptionForConfiguredProfile(
 	option: OpenWithOption,
 	appMap: Map<string, OpenWithOption>,
-	disabledKeys = new Set<string>(),
+	unavailableBuiltinKeys = new Set<string>(),
 ) {
 	const builtinKey = BUILTIN_KEY_BY_LEGACY_OPTION_KEY[option.key];
 	if (!builtinKey) {
 		return option;
 	}
 
-	if (disabledKeys.has(builtinKey)) {
+	if (unavailableBuiltinKeys.has(builtinKey)) {
 		return null;
 	}
 
 	return appMap.get(builtinKey) ?? option;
 }
 
-function getConfiguredPreviewIcon(key: string): string {
+function getConfiguredBuiltinPreviewIcon(
+	key: string,
+	category: FilePreviewProfile["category"],
+) {
+	if (key === "builtin.formatted") {
+		return category === "xml"
+			? PREVIEW_APP_ICON_URLS.xml
+			: PREVIEW_APP_ICON_URLS.json;
+	}
+
 	return getBuiltinPreviewAppIconUrl(key);
+}
+
+function getConfiguredPreviewIcon(
+	app: ConfiguredPreviewApp,
+	category: FilePreviewProfile["category"],
+): string {
+	const configuredIcon = app.icon?.trim() ?? "";
+	const defaultIcon = getBuiltinPreviewAppIconUrl(app.key);
+	const builtinIcon = getConfiguredBuiltinPreviewIcon(app.key, category);
+
+	if (!configuredIcon || configuredIcon === defaultIcon) {
+		return builtinIcon;
+	}
+
+	return configuredIcon;
 }
 
 function getConfiguredPreviewProvider(
@@ -898,10 +920,8 @@ function getConfiguredPreviewMode(
 			return "markdown";
 		case BUILTIN_TABLE_PREVIEW_APP_KEY:
 			return "table";
-		case "builtin.formatted_json":
-			return "formatted_json";
-		case "builtin.formatted_xml":
-			return "formatted_xml";
+		case "builtin.formatted":
+			return "formatted";
 		case "builtin.code":
 		case "builtin.try_text":
 			return "code";
@@ -910,41 +930,18 @@ function getConfiguredPreviewMode(
 	}
 }
 
-function matchesConfiguredRule(
+function matchesConfiguredApp(
 	file: PreviewableFileLike,
-	category: FilePreviewProfile["category"],
-	rule: ConfiguredPreviewRule,
+	app: ConfiguredPreviewApp,
 ) {
 	const extension = getFileExtension(file);
-	const mimeType = file.mime_type.toLowerCase();
-	const matches = rule.matches ?? {};
-	const extensions: string[] = matches.extensions ?? [];
-	const mimeTypes: string[] = matches.mime_types ?? [];
-	const mimePrefixes: string[] = matches.mime_prefixes ?? [];
-	const categories: string[] = matches.categories ?? [];
-	const hasConditions =
-		extensions.length > 0 ||
-		mimeTypes.length > 0 ||
-		mimePrefixes.length > 0 ||
-		categories.length > 0;
+	if (!extension) {
+		return false;
+	}
 
-	if (!hasConditions) return true;
-
-	const matchesExtension =
-		extensions.length > 0 &&
-		extensions.some((candidate) => candidate === extension);
-	const matchesMimeType =
-		mimeTypes.length > 0 &&
-		mimeTypes.some((candidate) => candidate === mimeType);
-	const matchesMimePrefix =
-		mimePrefixes.length > 0 &&
-		mimePrefixes.some((candidate) => mimeType.startsWith(candidate));
-	const matchesCategory =
-		categories.length > 0 &&
-		categories.some((candidate) => candidate === category);
-
-	return (
-		matchesExtension || matchesMimeType || matchesMimePrefix || matchesCategory
+	return (app.extensions ?? []).some(
+		(candidate) =>
+			candidate.trim().replace(/^\./, "").toLowerCase() === extension,
 	);
 }
 
@@ -954,18 +951,12 @@ function detectConfiguredFilePreviewProfile(
 ): FilePreviewProfile {
 	const legacyProfile = detectLegacyFilePreviewProfile(file);
 	const allConfiguredApps = previewApps.apps ?? [];
-	const disabledAppKeys = new Set(
-		allConfiguredApps
-			.filter((app) => !isConfiguredPreviewAppEnabled(app))
-			.map((app) => app.key),
-	);
 	const configuredApps = allConfiguredApps.filter(
 		isConfiguredPreviewAppEnabled,
 	);
-	const configuredRules = previewApps.rules ?? [];
 	const configuredOptions = configuredApps
 		.map((app) => {
-			const option = normalizeConfiguredOption(app);
+			const option = normalizeConfiguredOption(app, legacyProfile.category);
 			return option ? ([app.key, option] as const) : null;
 		})
 		.filter(
@@ -975,61 +966,49 @@ function detectConfiguredFilePreviewProfile(
 				entry !== null,
 		);
 	const appMap = new Map(configuredOptions);
-	const options: OpenWithOption[] = [];
-	let defaultMode: string | null = null;
-
-	for (const rule of configuredRules) {
-		if (!matchesConfiguredRule(file, legacyProfile.category, rule)) {
-			continue;
-		}
-
-		for (const appKey of rule.apps ?? []) {
-			const option = appMap.get(appKey);
-			if (
-				!option ||
-				options.some((candidate) => candidate.key === option.key)
-			) {
-				continue;
-			}
-			options.push(option);
-		}
-	}
+	const availableAppKeys = new Set(configuredApps.map((app) => app.key));
+	const unavailableBuiltinKeys = new Set(
+		Object.values(BUILTIN_KEY_BY_LEGACY_OPTION_KEY).filter(
+			(key): key is string => {
+				if (!key) {
+					return false;
+				}
+				return !availableAppKeys.has(key);
+			},
+		),
+	);
+	const matchedConfiguredOptions = configuredApps
+		.filter((app) => matchesConfiguredApp(file, app))
+		.map((app) => appMap.get(app.key) ?? null)
+		.filter((option): option is OpenWithOption => option !== null);
 
 	const fallbackOptions = legacyProfile.options
 		.map((option) =>
 			normalizeLegacyOptionForConfiguredProfile(
 				option,
 				appMap,
-				disabledAppKeys,
+				unavailableBuiltinKeys,
 			),
 		)
 		.filter((option): option is OpenWithOption => option !== null);
-	const registeredOptions = configuredOptions.map(([, option]) => option);
-	const allOptions = mergeOpenWithOptions(
-		options,
-		registeredOptions,
+	const options = mergeOpenWithOptions(
+		matchedConfiguredOptions,
 		fallbackOptions,
 	);
-
-	for (const rule of configuredRules) {
-		if (!matchesConfiguredRule(file, legacyProfile.category, rule)) {
-			continue;
-		}
-		if (
-			defaultMode === null &&
-			rule.default_app &&
-			allOptions.some((option) => option.key === rule.default_app)
-		) {
-			defaultMode = rule.default_app;
-		}
-	}
+	const registeredOptions = configuredOptions.map(([, option]) => option);
+	const allOptions = mergeOpenWithOptions(options, registeredOptions);
+	let defaultMode = matchedConfiguredOptions[0]?.key ?? null;
 
 	if (defaultMode === null && legacyProfile.defaultMode) {
 		const legacyDefaultOption = legacyProfile.options.find(
 			(option) => option.key === legacyProfile.defaultMode,
 		);
 		const legacyDefault = legacyDefaultOption
-			? normalizeLegacyOptionForConfiguredProfile(legacyDefaultOption, appMap)
+			? normalizeLegacyOptionForConfiguredProfile(
+					legacyDefaultOption,
+					appMap,
+					unavailableBuiltinKeys,
+				)
 			: null;
 		if (
 			legacyDefault &&

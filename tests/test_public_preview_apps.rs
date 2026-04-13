@@ -16,17 +16,13 @@ async fn test_public_preview_apps_returns_default_registry() {
     assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["version"], 1);
+    assert_eq!(body["data"]["version"], 2);
     assert!(
         body["data"]["apps"]
             .as_array()
             .is_some_and(|apps| !apps.is_empty())
     );
-    assert!(
-        body["data"]["rules"]
-            .as_array()
-            .is_some_and(|rules| !rules.is_empty())
-    );
+    assert!(body["data"].get("rules").is_none());
     assert!(body["data"]["apps"].as_array().unwrap().iter().any(|app| {
         app["key"] == "builtin.code"
             && app["labels"]["en"] == "Source view"
@@ -36,6 +32,11 @@ async fn test_public_preview_apps_returns_default_registry() {
         app["key"] == "builtin.try_text"
             && app["icon"] == "/static/preview-apps/file.svg"
             && app["labels"]["en"] == "Open as text"
+    }));
+    assert!(body["data"]["apps"].as_array().unwrap().iter().any(|app| {
+        app["key"] == "builtin.formatted"
+            && app["extensions"] == json!(["json", "xml"])
+            && app["labels"]["zh"] == "格式化视图"
     }));
 }
 
@@ -70,20 +71,12 @@ async fn test_public_preview_apps_uses_admin_config_and_filters_disabled_apps() 
         "labels": {
             "en": "Viewer"
         },
+        "extensions": ["txt"],
         "config": {
             "mode": "iframe",
             "url_template": "https://viewer.example.com/?src={{file_preview_url}}"
         }
     }));
-    custom_config["rules"] = json!([
-        {
-            "matches": {
-                "categories": ["text"]
-            },
-            "apps": ["custom.viewer", "builtin.code"],
-            "default_app": "builtin.code"
-        }
-    ]);
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/frontend_preview_apps_json")
@@ -105,13 +98,7 @@ async fn test_public_preview_apps_uses_admin_config_and_filters_disabled_apps() 
         .expect("apps should be an array");
     assert_eq!(apps.len(), 1);
     assert_eq!(apps[0]["key"], "builtin.code");
-
-    let rules = body["data"]["rules"]
-        .as_array()
-        .expect("rules should be an array");
-    assert_eq!(rules.len(), 1);
-    assert_eq!(rules[0]["apps"], json!(["builtin.code"]));
-    assert_eq!(rules[0]["default_app"], "builtin.code");
+    assert!(body["data"].get("rules").is_none());
 }
 
 #[actix_web::test]
@@ -147,7 +134,7 @@ async fn test_admin_preview_apps_config_rejects_builtin_removal() {
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(json!({
             "value": json!({
-                "version": 1,
+                "version": 2,
                 "apps": [
                     {
                         "key": "custom.viewer",
@@ -156,16 +143,11 @@ async fn test_admin_preview_apps_config_rejects_builtin_removal() {
                         "labels": {
                             "en": "Viewer"
                         },
+                        "extensions": ["txt"],
                         "config": {
                             "mode": "iframe",
                             "url_template": "https://viewer.example.com/?src={{file_preview_url}}"
                         }
-                    }
-                ],
-                "rules": [
-                    {
-                        "apps": ["custom.viewer"],
-                        "matches": { "categories": ["text"] }
                     }
                 ]
             }).to_string()

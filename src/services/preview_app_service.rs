@@ -9,7 +9,7 @@ use crate::runtime::AppState;
 
 pub const PREVIEW_APPS_CONFIG_KEY: &str = "frontend_preview_apps_json";
 
-const PREVIEW_APPS_VERSION: i32 = 1;
+const PREVIEW_APPS_VERSION: i32 = 2;
 const BUILTIN_TABLE_PREVIEW_APP_KEY: &str = "builtin.table";
 const DEFAULT_TABLE_PREVIEW_DELIMITER: &str = "auto";
 const PREVIEW_APP_ICON_AUDIO: &str = "/static/preview-apps/audio.svg";
@@ -23,7 +23,6 @@ const PREVIEW_APP_ICON_MICROSOFT_ONEDRIVE: &str = "/static/preview-apps/microsof
 const PREVIEW_APP_ICON_PDF: &str = "/static/preview-apps/pdf.svg";
 const PREVIEW_APP_ICON_TABLE: &str = "/static/preview-apps/table.svg";
 const PREVIEW_APP_ICON_VIDEO: &str = "/static/preview-apps/video.svg";
-const PREVIEW_APP_ICON_XML: &str = "/static/preview-apps/xml.svg";
 
 const REQUIRED_BUILTIN_PREVIEW_APP_KEYS: &[&str] = &[
     "builtin.image",
@@ -32,8 +31,7 @@ const REQUIRED_BUILTIN_PREVIEW_APP_KEYS: &[&str] = &[
     "builtin.pdf",
     "builtin.markdown",
     BUILTIN_TABLE_PREVIEW_APP_KEY,
-    "builtin.formatted_json",
-    "builtin.formatted_xml",
+    "builtin.formatted",
     "builtin.code",
     "builtin.try_text",
 ];
@@ -46,8 +44,6 @@ pub struct PublicPreviewAppsConfig {
     pub version: i32,
     #[serde(default)]
     pub apps: Vec<PublicPreviewAppDefinition>,
-    #[serde(default)]
-    pub rules: Vec<PublicPreviewAppRule>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,34 +59,10 @@ pub struct PublicPreviewAppDefinition {
     pub label_i18n_key: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<String>,
     #[serde(default, skip_serializing_if = "PublicPreviewAppConfig::is_empty")]
     pub config: PublicPreviewAppConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PublicPreviewAppRule {
-    #[serde(default)]
-    pub matches: PublicPreviewAppMatch,
-    #[serde(default)]
-    pub apps: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_app: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PublicPreviewAppMatch {
-    #[serde(default)]
-    pub extensions: Vec<String>,
-    #[serde(default)]
-    pub mime_types: Vec<String>,
-    #[serde(default)]
-    pub mime_prefixes: Vec<String>,
-    #[serde(default)]
-    pub categories: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -199,40 +171,31 @@ pub fn default_public_preview_apps() -> PublicPreviewAppsConfig {
                 "builtin.image",
                 PREVIEW_APP_ICON_IMAGE,
                 labels(("en", "Image preview"), ("zh", "图片预览")),
+                &[],
             ),
             builtin_app(
                 "builtin.video",
                 PREVIEW_APP_ICON_VIDEO,
                 labels(("en", "Video preview"), ("zh", "视频预览")),
+                &[],
             ),
             builtin_app(
                 "builtin.audio",
                 PREVIEW_APP_ICON_AUDIO,
                 labels(("en", "Audio preview"), ("zh", "音频预览")),
+                &[],
             ),
             builtin_app(
                 "builtin.pdf",
                 PREVIEW_APP_ICON_PDF,
                 labels(("en", "PDF preview"), ("zh", "PDF 预览")),
-            ),
-            url_template_app(
-                "builtin.office_google",
-                PREVIEW_APP_ICON_GOOGLE_DRIVE,
-                labels(("en", "Google Viewer"), ("zh", "Google 预览器")),
-                PublicPreviewAppConfig {
-                    mode: Some(PreviewOpenMode::Iframe),
-                    url_template: Some(
-                        "https://docs.google.com/gview?embedded=true&url={{file_preview_url}}"
-                            .to_string(),
-                    ),
-                    allowed_origins: vec!["https://docs.google.com".to_string()],
-                    ..Default::default()
-                },
+                &["pdf"],
             ),
             url_template_app(
                 "builtin.office_microsoft",
                 PREVIEW_APP_ICON_MICROSOFT_ONEDRIVE,
                 labels(("en", "Microsoft Viewer"), ("zh", "Microsoft 预览器")),
+                &["doc", "docx", "xls", "xlsx", "ppt", "pptx"],
                 PublicPreviewAppConfig {
                     mode: Some(PreviewOpenMode::Iframe),
                     url_template: Some(
@@ -243,178 +206,57 @@ pub fn default_public_preview_apps() -> PublicPreviewAppsConfig {
                     ..Default::default()
                 },
             ),
+            url_template_app(
+                "builtin.office_google",
+                PREVIEW_APP_ICON_GOOGLE_DRIVE,
+                labels(("en", "Google Viewer"), ("zh", "Google 预览器")),
+                &[
+                    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp",
+                ],
+                PublicPreviewAppConfig {
+                    mode: Some(PreviewOpenMode::Iframe),
+                    url_template: Some(
+                        "https://docs.google.com/gview?embedded=true&url={{file_preview_url}}"
+                            .to_string(),
+                    ),
+                    allowed_origins: vec!["https://docs.google.com".to_string()],
+                    ..Default::default()
+                },
+            ),
             builtin_app(
                 "builtin.markdown",
                 PREVIEW_APP_ICON_MARKDOWN,
                 labels(("en", "Markdown preview"), ("zh", "Markdown 预览")),
+                &["md", "markdown"],
             ),
             builtin_app_with_config(
                 BUILTIN_TABLE_PREVIEW_APP_KEY,
                 PREVIEW_APP_ICON_TABLE,
                 labels(("en", "Table preview"), ("zh", "表格预览")),
+                &["csv", "tsv"],
                 PublicPreviewAppConfig {
                     delimiter: Some(DEFAULT_TABLE_PREVIEW_DELIMITER.to_string()),
                     ..Default::default()
                 },
             ),
             builtin_app(
-                "builtin.formatted_json",
+                "builtin.formatted",
                 PREVIEW_APP_ICON_JSON,
                 labels(("en", "Formatted view"), ("zh", "格式化视图")),
-            ),
-            builtin_app(
-                "builtin.formatted_xml",
-                PREVIEW_APP_ICON_XML,
-                labels(("en", "Formatted view"), ("zh", "格式化视图")),
+                &["json", "xml"],
             ),
             builtin_app(
                 "builtin.code",
                 PREVIEW_APP_ICON_CODE,
                 labels(("en", "Source view"), ("zh", "源码视图")),
+                &[],
             ),
             builtin_app(
                 "builtin.try_text",
                 PREVIEW_APP_ICON_FILE,
                 labels(("en", "Open as text"), ("zh", "以文本方式打开")),
+                &[],
             ),
-        ],
-        rules: vec![
-            category_rule("image", &["builtin.image"], Some("builtin.image")),
-            category_rule("video", &["builtin.video"], Some("builtin.video")),
-            category_rule("audio", &["builtin.audio"], Some("builtin.audio")),
-            category_rule("pdf", &["builtin.pdf"], Some("builtin.pdf")),
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["doc".to_string(), "docx".to_string()],
-                    mime_types: vec!["application/msword".to_string()],
-                    mime_prefixes: vec![
-                        "application/vnd.openxmlformats-officedocument.wordprocessingml"
-                            .to_string(),
-                    ],
-                    ..Default::default()
-                },
-                apps: vec![
-                    "builtin.office_microsoft".to_string(),
-                    "builtin.office_google".to_string(),
-                ],
-                default_app: Some("builtin.office_microsoft".to_string()),
-            },
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["xls".to_string(), "xlsx".to_string()],
-                    mime_types: vec!["application/vnd.ms-excel".to_string()],
-                    mime_prefixes: vec![
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml".to_string(),
-                    ],
-                    ..Default::default()
-                },
-                apps: vec![
-                    "builtin.office_microsoft".to_string(),
-                    "builtin.office_google".to_string(),
-                ],
-                default_app: Some("builtin.office_microsoft".to_string()),
-            },
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["ppt".to_string(), "pptx".to_string()],
-                    mime_types: vec!["application/vnd.ms-powerpoint".to_string()],
-                    mime_prefixes: vec![
-                        "application/vnd.openxmlformats-officedocument.presentationml".to_string(),
-                    ],
-                    ..Default::default()
-                },
-                apps: vec![
-                    "builtin.office_microsoft".to_string(),
-                    "builtin.office_google".to_string(),
-                ],
-                default_app: Some("builtin.office_microsoft".to_string()),
-            },
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["odt".to_string()],
-                    mime_types: vec!["application/vnd.oasis.opendocument.text".to_string()],
-                    ..Default::default()
-                },
-                apps: vec!["builtin.office_google".to_string()],
-                default_app: Some("builtin.office_google".to_string()),
-            },
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["ods".to_string()],
-                    mime_types: vec!["application/vnd.oasis.opendocument.spreadsheet".to_string()],
-                    ..Default::default()
-                },
-                apps: vec!["builtin.office_google".to_string()],
-                default_app: Some("builtin.office_google".to_string()),
-            },
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["odp".to_string()],
-                    mime_types: vec!["application/vnd.oasis.opendocument.presentation".to_string()],
-                    ..Default::default()
-                },
-                apps: vec!["builtin.office_google".to_string()],
-                default_app: Some("builtin.office_google".to_string()),
-            },
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["md".to_string(), "markdown".to_string()],
-                    mime_types: vec!["text/markdown".to_string()],
-                    ..Default::default()
-                },
-                apps: vec!["builtin.markdown".to_string(), "builtin.code".to_string()],
-                default_app: Some("builtin.markdown".to_string()),
-            },
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["csv".to_string()],
-                    mime_types: vec!["text/csv".to_string()],
-                    ..Default::default()
-                },
-                apps: vec![
-                    BUILTIN_TABLE_PREVIEW_APP_KEY.to_string(),
-                    "builtin.code".to_string(),
-                ],
-                default_app: Some(BUILTIN_TABLE_PREVIEW_APP_KEY.to_string()),
-            },
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["tsv".to_string()],
-                    mime_types: vec!["text/tab-separated-values".to_string()],
-                    ..Default::default()
-                },
-                apps: vec![
-                    BUILTIN_TABLE_PREVIEW_APP_KEY.to_string(),
-                    "builtin.code".to_string(),
-                ],
-                default_app: Some(BUILTIN_TABLE_PREVIEW_APP_KEY.to_string()),
-            },
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["json".to_string()],
-                    mime_types: vec!["application/json".to_string()],
-                    ..Default::default()
-                },
-                apps: vec![
-                    "builtin.formatted_json".to_string(),
-                    "builtin.code".to_string(),
-                ],
-                default_app: Some("builtin.formatted_json".to_string()),
-            },
-            PublicPreviewAppRule {
-                matches: PublicPreviewAppMatch {
-                    extensions: vec!["xml".to_string()],
-                    mime_types: vec!["text/xml".to_string(), "application/xml".to_string()],
-                    ..Default::default()
-                },
-                apps: vec![
-                    "builtin.formatted_xml".to_string(),
-                    "builtin.code".to_string(),
-                ],
-                default_app: Some("builtin.formatted_xml".to_string()),
-            },
-            category_rule("text", &["builtin.code"], Some("builtin.code")),
-            category_rule("unknown", &["builtin.try_text"], None),
         ],
     }
 }
@@ -457,38 +299,9 @@ fn parse_public_preview_apps_config(value: &str) -> Result<PublicPreviewAppsConf
 }
 
 fn build_public_preview_apps(config: PublicPreviewAppsConfig) -> PublicPreviewAppsConfig {
-    let enabled_keys: HashSet<&str> = config
-        .apps
-        .iter()
-        .filter(|app| app.enabled)
-        .map(|app| app.key.as_str())
-        .collect();
-
-    let rules = config
-        .rules
-        .into_iter()
-        .filter_map(|mut rule| {
-            rule.apps.retain(|key| enabled_keys.contains(key.as_str()));
-            if rule.apps.is_empty() {
-                return None;
-            }
-
-            if rule
-                .default_app
-                .as_deref()
-                .is_none_or(|key| !rule.apps.iter().any(|candidate| candidate == key))
-            {
-                rule.default_app = rule.apps.first().cloned();
-            }
-
-            Some(rule)
-        })
-        .collect();
-
     PublicPreviewAppsConfig {
         version: config.version,
         apps: config.apps.into_iter().filter(|app| app.enabled).collect(),
-        rules,
     }
 }
 
@@ -537,56 +350,14 @@ fn validate_preview_apps_config(config: &mut PublicPreviewAppsConfig) -> Result<
         }
     }
 
-    let app_keys: HashSet<&str> = config.apps.iter().map(|app| app.key.as_str()).collect();
-    for rule in &mut config.rules {
-        normalize_match_list(&mut rule.matches.extensions, normalize_extension)?;
-        normalize_match_list(&mut rule.matches.mime_types, normalize_mime)?;
-        normalize_match_list(&mut rule.matches.mime_prefixes, normalize_mime_prefix)?;
-        normalize_match_list(&mut rule.matches.categories, normalize_category)?;
-        normalize_match_list(&mut rule.apps, |value| {
-            normalize_non_empty("rule app", value)
-        })?;
-
-        if rule.apps.is_empty() {
-            return Err(AsterError::validation_error(
-                "preview app rule must reference at least one app",
-            ));
-        }
-
-        if let Some(default_app) = rule.default_app.take() {
-            let normalized_default = normalize_non_empty("rule default_app", &default_app)?;
-            if !rule.apps.iter().any(|key| key == &normalized_default) {
-                return Err(AsterError::validation_error(format!(
-                    "preview app rule default_app '{}' must be present in apps",
-                    normalized_default
-                )));
-            }
-            rule.default_app = Some(normalized_default);
-        }
-
-        let mut seen_rule_apps = HashSet::new();
-        for app_key in &rule.apps {
-            if !seen_rule_apps.insert(app_key.clone()) {
-                return Err(AsterError::validation_error(format!(
-                    "preview app rule contains duplicate app '{}'",
-                    app_key
-                )));
-            }
-            if !app_keys.contains(app_key.as_str()) {
-                return Err(AsterError::validation_error(format!(
-                    "preview app rule references unknown app '{}'",
-                    app_key
-                )));
-            }
-        }
-    }
-
     Ok(())
 }
 
 fn validate_preview_app_config(app: &mut PublicPreviewAppDefinition) -> Result<()> {
     let provider = app.provider;
     ensure_supported_provider(app, provider)?;
+
+    normalize_match_list(&mut app.extensions, normalize_extension)?;
 
     if is_table_preview_app_key(&app.key) {
         let delimiter = app
@@ -746,27 +517,6 @@ fn normalize_table_delimiter(value: &str) -> Result<String> {
     }
 }
 
-fn normalize_mime(value: &str) -> Result<String> {
-    Ok(normalize_non_empty("mime type", value)?.to_ascii_lowercase())
-}
-
-fn normalize_mime_prefix(value: &str) -> Result<String> {
-    Ok(normalize_non_empty("mime prefix", value)?.to_ascii_lowercase())
-}
-
-fn normalize_category(value: &str) -> Result<String> {
-    let category = normalize_non_empty("category", value)?.to_ascii_lowercase();
-    match category.as_str() {
-        "image" | "video" | "audio" | "pdf" | "markdown" | "csv" | "tsv" | "json" | "xml"
-        | "text" | "archive" | "document" | "spreadsheet" | "presentation" | "unknown" => {
-            Ok(category)
-        }
-        _ => Err(AsterError::validation_error(format!(
-            "unsupported preview category '{category}'",
-        ))),
-    }
-}
-
 fn normalize_optional_non_empty(field: &str, value: Option<String>) -> Option<String> {
     value.and_then(|value| {
         let trimmed = value.trim();
@@ -815,26 +565,49 @@ fn builtin_app(
     key: &str,
     icon: &str,
     labels: BTreeMap<String, String>,
+    extensions: &[&str],
 ) -> PublicPreviewAppDefinition {
-    builtin_app_with_config(key, icon, labels, PublicPreviewAppConfig::default())
+    builtin_app_with_config(
+        key,
+        icon,
+        labels,
+        extensions,
+        PublicPreviewAppConfig::default(),
+    )
 }
 
 fn builtin_app_with_config(
     key: &str,
     icon: &str,
     labels: BTreeMap<String, String>,
+    extensions: &[&str],
     config: PublicPreviewAppConfig,
 ) -> PublicPreviewAppDefinition {
-    app_with_config(PreviewAppProvider::Builtin, key, icon, labels, config)
+    app_with_config(
+        PreviewAppProvider::Builtin,
+        key,
+        icon,
+        labels,
+        extensions,
+        config,
+    )
 }
 
 fn url_template_app(
     key: &str,
     icon: &str,
     labels: BTreeMap<String, String>,
+    extensions: &[&str],
     config: PublicPreviewAppConfig,
 ) -> PublicPreviewAppDefinition {
-    app_with_config(PreviewAppProvider::UrlTemplate, key, icon, labels, config)
+    app_with_config(
+        PreviewAppProvider::UrlTemplate,
+        key,
+        icon,
+        labels,
+        extensions,
+        config,
+    )
 }
 
 fn app_with_config(
@@ -842,6 +615,7 @@ fn app_with_config(
     key: &str,
     icon: &str,
     labels: BTreeMap<String, String>,
+    extensions: &[&str],
     config: PublicPreviewAppConfig,
 ) -> PublicPreviewAppDefinition {
     PublicPreviewAppDefinition {
@@ -851,6 +625,7 @@ fn app_with_config(
         enabled: true,
         label_i18n_key: None,
         labels,
+        extensions: extensions.iter().map(|value| value.to_string()).collect(),
         config,
     }
 }
@@ -870,17 +645,6 @@ fn is_required_builtin_preview_app_key(key: &str) -> bool {
     REQUIRED_BUILTIN_PREVIEW_APP_KEYS.contains(&key)
 }
 
-fn category_rule(category: &str, apps: &[&str], default_app: Option<&str>) -> PublicPreviewAppRule {
-    PublicPreviewAppRule {
-        matches: PublicPreviewAppMatch {
-            categories: vec![category.to_string()],
-            ..Default::default()
-        },
-        apps: apps.iter().map(|value| value.to_string()).collect(),
-        default_app: default_app.map(ToString::to_string),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -890,11 +654,80 @@ mod tests {
     };
     use serde_json::{Value, json};
 
+    fn minimum_builtin_apps_json() -> Vec<Value> {
+        vec![
+            json!({
+                "key": "builtin.image",
+                "provider": "builtin",
+                "icon": "Eye",
+                "labels": { "en": "Image preview" }
+            }),
+            json!({
+                "key": "builtin.video",
+                "provider": "builtin",
+                "icon": "Monitor",
+                "labels": { "en": "Video preview" }
+            }),
+            json!({
+                "key": "builtin.audio",
+                "provider": "builtin",
+                "icon": "FileAudio",
+                "labels": { "en": "Audio preview" }
+            }),
+            json!({
+                "key": "builtin.pdf",
+                "provider": "builtin",
+                "icon": "FileText",
+                "labels": { "en": "PDF preview" },
+                "extensions": ["pdf"]
+            }),
+            json!({
+                "key": "builtin.markdown",
+                "provider": "builtin",
+                "icon": "Eye",
+                "labels": { "en": "Markdown preview" },
+                "extensions": ["md", "markdown"]
+            }),
+            json!({
+                "key": "builtin.table",
+                "provider": "builtin",
+                "icon": "Table",
+                "labels": { "en": "Table preview" },
+                "extensions": ["csv", "tsv"],
+                "config": { "delimiter": "auto" }
+            }),
+            json!({
+                "key": "builtin.formatted",
+                "provider": "builtin",
+                "icon": "BracketsCurly",
+                "labels": { "en": "Formatted view" },
+                "extensions": ["json", "xml"]
+            }),
+            json!({
+                "key": "builtin.code",
+                "provider": "builtin",
+                "icon": "FileCode",
+                "labels": { "en": "Source view" }
+            }),
+            json!({
+                "key": "builtin.try_text",
+                "provider": "builtin",
+                "icon": "FileCode",
+                "labels": { "en": "Open as text" }
+            }),
+        ]
+    }
+
     #[test]
     fn default_preview_apps_serialize_and_parse() {
         let raw = serde_json::to_string(&default_public_preview_apps()).unwrap();
         let parsed = parse_public_preview_apps_config(&raw).unwrap();
-        assert_eq!(parsed.version, 1);
+        assert_eq!(parsed.version, 2);
+        assert!(parsed.apps.iter().any(|app| {
+            app.key == "builtin.formatted"
+                && app.extensions.iter().any(|extension| extension == "json")
+                && app.extensions.iter().any(|extension| extension == "xml")
+        }));
         assert!(parsed.apps.iter().any(|app| {
             app.key == "builtin.code"
                 && app
@@ -906,12 +739,9 @@ mod tests {
                     .get("zh")
                     .is_some_and(|label| label == "源码视图")
         }));
-        assert!(parsed.rules.iter().any(|rule| {
-            rule.matches
-                .categories
-                .iter()
-                .any(|category| category == "video")
-                && rule.apps.iter().any(|app| app == "builtin.video")
+        assert!(parsed.apps.iter().any(|app| {
+            app.key == "builtin.office_microsoft"
+                && app.extensions.iter().any(|extension| extension == "docx")
         }));
     }
 
@@ -928,6 +758,7 @@ mod tests {
                 (" EN ".to_string(), " Viewer ".to_string()),
                 ("zh".to_string(), " 查看器 ".to_string()),
             ]),
+            extensions: vec![" MP4 ".to_string()],
             config: PublicPreviewAppConfig {
                 mode: Some(PreviewOpenMode::Iframe),
                 url_template: Some(
@@ -939,14 +770,6 @@ mod tests {
                 ],
                 ..Default::default()
             },
-        });
-        config.rules.push(super::PublicPreviewAppRule {
-            matches: super::PublicPreviewAppMatch {
-                categories: vec![" Video ".to_string()],
-                ..Default::default()
-            },
-            apps: vec![" custom.viewer ".to_string()],
-            default_app: Some(" custom.viewer ".to_string()),
         });
 
         let raw = serde_json::to_string(&config).unwrap();
@@ -962,31 +785,22 @@ mod tests {
                         && app["labels"]["en"] == "Viewer"
                         && app["labels"]["zh"] == "查看器"
                         && app["config"]["mode"] == "iframe"
+                        && app["extensions"] == json!(["mp4"])
                 }))
-        );
-        assert_eq!(
-            normalized_json["rules"][normalized_json["rules"].as_array().unwrap().len() - 1]["matches"]
-                ["categories"],
-            json!(["video"])
         );
     }
 
     #[test]
-    fn preview_apps_reject_unknown_rule_app() {
-        let mut config = default_public_preview_apps();
-        config.rules = vec![super::PublicPreviewAppRule {
-            matches: super::PublicPreviewAppMatch {
-                categories: vec!["text".to_string()],
-                ..Default::default()
-            },
-            apps: vec!["missing.app".to_string()],
-            default_app: None,
-        }];
-
-        let raw = serde_json::to_string(&config).unwrap();
+    fn preview_apps_reject_legacy_rules_field() {
+        let raw = json!({
+            "version": 2,
+            "apps": minimum_builtin_apps_json(),
+            "rules": []
+        })
+        .to_string();
 
         let error = normalize_public_preview_apps_config_value(&raw).unwrap_err();
-        assert!(error.to_string().contains("missing.app"));
+        assert!(error.to_string().contains("unknown field `rules`"));
     }
 
     #[test]
@@ -1011,76 +825,8 @@ mod tests {
     #[test]
     fn preview_apps_allow_removing_external_viewers_but_not_core_builtins() {
         let raw = json!({
-            "version": 1,
-            "apps": [
-                {
-                    "key": "builtin.image",
-                    "provider": "builtin",
-                    "icon": "Eye",
-                    "labels": { "en": "Image preview" }
-                },
-                {
-                    "key": "builtin.video",
-                    "provider": "builtin",
-                    "icon": "Monitor",
-                    "labels": { "en": "Video preview" }
-                },
-                {
-                    "key": "builtin.audio",
-                    "provider": "builtin",
-                    "icon": "FileAudio",
-                    "labels": { "en": "Audio preview" }
-                },
-                {
-                    "key": "builtin.pdf",
-                    "provider": "builtin",
-                    "icon": "FileText",
-                    "labels": { "en": "PDF preview" }
-                },
-                {
-                    "key": "builtin.markdown",
-                    "provider": "builtin",
-                    "icon": "Eye",
-                    "labels": { "en": "Markdown preview" }
-                },
-                {
-                    "key": "builtin.table",
-                    "provider": "builtin",
-                    "icon": "Table",
-                    "labels": { "en": "Table preview" },
-                    "config": { "delimiter": "auto" }
-                },
-                {
-                    "key": "builtin.formatted_json",
-                    "provider": "builtin",
-                    "icon": "BracketsCurly",
-                    "labels": { "en": "Formatted view" }
-                },
-                {
-                    "key": "builtin.formatted_xml",
-                    "provider": "builtin",
-                    "icon": "BracketsCurly",
-                    "labels": { "en": "Formatted view" }
-                },
-                {
-                    "key": "builtin.code",
-                    "provider": "builtin",
-                    "icon": "FileCode",
-                    "labels": { "en": "Source view" }
-                },
-                {
-                    "key": "builtin.try_text",
-                    "provider": "builtin",
-                    "icon": "FileCode",
-                    "labels": { "en": "Open as text" }
-                }
-            ],
-            "rules": [
-                {
-                    "apps": ["builtin.code"],
-                    "matches": { "categories": ["text"] }
-                }
-            ]
+            "version": 2,
+            "apps": minimum_builtin_apps_json()
         })
         .to_string();
 
@@ -1089,88 +835,22 @@ mod tests {
 
     #[test]
     fn preview_apps_allow_empty_icon_and_trim_it() {
+        let mut apps = minimum_builtin_apps_json();
+        apps.push(json!({
+            "key": "custom.viewer",
+            "provider": "url_template",
+            "icon": "   ",
+            "labels": { "en": "Viewer" },
+            "extensions": ["txt"],
+            "config": {
+                "mode": "iframe",
+                "url_template": "https://viewer.example.com/?src={{file_preview_url}}"
+            }
+        }));
+
         let raw = json!({
-            "version": 1,
-            "apps": [
-                {
-                    "key": "builtin.image",
-                    "provider": "builtin",
-                    "icon": "Eye",
-                    "labels": { "en": "Image preview" }
-                },
-                {
-                    "key": "builtin.video",
-                    "provider": "builtin",
-                    "icon": "Monitor",
-                    "labels": { "en": "Video preview" }
-                },
-                {
-                    "key": "builtin.audio",
-                    "provider": "builtin",
-                    "icon": "FileAudio",
-                    "labels": { "en": "Audio preview" }
-                },
-                {
-                    "key": "builtin.pdf",
-                    "provider": "builtin",
-                    "icon": "FileText",
-                    "labels": { "en": "PDF preview" }
-                },
-                {
-                    "key": "builtin.markdown",
-                    "provider": "builtin",
-                    "icon": "Eye",
-                    "labels": { "en": "Markdown preview" }
-                },
-                {
-                    "key": "builtin.table",
-                    "provider": "builtin",
-                    "icon": "Table",
-                    "labels": { "en": "Table preview" },
-                    "config": { "delimiter": "auto" }
-                },
-                {
-                    "key": "builtin.formatted_json",
-                    "provider": "builtin",
-                    "icon": "BracketsCurly",
-                    "labels": { "en": "Formatted view" }
-                },
-                {
-                    "key": "builtin.formatted_xml",
-                    "provider": "builtin",
-                    "icon": "BracketsCurly",
-                    "labels": { "en": "Formatted view" }
-                },
-                {
-                    "key": "builtin.code",
-                    "provider": "builtin",
-                    "icon": "FileCode",
-                    "labels": { "en": "Source view" }
-                },
-                {
-                    "key": "builtin.try_text",
-                    "provider": "builtin",
-                    "icon": "FileCode",
-                    "labels": { "en": "Open as text" }
-                },
-                {
-                    "key": "custom.viewer",
-                    "provider": "url_template",
-                    "icon": "   ",
-                    "labels": { "en": "Viewer" },
-                    "config": {
-                        "mode": "iframe",
-                        "url_template": "https://viewer.example.com/?src={{file_preview_url}}"
-                    }
-                }
-            ],
-            "rules": [
-                {
-                    "apps": ["builtin.code", "custom.viewer"],
-                    "default_app": "custom.viewer",
-                    "matches": { "categories": ["text"] }
-                }
-            ]
+            "version": 2,
+            "apps": apps
         })
         .to_string();
 

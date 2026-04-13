@@ -33,7 +33,10 @@ import type {
 	WopiLaunchSession,
 } from "@/types/api";
 import { BlobMediaPreview } from "./BlobMediaPreview";
-import { detectFilePreviewProfile } from "./file-capabilities";
+import {
+	detectFilePreviewProfile,
+	getFileExtension,
+} from "./file-capabilities";
 import { resolveOpenWithOptionLabel } from "./openWithLabel";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import { PreviewUnavailable } from "./PreviewUnavailable";
@@ -368,8 +371,7 @@ export function FilePreviewDialog({
 			getEmbeddedOptionMode(activeOption) !== "new_tab");
 	const fillsViewportHeight =
 		activeOption?.mode === "code" ||
-		activeOption?.mode === "formatted_json" ||
-		activeOption?.mode === "formatted_xml" ||
+		activeOption?.mode === "formatted" ||
 		activeOption?.mode === "markdown" ||
 		activeOption?.mode === "pdf" ||
 		activeOption?.mode === "table" ||
@@ -467,17 +469,23 @@ export function FilePreviewDialog({
 				</Suspense>
 			);
 		}
-		if (activeOption.mode === "formatted_json") {
+		if (activeOption.mode === "formatted") {
+			const formattedCategory =
+				profile.category === "xml" || getFileExtension(file) === "xml"
+					? "xml"
+					: "json";
+
+			if (formattedCategory === "xml") {
+				return (
+					<Suspense fallback={previewLoadingState}>
+						<XmlPreview path={resolvedDownloadPath} mode="formatted" />
+					</Suspense>
+				);
+			}
+
 			return (
 				<Suspense fallback={previewLoadingState}>
 					<JsonPreview path={resolvedDownloadPath} />
-				</Suspense>
-			);
-		}
-		if (activeOption.mode === "formatted_xml") {
-			return (
-				<Suspense fallback={previewLoadingState}>
-					<XmlPreview path={resolvedDownloadPath} mode="formatted" />
 				</Suspense>
 			);
 		}

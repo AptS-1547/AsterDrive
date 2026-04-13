@@ -15,6 +15,7 @@ import type {
 	CreateUserReq,
 	DriverType,
 	ExecuteConfigActionRequest,
+	ExecuteConfigActionResponse,
 	LockPage,
 	MigratePolicyGroupUsersRequest,
 	PolicyGroupUserMigrationResult,
@@ -349,7 +350,7 @@ export const adminConfigService = {
 	delete: (key: string) => api.delete<void>(`/admin/config/${key}`),
 
 	action: (key: string, data: ExecuteConfigActionRequest) =>
-		api.post<ActionMessageResp>(`/admin/config/${key}/action`, data),
+		api.post<ExecuteConfigActionResponse>(`/admin/config/${key}/action`, data),
 
 	sendTestEmail: (targetEmail?: string) =>
 		api.post<ActionMessageResp>("/admin/config/mail/action", {

@@ -901,6 +901,33 @@ export default function AdminSettingsPage({
 		}
 	}, [testEmailTarget]);
 
+	const handleBuildWopiDiscoveryPreviewConfig = useCallback(
+		async ({
+			discoveryUrl,
+			value,
+		}: {
+			discoveryUrl: string;
+			value: string;
+		}) => {
+			try {
+				const response = await adminConfigService.action(
+					PREVIEW_APPS_CONFIG_KEY,
+					{
+						action: "build_wopi_discovery_preview_config",
+						discovery_url: discoveryUrl,
+						value,
+					},
+				);
+				toast.success(response.message);
+				return response.value ?? value;
+			} catch (error) {
+				handleApiError(error);
+				throw error;
+			}
+		},
+		[],
+	);
+
 	const load = useCallback(async (options?: { showLoading?: boolean }) => {
 		const showLoading = options?.showLoading ?? true;
 
@@ -2014,6 +2041,9 @@ export default function AdminSettingsPage({
 		if (config.key === PREVIEW_APPS_CONFIG_KEY) {
 			return (
 				<PreviewAppsConfigEditor
+					onBuildWopiDiscoveryPreviewConfig={
+						handleBuildWopiDiscoveryPreviewConfig
+					}
 					value={draftValue}
 					onChange={(nextValue) => updateDraftValue(config.key, nextValue)}
 				/>
@@ -2066,7 +2096,6 @@ export default function AdminSettingsPage({
 	const renderSystemConfigRow = (config: SystemConfig) => {
 		const draftValue = getDraftValue(config);
 		const valueType = getConfigValueType(config);
-
 		return (
 			<div className="space-y-3">
 				{renderFieldMeta(config)}

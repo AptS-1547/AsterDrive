@@ -29,7 +29,7 @@ COPY src/ src/
 COPY build.rs ./
 COPY --from=frontend /build/frontend-panel/dist/ frontend-panel/dist/
 
-ARG CARGO_FEATURES="server"
+ARG CARGO_FEATURES="server,cli"
 ENV RUSTFLAGS="-C link-arg=-s"
 
 RUN cargo build --release --features "${CARGO_FEATURES}"

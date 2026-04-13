@@ -151,6 +151,7 @@ describe("file preview capabilities", () => {
 	it("derives preview profiles and open-with options", () => {
 		const markdown = { name: "notes.md", mime_type: "text/markdown" };
 		const json = { name: "data.json", mime_type: "application/json" };
+		const xml = { name: "config.xml", mime_type: "application/xml" };
 		const image = { name: "photo.png", mime_type: "image/png" };
 		const document = {
 			name: "report.docx",
@@ -176,7 +177,11 @@ describe("file preview capabilities", () => {
 		});
 		expect(detectFilePreviewProfile(json)).toMatchObject({
 			category: "json",
-			defaultMode: "formatted_json",
+			defaultMode: "formatted",
+		});
+		expect(detectFilePreviewProfile(xml)).toMatchObject({
+			category: "xml",
+			defaultMode: "formatted",
 		});
 		expect(detectFilePreviewProfile(image)).toMatchObject({
 			category: "image",
@@ -209,12 +214,12 @@ describe("file preview capabilities", () => {
 
 		expect(getAvailableOpenWithOptions(json)).toEqual([
 			expect.objectContaining({
-				key: "formatted_json",
-				mode: "formatted_json",
+				key: "formatted",
+				mode: "formatted",
 			}),
 			expect.objectContaining({ mode: "code" }),
 		]);
-		expect(getDefaultOpenWith(json)).toBe("formatted_json");
+		expect(getDefaultOpenWith(json)).toBe("formatted");
 		expect(getDefaultOpenWith(document)).toBe("office_microsoft");
 		expect(getDefaultOpenWith(tsv)).toBe("table");
 		expect(isEditableTextFile(markdown)).toBe(true);
@@ -240,12 +245,13 @@ describe("file preview capabilities", () => {
 		});
 	});
 
-	it("uses backend-configured preview app rules when available", () => {
+	it("uses backend-configured preview app extensions when available", () => {
 		const markdown = { name: "notes.md", mime_type: "text/markdown" };
 		const previewApps = {
-			version: 1,
+			version: 2,
 			apps: [
 				{
+					extensions: ["md"],
 					icon: "Scroll",
 					key: "builtin.markdown",
 					label_i18n_key: "open_with_markdown",
@@ -264,6 +270,7 @@ describe("file preview capabilities", () => {
 						url_template:
 							"https://viewer.example.com/open?src={{file_preview_url}}",
 					},
+					extensions: ["md"],
 					icon: "https://cdn.example.com/icons/external-viewer.svg",
 					key: "external",
 					labels: {
@@ -273,13 +280,6 @@ describe("file preview capabilities", () => {
 					provider: "url_template",
 				},
 			],
-			rules: [
-				{
-					apps: ["builtin.markdown", "builtin.code", "external"],
-					default_app: "builtin.markdown",
-					matches: { categories: ["markdown"] },
-				},
-			],
 		};
 
 		expect(detectFilePreviewProfile(markdown, previewApps)).toMatchObject({
@@ -287,7 +287,6 @@ describe("file preview capabilities", () => {
 			defaultMode: "builtin.markdown",
 			options: [
 				{ key: "builtin.markdown", mode: "markdown" },
-				{ key: "builtin.code", mode: "code" },
 				{
 					config: {
 						allowed_origins: ["https://viewer.example.com"],
@@ -302,18 +301,19 @@ describe("file preview capabilities", () => {
 					},
 					mode: "url_template",
 				},
+				{ key: "builtin.code", mode: "code" },
 			],
 		});
 	});
 
-	it("matches configured office rules when any declared file matcher applies", () => {
+	it("matches configured office apps by extension", () => {
 		const spreadsheet = {
 			name: "2025级选课名单0320.xlsx",
 			mime_type:
 				"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		};
 		const previewApps = {
-			version: 1,
+			version: 2,
 			apps: [
 				{
 					config: {
@@ -322,6 +322,7 @@ describe("file preview capabilities", () => {
 						url_template:
 							"https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}",
 					},
+					extensions: ["xls", "xlsx"],
 					icon: "/static/preview-apps/microsoft-onedrive.svg",
 					key: "builtin.office_microsoft",
 					labels: {
@@ -337,6 +338,7 @@ describe("file preview capabilities", () => {
 						url_template:
 							"https://docs.google.com/gview?embedded=true&url={{file_preview_url}}",
 					},
+					extensions: ["xls", "xlsx", "ods"],
 					icon: "/static/preview-apps/google-drive.svg",
 					key: "builtin.office_google",
 					labels: {
@@ -344,19 +346,6 @@ describe("file preview capabilities", () => {
 						zh: "Google 预览器",
 					},
 					provider: "url_template",
-				},
-			],
-			rules: [
-				{
-					apps: ["builtin.office_microsoft", "builtin.office_google"],
-					default_app: "builtin.office_microsoft",
-					matches: {
-						extensions: ["xls", "xlsx"],
-						mime_types: ["application/vnd.ms-excel"],
-						mime_prefixes: [
-							"application/vnd.openxmlformats-officedocument.spreadsheetml",
-						],
-					},
 				},
 			],
 		};
@@ -380,9 +369,10 @@ describe("file preview capabilities", () => {
 	it("keeps configured choices first while exposing every registered app", () => {
 		const markdown = { name: "notes.md", mime_type: "text/markdown" };
 		const previewApps = {
-			version: 1,
+			version: 2,
 			apps: [
 				{
+					extensions: ["md"],
 					icon: "/static/preview-apps/markdown.svg",
 					key: "builtin.markdown",
 					label_i18n_key: "open_with_markdown",
@@ -401,6 +391,7 @@ describe("file preview capabilities", () => {
 						url_template:
 							"https://viewer.example.com/open?src={{file_preview_url}}",
 					},
+					extensions: ["md"],
 					icon: "https://cdn.example.com/icons/external-viewer.svg",
 					key: "external",
 					labels: {
@@ -410,17 +401,11 @@ describe("file preview capabilities", () => {
 					provider: "url_template",
 				},
 				{
+					extensions: ["pdf"],
 					icon: "/static/preview-apps/pdf.svg",
 					key: "builtin.pdf",
 					label_i18n_key: "open_with_pdf",
 					provider: "builtin",
-				},
-			],
-			rules: [
-				{
-					apps: ["builtin.markdown"],
-					default_app: "builtin.markdown",
-					matches: { categories: ["markdown"] },
 				},
 			],
 		};
@@ -428,11 +413,15 @@ describe("file preview capabilities", () => {
 		expect(detectFilePreviewProfile(markdown, previewApps)).toMatchObject({
 			category: "markdown",
 			defaultMode: "builtin.markdown",
-			options: [{ key: "builtin.markdown", mode: "markdown" }],
+			options: [
+				{ key: "builtin.markdown", mode: "markdown" },
+				{ key: "external", mode: "url_template" },
+				{ key: "builtin.code", mode: "code" },
+			],
 			allOptions: [
 				{ key: "builtin.markdown", mode: "markdown" },
-				{ key: "builtin.code", mode: "code" },
 				{ key: "external", mode: "url_template" },
+				{ key: "builtin.code", mode: "code" },
 				{ key: "builtin.pdf", mode: "pdf" },
 			],
 		});
@@ -474,14 +463,14 @@ describe("file preview capabilities", () => {
 		expect(detectFilePreviewProfile(archive).options).toEqual([]);
 	});
 
-	it("falls back to legacy defaults when configured rules omit a default app", () => {
+	it("falls back to legacy defaults when configured apps omit direct bindings", () => {
 		const json = { name: "data.json", mime_type: "application/json" };
 		const previewApps = {
-			version: 1,
+			version: 2,
 			apps: [
 				{
 					icon: "BracketsCurly",
-					key: "builtin.formatted_json",
+					key: "builtin.formatted",
 					label_i18n_key: "open_with_formatted",
 					provider: "builtin",
 				},
@@ -492,17 +481,9 @@ describe("file preview capabilities", () => {
 					provider: "builtin",
 				},
 			],
-			rules: [
-				{
-					apps: ["builtin.formatted_json", "builtin.code"],
-					matches: { categories: ["json"] },
-				},
-			],
 		};
 
-		expect(getDefaultOpenWith(json, previewApps)).toBe(
-			"builtin.formatted_json",
-		);
+		expect(getDefaultOpenWith(json, previewApps)).toBe("builtin.formatted");
 	});
 
 	it("recognizes configured wopi providers without treating them as url templates", () => {
@@ -512,12 +493,13 @@ describe("file preview capabilities", () => {
 				"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		};
 		const previewApps = {
-			version: 1,
+			version: 2,
 			apps: [
 				{
 					config: {
 						mode: "iframe",
 					},
+					extensions: ["docx"],
 					icon: "/static/preview-apps/file.svg",
 					key: "custom.onlyoffice",
 					labels: {
@@ -525,13 +507,6 @@ describe("file preview capabilities", () => {
 						zh: "OnlyOffice",
 					},
 					provider: "wopi",
-				},
-			],
-			rules: [
-				{
-					apps: ["custom.onlyoffice"],
-					default_app: "custom.onlyoffice",
-					matches: { extensions: ["docx"] },
 				},
 			],
 		};
@@ -551,7 +526,7 @@ describe("file preview capabilities", () => {
 	it("does not infer a runtime provider from the app key when provider is missing", () => {
 		const markdown = { name: "notes.md", mime_type: "text/markdown" };
 		const previewApps = {
-			version: 1,
+			version: 2,
 			apps: [
 				{
 					config: {
@@ -559,6 +534,7 @@ describe("file preview capabilities", () => {
 						url_template:
 							"https://viewer.example.com/open?src={{file_preview_url}}",
 					},
+					extensions: ["md"],
 					icon: "https://cdn.example.com/icons/external-viewer.svg",
 					key: "custom.viewer",
 					labels: {
@@ -566,13 +542,6 @@ describe("file preview capabilities", () => {
 						zh: "外部查看器",
 					},
 					provider: "",
-				},
-			],
-			rules: [
-				{
-					apps: ["custom.viewer"],
-					default_app: "custom.viewer",
-					matches: { categories: ["markdown"] },
 				},
 			],
 		};
@@ -598,10 +567,11 @@ describe("file preview capabilities", () => {
 	it("skips disabled configured apps, including disabled builtin fallbacks", () => {
 		const markdown = { name: "notes.md", mime_type: "text/markdown" };
 		const previewApps = {
-			version: 1,
+			version: 2,
 			apps: [
 				{
 					enabled: false,
+					extensions: ["md"],
 					icon: "/static/preview-apps/markdown.svg",
 					key: "builtin.markdown",
 					label_i18n_key: "open_with_markdown",
@@ -612,13 +582,6 @@ describe("file preview capabilities", () => {
 					key: "builtin.code",
 					label_i18n_key: "open_with_code",
 					provider: "builtin",
-				},
-			],
-			rules: [
-				{
-					apps: ["builtin.markdown", "builtin.code"],
-					default_app: "builtin.markdown",
-					matches: { categories: ["markdown"] },
 				},
 			],
 		};

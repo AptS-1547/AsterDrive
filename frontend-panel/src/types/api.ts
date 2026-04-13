@@ -115,6 +115,8 @@ export type ConfigActionType = components["schemas"]["ConfigActionType"];
 export type ConfigSchemaItem = components["schemas"]["ConfigSchemaItem"];
 export type ExecuteConfigActionRequest =
 	components["schemas"]["ExecuteConfigActionReq"];
+export type ExecuteConfigActionResponse =
+	components["schemas"]["ExecuteConfigActionResp"];
 export type TemplateVariableGroup =
 	components["schemas"]["TemplateVariableGroup"];
 export type TemplateVariableItem =
@@ -126,10 +128,6 @@ export type PublicPreviewAppConfig =
 	components["schemas"]["PublicPreviewAppConfig"];
 export type PublicPreviewAppDefinition =
 	components["schemas"]["PublicPreviewAppDefinition"];
-export type PublicPreviewAppMatch =
-	components["schemas"]["PublicPreviewAppMatch"];
-export type PublicPreviewAppRule =
-	components["schemas"]["PublicPreviewAppRule"];
 export type PublicPreviewAppsConfig =
 	components["schemas"]["PublicPreviewAppsConfig"];
 export type SystemConfig = components["schemas"]["SystemConfig"];

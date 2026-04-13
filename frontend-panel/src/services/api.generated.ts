@@ -2817,7 +2817,7 @@ export interface components {
             part_number: number;
         };
         /** @enum {string} */
-        ConfigActionType: "send_test_email";
+        ConfigActionType: "build_wopi_discovery_preview_config" | "send_test_email";
         /** @description 系统配置的 schema 信息（从 ALL_CONFIGS 生成） */
         ConfigSchemaItem: {
             category: string;
@@ -2931,7 +2931,13 @@ export interface components {
         ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 1006 | 1007 | 1008 | 2000 | 2001 | 2002 | 2003 | 2004 | 2005 | 2006 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 3011 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
         ExecuteConfigActionReq: {
             action: components["schemas"]["ConfigActionType"];
+            discovery_url?: string | null;
             target_email?: string | null;
+            value?: string | null;
+        };
+        ExecuteConfigActionResp: {
+            message: string;
+            value?: string | null;
         };
         FileCursor: {
             /** Format: int64 */
@@ -3587,6 +3593,7 @@ export interface components {
         PublicPreviewAppDefinition: {
             config?: components["schemas"]["PublicPreviewAppConfig"];
             enabled?: boolean;
+            extensions?: string[];
             icon: string;
             key: string;
             label_i18n_key?: string | null;
@@ -3595,20 +3602,8 @@ export interface components {
             };
             provider: components["schemas"]["PreviewAppProvider"];
         };
-        PublicPreviewAppMatch: {
-            categories?: string[];
-            extensions?: string[];
-            mime_prefixes?: string[];
-            mime_types?: string[];
-        };
-        PublicPreviewAppRule: {
-            apps?: string[];
-            default_app?: string | null;
-            matches?: components["schemas"]["PublicPreviewAppMatch"];
-        };
         PublicPreviewAppsConfig: {
             apps?: components["schemas"]["PublicPreviewAppDefinition"][];
-            rules?: components["schemas"]["PublicPreviewAppRule"][];
             /** Format: int32 */
             version?: number;
         };
@@ -4636,6 +4631,7 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             message: string;
+                            value?: string | null;
                         };
                         msg: string;
                     };
@@ -9730,7 +9726,6 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             apps?: components["schemas"]["PublicPreviewAppDefinition"][];
-                            rules?: components["schemas"]["PublicPreviewAppRule"][];
                             /** Format: int32 */
                             version?: number;
                         };

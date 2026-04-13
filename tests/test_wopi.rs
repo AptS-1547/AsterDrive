@@ -103,6 +103,7 @@ fn test_wopi_app_definition(
         enabled,
         label_i18n_key: None,
         labels: BTreeMap::from([("en".to_string(), "OnlyOffice".to_string())]),
+        extensions: vec!["docx".to_string(), "xlsx".to_string(), "pptx".to_string()],
         config: PublicPreviewAppConfig {
             mode: Some(PreviewOpenMode::Iframe),
             action_url: Some(action_url.to_string()),

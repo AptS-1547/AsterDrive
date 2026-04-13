@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { PreviewAppsConfigEditor } from "@/components/admin/PreviewAppsConfigEditor";
@@ -24,9 +24,10 @@ vi.mock("react-i18next", () => ({
 function createPreviewAppsConfig() {
 	return JSON.stringify(
 		{
-			version: 1,
+			version: 2,
 			apps: [
 				{
+					extensions: ["md"],
 					key: "custom.viewer",
 					provider: "url_template",
 					icon: "https://viewer.example.com/icon.svg",
@@ -43,19 +44,19 @@ function createPreviewAppsConfig() {
 					},
 				},
 			],
-			rules: [],
 		},
 		null,
 		2,
 	);
 }
 
-function createPreviewAppsConfigWithRule() {
+function createPreviewAppsConfigWithExtensions() {
 	return JSON.stringify(
 		{
-			version: 1,
+			version: 2,
 			apps: [
 				{
+					extensions: ["xlsx"],
 					key: "custom.viewer",
 					provider: "url_template",
 					icon: "https://viewer.example.com/icon.svg",
@@ -69,20 +70,6 @@ function createPreviewAppsConfigWithRule() {
 						url_template:
 							"https://viewer.example.com/embed?src={{file_preview_url}}",
 						allowed_origins: ["https://viewer.example.com"],
-					},
-				},
-			],
-			rules: [
-				{
-					apps: ["custom.viewer"],
-					default_app: "custom.viewer",
-					matches: {
-						categories: ["spreadsheet"],
-						extensions: [".xlsx"],
-						mime_types: [
-							"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-						],
-						mime_prefixes: [],
 					},
 				},
 			],
@@ -95,7 +82,7 @@ function createPreviewAppsConfigWithRule() {
 function createPreviewAppsConfigWithDefaultIcon() {
 	return JSON.stringify(
 		{
-			version: 1,
+			version: 2,
 			apps: [
 				{
 					key: "builtin.image",
@@ -107,7 +94,6 @@ function createPreviewAppsConfigWithDefaultIcon() {
 					},
 				},
 			],
-			rules: [],
 		},
 		null,
 		2,
@@ -124,12 +110,31 @@ function StatefulPreviewAppsEditor({
 }
 
 describe("PreviewAppsConfigEditor", () => {
-	it("keeps the focused input active while typing in an expanded app row", () => {
+	it("opens the add dialog and creates an embed app", () => {
 		render(<StatefulPreviewAppsEditor />);
 
 		fireEvent.click(
-			screen.getByRole("button", { name: "preview_apps_expand" }),
+			screen.getByRole("button", { name: "preview_apps_add_app" }),
 		);
+
+		expect(
+			screen.getByText("preview_apps_add_dialog_desc"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen
+				.getByText("preview_apps_add_dialog_embed_title")
+				.closest("button") as HTMLButtonElement,
+		);
+
+		expect(screen.getByRole("dialog")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("custom.app_1")).toBeInTheDocument();
+	});
+
+	it("keeps the focused input active while typing in the app edit dialog", () => {
+		render(<StatefulPreviewAppsEditor />);
+
+		fireEvent.click(screen.getByRole("button", { name: "preview_apps_edit" }));
 
 		const keyInput = screen.getByDisplayValue("custom.viewer");
 		keyInput.focus();
@@ -145,9 +150,7 @@ describe("PreviewAppsConfigEditor", () => {
 	it("opens the URL template magic variables dialog", () => {
 		render(<StatefulPreviewAppsEditor />);
 
-		fireEvent.click(
-			screen.getByRole("button", { name: "preview_apps_expand" }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: "preview_apps_edit" }));
 		fireEvent.click(
 			screen.getByRole("button", {
 				name: "preview_apps_url_template_variables_link",
@@ -168,54 +171,40 @@ describe("PreviewAppsConfigEditor", () => {
 			/>,
 		);
 
-		fireEvent.click(
-			screen.getByRole("button", { name: "preview_apps_expand" }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: "preview_apps_edit" }));
 
-		const iconField = screen
-			.getAllByText("preview_apps_icon_label")[1]
-			?.parentElement?.querySelector("input");
+		const dialog = screen.getByRole("dialog");
+		const iconField = within(dialog)
+			.getByText("preview_apps_icon_label")
+			.parentElement?.querySelector("input");
 		expect(iconField).not.toBeNull();
 		expect(iconField).toHaveValue("");
 	});
 
-	it("keeps expanded content mounted until the collapse animation finishes", () => {
-		vi.useFakeTimers();
-
+	it("opens the app editor in a dialog instead of inline content", () => {
 		render(<StatefulPreviewAppsEditor />);
 
-		fireEvent.click(
-			screen.getByRole("button", { name: "preview_apps_expand" }),
-		);
-		fireEvent.click(
-			screen.getByRole("button", { name: "preview_apps_collapse" }),
-		);
+		fireEvent.click(screen.getByRole("button", { name: "preview_apps_edit" }));
 
-		expect(screen.getByDisplayValue("custom.viewer")).toBeInTheDocument();
-
-		act(() => {
-			vi.runAllTimers();
-		});
-
-		expect(screen.queryByDisplayValue("custom.viewer")).not.toBeInTheDocument();
+		const dialog = screen.getByRole("dialog");
+		expect(
+			within(dialog).getByDisplayValue("custom.viewer"),
+		).toBeInTheDocument();
+		expect(screen.getByText("preview_apps_dialog_desc")).toBeInTheDocument();
 	});
 
-	it("shows readable rule summaries before expanding a rule", () => {
+	it("shows readable extension summaries before expanding an app", () => {
 		render(
 			<StatefulPreviewAppsEditor
-				initialValue={createPreviewAppsConfigWithRule()}
+				initialValue={createPreviewAppsConfigWithExtensions()}
 			/>,
 		);
 
-		expect(screen.getByText("spreadsheet")).toBeInTheDocument();
-		expect(screen.getByText(".xlsx")).toBeInTheDocument();
+		expect(screen.getByText(/xlsx/)).toBeInTheDocument();
 		expect(screen.getAllByText("外部查看器").length).toBeGreaterThan(0);
 		expect(
-			screen.getByText("preview_apps_rule_default_badge"),
-		).toBeInTheDocument();
-		expect(
 			screen.queryByRole("combobox", {
-				name: "preview_apps_rule_default_label",
+				name: "preview_apps_provider_label",
 			}),
 		).not.toBeInTheDocument();
 	});

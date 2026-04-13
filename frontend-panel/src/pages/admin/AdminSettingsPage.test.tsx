@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
 
 const mockState = vi.hoisted(() => ({
+	actionConfig: vi.fn(),
 	codeEditorProps: null as null | Record<string, unknown>,
 	deleteConfig: vi.fn(),
 	handleApiError: vi.fn(),
@@ -402,6 +403,7 @@ vi.mock("@/hooks/useApiError", () => ({
 
 vi.mock("@/services/adminService", () => ({
 	adminConfigService: {
+		action: (...args: unknown[]) => mockState.actionConfig(...args),
 		delete: (...args: unknown[]) => mockState.deleteConfig(...args),
 		list: (...args: unknown[]) => mockState.listConfigs(...args),
 		sendTestEmail: (...args: unknown[]) => mockState.sendTestEmail(...args),
@@ -477,6 +479,7 @@ function getMockConfigCategory(key: string) {
 
 describe("AdminSettingsPage", () => {
 	beforeEach(() => {
+		mockState.actionConfig.mockReset();
 		mockState.codeEditorProps = null;
 		mockState.deleteConfig.mockReset();
 		mockState.handleApiError.mockReset();
@@ -527,6 +530,9 @@ describe("AdminSettingsPage", () => {
 		]);
 		mockState.sendTestEmail.mockResolvedValue({
 			message: "Test email sent to admin@example.com",
+		});
+		mockState.actionConfig.mockResolvedValue({
+			message: "Imported WOPI discovery apps from 1 source",
 		});
 		mockState.templateVariables.mockResolvedValue([
 			createTemplateVariableGroup(),
@@ -1256,20 +1262,15 @@ describe("AdminSettingsPage", () => {
 					key: "frontend_preview_apps_json",
 					value: JSON.stringify(
 						{
-							version: 1,
+							version: 2,
 							apps: [
 								{
+									extensions: ["png", "jpg", "jpeg", "gif"],
 									key: "builtin.image",
 									icon: "Eye",
 									enabled: true,
 									label_i18n_key: "open_with_image",
-								},
-							],
-							rules: [
-								{
-									matches: { categories: ["image"] },
-									apps: ["builtin.image"],
-									default_app: "builtin.image",
+									provider: "builtin",
 								},
 							],
 						},
@@ -1304,6 +1305,139 @@ describe("AdminSettingsPage", () => {
 		).toBeGreaterThan(0);
 		expect(screen.queryByLabelText("Code editor")).not.toBeInTheDocument();
 		expect(mockState.codeEditorProps).toBeNull();
+	});
+
+	it("builds WOPI discovery apps into the local preview app draft", async () => {
+		const initialPreviewValue = JSON.stringify(
+			{
+				version: 2,
+				apps: [
+					{
+						key: "custom.viewer",
+						provider: "url_template",
+						icon: "https://viewer.example.com/icon.svg",
+						enabled: true,
+						extensions: ["md"],
+						labels: {
+							en: "Viewer",
+						},
+						config: {
+							mode: "iframe",
+							url_template:
+								"https://viewer.example.com/embed?src={{file_preview_url}}",
+							allowed_origins: ["https://viewer.example.com"],
+						},
+					},
+				],
+			},
+			null,
+			2,
+		);
+
+		mockState.actionConfig.mockResolvedValueOnce({
+			message: "Built preview apps from discovery",
+			value: JSON.stringify(
+				{
+					version: 2,
+					apps: [
+						{
+							key: "custom.viewer",
+							provider: "url_template",
+							icon: "https://viewer.example.com/icon.svg",
+							enabled: true,
+							extensions: ["md"],
+							labels: {
+								en: "Viewer",
+							},
+							config: {
+								mode: "iframe",
+								url_template:
+									"https://viewer.example.com/embed?src={{file_preview_url}}",
+								allowed_origins: ["https://viewer.example.com"],
+							},
+						},
+						{
+							key: "custom.wopi.localhost.8080.hosting.discovery__wopi_discovery__word",
+							provider: "wopi",
+							icon: "http://localhost:8080/word.ico",
+							enabled: true,
+							extensions: ["doc", "docx"],
+							labels: {
+								en: "Word",
+							},
+							config: {
+								mode: "iframe",
+								action: "view",
+								discovery_url: "http://localhost:8080/hosting/discovery",
+							},
+						},
+					],
+				},
+				null,
+				2,
+			),
+		});
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "general.preview",
+					key: "frontend_preview_apps_json",
+					value: initialPreviewValue,
+					value_type: "multiline",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "general.preview",
+				key: "frontend_preview_apps_json",
+				value_type: "multiline",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="general" />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /settings_section_expand/i }),
+		);
+		await screen.findByText("preview_apps_editor_title");
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /preview_apps_add_app/ }),
+		);
+		fireEvent.click(
+			screen
+				.getByText("preview_apps_add_dialog_wopi_title")
+				.closest("button") as HTMLButtonElement,
+		);
+		fireEvent.change(
+			screen.getByLabelText("preview_apps_wopi_discovery_dialog_label"),
+			{
+				target: { value: "http://localhost:8080/hosting/discovery" },
+			},
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "preview_apps_wopi_discovery_dialog_submit",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.actionConfig).toHaveBeenCalledWith(
+				"frontend_preview_apps_json",
+				{
+					action: "build_wopi_discovery_preview_config",
+					discovery_url: "http://localhost:8080/hosting/discovery",
+					value: initialPreviewValue,
+				},
+			);
+		});
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"Built preview apps from discovery",
+			);
+		});
+		expect(screen.getAllByText("Word").length).toBeGreaterThan(0);
 	});
 
 	it("debounces favicon asset preview updates while typing", async () => {

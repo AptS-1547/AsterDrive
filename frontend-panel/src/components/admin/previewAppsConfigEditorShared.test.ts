@@ -1,20 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
 	createPreviewAppDraft,
-	createPreviewRuleDraft,
 	getPreviewAppsConfigIssues,
 	getPreviewAppsConfigIssuesFromString,
 	parsePreviewAppsConfig,
-	removePreviewRuleAppKey,
-	renamePreviewRuleAppKey,
 	serializePreviewAppsConfig,
 } from "@/components/admin/previewAppsConfigEditorShared";
 import { PREVIEW_APP_ICON_URLS } from "@/components/common/previewAppIconUrls";
 
 describe("previewAppsConfigEditorShared", () => {
-	it("parses and serializes preview app config drafts", () => {
+	it("parses and serializes extension-bound preview app configs", () => {
 		const draft = parsePreviewAppsConfig(`{
-			"version": 1,
+			"version": 2,
 			"apps": [
 				{
 					"key": "builtin.image",
@@ -34,18 +31,12 @@ describe("previewAppsConfigEditorShared", () => {
 					"labels": {
 						"en": "Jellyfin"
 					},
+					"extensions": ["mp4", "mkv"],
 					"config": {
 						"mode": "iframe",
 						"url_template": "https://videos.example.com/watch?src={{file_preview_url}}",
 						"allowed_origins": ["https://videos.example.com"]
 					}
-				}
-			],
-			"rules": [
-				{
-					"matches": { "categories": ["video"] },
-					"apps": ["custom.viewer"],
-					"default_app": "custom.viewer"
 				}
 			]
 		}`);
@@ -53,12 +44,12 @@ describe("previewAppsConfigEditorShared", () => {
 		expect(draft).toMatchObject({
 			apps: [
 				{
+					key: "builtin.image",
+					provider: "builtin",
 					labels: {
 						en: "Image preview",
 						zh: "图片预览",
 					},
-					key: "builtin.image",
-					provider: "builtin",
 				},
 				{
 					config: {
@@ -68,6 +59,7 @@ describe("previewAppsConfigEditorShared", () => {
 							"https://videos.example.com/watch?src={{file_preview_url}}",
 					},
 					enabled: false,
+					extensions: ["mp4", "mkv"],
 					key: "custom.viewer",
 					labels: {
 						en: "Jellyfin",
@@ -75,17 +67,11 @@ describe("previewAppsConfigEditorShared", () => {
 					provider: "url_template",
 				},
 			],
-			rules: [
-				{
-					apps: ["custom.viewer"],
-					default_app: "custom.viewer",
-					matches: { categories: ["video"] },
-				},
-			],
-			version: 1,
+			version: 2,
 		});
 
-		expect(JSON.parse(serializePreviewAppsConfig(draft))).toMatchObject({
+		const serialized = JSON.parse(serializePreviewAppsConfig(draft));
+		expect(serialized).toMatchObject({
 			apps: expect.arrayContaining([
 				{
 					enabled: true,
@@ -105,6 +91,7 @@ describe("previewAppsConfigEditorShared", () => {
 							"https://videos.example.com/watch?src={{file_preview_url}}",
 					},
 					enabled: false,
+					extensions: ["mp4", "mkv"],
 					icon: "https://cdn.example.com/jellyfin.svg",
 					key: "custom.viewer",
 					labels: {
@@ -113,13 +100,14 @@ describe("previewAppsConfigEditorShared", () => {
 					provider: "url_template",
 				},
 			]),
-			version: 1,
+			version: 2,
 		});
+		expect(serialized).not.toHaveProperty("rules");
 	});
 
 	it("treats default icons as empty overrides", () => {
 		const draft = parsePreviewAppsConfig(`{
-			"version": 1,
+			"version": 2,
 			"apps": [
 				{
 					"key": "builtin.image",
@@ -138,13 +126,13 @@ describe("previewAppsConfigEditorShared", () => {
 					"labels": {
 						"zh": "外部查看器"
 					},
+					"extensions": ["txt"],
 					"config": {
 						"mode": "iframe",
 						"url_template": "https://viewer.example.com/embed?src={{file_preview_url}}"
 					}
 				}
-			],
-			"rules": []
+			]
 		}`);
 
 		expect(draft.apps).toMatchObject([
@@ -172,45 +160,9 @@ describe("previewAppsConfigEditorShared", () => {
 		);
 	});
 
-	it("drops non-url icon overrides", () => {
-		const draft = parsePreviewAppsConfig(`{
-			"version": 1,
-			"apps": [
-				{
-					"key": "custom.viewer",
-					"icon": "Globe",
-					"enabled": true,
-					"provider": "url_template",
-					"labels": {
-						"zh": "外部查看器"
-					},
-					"config": {
-						"mode": "iframe",
-						"url_template": "https://viewer.example.com/embed?src={{file_preview_url}}"
-					}
-				}
-			],
-			"rules": []
-		}`);
-
-		expect(draft.apps).toMatchObject([
-			{
-				icon: "",
-				key: "custom.viewer",
-			},
-		]);
-
-		expect(JSON.parse(serializePreviewAppsConfig(draft)).apps).toEqual([
-			expect.objectContaining({
-				icon: "",
-				key: "custom.viewer",
-			}),
-		]);
-	});
-
 	it("does not infer provider from the app key when parsing drafts", () => {
 		const draft = parsePreviewAppsConfig(`{
-			"version": 1,
+			"version": 2,
 			"apps": [
 				{
 					"key": "custom.viewer",
@@ -219,67 +171,25 @@ describe("previewAppsConfigEditorShared", () => {
 					"labels": {
 						"zh": "外部查看器"
 					},
+					"extensions": ["md"],
 					"config": {
 						"mode": "iframe",
 						"url_template": "https://viewer.example.com/embed?src={{file_preview_url}}"
 					}
 				}
-			],
-			"rules": []
+			]
 		}`);
 
 		expect(draft.apps).toMatchObject([
 			{
+				extensions: ["md"],
 				key: "custom.viewer",
 				provider: "",
 			},
 		]);
 	});
 
-	it("renames and removes rule references when app keys change", () => {
-		const rules = [
-			{
-				apps: ["custom.viewer", "builtin.code"],
-				default_app: "custom.viewer",
-				matches: {
-					categories: ["video"],
-					extensions: [],
-					mime_prefixes: [],
-					mime_types: [],
-				},
-			},
-		];
-
-		expect(
-			renamePreviewRuleAppKey(rules, "custom.viewer", "custom.viewer_v2"),
-		).toEqual([
-			{
-				apps: ["custom.viewer_v2", "builtin.code"],
-				default_app: "custom.viewer_v2",
-				matches: {
-					categories: ["video"],
-					extensions: [],
-					mime_prefixes: [],
-					mime_types: [],
-				},
-			},
-		]);
-
-		expect(removePreviewRuleAppKey(rules, "custom.viewer")).toEqual([
-			{
-				apps: ["builtin.code"],
-				default_app: "builtin.code",
-				matches: {
-					categories: ["video"],
-					extensions: [],
-					mime_prefixes: [],
-					mime_types: [],
-				},
-			},
-		]);
-	});
-
-	it("creates useful default app and rule drafts", () => {
+	it("creates useful default app drafts", () => {
 		const app = createPreviewAppDraft(["custom.app_1"]);
 		expect(app).toMatchObject({
 			config: {
@@ -287,33 +197,12 @@ describe("previewAppsConfigEditorShared", () => {
 				mode: "iframe",
 				url_template: "",
 			},
+			enabled: true,
+			extensions: [],
 			icon: "",
 			key: "custom.app_2",
 			labels: {},
 			provider: "url_template",
-		});
-
-		expect(
-			createPreviewRuleDraft([
-				{
-					config: {},
-					enabled: true,
-					icon: "",
-					key: "builtin.image",
-					label_i18n_key: "open_with_image",
-					labels: {},
-					provider: "builtin",
-				},
-			]),
-		).toEqual({
-			apps: ["builtin.image"],
-			default_app: "builtin.image",
-			matches: {
-				categories: [],
-				extensions: [],
-				mime_prefixes: [],
-				mime_types: [],
-			},
 		});
 	});
 
@@ -328,6 +217,7 @@ describe("previewAppsConfigEditorShared", () => {
 					{
 						config: { mode: "" },
 						enabled: true,
+						extensions: [],
 						icon: "",
 						key: "",
 						label_i18n_key: "",
@@ -337,6 +227,7 @@ describe("previewAppsConfigEditorShared", () => {
 					{
 						config: {},
 						enabled: true,
+						extensions: [],
 						icon: "",
 						key: "",
 						label_i18n_key: "",
@@ -348,6 +239,7 @@ describe("previewAppsConfigEditorShared", () => {
 							mode: "",
 						},
 						enabled: true,
+						extensions: ["docx"],
 						icon: "",
 						key: "custom.onlyoffice",
 						label_i18n_key: "",
@@ -355,18 +247,6 @@ describe("previewAppsConfigEditorShared", () => {
 							zh: "OnlyOffice",
 						},
 						provider: "wopi",
-					},
-				],
-				rules: [
-					{
-						apps: ["missing.app"],
-						default_app: "builtin.image",
-						matches: {
-							categories: [],
-							extensions: [],
-							mime_prefixes: [],
-							mime_types: [],
-						},
 					},
 				],
 				version: 99,
@@ -380,8 +260,6 @@ describe("previewAppsConfigEditorShared", () => {
 				"preview_apps_error_url_template_mode_required",
 				"preview_apps_error_url_template_required",
 				"preview_apps_error_builtin_required",
-				"preview_apps_error_rule_unknown_app",
-				"preview_apps_error_rule_default_missing",
 				"preview_apps_error_wopi_mode_required",
 				"preview_apps_error_wopi_target_required",
 			]),

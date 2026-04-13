@@ -148,7 +148,9 @@ vi.mock("@/components/ui/card", () => ({
 
 vi.mock("recharts", () => ({
 	CartesianGrid: () => <div>recharts-grid</div>,
-	Line: () => <div>recharts-line</div>,
+	Line: ({ dataKey, name }: { dataKey?: string; name?: string }) => (
+		<div>{`recharts-line:${dataKey ?? ""}:${name ?? ""}`}</div>
+	),
 	LineChart: ({
 		children,
 		data,
@@ -346,7 +348,20 @@ describe("AdminOverviewPage", () => {
 				{ name: /refresh/i },
 			),
 		).toBeInTheDocument();
-		expect(screen.getByText("recharts-line")).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"recharts-line:totalEvents:overview_report_total_events",
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("recharts-line:uploads:overview_report_uploads"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("recharts-line:shareCreations:overview_report_shares"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("recharts-line:newUsers:overview_report_new_users"),
+		).toBeInTheDocument();
 		expect(
 			screen.getByText("recharts-x-axis:label:0:0:12:12"),
 		).toBeInTheDocument();
