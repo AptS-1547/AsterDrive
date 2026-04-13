@@ -1,5 +1,6 @@
+mod ui;
+
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::io::{self, IsTerminal};
 use std::path::Path;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -16,6 +17,12 @@ use serde::Serialize;
 use crate::db;
 use crate::errors::{AsterError, Result};
 use crate::utils::hash::sha256_hex;
+
+use self::ui::ProgressReporter;
+
+pub use self::ui::{
+    DatabaseMigrateOutputFormat, render_database_migration_error, render_database_migration_success,
+};
 
 const COPY_TABLE_ORDER: &[&str] = &[
     "storage_policies",
@@ -193,7 +200,7 @@ impl ResumeReport {
 }
 
 #[derive(Debug, Serialize)]
-struct DatabaseMigrationReport {
+pub struct DatabaseMigrationReport {
     mode: MigrationMode,
     ready_to_cutover: bool,
     rolled_back: bool,
@@ -253,6 +260,13 @@ struct UniqueIndex {
     is_primary: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ExpressionUniqueCheck {
+    table: &'static str,
+    constraint: &'static str,
+    expressions: &'static [&'static str],
+}
+
 #[derive(Debug)]
 struct ForeignKey {
     table: String,
@@ -309,54 +323,9 @@ struct ApplyModeContext<'a> {
     progress: &'a ProgressReporter,
 }
 
-struct ProgressReporter {
-    enabled: bool,
-}
-
-impl ProgressReporter {
-    fn new() -> Self {
-        Self {
-            enabled: io::stderr().is_terminal() || env_truthy(PROGRESS_ENV),
-        }
-    }
-
-    fn stage(&self, stage: &str, message: impl AsRef<str>) {
-        if self.enabled {
-            eprintln!("[database-migrate] {stage}: {}", message.as_ref());
-        }
-    }
-
-    fn batch(
-        &self,
-        table_index: usize,
-        table_count: usize,
-        plan: &TablePlan,
-        table_copied: i64,
-        overall_copied: i64,
-        total_rows: i64,
-    ) {
-        if !self.enabled {
-            return;
-        }
-
-        let table_pct = format_percent(table_copied, plan.source_rows);
-        let overall_pct = format_percent(overall_copied, total_rows);
-        eprintln!(
-            "[database-migrate] data_copy: [{}/{}] {} {}/{} rows ({}) total {}/{} ({})",
-            table_index + 1,
-            table_count,
-            plan.name,
-            table_copied,
-            plan.source_rows,
-            table_pct,
-            overall_copied,
-            total_rows,
-            overall_pct
-        );
-    }
-}
-
-pub async fn execute_database_migration(args: &DatabaseMigrateArgs) -> Result<serde_json::Value> {
+pub async fn execute_database_migration(
+    args: &DatabaseMigrateArgs,
+) -> Result<DatabaseMigrationReport> {
     if args.dry_run && args.verify_only {
         return Err(AsterError::validation_error(
             "dry-run and verify-only cannot be enabled at the same time",
@@ -605,11 +574,7 @@ pub async fn execute_database_migration(args: &DatabaseMigrateArgs) -> Result<se
         resume,
     };
 
-    serde_json::to_value(report).map_err(|error| {
-        AsterError::internal_error(format!(
-            "failed to serialize database migration report: {error}"
-        ))
-    })
+    Ok(report)
 }
 
 async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<ApplyExecution> {
@@ -1855,7 +1820,8 @@ where
     }
 
     let unique_indexes = load_unique_indexes(target, target_backend, plans).await?;
-    verification.checked_unique_constraints = unique_indexes.len() + 2;
+    let expression_checks = expression_unique_checks();
+    verification.checked_unique_constraints = unique_indexes.len() + expression_checks.len();
     for index in unique_indexes {
         let violations =
             count_duplicate_groups(target, target_backend, &index.table, &index.columns).await?;
@@ -1873,14 +1839,19 @@ where
         }
     }
 
-    for (table, name, columns) in live_name_unique_checks() {
+    for check in expression_checks {
         let violations =
-            count_expression_duplicates(target, target_backend, table, columns).await?;
+            count_expression_duplicates(target, target_backend, check.table, check.expressions)
+                .await?;
         if violations != 0 {
             verification.unique_conflicts.push(ConstraintCheck {
-                table: table.to_string(),
-                constraint: name.to_string(),
-                columns: columns.iter().map(|value| value.to_string()).collect(),
+                table: check.table.to_string(),
+                constraint: check.constraint.to_string(),
+                columns: check
+                    .expressions
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect(),
                 violations,
             });
         }
@@ -1992,7 +1963,11 @@ where
                  WHERE table_schema = DATABASE() \
                    AND table_name IN ({table_filter}) \
                    AND non_unique = 0 \
-                   AND index_name NOT IN ('idx_files_unique_live_name', 'idx_folders_unique_live_name') \
+                   AND index_name NOT IN (\
+                        'idx_files_unique_live_name', \
+                        'idx_folders_unique_live_name', \
+                        'idx_contact_verification_tokens_single_active'\
+                   ) \
                  GROUP BY table_name, index_name \
                  ORDER BY table_name, index_name"
             );
@@ -2065,7 +2040,9 @@ where
                 .map_err(|error| AsterError::database_operation(error.to_string()))?;
             if matches!(
                 name.as_str(),
-                "idx_files_unique_live_name" | "idx_folders_unique_live_name"
+                "idx_files_unique_live_name"
+                    | "idx_folders_unique_live_name"
+                    | "idx_contact_verification_tokens_single_active"
             ) {
                 continue;
             }
@@ -2135,30 +2112,40 @@ where
     scalar_i64(db, backend, &sql).await
 }
 
-fn live_name_unique_checks() -> [(&'static str, &'static str, [&'static str; 5]); 2] {
-    [
-        (
-            "files",
-            "idx_files_unique_live_name",
-            [
+fn expression_unique_checks() -> &'static [ExpressionUniqueCheck] {
+    &[
+        ExpressionUniqueCheck {
+            table: "files",
+            constraint: "idx_files_unique_live_name",
+            expressions: &[
                 "CASE WHEN team_id IS NULL THEN 0 ELSE 1 END",
                 "CASE WHEN team_id IS NULL THEN user_id ELSE team_id END",
                 "COALESCE(folder_id, 0)",
                 "name",
                 "CASE WHEN deleted_at IS NULL THEN 1 ELSE NULL END",
             ],
-        ),
-        (
-            "folders",
-            "idx_folders_unique_live_name",
-            [
+        },
+        ExpressionUniqueCheck {
+            table: "folders",
+            constraint: "idx_folders_unique_live_name",
+            expressions: &[
                 "CASE WHEN team_id IS NULL THEN 0 ELSE 1 END",
                 "CASE WHEN team_id IS NULL THEN user_id ELSE team_id END",
                 "COALESCE(parent_id, 0)",
                 "name",
                 "CASE WHEN deleted_at IS NULL THEN 1 ELSE NULL END",
             ],
-        ),
+        },
+        ExpressionUniqueCheck {
+            table: "contact_verification_tokens",
+            constraint: "idx_contact_verification_tokens_single_active",
+            expressions: &[
+                "user_id",
+                "channel",
+                "purpose",
+                "CASE WHEN consumed_at IS NULL THEN 1 ELSE NULL END",
+            ],
+        },
     ]
 }
 
@@ -2166,14 +2153,21 @@ async fn count_expression_duplicates<C>(
     db: &C,
     backend: DbBackend,
     table: &str,
-    expressions: [&str; 5],
+    expressions: &[&str],
 ) -> Result<i64>
 where
     C: ConnectionTrait,
 {
     let table_ident = quote_ident(backend, table);
+    let where_clause = expressions
+        .iter()
+        .map(|expression| format!("({expression}) IS NOT NULL"))
+        .collect::<Vec<_>>()
+        .join(" AND ");
     let group_by = expressions.join(", ");
-    let inner = format!("SELECT 1 FROM {table_ident} GROUP BY {group_by} HAVING COUNT(*) > 1");
+    let inner = format!(
+        "SELECT 1 FROM {table_ident} WHERE {where_clause} GROUP BY {group_by} HAVING COUNT(*) > 1"
+    );
     let sql = format!("SELECT COUNT(*) FROM ({inner}) AS duplicate_groups");
     scalar_i64(db, backend, &sql).await
 }
@@ -2766,28 +2760,11 @@ fn parse_positive_i64_env(name: &str, default_value: i64) -> Result<i64> {
     Ok(value)
 }
 
-fn env_truthy(name: &str) -> bool {
-    let Some(value) = std::env::var_os(name) else {
-        return false;
-    };
-    matches!(
-        value.to_string_lossy().to_ascii_lowercase().as_str(),
-        "1" | "true" | "yes" | "on"
-    )
-}
-
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock should be after unix epoch")
         .as_millis() as i64
-}
-
-fn format_percent(current: i64, total: i64) -> String {
-    if total <= 0 {
-        return "0.0%".to_string();
-    }
-    format!("{:.1}%", (current as f64 / total as f64) * 100.0)
 }
 
 fn binding_kind_is_integer(kind: BindingKind) -> bool {
@@ -2925,7 +2902,9 @@ mod tests {
     #[test]
     fn redact_database_url_masks_sqlite_paths_but_preserves_filename() {
         assert_eq!(
-            redact_database_url("sqlite:///Users/esap/Desktop/Github/AsterDrive/data/asterdrive.db?mode=rwc"),
+            redact_database_url(
+                "sqlite:///Users/esap/Desktop/Github/AsterDrive/data/asterdrive.db?mode=rwc"
+            ),
             "sqlite:///.../asterdrive.db?mode=rwc"
         );
         assert_eq!(

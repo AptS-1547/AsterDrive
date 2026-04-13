@@ -25,19 +25,26 @@ struct RootCli {
 enum RootCommand {
     /// Start the AsterDrive server
     Serve,
+    /// Run offline health checks for database, config, and storage readiness
+    Doctor {
+        #[arg(long, env = "ASTER_CLI_OUTPUT_FORMAT", default_value = "auto")]
+        output_format: aster_drive::cli::OutputFormat,
+        #[command(flatten)]
+        args: aster_drive::cli::DoctorArgs,
+    },
     /// Manage runtime configuration stored in system_config
     Config {
         #[arg(long, env = "ASTER_CLI_DATABASE_URL")]
         database_url: String,
-        #[arg(long, env = "ASTER_CLI_OUTPUT_FORMAT", default_value = "json")]
+        #[arg(long, env = "ASTER_CLI_OUTPUT_FORMAT", default_value = "auto")]
         output_format: aster_drive::cli::OutputFormat,
         #[command(subcommand)]
         action: aster_drive::cli::ConfigCommand,
     },
     /// Run an offline database backend migration for a maintenance window
     DatabaseMigrate {
-        #[arg(long, env = "ASTER_CLI_OUTPUT_FORMAT", default_value = "json")]
-        output_format: aster_drive::cli::OutputFormat,
+        #[arg(long, env = "ASTER_CLI_OUTPUT_FORMAT", default_value = "auto")]
+        output_format: aster_drive::cli::DatabaseMigrateOutputFormat,
         #[command(flatten)]
         args: aster_drive::cli::DatabaseMigrateArgs,
     },
@@ -54,6 +61,20 @@ async fn main() -> std::io::Result<()> {
     {
         let cli = RootCli::parse();
         match cli.command {
+            Some(RootCommand::Doctor {
+                output_format,
+                args,
+            }) => {
+                let report = aster_drive::cli::execute_doctor_command(&args).await;
+                println!(
+                    "{}",
+                    aster_drive::cli::render_doctor_success(output_format, &report)
+                );
+                if report.should_exit_nonzero() {
+                    std::process::exit(1);
+                }
+                return Ok(());
+            }
             Some(RootCommand::Config {
                 database_url,
                 output_format,
@@ -73,11 +94,17 @@ async fn main() -> std::io::Result<()> {
                 args,
             }) => match aster_drive::cli::execute_database_migration(&args).await {
                 Ok(data) => {
-                    println!("{}", aster_drive::cli::render_success(output_format, &data));
+                    println!(
+                        "{}",
+                        aster_drive::cli::render_database_migration_success(output_format, &data,)
+                    );
                     return Ok(());
                 }
                 Err(error) => {
-                    eprintln!("{}", aster_drive::cli::render_error(output_format, &error));
+                    eprintln!(
+                        "{}",
+                        aster_drive::cli::render_database_migration_error(output_format, &error,)
+                    );
                     std::process::exit(1);
                 }
             },
