@@ -5,6 +5,98 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.19] - 2026-04-14
+
+### Release Highlights
+
+- **跨数据库后端迁移工具** — 新增 `aster-drive database-migrate` 子命令，支持在 SQLite、PostgreSQL、MySQL 之间做离线全量数据迁移。表依赖感知的复制顺序、断点续传、数据完整性验证、进度条展示
+- **离线健康检查** — 新增 `aster-drive doctor` 子命令，类似 `brew doctor`，一键检查数据库连接、迁移状态、运行时配置、邮件配置、存储策略完整性，支持 `--strict` 模式
+- **WOPI 协议补全** — 新增 GET_LOCK、RENAME_FILE、PUT_USER_INFO、UnlockAndRelock、PutRelativeFile 五个 WOPI 操作，大幅提升 Office 在线编辑兼容性
+- **文件/文件夹同名唯一索引** — 在数据库层面添加条件唯一索引，彻底解决软删除场景下的同名竞态条件和数据完整性问题
+- **CLI 模块重构与 human 输出** — CLI 拆分为模块目录结构，新增 human-readable 终端输出格式，支持彩色输出和自动格式检测
+
+
+### Added
+
+- **跨数据库迁移工具 (`database-migrate`)**
+  - 三种运行模式：`apply`（执行）、`dry-run`（计划）、`verify-only`（验证）
+  - 22 张表按外键依赖顺序复制，断点续传支持中断恢复
+  - 迁移完成后自动验证：行数匹配、唯一约束、外键约束
+  - 跨后端类型映射（Bool/Int32/Int64/Float64/String/Bytes/TimestampWithTimeZone）
+  - PostgreSQL/MySQL 序列自动重置
+  - 可配置批量大小（`ASTER_CLI_COPY_BATCH_SIZE`，默认 200）
+- **离线健康检查 (`doctor`)**
+  - 检查项：数据库连接与后端类型、迁移状态、运行时配置快照、Public Site URL 格式、SMTP 配置完整性、预览应用注册表、存储策略与策略组
+  - `--strict` 模式将 warning 视为失败
+- **WOPI 协议扩展**
+  - GET_LOCK：查询当前文件锁值
+  - RENAME_FILE：WOPI 重命名（自动保留扩展名、清理非法字符、截断超长名称、冲突自动分配）
+  - PUT_USER_INFO：保存/读取 WOPI 用户偏好（存储到 `user_profiles.wopi_user_info`）
+  - UnlockAndRelock：原子换锁操作
+  - PutRelativeFile：创建/覆写相邻文件（Suggested 模式自动去重命名 + Relative 模式精确指定）
+  - CheckFileInfo 新增 `SupportsGetLock`/`SupportsRename`/`UserCanRename`/`SupportsUserInfo`/`FileNameMaxLength` 字段
+- **数据库唯一索引**
+  - `idx_files_unique_live_name`：文件名在活跃状态下的唯一约束（区分个人/团队空间）
+  - `idx_folders_unique_live_name`：文件夹名在活跃状态下的唯一约束
+  - `idx_contact_verification_tokens_single_active`：同一用户/渠道/用途只允许一个未消费验证令牌
+  - `user_profiles.wopi_user_info` 列（VARCHAR(1024)）
+- **CLI human 输出格式**
+  - 终端自动检测：终端显示 human 格式，管道输出 JSON
+  - 彩色输出：支持 `CLICOLOR_FORCE` / `NO_COLOR` 环境变量
+  - 敏感值掩码、多行值摘要、来源徽章（`[system]`/`[custom]`）
+  - 进度条展示（database-migrate）
+- **运维 CLI 文档** — 新增 `docs/deployment/ops-cli.md`，覆盖 doctor/config/database-migrate 完整使用指南；README 和全站文档交叉引用
+
+
+### Changed
+
+- **CLI 模块结构重构**
+  - 从 `cli.rs` 单文件拆分为 `cli/config.rs`、`cli/doctor.rs`、`cli/database_migration.rs`、`cli/shared.rs` 模块目录
+  - 提取公共工具到 `cli/shared.rs`：OutputFormat、CliTerminalPalette、Success/ErrorEnvelope
+- **`/auth/check` 接口简化**
+  - 移除 `CheckReq` 请求体（原含 `identifier` 字段），接口仅返回实例认证状态
+  - `operation_id` 从 `check_identifier` 改为 `check_auth_state`
+  - 前端 `authService.check()` 和 `LoginPage` 同步更新
+- **后台任务管理**
+  - 新增 `BackgroundTasks` 结构体收集所有 JoinHandle
+  - panic 捕获从子任务 spawn 改为 `AssertUnwindSafe + catch_unwind`
+  - 关闭顺序改为：先 abort 后台任务 → 再关闭数据库连接
+- **config_repo upsert 优化**
+  - `upsert_with_actor` 改为 INSERT ON CONFLICT DO NOTHING + TryInsertResult 检查
+  - 消除 SELECT-then-INSERT 的竞态条件
+- **文件复制重试逻辑**
+  - 文件/文件夹复制从 check-then-create 改为 try-create-and-retry（最多 32 次）
+  - 彻底消除复制操作中的 TOCTOU 竞态条件
+- **WOPI 错误响应**
+  - 不再将 403 映射为 401，改用标准 actix_web 错误响应
+- **存储配额计算**
+  - 文件覆写时配额增量改为新内容全量（而非差值）
+
+
+### Fixed
+
+- **文件/文件夹同名冲突** — 软删除后无法创建同名文件、回收站恢复冲突、批量操作后名称释放等问题，通过数据库唯一索引彻底解决
+- **验证令牌重复发送** — 同一用户/渠道/用途重复请求验证邮件时不再发送新邮件，唯一索引保证只有一个活跃令牌
+- **用户注册/邮箱变更唯一约束** — 区分用户名和邮箱冲突，返回更精确的错误信息
+- **SQLite URL 缺少写模式** — 不带查询参数的 SQLite URL 自动补齐 `?mode=rwc`
+
+
+### Breaking Changes
+
+- **`/auth/check` 接口变更**：移除请求体，`operation_id` 从 `check_identifier` 改为 `check_auth_state`，依赖此接口的客户端需移除 `identifier` 参数
+- **CLI 输出格式默认行为**：`config` 子命令在终端中默认输出 human 格式而非 JSON，依赖 JSON 输出的脚本需显式指定 `--output-format json`
+- **WOPI CheckFileInfo 响应变更**：`UserCanNotWriteRelative` 从 `true` 改为 `false`，新增多个能力声明字段
+- **存储配额计算变更**：文件覆写时配额增量改为新内容全量，接近配额上限的用户可能受影响
+- **数据库 Schema**：4 个新迁移（唯一索引 + wopi_user_info 列），需运行数据库迁移。唯一索引迁移会自动清理已有的重复数据
+
+
+---
+
+**统计数据**：
+- 71 files changed, 10,354 insertions(+), 1,030 deletions(-)
+- 9 commits
+
+
 ## [v0.0.1-alpha.18] - 2026-04-13
 
 > **⚠️ 升级必读**：本版本将配置文件和数据库文件迁移至 `data/` 目录。升级前需手动迁移：
@@ -1513,7 +1605,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.18...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.19...HEAD
+[v0.0.1-alpha.19]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.18...v0.0.1-alpha.19
 [v0.0.1-alpha.18]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.17...v0.0.1-alpha.18
 [v0.0.1-alpha.17]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.16...v0.0.1-alpha.17
 [v0.0.1-alpha.16]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.15...v0.0.1-alpha.16
