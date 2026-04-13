@@ -38,6 +38,8 @@ mod m20260412_000001_create_wopi_sessions;
 mod m20260412_000002_drop_legacy_avatar_policy_id;
 mod m20260412_000003_drop_legacy_user_storage_policies;
 mod m20260413_000001_add_files_live_name_unique_index;
+mod m20260413_000002_add_folders_live_name_unique_index;
+mod m20260413_000003_add_contact_verification_single_active_index;
 
 pub struct Migrator;
 
@@ -83,6 +85,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260412_000002_drop_legacy_avatar_policy_id::Migration),
             Box::new(m20260412_000003_drop_legacy_user_storage_policies::Migration),
             Box::new(m20260413_000001_add_files_live_name_unique_index::Migration),
+            Box::new(m20260413_000002_add_folders_live_name_unique_index::Migration),
+            Box::new(m20260413_000003_add_contact_verification_single_active_index::Migration),
         ]
     }
 }

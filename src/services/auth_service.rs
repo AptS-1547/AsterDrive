@@ -1,7 +1,8 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ConnectionTrait, IntoActiveModel, Set, TransactionTrait,
+    ActiveModelTrait, ActiveValue, ConnectionTrait, DbErr, IntoActiveModel, Set, SqlErr,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +18,7 @@ use crate::utils::hash;
 
 pub const AUTH_SNAPSHOT_TTL: u64 = 30; // 秒
 const INITIAL_SESSION_VERSION: i64 = 1;
+const ACTIVE_VERIFICATION_REQUEST_MESSAGE: &str = "a verification request is already active";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
@@ -307,6 +309,85 @@ fn normalize_email(email: &str) -> Result<String> {
     Ok(normalized.to_string())
 }
 
+fn is_unique_conflict_db_err(err: &DbErr) -> bool {
+    matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
+}
+
+async fn map_user_create_db_err<C: ConnectionTrait>(
+    db: &C,
+    err: DbErr,
+    username: &str,
+    email: &str,
+) -> AsterError {
+    if !is_unique_conflict_db_err(&err) {
+        return AsterError::from(err);
+    }
+
+    if user_repo::find_by_username(db, username)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return AsterError::validation_error("username already exists");
+    }
+
+    if user_repo::find_by_email(db, email)
+        .await
+        .ok()
+        .flatten()
+        .is_some()
+        || user_repo::find_by_pending_email(db, email)
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+    {
+        return AsterError::validation_error("email already exists");
+    }
+
+    AsterError::validation_error("username or email already exists")
+}
+
+fn map_user_email_db_err(err: DbErr) -> AsterError {
+    if is_unique_conflict_db_err(&err) {
+        AsterError::validation_error("email already exists")
+    } else {
+        AsterError::from(err)
+    }
+}
+
+async fn map_contact_token_create_db_err<C: ConnectionTrait>(
+    db: &C,
+    err: DbErr,
+    user_id: i64,
+    purpose: VerificationPurpose,
+) -> AsterError {
+    if !is_unique_conflict_db_err(&err) {
+        return AsterError::from(err);
+    }
+
+    if contact_verification_token_repo::find_latest_active_for_user(
+        db,
+        user_id,
+        VerificationChannel::Email,
+        purpose,
+    )
+    .await
+    .ok()
+    .flatten()
+    .is_some()
+    {
+        return AsterError::rate_limited(ACTIVE_VERIFICATION_REQUEST_MESSAGE);
+    }
+
+    AsterError::from(err)
+}
+
+fn is_active_verification_request_error(err: &AsterError) -> bool {
+    matches!(err, AsterError::RateLimited(message) if message == ACTIVE_VERIFICATION_REQUEST_MESSAGE)
+}
+
 async fn ensure_email_available<C: ConnectionTrait>(
     db: &C,
     email: &str,
@@ -369,6 +450,8 @@ async fn create_user_with_role<C: ConnectionTrait>(
             )
         })?;
 
+    let username_for_err = username.clone();
+    let email_for_err = email.clone();
     let model = user::ActiveModel {
         username: Set(username),
         email: Set(email),
@@ -385,7 +468,12 @@ async fn create_user_with_role<C: ConnectionTrait>(
         updated_at: Set(now),
         ..Default::default()
     };
-    let user = user_repo::create(db, model).await?;
+    let user = match model.insert(db).await {
+        Ok(user) => user,
+        Err(err) => {
+            return Err(map_user_create_db_err(db, err, &username_for_err, &email_for_err).await);
+        }
+    };
 
     if let Some(policy_group_id) = user.policy_group_id {
         state
@@ -435,21 +523,25 @@ async fn issue_contact_verification_token<C: ConnectionTrait>(
     )
     .await?;
 
-    contact_verification_token_repo::create(
-        db,
-        contact_verification_token::ActiveModel {
-            user_id: Set(user_id),
-            channel: Set(VerificationChannel::Email),
-            purpose: Set(purpose),
-            target: Set(target.to_string()),
-            token_hash: Set(token_hash),
-            expires_at: Set(now + Duration::seconds(ttl_secs as i64)),
-            consumed_at: Set(None),
-            created_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await?;
+    match (contact_verification_token::ActiveModel {
+        user_id: Set(user_id),
+        channel: Set(VerificationChannel::Email),
+        purpose: Set(purpose),
+        target: Set(target.to_string()),
+        token_hash: Set(token_hash),
+        expires_at: Set(now + Duration::seconds(ttl_secs as i64)),
+        consumed_at: Set(None),
+        created_at: Set(now),
+        ..Default::default()
+    })
+    .insert(db)
+    .await
+    {
+        Ok(_) => {}
+        Err(err) => {
+            return Err(map_contact_token_create_db_err(db, err, user_id, purpose).await);
+        }
+    }
 
     Ok(token)
 }
@@ -646,14 +738,19 @@ pub async fn resend_register_activation(
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
 
     let txn = state.db.begin().await.map_err(AsterError::from)?;
-    let token = issue_contact_verification_token(
+    let token = match issue_contact_verification_token(
         &txn,
         user.id,
         VerificationPurpose::RegisterActivation,
         &user.email,
         policy.register_activation_ttl_secs,
     )
-    .await?;
+    .await
+    {
+        Ok(token) => token,
+        Err(err) if is_active_verification_request_error(&err) => return Ok(None),
+        Err(err) => return Err(err),
+    };
     mail_outbox_service::enqueue(
         &txn,
         &user.email,
@@ -705,7 +802,7 @@ pub async fn request_email_change(
     let mut active = existing.into_active_model();
     active.pending_email = Set(Some(normalized_email.clone()));
     active.updated_at = Set(Utc::now());
-    let updated = active.update(&txn).await.map_err(AsterError::from)?;
+    let updated = active.update(&txn).await.map_err(map_user_email_db_err)?;
     let token = issue_contact_verification_token(
         &txn,
         updated.id,
@@ -765,14 +862,19 @@ pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<Optio
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
 
     let txn = state.db.begin().await.map_err(AsterError::from)?;
-    let token = issue_contact_verification_token(
+    let token = match issue_contact_verification_token(
         &txn,
         user.id,
         VerificationPurpose::ContactChange,
         &pending_email,
         policy.contact_change_ttl_secs,
     )
-    .await?;
+    .await
+    {
+        Ok(token) => token,
+        Err(err) if is_active_verification_request_error(&err) => return Ok(None),
+        Err(err) => return Err(err),
+    };
     mail_outbox_service::enqueue(
         &txn,
         &pending_email,
@@ -811,14 +913,23 @@ pub async fn request_password_reset(
 
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
     let txn = state.db.begin().await.map_err(AsterError::from)?;
-    let token = issue_contact_verification_token(
+    let token = match issue_contact_verification_token(
         &txn,
         user.id,
         VerificationPurpose::PasswordReset,
         &user.email,
         policy.password_reset_ttl_secs,
     )
-    .await?;
+    .await
+    {
+        Ok(token) => token,
+        Err(err) if is_active_verification_request_error(&err) => {
+            return Ok(PasswordResetRequestResult {
+                user: Some(user_audit_info(&user)),
+            });
+        }
+        Err(err) => return Err(err),
+    };
     mail_outbox_service::enqueue(
         &txn,
         &user.email,
@@ -986,7 +1097,7 @@ pub async fn confirm_contact_verification(
                 active.pending_email = Set(None);
                 active.email_verified_at = Set(Some(now));
                 active.updated_at = Set(now);
-                active.update(&txn).await.map_err(AsterError::from)?;
+                active.update(&txn).await.map_err(map_user_email_db_err)?;
                 if let Some(previous_email) = previous_email.as_deref() {
                     mail_outbox_service::enqueue(
                         &txn,

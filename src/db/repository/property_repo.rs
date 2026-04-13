@@ -1,5 +1,5 @@
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
+    ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set, TryInsertResult,
 };
 
 use crate::entities::entity_property::{self, Entity as EntityProperty};
@@ -29,31 +29,68 @@ pub async fn upsert<C: ConnectionTrait>(
     name: &str,
     value: Option<&str>,
 ) -> Result<entity_property::Model> {
-    // 先查是否存在
-    let existing = EntityProperty::find()
+    let value_owned = value.map(|v| v.to_string());
+    let inserted = match EntityProperty::insert(entity_property::ActiveModel {
+        entity_type: Set(entity_type),
+        entity_id: Set(entity_id),
+        namespace: Set(namespace.to_string()),
+        name: Set(name.to_string()),
+        value: Set(value_owned.clone()),
+        ..Default::default()
+    })
+    .on_conflict_do_nothing_on([
+        entity_property::Column::EntityType,
+        entity_property::Column::EntityId,
+        entity_property::Column::Namespace,
+        entity_property::Column::Name,
+    ])
+    .exec(db)
+    .await
+    .map_err(AsterError::from)?
+    {
+        TryInsertResult::Inserted(_) => true,
+        TryInsertResult::Conflicted => false,
+        TryInsertResult::Empty => {
+            return Err(AsterError::internal_error(
+                "entity property upsert produced empty insert result",
+            ));
+        }
+    };
+
+    if !inserted {
+        let result = EntityProperty::update_many()
+            .col_expr(
+                entity_property::Column::Value,
+                sea_orm::sea_query::Expr::value(value_owned.clone()),
+            )
+            .filter(entity_property::Column::EntityType.eq(entity_type))
+            .filter(entity_property::Column::EntityId.eq(entity_id))
+            .filter(entity_property::Column::Namespace.eq(namespace))
+            .filter(entity_property::Column::Name.eq(name))
+            .exec(db)
+            .await
+            .map_err(AsterError::from)?;
+
+        if result.rows_affected == 0 {
+            return Err(AsterError::internal_error(format!(
+                "entity property upsert update affected 0 rows for {entity_type:?}#{entity_id} {namespace}:{name}"
+            )));
+        }
+    }
+
+    EntityProperty::find()
         .filter(entity_property::Column::EntityType.eq(entity_type))
         .filter(entity_property::Column::EntityId.eq(entity_id))
         .filter(entity_property::Column::Namespace.eq(namespace))
         .filter(entity_property::Column::Name.eq(name))
         .one(db)
         .await
-        .map_err(AsterError::from)?;
-
-    if let Some(existing) = existing {
-        let mut active: entity_property::ActiveModel = existing.into();
-        active.value = Set(value.map(|v| v.to_string()));
-        active.update(db).await.map_err(AsterError::from)
-    } else {
-        let model = entity_property::ActiveModel {
-            entity_type: Set(entity_type),
-            entity_id: Set(entity_id),
-            namespace: Set(namespace.to_string()),
-            name: Set(name.to_string()),
-            value: Set(value.map(|v| v.to_string())),
-            ..Default::default()
-        };
-        model.insert(db).await.map_err(AsterError::from)
-    }
+        .map_err(AsterError::from)?
+        .ok_or_else(|| {
+            AsterError::internal_error(format!(
+                "entity property upsert could not reload row for {entity_type:?}#{entity_id} {namespace}:{name}"
+            ))
+        })
 }
 
 /// 删除单个属性

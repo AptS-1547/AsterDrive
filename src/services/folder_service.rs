@@ -16,6 +16,8 @@ use crate::services::{
 };
 use crate::types::NullablePatch;
 
+const MAX_COPY_NAME_RETRIES: usize = 32;
+
 #[derive(Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct FolderAncestorItem {
@@ -189,10 +191,7 @@ pub(crate) async fn create_in_scope(
     };
 
     if exists {
-        return Err(AsterError::validation_error(format!(
-            "folder '{}' already exists in this location",
-            name
-        )));
+        return Err(folder_repo::duplicate_name_error(name));
     }
 
     let now = Utc::now();
@@ -550,22 +549,20 @@ pub(crate) async fn update_in_scope(
         NullablePatch::Null => None,
         NullablePatch::Value(pid) => Some(pid),
     };
-    let final_name = name.as_deref().unwrap_or(&f.name);
+    let final_name = name.clone().unwrap_or_else(|| f.name.clone());
     let existing = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            folder_repo::find_by_name_in_parent(db, user_id, target_parent, final_name).await?
+            folder_repo::find_by_name_in_parent(db, user_id, target_parent, &final_name).await?
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            folder_repo::find_by_name_in_team_parent(db, team_id, target_parent, final_name).await?
+            folder_repo::find_by_name_in_team_parent(db, team_id, target_parent, &final_name)
+                .await?
         }
     };
     if let Some(existing) = existing
         && existing.id != id
     {
-        return Err(AsterError::validation_error(format!(
-            "folder '{}' already exists in this location",
-            final_name
-        )));
+        return Err(folder_repo::duplicate_name_error(&final_name));
     }
 
     let previous_parent_id = f.parent_id;
@@ -584,7 +581,10 @@ pub(crate) async fn update_in_scope(
         NullablePatch::Value(pid) => active.policy_id = Set(Some(pid)),
     }
     active.updated_at = Set(Utc::now());
-    let updated = active.update(db).await.map_err(AsterError::from)?;
+    let updated = active
+        .update(db)
+        .await
+        .map_err(|err| folder_repo::map_name_db_err(err, &final_name))?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
@@ -1006,7 +1006,7 @@ pub(crate) async fn copy_folder_in_scope(
     }
 
     let mut dest_name = src.name.clone();
-    loop {
+    for _ in 0..MAX_COPY_NAME_RETRIES {
         let exists = match scope {
             WorkspaceStorageScope::Personal { user_id } => {
                 folder_repo::find_by_name_in_parent(db, user_id, dest_parent_id, &dest_name)
@@ -1020,33 +1020,45 @@ pub(crate) async fn copy_folder_in_scope(
             }
         };
 
-        if !exists {
-            break;
+        if exists {
+            dest_name = crate::utils::next_copy_name(&dest_name);
+            continue;
         }
-        dest_name = crate::utils::next_copy_name(&dest_name);
+
+        match recursive_copy_folder_in_scope(state, scope, src_id, dest_parent_id, &dest_name).await
+        {
+            Ok(copied) => {
+                storage_change_service::publish(
+                    state,
+                    storage_change_service::StorageChangeEvent::new(
+                        storage_change_service::StorageChangeKind::FolderCreated,
+                        scope,
+                        vec![],
+                        vec![copied.id],
+                        vec![copied.parent_id],
+                    ),
+                );
+                tracing::debug!(
+                    scope = ?scope,
+                    src_folder_id = src_id,
+                    copied_folder_id = copied.id,
+                    parent_id = copied.parent_id,
+                    name = %copied.name,
+                    "copied folder tree"
+                );
+                return Ok(copied);
+            }
+            Err(err) if folder_repo::is_duplicate_name_error(&err, &dest_name) => {
+                dest_name = crate::utils::next_copy_name(&dest_name);
+            }
+            Err(err) => return Err(err),
+        }
     }
 
-    let copied =
-        recursive_copy_folder_in_scope(state, scope, src_id, dest_parent_id, &dest_name).await?;
-    storage_change_service::publish(
-        state,
-        storage_change_service::StorageChangeEvent::new(
-            storage_change_service::StorageChangeKind::FolderCreated,
-            scope,
-            vec![],
-            vec![copied.id],
-            vec![copied.parent_id],
-        ),
-    );
-    tracing::debug!(
-        scope = ?scope,
-        src_folder_id = src_id,
-        copied_folder_id = copied.id,
-        parent_id = copied.parent_id,
-        name = %copied.name,
-        "copied folder tree"
-    );
-    Ok(copied)
+    Err(AsterError::validation_error(format!(
+        "failed to allocate a unique copy name for '{}'",
+        src.name
+    )))
 }
 
 /// 复制文件夹（递归复制所有文件和子文件夹）

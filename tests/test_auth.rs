@@ -885,6 +885,89 @@ async fn test_password_reset_request_cooldown_returns_generic_success() {
 }
 
 #[actix_web::test]
+async fn test_contact_verification_tokens_allow_only_one_unconsumed_token_per_purpose() {
+    use aster_drive::db::repository::{contact_verification_token_repo, user_repo};
+    use aster_drive::entities::contact_verification_token;
+    use aster_drive::types::{VerificationChannel, VerificationPurpose};
+    use sea_orm::Set;
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+    let _ = register_and_login!(app);
+
+    let user = user_repo::find_by_email(&db, "test@example.com")
+        .await
+        .unwrap()
+        .expect("test user should exist");
+    let now = chrono::Utc::now();
+
+    contact_verification_token_repo::create(
+        &db,
+        contact_verification_token::ActiveModel {
+            user_id: Set(user.id),
+            channel: Set(VerificationChannel::Email),
+            purpose: Set(VerificationPurpose::PasswordReset),
+            target: Set(user.email.clone()),
+            token_hash: Set("token-hash-1".to_string()),
+            expires_at: Set(now + chrono::Duration::minutes(10)),
+            consumed_at: Set(None),
+            created_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let duplicate = contact_verification_token_repo::create(
+        &db,
+        contact_verification_token::ActiveModel {
+            user_id: Set(user.id),
+            channel: Set(VerificationChannel::Email),
+            purpose: Set(VerificationPurpose::PasswordReset),
+            target: Set(user.email.clone()),
+            token_hash: Set("token-hash-2".to_string()),
+            expires_at: Set(now + chrono::Duration::minutes(20)),
+            consumed_at: Set(None),
+            created_at: Set(now + chrono::Duration::seconds(1)),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(duplicate.is_err());
+
+    let first = contact_verification_token_repo::find_latest_active_for_user(
+        &db,
+        user.id,
+        VerificationChannel::Email,
+        VerificationPurpose::PasswordReset,
+    )
+    .await
+    .unwrap()
+    .expect("first token should still be active");
+    contact_verification_token_repo::mark_consumed(&db, first)
+        .await
+        .unwrap();
+
+    contact_verification_token_repo::create(
+        &db,
+        contact_verification_token::ActiveModel {
+            user_id: Set(user.id),
+            channel: Set(VerificationChannel::Email),
+            purpose: Set(VerificationPurpose::PasswordReset),
+            target: Set(user.email),
+            token_hash: Set("token-hash-3".to_string()),
+            expires_at: Set(now + chrono::Duration::minutes(30)),
+            consumed_at: Set(None),
+            created_at: Set(now + chrono::Duration::seconds(2)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+}
+
+#[actix_web::test]
 async fn test_token_refresh() {
     let state = common::setup().await;
     let app = create_test_app!(state);

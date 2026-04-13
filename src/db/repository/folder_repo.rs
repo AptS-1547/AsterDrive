@@ -1,13 +1,45 @@
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
-    FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, SqlErr,
     entity::prelude::DeriveIden,
     sea_query::{Asterisk, CommonTableExpression, Expr, Order, Query, UnionType, WithClause},
 };
 
 use crate::entities::folder::{self, Entity as Folder};
 use crate::errors::{AsterError, Result};
+
+pub fn duplicate_name_message(name: &str) -> String {
+    format!("folder '{name}' already exists in this location")
+}
+
+pub fn duplicate_name_error(name: &str) -> AsterError {
+    AsterError::validation_error(duplicate_name_message(name))
+}
+
+pub fn is_name_conflict_db_err(err: &sea_orm::DbErr) -> bool {
+    matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
+}
+
+pub fn map_name_db_err(err: sea_orm::DbErr, name: &str) -> AsterError {
+    if is_name_conflict_db_err(&err) {
+        duplicate_name_error(name)
+    } else {
+        AsterError::from(err)
+    }
+}
+
+pub fn map_bulk_name_db_err(err: sea_orm::DbErr, message: &str) -> AsterError {
+    if is_name_conflict_db_err(&err) {
+        AsterError::validation_error(message)
+    } else {
+        AsterError::from(err)
+    }
+}
+
+pub fn is_duplicate_name_error(err: &AsterError, name: &str) -> bool {
+    matches!(err, AsterError::ValidationError(message) if message == &duplicate_name_message(name))
+}
 
 #[derive(Clone, Copy)]
 enum FolderScope {
@@ -688,7 +720,11 @@ pub async fn create<C: ConnectionTrait>(
     db: &C,
     model: folder::ActiveModel,
 ) -> Result<folder::Model> {
-    model.insert(db).await.map_err(AsterError::from)
+    let name = model.name.clone().take().unwrap_or_default();
+    model
+        .insert(db)
+        .await
+        .map_err(|err| map_name_db_err(err, &name))
 }
 
 /// 批量移动文件夹到同一父文件夹
@@ -713,7 +749,9 @@ pub async fn move_many_to_parent<C: ConnectionTrait>(
         .filter(folder::Column::Id.is_in(ids.to_vec()))
         .exec(db)
         .await
-        .map_err(AsterError::from)?;
+        .map_err(|err| {
+            map_bulk_name_db_err(err, "one or more folders already exist in target folder")
+        })?;
     Ok(())
 }
 
@@ -842,9 +880,13 @@ pub async fn soft_delete_many<C: ConnectionTrait>(
 /// 恢复：清除 deleted_at
 pub async fn restore<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     let f = find_by_id(db, id).await?;
+    let name = f.name.clone();
     let mut active: folder::ActiveModel = f.into();
     active.deleted_at = Set(None);
-    active.update(db).await.map_err(AsterError::from)?;
+    active
+        .update(db)
+        .await
+        .map_err(|err| map_name_db_err(err, &name))?;
     Ok(())
 }
 
@@ -861,7 +903,12 @@ pub async fn restore_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()>
         .filter(folder::Column::Id.is_in(ids.to_vec()))
         .exec(db)
         .await
-        .map_err(AsterError::from)?;
+        .map_err(|err| {
+            map_bulk_name_db_err(
+                err,
+                "one or more folders already exist in their original locations",
+            )
+        })?;
     Ok(())
 }
 

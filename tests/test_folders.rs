@@ -503,3 +503,42 @@ async fn test_folder_copy_preserves_policy_ids() {
         .unwrap();
     assert_eq!(copied_nested.policy_id, Some(child_policy_id));
 }
+
+#[actix_web::test]
+async fn test_deleted_folder_name_can_be_reused_and_restore_rejects_active_conflict() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "restore-conflict-folder" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let deleted_folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/folders/{deleted_folder_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "restore-conflict-folder" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/trash/folder/{deleted_folder_id}/restore"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+}

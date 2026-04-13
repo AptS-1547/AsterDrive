@@ -235,9 +235,9 @@ async fn store_from_temp_internal(
     } else {
         None
     };
-    let storage_delta = overwrite_ctx
-        .as_ref()
-        .map_or(size, |(old_file, _)| size - old_file.size);
+    // 覆盖写入会把旧内容转成历史版本保留，因此逻辑占用始终新增整份新内容，
+    // 不能只按 current file 的 size 差值计费。
+    let storage_delta = overwrite_ctx.as_ref().map_or(size, |_| size);
 
     if storage_delta > 0 {
         check_quota(db, scope, storage_delta).await?;

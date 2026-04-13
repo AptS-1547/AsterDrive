@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::Set;
+use sea_orm::{ActiveModelTrait, DbErr, Set, SqlErr};
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -10,6 +10,14 @@ use crate::entities::webdav_account;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::utils::hash;
+
+fn map_webdav_account_create_db_err(err: DbErr) -> AsterError {
+    if matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
+        AsterError::validation_error("WebDAV username already exists")
+    } else {
+        AsterError::from(err)
+    }
+}
 
 /// 创建账号后返回的响应（包含一次性明文密码）
 #[derive(Serialize)]
@@ -118,7 +126,10 @@ pub async fn create(
         ..Default::default()
     };
 
-    let created = webdav_account_repo::create(&state.db, model).await?;
+    let created = model
+        .insert(&state.db)
+        .await
+        .map_err(map_webdav_account_create_db_err)?;
 
     Ok(WebdavAccountCreated {
         id: created.id,

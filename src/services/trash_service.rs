@@ -417,12 +417,16 @@ async fn restore_folder_in_scope(
 
     let txn = state.db.begin().await.map_err(AsterError::from)?;
     let mut active: folder::ActiveModel = folder.into();
+    let folder_name = active.name.clone().take().unwrap_or_default();
     if restore_to_root {
         active.parent_id = sea_orm::Set(None);
     }
     active.deleted_at = sea_orm::Set(None);
     use sea_orm::ActiveModelTrait;
-    active.update(&txn).await.map_err(AsterError::from)?;
+    active
+        .update(&txn)
+        .await
+        .map_err(|err| folder_repo::map_name_db_err(err, &folder_name))?;
     let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
     file_repo::restore_many(&txn, &file_ids).await?;
     folder_repo::restore_many(&txn, &child_folder_ids).await?;

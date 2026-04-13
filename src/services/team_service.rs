@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
-use sea_orm::{ConnectionTrait, IntoActiveModel, Set, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ConnectionTrait, DbErr, IntoActiveModel, Set, SqlErr, TransactionTrait,
+};
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -17,6 +19,14 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::audit_service;
 use crate::types::{EntityType, TeamMemberRole, UserStatus};
+
+fn map_team_member_create_db_err(err: DbErr) -> AsterError {
+    if matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
+        AsterError::validation_error("user is already a team member")
+    } else {
+        AsterError::from(err)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct CreateTeamInput {
@@ -910,18 +920,17 @@ pub async fn add_admin_member(
         ));
     }
 
-    let membership = team_member_repo::create(
-        &txn,
-        team_member::ActiveModel {
-            team_id: Set(team_id),
-            user_id: Set(target_user.id),
-            role: Set(input.role),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await?;
+    let membership = team_member::ActiveModel {
+        team_id: Set(team_id),
+        user_id: Set(target_user.id),
+        role: Set(input.role),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(&txn)
+    .await
+    .map_err(map_team_member_create_db_err)?;
     txn.commit().await.map_err(AsterError::from)?;
 
     Ok(build_team_member_info(membership, target_user))
@@ -1083,18 +1092,17 @@ pub async fn add_member(
         ));
     }
 
-    let membership = team_member_repo::create(
-        &txn,
-        team_member::ActiveModel {
-            team_id: Set(team_id),
-            user_id: Set(target_user.id),
-            role: Set(input.role),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await?;
+    let membership = team_member::ActiveModel {
+        team_id: Set(team_id),
+        user_id: Set(target_user.id),
+        role: Set(input.role),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(&txn)
+    .await
+    .map_err(map_team_member_create_db_err)?;
     txn.commit().await.map_err(AsterError::from)?;
 
     Ok(build_team_member_info(membership, target_user))

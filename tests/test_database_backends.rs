@@ -189,6 +189,7 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
         );
     }
 
+    let mut documents_folder_id = None;
     for folder_name in ["Documents", "Photos"] {
         let req = test::TestRequest::post()
             .uri("/api/v1/folders")
@@ -197,6 +198,33 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 201);
+        let body: Value = test::read_body_json(resp).await;
+        if folder_name == "Documents" {
+            documents_folder_id = body["data"]["id"].as_i64();
+        }
+    }
+
+    let documents_folder_id = documents_folder_id.expect("Documents folder id should exist");
+    let delete_folder_req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/folders/{documents_folder_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let delete_folder_resp = test::call_service(&app, delete_folder_req).await;
+    assert_eq!(delete_folder_resp.status(), 200);
+
+    let recreate_folder_req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Documents", "parent_id": null }))
+        .to_request();
+    let recreate_folder_resp = test::call_service(&app, recreate_folder_req).await;
+    let recreate_folder_status = recreate_folder_resp.status();
+    if recreate_folder_status != 201 {
+        let body = test::read_body(recreate_folder_resp).await;
+        panic!(
+            "recreate Documents folder returned {recreate_folder_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
     }
 
     let search_req = test::TestRequest::get()

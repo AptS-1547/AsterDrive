@@ -34,6 +34,13 @@ async fn store_service_file(
     .id
 }
 
+async fn user_storage_used(state: &aster_drive::runtime::AppState, user_id: i64) -> i64 {
+    aster_drive::db::repository::user_repo::find_by_id(&state.db, user_id)
+        .await
+        .unwrap()
+        .storage_used
+}
+
 // ─── Auth Service ─────────────────────────────────────────────────
 
 #[actix_web::test]
@@ -824,6 +831,178 @@ async fn test_version_service_list_delete() {
         .await
         .unwrap();
     assert_eq!(versions.len(), 0);
+}
+
+#[actix_web::test]
+async fn test_version_storage_used_tracks_overwrite_delete_and_restore() {
+    let state = common::setup().await;
+
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "versionquota",
+        "versionquota@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+
+    let temp1 = write_service_fixture("quota-v1.txt", "1111");
+    let file = aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "quota-versioned.txt",
+        &temp1,
+        4,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(user_storage_used(&state, user.id).await, 4);
+
+    let temp2 = write_service_fixture("quota-v2.txt", "222222");
+    aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "quota-versioned.txt",
+        &temp2,
+        6,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(user_storage_used(&state, user.id).await, 10);
+
+    let temp3 = write_service_fixture("quota-v3.txt", "33333333");
+    aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "quota-versioned.txt",
+        &temp3,
+        8,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(user_storage_used(&state, user.id).await, 18);
+
+    let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        versions
+            .iter()
+            .map(|version| version.size)
+            .collect::<Vec<_>>(),
+        vec![6, 4]
+    );
+
+    aster_drive::services::version_service::delete_version(
+        &state,
+        file.id,
+        versions[1].id,
+        user.id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(user_storage_used(&state, user.id).await, 14);
+
+    let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
+        .await
+        .unwrap();
+    let restored = aster_drive::services::version_service::restore_version(
+        &state,
+        file.id,
+        versions[0].id,
+        user.id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(restored.size, 6);
+    assert_eq!(user_storage_used(&state, user.id).await, 6);
+
+    let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
+        .await
+        .unwrap();
+    assert!(versions.is_empty());
+}
+
+#[actix_web::test]
+async fn test_version_cleanup_excess_reclaims_storage_used() {
+    let state = common::setup().await;
+
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "versionlimit",
+        "versionlimit@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+
+    let mut max_versions =
+        aster_drive::db::repository::config_repo::find_by_key(&state.db, "max_versions_per_file")
+            .await
+            .unwrap()
+            .unwrap();
+    max_versions.value = "1".to_string();
+    state.runtime_config.apply(max_versions);
+
+    let temp1 = write_service_fixture("limit-v1.txt", "1111");
+    let file = aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "limit-versioned.txt",
+        &temp1,
+        4,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(user_storage_used(&state, user.id).await, 4);
+
+    let temp2 = write_service_fixture("limit-v2.txt", "222222");
+    aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "limit-versioned.txt",
+        &temp2,
+        6,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(user_storage_used(&state, user.id).await, 10);
+
+    let temp3 = write_service_fixture("limit-v3.txt", "33333333");
+    aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "limit-versioned.txt",
+        &temp3,
+        8,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+
+    let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0].size, 6);
+    assert_eq!(user_storage_used(&state, user.id).await, 14);
 }
 
 #[actix_web::test]
