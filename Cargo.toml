@@ -86,7 +86,7 @@ num_cpus = "1.17.0"
 paste = "1.0.15"
 prometheus = { version = "0.14", optional = true, default-features = false }
 sysinfo = { version = "0.38", optional = true, default-features = false, features = ["system"] }
-rand = { version = "0.10.0", default-features = false, features = ["std", "std_rng", "thread_rng"] }
+rand = { version = "0.10.1", default-features = false, features = ["std", "std_rng", "thread_rng"] }
 redis = { version = "1.2.0", features = ["connection-manager", "tokio-comp", "tokio-rustls-comp"] }
 reqwest = "0.13"
 rust-embed = "8"
