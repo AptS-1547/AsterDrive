@@ -1,21 +1,51 @@
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::time::Duration;
 
 use actix_web::web;
+use futures::FutureExt;
+use tokio::task::JoinHandle;
 
 use super::AppState;
+
+pub struct BackgroundTasks {
+    handles: Vec<JoinHandle<()>>,
+}
+
+impl BackgroundTasks {
+    fn new() -> Self {
+        Self {
+            handles: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, handle: JoinHandle<()>) {
+        self.handles.push(handle);
+    }
+
+    pub async fn shutdown(self) {
+        for handle in &self.handles {
+            handle.abort();
+        }
+
+        for handle in self.handles {
+            let _ = handle.await;
+        }
+    }
+}
 
 /// Spawn a periodic background task with panic recovery.
 ///
 /// Each iteration sleeps using the latest runtime-configured interval before
-/// the next run. The task itself runs in a child `tokio::spawn` so that a
-/// panic is caught by the `JoinHandle` instead of killing the loop.
+/// the next run. Panics are caught inside the loop so one failed iteration
+/// does not kill the whole periodic worker.
 fn spawn_periodic<F, I, Fut>(
     name: &'static str,
     interval_fn: I,
     state: web::Data<AppState>,
     task_fn: F,
-) where
+) -> JoinHandle<()>
+where
     I: Fn(&AppState) -> Duration + Send + Sync + 'static,
     F: Fn(web::Data<AppState>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
@@ -29,16 +59,25 @@ fn spawn_periodic<F, I, Fut>(
             first_run = false;
 
             let s = state.clone();
-            if let Err(e) = tokio::spawn(task_fn(s)).await {
-                tracing::error!("background task '{name}' panicked: {e}");
+            if let Err(panic) = AssertUnwindSafe(task_fn(s)).catch_unwind().await {
+                let panic_message = if let Some(message) = panic.downcast_ref::<&str>() {
+                    (*message).to_string()
+                } else if let Some(message) = panic.downcast_ref::<String>() {
+                    message.clone()
+                } else {
+                    "unknown panic payload".to_string()
+                };
+                tracing::error!("background task '{name}' panicked: {panic_message}");
             }
         }
-    });
+    })
 }
 
 /// Spawn all periodic background cleanup tasks.
-pub fn spawn_background_tasks(state: web::Data<AppState>) {
-    spawn_periodic(
+pub fn spawn_background_tasks(state: web::Data<AppState>) -> BackgroundTasks {
+    let mut tasks = BackgroundTasks::new();
+
+    tasks.push(spawn_periodic(
         "mail-outbox-dispatch",
         mail_outbox_dispatch_interval,
         state.clone(),
@@ -57,9 +96,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 _ => {}
             }
         },
-    );
+    ));
 
-    spawn_periodic(
+    tasks.push(spawn_periodic(
         "background-task-dispatch",
         background_task_dispatch_interval,
         state.clone(),
@@ -78,9 +117,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 _ => {}
             }
         },
-    );
+    ));
 
-    spawn_periodic(
+    tasks.push(spawn_periodic(
         "upload-cleanup",
         maintenance_cleanup_interval,
         state.clone(),
@@ -89,9 +128,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 tracing::warn!("upload cleanup failed: {e}");
             }
         },
-    );
+    ));
 
-    spawn_periodic(
+    tasks.push(spawn_periodic(
         "completed-upload-cleanup",
         maintenance_cleanup_interval,
         state.clone(),
@@ -110,10 +149,10 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 _ => {}
             }
         },
-    );
+    ));
 
     // Full-table blob reconciliation is intentionally less frequent than lightweight cleanups.
-    spawn_periodic(
+    tasks.push(spawn_periodic(
         "blob-reconcile",
         blob_reconcile_interval,
         state.clone(),
@@ -130,9 +169,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 _ => {}
             }
         },
-    );
+    ));
 
-    spawn_periodic(
+    tasks.push(spawn_periodic(
         "trash-cleanup",
         maintenance_cleanup_interval,
         state.clone(),
@@ -141,9 +180,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 tracing::warn!("trash cleanup failed: {e}");
             }
         },
-    );
+    ));
 
-    spawn_periodic(
+    tasks.push(spawn_periodic(
         "team-archive-cleanup",
         maintenance_cleanup_interval,
         state.clone(),
@@ -156,9 +195,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 _ => {}
             }
         },
-    );
+    ));
 
-    spawn_periodic(
+    tasks.push(spawn_periodic(
         "lock-cleanup",
         maintenance_cleanup_interval,
         state.clone(),
@@ -169,9 +208,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 _ => {}
             }
         },
-    );
+    ));
 
-    spawn_periodic(
+    tasks.push(spawn_periodic(
         "audit-cleanup",
         maintenance_cleanup_interval,
         state.clone(),
@@ -180,9 +219,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 tracing::warn!("audit log cleanup failed: {e}");
             }
         },
-    );
+    ));
 
-    spawn_periodic(
+    tasks.push(spawn_periodic(
         "task-cleanup",
         maintenance_cleanup_interval,
         state.clone(),
@@ -195,9 +234,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 _ => {}
             }
         },
-    );
+    ));
 
-    spawn_periodic(
+    tasks.push(spawn_periodic(
         "wopi-session-cleanup",
         maintenance_cleanup_interval,
         state,
@@ -210,7 +249,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
                 _ => {}
             }
         },
-    );
+    ));
+
+    tasks
 }
 
 fn mail_outbox_dispatch_interval(state: &AppState) -> Duration {

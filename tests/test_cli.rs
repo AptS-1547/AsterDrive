@@ -481,6 +481,34 @@ async fn test_root_binary_database_migrate_sqlite_resume_from_checkpoint() {
     )
     .await;
     assert_eq!(checkpoint_rows, 1);
+    let checkpoint_source_url = scalar_string(
+        &target_db,
+        DbBackend::Sqlite,
+        "SELECT source_database_url FROM aster_cli_database_migrations LIMIT 1",
+    )
+    .await;
+    let checkpoint_target_url = scalar_string(
+        &target_db,
+        DbBackend::Sqlite,
+        "SELECT target_database_url FROM aster_cli_database_migrations LIMIT 1",
+    )
+    .await;
+    assert_ne!(checkpoint_source_url, source_database_url);
+    assert_ne!(checkpoint_target_url, target_database_url);
+    assert!(checkpoint_source_url.contains("/.../"));
+    assert!(checkpoint_target_url.contains("/.../"));
+    assert!(checkpoint_source_url.contains(
+        source_db_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("source db file name should be valid utf-8")
+    ));
+    assert!(checkpoint_target_url.contains(
+        target_db_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("target db file name should be valid utf-8")
+    ));
 
     let second_output = run_aster_drive_with_env(
         &[

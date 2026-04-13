@@ -109,14 +109,19 @@ pub async fn file_operation(
     if override_value.eq_ignore_ascii_case("PUT_RELATIVE") {
         return match wopi_service::put_relative_file(
             &state,
-            *path,
-            &query.access_token,
-            body,
-            optional_header_value(&req, "X-WOPI-SuggestedTarget"),
-            optional_header_value(&req, "X-WOPI-RelativeTarget"),
-            optional_header_value(&req, "X-WOPI-OverwriteRelativeTarget"),
-            optional_header_value(&req, "X-WOPI-Size"),
-            request_source(&req),
+            wopi_service::WopiPutRelativeRequest {
+                file_id: *path,
+                access_token: &query.access_token,
+                body,
+                suggested_target: optional_header_value(&req, "X-WOPI-SuggestedTarget"),
+                relative_target: optional_header_value(&req, "X-WOPI-RelativeTarget"),
+                overwrite_relative_target: optional_header_value(
+                    &req,
+                    "X-WOPI-OverwriteRelativeTarget",
+                ),
+                size_header: optional_header_value(&req, "X-WOPI-Size"),
+                request_source: request_source(&req),
+            },
         )
         .await
         {

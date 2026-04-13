@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::{self, IsTerminal};
+use std::path::Path;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, FixedOffset};
@@ -297,6 +298,17 @@ struct ApplyExecution {
     resumed: bool,
 }
 
+struct ApplyModeContext<'a> {
+    args: &'a DatabaseMigrateArgs,
+    source_db: &'a DatabaseConnection,
+    target_db: &'a DatabaseConnection,
+    source_plans: &'a [TablePlan],
+    table_reports: &'a mut [TableReport],
+    target_pending_before: &'a [String],
+    expected_migrations: &'a [String],
+    progress: &'a ProgressReporter,
+}
+
 struct ProgressReporter {
     enabled: bool,
 }
@@ -493,16 +505,16 @@ pub async fn execute_database_migration(args: &DatabaseMigrateArgs) -> Result<se
             });
         }
         MigrationMode::Apply => {
-            let apply = execute_apply_mode(
+            let apply = execute_apply_mode(ApplyModeContext {
                 args,
-                &source_db,
-                &target_db,
-                &source_plans,
-                &mut table_reports,
-                &target_pending_before,
-                &expected_migrations,
-                &progress,
-            )
+                source_db: &source_db,
+                target_db: &target_db,
+                source_plans: &source_plans,
+                table_reports: &mut table_reports,
+                target_pending_before: &target_pending_before,
+                expected_migrations: &expected_migrations,
+                progress: &progress,
+            })
             .await?;
             target_pending_after = apply.target_pending_after;
             verification = apply.verification;
@@ -600,23 +612,15 @@ pub async fn execute_database_migration(args: &DatabaseMigrateArgs) -> Result<se
     })
 }
 
-async fn execute_apply_mode(
-    args: &DatabaseMigrateArgs,
-    source_db: &DatabaseConnection,
-    target_db: &DatabaseConnection,
-    source_plans: &[TablePlan],
-    table_reports: &mut [TableReport],
-    target_pending_before: &[String],
-    expected_migrations: &[String],
-    progress: &ProgressReporter,
-) -> Result<ApplyExecution> {
-    progress.stage("structure_prepare", "preparing target schema");
-    Migrator::up(target_db, None)
+async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<ApplyExecution> {
+    ctx.progress
+        .stage("structure_prepare", "preparing target schema");
+    Migrator::up(ctx.target_db, None)
         .await
         .map_err(|error| AsterError::database_operation(error.to_string()))?;
-    let target_backend = target_db.get_database_backend();
+    let target_backend = ctx.target_db.get_database_backend();
     let target_pending_after =
-        pending_migrations(target_db, target_backend, expected_migrations).await?;
+        pending_migrations(ctx.target_db, target_backend, ctx.expected_migrations).await?;
     if !target_pending_after.is_empty() {
         return Err(AsterError::database_operation(format!(
             "target database still has pending migrations after prepare: {}",
@@ -624,10 +628,10 @@ async fn execute_apply_mode(
         )));
     }
 
-    ensure_checkpoint_table(target_db).await?;
-    let mut checkpoint = initialize_checkpoint(args, target_db, source_plans).await?;
+    ensure_checkpoint_table(ctx.target_db).await?;
+    let mut checkpoint = initialize_checkpoint(ctx.args, ctx.target_db, ctx.source_plans).await?;
     let resumed = checkpoint.resumed;
-    progress.stage(
+    ctx.progress.stage(
         "resume",
         if resumed {
             resume_message(&checkpoint.checkpoint)
@@ -637,60 +641,62 @@ async fn execute_apply_mode(
     );
 
     let target_type_hints =
-        match load_target_type_hints(target_db, target_backend, source_plans).await {
+        match load_target_type_hints(ctx.target_db, target_backend, ctx.source_plans).await {
             Ok(value) => value,
             Err(error) => {
-                let _ = mark_checkpoint_failed(target_db, &mut checkpoint.checkpoint, &error).await;
+                let _ =
+                    mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
                 return Err(error);
             }
         };
 
     if let Err(error) = copy_tables_with_resume(
-        source_db,
-        target_db,
-        source_plans,
+        ctx.source_db,
+        ctx.target_db,
+        ctx.source_plans,
         &target_type_hints,
         &mut checkpoint.checkpoint,
-        progress,
+        ctx.progress,
     )
     .await
     {
-        let _ = mark_checkpoint_failed(target_db, &mut checkpoint.checkpoint, &error).await;
+        let _ = mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
         return Err(error);
     }
 
-    if let Err(error) = reset_sequences(target_db, source_plans).await {
-        let _ = mark_checkpoint_failed(target_db, &mut checkpoint.checkpoint, &error).await;
+    if let Err(error) = reset_sequences(ctx.target_db, ctx.source_plans).await {
+        let _ = mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
         return Err(error);
     }
 
     checkpoint.checkpoint.stage = "verification".to_string();
     checkpoint.checkpoint.status = "running".to_string();
     checkpoint.checkpoint.current_table = None;
-    checkpoint.checkpoint.current_table_index = source_plans.len() as i64;
+    checkpoint.checkpoint.current_table_index = ctx.source_plans.len() as i64;
     checkpoint.checkpoint.current_table_offset = 0;
     checkpoint.checkpoint.updated_at_ms = now_ms();
     checkpoint.checkpoint.heartbeat_at_ms = checkpoint.checkpoint.updated_at_ms;
-    if let Err(error) = update_checkpoint(target_db, &checkpoint.checkpoint).await {
-        let _ = mark_checkpoint_failed(target_db, &mut checkpoint.checkpoint, &error).await;
+    if let Err(error) = update_checkpoint(ctx.target_db, &checkpoint.checkpoint).await {
+        let _ = mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
         return Err(error);
     }
 
-    progress.stage("verification", "running post-copy verification");
-    let verification = match verify_target(target_db, source_plans).await {
+    ctx.progress
+        .stage("verification", "running post-copy verification");
+    let verification = match verify_target(ctx.target_db, ctx.source_plans).await {
         Ok(value) => value,
         Err(error) => {
-            let _ = mark_checkpoint_failed(target_db, &mut checkpoint.checkpoint, &error).await;
+            let _ = mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
             return Err(error);
         }
     };
     let ready_to_cutover = verification_ready(&verification);
 
-    if let Err(error) = refresh_target_rows(target_db, table_reports).await {
-        let _ = mark_checkpoint_failed(target_db, &mut checkpoint.checkpoint, &error).await;
+    if let Err(error) = refresh_target_rows(ctx.target_db, ctx.table_reports).await {
+        let _ = mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
         return Err(error);
     }
-    for report in table_reports {
+    for report in &mut *ctx.table_reports {
         report.copied_rows = report.target_rows;
     }
 
@@ -705,9 +711,9 @@ async fn execute_apply_mode(
         "verification".to_string()
     };
     checkpoint.checkpoint.current_table = None;
-    checkpoint.checkpoint.current_table_index = source_plans.len() as i64;
+    checkpoint.checkpoint.current_table_index = ctx.source_plans.len() as i64;
     checkpoint.checkpoint.current_table_offset = 0;
-    checkpoint.checkpoint.copied_rows = total_source_rows(source_plans);
+    checkpoint.checkpoint.copied_rows = total_source_rows(ctx.source_plans);
     checkpoint.checkpoint.last_error = None;
     checkpoint.checkpoint.updated_at_ms = now_ms();
     checkpoint.checkpoint.heartbeat_at_ms = checkpoint.checkpoint.updated_at_ms;
@@ -716,10 +722,13 @@ async fn execute_apply_mode(
         StageReport {
             name: "structure_prepare",
             status: "ok",
-            message: if target_pending_before.is_empty() {
+            message: if ctx.target_pending_before.is_empty() {
                 "target schema already matched current migrations".to_string()
             } else {
-                format!("applied {} pending migrations", target_pending_before.len())
+                format!(
+                    "applied {} pending migrations",
+                    ctx.target_pending_before.len()
+                )
             },
         },
         StageReport {
@@ -728,14 +737,14 @@ async fn execute_apply_mode(
             message: if resumed {
                 format!(
                     "copied {} tables and {} rows (resumed from checkpoint)",
-                    source_plans.len(),
-                    total_source_rows(source_plans)
+                    ctx.source_plans.len(),
+                    total_source_rows(ctx.source_plans)
                 )
             } else {
                 format!(
                     "copied {} tables and {} rows",
-                    source_plans.len(),
-                    total_source_rows(source_plans)
+                    ctx.source_plans.len(),
+                    total_source_rows(ctx.source_plans)
                 )
             },
         },
@@ -745,7 +754,7 @@ async fn execute_apply_mode(
             message: verification_message(&verification, ready_to_cutover),
         },
     ];
-    progress.stage(
+    ctx.progress.stage(
         "verification",
         verification_message(&verification, ready_to_cutover),
     );
@@ -1289,12 +1298,12 @@ async fn copy_tables_with_resume(
             );
 
             committed_batches += 1;
-            if let Some(limit) = fail_after_batches {
-                if committed_batches >= limit {
-                    return Err(AsterError::internal_error(
-                        "forced failure after committed batch for resume-path verification",
-                    ));
-                }
+            if let Some(limit) = fail_after_batches
+                && committed_batches >= limit
+            {
+                return Err(AsterError::internal_error(
+                    "forced failure after committed batch for resume-path verification",
+                ));
             }
         }
 
@@ -2418,8 +2427,8 @@ async fn initialize_checkpoint(
     let now = now_ms();
     let checkpoint = MigrationCheckpoint {
         migration_key,
-        source_database_url: args.source_database_url.clone(),
-        target_database_url: args.target_database_url.clone(),
+        source_database_url: redact_database_url(&args.source_database_url),
+        target_database_url: redact_database_url(&args.target_database_url),
         mode: MigrationMode::Apply.as_str().to_string(),
         status: "running".to_string(),
         stage: "data_copy".to_string(),
@@ -2486,12 +2495,14 @@ async fn load_checkpoint(
         migration_key: row
             .try_get_by_index::<String>(0)
             .map_err(|error| AsterError::database_operation(error.to_string()))?,
-        source_database_url: row
-            .try_get_by_index::<String>(1)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
-        target_database_url: row
-            .try_get_by_index::<String>(2)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+        source_database_url: redact_database_url(
+            &row.try_get_by_index::<String>(1)
+                .map_err(|error| AsterError::database_operation(error.to_string()))?,
+        ),
+        target_database_url: redact_database_url(
+            &row.try_get_by_index::<String>(2)
+                .map_err(|error| AsterError::database_operation(error.to_string()))?,
+        ),
         mode: row
             .try_get_by_index::<String>(3)
             .map_err(|error| AsterError::database_operation(error.to_string()))?,
@@ -2840,23 +2851,87 @@ fn quote_sqlite_literal(value: &str) -> String {
 }
 
 fn redact_database_url(database_url: &str) -> String {
-    if database_url.starts_with("sqlite:") {
+    if database_url == "sqlite::memory:" {
         return database_url.to_string();
+    }
+
+    if database_url.starts_with("sqlite:") {
+        return redact_sqlite_database_url(database_url);
     }
 
     let Some((scheme, rest)) = database_url.split_once("://") else {
         return database_url.to_string();
     };
 
-    let Some((authority, suffix)) = rest.split_once('@') else {
+    let Some((_authority, suffix)) = rest.rsplit_once('@') else {
         return database_url.to_string();
     };
 
-    let redacted_authority = if let Some((user, _password)) = authority.split_once(':') {
-        format!("{user}:***")
-    } else {
-        authority.to_string()
+    format!("{scheme}://***@{suffix}")
+}
+
+fn redact_sqlite_database_url(database_url: &str) -> String {
+    let Some(path_and_query) = database_url.strip_prefix("sqlite://") else {
+        return database_url.to_string();
+    };
+    let (path, query) = path_and_query
+        .split_once('?')
+        .map_or((path_and_query, None), |(path, query)| (path, Some(query)));
+    let redacted_path = redact_sqlite_path(path);
+
+    match query {
+        Some(query) => format!("sqlite://{redacted_path}?{query}"),
+        None => format!("sqlite://{redacted_path}"),
+    }
+}
+
+fn redact_sqlite_path(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return "***".to_string();
+    }
+
+    let Some(file_name) = Path::new(trimmed)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+    else {
+        return "***".to_string();
     };
 
-    format!("{scheme}://{redacted_authority}@{suffix}")
+    if path.starts_with('/') {
+        format!("/.../{file_name}")
+    } else {
+        format!(".../{file_name}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact_database_url;
+
+    #[test]
+    fn redact_database_url_masks_network_credentials() {
+        assert_eq!(
+            redact_database_url("postgres://postgres:postgres@127.0.0.1:5432/asterdrive"),
+            "postgres://***@127.0.0.1:5432/asterdrive"
+        );
+        assert_eq!(
+            redact_database_url("mysql://aster@db.internal:3306/asterdrive"),
+            "mysql://***@db.internal:3306/asterdrive"
+        );
+    }
+
+    #[test]
+    fn redact_database_url_masks_sqlite_paths_but_preserves_filename() {
+        assert_eq!(
+            redact_database_url("sqlite:///Users/esap/Desktop/Github/AsterDrive/data/asterdrive.db?mode=rwc"),
+            "sqlite:///.../asterdrive.db?mode=rwc"
+        );
+        assert_eq!(
+            redact_database_url("sqlite://data/asterdrive.db?mode=rwc"),
+            "sqlite://.../asterdrive.db?mode=rwc"
+        );
+        assert_eq!(redact_database_url("sqlite::memory:"), "sqlite::memory:");
+    }
 }

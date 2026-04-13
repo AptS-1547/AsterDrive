@@ -150,7 +150,7 @@ async fn main() -> std::io::Result<()> {
     let server_handle = server.handle();
 
     // 后台清理任务（panic-safe，自动重启）
-    aster_drive::runtime::tasks::spawn_background_tasks(value);
+    let background_tasks = aster_drive::runtime::tasks::spawn_background_tasks(value);
 
     // 优雅关闭监听
     tokio::spawn(async move {
@@ -160,7 +160,7 @@ async fn main() -> std::io::Result<()> {
 
     let server_result = server.await;
     tracing::info!("server stopped");
-    aster_drive::runtime::shutdown::perform_shutdown(shutdown_db).await;
+    aster_drive::runtime::shutdown::perform_shutdown(background_tasks, shutdown_db).await;
 
     server_result
 }

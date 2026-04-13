@@ -184,7 +184,7 @@ enum PutRelativeTargetMode {
 }
 
 #[derive(Debug, Clone)]
-struct PutRelativeRequest {
+struct ParsedPutRelativeRequest {
     target_mode: PutRelativeTargetMode,
 }
 
@@ -231,6 +231,17 @@ pub struct DiscoveredWopiPreviewApp {
 pub struct WopiRequestSource<'a> {
     pub origin: Option<&'a str>,
     pub referer: Option<&'a str>,
+}
+
+pub struct WopiPutRelativeRequest<'a> {
+    pub file_id: i64,
+    pub access_token: &'a str,
+    pub body: actix_web::web::Bytes,
+    pub suggested_target: Option<&'a str>,
+    pub relative_target: Option<&'a str>,
+    pub overwrite_relative_target: Option<&'a str>,
+    pub size_header: Option<&'a str>,
+    pub request_source: WopiRequestSource<'a>,
 }
 
 pub(crate) async fn create_launch_session_in_scope(
@@ -355,15 +366,18 @@ pub async fn put_file_contents(
 
 pub async fn put_relative_file(
     state: &AppState,
-    file_id: i64,
-    access_token: &str,
-    body: actix_web::web::Bytes,
-    suggested_target: Option<&str>,
-    relative_target: Option<&str>,
-    overwrite_relative_target: Option<&str>,
-    size_header: Option<&str>,
-    request_source: WopiRequestSource<'_>,
+    req: WopiPutRelativeRequest<'_>,
 ) -> Result<WopiPutRelativeResult> {
+    let WopiPutRelativeRequest {
+        file_id,
+        access_token,
+        body,
+        suggested_target,
+        relative_target,
+        overwrite_relative_target,
+        size_header,
+        request_source,
+    } = req;
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
     let request = parse_put_relative_request(
         &resolved.file.name,
@@ -745,7 +759,7 @@ fn parse_put_relative_request(
     overwrite_relative_target: Option<&str>,
     size_header: Option<&str>,
     body_len: usize,
-) -> Result<PutRelativeRequest> {
+) -> Result<ParsedPutRelativeRequest> {
     if let Some(size_header) = size_header {
         let declared_size = size_header.parse::<usize>().map_err(|_| {
             AsterError::validation_error("X-WOPI-Size header must be a non-negative integer")
@@ -767,14 +781,14 @@ fn parse_put_relative_request(
         (Some(suggested_target), None) => {
             let decoded = decode_wopi_filename(suggested_target)?;
             let target_name = normalize_suggested_target_name(source_file_name, &decoded);
-            Ok(PutRelativeRequest {
+            Ok(ParsedPutRelativeRequest {
                 target_mode: PutRelativeTargetMode::Suggested(target_name),
             })
         }
         (None, Some(relative_target)) => {
             let decoded = decode_wopi_filename(relative_target)?;
             let overwrite = parse_overwrite_relative_target(overwrite_relative_target)?;
-            Ok(PutRelativeRequest {
+            Ok(ParsedPutRelativeRequest {
                 target_mode: PutRelativeTargetMode::Relative {
                     target_name: normalize_relative_target_name(&decoded)?,
                     overwrite,

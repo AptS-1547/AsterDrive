@@ -157,7 +157,7 @@ fn parse_wopi_result_url(url: &str) -> (i64, String) {
     let parsed = reqwest::Url::parse(url).expect("put-relative url should be valid");
     let file_id = parsed
         .path_segments()
-        .and_then(|segments| segments.last())
+        .and_then(|mut segments| segments.next_back())
         .and_then(|segment| segment.parse::<i64>().ok())
         .expect("put-relative url should end with file id");
     let access_token = parsed
