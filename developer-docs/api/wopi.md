@@ -56,7 +56,7 @@ WOPI 相关能力分成两层：
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/wopi/files/{id}?access_token=...` | `CheckFileInfo` |
-| `POST` | `/wopi/files/{id}?access_token=...` | `LOCK` / `UNLOCK` / `REFRESH_LOCK` |
+| `POST` | `/wopi/files/{id}?access_token=...` | `LOCK` / `UNLOCK` / `REFRESH_LOCK` / `GET_LOCK` / `PUT_RELATIVE` / `RENAME_FILE` / `PUT_USER_INFO` |
 | `GET` | `/wopi/files/{id}/contents?access_token=...` | 获取文件内容 |
 | `POST` | `/wopi/files/{id}/contents?access_token=...` | 覆盖文件内容（`X-WOPI-Override: PUT`） |
 
@@ -67,48 +67,124 @@ WOPI 相关能力分成两层：
 当前返回内容包含：
 
 - `BaseFileName`
+- `FileNameMaxLength`
 - `OwnerId`
 - `Size`
 - `UserId`
 - `UserCanNotWriteRelative`
 - `UserCanRename`
+- `UserInfo`
 - `UserCanWrite`
 - `ReadOnly`
 - `SupportsGetLock`
 - `SupportsLocks`
 - `SupportsRename`
+- `SupportsUserInfo`
 - `SupportsUpdate`
 - `Version`
 
 当前实现里：
 
-- `UserCanRename = false`
+- `UserCanNotWriteRelative = false`
+- `UserCanRename = true`
 - `SupportsLocks = true`
 - `SupportsUpdate = true`
-- `SupportsGetLock = false`
+- `SupportsGetLock = true`
+- `SupportsRename = true`
+- `SupportsUserInfo = true`
+- `FileNameMaxLength = 255`
+- 如果当前用户档案里已有 `wopi_user_info`，会透传到 `UserInfo`
 
-## 锁操作
+## `POST /wopi/files/{id}`
 
-`POST /wopi/files/{id}` 目前只支持这几种 `X-WOPI-Override`：
+这条协议入口当前按 `X-WOPI-Override` 分派多种操作：
 
 - `LOCK`
 - `UNLOCK`
 - `REFRESH_LOCK`
+- `GET_LOCK`
+- `PUT_RELATIVE`
+- `RENAME_FILE`
+- `PUT_USER_INFO`
 
-配套请求头：
+另外还有一个特殊变体：
+
+- `LOCK` + `X-WOPI-OldLock`：按 WOPI 语义执行 `UnlockAndRelock`
+
+如果 override 不在支持列表内，服务端当前会返回 `501 Not Implemented`。
+
+### 锁相关操作
+
+`LOCK` / `UNLOCK` / `REFRESH_LOCK` / `GET_LOCK` 依赖这些请求头：
 
 - `X-WOPI-Lock`
+
+`UnlockAndRelock` 额外需要：
+
+- `X-WOPI-OldLock`
 
 冲突时返回 `409`，并会带：
 
 - `X-WOPI-LockFailureReason`
-- `X-WOPI-Lock`（如果服务端当前能给出锁值）
+- `X-WOPI-Lock`（当前锁值已知时返回；某些场景会显式返回空字符串）
 
 当前实现要点：
 
 - 同一 app、同一锁值再次 `LOCK` 会被视为续期
+- `LOCK + X-WOPI-OldLock` 会尝试原子替换锁值
 - 文件如果已经被非 WOPI 锁住，也会返回冲突
+- `GET_LOCK` 成功时返回 `200`，并在响应头里带当前 `X-WOPI-Lock`
 - `UNLOCK` / `REFRESH_LOCK` 在没有活动锁时同样返回 `409`
+
+### `PUT_RELATIVE`
+
+这条操作用于在源文件旁边创建或覆写相邻文件。
+
+请求头规则：
+
+- 必须二选一传 `X-WOPI-SuggestedTarget` 或 `X-WOPI-RelativeTarget`
+- 可选 `X-WOPI-OverwriteRelativeTarget`
+- 可选 `X-WOPI-Size`
+
+成功时返回原始 WOPI JSON，核心字段是：
+
+- `Name`
+- `Url`
+
+冲突时返回 `409`，并可能额外带：
+
+- `X-WOPI-Lock`
+- `X-WOPI-LockFailureReason`
+- `X-WOPI-ValidRelativeTarget`
+
+也就是说，如果目标文件名冲突且当前请求不允许覆写，服务端会直接给出一个可用候选名。
+
+### `RENAME_FILE`
+
+这条操作通过下面的请求头驱动：
+
+- `X-WOPI-RequestedName`
+- 可选 `X-WOPI-Lock`
+
+成功时返回原始 WOPI JSON，包含：
+
+- `Name`
+
+当前实现要点：
+
+- 服务端会校验并规范化请求名
+- 如果目标名称冲突，会自动避让出一个可用名称，而不是简单报 409
+- 如果名称非法，会返回 `400`，并在响应头里带 `X-WOPI-InvalidFileNameError`
+
+### `PUT_USER_INFO`
+
+这条操作把 WOPI 宿主传来的用户状态字符串持久化到用户档案，后续会通过 `CheckFileInfo.UserInfo` 回传。
+
+当前约束：
+
+- body 必须是有效 UTF-8
+- body 只允许 ASCII 字符
+- 最大长度 `1024` 字节
 
 ## `GET /wopi/files/{id}/contents`
 

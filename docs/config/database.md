@@ -61,6 +61,18 @@ url = "mysql://user:password@localhost:3306/asterdrive"
 
 所以大多数部署不需要再手动执行迁移命令。
 
+## 换数据库后端时不要直接改 `url`
+
+如果你只是做同一种数据库里的正常升级，直接启动服务就会自动补齐 schema。  
+但如果你要把数据从 SQLite 换到 PostgreSQL 或 MySQL，不能只改 `database.url` 然后重启。
+
+原因很简单：
+
+- 启动时自动迁移只负责“更新目标库结构”
+- 它不会把旧数据库里的业务数据自动搬过去
+
+这类场景要先用 [运维 CLI](/deployment/ops-cli) 里的 `database-migrate` 把数据迁过去，再切换生产实例。
+
 ## SQLite 的路径语义
 
 默认 SQLite 使用相对路径时，会相对于 `data/config.toml` 所在目录解析。

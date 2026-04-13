@@ -12,7 +12,7 @@ WebDAV 相关内容可以分成三块：账号、挂载入口、协议能力。
 | `POST` | `/webdav-accounts` | 创建 WebDAV 账号 |
 | `DELETE` | `/webdav-accounts/{id}` | 删除 WebDAV 账号 |
 | `POST` | `/webdav-accounts/{id}/toggle` | 启用或停用账号 |
-| `GET` | `/webdav-accounts/settings` | 读取当前挂载前缀 |
+| `GET` | `/webdav-accounts/settings` | 读取当前挂载前缀和客户端可直接使用的挂载地址 |
 | `POST` | `/webdav-accounts/test` | 测试一组 WebDAV 凭据 |
 
 常用点：
@@ -21,7 +21,9 @@ WebDAV 相关内容可以分成三块：账号、挂载入口、协议能力。
 - 明文密码只在创建时返回一次
 - `root_folder_id` 为空表示可访问整个用户空间
 - `/toggle` 没有请求体，每调用一次就在启用 / 停用之间切换
-- `/settings` 会返回当前实际启用的 `prefix`
+- `/settings` 会返回两个字段：
+  - `prefix`：服务端当前实际启用的挂载前缀
+  - `endpoint`：面向客户端的可访问地址；如果配置了 `public_site_url`，这里会是绝对 URL，否则返回相对路径
 - `/test` 用来先验账号密码，不必真的挂载客户端
 - `GET /webdav-accounts` 是分页接口，支持 `limit` 和 `offset`
 

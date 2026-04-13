@@ -44,3 +44,4 @@ features:
 - 想了解管理后台每个入口负责什么：看 [管理后台](/guide/admin-console)
 - 想改端口、数据库、登录密钥、WebDAV、系统设置、存储策略或日志：看 [配置说明](/config/)
 - 准备挂 HTTPS、反向代理、升级或检查首次启动结果：看 [部署与升级](/deployment/)
+- 想在命令行里做部署检查、离线改系统设置或跨数据库迁移：看 [运维 CLI](/deployment/ops-cli)

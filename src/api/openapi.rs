@@ -275,7 +275,6 @@ use utoipa::{Modify, OpenApi};
             crate::types::AvatarSource,
             crate::types::DriverType,
             crate::types::VerificationPurpose,
-            crate::api::routes::auth::CheckReq,
             crate::api::routes::auth::CheckResp,
             crate::api::routes::auth::SetupReq,
             crate::api::routes::auth::RegisterReq,

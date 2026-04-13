@@ -21,8 +21,7 @@ export interface AuthSessionInfo {
 }
 
 export const authService = {
-	check: (identifier: string) =>
-		api.post<CheckResp>("/auth/check", { identifier }),
+	check: () => api.post<CheckResp>("/auth/check"),
 
 	login: async (
 		identifier: string,

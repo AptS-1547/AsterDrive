@@ -15,6 +15,7 @@
   <a href="https://asterdrive.docs.esap.cc/"><img alt="Documentation Site" src="https://img.shields.io/badge/docs-VitePress-7C3AED?style=for-the-badge&logo=vitepress&logoColor=white"></a>
   <a href="README.zh.md"><img alt="中文 README" src="https://img.shields.io/badge/README-中文-E11D48?style=for-the-badge"></a>
   <a href="docs/guide/getting-started.md"><img alt="Quick Start" src="https://img.shields.io/badge/quick%20start-guide-2563EB?style=for-the-badge"></a>
+  <a href="docs/deployment/ops-cli.md"><img alt="Ops CLI" src="https://img.shields.io/badge/ops-CLI-0EA5E9?style=for-the-badge"></a>
   <a href="developer-docs/architecture.md"><img alt="Architecture" src="https://img.shields.io/badge/architecture-overview-0F172A?style=for-the-badge"></a>
   <a href="developer-docs/api/index.md"><img alt="API Docs" src="https://img.shields.io/badge/API-reference-059669?style=for-the-badge"></a>
   <a href="docs/deployment/docker.md"><img alt="Docker" src="https://img.shields.io/badge/docker-deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
@@ -86,6 +87,8 @@ The current container image is an **Alpine runtime image**. The recommended pers
 
 See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`](docs/deployment/docker.md) for a complete deployment example.
 
+If you need offline deployment checks, runtime-config changes from the command line, or cross-database migration from SQLite to PostgreSQL / MySQL, start with [`docs/deployment/ops-cli.md`](docs/deployment/ops-cli.md).
+
 ## Core capabilities
 
 ### File management
@@ -127,6 +130,7 @@ See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`]
 
 - [Getting started](docs/guide/getting-started.md)
 - [Installation and deployment](docs/guide/installation.md)
+- [Operations CLI](docs/deployment/ops-cli.md)
 - [Developer docs](developer-docs/README.md)
 - [Architecture](developer-docs/architecture.md)
 - [Docker deployment](docs/deployment/docker.md)

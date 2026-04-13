@@ -350,7 +350,7 @@ export default function LoginPage() {
 		let cancelled = false;
 
 		void authService
-			.check("")
+			.check()
 			.then((result) => {
 				if (cancelled) return;
 				if (!result.has_users) {

@@ -82,6 +82,8 @@ ASTER__WEBDAV__PREFIX=/dav
 
 详情见 [系统设置](/config/runtime) 和 [邮件](/config/mail)。
 
+如果后台暂时进不去，或者你想在停机窗口里离线检查、校验或批量写入系统设置，可以改走 [运维 CLI](/deployment/ops-cli)。
+
 ## 存储策略和策略组不在 `config.toml` 里
 
 存储策略和策略组都在后台页面里维护，不写在 `config.toml` 里。

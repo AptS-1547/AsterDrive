@@ -98,12 +98,6 @@ pub struct ResendRegisterActivationReq {
     pub identifier: String,
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CheckReq {
-    pub identifier: String,
-}
-
 #[derive(serde::Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CheckResp {
@@ -332,14 +326,12 @@ fn storage_event_frame(event: &storage_change_service::StorageChangeEvent) -> Op
     post,
     path = "/api/v1/auth/check",
     tag = "auth",
-    operation_id = "check_identifier",
-    request_body = CheckReq,
+    operation_id = "check_auth_state",
     responses(
         (status = 200, description = "Check result", body = inline(ApiResponse<CheckResp>)),
     ),
 )]
-pub async fn check(state: web::Data<AppState>, body: web::Json<CheckReq>) -> Result<HttpResponse> {
-    let _ = body;
+pub async fn check(state: web::Data<AppState>) -> Result<HttpResponse> {
     let has_users = auth_service::check_auth_state(&state).await?;
     let allow_user_registration =
         RuntimeAuthPolicy::from_runtime_config(&state.runtime_config).allow_user_registration;

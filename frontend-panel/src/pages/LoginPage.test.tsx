@@ -224,7 +224,7 @@ describe("LoginPage", () => {
 		render(<LoginPage />);
 
 		await waitFor(() => {
-			expect(mockState.check).toHaveBeenCalledWith("");
+			expect(mockState.check).toHaveBeenCalledWith();
 		});
 		expect(
 			await screen.findByRole("button", { name: "sign_in" }),
@@ -566,7 +566,7 @@ describe("LoginPage", () => {
 		render(<LoginPage />);
 
 		await waitFor(() => {
-			expect(mockState.check).toHaveBeenCalledWith("");
+			expect(mockState.check).toHaveBeenCalledWith();
 		});
 
 		fireEvent.change(screen.getByLabelText("email_or_username"), {
@@ -651,7 +651,7 @@ describe("LoginPage", () => {
 		render(<LoginPage />);
 
 		await waitFor(() => {
-			expect(mockState.check).toHaveBeenCalledWith("");
+			expect(mockState.check).toHaveBeenCalledWith();
 		});
 		expect(
 			await screen.findByRole("button", { name: "sign_in" }),
@@ -667,7 +667,7 @@ describe("LoginPage", () => {
 		render(<LoginPage />);
 
 		await waitFor(() => {
-			expect(mockState.check).toHaveBeenCalledWith("");
+			expect(mockState.check).toHaveBeenCalledWith();
 		});
 		expect(
 			await screen.findByRole("button", { name: "sign_in" }),

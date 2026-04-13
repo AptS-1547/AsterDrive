@@ -236,12 +236,14 @@
 
 ### 当前常用 key
 
-- 具体定义以 `/admin/config/schema` 和 `src/config/definitions.rs` 为准；下面只列一批当前高频项
+- 具体定义以 `/admin/config/schema` 和 `src/config/definitions.rs` 为准；下面只列一批当前高频项，不是完整清单。邮件 SMTP、邮件模板、头像上传限制、注册/找回 TTL、分页上限等键也都在 schema 里
 - `default_storage_quota`
 - `webdav_enabled`
 - `trash_retention_days`
 - `team_archive_retention_days`
 - `max_versions_per_file`
+- `auth_allow_user_registration`
+- `auth_register_activation_enabled`
 - `audit_log_enabled`
 - `audit_log_retention_days`
 - `public_site_url`
@@ -255,8 +257,11 @@
 - `background_task_dispatch_interval_secs`
 - `maintenance_cleanup_interval_secs`
 - `blob_reconcile_interval_secs`
+- `team_member_list_max_limit`
 - `task_list_max_limit`
 - `task_retention_hours`
+- `avatar_max_upload_size_bytes`
+- `thumbnail_max_source_bytes`
 - `wopi_access_token_ttl_secs`
 - `wopi_lock_ttl_secs`
 - `wopi_discovery_cache_ttl_secs`

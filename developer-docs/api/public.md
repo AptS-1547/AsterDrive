@@ -75,4 +75,4 @@
   - `url_template` 预览器常见字段有 `mode`、`url_template`、`allowed_origins`
   - `wopi` 预览器常见字段有 `mode`、`action` / `action_url` / `action_url_template`、`discovery_url`
 - 前端文件预览、公开分享预览和 WOPI 集成入口都会依赖这份注册表，而不是把预览器信息硬编码在前端里
-- 管理员当前可以通过 `/admin/config/frontend_preview_apps_json` 维护这份注册表
+- 管理员当前可以通过 `/api/v1/admin/config/frontend_preview_apps_json` 维护这份注册表

@@ -15,6 +15,7 @@
   <a href="https://asterdrive.docs.esap.cc/"><img alt="在线文档" src="https://img.shields.io/badge/docs-VitePress-7C3AED?style=for-the-badge&logo=vitepress&logoColor=white"></a>
   <a href="README.md"><img alt="English README" src="https://img.shields.io/badge/README-English-E11D48?style=for-the-badge"></a>
   <a href="docs/guide/getting-started.md"><img alt="快速开始" src="https://img.shields.io/badge/快速开始-guide-2563EB?style=for-the-badge"></a>
+  <a href="docs/deployment/ops-cli.md"><img alt="运维 CLI" src="https://img.shields.io/badge/运维-CLI-0EA5E9?style=for-the-badge"></a>
   <a href="developer-docs/architecture.md"><img alt="架构文档" src="https://img.shields.io/badge/架构-总览-0F172A?style=for-the-badge"></a>
   <a href="developer-docs/api/index.md"><img alt="API 文档" src="https://img.shields.io/badge/API-reference-059669?style=for-the-badge"></a>
   <a href="docs/deployment/docker.md"><img alt="Docker 部署" src="https://img.shields.io/badge/docker-deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
@@ -86,6 +87,8 @@ docker compose up -d
 
 完整部署示例见 [`docker-compose.yml`](docker-compose.yml) 和 [`docs/deployment/docker.md`](docs/deployment/docker.md)。
 
+如果你部署完成后想在命令行里做离线检查、批量改系统设置，或者把 SQLite 迁到 PostgreSQL / MySQL，直接看 [`docs/deployment/ops-cli.md`](docs/deployment/ops-cli.md)。
+
 ## 核心能力
 
 ### 文件管理
@@ -127,6 +130,7 @@ docker compose up -d
 
 - [快速开始](docs/guide/getting-started.md)
 - [安装与部署](docs/guide/installation.md)
+- [运维 CLI](docs/deployment/ops-cli.md)
 - [开发者文档](developer-docs/README.md)
 - [架构文档](developer-docs/architecture.md)
 - [Docker 部署](docs/deployment/docker.md)

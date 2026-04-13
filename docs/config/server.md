@@ -11,6 +11,11 @@ temp_dir = ".tmp"
 upload_temp_dir = ".uploads"
 ```
 
+如果这是自动生成在 `data/config.toml` 里的默认值，那运行时实际会解析成：
+
+- `data/.tmp`
+- `data/.uploads`
+
 ## 什么时候需要改这组配置
 
 - Docker 或容器部署：把 `host` 改成 `0.0.0.0`
@@ -25,8 +30,8 @@ upload_temp_dir = ".uploads"
 | `host` | `"127.0.0.1"` | 监听地址；容器部署通常改成 `0.0.0.0` |
 | `port` | `3000` | HTTP 监听端口 |
 | `workers` | `0` | 工作线程数；`0` 表示自动按 CPU 数量决定 |
-| `temp_dir` | `".tmp"` | 服务端通用临时文件目录，相对于 `data/config.toml` 所在目录 |
-| `upload_temp_dir` | `".uploads"` | 分片上传和上传恢复使用的临时目录，相对于 `data/config.toml` 所在目录 |
+| `temp_dir` | `".tmp"` | 服务端通用临时文件目录；如果配置文件在 `data/config.toml`，实际会落到 `data/.tmp` |
+| `upload_temp_dir` | `".uploads"` | 分片上传和上传恢复使用的临时目录；如果配置文件在 `data/config.toml`，实际会落到 `data/.uploads` |
 
 ## `temp_dir` 和 `upload_temp_dir` 有什么影响
 
@@ -51,8 +56,8 @@ upload_temp_dir = ".uploads"
 host = "127.0.0.1"
 port = 3000
 workers = 0
-temp_dir = ".tmp"
-upload_temp_dir = ".uploads"
+temp_dir = "data/.tmp"
+upload_temp_dir = "data/.uploads"
 ```
 
 ### Docker 或容器

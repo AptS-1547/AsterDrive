@@ -314,9 +314,6 @@ async fn test_check_reports_public_registration_flag() {
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/check")
         .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "someone@example.com"
-        }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

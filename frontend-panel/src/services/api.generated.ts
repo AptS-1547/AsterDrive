@@ -493,7 +493,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["check_identifier"];
+        post: operations["check_auth_state"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2790,9 +2790,6 @@ export interface components {
             current_password: string;
             new_password: string;
         };
-        CheckReq: {
-            identifier: string;
-        };
         CheckResp: {
             allow_user_registration: boolean;
             has_users: boolean;
@@ -4222,7 +4219,10 @@ export interface components {
         };
         WopiLaunchSession: {
             access_token: string;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description WOPI access token expiry time as a Unix timestamp in milliseconds.
+             */
             access_token_ttl: number;
             action_url: string;
             form_fields?: {
@@ -6876,18 +6876,14 @@ export interface operations {
             };
         };
     };
-    check_identifier: {
+    check_auth_state: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CheckReq"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Check result */
             200: {
@@ -8995,7 +8991,10 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             access_token: string;
-                            /** Format: int64 */
+                            /**
+                             * Format: int64
+                             * @description WOPI access token expiry time as a Unix timestamp in milliseconds.
+                             */
                             access_token_ttl: number;
                             action_url: string;
                             form_fields?: {
@@ -13123,7 +13122,10 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             access_token: string;
-                            /** Format: int64 */
+                            /**
+                             * Format: int64
+                             * @description WOPI access token expiry time as a Unix timestamp in milliseconds.
+                             */
                             access_token_ttl: number;
                             action_url: string;
                             form_fields?: {

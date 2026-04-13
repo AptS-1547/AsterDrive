@@ -22,7 +22,7 @@
 - 配置分两类：
   - 静态配置：`data/config.toml` + 环境变量，影响进程启动和基础设施
   - 运行时配置：数据库里的 `system_config`，影响 WebDAV 开关、回收站保留期、版本数上限等业务行为
-    也包括默认配额、公开站点地址、预览应用注册表、后台调度周期、团队归档保留期、CORS 行为和 WOPI 相关配置
+    也包括默认配额、公开站点地址、预览应用注册表、后台调度周期、团队归档保留期、CORS、注册/邮件/头像和 WOPI 等配置；完整单一数据源是 `src/config/definitions.rs`
 
 ## 从哪里开始看代码
 
@@ -165,7 +165,7 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 | `src/db/repository/` | 面向实体的数据库访问封装 |
 | `src/storage/` | 存储抽象，封装本地与 S3 兼容后端 |
 | `src/webdav/` | WebDAV 文件系统、认证、数据库锁、DeltaV 最小子集 |
-| `src/cli.rs` | `serve` / `config` CLI 入口，提供离线运行时配置操作 |
+| `src/cli.rs` | CLI 根入口；当前子命令包括 `serve`、`doctor`、`config`、`database-migrate` |
 | `frontend-panel/` | React 19 + Vite 前端，打包产物由后端服务 |
 | `migration/` | SeaORM 迁移，启动时自动执行 |
 | `tests/` | 集成测试，覆盖 API 契约和关键行为 |
@@ -227,7 +227,7 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 运行时配置在数据库 `system_config` 表里，主要通过管理员接口管理。
 定义单一数据源在 `src/config/definitions.rs`，接口上的 schema 视图来自这里。
 
-它们主要控制：
+它们覆盖的范围比下面这份示例列表更广，当前除了存储 / WOPI / CORS，还包含注册开关、头像上传限制、邮件 SMTP 与模板、任务保留期、分页上限等键。下面只列一批最常见项：
 
 - `webdav_enabled`
 - `trash_retention_days`

@@ -105,6 +105,7 @@ bootstrap_insecure_cookies = false
 
 - 用 Docker：看 [Docker 部署](/deployment/docker)
 - 用 systemd：看 [systemd 部署](/deployment/systemd)
+- 想在命令行里做部署检查、离线配置或跨数据库迁移：看 [运维 CLI](/deployment/ops-cli)
 - 准备挂 HTTPS：看 [反向代理](/deployment/proxy)
 - 想确认首次启动到底自动做了哪些事：看 [首次启动检查](/deployment/runtime-behavior)
 - 准备升级：看 [升级与浏览器缓存](/deployment/frontend-assets)

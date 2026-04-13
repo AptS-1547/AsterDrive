@@ -47,7 +47,7 @@ describe("authService", () => {
 			return undefined;
 		});
 
-		authService.check("alice@example.com");
+		authService.check();
 		await expect(
 			authService.login("alice@example.com", "secret"),
 		).resolves.toEqual({
@@ -75,9 +75,7 @@ describe("authService", () => {
 		authService.resendEmailChange();
 		authService.setAvatarSource("gravatar");
 
-		expect(mockState.post).toHaveBeenNthCalledWith(1, "/auth/check", {
-			identifier: "alice@example.com",
-		});
+		expect(mockState.post).toHaveBeenNthCalledWith(1, "/auth/check");
 		expect(mockState.post).toHaveBeenNthCalledWith(2, "/auth/login", {
 			identifier: "alice@example.com",
 			password: "secret",

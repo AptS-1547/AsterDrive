@@ -144,6 +144,22 @@ systemd 适合长期运行的 Linux 服务器。
 ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true ./aster_drive
 ```
 
+## 需要离线检查或迁移时
+
+现在同一个 `aster_drive` 二进制里还带了运维子命令，适合这些场景：
+
+- 新部署后先跑一轮离线检查
+- 后台暂时进不去，直接查看或修改系统设置
+- 把 SQLite 迁到 PostgreSQL / MySQL
+
+最常见的三类命令是：
+
+- `doctor`：检查数据库、公开站点地址、邮件、预览应用和默认存储策略状态
+- `config`：离线查看、校验、设置、导入或导出系统设置
+- `database-migrate`：跨数据库后端搬迁业务数据
+
+具体命令和使用顺序看 [运维 CLI](/deployment/ops-cli)。
+
 ## 首次启动后会自动完成什么
 
 第一次成功启动后，AsterDrive 会自动完成：
@@ -181,5 +197,6 @@ http://服务器地址:3000
 ## 下一步该看哪里
 
 - 想挂 HTTPS、Caddy 或 Nginx：看 [反向代理](/deployment/proxy)
+- 想在命令行里做部署检查、离线配置或跨库迁移：看 [运维 CLI](/deployment/ops-cli)
 - 想确认默认目录、默认策略和后台任务是否按预期创建：看 [首次启动检查](/deployment/runtime-behavior)
 - 想改数据库、WebDAV、日志或系统设置：看 [配置说明](/config/)
