@@ -31,4 +31,7 @@ export ASTER__LOGGING__LEVEL=warn
 export CARGO_TARGET_DIR="${ASTER_E2E_TARGET_DIR:-$REPO_ROOT/target/e2e}"
 
 cd "$RUNTIME_DIR"
-exec cargo run --manifest-path "$REPO_ROOT/Cargo.toml"
+exec cargo run \
+	--manifest-path "$REPO_ROOT/Cargo.toml" \
+	--no-default-features \
+	--features server

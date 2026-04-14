@@ -40,6 +40,8 @@ const CODE_FILE = {
 } as const;
 
 const PREVIEW_APPS_CACHE_KEY = "aster-cached-preview-apps";
+const RESUMABLE_UPLOADS_KEY = "aster_resumable_uploads";
+const RUN_ID = Date.now().toString(36);
 
 const DEFAULT_STORAGE_STATE = {
 	"aster-browser-open-mode": "single_click",
@@ -231,6 +233,389 @@ test.describe
 				clientState,
 			);
 		});
+
+		test("manages admin users end-to-end", async ({ page, request }) => {
+			await authenticate(page, request);
+
+			const username = uniqueAccountName("pwuser");
+			const email = `${username}@example.com`;
+
+			await gotoAdminPage(page, "/admin/users", "Users");
+
+			await page.getByRole("button", { name: "New User" }).click();
+			const createDialog = dialogByTitle(page, "Create user");
+			await expect(createDialog).toBeVisible();
+			await createDialog.locator("#create-user-username").fill(username);
+			await createDialog.locator("#create-user-email").fill(email);
+			await createDialog.locator("#create-user-password").fill("Playwright123!");
+			await createDialog.getByRole("button", { name: "Create" }).click();
+			await expect(createDialog).toBeHidden();
+
+			await expect(tableRowByCellText(page, username)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await page
+				.getByPlaceholder("Search by username, email, or ID...")
+				.fill(username);
+			await expect(tableRowByCellText(page, username)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await tableRowByCellText(page, username).click();
+			const detailDialog = dialogByTitle(page, "User details");
+			await expect(detailDialog).toBeVisible();
+			await expect(detailDialog.getByText(email, { exact: true })).toBeVisible();
+			await detailDialog
+				.locator('[data-slot="dialog-footer"]')
+				.getByRole("button", { name: "Close" })
+				.click();
+			await expect(detailDialog).toBeHidden();
+
+			await tableRowByCellText(page, username)
+				.getByTitle("Delete user")
+				.click();
+			const deleteDialog = page.getByRole("alertdialog", {
+				name: "Delete user",
+			});
+			await expect(deleteDialog).toBeVisible();
+			await deleteDialog.getByRole("button", { name: "Delete" }).click();
+			await expect(tableRowByCellText(page, username)).toHaveCount(0, {
+				timeout: 30_000,
+			});
+		});
+
+		test("configures local storage policies through the admin flow", async ({
+			page,
+			request,
+		}) => {
+			await authenticate(page, request);
+
+			const policyName = uniqueName("pw-local-policy");
+			const initialBasePath = `/tmp/${policyName}-v1`;
+			const updatedBasePath = `/tmp/${policyName}-v2`;
+
+			await gotoAdminPage(page, "/admin/policies", "Storage Policies");
+
+			await page.getByRole("button", { name: "New Policy" }).click();
+			const createDialog = dialogByTitle(page, "Create Policy");
+			await expect(createDialog).toBeVisible();
+			await createDialog.getByRole("button", { name: "Local" }).click();
+			await createDialog.getByRole("button", { name: "Next" }).click();
+			await createDialog.locator("#name").fill(policyName);
+			await createDialog.locator("#base_path").fill(initialBasePath);
+			await createDialog
+				.getByRole("button", { exact: true, name: "Review" })
+				.click();
+			await createDialog.getByRole("button", { name: "Create" }).click();
+			await expect(createDialog).toBeHidden();
+
+			await expect(tableRowByCellText(page, policyName)).toBeVisible({
+				timeout: 30_000,
+			});
+			await expect(tableRowByCellText(page, policyName)).toContainText(
+				initialBasePath,
+			);
+
+			await tableRowByCellText(page, policyName).click();
+			const editDialog = dialogByTitle(page, "Edit Policy");
+			await expect(editDialog).toBeVisible();
+			await editDialog.locator("#base_path").fill(updatedBasePath);
+			await editDialog.getByRole("button", { name: "Save Changes" }).click();
+			await expect(editDialog).toBeHidden();
+			await expect(tableRowByCellText(page, policyName)).toContainText(
+				updatedBasePath,
+			);
+
+			await tableRowByCellText(page, policyName)
+				.getByTitle("Delete Policy")
+				.click();
+			const deleteDialog = page.getByRole("alertdialog", {
+				name: `Delete Policy "${policyName}"?`,
+			});
+			await expect(deleteDialog).toBeVisible();
+			await deleteDialog.getByRole("button", { name: "Delete" }).click();
+			await expect(tableRowByCellText(page, policyName)).toHaveCount(0, {
+				timeout: 30_000,
+			});
+		});
+
+		test("applies batch copy, move, and delete operations from multi-selection", async ({
+			page,
+			request,
+		}) => {
+			await authenticate(page, request);
+
+			const copyTarget = uniqueName("pw-batch-copy");
+			const moveTarget = uniqueName("pw-batch-move");
+			const firstFile = {
+				buffer: Buffer.from("batch file alpha\n", "utf8"),
+				mimeType: "text/plain",
+				name: `${uniqueName("pw-batch-alpha")}.txt`,
+			} as const;
+			const secondFile = {
+				buffer: Buffer.from("batch file beta\n", "utf8"),
+				mimeType: "text/plain",
+				name: `${uniqueName("pw-batch-beta")}.txt`,
+			} as const;
+
+			await createFolderFromSurface(page, copyTarget);
+			await createFolderFromSurface(page, moveTarget);
+			await uploadViaPicker(page, [firstFile, secondFile]);
+			await expect(fileNameCell(page, firstFile.name)).toBeVisible({
+				timeout: 30_000,
+			});
+			await expect(fileNameCell(page, secondFile.name)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await toggleItemSelection(page, firstFile.name);
+			await toggleItemSelection(page, secondFile.name);
+			await expect(page.getByText("2 selected")).toBeVisible();
+			await page.getByRole("button", { exact: true, name: "Copy" }).click();
+			await chooseTargetFolder(page, copyTarget, "Copy here");
+
+			await openFolder(page, copyTarget);
+			await expect(fileNameCell(page, firstFile.name)).toBeVisible({
+				timeout: 30_000,
+			});
+			await expect(fileNameCell(page, secondFile.name)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await navigateToRoot(page);
+			await toggleItemSelection(page, firstFile.name);
+			await toggleItemSelection(page, secondFile.name);
+			await page.getByRole("button", { exact: true, name: "Move" }).click();
+			await chooseTargetFolder(page, moveTarget, "Move here");
+			await expectItemMissing(page, firstFile.name);
+			await expectItemMissing(page, secondFile.name);
+
+			await openFolder(page, moveTarget);
+			await expect(fileNameCell(page, firstFile.name)).toBeVisible({
+				timeout: 30_000,
+			});
+			await expect(fileNameCell(page, secondFile.name)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await toggleItemSelection(page, firstFile.name);
+			await toggleItemSelection(page, secondFile.name);
+			await page.getByRole("button", { exact: true, name: "Delete" }).click();
+			const deleteDialog = page.getByRole("alertdialog");
+			await expect(deleteDialog).toBeVisible();
+			await deleteDialog.getByRole("button", { name: "Delete" }).click();
+			await expectItemMissing(page, firstFile.name);
+			await expectItemMissing(page, secondFile.name);
+
+			await page.getByRole("link", { name: "Trash" }).click();
+			await expect(page).toHaveURL(/\/trash$/);
+			await expectTrashItemVisible(page, firstFile.name);
+			await expectTrashItemVisible(page, secondFile.name);
+		});
+
+		test("resumes a chunked upload from persisted progress", async ({
+			page,
+			request,
+		}) => {
+			await authenticate(page, request);
+
+			const filename = `${uniqueName("pw-resume")}.bin`;
+			const buffer = Buffer.alloc(6 * 1024 * 1024 + 257, 0x61);
+			const init = await apiJsonInPage<{
+				chunk_size: number;
+				mode?: string;
+				total_chunks: number;
+				upload_id: string;
+			}>(page, "/api/v1/files/upload/init", {
+				method: "POST",
+				body: {
+					filename,
+					total_size: buffer.length,
+				},
+				withCsrf: true,
+			});
+			expect(init.total_chunks).toBeGreaterThan(1);
+			expect(init.chunk_size).toBeGreaterThan(0);
+
+			await uploadChunkViaApi(
+				page,
+				init.upload_id,
+				0,
+				buffer.subarray(0, init.chunk_size),
+			);
+
+			const progress = await apiJsonInPage<{
+				received_count: number;
+				status: string;
+			}>(page, `/api/v1/files/upload/${init.upload_id}`);
+			expect(progress.received_count).toBe(1);
+			expect(progress.status).toBe("uploading");
+
+			await saveResumableSession(page, {
+				baseFolderId: null,
+				baseFolderName: "My Drive",
+				chunkSize: init.chunk_size,
+				filename,
+				mode: "chunked",
+				relativePath: null,
+				savedAt: Date.now(),
+				totalChunks: init.total_chunks,
+				totalSize: buffer.length,
+				uploadId: init.upload_id,
+				workspace: { kind: "personal" },
+			});
+
+			await page.reload();
+			await expect(page.getByText(filename, { exact: true })).toBeVisible({
+				timeout: 30_000,
+			});
+			await expect(page.getByText("Chunked", { exact: true })).toBeVisible();
+			await expect(
+				page.getByText(`Chunk 1/${init.total_chunks}`, { exact: true }),
+			).toBeVisible();
+			await page.getByTitle("Select file to resume").first().click();
+			await page.getByTestId("resume-input").setInputFiles({
+				buffer,
+				mimeType: "application/octet-stream",
+				name: filename,
+			});
+
+			await expect(fileNameCell(page, filename)).toBeVisible({
+				timeout: 30_000,
+			});
+			expect(await loadPersistedSessions(page)).toHaveLength(0);
+		});
+
+		test("creates a WebDAV account and exercises basic WebDAV methods", async ({
+			page,
+			request,
+		}) => {
+			await authenticate(page, request);
+
+			const username = uniqueAccountName("pwdav");
+			const password = "PlaywrightDav123!";
+			const settings = await apiJsonInPage<{
+				endpoint: string;
+				prefix: string;
+			}>(page, "/api/v1/webdav-accounts/settings");
+			const prefix = normalizeWebdavPrefix(settings.prefix);
+			const authHeader = basicAuth(username, password);
+			const directoryName = uniqueName("pw-dav-dir");
+			const fileName = `${uniqueName("pw-dav-file")}.txt`;
+			const fileContent = "WebDAV content from Playwright";
+			const rootPath = `${prefix}/`;
+			const directoryPath = `${rootPath}${directoryName}/`;
+			const filePath = `${directoryPath}${fileName}`;
+
+			await page.goto("/settings/webdav");
+			await expect(
+				page.getByRole("heading", { exact: true, name: "WebDAV" }),
+			).toBeVisible();
+			await page.getByRole("button", { name: "Create WebDAV Account" }).click();
+
+			const createDialog = dialogByTitle(page, "Create WebDAV Account");
+			await expect(createDialog).toBeVisible();
+			await createDialog.locator("#username").fill(username);
+			await createDialog.locator("#password").fill(password);
+			await createDialog.getByRole("button", { name: "Create" }).click();
+
+			const credentialsDialog = dialogByTitle(page, "Latest Credentials");
+			await expect(credentialsDialog).toBeVisible();
+			await credentialsDialog.getByRole("button", { name: "Test Connection" }).click();
+			await expect(
+				credentialsDialog.getByText("Connection successful", {
+					exact: true,
+				}),
+			).toBeVisible({
+				timeout: 30_000,
+			});
+
+			const rootListing = await webdavRequest(page, rootPath, {
+				headers: {
+					Authorization: authHeader,
+					Depth: "0",
+				},
+				method: "PROPFIND",
+			});
+			expect(rootListing.status).toBe(207);
+
+			const createDirectory = await webdavRequest(page, directoryPath, {
+				headers: {
+					Authorization: authHeader,
+				},
+				method: "MKCOL",
+			});
+			expect(createDirectory.status).toBe(201);
+
+			const nestedListing = await webdavRequest(page, rootPath, {
+				headers: {
+					Authorization: authHeader,
+					Depth: "1",
+				},
+				method: "PROPFIND",
+			});
+			expect(nestedListing.status).toBe(207);
+			expect(nestedListing.text).toContain(directoryName);
+
+			const putFile = await webdavRequest(page, filePath, {
+				body: fileContent,
+				headers: {
+					Authorization: authHeader,
+					"Content-Type": "text/plain",
+				},
+				method: "PUT",
+			});
+			expect([201, 204]).toContain(putFile.status);
+
+			const getFile = await webdavRequest(page, filePath, {
+				headers: {
+					Authorization: authHeader,
+				},
+				method: "GET",
+			});
+			expect(getFile.status).toBe(200);
+			expect(getFile.text).toContain(fileContent);
+
+			const deleteFile = await webdavRequest(page, filePath, {
+				headers: {
+					Authorization: authHeader,
+				},
+				method: "DELETE",
+			});
+			expect([200, 204]).toContain(deleteFile.status);
+
+			const deleteDirectory = await webdavRequest(page, directoryPath, {
+				headers: {
+					Authorization: authHeader,
+				},
+				method: "DELETE",
+			});
+			expect([200, 204]).toContain(deleteDirectory.status);
+		});
+
+		test("supports mobile navigation for the user and admin layouts", async ({
+			page,
+			request,
+		}) => {
+			await authenticate(page, request);
+
+			await page.setViewportSize({ width: 390, height: 844 });
+			await page.goto("/");
+			await expect(fileDropZone(page)).toBeVisible();
+
+			await page.getByRole("button", { name: "Open sidebar" }).click();
+			await expect(
+				page.getByRole("button", { name: "Close sidebar" }).first(),
+			).toBeVisible();
+			await page.getByRole("link", { name: "Trash" }).click();
+			await expect(page).toHaveURL(/\/trash$/);
+
+			await gotoAdminPage(page, "/admin/users", "Users");
+			await page.getByRole("button", { name: "Open admin sidebar" }).click();
+			await page.getByRole("link", { name: "Storage Policies" }).click();
+			await expect(page).toHaveURL(/\/admin\/policies$/);
+		});
 	});
 
 async function seedClientState(
@@ -312,11 +697,45 @@ function fileNameCell(page: Page, fileName: string) {
 	return page.getByRole("cell", { exact: true, name: fileName }).first();
 }
 
-function fileRow(page: Page, fileName: string) {
+function tableRowByCellText(page: Page, cellText: string) {
 	return page
 		.getByRole("row")
-		.filter({ has: page.getByRole("cell", { exact: true, name: fileName }) })
+		.filter({ has: page.getByRole("cell", { exact: true, name: cellText }) })
 		.first();
+}
+
+function fileRow(page: Page, fileName: string) {
+	return tableRowByCellText(page, fileName);
+}
+
+function dialogByTitle(page: Page, title: string) {
+	return page
+		.getByRole("dialog")
+		.filter({ has: page.getByRole("heading", { exact: true, name: title }) })
+		.first();
+}
+
+async function resolveAdminSiteUrlPrompt(page: Page) {
+	const dialog = page.getByRole("alertdialog", {
+		name: "Current site URL does not match the system config",
+	});
+	const promptAppeared = await dialog
+		.waitFor({ state: "visible", timeout: 3_000 })
+		.then(() => true)
+		.catch(() => false);
+	if (!promptAppeared) {
+		return;
+	}
+	await dialog.getByRole("button", { name: "Update site URL" }).click();
+	await expect(dialog).toBeHidden({ timeout: 30_000 });
+}
+
+async function gotoAdminPage(page: Page, url: string, heading: string) {
+	await page.goto(url);
+	await resolveAdminSiteUrlPrompt(page);
+	await expect(page.getByRole("heading", { name: heading })).toBeVisible({
+		timeout: 30_000,
+	});
 }
 
 async function hasUsers(request: APIRequestContext) {
@@ -576,6 +995,10 @@ async function deleteItem(page: Page, itemName: string) {
 	await page.getByRole("menuitem", { name: "Delete" }).click();
 }
 
+async function toggleItemSelection(page: Page, itemName: string) {
+	await fileRow(page, itemName).locator("button[aria-pressed]").first().click();
+}
+
 function folderTreeButton(page: Page, folderName: string) {
 	return page
 		.getByRole("complementary")
@@ -734,4 +1157,234 @@ async function expectProtectedFolderSharePreview(
 
 	await closeActiveDialog(page);
 	await context.close();
+}
+
+function uniqueName(prefix: string) {
+	return `${prefix}-${RUN_ID}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function uniqueAccountName(prefix: string) {
+	return `${prefix}-${Math.random().toString(36).slice(2, 8)}`.slice(0, 16);
+}
+
+async function apiJsonInPage<T>(
+	page: Page,
+	requestPath: string,
+	options?: {
+		body?: unknown;
+		method?: string;
+		withCsrf?: boolean;
+	},
+) {
+	const response = await page.evaluate(
+		async ({ body, method, requestPath, withCsrf }) => {
+			const readCookie = (name: string) => {
+				const encodedName = `${encodeURIComponent(name)}=`;
+				for (const chunk of document.cookie.split(";")) {
+					const trimmed = chunk.trim();
+					if (trimmed.startsWith(encodedName)) {
+						return decodeURIComponent(trimmed.slice(encodedName.length));
+					}
+				}
+				return null;
+			};
+
+			const headers: Record<string, string> = {};
+			if (body !== undefined) {
+				headers["Content-Type"] = "application/json";
+			}
+			if (withCsrf) {
+				const token = readCookie("aster_csrf");
+				if (token) {
+					headers["X-CSRF-Token"] = token;
+				}
+			}
+
+			const result = await fetch(requestPath, {
+				body: body === undefined ? undefined : JSON.stringify(body),
+				credentials: "include",
+				headers,
+				method,
+			});
+
+			return {
+				status: result.status,
+				text: await result.text(),
+			};
+		},
+		{
+			body: options?.body,
+			method: options?.method ?? "GET",
+			requestPath,
+			withCsrf: options?.withCsrf ?? false,
+		},
+	);
+
+	expect(response.status).toBeGreaterThanOrEqual(200);
+	expect(response.status).toBeLessThan(300);
+	const payload = JSON.parse(response.text) as {
+		code: number;
+		data: T;
+		msg?: string;
+	};
+	expect(payload.code).toBe(0);
+	return payload.data;
+}
+
+async function uploadChunkViaApi(
+	page: Page,
+	uploadId: string,
+	chunkNumber: number,
+	buffer: Buffer,
+) {
+	const response = await page.evaluate(
+		async ({ bufferBase64, chunkNumber, uploadId }) => {
+			const readCookie = (name: string) => {
+				const encodedName = `${encodeURIComponent(name)}=`;
+				for (const chunk of document.cookie.split(";")) {
+					const trimmed = chunk.trim();
+					if (trimmed.startsWith(encodedName)) {
+						return decodeURIComponent(trimmed.slice(encodedName.length));
+					}
+				}
+				return null;
+			};
+			const binary = atob(bufferBase64);
+			const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+			const headers: Record<string, string> = {
+				"Content-Type": "application/octet-stream",
+			};
+			const csrfToken = readCookie("aster_csrf");
+			if (csrfToken) {
+				headers["X-CSRF-Token"] = csrfToken;
+			}
+
+			const result = await fetch(
+				`/api/v1/files/upload/${uploadId}/${chunkNumber}`,
+				{
+					body: bytes,
+					credentials: "include",
+					headers,
+					method: "PUT",
+				},
+			);
+
+			return {
+				status: result.status,
+				text: await result.text(),
+			};
+		},
+		{
+			bufferBase64: buffer.toString("base64"),
+			chunkNumber,
+			uploadId,
+		},
+	);
+
+	expect(response.status).toBeGreaterThanOrEqual(200);
+	expect(response.status).toBeLessThan(300);
+	const payload = JSON.parse(response.text) as { code: number };
+	expect(payload.code).toBe(0);
+}
+
+async function saveResumableSession(
+	page: Page,
+	session: {
+		baseFolderId: number | null;
+		baseFolderName: string;
+		chunkSize: number;
+		filename: string;
+		mode: "chunked" | "presigned_multipart";
+		relativePath: string | null;
+		savedAt: number;
+		totalChunks: number;
+		totalSize: number;
+		uploadId: string;
+		workspace: { kind: "personal" } | { kind: "team"; teamId: number };
+	},
+) {
+	await page.evaluate(
+		({ session, storageKey }) => {
+			const raw = window.localStorage.getItem(storageKey);
+			const existing = raw ? (JSON.parse(raw) as unknown[]) : [];
+			const next = existing.filter((item) => {
+				if (
+					typeof item === "object" &&
+					item !== null &&
+					"uploadId" in item &&
+					typeof item.uploadId === "string"
+				) {
+					return item.uploadId !== session.uploadId;
+				}
+				return true;
+			});
+			next.push(session);
+			window.localStorage.setItem(storageKey, JSON.stringify(next));
+		},
+		{
+			session,
+			storageKey: RESUMABLE_UPLOADS_KEY,
+		},
+	);
+}
+
+async function loadPersistedSessions(page: Page) {
+	return page.evaluate((storageKey) => {
+		const raw = window.localStorage.getItem(storageKey);
+		return raw ? (JSON.parse(raw) as unknown[]) : [];
+	}, RESUMABLE_UPLOADS_KEY);
+}
+
+function basicAuth(username: string, password: string) {
+	return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
+}
+
+function normalizeWebdavPrefix(prefix: string) {
+	const trimmed = prefix.trim();
+	if (!trimmed) {
+		return "/webdav";
+	}
+
+	if (trimmed === "/") {
+		return "";
+	}
+
+	return trimmed.startsWith("/")
+		? trimmed.replace(/\/+$/, "")
+		: `/${trimmed.replace(/\/+$/, "")}`;
+}
+
+async function webdavRequest(
+	page: Page,
+	requestPath: string,
+	options: {
+		body?: string;
+		headers?: Record<string, string>;
+		method:
+			| "DELETE"
+			| "GET"
+			| "MKCOL"
+			| "PROPFIND"
+			| "PUT";
+	},
+) {
+	return page.evaluate(
+		async ({ body, headers, method, requestPath }) => {
+			const response = await fetch(requestPath, {
+				body,
+				headers,
+				method,
+			});
+			return {
+				status: response.status,
+				text: await response.text(),
+			};
+		},
+		{
+			body: options.body,
+			headers: options.headers,
+			method: options.method,
+			requestPath,
+		},
+	);
 }
