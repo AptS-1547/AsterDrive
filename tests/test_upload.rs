@@ -357,7 +357,8 @@ async fn test_chunked_upload_flow() {
     // 1. 初始化分片上传（10KB 文件，chunk_size=5MB → 直传模式）
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload/init")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "filename": "chunked.txt",
             "total_size": 10240
@@ -382,7 +383,8 @@ async fn test_chunked_upload_flow() {
             let chunk_data = vec![b'A'; 5120]; // 5KB per chunk
             let req = test::TestRequest::put()
                 .uri(&format!("/api/v1/files/upload/{upload_id}/{i}"))
-                .insert_header(("Cookie", format!("aster_access={token}")))
+                .insert_header(("Cookie", common::access_cookie_header(&token)))
+                .insert_header(common::csrf_header_for(&token))
                 .insert_header(("Content-Type", "application/octet-stream"))
                 .set_payload(chunk_data)
                 .to_request();
@@ -393,7 +395,8 @@ async fn test_chunked_upload_flow() {
         // 3. 查看进度
         let req = test::TestRequest::get()
             .uri(&format!("/api/v1/files/upload/{upload_id}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 200);
@@ -401,7 +404,8 @@ async fn test_chunked_upload_flow() {
         // 4. 完成上传
         let req = test::TestRequest::post()
             .uri(&format!("/api/v1/files/upload/{upload_id}/complete"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 201);
@@ -557,7 +561,8 @@ async fn test_local_direct_upload_with_declared_size_avoids_global_temp_dirs_and
             "/api/v1/files/upload?declared_size={}",
             data.len()
         ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -575,7 +580,8 @@ async fn test_local_direct_upload_with_declared_size_avoids_global_temp_dirs_and
             "/api/v1/files/upload?declared_size={}",
             data.len()
         ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary2}"),
@@ -619,7 +625,8 @@ async fn test_chunked_upload_cancel() {
     // 初始化大文件上传（强制 chunked 模式）
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload/init")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "filename": "big.bin",
             "total_size": 10_485_760  // 10MB → 超过 chunk_size(5MB) → chunked
@@ -633,7 +640,8 @@ async fn test_chunked_upload_cancel() {
         // 取消上传
         let req = test::TestRequest::delete()
             .uri(&format!("/api/v1/files/upload/{upload_id}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 200);
@@ -641,7 +649,8 @@ async fn test_chunked_upload_cancel() {
         // 再查进度应该 404
         let req = test::TestRequest::get()
             .uri(&format!("/api/v1/files/upload/{upload_id}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status() == 404 || resp.status() == 410);
@@ -657,7 +666,8 @@ async fn test_init_upload_local_never_presigned() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload/init")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "filename": "test.bin",
             "total_size": 1024
@@ -1388,9 +1398,14 @@ async fn test_presigned_multipart_upload_s3_e2e() {
 
     let state = common::setup().await;
 
-    let user = auth_service::register(&state, "s3multipartuser", "s3multipart@test.com", "pass1234")
-        .await
-        .unwrap();
+    let user = auth_service::register(
+        &state,
+        "s3multipartuser",
+        "s3multipart@test.com",
+        "pass1234",
+    )
+    .await
+    .unwrap();
     let s3_policy = create_s3_default_policy(
         &state,
         user.id,
@@ -1529,6 +1544,7 @@ async fn test_create_empty_file_s3_no_dedup() {
     let login = auth_service::login(&state, "s3empty", "pass1234")
         .await
         .unwrap();
+    common::seed_csrf_token(&login.access_token);
 
     let db = state.db.clone();
     let driver_registry = state.driver_registry.clone();
@@ -1536,7 +1552,8 @@ async fn test_create_empty_file_s3_no_dedup() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/files/new")
-        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
         .insert_header(("Content-Type", "application/json"))
         .set_json(serde_json::json!({ "name": "empty.txt", "folder_id": null }))
         .to_request();
@@ -1547,7 +1564,8 @@ async fn test_create_empty_file_s3_no_dedup() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/files/new")
-        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
         .insert_header(("Content-Type", "application/json"))
         .set_json(serde_json::json!({ "name": "empty.txt", "folder_id": null }))
         .to_request();
@@ -1619,6 +1637,7 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
     let login = auth_service::login(&state, "relaydirect", "pass1234")
         .await
         .unwrap();
+    common::seed_csrf_token(&login.access_token);
 
     let data = b"hello relay stream!";
     let init =
@@ -1642,7 +1661,8 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
             "/api/v1/files/upload?declared_size={}",
             data.len()
         ))
-        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -1660,7 +1680,8 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
             "/api/v1/files/upload?declared_size={}",
             data.len()
         ))
-        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary2}"),
@@ -1742,6 +1763,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     let login = auth_service::login(&state, "relayexact", "pass1234")
         .await
         .unwrap();
+    common::seed_csrf_token(&login.access_token);
 
     let db = state.db.clone();
     let sessions_before = upload_session::Entity::find()
@@ -1802,7 +1824,8 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
             "/api/v1/files/upload?declared_size={}",
             data.len()
         ))
-        .insert_header(("Cookie", format!("aster_access={}", login.access_token)))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),

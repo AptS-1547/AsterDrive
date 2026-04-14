@@ -193,10 +193,14 @@ async fn test_auth_service_verify_token() {
 async fn test_file_service_get_info() {
     let state = common::setup().await;
 
-    let user =
-        aster_drive::services::auth_service::register(&state, "user1", "u1@example.com", "pass1234")
-            .await
-            .unwrap();
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "user1",
+        "u1@example.com",
+        "pass1234",
+    )
+    .await
+    .unwrap();
 
     // 上传临时文件
     let temp_dir = format!("/tmp/asterdrive-svc-test-{}", uuid::Uuid::new_v4());
@@ -225,10 +229,14 @@ async fn test_file_service_get_info() {
     assert_eq!(info.user_id, user.id);
 
     // 别人的文件
-    let user2 =
-        aster_drive::services::auth_service::register(&state, "user2", "u2@example.com", "pass1234")
-            .await
-            .unwrap();
+    let user2 = aster_drive::services::auth_service::register(
+        &state,
+        "user2",
+        "u2@example.com",
+        "pass1234",
+    )
+    .await
+    .unwrap();
     let err = aster_drive::services::file_service::get_info(&state, file.id, user2.id).await;
     assert!(err.is_err());
 }
@@ -1322,10 +1330,14 @@ async fn test_copy_file_naming() {
 async fn test_folder_service_cycle_detection() {
     let state = common::setup().await;
 
-    let user =
-        aster_drive::services::auth_service::register(&state, "cycl", "cyc@example.com", "pass1234")
-            .await
-            .unwrap();
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "cycl",
+        "cyc@example.com",
+        "pass1234",
+    )
+    .await
+    .unwrap();
 
     let a = aster_drive::services::folder_service::create(&state, user.id, "A", None)
         .await

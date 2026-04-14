@@ -1,5 +1,104 @@
 use aster_drive::runtime::AppState;
-use std::sync::Arc;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+};
+
+thread_local! {
+    static CSRF_LOOKUP_CACHE: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+}
+
+fn csrf_registry() -> &'static Mutex<HashMap<String, String>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn lock_csrf_registry() -> std::sync::MutexGuard<'static, HashMap<String, String>> {
+    csrf_registry()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+#[allow(dead_code)]
+pub fn remember_csrf_token(session_token: &str, csrf_token: &str) {
+    if session_token.is_empty() || csrf_token.is_empty() {
+        return;
+    }
+
+    CSRF_LOOKUP_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .insert(session_token.to_string(), csrf_token.to_string());
+    });
+
+    lock_csrf_registry().insert(session_token.to_string(), csrf_token.to_string());
+}
+
+#[allow(dead_code)]
+pub fn seed_csrf_token(session_token: &str) -> String {
+    let csrf_token = aster_drive::api::middleware::csrf::build_csrf_token();
+    remember_csrf_token(session_token, &csrf_token);
+    csrf_token
+}
+
+#[allow(dead_code)]
+pub fn csrf_token_for(session_token: impl AsRef<str>) -> String {
+    let session_token = session_token.as_ref();
+    if let Some(token) = CSRF_LOOKUP_CACHE.with(|cache| cache.borrow().get(session_token).cloned())
+    {
+        return token;
+    }
+
+    lock_csrf_registry()
+        .get(session_token)
+        .cloned()
+        .map(|csrf_token| {
+            CSRF_LOOKUP_CACHE.with(|cache| {
+                cache
+                    .borrow_mut()
+                    .insert(session_token.to_string(), csrf_token.clone());
+            });
+            csrf_token
+        })
+        .unwrap_or_else(|| panic!("missing csrf token for session token: {session_token}"))
+}
+
+#[allow(dead_code)]
+pub fn access_cookie_header(access_token: impl AsRef<str>) -> String {
+    let access_token = access_token.as_ref();
+    format!(
+        "aster_access={access_token}; aster_csrf={}",
+        csrf_token_for(access_token)
+    )
+}
+
+#[allow(dead_code)]
+pub fn refresh_cookie_header(refresh_token: impl AsRef<str>) -> String {
+    let refresh_token = refresh_token.as_ref();
+    format!(
+        "aster_refresh={refresh_token}; aster_csrf={}",
+        csrf_token_for(refresh_token)
+    )
+}
+
+#[allow(dead_code)]
+pub fn access_and_refresh_cookie_header(
+    access_token: impl AsRef<str>,
+    refresh_token: impl AsRef<str>,
+) -> String {
+    let access_token = access_token.as_ref();
+    let refresh_token = refresh_token.as_ref();
+    format!(
+        "aster_access={access_token}; aster_refresh={refresh_token}; aster_csrf={}",
+        csrf_token_for(access_token)
+    )
+}
+
+#[allow(dead_code)]
+pub fn csrf_header_for(session_token: impl AsRef<str>) -> (&'static str, String) {
+    ("X-CSRF-Token", csrf_token_for(session_token))
+}
 
 /// 构建一个干净的测试 AppState（内存 SQLite）
 #[allow(dead_code)]
@@ -149,10 +248,24 @@ pub async fn flush_mail_outbox_with(
 /// 从 Set-Cookie header 提取指定 cookie 的值
 #[allow(dead_code)]
 pub fn extract_cookie<B>(resp: &actix_web::dev::ServiceResponse<B>, name: &str) -> Option<String> {
-    resp.response()
+    let value = resp
+        .response()
         .cookies()
         .find(|c| c.name() == name)
-        .map(|c| c.value().to_string())
+        .map(|c| c.value().to_string())?;
+
+    if matches!(name, "aster_access" | "aster_refresh") {
+        if let Some(csrf_token) = resp
+            .response()
+            .cookies()
+            .find(|cookie| cookie.name() == "aster_csrf")
+            .map(|cookie| cookie.value().to_string())
+        {
+            remember_csrf_token(&value, &csrf_token);
+        }
+    }
+
+    Some(value)
 }
 
 #[allow(dead_code)]
@@ -333,7 +446,8 @@ macro_rules! admin_create_user {
 
         let req = test::TestRequest::post()
             .uri("/api/v1/admin/users")
-            .insert_header(("Cookie", format!("aster_access={}", $admin_token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$admin_token)))
+            .insert_header(common::csrf_header_for(&$admin_token))
             .peer_addr("127.0.0.1:12345".parse().unwrap())
             .set_json(serde_json::json!({
                 "username": $username,
@@ -418,7 +532,8 @@ macro_rules! upload_test_file {
         );
         let req = test::TestRequest::post()
             .uri("/api/v1/files/upload")
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -450,7 +565,8 @@ macro_rules! upload_test_file_named {
         );
         let req = test::TestRequest::post()
             .uri("/api/v1/files/upload")
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -481,7 +597,8 @@ macro_rules! upload_test_file_to_folder {
         );
         let req = test::TestRequest::post()
             .uri(&format!("/api/v1/files/upload?folder_id={}", $folder_id))
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),

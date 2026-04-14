@@ -64,6 +64,8 @@ http://127.0.0.1:3000
 
 第一个注册用户会自动成为 `admin`。
 
+正式上线时不要直接暴露 `:3000`。请把站点放在反向代理后面，由代理层统一处理 HTTPS、`Content-Security-Policy` 等安全响应头、上传限制，以及 WebDAV / WOPI 透传。
+
 ### 使用 Docker 运行
 
 ```bash

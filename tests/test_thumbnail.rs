@@ -36,7 +36,8 @@ macro_rules! upload_png {
 
         let req = test::TestRequest::post()
             .uri("/api/v1/files/upload")
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -61,7 +62,8 @@ async fn test_thumbnail_returns_202_when_not_ready() {
     // 首次请求缩略图——后台 worker 未运行（测试中 rx 被 drop），应返回 202
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -110,7 +112,8 @@ async fn test_thumbnail_returns_200_after_generation() {
     // 首次请求——入队生成
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     // 可能是 202（worker 还没处理）或 200（worker 很快就处理了）
@@ -126,7 +129,8 @@ async fn test_thumbnail_returns_200_after_generation() {
     // 再次请求——应已生成
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -185,7 +189,8 @@ async fn test_thumbnail_returns_304_for_matching_if_none_match() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let _ = test::call_service(&app, req).await;
 
@@ -193,7 +198,8 @@ async fn test_thumbnail_returns_304_for_matching_if_none_match() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -207,7 +213,8 @@ async fn test_thumbnail_returns_304_for_matching_if_none_match() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("If-None-Match", etag.as_str()))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -237,7 +244,8 @@ async fn test_thumbnail_non_image_returns_error() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     // 非图片应返回错误（不是 202）
@@ -276,7 +284,8 @@ async fn test_thumbnail_dedup_same_blob() {
     for _ in 0..5 {
         let req = test::TestRequest::get()
             .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let _ = test::call_service(&app, req).await;
     }
@@ -287,7 +296,8 @@ async fn test_thumbnail_dedup_same_blob() {
     // 最终请求应返回 200
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

@@ -7,8 +7,44 @@ type MockAxiosError = {
 	response?: { status: number };
 };
 
+type MockRequestConfig = {
+	headers?: Record<string, string>;
+	method?: string;
+	url?: string;
+};
+
+function setTestCookie(cookie: string) {
+	// biome-ignore lint/suspicious/noDocumentCookie: jsdom tests need direct cookie mutation.
+	document.cookie = cookie;
+}
+
 const mockState = vi.hoisted(() => {
+	let requestHandler:
+		| ((
+				config: MockRequestConfig,
+		  ) => MockRequestConfig | Promise<MockRequestConfig>)
+		| undefined;
 	let errorHandler: ((error: MockAxiosError) => Promise<unknown>) | undefined;
+	const axiosHeaders = {
+		from: vi.fn((headers: Record<string, string> = {}) => {
+			const nextHeaders: Record<string, string> & {
+				get: (name: string) => string | undefined;
+				set: (name: string, value: string) => void;
+			} = {
+				...headers,
+				get(name) {
+					const key = Object.keys(this).find(
+						(headerName) => headerName.toLowerCase() === name.toLowerCase(),
+					);
+					return key ? this[key] : undefined;
+				},
+				set(name, value) {
+					this[name] = value;
+				},
+			};
+			return nextHeaders;
+		}),
+	};
 
 	const client = vi.fn();
 	client.get = vi.fn();
@@ -17,6 +53,18 @@ const mockState = vi.hoisted(() => {
 	client.patch = vi.fn();
 	client.delete = vi.fn();
 	client.interceptors = {
+		request: {
+			use: vi.fn(
+				(
+					success: (
+						config: MockRequestConfig,
+					) => MockRequestConfig | Promise<MockRequestConfig>,
+				) => {
+					requestHandler = success;
+					return 0;
+				},
+			),
+		},
 		response: {
 			use: vi.fn(
 				(
@@ -42,9 +90,14 @@ const mockState = vi.hoisted(() => {
 	const logout = vi.fn(async () => undefined);
 
 	return {
+		axiosHeaders,
 		axiosModule,
 		client,
 		forceLogout: vi.fn(),
+		getRequestHandler: () => {
+			if (!requestHandler) throw new Error("request handler not registered");
+			return requestHandler;
+		},
 		getErrorHandler: () => {
 			if (!errorHandler)
 				throw new Error("response error handler not registered");
@@ -56,6 +109,7 @@ const mockState = vi.hoisted(() => {
 });
 
 vi.mock("axios", () => ({
+	AxiosHeaders: mockState.axiosHeaders,
 	default: mockState.axiosModule,
 }));
 
@@ -76,6 +130,7 @@ async function loadHttpModule() {
 
 describe("http api helpers", () => {
 	beforeEach(() => {
+		mockState.axiosHeaders.from.mockClear();
 		mockState.axiosModule.create.mockClear();
 		mockState.axiosModule.isCancel.mockClear();
 		mockState.axiosModule.isAxiosError.mockClear();
@@ -86,11 +141,13 @@ describe("http api helpers", () => {
 		mockState.client.patch.mockReset();
 		mockState.client.post.mockReset();
 		mockState.client.put.mockReset();
+		mockState.client.interceptors.request.use.mockClear();
 		mockState.client.interceptors.response.use.mockClear();
 		mockState.forceLogout.mockClear();
 		mockState.logout.mockClear();
 		mockState.refreshToken.mockReset();
 		mockState.refreshToken.mockResolvedValue(undefined);
+		setTestCookie("aster_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/");
 	});
 
 	it("unwraps successful responses from api.get", async () => {
@@ -154,6 +211,42 @@ describe("http api helpers", () => {
 			}),
 		);
 		await expect(api.get("/files")).rejects.toBeInstanceOf(ApiError);
+	});
+
+	it("adds the csrf header to unsafe requests when the cookie exists", async () => {
+		setTestCookie("aster_csrf=csrf-token-1; path=/");
+
+		await loadHttpModule();
+		const requestHandler = mockState.getRequestHandler();
+
+		expect(
+			requestHandler({
+				method: "post",
+				headers: {},
+				url: "/auth/profile",
+			}),
+		).toMatchObject({
+			headers: {
+				"X-CSRF-Token": "csrf-token-1",
+			},
+		});
+	});
+
+	it("does not add the csrf header to safe requests", async () => {
+		setTestCookie("aster_csrf=csrf-token-1; path=/");
+
+		await loadHttpModule();
+		const requestHandler = mockState.getRequestHandler();
+
+		expect(
+			requestHandler({
+				method: "get",
+				headers: {},
+				url: "/auth/me",
+			}),
+		).toMatchObject({
+			headers: {},
+		});
 	});
 
 	it("refreshes and retries a protected request after a 401", async () => {

@@ -52,7 +52,8 @@ async fn test_update_content_basic() {
     // PUT /content 覆盖
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("updated content")
         .to_request();
@@ -72,7 +73,8 @@ async fn test_update_content_basic() {
     // 下载验证 ETag
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -96,7 +98,8 @@ async fn test_update_content_local_fast_path_avoids_global_temp_dir() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("updated through local staging")
         .to_request();
@@ -122,7 +125,8 @@ async fn test_update_content_creates_version() {
     // 覆盖写入
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("v2")
         .to_request();
@@ -132,7 +136,8 @@ async fn test_update_content_creates_version() {
     // 查版本列表
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -153,7 +158,8 @@ async fn test_restore_single_history_version_recovers_original_content() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("v2")
         .to_request();
@@ -162,7 +168,8 @@ async fn test_restore_single_history_version_recovers_original_content() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -175,14 +182,16 @@ async fn test_restore_single_history_version_recovers_original_content() {
         .uri(&format!(
             "/api/v1/files/{file_id}/versions/{version_id}/restore"
         ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -191,7 +200,8 @@ async fn test_restore_single_history_version_recovers_original_content() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -214,7 +224,8 @@ async fn test_download_if_none_match_returns_304() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -228,7 +239,8 @@ async fn test_download_if_none_match_returns_304() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("If-None-Match", etag.as_str()))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
@@ -253,7 +265,8 @@ async fn test_update_content_etag_match() {
     // 下载拿 ETag
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let etag = resp
@@ -267,7 +280,8 @@ async fn test_update_content_etag_match() {
     // 用正确 ETag 覆盖
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .insert_header(("If-Match", etag.as_str()))
         .set_payload("updated with etag")
@@ -287,7 +301,8 @@ async fn test_update_content_etag_mismatch() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .insert_header(("If-Match", "\"wrong-etag\""))
         .set_payload("should fail")
@@ -341,7 +356,8 @@ async fn test_update_content_locked_by_other() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("should fail")
         .to_request();
@@ -366,7 +382,8 @@ async fn test_update_content_lock_owner_can_write() {
     // 自己锁定
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({"locked": true}))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
@@ -375,7 +392,8 @@ async fn test_update_content_lock_owner_can_write() {
     // 锁持有者覆盖
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("updated by lock owner")
         .to_request();

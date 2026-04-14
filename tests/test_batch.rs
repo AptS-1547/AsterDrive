@@ -29,7 +29,8 @@ async fn test_batch_delete_files() {
             upload_named_file(name, &format!("content of {name}"), "text/plain", boundary);
         let req = test::TestRequest::post()
             .uri("/api/v1/files/upload")
-            .insert_header(("Cookie", format!("aster_access={}", token)))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -45,7 +46,8 @@ async fn test_batch_delete_files() {
     // Batch delete first two files
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/delete")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_ids[0], file_ids[1]],
             "folder_ids": []
@@ -62,7 +64,8 @@ async fn test_batch_delete_files() {
         let payload = upload_named_file(name, &format!("recreated {name}"), "text/plain", boundary);
         let req = test::TestRequest::post()
             .uri("/api/v1/files/upload")
-            .insert_header(("Cookie", format!("aster_access={}", token)))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -77,7 +80,8 @@ async fn test_batch_delete_files() {
     // Third file should still be accessible
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{}", file_ids[2]))
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -95,7 +99,8 @@ async fn test_batch_delete_mixed() {
     let payload = upload_named_file("mixed1.txt", "content1", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -110,7 +115,8 @@ async fn test_batch_delete_mixed() {
     // Create a folder
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "MixedFolder", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -121,7 +127,8 @@ async fn test_batch_delete_mixed() {
     // Batch delete one file + one folder
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/delete")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_id],
             "folder_ids": [folder_id]
@@ -143,7 +150,8 @@ async fn test_batch_move_files() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Source", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -160,7 +168,8 @@ async fn test_batch_move_files() {
             upload_named_file(name, &format!("content of {name}"), "text/plain", boundary);
         let req = test::TestRequest::post()
             .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
-            .insert_header(("Cookie", format!("aster_access={}", token)))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -176,7 +185,8 @@ async fn test_batch_move_files() {
     // Create target folder
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Target", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -187,7 +197,8 @@ async fn test_batch_move_files() {
     // Batch move both files into target folder
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/move")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": file_ids,
             "folder_ids": [],
@@ -203,7 +214,8 @@ async fn test_batch_move_files() {
     // Verify files are now in target folder
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{target_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -213,7 +225,8 @@ async fn test_batch_move_files() {
     // Source folder should have no files now
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{source_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -223,7 +236,8 @@ async fn test_batch_move_files() {
     let payload = upload_named_file("move1.txt", "recreated move1", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -236,7 +250,8 @@ async fn test_batch_move_files() {
     // Batch move both files back to root (null = root)
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/move")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": file_ids,
             "folder_ids": [],
@@ -252,7 +267,8 @@ async fn test_batch_move_files() {
     // Root should have the files again
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -261,7 +277,8 @@ async fn test_batch_move_files() {
     // Target folder should be empty again
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{target_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -277,7 +294,8 @@ async fn test_batch_copy_files() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Source", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -294,7 +312,8 @@ async fn test_batch_copy_files() {
             upload_named_file(name, &format!("content of {name}"), "text/plain", boundary);
         let req = test::TestRequest::post()
             .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
-            .insert_header(("Cookie", format!("aster_access={}", token)))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -311,7 +330,8 @@ async fn test_batch_copy_files() {
     let mut rx = storage_change_tx.subscribe();
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/copy")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": file_ids,
             "folder_ids": [],
@@ -338,7 +358,8 @@ async fn test_batch_copy_files() {
     // Verify copies exist in root
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -349,7 +370,8 @@ async fn test_batch_copy_files() {
     // Originals should still be in source folder
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{source_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -364,7 +386,8 @@ async fn test_batch_move_preserves_per_item_conflict_reporting() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "SourceA", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -374,7 +397,8 @@ async fn test_batch_move_preserves_per_item_conflict_reporting() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "SourceB", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -384,7 +408,8 @@ async fn test_batch_move_preserves_per_item_conflict_reporting() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "TargetConflict", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -396,7 +421,8 @@ async fn test_batch_move_preserves_per_item_conflict_reporting() {
     let payload = upload_named_file("dup.txt", "same-name", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/upload?folder_id={source_a}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -411,7 +437,8 @@ async fn test_batch_move_preserves_per_item_conflict_reporting() {
     let payload = upload_named_file("dup.txt", "same-name", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/upload?folder_id={source_b}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -425,7 +452,8 @@ async fn test_batch_move_preserves_per_item_conflict_reporting() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/move")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_a, file_b],
             "folder_ids": [],
@@ -442,7 +470,8 @@ async fn test_batch_move_preserves_per_item_conflict_reporting() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{target_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -452,7 +481,8 @@ async fn test_batch_move_preserves_per_item_conflict_reporting() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{source_b}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -467,7 +497,8 @@ async fn test_batch_copy_duplicate_ids_allocate_unique_names() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "CopyDupSource", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -479,7 +510,8 @@ async fn test_batch_copy_duplicate_ids_allocate_unique_names() {
     let payload = upload_named_file("repeat.txt", "repeat-content", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -493,7 +525,8 @@ async fn test_batch_copy_duplicate_ids_allocate_unique_names() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/copy")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_id, file_id],
             "folder_ids": [],
@@ -508,7 +541,8 @@ async fn test_batch_copy_duplicate_ids_allocate_unique_names() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -536,7 +570,8 @@ async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
     let payload = upload_named_file("delete-ok.txt", "delete-ok", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -551,7 +586,8 @@ async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
     let payload = upload_named_file("delete-locked.txt", "delete-locked", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -565,7 +601,8 @@ async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "DeleteFolderOk", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -575,7 +612,8 @@ async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "DeleteFolderLocked", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -585,7 +623,8 @@ async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_locked}/lock"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -593,7 +632,8 @@ async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/folders/{folder_locked}/lock"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -601,7 +641,8 @@ async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/delete")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_ok, file_locked],
             "folder_ids": [folder_ok, folder_locked]
@@ -619,7 +660,8 @@ async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -629,14 +671,16 @@ async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_locked}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{folder_locked}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -650,7 +694,8 @@ async fn test_batch_move_preserves_cycle_failures_for_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "CycleA", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -660,7 +705,8 @@ async fn test_batch_move_preserves_cycle_failures_for_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "CycleB", "parent_id": folder_a }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -670,7 +716,8 @@ async fn test_batch_move_preserves_cycle_failures_for_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "CycleC", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -680,7 +727,8 @@ async fn test_batch_move_preserves_cycle_failures_for_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/move")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [],
             "folder_ids": [folder_a, folder_c],
@@ -697,7 +745,8 @@ async fn test_batch_move_preserves_cycle_failures_for_folders() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{folder_b}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -708,7 +757,8 @@ async fn test_batch_move_preserves_cycle_failures_for_folders() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -734,7 +784,8 @@ async fn test_batch_move_normalizes_descendants_of_selected_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "MoveParent", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -744,7 +795,8 @@ async fn test_batch_move_normalizes_descendants_of_selected_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "MoveChild", "parent_id": parent_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -754,7 +806,8 @@ async fn test_batch_move_normalizes_descendants_of_selected_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "MoveTarget", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -766,7 +819,8 @@ async fn test_batch_move_normalizes_descendants_of_selected_folders() {
     let payload = upload_named_file("nested.txt", "nested content", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/upload?folder_id={child_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -780,7 +834,8 @@ async fn test_batch_move_normalizes_descendants_of_selected_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/move")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_id],
             "folder_ids": [parent_id, child_id],
@@ -792,7 +847,8 @@ async fn test_batch_move_normalizes_descendants_of_selected_folders() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{target_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -806,7 +862,8 @@ async fn test_batch_move_normalizes_descendants_of_selected_folders() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{parent_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -820,7 +877,8 @@ async fn test_batch_move_normalizes_descendants_of_selected_folders() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{child_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -842,7 +900,8 @@ async fn test_batch_copy_preserves_partial_failures_for_quota() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "QuotaSource", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -855,7 +914,8 @@ async fn test_batch_copy_preserves_partial_failures_for_quota() {
     let payload = upload_named_file("quota-a.txt", "quota-a-content", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -870,7 +930,8 @@ async fn test_batch_copy_preserves_partial_failures_for_quota() {
     let payload = upload_named_file("quota-b.txt", "quota-b-content", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -897,7 +958,8 @@ async fn test_batch_copy_preserves_partial_failures_for_quota() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/copy")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_a, file_b],
             "folder_ids": [],
@@ -914,7 +976,8 @@ async fn test_batch_copy_preserves_partial_failures_for_quota() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -925,7 +988,8 @@ async fn test_batch_copy_preserves_partial_failures_for_quota() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{source_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -941,7 +1005,8 @@ async fn test_batch_limit_allows_1000_items() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/delete")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": (1..=1000).collect::<Vec<i64>>(),
             "folder_ids": []
@@ -959,7 +1024,8 @@ async fn test_batch_limit_rejects_over_1000_items() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/delete")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": (1..=1001).collect::<Vec<i64>>(),
             "folder_ids": []
@@ -980,7 +1046,8 @@ async fn test_batch_empty_request() {
     // Send batch delete with empty arrays — validation should reject
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/delete")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [],
             "folder_ids": []

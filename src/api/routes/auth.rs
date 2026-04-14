@@ -19,6 +19,7 @@ use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
+use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::middleware::rate_limit;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 
@@ -230,6 +231,26 @@ fn clear_access_cookie(secure: bool) -> Cookie<'static> {
 
 fn clear_refresh_cookie(secure: bool) -> Cookie<'static> {
     clear_cookie(REFRESH_COOKIE, REFRESH_COOKIE_PATH, secure)
+}
+
+fn build_csrf_cookie(value: &str, max_age_secs: i64, secure: bool) -> Cookie<'static> {
+    Cookie::build(csrf::CSRF_COOKIE.to_string(), value.to_string())
+        .path("/".to_string())
+        .http_only(false)
+        .same_site(SameSite::Lax)
+        .secure(secure)
+        .max_age(CookieDuration::seconds(max_age_secs))
+        .finish()
+}
+
+fn clear_csrf_cookie(secure: bool) -> Cookie<'static> {
+    Cookie::build(csrf::CSRF_COOKIE.to_string(), "")
+        .path("/".to_string())
+        .http_only(false)
+        .same_site(SameSite::Lax)
+        .secure(secure)
+        .max_age(CookieDuration::ZERO)
+        .finish()
 }
 
 async fn apply_auth_mail_response_floor(started_at: tokio::time::Instant) {
@@ -772,6 +793,11 @@ pub async fn login(
     req: actix_web::HttpRequest,
     body: web::Json<LoginReq>,
 ) -> Result<HttpResponse> {
+    csrf::ensure_request_source_allowed(
+        &req,
+        &state.runtime_config,
+        RequestSourceMode::OptionalWhenPresent,
+    )?;
     let result = auth_service::login(&state, &body.identifier, &body.password).await?;
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
 
@@ -800,6 +826,7 @@ pub async fn login(
     .await;
 
     let secure = auth_policy.cookie_secure;
+    let csrf_token = csrf::build_csrf_token();
     Ok(HttpResponse::Ok()
         .cookie(build_access_cookie(
             &result.access_token,
@@ -808,6 +835,11 @@ pub async fn login(
         ))
         .cookie(build_refresh_cookie(
             &result.refresh_token,
+            auth_policy.refresh_token_ttl_secs as i64,
+            secure,
+        ))
+        .cookie(build_csrf_cookie(
+            &csrf_token,
             auth_policy.refresh_token_ttl_secs as i64,
             secure,
         ))
@@ -830,6 +862,12 @@ pub async fn refresh(
     state: web::Data<AppState>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
+    csrf::ensure_request_source_allowed(
+        &req,
+        &state.runtime_config,
+        RequestSourceMode::OptionalWhenPresent,
+    )?;
+    csrf::ensure_double_submit_token(&req)?;
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     let refresh_tok = req
         .cookie(REFRESH_COOKIE)
@@ -839,10 +877,16 @@ pub async fn refresh(
     let access = auth_service::refresh_token(&state, &refresh_tok).await?;
 
     let secure = auth_policy.cookie_secure;
+    let csrf_token = csrf::build_csrf_token();
     Ok(HttpResponse::Ok()
         .cookie(build_access_cookie(
             &access,
             auth_policy.access_token_ttl_secs as i64,
+            secure,
+        ))
+        .cookie(build_csrf_cookie(
+            &csrf_token,
+            auth_policy.refresh_token_ttl_secs as i64,
             secure,
         ))
         .json(ApiResponse::ok(AuthTokenResp {
@@ -860,6 +904,19 @@ pub async fn refresh(
     ),
 )]
 pub async fn logout(state: web::Data<AppState>, req: actix_web::HttpRequest) -> HttpResponse {
+    if req.cookie(ACCESS_COOKIE).is_some() || req.cookie(REFRESH_COOKIE).is_some() {
+        if let Err(error) = csrf::ensure_request_source_allowed(
+            &req,
+            &state.runtime_config,
+            RequestSourceMode::OptionalWhenPresent,
+        ) {
+            return actix_web::ResponseError::error_response(&error);
+        }
+        if let Err(error) = csrf::ensure_double_submit_token(&req) {
+            return actix_web::ResponseError::error_response(&error);
+        }
+    }
+
     for token in [
         req.cookie(REFRESH_COOKIE)
             .map(|cookie| cookie.value().to_string()),
@@ -903,6 +960,7 @@ pub async fn logout(state: web::Data<AppState>, req: actix_web::HttpRequest) -> 
     HttpResponse::Ok()
         .cookie(clear_access_cookie(secure))
         .cookie(clear_refresh_cookie(secure))
+        .cookie(clear_csrf_cookie(secure))
         .json(ApiResponse::<()>::ok_empty())
 }
 
@@ -965,6 +1023,7 @@ pub async fn put_password(
     .await;
 
     let secure = auth_policy.cookie_secure;
+    let csrf_token = csrf::build_csrf_token();
     Ok(HttpResponse::Ok()
         .cookie(build_access_cookie(
             &access_token,
@@ -973,6 +1032,11 @@ pub async fn put_password(
         ))
         .cookie(build_refresh_cookie(
             &refresh_token,
+            auth_policy.refresh_token_ttl_secs as i64,
+            secure,
+        ))
+        .cookie(build_csrf_cookie(
+            &csrf_token,
             auth_policy.refresh_token_ttl_secs as i64,
             secure,
         ))

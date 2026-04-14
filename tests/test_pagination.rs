@@ -9,7 +9,8 @@ macro_rules! create_folder {
     ($app:expr, $token:expr, $name:expr) => {{
         let req = test::TestRequest::post()
             .uri("/api/v1/folders")
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .set_json(serde_json::json!({ "name": $name }))
             .to_request();
         let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
@@ -20,7 +21,8 @@ macro_rules! create_folder {
     ($app:expr, $token:expr, $name:expr, $parent_id:expr) => {{
         let req = test::TestRequest::post()
             .uri("/api/v1/folders")
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .set_json(serde_json::json!({ "name": $name, "parent_id": $parent_id }))
             .to_request();
         let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
@@ -38,7 +40,8 @@ async fn test_folder_list_includes_share_and_lock_status() {
 
     let folder_req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Shared Folder" }))
         .to_request();
     let folder_resp = test::call_service(&app, folder_req).await;
@@ -50,7 +53,8 @@ async fn test_folder_list_includes_share_and_lock_status() {
 
     let lock_file_req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let lock_file_resp = test::call_service(&app, lock_file_req).await;
@@ -58,7 +62,8 @@ async fn test_folder_list_includes_share_and_lock_status() {
 
     let lock_folder_req = test::TestRequest::post()
         .uri(&format!("/api/v1/folders/{folder_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let lock_folder_resp = test::call_service(&app, lock_folder_req).await;
@@ -66,7 +71,8 @@ async fn test_folder_list_includes_share_and_lock_status() {
 
     let share_file_req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let share_file_resp = test::call_service(&app, share_file_req).await;
@@ -74,7 +80,8 @@ async fn test_folder_list_includes_share_and_lock_status() {
 
     let share_folder_req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": folder_id }))
         .to_request();
     let share_folder_resp = test::call_service(&app, share_folder_req).await;
@@ -82,7 +89,8 @@ async fn test_folder_list_includes_share_and_lock_status() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -115,7 +123,8 @@ async fn test_folder_list_pagination_defaults() {
     // Default request returns totals
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -140,7 +149,8 @@ async fn test_folder_list_file_cursor_pagination() {
     // Page 1: file_limit=3, no cursor
     let req = test::TestRequest::get()
         .uri("/api/v1/folders?folder_limit=0&file_limit=3")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -169,7 +179,8 @@ async fn test_folder_list_file_cursor_pagination() {
     );
     let req = test::TestRequest::get()
         .uri(&uri)
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -195,7 +206,8 @@ async fn test_folder_list_file_cursor_pagination() {
     );
     let req = test::TestRequest::get()
         .uri(&uri)
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -222,7 +234,8 @@ async fn test_folder_list_file_limit_zero_skips_files() {
     // file_limit=0 should return no files but still show files_total
     let req = test::TestRequest::get()
         .uri("/api/v1/folders?file_limit=0")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -255,7 +268,8 @@ async fn test_subfolder_pagination() {
         .uri(&format!(
             "/api/v1/folders/{parent_id}?folder_limit=2&file_limit=3"
         ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -276,7 +290,8 @@ async fn test_trash_pagination() {
         let id = create_folder!(app, token, format!("trash-folder-{i}"));
         let req = test::TestRequest::delete()
             .uri(&format!("/api/v1/folders/{id}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 200);
@@ -287,7 +302,8 @@ async fn test_trash_pagination() {
         let id = upload_test_file!(app, token);
         let req = test::TestRequest::delete()
             .uri(&format!("/api/v1/files/{id}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 200);
@@ -296,7 +312,8 @@ async fn test_trash_pagination() {
     // Default trash list with totals
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -306,7 +323,8 @@ async fn test_trash_pagination() {
     // Page 1: file_limit=3, should get next_file_cursor
     let req = test::TestRequest::get()
         .uri("/api/v1/trash?folder_limit=2&file_limit=3")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -327,7 +345,8 @@ async fn test_trash_pagination() {
         .uri(&format!(
             "/api/v1/trash?folder_limit=0&file_limit=3&file_after_deleted_at={after_deleted_at}&file_after_id={after_id}"
         ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -348,7 +367,8 @@ async fn test_sort_by_name() {
     // sort_by=name&sort_order=asc
     let req = test::TestRequest::get()
         .uri("/api/v1/folders?folder_limit=0&file_limit=10&sort_by=name&sort_order=asc")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -359,7 +379,8 @@ async fn test_sort_by_name() {
     // sort_by=name&sort_order=desc
     let req = test::TestRequest::get()
         .uri("/api/v1/folders?folder_limit=0&file_limit=10&sort_by=name&sort_order=desc")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -381,7 +402,8 @@ async fn test_sort_cursor_no_duplicates() {
     // Page 1 with sort_by=size
     let req = test::TestRequest::get()
         .uri("/api/v1/folders?folder_limit=0&file_limit=3&sort_by=size&sort_order=asc")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -406,7 +428,8 @@ async fn test_sort_cursor_no_duplicates() {
     );
     let req = test::TestRequest::get()
         .uri(&uri)
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -437,7 +460,8 @@ async fn test_sort_cursor_no_duplicates() {
     );
     let req = test::TestRequest::get()
         .uri(&uri)
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;

@@ -68,7 +68,8 @@ macro_rules! team_multipart_request {
 
         test::TestRequest::post()
             .uri($uri)
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -82,7 +83,8 @@ macro_rules! open_wopi_session {
     ($app:expr, $token:expr, $uri:expr, $app_key:expr) => {{
         let req = test::TestRequest::post()
             .uri($uri)
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .set_json(json!({ "app_key": $app_key }))
             .to_request();
         let resp = test::call_service(&$app, req).await;
@@ -183,7 +185,8 @@ async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/wopi/open"))
-        .insert_header(("Cookie", format!("aster_access={access_cookie}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access_cookie)))
+        .insert_header(common::csrf_header_for(&access_cookie))
         .set_json(json!({ "app_key": TEST_WOPI_APP_KEY }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -391,7 +394,8 @@ async fn test_wopi_lock_put_get_and_unlock_lifecycle() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={access_cookie}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access_cookie)))
+        .insert_header(common::csrf_header_for(&access_cookie))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -443,7 +447,8 @@ async fn test_wopi_lock_put_get_and_unlock_lifecycle() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={access_cookie}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access_cookie)))
+        .insert_header(common::csrf_header_for(&access_cookie))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -680,7 +685,8 @@ async fn test_wopi_lock_returns_conflict_when_file_is_locked_outside_wopi() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={access_cookie}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access_cookie)))
+        .insert_header(common::csrf_header_for(&access_cookie))
         .set_json(json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1199,7 +1205,8 @@ async fn test_wopi_rename_file_renames_and_returns_name_without_extension() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={access_cookie}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access_cookie)))
+        .insert_header(common::csrf_header_for(&access_cookie))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1341,7 +1348,8 @@ async fn test_wopi_check_file_info_rejects_untrusted_origin() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/wopi/open"))
-        .insert_header(("Cookie", format!("aster_access={access_cookie}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access_cookie)))
+        .insert_header(common::csrf_header_for(&access_cookie))
         .set_json(json!({ "app_key": TEST_WOPI_APP_KEY }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1529,7 +1537,8 @@ async fn test_disabled_user_invalidates_wopi_access_token() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{user_id}"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .set_json(json!({ "status": "disabled" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1647,7 +1656,8 @@ async fn test_wopi_put_file_returns_conflict_when_file_is_locked_outside_wopi() 
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={access_cookie}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access_cookie)))
+        .insert_header(common::csrf_header_for(&access_cookie))
         .set_json(json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1692,7 +1702,8 @@ async fn test_revoked_user_sessions_invalidate_wopi_access_token() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/wopi/open"))
-        .insert_header(("Cookie", format!("aster_access={access_cookie}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access_cookie)))
+        .insert_header(common::csrf_header_for(&access_cookie))
         .set_json(json!({ "app_key": TEST_WOPI_APP_KEY }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1706,7 +1717,8 @@ async fn test_revoked_user_sessions_invalidate_wopi_access_token() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/users/{}/sessions/revoke", user.id))
-        .insert_header(("Cookie", format!("aster_access={access_cookie}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access_cookie)))
+        .insert_header(common::csrf_header_for(&access_cookie))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1760,7 +1772,8 @@ async fn test_team_file_wopi_open_persists_team_scope_and_allows_check_file_info
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(json!({ "name": "WOPI Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1770,7 +1783,8 @@ async fn test_team_file_wopi_open_persists_team_scope_and_allows_check_file_info
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(json!({ "user_id": member_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1845,7 +1859,8 @@ async fn test_team_wopi_access_token_is_rejected_after_member_removal() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(json!({ "name": "WOPI Team 3" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1855,7 +1870,8 @@ async fn test_team_wopi_access_token_is_rejected_after_member_removal() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(json!({ "user_id": member_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1882,7 +1898,8 @@ async fn test_team_wopi_access_token_is_rejected_after_member_removal() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}/members/{member_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1922,7 +1939,8 @@ async fn test_team_wopi_put_relative_is_rejected_after_member_removal() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(json!({ "name": "WOPI Team 4" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1932,7 +1950,8 @@ async fn test_team_wopi_put_relative_is_rejected_after_member_removal() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(json!({ "user_id": member_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1959,7 +1978,8 @@ async fn test_team_wopi_put_relative_is_rejected_after_member_removal() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}/members/{member_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2002,7 +2022,8 @@ async fn test_team_file_wopi_open_rejects_non_member() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(json!({ "name": "WOPI Team 2" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2025,7 +2046,8 @@ async fn test_team_file_wopi_open_rejects_non_member() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/files/{file_id}/wopi/open"
         ))
-        .insert_header(("Cookie", format!("aster_access={outsider_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&outsider_token)))
+        .insert_header(common::csrf_header_for(&outsider_token))
         .set_json(json!({ "app_key": TEST_WOPI_APP_KEY }))
         .to_request();
     let resp = test::call_service(&app, req).await;

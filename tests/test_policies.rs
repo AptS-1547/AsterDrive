@@ -135,7 +135,8 @@ async fn test_policy_crud() {
     // 列出策略（应有 1 个默认）
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -146,7 +147,8 @@ async fn test_policy_crud() {
     // 创建新策略
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Test S3",
             "driver_type": "s3",
@@ -173,7 +175,8 @@ async fn test_policy_crud() {
     // 获取单个
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/policies/{policy_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -181,7 +184,8 @@ async fn test_policy_crud() {
     // 更新策略
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/policies/{policy_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Renamed S3" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -192,7 +196,8 @@ async fn test_policy_crud() {
     // 删除策略
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/policies/{policy_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -200,7 +205,8 @@ async fn test_policy_crud() {
     // 只剩默认策略
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -217,7 +223,8 @@ async fn test_user_policy_assignment() {
     // 获取默认策略 ID
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -225,7 +232,8 @@ async fn test_user_policy_assignment() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policy-groups")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Dedicated User Group",
             "description": "Single binding target",
@@ -249,7 +257,8 @@ async fn test_user_policy_assignment() {
     // 获取用户 ID
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -257,7 +266,8 @@ async fn test_user_policy_assignment() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{user_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "policy_group_id": group_id
         }))
@@ -269,7 +279,8 @@ async fn test_user_policy_assignment() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/users/{user_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -278,7 +289,8 @@ async fn test_user_policy_assignment() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{user_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "policy_group_id": serde_json::Value::Null
         }))
@@ -301,7 +313,8 @@ async fn test_system_policy_default_uniqueness() {
     // 创建第二个策略并设为 default
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "New Default",
             "driver_type": "local",
@@ -318,7 +331,8 @@ async fn test_system_policy_default_uniqueness() {
     // 列出所有策略，应只有一个 is_default=true
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -351,7 +365,8 @@ async fn test_patch_policy_promotes_existing_policy_to_default() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Patch To Default",
             "driver_type": "local",
@@ -367,7 +382,8 @@ async fn test_patch_policy_promotes_existing_policy_to_default() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/policies/{policy_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "is_default": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -377,7 +393,8 @@ async fn test_patch_policy_promotes_existing_policy_to_default() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -431,7 +448,8 @@ async fn test_cannot_disable_default_policy_group() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policy-groups")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -447,7 +465,8 @@ async fn test_cannot_disable_default_policy_group() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "is_enabled": false }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -467,7 +486,8 @@ async fn test_cannot_disable_assigned_policy_group() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -476,7 +496,8 @@ async fn test_cannot_disable_assigned_policy_group() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policy-groups")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Assigned Group",
             "description": "Used by one user",
@@ -499,7 +520,8 @@ async fn test_cannot_disable_assigned_policy_group() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -508,7 +530,8 @@ async fn test_cannot_disable_assigned_policy_group() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{user_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "policy_group_id": group_id
         }))
@@ -518,7 +541,8 @@ async fn test_cannot_disable_assigned_policy_group() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "is_enabled": false }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -538,7 +562,8 @@ async fn test_cannot_assign_disabled_policy_group_to_user() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -547,7 +572,8 @@ async fn test_cannot_assign_disabled_policy_group_to_user() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policy-groups")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Legacy Disabled Group",
             "description": "Disabled after assignment",
@@ -570,7 +596,8 @@ async fn test_cannot_assign_disabled_policy_group_to_user() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "is_enabled": false }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -578,7 +605,8 @@ async fn test_cannot_assign_disabled_policy_group_to_user() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -586,7 +614,8 @@ async fn test_cannot_assign_disabled_policy_group_to_user() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{user_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "policy_group_id": group_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -603,7 +632,8 @@ async fn test_cannot_disable_or_delete_policy_group_assigned_to_team() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -612,7 +642,8 @@ async fn test_cannot_disable_or_delete_policy_group_assigned_to_team() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policy-groups")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Team Bound Group",
             "description": "Referenced by a team",
@@ -647,7 +678,8 @@ async fn test_cannot_disable_or_delete_policy_group_assigned_to_team() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/teams")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Policy Bound Team",
             "admin_identifier": "teampolicyadmin",
@@ -659,7 +691,8 @@ async fn test_cannot_disable_or_delete_policy_group_assigned_to_team() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "is_enabled": false }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -672,7 +705,8 @@ async fn test_cannot_disable_or_delete_policy_group_assigned_to_team() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/policy-groups/{group_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
@@ -727,7 +761,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -736,7 +771,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policy-groups")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Source Group",
             "description": "Users will be migrated away",
@@ -759,7 +795,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policy-groups")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Target Group",
             "description": "Users land here after migration",
@@ -782,7 +819,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{}", user_with_source_only.id))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "policy_group_id": source_group_id
         }))
@@ -795,7 +833,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
             "/api/v1/admin/users/{}",
             user_with_existing_target.id
         ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "policy_group_id": target_group_id
         }))
@@ -807,7 +846,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
         .uri(&format!(
             "/api/v1/admin/policy-groups/{source_group_id}/migrate-users"
         ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "target_group_id": target_group_id
         }))
@@ -822,7 +862,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/users/{}", user_with_source_only.id))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -834,7 +875,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
             "/api/v1/admin/users/{}",
             user_with_existing_target.id
         ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -843,7 +885,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/policy-groups/{source_group_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -852,7 +895,8 @@ async fn test_migrate_policy_group_users_moves_assignments_and_preserves_default
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/policy-groups/{target_group_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -868,7 +912,8 @@ async fn test_cannot_migrate_policy_group_users_to_disabled_group() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -877,7 +922,8 @@ async fn test_cannot_migrate_policy_group_users_to_disabled_group() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policy-groups")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Migration Source",
             "description": "source",
@@ -900,7 +946,8 @@ async fn test_cannot_migrate_policy_group_users_to_disabled_group() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policy-groups")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Disabled Target",
             "description": "target",
@@ -925,7 +972,8 @@ async fn test_cannot_migrate_policy_group_users_to_disabled_group() {
         .uri(&format!(
             "/api/v1/admin/policy-groups/{source_group_id}/migrate-users"
         ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "target_group_id": target_group_id
         }))
@@ -950,7 +998,8 @@ async fn test_cannot_delete_only_default_policy() {
     // 获取默认策略 ID
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -959,7 +1008,8 @@ async fn test_cannot_delete_only_default_policy() {
     // 尝试删除唯一默认策略 → 应被拒绝
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/policies/{policy_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(
@@ -978,7 +1028,8 @@ async fn test_cannot_delete_builtin_system_policy_even_after_switching_default()
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -993,7 +1044,8 @@ async fn test_cannot_delete_builtin_system_policy_even_after_switching_default()
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Replacement Default",
             "driver_type": "local",
@@ -1007,7 +1059,8 @@ async fn test_cannot_delete_builtin_system_policy_even_after_switching_default()
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/policies/{built_in_policy_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(
@@ -1019,7 +1072,8 @@ async fn test_cannot_delete_builtin_system_policy_even_after_switching_default()
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1044,7 +1098,8 @@ async fn test_cannot_unset_only_default_policy() {
     // 获取默认策略 ID
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -1053,7 +1108,8 @@ async fn test_cannot_unset_only_default_policy() {
     // 尝试取消 default → 应被拒绝
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/policies/{policy_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({"is_default": false}))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
@@ -1272,7 +1328,8 @@ async fn test_policy_delete_clears_folder_policy_reference() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Folder Override Policy",
             "driver_type": "local",
@@ -1288,7 +1345,8 @@ async fn test_policy_delete_clears_folder_policy_reference() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "override-folder" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1298,7 +1356,8 @@ async fn test_policy_delete_clears_folder_policy_reference() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "policy_id": policy_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1309,7 +1368,8 @@ async fn test_policy_delete_clears_folder_policy_reference() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/policies/{policy_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1329,7 +1389,8 @@ async fn test_folder_patch_can_clear_policy_with_null() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Nullable Folder Override Policy",
             "driver_type": "local",
@@ -1345,7 +1406,8 @@ async fn test_folder_patch_can_clear_policy_with_null() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "nullable-override-folder" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1355,7 +1417,8 @@ async fn test_folder_patch_can_clear_policy_with_null() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "policy_id": policy_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1366,7 +1429,8 @@ async fn test_folder_patch_can_clear_policy_with_null() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "policy_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1387,7 +1451,8 @@ async fn test_policy_connection_endpoints_for_local_driver() {
     let stored_base_path = format!("/tmp/test-policy-connection-{}", uuid::Uuid::new_v4());
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Connection Test Policy",
             "driver_type": "local",
@@ -1403,7 +1468,8 @@ async fn test_policy_connection_endpoints_for_local_driver() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/policies/{policy_id}/test"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1412,7 +1478,8 @@ async fn test_policy_connection_endpoints_for_local_driver() {
     let temp_base_path = format!("/tmp/test-policy-params-{}", uuid::Uuid::new_v4());
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies/test")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "driver_type": "local",
             "base_path": temp_base_path

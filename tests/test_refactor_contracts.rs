@@ -185,7 +185,8 @@ async fn test_config_schema_returns_non_empty_with_required_fields() {
     // HTTP 验证 schema 非空
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/config/schema")
-        .insert_header(("Cookie", format!("aster_access={}", &cookies[0])))
+        .insert_header(("Cookie", common::access_cookie_header(&&cookies[0])))
+        .insert_header(common::csrf_header_for(&&cookies[0]))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -248,7 +249,8 @@ async fn test_locked_file_blocks_other_users_delete_and_rename() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", &cookies_a[0])))
+        .insert_header(("Cookie", common::access_cookie_header(&&cookies_a[0])))
+        .insert_header(common::csrf_header_for(&&cookies_a[0]))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -266,7 +268,8 @@ async fn test_locked_file_blocks_other_users_delete_and_rename() {
     // 用户 B 尝试删除 → 403
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={intruder_access}")))
+        .insert_header(("Cookie", common::access_cookie_header(&intruder_access)))
+        .insert_header(common::csrf_header_for(&intruder_access))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
@@ -274,7 +277,8 @@ async fn test_locked_file_blocks_other_users_delete_and_rename() {
     // 用户 B 尝试重命名 → 403
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={intruder_access}")))
+        .insert_header(("Cookie", common::access_cookie_header(&intruder_access)))
+        .insert_header(common::csrf_header_for(&intruder_access))
         .set_json(serde_json::json!({ "name": "hacked.txt" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -307,7 +311,8 @@ async fn test_locked_folder_blocks_other_users_delete() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={}", &cookies_a[0])))
+        .insert_header(("Cookie", common::access_cookie_header(&&cookies_a[0])))
+        .insert_header(common::csrf_header_for(&&cookies_a[0]))
         .set_json(serde_json::json!({ "name": "locked-folder" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -317,7 +322,8 @@ async fn test_locked_folder_blocks_other_users_delete() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", &cookies_a[0])))
+        .insert_header(("Cookie", common::access_cookie_header(&&cookies_a[0])))
+        .insert_header(common::csrf_header_for(&&cookies_a[0]))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -334,7 +340,8 @@ async fn test_locked_folder_blocks_other_users_delete() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={intruder_access}")))
+        .insert_header(("Cookie", common::access_cookie_header(&intruder_access)))
+        .insert_header(common::csrf_header_for(&intruder_access))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
@@ -343,15 +350,7 @@ async fn test_locked_folder_blocks_other_users_delete() {
 // ── Helpers ───────────────────────────────────────────────────────────
 
 fn extract_cookies(resp: &actix_web::dev::ServiceResponse) -> Vec<String> {
-    let access = resp
-        .response()
-        .cookies()
-        .find(|c| c.name() == "aster_access")
-        .map(|c| c.value().to_string());
-    let refresh = resp
-        .response()
-        .cookies()
-        .find(|c| c.name() == "aster_refresh")
-        .map(|c| c.value().to_string());
+    let access = common::extract_cookie(resp, "aster_access");
+    let refresh = common::extract_cookie(resp, "aster_refresh");
     [access, refresh].into_iter().flatten().collect()
 }

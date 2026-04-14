@@ -109,7 +109,8 @@ async fn seed_migration_fixture(database_url: &str) -> i64 {
 
     let folder_req = actix_test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Migrated Folder",
             "parent_id": null

@@ -57,7 +57,8 @@ async fn test_public_branding_uses_admin_updated_values() {
     ] {
         let req = test::TestRequest::put()
             .uri(&format!("/api/v1/admin/config/{key}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({ "value": value }))
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -104,7 +105,8 @@ async fn test_public_branding_blank_values_fall_back_to_defaults() {
     ] {
         let req = test::TestRequest::put()
             .uri(&format!("/api/v1/admin/config/{key}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({ "value": value }))
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -155,7 +157,8 @@ async fn test_public_branding_preserves_non_ascii_text() {
     ] {
         let req = test::TestRequest::put()
             .uri(&format!("/api/v1/admin/config/{key}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({ "value": value }))
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -201,7 +204,8 @@ async fn test_frontend_shell_injects_branding_into_initial_html() {
     ] {
         let req = test::TestRequest::put()
             .uri(&format!("/api/v1/admin/config/{key}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({ "value": value }))
             .to_request();
         let resp = test::call_service(&app, req).await;

@@ -14,7 +14,8 @@ async fn test_me_no_sensitive_fields() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -42,7 +43,8 @@ async fn test_preferences_patch_and_get() {
     // 初始状态：无偏好
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
     assert!(
@@ -53,7 +55,8 @@ async fn test_preferences_patch_and_get() {
     // PATCH 设置 theme_mode
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "theme_mode": "dark",
             "browser_open_mode": "double_click",
@@ -68,7 +71,8 @@ async fn test_preferences_patch_and_get() {
     // 再 PATCH 设置 language（合并，不覆盖之前的）
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "language": "zh" }))
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
@@ -83,7 +87,8 @@ async fn test_preferences_patch_and_get() {
     // /me 也返回完整偏好
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
     assert_eq!(body["data"]["preferences"]["theme_mode"], "dark");
@@ -109,7 +114,8 @@ async fn test_preferences_empty_patch_noop() {
     // 先设一个值
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "color_preset": "green" }))
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
@@ -119,7 +125,8 @@ async fn test_preferences_empty_patch_noop() {
     // 空 PATCH（全 None）
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({}))
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
@@ -140,7 +147,8 @@ async fn test_preferences_invalid_value_rejected() {
 
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "theme_mode": "neon" }))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;

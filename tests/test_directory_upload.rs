@@ -20,7 +20,8 @@ async fn test_direct_upload_with_relative_path_creates_nested_folders() {
          ------DirUploadBoundary123--\r\n";
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload?relative_path=docs/guides/hello.txt")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -34,7 +35,8 @@ async fn test_direct_upload_with_relative_path_creates_nested_folders() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -49,7 +51,8 @@ async fn test_direct_upload_with_relative_path_creates_nested_folders() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{docs_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -63,7 +66,8 @@ async fn test_direct_upload_with_relative_path_creates_nested_folders() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{guides_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -80,7 +84,8 @@ async fn test_init_upload_with_relative_path_reuses_existing_directories() {
     for _ in 0..2 {
         let req = test::TestRequest::post()
             .uri("/api/v1/files/upload/init")
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({
                 "filename": "hello.txt",
                 "total_size": 10_485_760,
@@ -93,7 +98,8 @@ async fn test_init_upload_with_relative_path_reuses_existing_directories() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -104,7 +110,8 @@ async fn test_init_upload_with_relative_path_reuses_existing_directories() {
     let docs_id = root_folders[0]["id"].as_i64().unwrap();
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{docs_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -121,7 +128,8 @@ async fn test_relative_path_rejects_empty_segment() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload/init")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "filename": "bad.txt",
             "total_size": 10_485_760,
@@ -144,7 +152,8 @@ async fn test_chunked_upload_with_relative_path_and_auto_rename() {
     for expected_name in ["chunked.txt", "chunked (1).txt"] {
         let req = test::TestRequest::post()
             .uri("/api/v1/files/upload/init")
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({
                 "filename": "chunked.txt",
                 "total_size": total_size,
@@ -168,7 +177,8 @@ async fn test_chunked_upload_with_relative_path_and_auto_rename() {
             let chunk_data = vec![b'A' + i as u8; expected_chunk_size];
             let req = test::TestRequest::put()
                 .uri(&format!("/api/v1/files/upload/{upload_id}/{i}"))
-                .insert_header(("Cookie", format!("aster_access={token}")))
+                .insert_header(("Cookie", common::access_cookie_header(&token)))
+                .insert_header(common::csrf_header_for(&token))
                 .insert_header(("Content-Type", "application/octet-stream"))
                 .set_payload(chunk_data)
                 .to_request();
@@ -178,7 +188,8 @@ async fn test_chunked_upload_with_relative_path_and_auto_rename() {
 
         let req = test::TestRequest::post()
             .uri(&format!("/api/v1/files/upload/{upload_id}/complete"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 201);
@@ -188,7 +199,8 @@ async fn test_chunked_upload_with_relative_path_and_auto_rename() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -196,7 +208,8 @@ async fn test_chunked_upload_with_relative_path_and_auto_rename() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{docs_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;

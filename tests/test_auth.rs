@@ -8,6 +8,8 @@ use serde_json::Value;
 use std::io::Cursor;
 use std::time::Duration;
 
+const TEST_BROWSER_ORIGIN: &str = "http://localhost:8080";
+
 macro_rules! login_user_with_credentials {
     ($app:expr, $identifier:expr, $password:expr) => {{
         let req = test::TestRequest::post()
@@ -28,7 +30,8 @@ macro_rules! admin_create_user_with_credentials {
     ($app:expr, $admin_token:expr, $username:expr, $email:expr, $password:expr) => {{
         let req = test::TestRequest::post()
             .uri("/api/v1/admin/users")
-            .insert_header(("Cookie", format!("aster_access={}", $admin_token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$admin_token)))
+            .insert_header(common::csrf_header_for(&$admin_token))
             .peer_addr("127.0.0.1:12345".parse().unwrap())
             .set_json(serde_json::json!({
                 "username": $username,
@@ -58,7 +61,8 @@ macro_rules! team_upload_request {
 
         test::TestRequest::post()
             .uri(&format!("/api/v1/teams/{}/files/upload", $team_id))
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -244,16 +248,40 @@ async fn test_register_and_login() {
         .find(|cookie| cookie.name() == "aster_refresh")
         .expect("refresh cookie missing")
         .same_site();
+    let csrf = common::extract_cookie(&resp, "aster_csrf");
+    let csrf_cookie_path = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_csrf")
+        .expect("csrf cookie missing")
+        .path()
+        .map(str::to_string);
+    let csrf_cookie_same_site = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_csrf")
+        .expect("csrf cookie missing")
+        .same_site();
+    let csrf_cookie_http_only = resp
+        .response()
+        .cookies()
+        .find(|cookie| cookie.name() == "aster_csrf")
+        .expect("csrf cookie missing")
+        .http_only();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
     assert_eq!(body["data"]["expires_in"], 900);
     // tokens 在 cookie 里
     assert!(access.is_some());
     assert!(refresh.is_some());
+    assert!(csrf.is_some());
     assert_eq!(access_cookie_path.as_deref(), Some("/"));
     assert_eq!(access_cookie_same_site, Some(SameSite::Lax));
     assert_eq!(refresh_cookie_path.as_deref(), Some("/api/v1/auth/refresh"));
     assert_eq!(refresh_cookie_same_site, Some(SameSite::Lax));
+    assert_eq!(csrf_cookie_path.as_deref(), Some("/"));
+    assert_eq!(csrf_cookie_same_site, Some(SameSite::Lax));
+    assert_ne!(csrf_cookie_http_only, Some(true));
 
     // 错误密码
     let req = test::TestRequest::post()
@@ -266,6 +294,204 @@ async fn test_register_and_login() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 401);
+}
+
+#[actix_web::test]
+async fn test_login_rejects_untrusted_origin() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "alice",
+            "email": "alice@example.com",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .insert_header(("Origin", "https://evil.example.com"))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "alice",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
+async fn test_cookie_authenticated_write_rejects_same_site_request_source() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (access, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
+        .insert_header(("Sec-Fetch-Site", "same-site"))
+        .set_json(serde_json::json!({
+            "display_name": "Evil Mirror"
+        }))
+        .to_request();
+    assert_service_status!(app, req, 403);
+}
+
+#[actix_web::test]
+async fn test_cookie_authenticated_write_requires_csrf_token_for_same_origin_browser_request() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (access, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Origin", TEST_BROWSER_ORIGIN))
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .set_json(serde_json::json!({
+            "display_name": "Missing Token"
+        }))
+        .to_request();
+    assert_service_status!(app, req, 403);
+}
+
+#[actix_web::test]
+async fn test_cookie_authenticated_write_accepts_matching_csrf_token() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "alice",
+            "email": "alice@example.com",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "alice",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let access = common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+    let csrf = common::extract_cookie(&resp, "aster_csrf").expect("csrf cookie missing");
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Origin", TEST_BROWSER_ORIGIN))
+        .insert_header(("X-CSRF-Token", csrf.clone()))
+        .insert_header((
+            "Cookie",
+            format!("aster_access={access}; aster_csrf={csrf}"),
+        ))
+        .set_json(serde_json::json!({
+            "display_name": "Browser Path"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["display_name"], "Browser Path");
+}
+
+#[actix_web::test]
+async fn test_refresh_rejects_untrusted_origin() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (_, refresh) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
+        .insert_header(("Origin", "https://evil.example.com"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
+async fn test_refresh_accepts_matching_csrf_token_and_rotates_cookie() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "alice",
+            "email": "alice@example.com",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "alice",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let refresh = common::extract_cookie(&resp, "aster_refresh").expect("refresh cookie missing");
+    let csrf = common::extract_cookie(&resp, "aster_csrf").expect("csrf cookie missing");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Origin", TEST_BROWSER_ORIGIN))
+        .insert_header(("X-CSRF-Token", csrf.clone()))
+        .insert_header((
+            "Cookie",
+            format!("aster_refresh={refresh}; aster_csrf={csrf}"),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let rotated_csrf =
+        common::extract_cookie(&resp, "aster_csrf").expect("rotated csrf cookie missing");
+    assert_ne!(rotated_csrf, csrf);
+}
+
+#[actix_web::test]
+async fn test_bearer_authenticated_write_allows_missing_request_source() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (access, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Authorization", format!("Bearer {access}")))
+        .set_json(serde_json::json!({
+            "display_name": "Bearer Path"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["display_name"], "Bearer Path");
 }
 
 #[actix_web::test]
@@ -514,7 +740,8 @@ async fn test_email_change_confirmation_redirects_and_notifies_previous_email() 
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/email/change")
-        .insert_header(("Cookie", format!("aster_access={access}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
         .set_json(serde_json::json!({
             "new_email": "updated@example.com"
         }))
@@ -536,7 +763,8 @@ async fn test_email_change_confirmation_redirects_and_notifies_previous_email() 
             "/api/v1/auth/contact-verification/confirm?token={}",
             urlencoding::encode(&token)
         ))
-        .insert_header(("Cookie", format!("aster_access={access}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 302);
@@ -581,7 +809,8 @@ async fn test_email_change_resend_returns_generic_success_during_cooldown() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/email/change")
-        .insert_header(("Cookie", format!("aster_access={access}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
         .set_json(serde_json::json!({
             "new_email": "updated@example.com"
         }))
@@ -592,7 +821,8 @@ async fn test_email_change_resend_returns_generic_success_during_cooldown() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/email/change/resend")
-        .insert_header(("Cookie", format!("aster_access={access}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -698,13 +928,15 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={access}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
         .to_request();
     assert_service_status!(app, req, 401);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
-        .insert_header(("Cookie", format!("aster_refresh={refresh}")))
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
         .to_request();
     assert_service_status!(app, req, 401);
 
@@ -974,7 +1206,8 @@ async fn test_token_refresh() {
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
         .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .insert_header(("Cookie", format!("aster_refresh={refresh}")))
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1069,7 +1302,8 @@ async fn test_refresh_token_cannot_access_protected_routes() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={refresh}")))
+        .insert_header(("Cookie", common::access_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
         .to_request();
     assert_service_status!(app, req, 401);
 }
@@ -1082,7 +1316,8 @@ async fn test_storage_events_stream_receives_file_change_frames() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/events/storage")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1131,7 +1366,8 @@ async fn test_storage_events_stream_receives_team_file_change_frames_for_member(
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Storage Events Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1141,7 +1377,8 @@ async fn test_storage_events_stream_receives_team_file_change_frames_for_member(
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "user_id": member_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1149,7 +1386,8 @@ async fn test_storage_events_stream_receives_team_file_change_frames_for_member(
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/events/storage")
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1190,7 +1428,8 @@ async fn test_storage_events_stream_hides_team_frames_from_non_members() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Hidden Team Events" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1200,7 +1439,8 @@ async fn test_storage_events_stream_hides_team_frames_from_non_members() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/events/storage")
-        .insert_header(("Cookie", format!("aster_access={outsider_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&outsider_token)))
+        .insert_header(common::csrf_header_for(&outsider_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1236,8 +1476,9 @@ async fn test_logout_clears_cookies_without_revoking_existing_tokens() {
         .uri("/api/v1/auth/logout")
         .insert_header((
             "Cookie",
-            format!("aster_access={access}; aster_refresh={refresh}"),
+            common::access_and_refresh_cookie_header(&access, &refresh),
         ))
+        .insert_header(common::csrf_header_for(&access))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1271,14 +1512,16 @@ async fn test_logout_clears_cookies_without_revoking_existing_tokens() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={access}")))
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
-        .insert_header(("Cookie", format!("aster_refresh={refresh}")))
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1293,7 +1536,8 @@ async fn test_auth_me() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1322,7 +1566,8 @@ async fn test_register_auto_assigns_policy() {
     // 获取用户 ID
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -1386,7 +1631,8 @@ async fn test_user_status_cached_in_auth_middleware() {
     // 第一次请求（cache miss → 查 DB → 写缓存）
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1394,7 +1640,8 @@ async fn test_user_status_cached_in_auth_middleware() {
     // 第二次请求（cache hit → 不查 DB）—— 功能正确即可
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1450,7 +1697,8 @@ async fn test_disable_user_invalidates_status_cache() {
     // bob 正常访问（写入缓存）
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={bob_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&bob_token)))
+        .insert_header(common::csrf_header_for(&bob_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1458,7 +1706,8 @@ async fn test_disable_user_invalidates_status_cache() {
     // admin 禁用 bob
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{bob_id}"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .set_json(serde_json::json!({ "status": "disabled" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1467,19 +1716,22 @@ async fn test_disable_user_invalidates_status_cache() {
     // bob 再次访问——应被拒（缓存已失效）
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={bob_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&bob_token)))
+        .insert_header(common::csrf_header_for(&bob_token))
         .to_request();
     assert_service_status!(app, req, 403, "disabled user should get 403");
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
-        .insert_header(("Cookie", format!("aster_refresh={bob_refresh}")))
+        .insert_header(("Cookie", common::refresh_cookie_header(&bob_refresh)))
+        .insert_header(common::csrf_header_for(&bob_refresh))
         .to_request();
     assert_service_status!(app, req, 403, "disabled user refresh should get 403");
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{bob_id}"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .set_json(serde_json::json!({ "status": "active" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1487,13 +1739,15 @@ async fn test_disable_user_invalidates_status_cache() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={bob_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&bob_token)))
+        .insert_header(common::csrf_header_for(&bob_token))
         .to_request();
     assert_service_status!(app, req, 401, "old token should stay revoked");
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
-        .insert_header(("Cookie", format!("aster_refresh={bob_refresh}")))
+        .insert_header(("Cookie", common::refresh_cookie_header(&bob_refresh)))
+        .insert_header(common::csrf_header_for(&bob_refresh))
         .to_request();
     assert_service_status!(app, req, 401, "old refresh token should stay revoked");
 }
@@ -1510,7 +1764,8 @@ async fn test_patch_preferences_set_and_get() {
     // Patch all fields
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "theme_mode": "dark",
             "color_preset": "green",
@@ -1538,7 +1793,8 @@ async fn test_patch_preferences_set_and_get() {
     // Verify via GET /me
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1566,7 +1822,8 @@ async fn test_patch_preferences_partial_update() {
     // Set initial preferences
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "theme_mode": "dark",
             "view_mode": "grid",
@@ -1579,7 +1836,8 @@ async fn test_patch_preferences_partial_update() {
     // Partial update: only change sort_by
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "sort_by": "size"
         }))
@@ -1604,7 +1862,8 @@ async fn test_patch_preferences_invalid_enum_value() {
 
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "theme_mode": "invalid_value"
         }))
@@ -1615,7 +1874,8 @@ async fn test_patch_preferences_invalid_enum_value() {
     // sort_order with invalid value
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "sort_order": "sideways"
         }))
@@ -1634,7 +1894,8 @@ async fn test_patch_preferences_empty_body() {
     // Empty body — should succeed with no changes
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1650,7 +1911,8 @@ async fn test_patch_preferences_empty_body() {
     // Verify via GET /me — fresh user has no stored config so preferences is null
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1667,7 +1929,8 @@ async fn test_patch_preferences_sort_by_type() {
 
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "sort_by": "type" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1684,7 +1947,8 @@ async fn test_patch_profile_display_name_round_trip_and_clear() {
 
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/profile")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "display_name": "  Test User  "
         }))
@@ -1698,7 +1962,8 @@ async fn test_patch_profile_display_name_round_trip_and_clear() {
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/profile/avatar/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -1713,7 +1978,8 @@ async fn test_patch_profile_display_name_round_trip_and_clear() {
 
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/profile")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "display_name": "   "
         }))
@@ -1726,7 +1992,8 @@ async fn test_patch_profile_display_name_round_trip_and_clear() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1743,7 +2010,8 @@ async fn test_change_password_rotates_session_and_updates_login_secret() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/auth/password")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "current_password": "password123",
             "new_password": "newsecret456"
@@ -1759,26 +2027,30 @@ async fn test_change_password_rotates_session_and_updates_login_secret() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     assert_service_status!(app, req, 401);
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={rotated_access}")))
+        .insert_header(("Cookie", common::access_cookie_header(&rotated_access)))
+        .insert_header(common::csrf_header_for(&rotated_access))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
-        .insert_header(("Cookie", format!("aster_refresh={refresh}")))
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
         .to_request();
     assert_service_status!(app, req, 401);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
-        .insert_header(("Cookie", format!("aster_refresh={rotated_refresh}")))
+        .insert_header(("Cookie", common::refresh_cookie_header(&rotated_refresh)))
+        .insert_header(common::csrf_header_for(&rotated_refresh))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1814,7 +2086,8 @@ async fn test_change_password_rejects_wrong_current_password() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/auth/password")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "current_password": "wrongpassword",
             "new_password": "newsecret456"
@@ -1843,7 +2116,8 @@ async fn test_patch_profile_rejects_overlong_display_name() {
 
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/profile")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "display_name": "a".repeat(65)
         }))
@@ -1853,7 +2127,8 @@ async fn test_patch_profile_rejects_overlong_display_name() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1869,7 +2144,8 @@ async fn test_display_name_survives_avatar_source_switches() {
 
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/profile")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "display_name": "Avatar User"
         }))
@@ -1880,7 +2156,8 @@ async fn test_display_name_survives_avatar_source_switches() {
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/profile/avatar/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -1896,7 +2173,8 @@ async fn test_display_name_survives_avatar_source_switches() {
     for source in ["gravatar", "none"] {
         let req = test::TestRequest::put()
             .uri("/api/v1/auth/profile/avatar/source")
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({ "source": source }))
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -1924,7 +2202,8 @@ async fn test_avatar_upload_and_source_switch() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1934,7 +2213,8 @@ async fn test_avatar_upload_and_source_switch() {
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/profile/avatar/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -1970,7 +2250,8 @@ async fn test_avatar_upload_and_source_switch() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/profile/avatar/512")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1978,7 +2259,8 @@ async fn test_avatar_upload_and_source_switch() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/auth/profile/avatar/source")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "source": "gravatar"
         }))
@@ -2001,7 +2283,8 @@ async fn test_avatar_upload_and_source_switch() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/profile/avatar/512")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
@@ -2019,7 +2302,8 @@ async fn test_avatar_reupload_replaces_previous_objects() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2029,7 +2313,8 @@ async fn test_avatar_reupload_replaces_previous_objects() {
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/profile/avatar/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -2050,7 +2335,8 @@ async fn test_avatar_reupload_replaces_previous_objects() {
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/profile/avatar/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -2091,7 +2377,8 @@ async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2101,7 +2388,8 @@ async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/profile/avatar/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -2121,7 +2409,8 @@ async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/auth/profile/avatar/source")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "source": "none"
         }))
@@ -2140,7 +2429,8 @@ async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/profile/avatar/512")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);

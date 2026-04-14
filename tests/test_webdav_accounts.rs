@@ -15,7 +15,8 @@ async fn test_webdav_account_crud() {
     // 创建 WebDAV 账号
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "webdav_user",
             "password": "webdav_pass123"
@@ -30,7 +31,8 @@ async fn test_webdav_account_crud() {
     // 分页列出账号
     let req = test::TestRequest::get()
         .uri("/api/v1/webdav-accounts?limit=1&offset=0")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -43,7 +45,8 @@ async fn test_webdav_account_crud() {
     // 禁用账号
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/webdav-accounts/{account_id}/toggle"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -53,7 +56,8 @@ async fn test_webdav_account_crud() {
     // 再次 toggle 启用
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/webdav-accounts/{account_id}/toggle"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -63,7 +67,8 @@ async fn test_webdav_account_crud() {
     // 删除账号
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/webdav-accounts/{account_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -71,7 +76,8 @@ async fn test_webdav_account_crud() {
     // 列表应为空
     let req = test::TestRequest::get()
         .uri("/api/v1/webdav-accounts")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -91,7 +97,8 @@ async fn test_webdav_settings_returns_public_endpoint_when_configured() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/webdav-accounts/settings")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -112,7 +119,8 @@ async fn test_webdav_settings_falls_back_to_relative_endpoint_without_public_sit
 
     let req = test::TestRequest::get()
         .uri("/api/v1/webdav-accounts/settings")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -130,7 +138,8 @@ async fn test_webdav_account_list_resolves_nested_paths() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "A" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -139,7 +148,8 @@ async fn test_webdav_account_list_resolves_nested_paths() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "B", "parent_id": a_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -149,7 +159,8 @@ async fn test_webdav_account_list_resolves_nested_paths() {
     for (username, folder_id) in [("path_user_a", a_id), ("path_user_b", b_id)] {
         let req = test::TestRequest::post()
             .uri("/api/v1/webdav-accounts")
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({
                 "username": username,
                 "password": "pass123456",
@@ -162,7 +173,8 @@ async fn test_webdav_account_list_resolves_nested_paths() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/webdav-accounts?limit=10&offset=0")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -194,7 +206,8 @@ async fn test_webdav_account_rejects_duplicate_username_and_foreign_root_folder(
 
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "dup_user",
             "password": "pass123456"
@@ -205,7 +218,8 @@ async fn test_webdav_account_rejects_duplicate_username_and_foreign_root_folder(
 
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "dup_user",
             "password": "pass123456"
@@ -241,7 +255,8 @@ async fn test_webdav_account_rejects_duplicate_username_and_foreign_root_folder(
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={other_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&other_token)))
+        .insert_header(common::csrf_header_for(&other_token))
         .set_json(serde_json::json!({ "name": "Other Root" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -250,7 +265,8 @@ async fn test_webdav_account_rejects_duplicate_username_and_foreign_root_folder(
 
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "foreign-root",
             "password": "pass123456",
@@ -269,7 +285,8 @@ async fn test_webdav_account_auto_generated_password_and_disabled_test_rejected(
 
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "auto-pass-user"
         }))
@@ -283,7 +300,8 @@ async fn test_webdav_account_auto_generated_password_and_disabled_test_rejected(
 
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts/test")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "auto-pass-user",
             "password": password
@@ -294,14 +312,16 @@ async fn test_webdav_account_auto_generated_password_and_disabled_test_rejected(
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/webdav-accounts/{account_id}/toggle"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts/test")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "auto-pass-user",
             "password": body["data"]["password"]
@@ -320,7 +340,8 @@ async fn test_webdav_account_test_connection() {
     // 创建账号
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "test_conn",
             "password": "pass1234"
@@ -331,7 +352,8 @@ async fn test_webdav_account_test_connection() {
     // 测试连接（正确密码）
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts/test")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "test_conn",
             "password": "pass1234"
@@ -343,7 +365,8 @@ async fn test_webdav_account_test_connection() {
     // 测试连接（错误密码）
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts/test")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "test_conn",
             "password": "wrong"

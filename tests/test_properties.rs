@@ -15,7 +15,8 @@ async fn test_entity_properties() {
     // 设置属性
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/properties/file/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "namespace": "aster:",
             "name": "color",
@@ -31,7 +32,8 @@ async fn test_entity_properties() {
     // 列出属性
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/properties/file/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -41,7 +43,8 @@ async fn test_entity_properties() {
     // 删除属性
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/properties/file/{file_id}/aster:/color"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -49,7 +52,8 @@ async fn test_entity_properties() {
     // 列出为空
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/properties/file/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -58,7 +62,8 @@ async fn test_entity_properties() {
     // DAV: 命名空间被拒绝
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/properties/file/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "namespace": "DAV:",
             "name": "getcontenttype",

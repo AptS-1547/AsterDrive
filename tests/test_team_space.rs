@@ -57,7 +57,8 @@ macro_rules! multipart_request {
 
         test::TestRequest::post()
             .uri($uri)
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -108,7 +109,8 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Docs Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -117,7 +119,8 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "user_id": member_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -125,7 +128,8 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Docs" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -135,7 +139,8 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/files/new")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "name": "should-not-work.txt",
             "folder_id": docs_id
@@ -157,7 +162,8 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{docs_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -170,7 +176,8 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{docs_id}/info"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -182,7 +189,8 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -192,21 +200,24 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/properties/file/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "namespace": "custom",
             "name": "note",
@@ -218,7 +229,8 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -226,7 +238,8 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let status = resp.status();
@@ -236,7 +249,8 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/delete")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "file_ids": [file_id] }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -274,7 +288,8 @@ async fn test_team_space_delete_folder_and_non_member_forbidden() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Ops Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -283,14 +298,16 @@ async fn test_team_space_delete_folder_and_non_member_forbidden() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={outsider_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&outsider_token)))
+        .insert_header(common::csrf_header_for(&outsider_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Nested" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -309,14 +326,16 @@ async fn test_team_space_delete_folder_and_non_member_forbidden() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{nested_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -324,7 +343,8 @@ async fn test_team_space_delete_folder_and_non_member_forbidden() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -334,14 +354,16 @@ async fn test_team_space_delete_folder_and_non_member_forbidden() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "user_id": outsider_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -349,7 +371,8 @@ async fn test_team_space_delete_folder_and_non_member_forbidden() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/files/new"))
-        .insert_header(("Cookie", format!("aster_access={outsider_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&outsider_token)))
+        .insert_header(common::csrf_header_for(&outsider_token))
         .set_json(serde_json::json!({ "name": "empty.md" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -384,7 +407,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Collab Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -393,7 +417,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "user_id": member_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -401,7 +426,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Docs" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -411,7 +437,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Archive" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -421,7 +448,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "name": "Drafts",
             "parent_id": docs_id
@@ -445,7 +473,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{docs_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "parent_id": drafts_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -453,7 +482,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({
             "name": "final.txt",
             "folder_id": archive_id
@@ -467,7 +497,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{drafts_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({
             "name": "Shared",
             "parent_id": null
@@ -481,7 +512,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{archive_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -491,7 +523,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -510,7 +543,8 @@ async fn test_team_space_patch_file_and_folder() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/folders/{drafts_id}/ancestors"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -520,7 +554,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "should-not-work.txt" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -528,7 +563,8 @@ async fn test_team_space_patch_file_and_folder() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/folders/{drafts_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "should-not-work" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -554,7 +590,8 @@ async fn test_team_file_direct_link_supports_public_access_and_team_deactivation
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Direct Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -577,7 +614,8 @@ async fn test_team_file_direct_link_supports_public_access_and_team_deactivation
         .uri(&format!(
             "/api/v1/teams/{team_id}/files/{file_id}/direct-link"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -609,7 +647,8 @@ async fn test_team_file_direct_link_supports_public_access_and_team_deactivation
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -649,7 +688,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Copy Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -658,7 +698,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "user_id": member_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -666,7 +707,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Source" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -676,7 +718,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "name": "Nested",
             "parent_id": source_id
@@ -709,7 +752,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{source_id}/copy"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "parent_id": nested_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -717,7 +761,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/copy"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "folder_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -728,7 +773,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/copy"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "folder_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -739,7 +785,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/copy"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "folder_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -747,7 +794,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{source_id}/copy"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -759,7 +807,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/folders/{source_id}/copy"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -767,7 +816,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{copy_folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -779,7 +829,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{nested_copy_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -789,7 +840,8 @@ async fn test_team_space_copy_file_and_folder() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -825,7 +877,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Editor Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -834,7 +887,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "user_id": member_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -842,7 +896,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Docs" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -863,7 +918,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("should-not-work")
         .to_request();
@@ -872,7 +928,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -880,7 +937,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -894,7 +952,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .insert_header(("If-Match", "\"wrong-etag\""))
         .set_payload("bad")
@@ -904,7 +963,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .insert_header(("If-Match", etag.as_str()))
         .set_payload("v1-owner")
@@ -914,7 +974,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -922,7 +983,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("blocked-by-lock")
         .to_request();
@@ -931,7 +993,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("v2-member")
         .to_request();
@@ -941,7 +1004,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -951,7 +1015,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "locked": false }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -961,14 +1026,16 @@ async fn test_team_space_content_versions_and_locks() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/files/{file_id}/versions/{restore_version_id}/restore"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -977,7 +1044,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -986,7 +1054,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("v3-owner")
         .to_request();
@@ -995,7 +1064,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1007,14 +1077,16 @@ async fn test_team_space_content_versions_and_locks() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/files/{file_id}/versions/{delete_version_id}"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1023,7 +1095,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{docs_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1031,7 +1104,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{docs_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Blocked Rename" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1039,7 +1113,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/folders/{docs_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1047,7 +1122,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{docs_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "locked": false }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1055,7 +1131,8 @@ async fn test_team_space_content_versions_and_locks() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{docs_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Renamed Docs" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1092,7 +1169,8 @@ async fn test_team_versions_enforce_scope_and_membership() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Version Guard Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1113,7 +1191,8 @@ async fn test_team_versions_enforce_scope_and_membership() {
 
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/content"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .insert_header(("Content-Type", "application/octet-stream"))
         .set_payload("team-v2")
         .to_request();
@@ -1122,7 +1201,8 @@ async fn test_team_versions_enforce_scope_and_membership() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1133,17 +1213,20 @@ async fn test_team_versions_enforce_scope_and_membership() {
     for req in [
         test::TestRequest::get()
             .uri(&format!("/api/v1/files/{file_id}/versions"))
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .to_request(),
         test::TestRequest::post()
             .uri(&format!(
                 "/api/v1/files/{file_id}/versions/{version_id}/restore"
             ))
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .to_request(),
         test::TestRequest::delete()
             .uri(&format!("/api/v1/files/{file_id}/versions/{version_id}"))
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .to_request(),
     ] {
         let resp = test::call_service(&app, req).await;
@@ -1153,19 +1236,22 @@ async fn test_team_versions_enforce_scope_and_membership() {
     for req in [
         test::TestRequest::get()
             .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/versions"))
-            .insert_header(("Cookie", format!("aster_access={outsider_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&outsider_token)))
+            .insert_header(common::csrf_header_for(&outsider_token))
             .to_request(),
         test::TestRequest::post()
             .uri(&format!(
                 "/api/v1/teams/{team_id}/files/{file_id}/versions/{version_id}/restore"
             ))
-            .insert_header(("Cookie", format!("aster_access={outsider_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&outsider_token)))
+            .insert_header(common::csrf_header_for(&outsider_token))
             .to_request(),
         test::TestRequest::delete()
             .uri(&format!(
                 "/api/v1/teams/{team_id}/files/{file_id}/versions/{version_id}"
             ))
-            .insert_header(("Cookie", format!("aster_access={outsider_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&outsider_token)))
+            .insert_header(common::csrf_header_for(&outsider_token))
             .to_request(),
     ] {
         let resp = test::call_service(&app, req).await;
@@ -1174,7 +1260,8 @@ async fn test_team_versions_enforce_scope_and_membership() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1211,7 +1298,8 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Share Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1220,7 +1308,8 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "user_id": member_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1228,7 +1317,8 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Docs" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1237,7 +1327,8 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "name": "Nested",
             "parent_id": docs_id
@@ -1267,7 +1358,8 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/shares"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "folder_id": docs_id,
             "password": "secret123",
@@ -1283,7 +1375,8 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1293,7 +1386,8 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/shares?limit=20&offset=0"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1360,7 +1454,8 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}/shares/{share_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({
             "password": "",
             "expires_at": null,
@@ -1372,14 +1467,16 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}/shares/{share_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/shares?limit=20&offset=0"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1388,7 +1485,8 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1415,7 +1513,8 @@ async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Trash Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1424,7 +1523,8 @@ async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Parent" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1433,7 +1533,8 @@ async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "name": "Child",
             "parent_id": parent_id
@@ -1465,14 +1566,16 @@ async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{parent_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/trash"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1485,14 +1588,16 @@ async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/trash/file/{restored_file_id}/restore"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1503,14 +1608,16 @@ async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}/trash/folder/{parent_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/trash"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1520,7 +1627,8 @@ async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{purged_file_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
@@ -1529,7 +1637,8 @@ async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/files/{restored_file_id}/download"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1556,7 +1665,8 @@ async fn test_team_trash_rejects_active_and_out_of_scope_items() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Trash Guard Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1592,7 +1702,8 @@ async fn test_team_trash_rejects_active_and_out_of_scope_items() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/files/{trashed_team_file_id}"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1601,7 +1712,8 @@ async fn test_team_trash_rejects_active_and_out_of_scope_items() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/trash/file/{active_team_file_id}/restore"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
@@ -1610,14 +1722,16 @@ async fn test_team_trash_rejects_active_and_out_of_scope_items() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/trash/file/{personal_file_id}"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/trash"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1629,14 +1743,16 @@ async fn test_team_trash_rejects_active_and_out_of_scope_items() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/files/{active_team_file_id}"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{personal_file_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1670,7 +1786,8 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Trash Pagination Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1680,7 +1797,8 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/trash"))
-        .insert_header(("Cookie", format!("aster_access={outsider_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&outsider_token)))
+        .insert_header(common::csrf_header_for(&outsider_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
@@ -1688,7 +1806,8 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
     for i in 0..3 {
         let req = test::TestRequest::post()
             .uri(&format!("/api/v1/teams/{team_id}/folders"))
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .set_json(serde_json::json!({ "name": format!("trash-folder-{i}") }))
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -1698,7 +1817,8 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
 
         let req = test::TestRequest::delete()
             .uri(&format!("/api/v1/teams/{team_id}/folders/{folder_id}"))
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 200);
@@ -1718,7 +1838,8 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
 
         let req = test::TestRequest::delete()
             .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}"))
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 200);
@@ -1726,7 +1847,8 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/trash"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1738,7 +1860,8 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/trash?folder_limit=2&file_limit=3"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1759,7 +1882,8 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/trash?folder_limit=0&file_limit=3&file_after_deleted_at={after_deleted_at}&file_after_id={after_id}"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1774,7 +1898,8 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/trash?folder_limit=0&file_limit=0"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1805,7 +1930,8 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Chunk Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1814,7 +1940,8 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/files/upload/init"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "filename": "chunked-team.txt",
             "total_size": 10
@@ -1830,7 +1957,8 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/upload/{upload_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
@@ -1844,7 +1972,8 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
             .uri(&format!(
                 "/api/v1/teams/{team_id}/files/upload/{upload_id}/{chunk_number}"
             ))
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .insert_header(("Content-Type", "application/octet-stream"))
             .set_payload(bytes.to_vec())
             .to_request();
@@ -1854,14 +1983,16 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/upload/{upload_id}/complete"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/upload/{upload_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1873,7 +2004,8 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/files/upload/{upload_id}/complete"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -1883,7 +2015,8 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1892,7 +2025,8 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
@@ -1936,7 +2070,8 @@ async fn test_team_upload_session_enforces_owner_even_for_members() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Upload Guard Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1947,7 +2082,8 @@ async fn test_team_upload_session_enforces_owner_even_for_members() {
     for user_id in [member_id, outsider_id] {
         let req = test::TestRequest::post()
             .uri(&format!("/api/v1/teams/{team_id}/members"))
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .set_json(serde_json::json!({ "user_id": user_id }))
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -1956,7 +2092,8 @@ async fn test_team_upload_session_enforces_owner_even_for_members() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/files/upload/init"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "filename": "owner-only.bin",
             "total_size": 10
@@ -1971,14 +2108,16 @@ async fn test_team_upload_session_enforces_owner_even_for_members() {
     for token in [&member_token, &outsider_token] {
         let req = test::TestRequest::get()
             .uri(&format!("/api/v1/teams/{team_id}/files/upload/{upload_id}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 403);
 
         let req = test::TestRequest::delete()
             .uri(&format!("/api/v1/teams/{team_id}/files/upload/{upload_id}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 403);
@@ -1986,14 +2125,16 @@ async fn test_team_upload_session_enforces_owner_even_for_members() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}/files/upload/{upload_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/files/upload/{upload_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert!(resp.status() == 404 || resp.status() == 410);
@@ -2027,7 +2168,8 @@ async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() 
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Search Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2037,7 +2179,8 @@ async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() 
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Docs" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2047,7 +2190,8 @@ async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() 
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "name": "Research Notes",
             "parent_id": docs_id
@@ -2074,7 +2218,8 @@ async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() 
         .to_string();
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -2086,7 +2231,8 @@ async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() 
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/search?q=roadmap"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2099,7 +2245,8 @@ async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() 
         .uri(&format!(
             "/api/v1/teams/{team_id}/search?type=folder&q=research"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2110,7 +2257,8 @@ async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() 
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/search?q=roadmap"))
-        .insert_header(("Cookie", format!("aster_access={outsider_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&outsider_token)))
+        .insert_header(common::csrf_header_for(&outsider_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
@@ -2135,7 +2283,8 @@ async fn test_team_search_rejects_invalid_params_via_shared_validation() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Search Validation Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2150,7 +2299,8 @@ async fn test_team_search_rejects_invalid_params_via_shared_validation() {
     ] {
         let req = test::TestRequest::get()
             .uri(&uri)
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 400, "unexpected status for {uri}");
@@ -2176,7 +2326,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Batch Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2186,7 +2337,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Source" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2196,7 +2348,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Target" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2206,7 +2359,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/folders"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "name": "Nested",
             "parent_id": source_id
@@ -2228,7 +2382,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/batch/copy"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "file_ids": [],
             "folder_ids": [source_id],
@@ -2243,7 +2398,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{target_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2252,7 +2408,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/batch/move"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "file_ids": [file_id],
             "folder_ids": [],
@@ -2267,7 +2424,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{source_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2276,7 +2434,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/folders/{target_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2286,7 +2445,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/batch/delete"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "file_ids": [file_id],
             "folder_ids": []
@@ -2300,7 +2460,8 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/trash"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2328,7 +2489,8 @@ async fn test_team_batch_delete_preserves_scope_and_locked_failures() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Partial Batch Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2362,7 +2524,8 @@ async fn test_team_batch_delete_preserves_scope_and_locked_failures() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/files/{locked_team_file_id}/lock"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2372,7 +2535,8 @@ async fn test_team_batch_delete_preserves_scope_and_locked_failures() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/batch/delete"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "file_ids": [team_file_id, locked_team_file_id, personal_file_id],
             "folder_ids": []
@@ -2398,7 +2562,8 @@ async fn test_team_batch_delete_preserves_scope_and_locked_failures() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/trash"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2410,14 +2575,16 @@ async fn test_team_batch_delete_preserves_scope_and_locked_failures() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/files/{locked_team_file_id}"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{personal_file_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -2442,7 +2609,8 @@ async fn test_team_share_batch_delete_preserves_partial_failures() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Team Share Batch" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2463,7 +2631,8 @@ async fn test_team_share_batch_delete_preserves_partial_failures() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/shares"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2474,7 +2643,8 @@ async fn test_team_share_batch_delete_preserves_partial_failures() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/shares/batch-delete"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "share_ids": [share_id, 999999]
         }))
@@ -2490,7 +2660,8 @@ async fn test_team_share_batch_delete_preserves_partial_failures() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/shares"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

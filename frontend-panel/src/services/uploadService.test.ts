@@ -32,6 +32,11 @@ vi.mock("@/services/http", () => ({
 	},
 }));
 
+function setTestCookie(cookie: string) {
+	// biome-ignore lint/suspicious/noDocumentCookie: jsdom tests need direct cookie mutation.
+	document.cookie = cookie;
+}
+
 class MockXMLHttpRequest {
 	static instances: MockXMLHttpRequest[] = [];
 
@@ -92,6 +97,7 @@ describe("uploadService", () => {
 			writable: true,
 			value: MockXMLHttpRequest,
 		});
+		setTestCookie("aster_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/");
 	});
 
 	it("uses the expected init/cancel/progress/presign endpoints for the personal workspace", async () => {
@@ -158,6 +164,7 @@ describe("uploadService", () => {
 	});
 
 	it("uploads chunks via XHR and reports progress", async () => {
+		setTestCookie("aster_csrf=csrf-token-1; path=/");
 		const { uploadService } = await import("@/services/uploadService");
 		const progress = vi.fn();
 		const blob = new Blob(["hello"]);
@@ -185,6 +192,7 @@ describe("uploadService", () => {
 		expect(xhr.url).toBe("/api/v1/files/upload/upload-1/3");
 		expect(xhr.withCredentials).toBe(true);
 		expect(xhr.headers["Content-Type"]).toBe("application/octet-stream");
+		expect(xhr.headers["X-CSRF-Token"]).toBe("csrf-token-1");
 		expect(xhr.sentBody).toBe(blob);
 	});
 

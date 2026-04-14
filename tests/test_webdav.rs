@@ -140,7 +140,8 @@ async fn test_webdav_runtime_toggle_takes_effect_immediately() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/webdav_enabled")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "value": "false" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -159,7 +160,8 @@ async fn test_webdav_runtime_toggle_takes_effect_immediately() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/webdav_enabled")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "value": "true" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -562,7 +564,8 @@ async fn test_webdav_basic_auth_root_scope() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "scope-root" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -571,7 +574,8 @@ async fn test_webdav_basic_auth_root_scope() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "inside", "parent_id": root_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -579,7 +583,8 @@ async fn test_webdav_basic_auth_root_scope() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "outside" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -587,7 +592,8 @@ async fn test_webdav_basic_auth_root_scope() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "basic-scope-user",
             "password": "basic-scope-pass",
@@ -802,7 +808,8 @@ async fn test_webdav_bearer_respects_session_revocation() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/users/{user_id}/sessions/revoke"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

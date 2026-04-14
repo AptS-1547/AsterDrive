@@ -80,7 +80,8 @@ async fn test_public_preview_apps_uses_admin_config_and_filters_disabled_apps() 
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/frontend_preview_apps_json")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(json!({ "value": custom_config.to_string() }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -109,7 +110,8 @@ async fn test_admin_preview_apps_config_rejects_invalid_json() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/frontend_preview_apps_json")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(json!({ "value": "{bad json" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -131,7 +133,8 @@ async fn test_admin_preview_apps_config_rejects_builtin_removal() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/frontend_preview_apps_json")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(json!({
             "value": json!({
                 "version": 2,

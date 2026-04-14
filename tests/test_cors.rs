@@ -4,7 +4,7 @@ mod common;
 use actix_web::{App, body::to_bytes, http::header, test, web};
 use serde_json::Value;
 
-const EXPECTED_ALLOW_HEADERS: &str = "authorization, accept, content-type, depth, destination, if, lock-token, overwrite, timeout, x-wopi-lock, x-wopi-oldlock, x-wopi-override, x-wopi-overwriterelativetarget, x-wopi-requestedname, x-wopi-relativetarget, x-wopi-size, x-wopi-suggestedtarget";
+const EXPECTED_ALLOW_HEADERS: &str = "authorization, accept, content-type, depth, destination, if, lock-token, overwrite, timeout, x-csrf-token, x-wopi-lock, x-wopi-oldlock, x-wopi-override, x-wopi-overwriterelativetarget, x-wopi-requestedname, x-wopi-relativetarget, x-wopi-size, x-wopi-suggestedtarget";
 const EXPECTED_EXPOSE_HEADERS: &str = "dav, lock-token, x-wopi-itemversion, x-wopi-invalidfilenameerror, x-wopi-lock, x-wopi-lockfailurereason, x-wopi-validrelativetarget";
 
 macro_rules! create_test_app_with_cors {
@@ -27,7 +27,8 @@ macro_rules! set_config {
     ($app:expr, $token:expr, $key:expr, $value:expr) => {{
         let req = test::TestRequest::put()
             .uri(&format!("/api/v1/admin/config/{}", $key))
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .set_json(serde_json::json!({ "value": $value }))
             .to_request();
         test::call_service(&$app, req).await
@@ -107,7 +108,8 @@ async fn test_runtime_cors_hot_reload_updates_whitelist_and_max_age() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/cors_allowed_origins")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "value": "https://app.example.com/" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -143,7 +145,8 @@ async fn test_runtime_cors_hot_reload_updates_whitelist_and_max_age() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/cors_allowed_origins")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "value": "https://dashboard.example.com" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -151,7 +154,8 @@ async fn test_runtime_cors_hot_reload_updates_whitelist_and_max_age() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/cors_max_age_secs")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "value": "600" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -200,7 +204,8 @@ async fn test_runtime_cors_credentials_require_explicit_origin_list() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/cors_allowed_origins")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "value": "*" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -208,7 +213,8 @@ async fn test_runtime_cors_credentials_require_explicit_origin_list() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/cors_allow_credentials")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "value": "true" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -231,7 +237,8 @@ async fn test_runtime_cors_adds_credentials_header_for_allowed_origin() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/cors_allowed_origins")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "value": "https://panel.example.com" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -239,7 +246,8 @@ async fn test_runtime_cors_adds_credentials_header_for_allowed_origin() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/cors_allow_credentials")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "value": "true" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -682,7 +690,8 @@ async fn test_runtime_cors_schema_contains_network_defaults() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/config/schema")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

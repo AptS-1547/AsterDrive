@@ -56,7 +56,8 @@ async fn test_upload_to_other_users_folder_returns_403() {
     // user1 创建文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token1}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token1)))
+        .insert_header(common::csrf_header_for(&token1))
         .set_json(serde_json::json!({ "name": "private" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -74,7 +75,8 @@ async fn test_upload_to_other_users_folder_returns_403() {
         .to_string();
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/upload?folder_id={folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token2}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token2)))
+        .insert_header(common::csrf_header_for(&token2))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -101,7 +103,8 @@ async fn test_init_upload_to_other_users_folder_returns_403() {
     // user1 创建文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token1}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token1)))
+        .insert_header(common::csrf_header_for(&token1))
         .set_json(serde_json::json!({ "name": "secret" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -112,7 +115,8 @@ async fn test_init_upload_to_other_users_folder_returns_403() {
     // user2 尝试 init_upload 到 user1 的文件夹 → 403
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload/init")
-        .insert_header(("Cookie", format!("aster_access={token2}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token2)))
+        .insert_header(common::csrf_header_for(&token2))
         .set_json(serde_json::json!({
             "filename": "evil.bin",
             "total_size": 1024,
@@ -139,7 +143,8 @@ async fn test_directory_upload_to_other_users_base_folder_returns_403() {
     // user1 创建文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token1}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token1)))
+        .insert_header(common::csrf_header_for(&token1))
         .set_json(serde_json::json!({ "name": "base" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -159,7 +164,8 @@ async fn test_directory_upload_to_other_users_base_folder_returns_403() {
         .uri(&format!(
             "/api/v1/files/upload?folder_id={folder_id}&relative_path=sub/sneaky.txt"
         ))
-        .insert_header(("Cookie", format!("aster_access={token2}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token2)))
+        .insert_header(common::csrf_header_for(&token2))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -188,7 +194,8 @@ async fn test_create_folder_in_other_users_folder_returns_403() {
     // user1 创建文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token1}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token1)))
+        .insert_header(common::csrf_header_for(&token1))
         .set_json(serde_json::json!({ "name": "user1-only" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -199,7 +206,8 @@ async fn test_create_folder_in_other_users_folder_returns_403() {
     // user2 尝试在 user1 的文件夹下建子文件夹 → 403
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token2}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token2)))
+        .insert_header(common::csrf_header_for(&token2))
         .set_json(serde_json::json!({
             "name": "evil-subfolder",
             "parent_id": folder_id
@@ -225,7 +233,8 @@ async fn test_share_download_304_does_not_increment_count() {
     // 创建不限次数的分享
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;

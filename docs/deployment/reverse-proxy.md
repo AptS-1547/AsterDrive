@@ -4,6 +4,7 @@ AsterDrive 不内置 TLS 终端。
 只要你准备把站点暴露到公网、开放 WebDAV，或者接外部 Office / WOPI 服务，前面就**必须**有一层反向代理来负责：
 
 - HTTPS 证书
+- 安全响应头（至少 `Content-Security-Policy`）
 - HTTP 到 HTTPS 重定向
 - 大文件上传体积限制
 - SSE 长连接超时和缓冲
@@ -18,6 +19,7 @@ AsterDrive 不内置 TLS 终端。
 - `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 填成真实的 `https://` 域名，例如 `https://drive.example.com`
 - 静态引导项 `auth.bootstrap_insecure_cookies` 只在纯 HTTP 首次引导时临时设成 `true`
 - 正式切到 HTTPS 后，把 `auth.bootstrap_insecure_cookies` 去掉，并确认运行时 `auth_cookie_secure` 已恢复为开启
+- 代理层至少给浏览器页面补上一条可用的 `Content-Security-Policy`，别只做 HTTPS
 - 代理层不要拦掉 WebDAV 的 `PROPFIND`、`MOVE`、`COPY`、`LOCK`、`UNLOCK`
 - 代理层不要覆盖缩略图接口返回的 `ETag` / `Cache-Control`
 
@@ -56,6 +58,10 @@ drive.example.com {
     @embedded_static path /static/* /pdfjs/*
     header @embedded_static Cache-Control "public, max-age=86400"
 
+    header {
+        Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-src 'self';"
+    }
+
     reverse_proxy 127.0.0.1:3000 {
         # SSE 需要尽快 flush，不要让代理层攒着不发
         flush_interval -1
@@ -67,6 +73,7 @@ drive.example.com {
 
 - 自动 HTTPS
 - 自动 HTTP 到 HTTPS 跳转
+- 浏览器页面带基线 CSP
 - SSE 立即刷出
 - WebDAV / WOPI / 普通 API 全站透传
 
@@ -140,6 +147,7 @@ server {
 
     location / {
         proxy_pass http://127.0.0.1:3000;
+        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-src 'self';" always;
     }
 }
 ```
@@ -209,6 +217,7 @@ services:
       - traefik.http.routers.asterdrive.entrypoints=websecure
       - traefik.http.routers.asterdrive.tls=true
       - traefik.http.routers.asterdrive.tls.certresolver=letsencrypt
+      - traefik.http.routers.asterdrive.middlewares=asterdrive-security
       - traefik.http.routers.asterdrive.service=asterdrive
 
       - traefik.http.routers.asterdrive-assets.rule=Host(`drive.example.com`) && (PathPrefix(`/assets/`) || PathPrefix(`/static/`) || PathPrefix(`/pdfjs/`))
@@ -220,6 +229,7 @@ services:
       - traefik.http.routers.asterdrive-assets.service=asterdrive
 
       - traefik.http.middlewares.asterdrive-static-cache.headers.customresponseheaders.Cache-Control=public, max-age=86400
+      - "traefik.http.middlewares.asterdrive-security.headers.contentSecurityPolicy=default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-src 'self';"
 
       - traefik.http.services.asterdrive.loadbalancer.server.port=3000
 ```
@@ -229,9 +239,46 @@ Traefik 默认会补上常见的 `X-Forwarded-*` 头。
 
 - `web` 要跳到 `websecure`
 - `websecure` 的超时别太短
+- 给页面入口对应的 router 挂上 headers middleware，别只给 `/assets/` 那个 router 配缓存
 - 不要再给 WebDAV 或缩略图路由套一层会覆盖响应头的 middleware
 
 如果你想把 `/assets/` 做成更激进的 `immutable` 缓存，建议单独再拆一个 router；别顺手把所有 `/api/v1/*` 都改成强缓存，那是给自己找麻烦。
+
+## CSP / 安全响应头
+
+AsterDrive 当前不会替你在 SPA 页面上自动补一套通用 CSP。  
+如果安全扫描报“无 `Content-Security-Policy` 响应头”，优先在反向代理或你自己的网关中间件层收口，不要指望靠前端构建产物自己解决。
+
+推荐先从这条基线策略起步：
+
+```text
+default-src 'self';
+base-uri 'self';
+form-action 'self';
+frame-ancestors 'self';
+object-src 'none';
+script-src 'self';
+style-src 'self' 'unsafe-inline';
+img-src 'self' data: blob:;
+font-src 'self' data:;
+connect-src 'self';
+media-src 'self' blob:;
+worker-src 'self';
+manifest-src 'self';
+frame-src 'self';
+```
+
+这条策略是按当前前端实际行为收出来的，别乱删：
+
+- `style-src 'unsafe-inline'` 现在要保留；前端里有运行时内联样式和动态 `<style>`，硬去掉会直接炸样式
+- `img-src 'self' data: blob:` 和 `media-src 'self' blob:` 要保留；缩略图、图片 / 视频预览、头像裁剪会用到对象 URL
+- `worker-src 'self'` 要保留；PDF 预览会从同源静态资源加载 worker
+- 如果启用了 Gravatar 或预览应用图标外链，把对应域名补到 `img-src`
+- 如果预览应用或 WOPI 用的是 `iframe` 且跑在其他域名，把那些域名补到 `frame-src`
+- 如果你把 API、静态资源或字体拆到别的源，再按实际情况补 `connect-src`、`script-src`、`style-src`、`font-src` 或 `worker-src`
+
+想继续收紧时，先用 `Content-Security-Policy-Report-Only` 跑一轮真实验收，再切强制模式。  
+至少测试一次登录、上传、PDF 预览、文本预览、分享页、头像、以及外部预览应用 / WOPI。
 
 ## WebDAV 代理时不要漏掉什么
 
@@ -278,8 +325,9 @@ AsterDrive 的缩略图接口已经返回了：
 ## 上线后最少验收一次
 
 1. 浏览器能通过 `https://你的域名/` 正常登录
-2. `管理 -> 系统设置 -> 公开站点地址` 显示的是 `https://` 域名
-3. 上传一个大文件，确认不会被代理层截断
-4. 打开两个浏览器标签页，确认文件变更能通过 SSE 刷新出来
-5. 如果启用了 WebDAV，用真实客户端连一次
-6. 如果启用了 WOPI，用真实 Office 文件试开并保存一次
+2. 首页响应头里已经能看到 `Content-Security-Policy`
+3. `管理 -> 系统设置 -> 公开站点地址` 显示的是 `https://` 域名
+4. 上传一个大文件，确认不会被代理层截断
+5. 打开两个浏览器标签页，确认文件变更能通过 SSE 刷新出来
+6. 如果启用了 WebDAV，用真实客户端连一次
+7. 如果启用了 WOPI，用真实 Office 文件试开并保存一次

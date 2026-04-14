@@ -25,7 +25,8 @@ async fn test_file_upload_download_delete() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -43,7 +44,8 @@ async fn test_file_upload_download_delete() {
     // 获取文件信息
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -53,7 +55,8 @@ async fn test_file_upload_download_delete() {
     // 下载文件
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -67,7 +70,8 @@ async fn test_file_upload_download_delete() {
     // 列出根目录应该有这个文件
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -76,7 +80,8 @@ async fn test_file_upload_download_delete() {
     // 删除文件
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -84,7 +89,8 @@ async fn test_file_upload_download_delete() {
     // 再查应该 404
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
@@ -92,7 +98,8 @@ async fn test_file_upload_download_delete() {
     // 删除后应能再次创建同名文件
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -115,7 +122,8 @@ async fn test_file_direct_link_supports_public_access_force_download_and_file_re
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/direct-link"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -153,7 +161,8 @@ async fn test_file_direct_link_supports_public_access_force_download_and_file_re
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -180,7 +189,8 @@ async fn test_file_preview_link_supports_public_inline_access_and_usage_limit() 
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/preview-link"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -221,7 +231,8 @@ async fn test_file_preview_link_uses_configured_public_site_url() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/preview-link"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -242,7 +253,8 @@ async fn test_file_lock_unlock() {
     // 锁定文件
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -253,7 +265,8 @@ async fn test_file_lock_unlock() {
     // 删除应失败
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert!(resp.status() == 403 || resp.status() == 423);
@@ -261,7 +274,8 @@ async fn test_file_lock_unlock() {
     // 重命名应失败
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "renamed.txt" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -270,7 +284,8 @@ async fn test_file_lock_unlock() {
     // 解锁
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "locked": false }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -279,7 +294,8 @@ async fn test_file_lock_unlock() {
     // 解锁后删除成功
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -296,7 +312,8 @@ async fn test_file_rename_move() {
     // 创建文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Target" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -306,7 +323,8 @@ async fn test_file_rename_move() {
     // 重命名文件
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "renamed.txt" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -317,7 +335,8 @@ async fn test_file_rename_move() {
     // 移动到文件夹
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": folder_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -326,7 +345,8 @@ async fn test_file_rename_move() {
     // 确认在新文件夹中
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -336,7 +356,8 @@ async fn test_file_rename_move() {
     // 根目录应该没有文件了
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -346,7 +367,8 @@ async fn test_file_rename_move() {
     let reused_root_id = upload_test_file_named!(app, token, "renamed.txt");
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -357,7 +379,8 @@ async fn test_file_rename_move() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{reused_root_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -365,7 +388,8 @@ async fn test_file_rename_move() {
     // 再通过 patch + null 移回根目录
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "folder_id": null
         }))
@@ -378,7 +402,8 @@ async fn test_file_rename_move() {
     // 文件已回到根目录
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -389,7 +414,8 @@ async fn test_file_rename_move() {
     // 目标文件夹重新为空
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -404,7 +430,8 @@ async fn test_file_copy() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Source" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -421,7 +448,8 @@ async fn test_file_copy() {
         .uri(&format!(
             "/api/v1/files/upload?folder_id={source_folder_id}"
         ))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -436,7 +464,8 @@ async fn test_file_copy() {
     // 复制到根目录（null = root）
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/copy"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -450,7 +479,8 @@ async fn test_file_copy() {
     // 再复制一次到根目录（应生成冲突递增名）
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/copy"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -462,7 +492,8 @@ async fn test_file_copy() {
     // 源目录仍只保留原文件
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{source_folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -474,7 +505,8 @@ async fn test_file_copy() {
     // 根目录应出现两个副本
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -485,7 +517,8 @@ async fn test_file_copy() {
     // 复制到新文件夹（应保留原名）
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "CopyDest" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -494,7 +527,8 @@ async fn test_file_copy() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/copy"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": dest_folder }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -516,7 +550,8 @@ async fn test_file_versions() {
     // 无版本记录
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -533,7 +568,8 @@ async fn test_file_versions() {
         .to_string();
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -550,7 +586,8 @@ async fn test_file_versions() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/versions"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -565,7 +602,8 @@ async fn test_create_empty_file() {
     // 创建空文件
     let req = test::TestRequest::post()
         .uri("/api/v1/files/new")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/json"))
         .set_json(serde_json::json!({ "name": "empty.txt", "folder_id": null }))
         .to_request();
@@ -579,7 +617,8 @@ async fn test_create_empty_file() {
     // 同名再建一个，应自动重命名
     let req = test::TestRequest::post()
         .uri("/api/v1/files/new")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/json"))
         .set_json(serde_json::json!({ "name": "empty.txt", "folder_id": null }))
         .to_request();
@@ -597,7 +636,8 @@ async fn test_create_empty_file() {
     // 下载空文件应返回 200，内容为空
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/download"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -607,7 +647,8 @@ async fn test_create_empty_file() {
     // 无效文件名应返回 400
     let req = test::TestRequest::post()
         .uri("/api/v1/files/new")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/json"))
         .set_json(serde_json::json!({ "name": "", "folder_id": null }))
         .to_request();

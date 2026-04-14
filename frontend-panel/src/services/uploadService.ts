@@ -13,6 +13,7 @@ import type {
 	UploadProgressResponse,
 } from "@/types/api";
 import { type ApiResponse, ErrorCode } from "@/types/api-helpers";
+import { CSRF_HEADER_NAME, getCsrfToken } from "./csrf";
 import { ApiError, api } from "./http";
 
 export type {
@@ -97,6 +98,10 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 				);
 				xhr.withCredentials = true;
 				xhr.setRequestHeader("Content-Type", "application/octet-stream");
+				const csrfToken = getCsrfToken();
+				if (csrfToken) {
+					xhr.setRequestHeader(CSRF_HEADER_NAME, csrfToken);
+				}
 
 				if (onProgress) {
 					xhr.upload.onprogress = (e) => {

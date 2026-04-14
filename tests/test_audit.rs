@@ -8,7 +8,8 @@ macro_rules! fetch_audit_items {
     ($app:expr, $token:expr) => {{
         let req = test::TestRequest::get()
             .uri("/api/v1/admin/audit-logs")
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .to_request();
         let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 200);
@@ -47,7 +48,8 @@ async fn test_audit_log_recorded_on_upload() {
     // Admin queries audit logs
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/audit-logs")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -71,7 +73,8 @@ async fn test_audit_log_recorded_on_admin_create_user() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .peer_addr("127.0.0.1:12345".parse().unwrap())
         .set_json(serde_json::json!({
             "username": "audituser",
@@ -84,7 +87,8 @@ async fn test_audit_log_recorded_on_admin_create_user() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/audit-logs")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -114,7 +118,8 @@ async fn test_audit_log_pagination_fields_and_offset() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/audit-logs?limit=1&offset=1")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -136,7 +141,8 @@ async fn test_audit_log_limit_is_clamped() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/audit-logs?limit=9999")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -164,7 +170,8 @@ async fn test_audit_log_admin_only() {
     // Non-admin tries to access audit logs — should get 403
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/audit-logs")
-        .insert_header(("Cookie", format!("aster_access={}", token2)))
+        .insert_header(("Cookie", common::access_cookie_header(&token2)))
+        .insert_header(common::csrf_header_for(&token2))
         .to_request();
     let err = test::try_call_service(&app, req).await.unwrap_err();
     let resp = err.error_response();
@@ -232,7 +239,8 @@ async fn test_audit_log_recorded_on_file_and_folder_patch_variants_after_refacto
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Source Folder" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -242,7 +250,8 @@ async fn test_audit_log_recorded_on_file_and_folder_patch_variants_after_refacto
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Target Folder" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -252,7 +261,8 @@ async fn test_audit_log_recorded_on_file_and_folder_patch_variants_after_refacto
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/folders/{source_folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Renamed Folder" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -260,7 +270,8 @@ async fn test_audit_log_recorded_on_file_and_folder_patch_variants_after_refacto
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/folders/{source_folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "parent_id": target_folder_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -270,7 +281,8 @@ async fn test_audit_log_recorded_on_file_and_folder_patch_variants_after_refacto
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "renamed-file.txt" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -278,7 +290,8 @@ async fn test_audit_log_recorded_on_file_and_folder_patch_variants_after_refacto
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": target_folder_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -312,7 +325,8 @@ async fn test_audit_log_recorded_on_batch_actions_after_refactor() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Batch Target" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -326,7 +340,8 @@ async fn test_audit_log_recorded_on_batch_actions_after_refactor() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/copy")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_to_copy],
             "folder_ids": [],
@@ -338,7 +353,8 @@ async fn test_audit_log_recorded_on_batch_actions_after_refactor() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/move")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_to_move],
             "folder_ids": [],
@@ -350,7 +366,8 @@ async fn test_audit_log_recorded_on_batch_actions_after_refactor() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/delete")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_to_delete],
             "folder_ids": []
@@ -375,7 +392,8 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -385,7 +403,8 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/shares/{share_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "expires_at": "2099-04-02T12:00:00Z",
             "max_downloads": 3
@@ -396,14 +415,16 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/shares/{share_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/max_versions_per_file")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "value": "25" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -411,7 +432,8 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "managed-user",
             "email": "managed-user@example.com",
@@ -425,7 +447,8 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{managed_user_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "status": "disabled",
             "storage_quota": 1024
@@ -460,7 +483,8 @@ async fn test_audit_log_recorded_on_admin_team_lifecycle() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "team-admin-user",
             "email": "team-admin@example.com",
@@ -474,7 +498,8 @@ async fn test_audit_log_recorded_on_admin_team_lifecycle() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/teams")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Admin Audit Team",
             "description": "created by admin route",
@@ -488,7 +513,8 @@ async fn test_audit_log_recorded_on_admin_team_lifecycle() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Admin Audit Team Updated",
             "description": "updated by admin route"
@@ -499,14 +525,16 @@ async fn test_audit_log_recorded_on_admin_team_lifecycle() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/teams/{team_id}/restore"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -538,7 +566,8 @@ async fn test_audit_log_recorded_on_config_action_execute() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/config/mail/action")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "action": "send_test_email",
             "target_email": "audit-mail@example.com"
@@ -566,7 +595,8 @@ async fn test_audit_log_recorded_on_team_lifecycle() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Member Audit Team",
             "description": "created from team route"
@@ -579,7 +609,8 @@ async fn test_audit_log_recorded_on_team_lifecycle() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Member Audit Team Updated",
             "description": "updated from team route"
@@ -590,14 +621,16 @@ async fn test_audit_log_recorded_on_team_lifecycle() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/restore"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -642,7 +675,8 @@ async fn test_audit_log_recorded_on_team_archive_cleanup() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "name": "Cleanup Audit Team",
             "description": "cleanup target"
@@ -655,7 +689,8 @@ async fn test_audit_log_recorded_on_team_archive_cleanup() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

@@ -42,7 +42,8 @@ async fn test_policy_delete_with_blobs_rejected() {
     // 获取策略 ID
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/policies")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -51,7 +52,8 @@ async fn test_policy_delete_with_blobs_rejected() {
     // 尝试删除策略 → 应被拒绝（有 blob 引用）
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/policies/{policy_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(
@@ -92,7 +94,8 @@ async fn test_force_delete_user() {
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/profile/avatar/upload")
-        .insert_header(("Cookie", format!("aster_access={victim_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&victim_token)))
+        .insert_header(common::csrf_header_for(&victim_token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -119,7 +122,8 @@ async fn test_force_delete_user() {
     // 确认第二个用户可以在 admin 列表中看到
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -129,7 +133,8 @@ async fn test_force_delete_user() {
     // admin 强制删除第二个用户
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/users/{victim_id}"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(
@@ -142,7 +147,8 @@ async fn test_force_delete_user() {
     // 确认用户不存在了
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/users/{victim_id}"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
@@ -181,7 +187,8 @@ async fn test_force_delete_user_with_gravatar_profile() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/auth/profile/avatar/source")
-        .insert_header(("Cookie", format!("aster_access={victim_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&victim_token)))
+        .insert_header(common::csrf_header_for(&victim_token))
         .set_json(serde_json::json!({
             "source": "gravatar"
         }))
@@ -191,7 +198,8 @@ async fn test_force_delete_user_with_gravatar_profile() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/users/{victim_id}"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -219,7 +227,8 @@ async fn test_force_delete_user_tolerates_missing_avatar_object() {
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/profile/avatar/upload")
-        .insert_header(("Cookie", format!("aster_access={victim_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&victim_token)))
+        .insert_header(common::csrf_header_for(&victim_token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -243,7 +252,8 @@ async fn test_force_delete_user_tolerates_missing_avatar_object() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/users/{victim_id}"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -269,7 +279,8 @@ async fn test_admin_create_user_uses_default_quota_and_policy() {
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/default_storage_quota")
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .set_json(serde_json::json!({ "value": "1048576" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -277,7 +288,8 @@ async fn test_admin_create_user_uses_default_quota_and_policy() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .peer_addr("127.0.0.1:12345".parse().unwrap())
         .set_json(serde_json::json!({
             "username": "quotauser",
@@ -306,7 +318,8 @@ async fn test_cannot_delete_initial_admin() {
     // 尝试删除 id=1
     let req = test::TestRequest::delete()
         .uri("/api/v1/admin/users/1")
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(
@@ -340,7 +353,8 @@ async fn test_cannot_delete_admin_role() {
     // 获取 admin2 的 ID
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/users")
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -352,7 +366,8 @@ async fn test_cannot_delete_admin_role() {
     // 提升为 admin
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{admin2_id}"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .set_json(serde_json::json!({"role": "admin"}))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
@@ -361,7 +376,8 @@ async fn test_cannot_delete_admin_role() {
     // 尝试删除 admin2 → 应被拒绝
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/admin/users/{admin2_id}"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(

@@ -4,7 +4,7 @@ systemd 适合长期稳定运行的 Linux 服务器。
 这类部署最重要的是先定好工作目录，再决定配置文件、数据库、上传目录和临时目录放在哪里。
 
 正式上线时，不要直接把 `aster_drive` 暴露到公网。  
-systemd 只负责拉起进程；HTTPS、域名、上传限制和 WebDAV / WOPI 透传都应该交给前面的反向代理。
+systemd 只负责拉起进程；HTTPS、域名、`Content-Security-Policy` 等安全响应头、上传限制和 WebDAV / WOPI 透传都应该交给前面的反向代理。
 
 ## 1. 准备运行目录
 
@@ -86,6 +86,7 @@ journalctl -u asterdrive -f
 
 - `/health` 返回 200
 - `/health/ready` 返回 200
+- 首页响应头里已经带上 `Content-Security-Policy`
 - 首次启动日志里已完成数据库更新和默认策略初始化
 - 管理后台里能看到默认策略组
 - 浏览器可以正常登录
@@ -116,4 +117,4 @@ Environment=ASTER__AUTH__JWT_SECRET=replace-with-your-own-secret
 ## 9. HTTPS 与域名
 
 systemd 只负责把服务拉起来。  
-如果你要提供 HTTPS、域名、WebDAV 客户端访问，或者外部 Office / WOPI 打开方式，还需要在前面加一层反向代理，见 [反向代理部署](/deployment/reverse-proxy)。
+如果你要提供 HTTPS、域名、WebDAV 客户端访问，或者外部 Office / WOPI 打开方式，还需要在前面加一层反向代理，并让代理层负责 `Content-Security-Policy` 等安全响应头，见 [反向代理部署](/deployment/reverse-proxy)。

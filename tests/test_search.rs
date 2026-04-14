@@ -22,7 +22,8 @@ async fn test_search_includes_share_and_lock_status() {
 
     let folder_req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Status Docs", "parent_id": null }))
         .to_request();
     let folder_resp = test::call_service(&app, folder_req).await;
@@ -34,7 +35,8 @@ async fn test_search_includes_share_and_lock_status() {
     let payload = upload_named_file("status-report.txt", "status", "text/plain", boundary);
     let upload_req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -48,14 +50,16 @@ async fn test_search_includes_share_and_lock_status() {
 
     let lock_file_req = test::TestRequest::post()
         .uri(&format!("/api/v1/files/{file_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     assert_eq!(test::call_service(&app, lock_file_req).await.status(), 200);
 
     let lock_folder_req = test::TestRequest::post()
         .uri(&format!("/api/v1/folders/{folder_id}/lock"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "locked": true }))
         .to_request();
     assert_eq!(
@@ -65,14 +69,16 @@ async fn test_search_includes_share_and_lock_status() {
 
     let share_file_req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     assert_eq!(test::call_service(&app, share_file_req).await.status(), 201);
 
     let share_folder_req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": folder_id }))
         .to_request();
     assert_eq!(
@@ -82,7 +88,8 @@ async fn test_search_includes_share_and_lock_status() {
 
     let file_search_req = test::TestRequest::get()
         .uri("/api/v1/search?q=status-report")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let file_search_resp = test::call_service(&app, file_search_req).await;
     assert_eq!(file_search_resp.status(), 200);
@@ -98,7 +105,8 @@ async fn test_search_includes_share_and_lock_status() {
 
     let folder_search_req = test::TestRequest::get()
         .uri("/api/v1/search?type=folder&q=status")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let folder_search_resp = test::call_service(&app, folder_search_req).await;
     assert_eq!(folder_search_resp.status(), 200);
@@ -125,7 +133,8 @@ async fn test_search_by_name() {
     let payload = upload_named_file("report.pdf", "pdf content", "application/pdf", boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -139,7 +148,8 @@ async fn test_search_by_name() {
     let payload = upload_named_file("notes.txt", "some notes", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -152,7 +162,8 @@ async fn test_search_by_name() {
     // Search for "rep" — should only match report.pdf
     let req = test::TestRequest::get()
         .uri("/api/v1/search?q=rep")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -172,14 +183,16 @@ async fn test_search_rejects_invalid_type_and_dates() {
 
     let invalid_type_req = test::TestRequest::get()
         .uri("/api/v1/search?type=bogus")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let invalid_type_resp = test::call_service(&app, invalid_type_req).await;
     assert_eq!(invalid_type_resp.status(), 400);
 
     let invalid_date_req = test::TestRequest::get()
         .uri("/api/v1/search?created_after=not-a-date")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let invalid_date_resp = test::call_service(&app, invalid_date_req).await;
     assert_eq!(invalid_date_resp.status(), 400);
@@ -188,7 +201,8 @@ async fn test_search_rejects_invalid_type_and_dates() {
         .uri(
             "/api/v1/search?created_after=2026-04-03T00:00:00Z&created_before=2026-04-02T00:00:00Z",
         )
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let inverted_range_resp = test::call_service(&app, inverted_range_req).await;
     assert_eq!(inverted_range_resp.status(), 400);
@@ -206,7 +220,8 @@ async fn test_search_by_mime_type() {
     let payload = upload_named_file("doc.txt", "text content", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -220,7 +235,8 @@ async fn test_search_by_mime_type() {
     let payload = upload_named_file("report.pdf", "pdf content", "application/pdf", boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -233,7 +249,8 @@ async fn test_search_by_mime_type() {
     // Search by MIME type — only PDF should match
     let req = test::TestRequest::get()
         .uri("/api/v1/search?mime_type=application/pdf")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -254,7 +271,8 @@ async fn test_search_folders() {
     // Create "Documents" folder
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Documents", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -263,7 +281,8 @@ async fn test_search_folders() {
     // Create "Photos" folder
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Photos", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -272,7 +291,8 @@ async fn test_search_folders() {
     // Search folders with q=doc — only "Documents" should match
     let req = test::TestRequest::get()
         .uri("/api/v1/search?type=folder&q=doc")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -297,7 +317,8 @@ async fn test_search_excludes_deleted() {
     let payload = upload_named_file("searchable.txt", "find me", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -312,7 +333,8 @@ async fn test_search_excludes_deleted() {
     // Verify file is searchable before deletion
     let req = test::TestRequest::get()
         .uri("/api/v1/search?q=searchable")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -322,7 +344,8 @@ async fn test_search_excludes_deleted() {
     // Soft delete the file
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -330,7 +353,8 @@ async fn test_search_excludes_deleted() {
     // Search again — deleted file should not appear
     let req = test::TestRequest::get()
         .uri("/api/v1/search?q=searchable")
-        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -357,7 +381,8 @@ async fn test_search_only_own_files() {
     let payload = upload_named_file("user1_report.txt", "user1 data", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={}", token1)))
+        .insert_header(("Cookie", common::access_cookie_header(&token1)))
+        .insert_header(common::csrf_header_for(&token1))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -399,7 +424,8 @@ async fn test_search_only_own_files() {
     let payload = upload_named_file("user2_report.txt", "user2 data", "text/plain", boundary);
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={}", token2)))
+        .insert_header(("Cookie", common::access_cookie_header(&token2)))
+        .insert_header(common::csrf_header_for(&token2))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -412,7 +438,8 @@ async fn test_search_only_own_files() {
     // User1 searches for "report" — should only see own file
     let req = test::TestRequest::get()
         .uri("/api/v1/search?q=report")
-        .insert_header(("Cookie", format!("aster_access={}", token1)))
+        .insert_header(("Cookie", common::access_cookie_header(&token1)))
+        .insert_header(common::csrf_header_for(&token1))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

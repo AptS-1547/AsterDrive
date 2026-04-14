@@ -70,7 +70,8 @@ async fn test_team_crud_and_member_lifecycle() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "name": "Design",
             "description": "Core design team"
@@ -86,7 +87,8 @@ async fn test_team_crud_and_member_lifecycle() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "identifier": "member1"
         }))
@@ -101,7 +103,8 @@ async fn test_team_crud_and_member_lifecycle() {
         .uri(&format!(
             "/api/v1/teams/{team_id}/members?limit=1&offset=0&keyword=member1"
         ))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -116,7 +119,8 @@ async fn test_team_crud_and_member_lifecycle() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -126,7 +130,8 @@ async fn test_team_crud_and_member_lifecycle() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "name": "Design Ops",
             "description": "Updated"
@@ -139,7 +144,8 @@ async fn test_team_crud_and_member_lifecycle() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}/members/{member_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "role": "admin"
         }))
@@ -151,7 +157,8 @@ async fn test_team_crud_and_member_lifecycle() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({
             "description": "Admin updated"
         }))
@@ -198,7 +205,8 @@ async fn test_team_permissions_for_member_and_admin() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Platform" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -208,7 +216,8 @@ async fn test_team_permissions_for_member_and_admin() {
     for user_id in [member_id, extra_id] {
         let req = test::TestRequest::post()
             .uri(&format!("/api/v1/teams/{team_id}/members"))
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .set_json(serde_json::json!({ "user_id": user_id }))
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -217,7 +226,8 @@ async fn test_team_permissions_for_member_and_admin() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "user_id": owner_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -225,7 +235,8 @@ async fn test_team_permissions_for_member_and_admin() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "description": "nope" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -233,7 +244,8 @@ async fn test_team_permissions_for_member_and_admin() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}/members/{member_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "role": "admin" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -241,7 +253,8 @@ async fn test_team_permissions_for_member_and_admin() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}/members/{extra_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({ "role": "owner" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -249,7 +262,8 @@ async fn test_team_permissions_for_member_and_admin() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}/members/{owner_id}"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
@@ -282,7 +296,8 @@ async fn test_only_system_admin_can_create_team() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={user_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&user_token)))
+        .insert_header(common::csrf_header_for(&user_token))
         .set_json(serde_json::json!({ "name": "Should Fail" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -319,7 +334,8 @@ async fn test_team_owner_protection_and_archive() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Ops" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -328,7 +344,8 @@ async fn test_team_owner_protection_and_archive() {
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/teams/{team_id}/members/{owner_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "role": "member" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -336,14 +353,16 @@ async fn test_team_owner_protection_and_archive() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}/members/{owner_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/members"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "user_id": co_owner_id,
             "role": "owner"
@@ -354,14 +373,16 @@ async fn test_team_owner_protection_and_archive() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}/members/{owner_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -369,14 +390,16 @@ async fn test_team_owner_protection_and_archive() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={co_owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&co_owner_token)))
+        .insert_header(common::csrf_header_for(&co_owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={co_owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&co_owner_token)))
+        .insert_header(common::csrf_header_for(&co_owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -384,7 +407,8 @@ async fn test_team_owner_protection_and_archive() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={co_owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&co_owner_token)))
+        .insert_header(common::csrf_header_for(&co_owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
@@ -427,7 +451,8 @@ async fn test_team_admin_can_restore_archived_team() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "name": "Restore Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -439,7 +464,8 @@ async fn test_team_admin_can_restore_archived_team() {
     for (user_id, role) in [(admin_id, "admin"), (member_id, "member")] {
         let req = test::TestRequest::post()
             .uri(&format!("/api/v1/teams/{team_id}/members"))
-            .insert_header(("Cookie", format!("aster_access={owner_token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
             .set_json(serde_json::json!({
                 "user_id": user_id,
                 "role": role
@@ -451,14 +477,16 @@ async fn test_team_admin_can_restore_archived_team() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/teams/{team_id}"))
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -467,7 +495,8 @@ async fn test_team_admin_can_restore_archived_team() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/teams?archived=true")
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -478,14 +507,16 @@ async fn test_team_admin_can_restore_archived_team() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/restore"))
-        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/restore"))
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -496,7 +527,8 @@ async fn test_team_admin_can_restore_archived_team() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

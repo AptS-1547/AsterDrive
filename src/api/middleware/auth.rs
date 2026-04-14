@@ -6,6 +6,7 @@ use actix_web::{
 use futures::future::{LocalBoxFuture, Ready, ok};
 use std::rc::Rc;
 
+use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::errors::AsterError;
 use crate::runtime::AppState;
 use crate::services::auth_service;
@@ -59,16 +60,23 @@ where
 
             // 1. Cookie 优先
             // 2. Authorization: Bearer fallback
-            let token = req
-                .cookie(ACCESS_COOKIE)
-                .map(|c| c.value().to_string())
-                .or_else(|| {
-                    req.headers()
-                        .get("Authorization")
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|v| v.strip_prefix("Bearer "))
-                        .map(|s| s.to_string())
-                });
+            let cookie_token = req.cookie(ACCESS_COOKIE).map(|c| c.value().to_string());
+            if cookie_token.is_some() && csrf::is_unsafe_method(req.method()) {
+                csrf::ensure_service_request_source_allowed(
+                    &req,
+                    &state.runtime_config,
+                    RequestSourceMode::OptionalWhenPresent,
+                )?;
+                csrf::ensure_service_double_submit_token(&req)?;
+            }
+
+            let token = cookie_token.or_else(|| {
+                req.headers()
+                    .get("Authorization")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.strip_prefix("Bearer "))
+                    .map(|s| s.to_string())
+            });
 
             match token {
                 None => Err(AsterError::auth_invalid_credentials("missing token").into()),

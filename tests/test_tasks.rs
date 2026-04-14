@@ -56,7 +56,8 @@ macro_rules! multipart_request {
 
         test::TestRequest::post()
             .uri($uri)
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -148,7 +149,8 @@ async fn test_personal_archive_stream_preserves_empty_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "bundle", "parent_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -158,7 +160,8 @@ async fn test_personal_archive_stream_preserves_empty_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "docs", "parent_id": bundle_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -168,7 +171,8 @@ async fn test_personal_archive_stream_preserves_empty_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "empty", "parent_id": bundle_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -185,7 +189,8 @@ async fn test_personal_archive_stream_preserves_empty_folders() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/archive-download")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [],
             "folder_ids": [bundle_id],
@@ -199,7 +204,8 @@ async fn test_personal_archive_stream_preserves_empty_folders() {
 
     let req = test::TestRequest::get()
         .uri(&download_path)
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = assert_response_status(
         test::call_service(&app, req).await,
@@ -256,7 +262,8 @@ async fn test_team_archive_stream_is_scoped_to_team_routes() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/teams")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Ops Team" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -277,7 +284,8 @@ async fn test_team_archive_stream_is_scoped_to_team_routes() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/teams/{team_id}/batch/archive-download"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_id],
             "folder_ids": [],
@@ -291,7 +299,8 @@ async fn test_team_archive_stream_is_scoped_to_team_routes() {
 
     let req = test::TestRequest::get()
         .uri(&download_path)
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = assert_response_status(
         test::call_service(&app, req).await,
@@ -307,7 +316,8 @@ async fn test_team_archive_stream_is_scoped_to_team_routes() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/archive-download")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_ids": [file_id],
             "folder_ids": [],

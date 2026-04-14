@@ -29,7 +29,8 @@ macro_rules! upload_png {
 
         let req = test::TestRequest::post()
             .uri("/api/v1/files/upload")
-            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -78,7 +79,8 @@ async fn test_shares_crud() {
     // 创建分享
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -90,7 +92,8 @@ async fn test_shares_crud() {
     // 分页列出分享
     let req = test::TestRequest::get()
         .uri("/api/v1/shares?limit=1&offset=0")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -130,7 +133,8 @@ async fn test_shares_crud() {
     // 删除分享
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/shares/{share_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -153,7 +157,8 @@ async fn test_shared_thumbnail_returns_304_for_matching_if_none_match() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -210,7 +215,8 @@ async fn test_share_update_replaces_password_and_limits_without_changing_token()
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_id": file_id,
             "password": "secret123",
@@ -225,7 +231,8 @@ async fn test_share_update_replaces_password_and_limits_without_changing_token()
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/shares/{share_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "password": "new-secret",
             "expires_at": "2099-04-02T12:00:00Z",
@@ -241,7 +248,8 @@ async fn test_share_update_replaces_password_and_limits_without_changing_token()
 
     let req = test::TestRequest::get()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -270,7 +278,8 @@ async fn test_share_update_replaces_password_and_limits_without_changing_token()
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/shares/{share_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "password": "",
             "expires_at": null,
@@ -282,7 +291,8 @@ async fn test_share_update_replaces_password_and_limits_without_changing_token()
 
     let req = test::TestRequest::get()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -302,7 +312,8 @@ async fn test_share_password() {
     // 创建带密码分享
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_id": file_id,
             "password": "secret123"
@@ -324,7 +335,8 @@ async fn test_share_password() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -369,7 +381,8 @@ async fn test_share_verify_cookie_scoped_and_secure_when_enabled() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_id": file_id,
             "password": "secret123"
@@ -409,7 +422,8 @@ async fn test_duplicate_active_share_rejected() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -417,7 +431,8 @@ async fn test_duplicate_active_share_rejected() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -435,7 +450,8 @@ async fn test_share_batch_delete_removes_multiple_shares() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_one }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -446,7 +462,8 @@ async fn test_share_batch_delete_removes_multiple_shares() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_two }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -457,7 +474,8 @@ async fn test_share_batch_delete_removes_multiple_shares() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares/batch-delete")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "share_ids": [share_one_id, share_two_id]
         }))
@@ -470,7 +488,8 @@ async fn test_share_batch_delete_removes_multiple_shares() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -497,7 +516,8 @@ async fn test_share_batch_delete_preserves_partial_failures_for_foreign_and_miss
     let owner_file = upload_test_file_named!(app, owner_token, "owner-share.txt");
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({ "file_id": owner_file }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -536,7 +556,8 @@ async fn test_share_batch_delete_preserves_partial_failures_for_foreign_and_miss
     let other_file = upload_test_file_named!(app, other_token, "other-share.txt");
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={other_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&other_token)))
+        .insert_header(common::csrf_header_for(&other_token))
         .set_json(serde_json::json!({ "file_id": other_file }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -547,7 +568,8 @@ async fn test_share_batch_delete_preserves_partial_failures_for_foreign_and_miss
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares/batch-delete")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "share_ids": [owner_share_id, other_share_id, 999999]
         }))
@@ -568,7 +590,8 @@ async fn test_share_batch_delete_preserves_partial_failures_for_foreign_and_miss
 
     let req = test::TestRequest::get()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -583,7 +606,8 @@ async fn test_share_batch_delete_preserves_partial_failures_for_foreign_and_miss
 
     let req = test::TestRequest::get()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={other_token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&other_token)))
+        .insert_header(common::csrf_header_for(&other_token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -608,7 +632,8 @@ async fn test_share_download_limit() {
     // 创建限 1 次下载的分享
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_id": file_id,
             "max_downloads": 1
@@ -635,7 +660,8 @@ async fn test_share_download_limit() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -653,7 +679,8 @@ async fn test_share_folder() {
     // 创建文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Shared Folder" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -667,7 +694,8 @@ async fn test_share_folder() {
     // 分享文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": folder_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -711,7 +739,8 @@ async fn test_password_protected_share_preview_link_requires_cookie_but_does_not
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_id": file_id,
             "password": "secret123"
@@ -774,7 +803,8 @@ async fn test_folder_share_file_preview_link_supports_public_inline_access() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Preview Folder" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -786,7 +816,8 @@ async fn test_folder_share_file_preview_link_supports_public_inline_access() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": folder_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -821,7 +852,8 @@ async fn test_public_share_info_prefers_display_name_and_exposes_gravatar_avatar
 
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/profile")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "display_name": "Test User"
         }))
@@ -831,7 +863,8 @@ async fn test_public_share_info_prefers_display_name_and_exposes_gravatar_avatar
 
     let req = test::TestRequest::put()
         .uri("/api/v1/auth/profile/avatar/source")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "source": "gravatar"
         }))
@@ -842,7 +875,8 @@ async fn test_public_share_info_prefers_display_name_and_exposes_gravatar_avatar
     let file_id = upload_test_file!(app, token);
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -877,7 +911,8 @@ async fn test_share_avatar_route_serves_uploaded_avatar_and_requires_password_co
     let (boundary, payload) = avatar_upload_payload();
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/profile/avatar/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -890,7 +925,8 @@ async fn test_share_avatar_route_serves_uploaded_avatar_and_requires_password_co
     let file_id = upload_test_file!(app, token);
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_id": file_id,
             "password": "secret123"
@@ -950,7 +986,8 @@ async fn test_expired_share_public_endpoints_rejected() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_id": file_id,
             "expires_at": "2000-01-01T00:00:00Z"
@@ -1007,7 +1044,8 @@ async fn test_folder_share_deleted_child_resource_rejected() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Shared Root" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1016,7 +1054,8 @@ async fn test_folder_share_deleted_child_resource_rejected() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Child", "parent_id": root_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1027,7 +1066,8 @@ async fn test_folder_share_deleted_child_resource_rejected() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": root_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1036,7 +1076,8 @@ async fn test_folder_share_deleted_child_resource_rejected() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{child_file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1051,7 +1092,8 @@ async fn test_folder_share_deleted_child_resource_rejected() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{child_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1074,7 +1116,8 @@ async fn test_share_type_mismatch_rejected() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1089,7 +1132,8 @@ async fn test_share_type_mismatch_rejected() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Folder Share" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1098,7 +1142,8 @@ async fn test_share_type_mismatch_rejected() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": folder_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1122,7 +1167,8 @@ async fn test_share_forged_cookie_rejected() {
     // 创建带密码分享
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_id": file_id,
             "password": "secret"
@@ -1184,7 +1230,8 @@ async fn test_my_shares_list_deleted_and_expired_status() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "file_id": active_file_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1192,7 +1239,8 @@ async fn test_my_shares_list_deleted_and_expired_status() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Shared Deleted Folder" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1202,7 +1250,8 @@ async fn test_my_shares_list_deleted_and_expired_status() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": deleted_folder_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1210,7 +1259,8 @@ async fn test_my_shares_list_deleted_and_expired_status() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{deleted_folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1218,7 +1268,8 @@ async fn test_my_shares_list_deleted_and_expired_status() {
     let expired_file_id = upload_test_file!(app, token);
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "file_id": expired_file_id,
             "expires_at": "2000-01-01T00:00:00Z"
@@ -1231,7 +1282,8 @@ async fn test_my_shares_list_deleted_and_expired_status() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/shares?limit=10&offset=0")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1261,7 +1313,8 @@ async fn test_share_folder_deep_scope_and_outside_access() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Root" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1272,7 +1325,8 @@ async fn test_share_folder_deep_scope_and_outside_access() {
     for name in ["A", "B", "C"] {
         let req = test::TestRequest::post()
             .uri("/api/v1/folders")
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({ "name": name, "parent_id": parent_id }))
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -1284,7 +1338,8 @@ async fn test_share_folder_deep_scope_and_outside_access() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Outside" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1294,7 +1349,8 @@ async fn test_share_folder_deep_scope_and_outside_access() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": root_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1343,7 +1399,8 @@ async fn test_share_folder_subfolder_navigation() {
     // 创建根文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Shared Root" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1354,7 +1411,8 @@ async fn test_share_folder_subfolder_navigation() {
     // 创建子文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Subfolder", "parent_id": root_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1368,7 +1426,8 @@ async fn test_share_folder_subfolder_navigation() {
     // 分享根文件夹
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "folder_id": root_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1409,7 +1468,8 @@ async fn test_share_folder_subfolder_navigation() {
     // 创建不相关文件夹 — 越权访问应被拒绝
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Outside" }))
         .to_request();
     let resp = test::call_service(&app, req).await;

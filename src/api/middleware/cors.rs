@@ -42,6 +42,7 @@ const ALLOWED_HEADERS: &[&str] = &[
     "lock-token",
     "overwrite",
     "timeout",
+    "x-csrf-token",
     "x-wopi-lock",
     "x-wopi-oldlock",
     "x-wopi-override",

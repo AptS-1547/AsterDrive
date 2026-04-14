@@ -1,11 +1,16 @@
-import type { AxiosInstance, AxiosRequestConfig } from "axios";
-import axios from "axios";
+import type {
+	AxiosInstance,
+	AxiosRequestConfig,
+	InternalAxiosRequestConfig,
+} from "axios";
+import axios, { AxiosHeaders } from "axios";
 import { config } from "@/config/app";
 import {
 	type ApiResponse,
 	ErrorCode,
 	type ErrorCode as ErrorCodeType,
 } from "@/types/api-helpers";
+import { CSRF_HEADER_NAME, getCsrfToken } from "./csrf";
 
 const client: AxiosInstance = axios.create({
 	baseURL: config.apiBaseUrl,
@@ -31,6 +36,47 @@ function shouldSkipRefresh(url: string) {
 	return url.includes("/s/") || url.includes("/public/");
 }
 
+function isUnsafeMethod(method?: string) {
+	return !["get", "head", "options", "trace"].includes(
+		(method ?? "get").toLowerCase(),
+	);
+}
+
+function hasHeader(
+	headers: InternalAxiosRequestConfig["headers"],
+	name: string,
+): boolean {
+	if (!headers) {
+		return false;
+	}
+
+	if ("get" in headers && typeof headers.get === "function") {
+		return headers.get(name) != null;
+	}
+
+	return Object.keys(headers).some(
+		(key) => key.toLowerCase() === name.toLowerCase(),
+	);
+}
+
+function setHeader(
+	request: InternalAxiosRequestConfig,
+	name: string,
+	value: string,
+) {
+	if (
+		request.headers &&
+		"set" in request.headers &&
+		typeof request.headers.set === "function"
+	) {
+		request.headers.set(name, value);
+		return;
+	}
+
+	request.headers = AxiosHeaders.from(request.headers ?? {});
+	request.headers.set(name, value);
+}
+
 let isRefreshing = false;
 let refreshPromise: Promise<void> | null = null;
 
@@ -52,6 +98,18 @@ export function isRequestCanceled(error: unknown): boolean {
 	const name = "name" in error ? error.name : null;
 	return code === "ERR_CANCELED" || name === "AbortError";
 }
+
+client.interceptors.request.use((request) => {
+	const csrfToken = getCsrfToken();
+	if (!csrfToken || !isUnsafeMethod(request.method)) {
+		return request;
+	}
+
+	if (!hasHeader(request.headers, CSRF_HEADER_NAME)) {
+		setHeader(request, CSRF_HEADER_NAME, csrfToken);
+	}
+	return request;
+});
 
 client.interceptors.response.use(
 	(res) => res,

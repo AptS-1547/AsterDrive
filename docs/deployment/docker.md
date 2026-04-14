@@ -7,7 +7,7 @@ Docker 适合 NAS、单机和小团队部署。
 如果你把宿主机目录直接 bind mount 到 `/data`，记得先确保该目录对 `10001:10001` 可写，不然启动时生成 `config.toml`、SQLite 文件或临时目录都会直接报权限错误。
 
 容器把服务跑起来，不等于可以直接把 `3000` 端口长期暴露到公网。  
-正式上线时，前面还是应该接一层反向代理来处理 HTTPS、上传限制、WebDAV 和 WOPI。
+正式上线时，前面还是应该接一层反向代理来处理 HTTPS、`Content-Security-Policy` 等安全响应头、上传限制、WebDAV 和 WOPI。
 
 ## `/data` 里通常会有什么
 
@@ -97,6 +97,7 @@ volumes:
 - `auth.jwt_secret` 是否已经固定
 - 如果暂时是纯 HTTP 测试，是否只在首次引导时设置了 `bootstrap_insecure_cookies = true`
 - 切到 HTTPS 后，后台系统设置里的 Cookie 安全开关是否已经改回开启
+- 反向代理是否已经给浏览器页面补上 `Content-Security-Policy` 响应头
 - 如果站点对外访问，`公开站点地址` 是否已经填成真实域名
 - 如果要开放注册、找回密码或邮箱改绑，测试邮件是否已经发通
 - 数据库、上传目录和临时目录是否确实落在持久化卷里

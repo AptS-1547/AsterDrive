@@ -23,7 +23,8 @@ async fn test_trash_restore_purge() {
     // 软删除
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -31,7 +32,8 @@ async fn test_trash_restore_purge() {
     // 列出回收站
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -41,7 +43,8 @@ async fn test_trash_restore_purge() {
     // 恢复
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/trash/file/{file_id}/restore"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -49,7 +52,8 @@ async fn test_trash_restore_purge() {
     // 文件可访问
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -57,13 +61,15 @@ async fn test_trash_restore_purge() {
     // 再次软删除 → purge 永久删除
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     test::call_service(&app, req).await;
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/trash/file/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -71,7 +77,8 @@ async fn test_trash_restore_purge() {
     // 回收站为空
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -88,7 +95,8 @@ async fn test_restore_file_rejects_active_name_conflict() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -97,7 +105,8 @@ async fn test_restore_file_rejects_active_name_conflict() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/trash/file/{file_id}/restore"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
@@ -109,7 +118,8 @@ async fn test_restore_file_rejects_active_name_conflict() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -119,7 +129,8 @@ async fn test_restore_file_rejects_active_name_conflict() {
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{replacement_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -142,7 +153,8 @@ async fn test_trash_purge_all() {
          ------TestBoundary123--\r\n";
     let req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -158,7 +170,8 @@ async fn test_trash_purge_all() {
     for fid in [f1, f2] {
         let req = test::TestRequest::delete()
             .uri(&format!("/api/v1/files/{fid}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         test::call_service(&app, req).await;
     }
@@ -166,7 +179,8 @@ async fn test_trash_purge_all() {
     // 回收站有 2 个
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -175,7 +189,8 @@ async fn test_trash_purge_all() {
     // purge all
     let req = test::TestRequest::delete()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -183,7 +198,8 @@ async fn test_trash_purge_all() {
     // 回收站为空
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -200,7 +216,8 @@ async fn test_purge_nested_folder_cleans_children() {
     // 创建 parent/child 文件夹结构
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "parent" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -209,7 +226,8 @@ async fn test_purge_nested_folder_cleans_children() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "child", "parent_id": parent_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -222,7 +240,8 @@ async fn test_purge_nested_folder_cleans_children() {
     // 软删除顶层文件夹（会递归标记 child 和文件）
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{parent_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -230,7 +249,8 @@ async fn test_purge_nested_folder_cleans_children() {
     // purge 顶层文件夹
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/trash/folder/{parent_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -238,7 +258,8 @@ async fn test_purge_nested_folder_cleans_children() {
     // 回收站完全为空（子文件夹和子文件都已递归清理）
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -248,7 +269,8 @@ async fn test_purge_nested_folder_cleans_children() {
     // 子文件应已被硬删除（404）
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(
@@ -268,7 +290,8 @@ async fn test_purge_all_nested_no_orphans() {
     // 创建 A/B/C 三层嵌套
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "A" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -277,7 +300,8 @@ async fn test_purge_all_nested_no_orphans() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "B", "parent_id": a_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -286,7 +310,8 @@ async fn test_purge_all_nested_no_orphans() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "C", "parent_id": b_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -304,20 +329,23 @@ async fn test_purge_all_nested_no_orphans() {
     // 软删除 A + 散文件
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{a_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     test::call_service(&app, req).await;
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{root_file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     test::call_service(&app, req).await;
 
     // purge all
     let req = test::TestRequest::delete()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -325,7 +353,8 @@ async fn test_purge_all_nested_no_orphans() {
     // 回收站完全为空
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -335,7 +364,8 @@ async fn test_purge_all_nested_no_orphans() {
     // 最深层文件也应 404
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{c_file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
@@ -351,7 +381,8 @@ async fn test_soft_delete_nested_folder_marks_all_children() {
     // 创建 A/B 两层嵌套
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "A" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -360,7 +391,8 @@ async fn test_soft_delete_nested_folder_marks_all_children() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "B", "parent_id": a_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -374,7 +406,8 @@ async fn test_soft_delete_nested_folder_marks_all_children() {
     // 软删除顶层文件夹
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{a_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -383,7 +416,8 @@ async fn test_soft_delete_nested_folder_marks_all_children() {
     for fid in [a_file, b_file] {
         let req = test::TestRequest::get()
             .uri(&format!("/api/v1/files/{fid}"))
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(
@@ -396,7 +430,8 @@ async fn test_soft_delete_nested_folder_marks_all_children() {
     // 根目录应为空（所有内容已进回收站）
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -406,7 +441,8 @@ async fn test_soft_delete_nested_folder_marks_all_children() {
     // 回收站应有顶层文件夹
     let req = test::TestRequest::get()
         .uri("/api/v1/trash")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -415,7 +451,8 @@ async fn test_soft_delete_nested_folder_marks_all_children() {
     // 恢复后所有子项都回来
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/trash/folder/{a_id}/restore"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -423,7 +460,8 @@ async fn test_soft_delete_nested_folder_marks_all_children() {
     // A 文件夹里应有文件和子文件夹
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{a_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -433,7 +471,8 @@ async fn test_soft_delete_nested_folder_marks_all_children() {
     // B 文件夹里也应有文件
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{b_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -451,7 +490,8 @@ async fn test_restore_file_moves_to_root_when_original_folder_is_deleted() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "restore-parent" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -462,21 +502,24 @@ async fn test_restore_file_moves_to_root_when_original_folder_is_deleted() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/trash/file/{file_id}/restore"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -497,7 +540,8 @@ async fn test_restore_folder_moves_to_root_when_parent_is_deleted() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "restore-root-parent" }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -506,7 +550,8 @@ async fn test_restore_folder_moves_to_root_when_parent_is_deleted() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "restore-child", "parent_id": parent_id }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -517,21 +562,24 @@ async fn test_restore_folder_moves_to_root_when_parent_is_deleted() {
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{child_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{parent_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/trash/folder/{child_id}/restore"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);

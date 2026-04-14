@@ -134,7 +134,8 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
         let payload = upload_named_file(name, content, mime, boundary);
         let req = test::TestRequest::post()
             .uri("/api/v1/files/upload")
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .insert_header((
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -159,7 +160,8 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
     let report_file_id = report_file_id.expect("report upload should return file id");
     let delete_req = test::TestRequest::delete()
         .uri(&format!("/api/v1/files/{report_file_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let delete_resp = test::call_service(&app, delete_req).await;
     assert_eq!(delete_resp.status(), 200);
@@ -172,7 +174,8 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
     );
     let recreate_req = test::TestRequest::post()
         .uri("/api/v1/files/upload")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .insert_header((
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
@@ -193,7 +196,8 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
     for folder_name in ["Documents", "Photos"] {
         let req = test::TestRequest::post()
             .uri("/api/v1/folders")
-            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({ "name": folder_name, "parent_id": null }))
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -207,14 +211,16 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
     let documents_folder_id = documents_folder_id.expect("Documents folder id should exist");
     let delete_folder_req = test::TestRequest::delete()
         .uri(&format!("/api/v1/folders/{documents_folder_id}"))
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let delete_folder_resp = test::call_service(&app, delete_folder_req).await;
     assert_eq!(delete_folder_resp.status(), 200);
 
     let recreate_folder_req = test::TestRequest::post()
         .uri("/api/v1/folders")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({ "name": "Documents", "parent_id": null }))
         .to_request();
     let recreate_folder_resp = test::call_service(&app, recreate_folder_req).await;
@@ -229,7 +235,8 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
 
     let search_req = test::TestRequest::get()
         .uri("/api/v1/search?q=rep")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let search_resp = test::call_service(&app, search_req).await;
     let search_status = search_resp.status();
@@ -246,7 +253,8 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
 
     let short_search_req = test::TestRequest::get()
         .uri("/api/v1/search?q=r")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let short_search_resp = test::call_service(&app, short_search_req).await;
     let short_search_status = short_search_resp.status();
@@ -263,7 +271,8 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
 
     let folder_search_req = test::TestRequest::get()
         .uri("/api/v1/search?type=folder&q=doc")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let folder_search_resp = test::call_service(&app, folder_search_req).await;
     let folder_search_status = folder_search_resp.status();
@@ -283,7 +292,8 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
 
     let overview_req = test::TestRequest::get()
         .uri("/api/v1/admin/overview?days=3&timezone=UTC&event_limit=1")
-        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
         .to_request();
     let overview_resp = test::call_service(&app, overview_req).await;
     let overview_status = overview_resp.status();
