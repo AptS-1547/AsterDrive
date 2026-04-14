@@ -133,6 +133,7 @@ If you need offline deployment checks, runtime-config changes from the command l
 - [Getting started](docs/guide/getting-started.md)
 - [Installation and deployment](docs/guide/installation.md)
 - [Operations CLI](docs/deployment/ops-cli.md)
+- [Performance benchmarking](docs/deployment/performance-benchmarking.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Developer docs](developer-docs/README.md)
 - [Architecture](developer-docs/architecture.md)

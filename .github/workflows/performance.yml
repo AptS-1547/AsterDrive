@@ -1,0 +1,101 @@
+name: Performance Benchmarks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build frontend
+        working-directory: frontend-panel
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Start release-performance server
+        run: |
+          mkdir -p /tmp/asterdrive-perf/tmp /tmp/asterdrive-perf/uploads
+          ASTER__SERVER__HOST=127.0.0.1 \
+          ASTER__SERVER__PORT=3000 \
+          ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true \
+          ASTER__DATABASE__URL="sqlite:///tmp/asterdrive-perf/asterdrive.db?mode=rwc" \
+          ASTER__SERVER__TEMP_DIR="/tmp/asterdrive-perf/tmp" \
+          ASTER__SERVER__UPLOAD_TEMP_DIR="/tmp/asterdrive-perf/uploads" \
+          cargo run --profile release-performance > /tmp/asterdrive-perf/server.log 2>&1 &
+          echo $! > /tmp/asterdrive-perf/server.pid
+
+      - name: Wait for server readiness
+        run: |
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:3000/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/asterdrive-perf/server.log
+          exit 1
+
+      - name: Seed smoke dataset
+        env:
+          ASTER_BENCH_BASE_URL: http://127.0.0.1:3000
+          ASTER_BENCH_LIST_SIZES: 100,1000
+          ASTER_BENCH_DOWNLOAD_BYTES: 1048576
+          ASTER_BENCH_SEED_UPLOAD_CONCURRENCY: 8
+        run: bun tests/performance/seed.mjs
+
+      - name: Run smoke benchmarks
+        env:
+          ASTER_BENCH_BASE_URL: http://127.0.0.1:3000
+          ASTER_BENCH_SUMMARY_DIR: tests/performance/results/ci-smoke
+          ASTER_BENCH_AUTH_LOGIN_VUS: 4
+          ASTER_BENCH_AUTH_LOGIN_DURATION: 10s
+          ASTER_BENCH_AUTH_REFRESH_VUS: 4
+          ASTER_BENCH_AUTH_REFRESH_DURATION: 10s
+          ASTER_BENCH_FOLDER_LIST_VUS: 4
+          ASTER_BENCH_FOLDER_LIST_DURATION: 10s
+          ASTER_BENCH_SEARCH_VUS: 4
+          ASTER_BENCH_SEARCH_DURATION: 10s
+          ASTER_BENCH_SEARCH_DATASET_SIZE: 1000
+          ASTER_BENCH_DOWNLOAD_VUS: 4
+          ASTER_BENCH_DOWNLOAD_DURATION: 10s
+        run: |
+          mkdir -p tests/performance/results/ci-smoke
+          k6 run tests/performance/k6/auth-login.js
+          k6 run tests/performance/k6/auth-refresh.js
+          ASTER_BENCH_LIST_SIZE=100 k6 run tests/performance/k6/folder-list.js
+          ASTER_BENCH_LIST_SIZE=1000 k6 run tests/performance/k6/folder-list.js
+          k6 run tests/performance/k6/search.js
+          k6 run tests/performance/k6/download.js
+
+      - name: Upload smoke summaries
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: performance-smoke-summaries
+          if-no-files-found: ignore
+          path: tests/performance/results/ci-smoke
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/asterdrive-perf/server.pid ]; then
+            kill "$(cat /tmp/asterdrive-perf/server.pid)" || true
+          fi

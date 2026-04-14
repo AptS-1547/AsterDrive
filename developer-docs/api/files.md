@@ -38,8 +38,12 @@
 
 这两条入口都支持目录上传语义：
 
+- `POST /files/upload` 可通过 query 传 `folder_id`
 - `POST /files/upload` 可通过 query 传 `relative_path`
+- `POST /files/upload` 可通过 query 传 `declared_size`
 - `POST /files/upload/init` 可在请求体里传 `relative_path`
+- `folder_id = null` 或不传时表示上传到根目录
+- `declared_size` 是可选的客户端声明大小；当前前端普通 multipart 直传会带上它
 - 服务端会按相对路径自动创建缺失目录、复用已存在目录
 - `relative_path` 中的空 segment 会被拒绝，例如 `docs//bad.txt`
 

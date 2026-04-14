@@ -117,3 +117,4 @@ bootstrap_insecure_cookies = false
 - 准备挂 HTTPS：看 [反向代理](/deployment/reverse-proxy)
 - 想确认首次启动到底自动做了哪些事：看 [首次启动检查](/deployment/runtime-behavior)
 - 准备升级：看 [升级与浏览器缓存](/deployment/frontend-assets)
+- 想建立或复跑性能基准：看 [性能基准与压测](/deployment/performance-benchmarking)

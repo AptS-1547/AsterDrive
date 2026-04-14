@@ -3,6 +3,9 @@
 .DS_store
 /tmp
 
+# 测试结果
+/tests/performance/results/
+
 # 运行时生成
 /config.toml
 *.db

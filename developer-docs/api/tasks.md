@@ -63,6 +63,7 @@
 - `can_retry = true` 目前只在 `status = failed` 时出现
 - `progress_total <= 0` 时，成功任务的 `progress_percent` 会直接视为 `100`
 - `expires_at` 表示这条任务记录以及相关临时产物的清理时间；默认保留期来自运行时配置 `task_retention_hours`，默认 `24` 小时
+- 当前公开 OpenAPI / 前端 SDK 里的 `BackgroundTaskKind` 只有 `archive_extract` 和 `archive_compress`
 
 ## `POST /tasks/{id}/retry`
 
@@ -80,6 +81,6 @@
 
 - 当前 `/batch/archive-download` 和团队对应接口走的是“短期 stream ticket + 直接 ZIP 流下载”
 - 它们不会创建这里的 `background_task` 记录
-- `BackgroundTaskKind` 虽然还保留了 `archive_download`、`archive_extract`、`archive_compress` 这些枚举值，但现阶段公开 API 主要把这组接口当成任务面板 / 诊断入口来用
+- 旧文档里提过 `archive_download` 这个任务枚举值；但按当前公开 OpenAPI / 前端 SDK，任务类型只暴露 `archive_extract`、`archive_compress`
 
 也就是说，如果你只用当前公开 REST 能力，任务列表很可能长期为空，这是实现现状，不是你调错了。

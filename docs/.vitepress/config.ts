@@ -119,7 +119,8 @@ export default defineConfig({
             { text: '运维 CLI', link: '/deployment/ops-cli' },
             { text: '反向代理', link: '/deployment/reverse-proxy' },
             { text: '首次启动检查', link: '/deployment/runtime-behavior' },
-            { text: '升级与浏览器缓存', link: '/deployment/frontend-assets' }
+            { text: '升级与浏览器缓存', link: '/deployment/frontend-assets' },
+            { text: '性能基准与压测', link: '/deployment/performance-benchmarking' }
           ]
         }
       ]
