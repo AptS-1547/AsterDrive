@@ -1,10 +1,11 @@
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::config::site_url;
-use crate::db::repository::team_member_repo;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::{audit_service, auth_service, profile_service, storage_change_service};
+use crate::services::{
+    audit_service, auth_service, profile_service, storage_change_service, team_service,
+};
 use crate::types::VerificationPurpose;
 use actix_governor::Governor;
 use actix_web::cookie::time::Duration as CookieDuration;
@@ -389,12 +390,7 @@ pub async fn get_storage_events(
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     let user_id = claims.user_id;
-    let visible_team_ids: std::collections::HashSet<i64> =
-        team_member_repo::list_by_user_with_team(&state.db, user_id)
-            .await?
-            .into_iter()
-            .map(|(membership, _)| membership.team_id)
-            .collect();
+    let visible_team_ids = team_service::list_user_team_ids(&state, user_id, false).await?;
     let mut rx = state.storage_change_tx.subscribe();
 
     let stream = async_stream::stream! {

@@ -83,7 +83,7 @@ docker run -d \
 docker compose up -d
 ```
 
-The current container image is an **Alpine runtime image**. The recommended persistent volume is `/data`.
+The current container image is an **Alpine runtime image** that runs as a non-root user and includes a `/health/ready` health check. The recommended persistent volume is `/data`.
 
 See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`](docs/deployment/docker.md) for a complete deployment example.
 

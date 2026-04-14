@@ -1436,6 +1436,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				<input
 					ref={fileInputRef}
 					type="file"
+					data-testid="upload-file-input"
 					multiple
 					className="hidden"
 					onChange={handleFileInputChange}
@@ -1443,6 +1444,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				<input
 					ref={folderInputRef}
 					type="file"
+					data-testid="upload-folder-input"
 					multiple
 					className="hidden"
 					// @ts-expect-error webkitdirectory is browser-specific

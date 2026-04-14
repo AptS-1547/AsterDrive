@@ -83,7 +83,7 @@ docker run -d \
 docker compose up -d
 ```
 
-当前容器镜像为 **Alpine 运行镜像**，推荐使用 `/data` 作为持久化卷。
+当前容器镜像为 **Alpine 运行镜像**，默认以非 root 用户运行，并内置基于 `/health/ready` 的健康检查；推荐使用 `/data` 作为持久化卷。
 
 完整部署示例见 [`docker-compose.yml`](docker-compose.yml) 和 [`docs/deployment/docker.md`](docs/deployment/docker.md)。
 

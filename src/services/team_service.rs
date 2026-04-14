@@ -681,11 +681,7 @@ async fn force_delete_archived_team(state: &AppState, team: team::Model) -> Resu
 }
 
 pub async fn list_teams(state: &AppState, user_id: i64, archived: bool) -> Result<Vec<TeamInfo>> {
-    let memberships = if archived {
-        team_member_repo::list_by_user_with_archived_team(&state.db, user_id).await?
-    } else {
-        team_member_repo::list_by_user_with_team(&state.db, user_id).await?
-    };
+    let memberships = list_user_team_memberships(state, user_id, archived).await?;
     if memberships.is_empty() {
         return Ok(vec![]);
     }
@@ -708,6 +704,30 @@ pub async fn list_teams(state: &AppState, user_id: i64, archived: bool) -> Resul
         ));
     }
     Ok(teams)
+}
+
+pub async fn list_user_team_ids(
+    state: &AppState,
+    user_id: i64,
+    archived: bool,
+) -> Result<HashSet<i64>> {
+    Ok(list_user_team_memberships(state, user_id, archived)
+        .await?
+        .into_iter()
+        .map(|(membership, _)| membership.team_id)
+        .collect())
+}
+
+async fn list_user_team_memberships(
+    state: &AppState,
+    user_id: i64,
+    archived: bool,
+) -> Result<Vec<(team_member::Model, team::Model)>> {
+    if archived {
+        team_member_repo::list_by_user_with_archived_team(&state.db, user_id).await
+    } else {
+        team_member_repo::list_by_user_with_team(&state.db, user_id).await
+    }
 }
 
 pub async fn create_team(

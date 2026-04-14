@@ -2009,6 +2009,83 @@ async fn test_team_service_list_teams_for_member() {
 }
 
 #[actix_web::test]
+async fn test_team_service_list_user_team_ids_filters_archived_teams() {
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "teamids-owner",
+        "listteamids-owner@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let member = aster_drive::services::auth_service::register(
+        &state,
+        "teamids-member",
+        "listteamids-member@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let active_team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "Active Team".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let archived_team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "Archived Team".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    for team_id in [active_team.id, archived_team.id] {
+        aster_drive::services::team_service::add_member(
+            &state,
+            team_id,
+            owner.id,
+            aster_drive::services::team_service::AddTeamMemberInput {
+                user_id: Some(member.id),
+                identifier: None,
+                role: aster_drive::types::TeamMemberRole::Member,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    aster_drive::services::team_service::archive_team(&state, archived_team.id, owner.id)
+        .await
+        .unwrap();
+
+    let active_team_ids =
+        aster_drive::services::team_service::list_user_team_ids(&state, member.id, false)
+            .await
+            .unwrap();
+    assert_eq!(active_team_ids.len(), 1);
+    assert!(active_team_ids.contains(&active_team.id));
+    assert!(!active_team_ids.contains(&archived_team.id));
+
+    let archived_team_ids =
+        aster_drive::services::team_service::list_user_team_ids(&state, member.id, true)
+            .await
+            .unwrap();
+    assert_eq!(archived_team_ids.len(), 1);
+    assert!(archived_team_ids.contains(&archived_team.id));
+    assert!(!archived_team_ids.contains(&active_team.id));
+}
+
+#[actix_web::test]
 async fn test_team_archive_cleanup_deletes_expired_team_data() {
     use chrono::{Duration, Utc};
     use sea_orm::{IntoActiveModel, Set};

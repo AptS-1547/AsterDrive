@@ -135,6 +135,7 @@ export function ShareDialog({
 							<Input
 								value={createdLinks.primaryUrl}
 								readOnly
+								data-testid="share-primary-url"
 								className="text-sm"
 							/>
 							<Button
@@ -156,6 +157,7 @@ export function ShareDialog({
 									<Input
 										value={createdLinks.forceDownloadUrl}
 										readOnly
+										data-testid="share-force-download-url"
 										className="text-sm"
 									/>
 									<Button
