@@ -133,15 +133,7 @@ pub async fn lock_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file::Mod
             .await
             .map_err(AsterError::from)?
             .ok_or_else(|| AsterError::file_not_found(format!("file #{id}"))),
-        DbBackend::Sqlite => {
-            File::update_many()
-                .col_expr(file::Column::UpdatedAt, Expr::col(file::Column::UpdatedAt))
-                .filter(file::Column::Id.eq(id))
-                .exec(db)
-                .await
-                .map_err(AsterError::from)?;
-            find_by_id(db, id).await
-        }
+        DbBackend::Sqlite => find_by_id(db, id).await,
         _ => find_by_id(db, id).await,
     }
 }

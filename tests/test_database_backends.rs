@@ -7,6 +7,7 @@ use actix_web::test;
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use serde_json::Value;
 use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+use tokio::time::{Duration, timeout};
 
 fn upload_named_file(name: &str, content: &str, mime: &str, boundary: &str) -> String {
     format!(
@@ -98,6 +99,37 @@ async fn assert_mysql_search_objects(db: &DatabaseConnection) {
         folder_index.is_some(),
         "folders fulltext index should exist"
     );
+}
+
+#[actix_web::test]
+async fn test_sqlite_transactions_are_serialized_by_single_connection_pool() {
+    use sea_orm::TransactionTrait;
+
+    let database_path = format!("/tmp/asterdrive-sqlite-lock-{}.db", uuid::Uuid::new_v4());
+    let database_url = format!("sqlite://{database_path}");
+    let cfg = aster_drive::config::DatabaseConfig {
+        url: database_url,
+        pool_size: 8,
+        retry_count: 0,
+    };
+    let db = aster_drive::db::connect(&cfg).await.unwrap();
+
+    let txn = db.begin().await.unwrap();
+    let second_begin = timeout(Duration::from_millis(100), db.begin()).await;
+    assert!(
+        second_begin.is_err(),
+        "SQLite should serialize transactions by exposing only one pooled connection"
+    );
+
+    txn.commit().await.unwrap();
+
+    let second_txn = timeout(Duration::from_secs(1), db.begin())
+        .await
+        .expect("second transaction should start after the first commit")
+        .unwrap();
+    second_txn.commit().await.unwrap();
+
+    let _ = tokio::fs::remove_file(database_path).await;
 }
 
 async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {

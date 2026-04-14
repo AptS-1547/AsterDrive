@@ -76,19 +76,9 @@ pub async fn lock_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<folder::M
             .map_err(AsterError::from)?
             .ok_or_else(|| AsterError::folder_not_found(format!("folder #{id}"))),
         DbBackend::Sqlite => {
-            // TODO: SQLite has no row-level `SELECT ... FOR UPDATE`. This
-            // `Folder::update_many()` + `find_by_id()` sequence does not provide
-            // a real row lock; callers that need stronger isolation should use
-            // `BEGIN IMMEDIATE`/`BEGIN EXCLUSIVE` around this code path.
-            Folder::update_many()
-                .col_expr(
-                    folder::Column::UpdatedAt,
-                    Expr::col(folder::Column::UpdatedAt),
-                )
-                .filter(folder::Column::Id.eq(id))
-                .exec(db)
-                .await
-                .map_err(AsterError::from)?;
+            // AsterDrive forces SQLite to a single pooled connection in `db::connect()`,
+            // so an open transaction already serializes all writers at connection acquisition.
+            // There is no row-level lock to emulate here.
             find_by_id(db, id).await
         }
         _ => find_by_id(db, id).await,

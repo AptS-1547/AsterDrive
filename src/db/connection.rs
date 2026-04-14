@@ -5,6 +5,8 @@ use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection};
 pub async fn connect(cfg: &DatabaseConfig) -> Result<DatabaseConnection> {
     let url = normalize_database_url(&cfg.url);
     let is_sqlite = url.contains("sqlite");
+    // SQLite relies on a single pooled connection so concurrent writers are serialized at
+    // connection acquisition; repo-layer "lock" helpers do not emulate row locks there.
     let max_connections = if is_sqlite { 1 } else { cfg.pool_size };
 
     let mut opt = ConnectOptions::new(&url);
