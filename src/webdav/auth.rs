@@ -1,7 +1,7 @@
 use base64::Engine;
 
 use crate::db::repository::{user_repo, webdav_account_repo};
-use crate::errors::AsterError;
+use crate::errors::{AsterError, MapAsterErr};
 use crate::runtime::AppState;
 use crate::services::auth_service;
 use crate::utils::hash;
@@ -54,10 +54,10 @@ async fn authenticate_basic(
 ) -> Result<(i64, Option<i64>), AsterError> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded)
-        .map_err(|_| AsterError::auth_invalid_credentials("invalid base64"))?;
+        .map_aster_err_with(|| AsterError::auth_invalid_credentials("invalid base64"))?;
 
     let credentials = String::from_utf8(decoded)
-        .map_err(|_| AsterError::auth_invalid_credentials("invalid utf8"))?;
+        .map_aster_err_with(|| AsterError::auth_invalid_credentials("invalid utf8"))?;
 
     let (username, password) = credentials
         .split_once(':')

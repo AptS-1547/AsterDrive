@@ -844,14 +844,16 @@ async fn complete_upload_impl(
         for i in 0..session.total_chunks {
             let chunk_path =
                 paths::upload_chunk_path(&state.config.server.upload_temp_dir, upload_id, i);
-            let mut chunk_file = tokio::fs::File::open(&chunk_path)
-                .await
-                .map_err(|e| AsterError::upload_assembly_failed(format!("open chunk {i}: {e}")))?;
+            let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_aster_err_ctx(
+                &format!("open chunk {i}"),
+                AsterError::upload_assembly_failed,
+            )?;
 
             loop {
-                let n = chunk_file.read(&mut buffer).await.map_err(|e| {
-                    AsterError::upload_assembly_failed(format!("read chunk {i}: {e}"))
-                })?;
+                let n = chunk_file.read(&mut buffer).await.map_aster_err_ctx(
+                    &format!("read chunk {i}"),
+                    AsterError::upload_assembly_failed,
+                )?;
                 if n == 0 {
                     break;
                 }
@@ -1014,7 +1016,7 @@ async fn ensure_uploaded_s3_object_size(
     let meta = driver
         .metadata(temp_key)
         .await
-        .map_err(|_| AsterError::upload_assembly_failed(missing_message))?;
+        .map_aster_err_with(|| AsterError::upload_assembly_failed(missing_message))?;
     let actual_size = meta.size as i64;
 
     if actual_size != declared_size {

@@ -9,7 +9,7 @@ use crate::cache::CacheExt;
 use crate::config::site_url;
 use crate::db::repository::file_repo;
 use crate::entities::{file, share};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
     direct_link_service, file_service, share_service,
@@ -214,7 +214,7 @@ fn encode_shared_token(
 
 fn encode_payload(payload: &PreviewTokenPayload) -> Result<String> {
     let bytes = serde_json::to_vec(payload)
-        .map_err(|_| AsterError::internal_error("failed to encode preview token"))?;
+        .map_aster_err_ctx("failed to encode preview token", AsterError::internal_error)?;
     Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
 }
 
@@ -288,9 +288,9 @@ fn split_token(token: &str) -> Result<(&str, &str)> {
 fn decode_payload(payload_segment: &str) -> Result<PreviewTokenPayload> {
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(payload_segment)
-        .map_err(|_| AsterError::share_not_found("invalid preview link token"))?;
+        .map_aster_err_with(|| AsterError::share_not_found("invalid preview link token"))?;
     serde_json::from_slice::<PreviewTokenPayload>(&bytes)
-        .map_err(|_| AsterError::share_not_found("invalid preview link token"))
+        .map_aster_err_with(|| AsterError::share_not_found("invalid preview link token"))
 }
 
 fn decode_expiry(exp: i64) -> Result<DateTime<Utc>> {
@@ -394,8 +394,10 @@ fn ttl_seconds(payload: &PreviewTokenPayload) -> Result<u64> {
     if remaining <= 0 {
         return Err(AsterError::share_expired("preview link expired"));
     }
-    u64::try_from(remaining)
-        .map_err(|_| AsterError::internal_error("preview link ttl conversion failed"))
+    u64::try_from(remaining).map_aster_err_ctx(
+        "preview link ttl conversion failed",
+        AsterError::internal_error,
+    )
 }
 
 fn preview_cache_key(token: &str) -> String {

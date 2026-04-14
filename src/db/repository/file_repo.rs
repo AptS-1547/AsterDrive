@@ -9,7 +9,7 @@ use crate::entities::{
     file::{self, Entity as File},
     file_blob::{self, Entity as FileBlob},
 };
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 
 pub struct FindOrCreateBlobResult {
     pub model: file_blob::Model,
@@ -364,9 +364,9 @@ fn build_cursor_condition(
                 .add(sea_orm::Condition::all().add(eq).add(id_cond)))
         }
         SortBy::Size => {
-            let val: i64 = after_value
-                .parse()
-                .map_err(|_| AsterError::validation_error("invalid cursor value for size sort"))?;
+            let val: i64 = after_value.parse().map_aster_err_with(|| {
+                AsterError::validation_error("invalid cursor value for size sort")
+            })?;
             let (gt, eq) = if is_asc {
                 (file::Column::Size.gt(val), file::Column::Size.eq(val))
             } else {
@@ -377,9 +377,10 @@ fn build_cursor_condition(
                 .add(sea_orm::Condition::all().add(eq).add(id_cond)))
         }
         SortBy::CreatedAt => {
-            let val: chrono::DateTime<chrono::Utc> = after_value.parse().map_err(|_| {
-                AsterError::validation_error("invalid cursor value for created_at sort")
-            })?;
+            let val: chrono::DateTime<chrono::Utc> =
+                after_value.parse().map_aster_err_with(|| {
+                    AsterError::validation_error("invalid cursor value for created_at sort")
+                })?;
             let (gt, eq) = if is_asc {
                 (
                     file::Column::CreatedAt.gt(val),
@@ -396,9 +397,10 @@ fn build_cursor_condition(
                 .add(sea_orm::Condition::all().add(eq).add(id_cond)))
         }
         SortBy::UpdatedAt => {
-            let val: chrono::DateTime<chrono::Utc> = after_value.parse().map_err(|_| {
-                AsterError::validation_error("invalid cursor value for updated_at sort")
-            })?;
+            let val: chrono::DateTime<chrono::Utc> =
+                after_value.parse().map_aster_err_with(|| {
+                    AsterError::validation_error("invalid cursor value for updated_at sort")
+                })?;
             let (gt, eq) = if is_asc {
                 (
                     file::Column::UpdatedAt.gt(val),

@@ -1,4 +1,4 @@
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 
 pub fn bytes_to_usize(bytes: i64, value_name: &str) -> Result<usize> {
     if bytes < 0 {
@@ -7,7 +7,7 @@ pub fn bytes_to_usize(bytes: i64, value_name: &str) -> Result<usize> {
         )));
     }
 
-    usize::try_from(bytes).map_err(|_| {
+    usize::try_from(bytes).map_aster_err_with(|| {
         AsterError::internal_error(format!(
             "{value_name} exceeds platform usize range: {bytes}"
         ))
@@ -15,20 +15,21 @@ pub fn bytes_to_usize(bytes: i64, value_name: &str) -> Result<usize> {
 }
 
 pub fn i32_to_usize(value: i32, value_name: &str) -> Result<usize> {
-    usize::try_from(value).map_err(|_| {
+    usize::try_from(value).map_aster_err_with(|| {
         AsterError::internal_error(format!("{value_name} cannot be negative: {value}"))
     })
 }
 
 pub fn i64_to_u64(value: i64, value_name: &str) -> Result<u64> {
-    u64::try_from(value).map_err(|_| {
+    u64::try_from(value).map_aster_err_with(|| {
         AsterError::internal_error(format!("{value_name} cannot be negative: {value}"))
     })
 }
 
 pub fn usize_to_i32(value: usize, value_name: &str) -> Result<i32> {
-    i32::try_from(value)
-        .map_err(|_| AsterError::internal_error(format!("{value_name} exceeds i32 range: {value}")))
+    i32::try_from(value).map_aster_err_with(|| {
+        AsterError::internal_error(format!("{value_name} exceeds i32 range: {value}"))
+    })
 }
 
 pub fn calc_total_chunks(total_size: i64, chunk_size: i64, context: &str) -> Result<i32> {
@@ -48,7 +49,7 @@ pub fn calc_total_chunks(total_size: i64, chunk_size: i64, context: &str) -> Res
     })?;
     let chunks = adjusted / chunk_size;
 
-    i32::try_from(chunks).map_err(|_| {
+    i32::try_from(chunks).map_aster_err_with(|| {
         AsterError::validation_error(format!("{context} requires too many chunks: {chunks}"))
     })
 }

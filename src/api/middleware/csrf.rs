@@ -7,7 +7,7 @@ use http::Uri;
 use rand::RngExt;
 
 use crate::config::{RuntimeConfig, cors, site_url};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 
 pub const CSRF_COOKIE: &str = "aster_csrf";
 pub const CSRF_HEADER: &str = "X-CSRF-Token";
@@ -120,7 +120,7 @@ fn ensure_headers_allowed(
         .filter(|value| !value.is_empty())
         .map(|value| cors::normalize_origin(value, false))
         .transpose()
-        .map_err(|_| AsterError::validation_error("invalid Origin header"))?
+        .map_aster_err_with(|| AsterError::validation_error("invalid Origin header"))?
     {
         if origin_is_trusted(&origin, request_origin, public_site_origin) {
             return Ok(());
@@ -157,7 +157,7 @@ fn header_value(req: &HttpRequest, name: header::HeaderName) -> Option<&str> {
 
 fn request_origin(scheme: &str, host: &str) -> Result<String> {
     cors::normalize_origin(&format!("{scheme}://{host}"), false)
-        .map_err(|_| AsterError::validation_error("invalid request host"))
+        .map_aster_err_with(|| AsterError::validation_error("invalid request host"))
 }
 
 fn origin_is_trusted(origin: &str, request_origin: &str, public_site_origin: Option<&str>) -> bool {

@@ -737,8 +737,9 @@ fn item_version_if_present(_file_id: i64, item_version: String) -> String {
 }
 
 fn normalize_wopi_user_info(body: &actix_web::web::Bytes) -> Result<String> {
-    let user_info = std::str::from_utf8(body)
-        .map_err(|_| AsterError::validation_error("PUT_USER_INFO body must be valid UTF-8"))?;
+    let user_info = std::str::from_utf8(body).map_aster_err_with(|| {
+        AsterError::validation_error("PUT_USER_INFO body must be valid UTF-8")
+    })?;
     if !user_info.is_ascii() {
         return Err(AsterError::validation_error(
             "PUT_USER_INFO body must contain ASCII characters only",
@@ -761,7 +762,7 @@ fn parse_put_relative_request(
     body_len: usize,
 ) -> Result<ParsedPutRelativeRequest> {
     if let Some(size_header) = size_header {
-        let declared_size = size_header.parse::<usize>().map_err(|_| {
+        let declared_size = size_header.parse::<usize>().map_aster_err_with(|| {
             AsterError::validation_error("X-WOPI-Size header must be a non-negative integer")
         })?;
         if declared_size != body_len {
@@ -1006,7 +1007,7 @@ async fn store_relative_target_from_bytes(
     exact_name: bool,
 ) -> Result<file::Model> {
     let size = i64::try_from(body.len())
-        .map_err(|_| AsterError::validation_error("PUT_RELATIVE body is too large"))?;
+        .map_aster_err_with(|| AsterError::validation_error("PUT_RELATIVE body is too large"))?;
     let resolved_policy =
         workspace_storage_service::resolve_policy_for_size(state, scope, folder_id, size).await?;
 
@@ -1192,7 +1193,7 @@ fn decode_wopi_filename(value: &str) -> Result<String> {
         while !padded.len().is_multiple_of(4) {
             padded.push('=');
         }
-        let bytes = STANDARD.decode(padded.as_bytes()).map_err(|_| {
+        let bytes = STANDARD.decode(padded.as_bytes()).map_aster_err_with(|| {
             AsterError::validation_error("invalid UTF-7 base64 payload in WOPI target header")
         })?;
         if bytes.len() % 2 != 0 {
@@ -1205,7 +1206,7 @@ fn decode_wopi_filename(value: &str) -> Result<String> {
             .chunks_exact(2)
             .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]));
         for ch in char::decode_utf16(utf16) {
-            decoded.push(ch.map_err(|_| {
+            decoded.push(ch.map_aster_err_with(|| {
                 AsterError::validation_error("invalid UTF-16 sequence in WOPI target header")
             })?);
         }
@@ -1341,9 +1342,10 @@ async fn load_discovery(state: &AppState, discovery_url: &str) -> Result<WopiDis
         .get(discovery_url)
         .send()
         .await
-        .map_err(|error| {
-            AsterError::validation_error(format!("failed to fetch WOPI discovery: {error}"))
-        })?;
+        .map_aster_err_ctx(
+            "failed to fetch WOPI discovery",
+            AsterError::validation_error,
+        )?;
     if !response.status().is_success() {
         return Err(AsterError::validation_error(format!(
             "WOPI discovery returned HTTP {}",
@@ -1351,9 +1353,10 @@ async fn load_discovery(state: &AppState, discovery_url: &str) -> Result<WopiDis
         )));
     }
 
-    let body = response.text().await.map_err(|error| {
-        AsterError::validation_error(format!("failed to read WOPI discovery: {error}"))
-    })?;
+    let body = response.text().await.map_aster_err_ctx(
+        "failed to read WOPI discovery",
+        AsterError::validation_error,
+    )?;
     let parsed = parse_discovery_xml(&body)?;
     DISCOVERY_CACHE
         .insert(
@@ -1368,9 +1371,8 @@ async fn load_discovery(state: &AppState, discovery_url: &str) -> Result<WopiDis
 }
 
 fn parse_discovery_xml(xml: &str) -> Result<WopiDiscovery> {
-    let root = Element::parse(xml.as_bytes()).map_err(|error| {
-        AsterError::validation_error(format!("invalid WOPI discovery XML: {error}"))
-    })?;
+    let root = Element::parse(xml.as_bytes())
+        .map_aster_err_ctx("invalid WOPI discovery XML", AsterError::validation_error)?;
     let mut actions = Vec::new();
     collect_discovery_actions(&root, None, None, &mut actions);
     if actions.is_empty() {
@@ -1930,7 +1932,10 @@ fn encode_wopi_lock_payload(
         app_key: payload.app_key.clone(),
         lock: requested_lock.to_string(),
     })
-    .map_err(|_| AsterError::internal_error("failed to encode WOPI lock payload"))
+    .map_aster_err_ctx(
+        "failed to encode WOPI lock payload",
+        AsterError::internal_error,
+    )
 }
 
 fn discovery_cache_ttl(runtime_config: &crate::config::RuntimeConfig) -> Duration {
@@ -2079,7 +2084,7 @@ fn ensure_request_source_allowed(
         .filter(|value| !value.trim().is_empty())
         .map(|value| cors::normalize_origin(value, false))
         .transpose()
-        .map_err(|_| AsterError::validation_error("invalid Origin header"))?
+        .map_aster_err_with(|| AsterError::validation_error("invalid Origin header"))?
     {
         if trusted_origins.iter().any(|allowed| allowed == &origin) {
             return Ok(());

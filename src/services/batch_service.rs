@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, Result, display_error};
 use crate::runtime::AppState;
 use crate::services::{
     file_service, folder_service, storage_change_service,
@@ -249,7 +249,7 @@ async fn load_target_folder_in_scope(
     workspace_storage_service::verify_folder_access(state, scope, folder_id)
         .await
         .map(Some)
-        .map_err(|e| e.to_string())
+        .map_err(display_error)
 }
 
 async fn load_folder_ancestor_ids_in_scope(

@@ -4,6 +4,7 @@
 
 #[cfg(feature = "metrics")]
 mod inner {
+    use crate::errors::display_error;
     use prometheus::{
         Encoder, Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, Opts, Registry,
         TextEncoder,
@@ -108,8 +109,8 @@ mod inner {
             let mut buf = Vec::new();
             encoder
                 .encode(&metric_families, &mut buf)
-                .map_err(|e| e.to_string())?;
-            String::from_utf8(buf).map_err(|e| e.to_string())
+                .map_err(display_error)?;
+            String::from_utf8(buf).map_err(display_error)
         }
     }
 

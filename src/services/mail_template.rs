@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use utoipa::ToSchema;
 
 use crate::config::{RuntimeConfig, mail, site_url};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::types::MailTemplateCode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -298,21 +298,20 @@ pub fn render(
 }
 
 fn serialize_payload<T: Serialize>(payload: &T) -> Result<String> {
-    serde_json::to_string(payload).map_err(|error| {
-        AsterError::internal_error(format!("failed to serialize mail payload: {error}"))
-    })
+    serde_json::to_string(payload).map_aster_err_ctx(
+        "failed to serialize mail payload",
+        AsterError::internal_error,
+    )
 }
 
 fn deserialize_payload<T: DeserializeOwned>(
     template_code: MailTemplateCode,
     payload_json: &str,
 ) -> Result<T> {
-    serde_json::from_str(payload_json).map_err(|error| {
-        AsterError::internal_error(format!(
-            "failed to decode {} mail payload: {error}",
-            template_code.as_str()
-        ))
-    })
+    serde_json::from_str(payload_json).map_aster_err_ctx(
+        &format!("failed to decode {} mail payload", template_code.as_str()),
+        AsterError::internal_error,
+    )
 }
 
 fn verification_link(runtime_config: &RuntimeConfig, token: &str) -> String {

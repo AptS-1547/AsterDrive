@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 
 use crate::db::repository::{file_repo, team_repo};
 use crate::entities::file;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
     file_service,
@@ -76,7 +76,7 @@ pub(crate) async fn download_file(
 
 fn build_token(file: &file::Model, secret: &str) -> Result<String> {
     let file_id = u64::try_from(file.id)
-        .map_err(|_| AsterError::validation_error("file id must be non-negative"))?;
+        .map_aster_err_with(|| AsterError::validation_error("file id must be non-negative"))?;
     let file_part = encode_base62(file_id);
     let signature = signature_for_file(file, secret)?;
     Ok(format!("{file_part}{signature}"))
@@ -91,7 +91,7 @@ fn parse_token(token: &str) -> Result<(i64, &str)> {
     let file_id = decode_base62(file_part)
         .ok_or_else(|| AsterError::share_not_found("invalid direct link token"))?;
     let file_id = i64::try_from(file_id)
-        .map_err(|_| AsterError::share_not_found("invalid direct link token"))?;
+        .map_aster_err_with(|| AsterError::share_not_found("invalid direct link token"))?;
 
     Ok((file_id, signature))
 }

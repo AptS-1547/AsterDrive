@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use crate::config::cors::RuntimeCorsPolicy;
-use crate::errors::AsterError;
+use crate::errors::{AsterError, MapAsterErr};
 use crate::runtime::AppState;
 
 const ALLOWED_METHODS: &[&str] = &[
@@ -133,7 +133,7 @@ where
             let origin = crate::config::cors::normalize_origin(
                 origin_header
                     .to_str()
-                    .map_err(|_| AsterError::validation_error("invalid Origin header"))?,
+                    .map_aster_err_with(|| AsterError::validation_error("invalid Origin header"))?,
                 false,
             )?;
 
@@ -243,9 +243,9 @@ fn requested_headers_are_allowed(req: &ServiceRequest) -> Result<bool, AsterErro
         return Ok(true);
     };
 
-    let request_headers = request_headers
-        .to_str()
-        .map_err(|_| AsterError::validation_error("invalid Access-Control-Request-Headers"))?;
+    let request_headers = request_headers.to_str().map_aster_err_with(|| {
+        AsterError::validation_error("invalid Access-Control-Request-Headers")
+    })?;
 
     let allowed_headers = ALLOWED_HEADERS
         .iter()
@@ -258,9 +258,9 @@ fn requested_headers_are_allowed(req: &ServiceRequest) -> Result<bool, AsterErro
             continue;
         }
 
-        let _: header::HeaderName = requested
-            .parse()
-            .map_err(|_| AsterError::validation_error("invalid Access-Control-Request-Headers"))?;
+        let _: header::HeaderName = requested.parse().map_aster_err_with(|| {
+            AsterError::validation_error("invalid Access-Control-Request-Headers")
+        })?;
 
         if !allowed_headers.contains(requested.as_str()) {
             return Ok(false);
@@ -283,7 +283,7 @@ fn apply_origin_headers(
         let value = if policy.sends_wildcard_origin() {
             HeaderValue::from_static("*")
         } else {
-            HeaderValue::from_str(origin).map_err(|_| {
+            HeaderValue::from_str(origin).map_aster_err_with(|| {
                 AsterError::internal_error("failed to serialize Access-Control-Allow-Origin")
             })?
         };
@@ -356,7 +356,7 @@ fn ensure_vary(headers: &mut HeaderMap, value: &str) -> Result<(), AsterError> {
     if let Some(existing) = headers.get(header::VARY) {
         let existing = existing
             .to_str()
-            .map_err(|_| AsterError::internal_error("invalid Vary header"))?;
+            .map_aster_err_ctx("invalid Vary header", AsterError::internal_error)?;
         for item in existing.split(',') {
             let item = item.trim();
             if !item.is_empty() {
@@ -367,8 +367,10 @@ fn ensure_vary(headers: &mut HeaderMap, value: &str) -> Result<(), AsterError> {
 
     vary_values.insert(value.to_string());
     let joined = vary_values.into_iter().collect::<Vec<_>>().join(", ");
-    let header_value = HeaderValue::from_str(&joined)
-        .map_err(|_| AsterError::internal_error("failed to serialize Vary header"))?;
+    let header_value = HeaderValue::from_str(&joined).map_aster_err_ctx(
+        "failed to serialize Vary header",
+        AsterError::internal_error,
+    )?;
     headers.insert(header::VARY, header_value);
     Ok(())
 }

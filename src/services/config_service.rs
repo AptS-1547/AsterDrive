@@ -7,7 +7,7 @@ use crate::config::site_url;
 use crate::config::system_config as shared_system_config;
 use crate::db::repository::{config_repo, user_repo};
 use crate::entities::system_config;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
     audit_service::{self, AuditContext},
@@ -235,11 +235,10 @@ async fn execute_preview_app_action(
             let normalized =
                 preview_app_service::normalize_public_preview_apps_config_value(&raw_value)?;
             let mut config: preview_app_service::PublicPreviewAppsConfig =
-                serde_json::from_str(&normalized).map_err(|error| {
-                    AsterError::internal_error(format!(
-                        "failed to parse normalized preview apps config: {error}"
-                    ))
-                })?;
+                serde_json::from_str(&normalized).map_aster_err_ctx(
+                    "failed to parse normalized preview apps config",
+                    AsterError::internal_error,
+                )?;
 
             let requested_discovery_url =
                 discovery_url.map(str::trim).filter(|url| !url.is_empty());
@@ -248,11 +247,10 @@ async fn execute_preview_app_action(
             };
             build_wopi_discovery_preview_apps_into_config(state, &mut config, discovery_url)
                 .await?;
-            let serialized = serde_json::to_string_pretty(&config).map_err(|error| {
-                AsterError::internal_error(format!(
-                    "failed to serialize imported preview apps config: {error}"
-                ))
-            })?;
+            let serialized = serde_json::to_string_pretty(&config).map_aster_err_ctx(
+                "failed to serialize imported preview apps config",
+                AsterError::internal_error,
+            )?;
 
             if value.is_none() {
                 set(

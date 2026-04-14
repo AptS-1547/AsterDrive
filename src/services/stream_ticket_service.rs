@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 use crate::cache::CacheExt;
 use crate::config::site_url;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
     task_service,
@@ -167,7 +167,8 @@ async fn delete_ticket(state: &AppState, cache_key: &str) {
 
 fn ttl_secs_until(expires_at: DateTime<Utc>) -> Result<u64> {
     let ttl_secs = (expires_at - Utc::now()).num_seconds().max(1);
-    u64::try_from(ttl_secs).map_err(|_| AsterError::internal_error("stream ticket ttl overflow"))
+    u64::try_from(ttl_secs)
+        .map_aster_err_with(|| AsterError::internal_error("stream ticket ttl overflow"))
 }
 
 fn decode_expiry(exp: i64) -> Result<DateTime<Utc>> {

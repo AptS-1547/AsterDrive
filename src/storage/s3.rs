@@ -113,9 +113,13 @@ where
 impl S3Driver {
     const ERROR_BODY_PREVIEW_LIMIT: usize = 512;
 
+    fn rewrap_message_as_storage_error(err: AsterError) -> AsterError {
+        AsterError::storage_driver_error(err.message().to_string())
+    }
+
     pub fn new(policy: &storage_policy::Model) -> Result<Self> {
         let normalized = normalize_s3_endpoint_and_bucket(&policy.endpoint, &policy.bucket)
-            .map_err(|err| AsterError::storage_driver_error(err.message().to_string()))?;
+            .map_err(Self::rewrap_message_as_storage_error)?;
 
         let credentials = Credentials::new(
             &policy.access_key,
@@ -396,7 +400,7 @@ impl StorageDriver for S3Driver {
             .content_length
             .map(|value| numbers::i64_to_u64(value, "S3 content_length"))
             .transpose()
-            .map_err(|err| AsterError::storage_driver_error(err.message().to_string()))?
+            .map_err(Self::rewrap_message_as_storage_error)?
             .unwrap_or(0);
 
         Ok(BlobMetadata {

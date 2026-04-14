@@ -16,7 +16,7 @@ use crate::entities::{
     share::Entity as Share,
     user::{self, Entity as User},
 };
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::audit_service;
 use crate::types::UserStatus;
@@ -289,9 +289,9 @@ fn sum_as_i64_expr(
 }
 
 fn parse_timezone(timezone_name: &str) -> Result<Tz> {
-    timezone_name
-        .parse::<Tz>()
-        .map_err(|_| AsterError::validation_error(format!("invalid timezone '{timezone_name}'")))
+    timezone_name.parse::<Tz>().map_aster_err_with(|| {
+        AsterError::validation_error(format!("invalid timezone '{timezone_name}'"))
+    })
 }
 
 fn start_of_local_day(date: NaiveDate, timezone: Tz) -> Result<DateTimeUtc> {

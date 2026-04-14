@@ -256,7 +256,11 @@ impl AsterError {
 
 pub type Result<T> = std::result::Result<T, AsterError>;
 
-/// Extension trait to reduce `.map_err(|e| AsterError::xxx(e.to_string()))` boilerplate.
+pub fn display_error(err: impl std::fmt::Display) -> String {
+    err.to_string()
+}
+
+/// Extension trait to reduce common `map_err` boilerplate.
 pub trait MapAsterErr<T> {
     /// Map any `Display` error to an `AsterError` variant via its constructor.
     ///
@@ -271,6 +275,13 @@ pub trait MapAsterErr<T> {
     /// s3_op().map_aster_err_ctx("S3 put failed", AsterError::storage_driver_error)?;
     /// ```
     fn map_aster_err_ctx(self, ctx: &str, f: impl FnOnce(String) -> AsterError) -> Result<T>;
+
+    /// Map any error to a prebuilt `AsterError`, ignoring the original error value.
+    ///
+    /// ```ignore
+    /// decode().map_aster_err_with(|| AsterError::validation_error("invalid token"))?;
+    /// ```
+    fn map_aster_err_with(self, f: impl FnOnce() -> AsterError) -> Result<T>;
 }
 
 impl<T, E: std::fmt::Display> MapAsterErr<T> for std::result::Result<T, E> {
@@ -281,11 +292,15 @@ impl<T, E: std::fmt::Display> MapAsterErr<T> for std::result::Result<T, E> {
     fn map_aster_err_ctx(self, ctx: &str, f: impl FnOnce(String) -> AsterError) -> Result<T> {
         self.map_err(|e| f(format!("{ctx}: {e}")))
     }
+
+    fn map_aster_err_with(self, f: impl FnOnce() -> AsterError) -> Result<T> {
+        self.map_err(|_| f())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AsterError, ResponseLogLevel};
+    use super::{AsterError, MapAsterErr, ResponseLogLevel};
     use actix_web::http::StatusCode;
 
     #[test]
@@ -340,5 +355,15 @@ mod tests {
         let err = AsterError::thumbnail_generation_failed("decode failed");
         assert_eq!(err.http_status(), StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(err.response_log_level(), ResponseLogLevel::Error);
+    }
+
+    #[test]
+    fn map_aster_err_with_ignores_source_error() {
+        let err = std::result::Result::<(), std::io::Error>::Err(std::io::Error::other("boom"))
+            .map_aster_err_with(|| AsterError::validation_error("invalid token"))
+            .unwrap_err();
+
+        assert_eq!(err.code(), "E005");
+        assert_eq!(err.message(), "invalid token");
     }
 }

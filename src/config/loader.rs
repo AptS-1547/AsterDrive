@@ -8,7 +8,7 @@ use std::path::Path;
 
 pub fn load() -> Result<Config> {
     let base_dir = std::env::current_dir()
-        .map_err(|e| AsterError::config_error(format!("failed to resolve current dir: {e}")))?;
+        .map_aster_err_ctx("failed to resolve current dir", AsterError::config_error)?;
     let env_database_url = std::env::var("ASTER__DATABASE__URL").ok();
     load_from_dir(&base_dir, env_database_url.as_deref(), true)
 }
@@ -67,17 +67,16 @@ fn create_default_config(config_path: &Path) -> Result<()> {
     );
 
     if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| {
-            AsterError::config_error(format!(
-                "failed to create config dir '{}': {e}",
-                parent.display()
-            ))
-        })?;
+        std::fs::create_dir_all(parent).map_aster_err_ctx(
+            &format!("failed to create config dir '{}'", parent.display()),
+            AsterError::config_error,
+        )?;
     }
 
-    std::fs::write(config_path, &content).map_err(|e| {
-        AsterError::config_error(format!("failed to write {}: {e}", config_path.display()))
-    })?;
+    std::fs::write(config_path, &content).map_aster_err_ctx(
+        &format!("failed to write {}", config_path.display()),
+        AsterError::config_error,
+    )?;
 
     eprintln!(
         "[INFO] Default configuration written to: {}",

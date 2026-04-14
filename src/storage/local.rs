@@ -127,8 +127,8 @@ impl StorageDriver for LocalDriver {
             Ok::<Vec<String>, std::io::Error>(paths)
         })
         .await
-        .map_err(|error| AsterError::storage_driver_error(format!("list local paths: {error}")))?
-        .map_err(|error| AsterError::storage_driver_error(format!("list local paths: {error}")))
+        .map_aster_err_ctx("list local paths", AsterError::storage_driver_error)?
+        .map_aster_err_ctx("list local paths", AsterError::storage_driver_error)
     }
 
     async fn scan_paths(

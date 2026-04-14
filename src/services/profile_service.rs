@@ -740,9 +740,9 @@ pub async fn get_avatar_bytes(state: &AppState, user_id: i64, size: u32) -> Resu
     let prefix = stored_avatar_prefix(Some(&profile))
         .ok_or_else(|| AsterError::record_not_found("avatar key missing"))?;
     let path = avatar_variant_file_path(Path::new(prefix), size);
-    tokio::fs::read(&path)
-        .await
-        .map_err(|_| AsterError::record_not_found(format!("avatar object {}", path.display())))
+    tokio::fs::read(&path).await.map_aster_err_with(|| {
+        AsterError::record_not_found(format!("avatar object {}", path.display()))
+    })
 }
 
 pub fn avatar_image_response(bytes: Vec<u8>) -> HttpResponse {

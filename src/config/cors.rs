@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use http::Uri;
 
 use crate::config::RuntimeConfig;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 
 pub const CORS_ALLOWED_ORIGINS_KEY: &str = "cors_allowed_origins";
 pub const CORS_ALLOW_CREDENTIALS_KEY: &str = "cors_allow_credentials";
@@ -168,7 +168,7 @@ pub fn normalize_allow_credentials_config_value(value: &str) -> Result<String> {
 
 pub fn normalize_max_age_config_value(value: &str) -> Result<String> {
     let trimmed = value.trim();
-    let max_age = trimmed.parse::<u64>().map_err(|_| {
+    let max_age = trimmed.parse::<u64>().map_aster_err_with(|| {
         AsterError::validation_error("cors_max_age_secs must be a non-negative integer")
     })?;
     Ok(max_age.to_string())
@@ -222,9 +222,9 @@ pub fn normalize_origin(origin: &str, allow_wildcard: bool) -> Result<String> {
         return Ok("*".to_string());
     }
 
-    let uri: Uri = trimmed
-        .parse()
-        .map_err(|_| AsterError::validation_error(format!("invalid CORS origin '{trimmed}'")))?;
+    let uri: Uri = trimmed.parse().map_aster_err_with(|| {
+        AsterError::validation_error(format!("invalid CORS origin '{trimmed}'"))
+    })?;
 
     let scheme = uri.scheme_str().ok_or_else(|| {
         AsterError::validation_error(format!(
