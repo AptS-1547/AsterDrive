@@ -35,8 +35,37 @@ impl DownloadDisposition {
     }
 }
 
+fn disallows_same_origin_inline(mime_type: &str) -> bool {
+    let normalized = mime_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+
+    matches!(
+        normalized.as_str(),
+        "text/html" | "application/xhtml+xml" | "image/svg+xml"
+    )
+}
+
 pub(crate) fn ensure_personal_file_scope(file: &file::Model) -> Result<()> {
     workspace_storage_service::ensure_personal_file_scope(file)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::disallows_same_origin_inline;
+
+    #[test]
+    fn dangerous_same_origin_inline_mime_types_are_blocked() {
+        assert!(disallows_same_origin_inline("text/html"));
+        assert!(disallows_same_origin_inline("application/xhtml+xml"));
+        assert!(disallows_same_origin_inline("image/svg+xml"));
+        assert!(disallows_same_origin_inline("text/html; charset=utf-8"));
+        assert!(!disallows_same_origin_inline("text/plain"));
+        assert!(!disallows_same_origin_inline("application/pdf"));
+    }
 }
 
 pub(crate) async fn get_info_in_scope(
@@ -324,6 +353,20 @@ pub(crate) async fn build_stream_response_with_disposition(
     disposition: DownloadDisposition,
     if_none_match: Option<&str>,
 ) -> Result<HttpResponse> {
+    let effective_disposition = if disposition == DownloadDisposition::Inline
+        && disallows_same_origin_inline(&f.mime_type)
+    {
+        tracing::debug!(
+            file_id = f.id,
+            blob_id = blob.id,
+            mime_type = %f.mime_type,
+            "forcing attachment for same-origin inline-unsafe file"
+        );
+        DownloadDisposition::Attachment
+    } else {
+        disposition
+    };
+
     let etag = format!("\"{}\"", blob.hash);
     if let Some(if_none_match) = if_none_match
         && if_none_match_matches(if_none_match, &blob.hash)
@@ -331,7 +374,7 @@ pub(crate) async fn build_stream_response_with_disposition(
         tracing::debug!(
             file_id = f.id,
             blob_id = blob.id,
-            disposition = ?disposition,
+            disposition = ?effective_disposition,
             "serving cached file response with 304"
         );
         return Ok(HttpResponse::NotModified()
@@ -352,14 +395,17 @@ pub(crate) async fn build_stream_response_with_disposition(
         blob_id = blob.id,
         policy_id = blob.policy_id,
         size = blob.size,
-        disposition = ?disposition,
+        disposition = ?effective_disposition,
         "building streaming file response"
     );
 
     Ok(HttpResponse::Ok()
         .content_type(f.mime_type.clone())
         .insert_header(("Content-Length", blob.size.to_string()))
-        .insert_header(("Content-Disposition", disposition.header_value(&f.name)))
+        .insert_header((
+            "Content-Disposition",
+            effective_disposition.header_value(&f.name),
+        ))
         .insert_header(("ETag", etag))
         .insert_header(("Cache-Control", "private, max-age=0, must-revalidate"))
         // 跳过全局 Compress 中间件，避免压缩编码器缓冲导致内存暴涨

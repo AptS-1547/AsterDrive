@@ -251,6 +251,19 @@ export default defineConfig(({ command }) => {
 			environment: "jsdom",
 			setupFiles: "./src/test/setup.ts",
 			restoreMocks: true,
+			coverage: {
+				provider: "v8",
+				include: ["src/**/*.{ts,tsx}"],
+				exclude: [
+					"src/**/*.test.{ts,tsx}",
+					"src/test/**",
+					"src/services/api.generated.ts",
+					"src/types/**/*.d.ts",
+				],
+				reporter: ["text", "json-summary", "lcov", "html"],
+				reportsDirectory: "./coverage",
+				reportOnFailure: true,
+			},
 			server: {
 				deps: {
 					inline: [/^react-devicons(?:\/|$)/],

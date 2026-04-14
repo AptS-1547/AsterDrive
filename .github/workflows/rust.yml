@@ -6,16 +6,23 @@ on:
       - '**/*.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'scripts/coverage-summary.mjs'
+      - '.github/workflows/rust.yml'
     branches: [master]
   pull_request:
     paths:
       - '**/*.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'scripts/coverage-summary.mjs'
+      - '.github/workflows/rust.yml'
     branches: [master]
 
 env:
   CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -25,6 +32,13 @@ jobs:
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
 
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
@@ -44,8 +58,35 @@ jobs:
       - name: Format check
         run: cargo fmt -- --check
 
-      - name: Run tests
-        run: cargo test --no-fail-fast --verbose
+      - name: Run tests with coverage
+        run: cargo llvm-cov --workspace --no-fail-fast --verbose --lcov --output-path coverage/rust/lcov.info
+
+      - name: Generate HTML coverage report
+        if: success()
+        run: cargo llvm-cov report --workspace --html --output-dir coverage/rust/html
+
+      - name: Publish coverage summary
+        if: always() && hashFiles('coverage/rust/lcov.info') != ''
+        run: bun scripts/coverage-summary.mjs "Rust" coverage/rust/lcov.info
+
+      - name: Upload coverage reports to Codecov
+        if: always() && hashFiles('coverage/rust/lcov.info') != ''
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/rust/lcov.info
+          flags: rust
+          name: rust-backend
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+          verbose: true
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-coverage
+          if-no-files-found: ignore
+          path: coverage/rust
 
       - name: Clippy
         run: cargo clippy -- -D warnings

@@ -4,6 +4,39 @@ mod common;
 use actix_web::test;
 use serde_json::Value;
 
+macro_rules! upload_test_file_with_name_and_mime {
+    ($app:expr, $token:expr, $name:expr, $mime:expr, $content:expr) => {{
+        use actix_web::test;
+        use serde_json::Value;
+
+        let boundary = "----InlineUnsafeBoundary";
+        let payload = format!(
+            "------InlineUnsafeBoundary\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n\
+             Content-Type: {mime}\r\n\r\n\
+             {content}\r\n\
+             ------InlineUnsafeBoundary--\r\n",
+            name = $name,
+            mime = $mime,
+            content = $content
+        );
+        let req = test::TestRequest::post()
+            .uri("/api/v1/files/upload")
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
+            .insert_header((
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(payload)
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201, "upload should return 201");
+        let body: Value = test::read_body_json(resp).await;
+        body["data"]["id"].as_i64().unwrap()
+    }};
+}
+
 #[actix_web::test]
 async fn test_file_upload_download_delete() {
     let state = common::setup().await;
@@ -215,6 +248,85 @@ async fn test_file_preview_link_supports_public_inline_access_and_usage_limit() 
     let req = test::TestRequest::get().uri(&preview_path).to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
+async fn test_dangerous_html_direct_link_is_forced_to_attachment() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_with_name_and_mime!(
+        app,
+        token,
+        "dangerous.html",
+        "text/html",
+        "<!doctype html><script>alert(1)</script>"
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/direct-link"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let direct_token = body["data"]["token"]
+        .as_str()
+        .expect("direct link token should exist")
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/d/{direct_token}/dangerous.html"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("Content-Disposition").unwrap(),
+        r#"attachment; filename="dangerous.html""#
+    );
+}
+
+#[actix_web::test]
+async fn test_dangerous_svg_preview_link_is_forced_to_attachment() {
+    let mut state = common::setup().await;
+    state.cache = aster_drive::cache::create_cache(&aster_drive::config::CacheConfig {
+        enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_with_name_and_mime!(
+        app,
+        token,
+        "dangerous.svg",
+        "image/svg+xml",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>"
+    );
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/{file_id}/preview-link"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let preview_path = body["data"]["path"]
+        .as_str()
+        .expect("preview link path should exist")
+        .to_string();
+
+    let req = test::TestRequest::get().uri(&preview_path).to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("Content-Disposition").unwrap(),
+        r#"attachment; filename="dangerous.svg""#
+    );
 }
 
 #[actix_web::test]
