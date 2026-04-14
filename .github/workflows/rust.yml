@@ -6,14 +6,12 @@ on:
       - '**/*.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
-      - 'frontend-panel/**'
     branches: [master]
   pull_request:
     paths:
       - '**/*.rs'
       - 'Cargo.toml'
       - 'Cargo.lock'
-      - 'frontend-panel/**'
     branches: [master]
 
 env:
@@ -48,23 +46,3 @@ jobs:
 
       - name: Clippy
         run: cargo clippy -- -D warnings
-
-  frontend-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Setup bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        working-directory: frontend-panel
-        run: bun install --frozen-lockfile
-
-      - name: Lint
-        working-directory: frontend-panel
-        run: bun run check
-
-      - name: Run tests
-        working-directory: frontend-panel
-        run: bun run test

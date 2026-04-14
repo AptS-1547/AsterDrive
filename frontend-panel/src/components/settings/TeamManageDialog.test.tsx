@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TeamManageDialog } from "@/components/settings/TeamManageDialog";
 
@@ -152,5 +152,42 @@ describe("TeamManageDialog", () => {
 		expect(membersTab).not.toHaveClass("flex-none");
 		expect(membersTab.parentElement).toHaveClass("w-full", "gap-5", "border-b");
 		expect(membersTab.parentElement).not.toHaveClass("overflow-x-auto");
+	});
+
+	it("keeps the overview name input mounted while editing in page layout", async () => {
+		render(
+			<TeamManageDialog
+				layout="page"
+				currentUserId={1}
+				onArchivedReload={async () => undefined}
+				onOpenChange={vi.fn()}
+				onPageTabChange={vi.fn()}
+				onTeamsReload={async () => undefined}
+				open
+				pageTab="overview"
+				teamId={11}
+				teamSummary={{
+					created_at: "2026-04-01T00:00:00Z",
+					created_by: 1,
+					created_by_username: "owner",
+					description: "Team description",
+					id: 11,
+					member_count: 8,
+					my_role: "owner",
+					name: "Product",
+					storage_quota: 1024,
+					storage_used: 512,
+				}}
+			/>,
+		);
+
+		const input = (await screen.findByLabelText(
+			"core:name",
+		)) as HTMLInputElement;
+		fireEvent.change(input, { target: { value: "Product Ops" } });
+
+		expect(input.isConnected).toBe(true);
+		expect(screen.getByLabelText("core:name")).toBe(input);
+		expect(input.value).toBe("Product Ops");
 	});
 });

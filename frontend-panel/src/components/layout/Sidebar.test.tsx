@@ -167,7 +167,19 @@ describe("Sidebar", () => {
 	it("renders and closes the mobile overlay", () => {
 		const onMobileClose = vi.fn();
 
-		render(<Sidebar mobileOpen onMobileClose={onMobileClose} />);
+		const { container, rerender } = render(
+			<Sidebar mobileOpen={false} onMobileClose={onMobileClose} />,
+		);
+
+		expect(container.querySelector("aside")?.className).toContain(
+			"-translate-x-full",
+		);
+
+		rerender(<Sidebar mobileOpen onMobileClose={onMobileClose} />);
+
+		expect(container.querySelector("aside")?.className).toContain(
+			"translate-x-0",
+		);
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "translated:close_sidebar" }),
@@ -209,5 +221,18 @@ describe("Sidebar", () => {
 			folderIds: [2],
 		});
 		expect(trashButton.className).not.toContain("bg-destructive/10");
+	});
+
+	it("uses full-height mobile overlay positioning below the top bar", () => {
+		render(<Sidebar mobileOpen onMobileClose={vi.fn()} />);
+
+		expect(
+			screen.getByRole("button", { name: "translated:close_sidebar" })
+				.className,
+		).toContain("bottom-0");
+		expect(
+			screen.getByRole("button", { name: "translated:close_sidebar" })
+				.className,
+		).toContain("top-16");
 	});
 });

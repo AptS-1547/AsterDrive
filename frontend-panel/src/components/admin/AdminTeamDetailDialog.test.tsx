@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminTeamDetailDialog } from "@/components/admin/AdminTeamDetailDialog";
 
@@ -162,5 +162,54 @@ describe("AdminTeamDetailDialog", () => {
 		expect(membersTab).not.toHaveClass("flex-none");
 		expect(membersTab.parentElement).toHaveClass("w-full", "gap-5", "border-b");
 		expect(membersTab.parentElement).not.toHaveClass("overflow-x-auto");
+	});
+
+	it("keeps the overview name input mounted while editing in page layout", async () => {
+		render(
+			<AdminTeamDetailDialog
+				layout="page"
+				onListChange={async () => undefined}
+				onOpenChange={vi.fn()}
+				onPageTabChange={vi.fn()}
+				onRefreshPolicyGroups={async () => undefined}
+				open
+				pageTab="overview"
+				policyGroups={[
+					{
+						created_at: "2026-04-01T00:00:00Z",
+						description: "",
+						id: 5,
+						is_default: false,
+						is_enabled: true,
+						items: [
+							{
+								id: 1,
+								max_file_size: 0,
+								min_file_size: 0,
+								policy: {
+									id: 7,
+									name: "Default",
+								},
+								policy_id: 7,
+								priority: 1,
+							},
+						],
+						name: "Primary",
+						updated_at: "2026-04-01T00:00:00Z",
+					},
+				]}
+				policyGroupsLoading={false}
+				teamId={14}
+			/>,
+		);
+
+		const input = (await screen.findByLabelText(
+			"core:name",
+		)) as HTMLInputElement;
+		fireEvent.change(input, { target: { value: "Product Ops" } });
+
+		expect(input.isConnected).toBe(true);
+		expect(screen.getByLabelText("core:name")).toBe(input);
+		expect(input.value).toBe("Product Ops");
 	});
 });

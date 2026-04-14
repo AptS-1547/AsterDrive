@@ -101,15 +101,13 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 				)}
 				<aside
 					className={cn(
-						"border-r bg-background transition-all duration-200",
-						"hidden shrink-0 md:flex md:flex-col",
+						"border-r bg-background transition-transform duration-200 ease-out motion-reduce:transition-none",
 						ADMIN_SIDEBAR_WIDTH_CLASS,
-						mobileOpen &&
-							cn(
-								"fixed left-0 z-50 flex flex-col shadow-lg md:relative md:inset-y-0 md:left-auto md:z-auto",
-								ADMIN_SIDEBAR_WIDTH_CLASS,
-								ADMIN_TOPBAR_OFFSET_CLASS,
-							),
+						"fixed left-0 z-50 flex flex-col md:relative md:left-auto md:top-auto md:bottom-auto md:z-auto md:translate-x-0",
+						ADMIN_TOPBAR_OFFSET_CLASS,
+						mobileOpen
+							? "translate-x-0 shadow-lg md:shadow-none"
+							: "-translate-x-full pointer-events-none shadow-none md:pointer-events-auto",
 					)}
 				>
 					{sidebarContent}

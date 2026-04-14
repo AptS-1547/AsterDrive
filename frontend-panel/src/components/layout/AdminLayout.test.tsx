@@ -92,7 +92,11 @@ describe("AdminLayout", () => {
 	});
 
 	it("opens the mobile sidebar overlay and closes it again", () => {
-		render(<AdminLayout>Admin Content</AdminLayout>);
+		const { container } = render(<AdminLayout>Admin Content</AdminLayout>);
+
+		expect(container.querySelector("aside")?.className).toContain(
+			"-translate-x-full",
+		);
 
 		expect(
 			screen.queryByRole("button", {
@@ -102,6 +106,9 @@ describe("AdminLayout", () => {
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "Toggle Admin Sidebar" }),
+		);
+		expect(container.querySelector("aside")?.className).toContain(
+			"translate-x-0",
 		);
 		expect(
 			screen.getByRole("button", {
@@ -134,5 +141,20 @@ describe("AdminLayout", () => {
 				name: "translated:core:close_admin_sidebar",
 			}),
 		).not.toBeInTheDocument();
+	});
+
+	it("uses full-height mobile overlay positioning below the top bar", () => {
+		render(<AdminLayout>Admin Content</AdminLayout>);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "Toggle Admin Sidebar" }),
+		);
+
+		const overlay = screen.getByRole("button", {
+			name: "translated:core:close_admin_sidebar",
+		});
+
+		expect(overlay.className).toContain("bottom-0");
+		expect(overlay.className).toContain("top-16");
 	});
 });
