@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use crate::errors::{AsterError, Result};
-use clap::Args;
+use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::services::integrity_service;
+use clap::{Args, ValueEnum};
 use migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use serde::Serialize;
@@ -18,6 +19,39 @@ pub struct DoctorArgs {
     pub database_url: String,
     #[arg(long, env = "ASTER_CLI_DOCTOR_STRICT", default_value_t = false)]
     pub strict: bool,
+    #[arg(long, env = "ASTER_CLI_DOCTOR_DEEP", default_value_t = false)]
+    pub deep: bool,
+    #[arg(long, env = "ASTER_CLI_DOCTOR_FIX", default_value_t = false)]
+    pub fix: bool,
+    #[arg(
+        long = "scope",
+        env = "ASTER_CLI_DOCTOR_SCOPE",
+        value_enum,
+        value_delimiter = ','
+    )]
+    pub scopes: Vec<DoctorDeepScope>,
+    #[arg(long, env = "ASTER_CLI_DOCTOR_POLICY_ID")]
+    pub policy_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum DoctorDeepScope {
+    StorageUsage,
+    BlobRefCounts,
+    StorageObjects,
+    FolderTree,
+}
+
+impl DoctorDeepScope {
+    fn label(self) -> &'static str {
+        match self {
+            Self::StorageUsage => "storage_usage",
+            Self::BlobRefCounts => "blob_ref_counts",
+            Self::StorageObjects => "storage_objects",
+            Self::FolderTree => "folder_tree",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -61,6 +95,12 @@ pub struct DoctorCheck {
 #[derive(Debug, Serialize)]
 pub struct DoctorReport {
     strict: bool,
+    deep: bool,
+    fix: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    scopes: Vec<DoctorDeepScope>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    policy_id: Option<i64>,
     status: DoctorStatus,
     database_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -71,9 +111,11 @@ pub struct DoctorReport {
 
 impl DoctorReport {
     fn new(
+        args: &DoctorArgs,
         database_url: String,
         backend: Option<String>,
-        strict: bool,
+        deep: bool,
+        scopes: Vec<DoctorDeepScope>,
         checks: Vec<DoctorCheck>,
     ) -> Self {
         let mut ok = 0;
@@ -87,7 +129,7 @@ impl DoctorReport {
             }
         }
 
-        let status = if fail > 0 || (strict && warn > 0) {
+        let status = if fail > 0 || (args.strict && warn > 0) {
             DoctorStatus::Fail
         } else if warn > 0 {
             DoctorStatus::Warn
@@ -96,7 +138,11 @@ impl DoctorReport {
         };
 
         Self {
-            strict,
+            strict: args.strict,
+            deep,
+            fix: args.fix,
+            scopes,
+            policy_id: args.policy_id,
             status,
             database_url,
             backend,
@@ -115,8 +161,37 @@ impl DoctorReport {
     }
 }
 
+fn effective_deep_scopes(args: &DoctorArgs) -> Vec<DoctorDeepScope> {
+    if args.scopes.is_empty() {
+        return vec![
+            DoctorDeepScope::StorageUsage,
+            DoctorDeepScope::BlobRefCounts,
+            DoctorDeepScope::StorageObjects,
+            DoctorDeepScope::FolderTree,
+        ];
+    }
+
+    let mut deduped = Vec::new();
+    for scope in &args.scopes {
+        if !deduped.contains(scope) {
+            deduped.push(*scope);
+        }
+    }
+    deduped
+}
+
+fn doctor_scope_enabled(scopes: &[DoctorDeepScope], target: DoctorDeepScope) -> bool {
+    scopes.contains(&target)
+}
+
 pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
     let redacted_database_url = redact_database_url(&args.database_url);
+    let deep = args.deep || args.fix || !args.scopes.is_empty() || args.policy_id.is_some();
+    let scopes = if deep {
+        effective_deep_scopes(args)
+    } else {
+        Vec::new()
+    };
     let mut backend = None;
     let mut checks = Vec::new();
 
@@ -143,7 +218,8 @@ pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
                 summary: "database connection failed".to_string(),
                 details: vec![err.message().to_string()],
                 suggestion: Some(
-                    "检查 --database-url、数据库服务状态，以及目标库访问权限".to_string(),
+                    "Check --database-url, database availability, and access permissions."
+                        .to_string(),
                 ),
             });
             None
@@ -151,7 +227,7 @@ pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
     };
 
     let Some((db, db_backend)) = db else {
-        return DoctorReport::new(redacted_database_url, backend, args.strict, checks);
+        return DoctorReport::new(args, redacted_database_url, backend, deep, scopes, checks);
     };
 
     checks.push(match doctor_pending_migrations(&db, db_backend).await {
@@ -169,7 +245,10 @@ pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
             status: DoctorStatus::Warn,
             summary: format!("{} pending migration(s)", pending.len()),
             details: pending,
-            suggestion: Some("先补齐数据库迁移，再执行维护类 CLI 操作".to_string()),
+            suggestion: Some(
+                "Apply pending migrations before running maintenance-oriented CLI commands."
+                    .to_string(),
+            ),
         },
         Err(err) => DoctorCheck {
             name: "database_migrations",
@@ -178,7 +257,8 @@ pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
             summary: "failed to inspect migration history".to_string(),
             details: vec![err.message().to_string()],
             suggestion: Some(
-                "检查 seaql_migrations 表和数据库权限，确认迁移元数据可读".to_string(),
+                "Check the seaql_migrations table and database permissions to ensure migration metadata is readable."
+                    .to_string(),
             ),
         },
     });
@@ -203,7 +283,10 @@ pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
                 status: DoctorStatus::Fail,
                 summary: "failed to load runtime config snapshot".to_string(),
                 details: vec![err.message().to_string()],
-                suggestion: Some("检查 system_config 表结构和配置数据是否完整".to_string()),
+                suggestion: Some(
+                    "Check whether the system_config schema and stored values are complete."
+                        .to_string(),
+                ),
             });
             false
         }
@@ -217,7 +300,130 @@ pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
 
     checks.push(doctor_storage_policy_check(&db).await);
 
-    DoctorReport::new(redacted_database_url, backend, args.strict, checks)
+    let mut effective_policy_id = args.policy_id;
+    let mut policy_filter_valid = true;
+    if deep && let Some(policy_id) = args.policy_id {
+        match crate::db::repository::policy_repo::find_by_id(&db, policy_id).await {
+            Ok(policy) => checks.push(DoctorCheck {
+                name: "policy_filter",
+                label: "Policy filter",
+                status: DoctorStatus::Ok,
+                summary: format!("scoped to storage policy #{} ({})", policy.id, policy.name),
+                details: Vec::new(),
+                suggestion: None,
+            }),
+            Err(err) => {
+                checks.push(DoctorCheck {
+                    name: "policy_filter",
+                    label: "Policy filter",
+                    status: DoctorStatus::Fail,
+                    summary: format!("storage policy #{} does not exist", policy_id),
+                    details: vec![err.message().to_string()],
+                    suggestion: Some("Use a valid --policy-id or remove the filter.".to_string()),
+                });
+                effective_policy_id = None;
+                policy_filter_valid = false;
+            }
+        }
+    }
+
+    if deep && doctor_scope_enabled(&scopes, DoctorDeepScope::StorageUsage) {
+        checks.push(match doctor_storage_usage_check(&db, args.fix).await {
+            Ok(check) => check,
+            Err(err) => DoctorCheck {
+                name: "storage_usage_consistency",
+                label: "Storage usage counters",
+                status: DoctorStatus::Fail,
+                summary: "failed to audit storage usage counters".to_string(),
+                details: vec![err.message().to_string()],
+                suggestion: Some(
+                    "Check whether the users, teams, files, and file_versions tables are complete and readable."
+                        .to_string(),
+                ),
+            },
+        });
+    }
+
+    if deep && doctor_scope_enabled(&scopes, DoctorDeepScope::BlobRefCounts) && policy_filter_valid
+    {
+        checks.push(
+            match doctor_blob_ref_count_check(&db, args.fix, effective_policy_id).await {
+                Ok(check) => check,
+                Err(err) => DoctorCheck {
+                    name: "blob_ref_counts",
+                    label: "Blob reference counters",
+                    status: DoctorStatus::Fail,
+                    summary: "failed to audit blob reference counters".to_string(),
+                    details: vec![err.message().to_string()],
+                    suggestion: Some(
+                        "Check whether the file_blobs, files, and file_versions tables are complete and readable."
+                            .to_string(),
+                    ),
+                },
+            },
+        );
+    }
+
+    if deep && doctor_scope_enabled(&scopes, DoctorDeepScope::StorageObjects) && policy_filter_valid
+    {
+        match doctor_storage_scan_checks(&db, effective_policy_id).await {
+            Ok(storage_checks) => checks.extend(storage_checks),
+            Err(err) => checks.extend([
+                DoctorCheck {
+                    name: "tracked_blob_objects",
+                    label: "Tracked blob objects",
+                    status: DoctorStatus::Fail,
+                    summary: "failed to scan storage objects".to_string(),
+                    details: vec![err.message().to_string()],
+                    suggestion: Some(
+                        "Check storage policy configuration, driver permissions, and object storage connectivity."
+                            .to_string(),
+                    ),
+                },
+                DoctorCheck {
+                    name: "untracked_storage_objects",
+                    label: "Untracked storage objects",
+                    status: DoctorStatus::Fail,
+                    summary: "failed to scan storage objects".to_string(),
+                    details: vec![err.message().to_string()],
+                    suggestion: Some(
+                        "Check storage policy configuration, driver permissions, and object storage connectivity."
+                            .to_string(),
+                    ),
+                },
+                DoctorCheck {
+                    name: "thumbnail_objects",
+                    label: "Thumbnail objects",
+                    status: DoctorStatus::Fail,
+                    summary: "failed to scan storage objects".to_string(),
+                    details: vec![err.message().to_string()],
+                    suggestion: Some(
+                        "Check storage policy configuration, driver permissions, and object storage connectivity."
+                            .to_string(),
+                    ),
+                },
+            ]),
+        }
+    }
+
+    if deep && doctor_scope_enabled(&scopes, DoctorDeepScope::FolderTree) {
+        checks.push(match doctor_folder_tree_check(&db).await {
+            Ok(check) => check,
+            Err(err) => DoctorCheck {
+                name: "folder_tree_integrity",
+                label: "Folder tree integrity",
+                status: DoctorStatus::Fail,
+                summary: "failed to audit folder tree".to_string(),
+                details: vec![err.message().to_string()],
+                suggestion: Some(
+                    "Check whether the folders table is complete and whether parent_id relationships are readable."
+                        .to_string(),
+                ),
+            },
+        });
+    }
+
+    DoctorReport::new(args, redacted_database_url, backend, deep, scopes, checks)
 }
 
 pub fn render_doctor_success(format: OutputFormat, report: &DoctorReport) -> String {
@@ -246,10 +452,15 @@ fn render_doctor_human(report: &DoctorReport) -> String {
         format!(
             "{} {}",
             human_key("Mode", &palette),
-            if report.strict {
-                "strict (warnings fail)"
+            doctor_mode_label(report)
+        ),
+        format!(
+            "{} {}",
+            human_key("Scope", &palette),
+            if report.deep {
+                doctor_scope_label(report)
             } else {
-                "standard"
+                "default".to_string()
             }
         ),
         format!(
@@ -298,6 +509,385 @@ fn render_doctor_human(report: &DoctorReport) -> String {
     lines.join("\n")
 }
 
+fn doctor_mode_label(report: &DoctorReport) -> String {
+    let mut parts = Vec::new();
+    parts.push(if report.strict { "strict" } else { "standard" });
+    if report.deep {
+        parts.push("deep");
+    }
+    if report.fix {
+        parts.push("fix");
+    }
+    parts.join(" + ")
+}
+
+fn doctor_scope_label(report: &DoctorReport) -> String {
+    let mut label = if report.scopes.is_empty() {
+        "default".to_string()
+    } else {
+        report
+            .scopes
+            .iter()
+            .map(|scope| scope.label())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if let Some(policy_id) = report.policy_id {
+        label.push_str(&format!(" | policy_id={policy_id}"));
+    }
+    label
+}
+
+async fn doctor_storage_usage_check(
+    db: &sea_orm::DatabaseConnection,
+    fix: bool,
+) -> Result<DoctorCheck> {
+    let mut drifts = integrity_service::audit_storage_usage(db).await?;
+    let detected = drifts.len();
+    let mut fixed = 0usize;
+
+    if fix && !drifts.is_empty() {
+        integrity_service::fix_storage_usage_drifts(db, &drifts).await?;
+        fixed = drifts.len();
+        drifts = integrity_service::audit_storage_usage(db).await?;
+    }
+
+    if drifts.is_empty() {
+        let summary = if fixed > 0 {
+            format!("fixed {fixed} storage usage mismatch(es)")
+        } else {
+            "storage usage counters match logical file sizes".to_string()
+        };
+        let mut details = Vec::new();
+        if detected > 0 {
+            details.push(format!("detected_before_fix={detected}"));
+        }
+        return Ok(DoctorCheck {
+            name: "storage_usage_consistency",
+            label: "Storage usage counters",
+            status: DoctorStatus::Ok,
+            summary,
+            details,
+            suggestion: None,
+        });
+    }
+
+    let details = drifts
+        .into_iter()
+        .map(|drift| {
+            format!(
+                "{}#{} recorded={} actual={} delta={}",
+                match drift.owner_kind {
+                    integrity_service::StorageOwnerKind::User => "user",
+                    integrity_service::StorageOwnerKind::Team => "team",
+                },
+                drift.owner_id,
+                drift.recorded_bytes,
+                drift.actual_bytes,
+                drift.delta_bytes
+            )
+        })
+        .collect();
+
+    Ok(DoctorCheck {
+        name: "storage_usage_consistency",
+        label: "Storage usage counters",
+        status: DoctorStatus::Warn,
+        summary: format!("{} storage usage mismatch(es)", detected.max(fixed)),
+        details,
+        suggestion: Some(
+            "Run doctor --deep --fix to write back users.storage_used and teams.storage_used."
+                .to_string(),
+        ),
+    })
+}
+
+async fn doctor_blob_ref_count_check(
+    db: &sea_orm::DatabaseConnection,
+    fix: bool,
+    policy_id: Option<i64>,
+) -> Result<DoctorCheck> {
+    let mut drifts = integrity_service::audit_blob_ref_counts(db, policy_id).await?;
+    let detected = drifts.len();
+    let mut fixed = 0usize;
+
+    if fix && !drifts.is_empty() {
+        integrity_service::fix_blob_ref_count_drifts(db, &drifts).await?;
+        fixed = drifts.len();
+        drifts = integrity_service::audit_blob_ref_counts(db, policy_id).await?;
+    }
+
+    if drifts.is_empty() {
+        let summary = if fixed > 0 {
+            format!("fixed {fixed} blob ref_count mismatch(es)")
+        } else {
+            if let Some(policy_id) = policy_id {
+                format!("blob ref_count values match file references for policy #{policy_id}")
+            } else {
+                "blob ref_count values match file references".to_string()
+            }
+        };
+        let mut details = Vec::new();
+        if detected > 0 {
+            details.push(format!("detected_before_fix={detected}"));
+        }
+        return Ok(DoctorCheck {
+            name: "blob_ref_counts",
+            label: "Blob reference counters",
+            status: DoctorStatus::Ok,
+            summary,
+            details,
+            suggestion: None,
+        });
+    }
+
+    let details = drifts
+        .into_iter()
+        .map(|drift| {
+            format!(
+                "blob#{} recorded={} actual={} policy_id={} path={}",
+                drift.blob_id,
+                drift.recorded_ref_count,
+                drift.actual_ref_count,
+                drift.policy_id,
+                drift.storage_path
+            )
+        })
+        .collect();
+
+    Ok(DoctorCheck {
+        name: "blob_ref_counts",
+        label: "Blob reference counters",
+        status: DoctorStatus::Warn,
+        summary: match policy_id {
+            Some(policy_id) => format!(
+                "{} blob ref_count mismatch(es) for policy #{}",
+                detected.max(fixed),
+                policy_id
+            ),
+            None => format!("{} blob ref_count mismatch(es)", detected.max(fixed)),
+        },
+        details,
+        suggestion: Some("Run doctor --deep --fix to write back file_blobs.ref_count.".to_string()),
+    })
+}
+
+async fn doctor_storage_scan_checks(
+    db: &sea_orm::DatabaseConnection,
+    policy_id: Option<i64>,
+) -> Result<Vec<DoctorCheck>> {
+    let driver_registry = crate::storage::DriverRegistry::new();
+    let report = integrity_service::audit_storage_objects(db, &driver_registry, policy_id).await?;
+
+    let scan_meta = vec![
+        format!("policies={}", report.scanned_policies),
+        format!("objects={}", report.scanned_objects),
+        format!("ignored_paths={}", report.ignored_paths),
+    ];
+
+    let tracked_blob_check = if report.missing_blob_objects.is_empty() {
+        DoctorCheck {
+            name: "tracked_blob_objects",
+            label: "Tracked blob objects",
+            status: DoctorStatus::Ok,
+            summary: match policy_id {
+                Some(policy_id) => {
+                    format!("all tracked blobs exist in storage for policy #{policy_id}")
+                }
+                None => "all tracked blobs exist in storage".to_string(),
+            },
+            details: scan_meta.clone(),
+            suggestion: None,
+        }
+    } else {
+        let mut details = scan_meta.clone();
+        details.extend(
+            report
+                .missing_blob_objects
+                .iter()
+                .map(|issue| match issue.blob_id {
+                    Some(blob_id) => format!(
+                        "blob#{} policy_id={} missing path={}",
+                        blob_id, issue.policy_id, issue.path
+                    ),
+                    None => format!("policy_id={} missing path={}", issue.policy_id, issue.path),
+                }),
+        );
+        DoctorCheck {
+            name: "tracked_blob_objects",
+            label: "Tracked blob objects",
+            status: DoctorStatus::Fail,
+            summary: match policy_id {
+                Some(policy_id) => format!(
+                    "{} tracked blob object(s) are missing from storage for policy #{}",
+                    report.missing_blob_objects.len(),
+                    policy_id
+                ),
+                None => format!(
+                    "{} tracked blob object(s) are missing from storage",
+                    report.missing_blob_objects.len()
+                ),
+            },
+            details,
+            suggestion: Some(if report.scanned_objects == 0 {
+                "No storage objects were listed. Check the storage policy base path / bucket / prefix first; for local policies, relative base_path values are resolved from the current working directory.".to_string()
+            } else {
+                "Check for missing objects in the underlying storage, bad migrations, or manual file deletion.".to_string()
+            }),
+        }
+    };
+
+    let untracked_storage_check = if report.untracked_objects.is_empty() {
+        DoctorCheck {
+            name: "untracked_storage_objects",
+            label: "Untracked storage objects",
+            status: DoctorStatus::Ok,
+            summary: match policy_id {
+                Some(policy_id) => {
+                    format!("no extra storage objects were found for policy #{policy_id}")
+                }
+                None => "no extra storage objects were found".to_string(),
+            },
+            details: scan_meta.clone(),
+            suggestion: None,
+        }
+    } else {
+        let mut details = scan_meta.clone();
+        details.extend(report.untracked_objects.iter().map(|issue| {
+            format!(
+                "policy_id={} untracked path={}",
+                issue.policy_id, issue.path
+            )
+        }));
+        DoctorCheck {
+            name: "untracked_storage_objects",
+            label: "Untracked storage objects",
+            status: DoctorStatus::Warn,
+            summary: match policy_id {
+                Some(policy_id) => format!(
+                    "{} untracked storage object(s) found for policy #{}",
+                    report.untracked_objects.len(),
+                    policy_id
+                ),
+                None => format!(
+                    "{} untracked storage object(s) found",
+                    report.untracked_objects.len()
+                ),
+            },
+            details,
+            suggestion: Some(
+                "Confirm whether these are leftover temporary objects; clean them up manually or restore metadata if needed."
+                    .to_string(),
+            ),
+        }
+    };
+
+    let thumbnail_check = if report.orphan_thumbnails.is_empty() {
+        DoctorCheck {
+            name: "thumbnail_objects",
+            label: "Thumbnail objects",
+            status: DoctorStatus::Ok,
+            summary: match policy_id {
+                Some(policy_id) => {
+                    format!("thumbnail objects all map to known blobs for policy #{policy_id}")
+                }
+                None => "thumbnail objects all map to known blobs".to_string(),
+            },
+            details: scan_meta,
+            suggestion: None,
+        }
+    } else {
+        let mut details = vec![
+            format!("policies={}", report.scanned_policies),
+            format!("objects={}", report.scanned_objects),
+            format!("ignored_paths={}", report.ignored_paths),
+        ];
+        details.extend(report.orphan_thumbnails.iter().map(|issue| {
+            format!(
+                "policy_id={} orphan_thumbnail={}",
+                issue.policy_id, issue.path
+            )
+        }));
+        DoctorCheck {
+            name: "thumbnail_objects",
+            label: "Thumbnail objects",
+            status: DoctorStatus::Warn,
+            summary: match policy_id {
+                Some(policy_id) => format!(
+                    "{} orphan thumbnail object(s) found for policy #{}",
+                    report.orphan_thumbnails.len(),
+                    policy_id
+                ),
+                None => format!(
+                    "{} orphan thumbnail object(s) found",
+                    report.orphan_thumbnails.len()
+                ),
+            },
+            details,
+            suggestion: Some(
+                "These thumbnails are no longer referenced; remove them manually once confirmed unused."
+                    .to_string(),
+            ),
+        }
+    };
+
+    Ok(vec![
+        tracked_blob_check,
+        untracked_storage_check,
+        thumbnail_check,
+    ])
+}
+
+async fn doctor_folder_tree_check(db: &sea_orm::DatabaseConnection) -> Result<DoctorCheck> {
+    let issues = integrity_service::audit_folder_tree(db).await?;
+    if issues.is_empty() {
+        return Ok(DoctorCheck {
+            name: "folder_tree_integrity",
+            label: "Folder tree integrity",
+            status: DoctorStatus::Ok,
+            summary: "folder parent chains are internally consistent".to_string(),
+            details: Vec::new(),
+            suggestion: None,
+        });
+    }
+
+    let has_cycle = issues
+        .iter()
+        .any(|issue| issue.kind == integrity_service::FolderTreeIssueKind::Cycle);
+    let details = issues
+        .into_iter()
+        .map(|issue| {
+            format!(
+                "{} folder#{} {}",
+                match issue.kind {
+                    integrity_service::FolderTreeIssueKind::MissingParent => "missing_parent",
+                    integrity_service::FolderTreeIssueKind::CrossScopeParent =>
+                        "cross_scope_parent",
+                    integrity_service::FolderTreeIssueKind::Cycle => "cycle",
+                },
+                issue.folder_id,
+                issue.detail
+            )
+        })
+        .collect();
+
+    Ok(DoctorCheck {
+        name: "folder_tree_integrity",
+        label: "Folder tree integrity",
+        status: DoctorStatus::Fail,
+        summary: if has_cycle {
+            "folder tree contains cycles or invalid parent references".to_string()
+        } else {
+            "folder tree contains invalid parent references".to_string()
+        },
+        details,
+        suggestion: Some(
+            "Fix dangling parent_id values or folder cycles before continuing with bulk move or delete operations."
+                .to_string(),
+        ),
+    })
+}
+
 fn doctor_public_site_url_check(runtime_config: &crate::config::RuntimeConfig) -> DoctorCheck {
     let Some(raw_value) = runtime_config.get(crate::config::site_url::PUBLIC_SITE_URL_KEY) else {
         return DoctorCheck {
@@ -310,7 +900,7 @@ fn doctor_public_site_url_check(runtime_config: &crate::config::RuntimeConfig) -
                     .to_string(),
             ],
             suggestion: Some(
-                "设置 config public_site_url 为用户可访问的外部 HTTP(S) 域名".to_string(),
+                "Set config public_site_url to an externally reachable HTTP(S) origin.".to_string(),
             ),
         };
     };
@@ -326,7 +916,7 @@ fn doctor_public_site_url_check(runtime_config: &crate::config::RuntimeConfig) -
                     .to_string(),
             ],
             suggestion: Some(
-                "设置 config public_site_url 为用户可访问的外部 HTTP(S) 域名".to_string(),
+                "Set config public_site_url to an externally reachable HTTP(S) origin.".to_string(),
             ),
         };
     }
@@ -345,7 +935,7 @@ fn doctor_public_site_url_check(runtime_config: &crate::config::RuntimeConfig) -
                             .to_string(),
                     ],
                     suggestion: Some(
-                        "把站点放到 HTTPS 反向代理后面，再把 public_site_url 改成 https:// 域名"
+                        "Put the site behind an HTTPS reverse proxy and change public_site_url to an https:// origin."
                             .to_string(),
                     ),
                 };
@@ -367,7 +957,7 @@ fn doctor_public_site_url_check(runtime_config: &crate::config::RuntimeConfig) -
             summary: "public_site_url is invalid".to_string(),
             details: vec![err.message().to_string()],
             suggestion: Some(
-                "只保留纯 origin，例如 https://drive.example.com，不要带路径或非 HTTP(S) 协议"
+                "Use a plain origin such as https://drive.example.com, without a path or non-HTTP(S) scheme."
                     .to_string(),
             ),
         },
@@ -416,7 +1006,8 @@ fn doctor_mail_check(runtime_config: &crate::config::RuntimeConfig) -> DoctorChe
             summary: "SMTP authentication is only partially configured".to_string(),
             details,
             suggestion: Some(
-                "要么同时设置 mail_smtp_username / mail_smtp_password，要么两者都留空".to_string(),
+                "Set both mail_smtp_username and mail_smtp_password together, or leave both empty."
+                    .to_string(),
             ),
         };
     }
@@ -437,7 +1028,8 @@ fn doctor_mail_check(runtime_config: &crate::config::RuntimeConfig) -> DoctorChe
             summary: "mail delivery is not fully configured".to_string(),
             details,
             suggestion: Some(
-                "至少补齐 mail_smtp_host 和 mail_from_address，发信功能才算可用".to_string(),
+                "At minimum, set mail_smtp_host and mail_from_address to make mail delivery usable."
+                    .to_string(),
             ),
         };
     }
@@ -469,7 +1061,8 @@ fn doctor_preview_apps_check(runtime_config: &crate::config::RuntimeConfig) -> D
                     summary: "preview app registry is invalid".to_string(),
                     details: vec![err.message().to_string()],
                     suggestion: Some(
-                        "修正 frontend_preview_apps_json，或者先恢复为系统默认预览配置".to_string(),
+                        "Fix frontend_preview_apps_json or restore the default preview app configuration."
+                            .to_string(),
                     ),
                 };
             }
@@ -486,7 +1079,7 @@ fn doctor_preview_apps_check(runtime_config: &crate::config::RuntimeConfig) -> D
                     summary: "preview app registry could not be parsed".to_string(),
                     details: vec![err.to_string()],
                     suggestion: Some(
-                        "检查 frontend_preview_apps_json 是否被手工编辑坏了，必要时导回默认值"
+                        "Check whether frontend_preview_apps_json was edited into an invalid state; restore the default value if needed."
                             .to_string(),
                     ),
                 };
@@ -521,7 +1114,7 @@ fn doctor_preview_apps_check(runtime_config: &crate::config::RuntimeConfig) -> D
             summary: "WOPI preview apps are configured but public_site_url is empty".to_string(),
             details,
             suggestion: Some(
-                "补上 public_site_url，或者先禁用 WOPI 预览应用，避免生成不可用的预览入口"
+                "Set public_site_url or disable WOPI preview apps to avoid generating unusable preview entry points."
                     .to_string(),
             ),
         };
@@ -548,7 +1141,8 @@ async fn doctor_storage_policy_check(db: &sea_orm::DatabaseConnection) -> Doctor
                 summary: "failed to load storage policies".to_string(),
                 details: vec![err.message().to_string()],
                 suggestion: Some(
-                    "确认数据库已迁移完成，并且 storage_policies 表可正常访问".to_string(),
+                    "Ensure database migrations are complete and the storage_policies table is accessible."
+                        .to_string(),
                 ),
             };
         }
@@ -563,7 +1157,8 @@ async fn doctor_storage_policy_check(db: &sea_orm::DatabaseConnection) -> Doctor
                 summary: "failed to load storage policy groups".to_string(),
                 details: vec![err.message().to_string()],
                 suggestion: Some(
-                    "确认数据库已迁移完成，并且 storage_policy_groups 表可正常访问".to_string(),
+                    "Ensure database migrations are complete and the storage_policy_groups table is accessible."
+                        .to_string(),
                 ),
             };
         }
@@ -577,7 +1172,10 @@ async fn doctor_storage_policy_check(db: &sea_orm::DatabaseConnection) -> Doctor
             status: DoctorStatus::Fail,
             summary: "failed to build storage policy snapshot".to_string(),
             details: vec![err.message().to_string()],
-            suggestion: Some("检查策略、策略组和用户策略组分配数据是否一致".to_string()),
+            suggestion: Some(
+                "Check whether policies, policy groups, and user policy group assignments are consistent."
+                    .to_string(),
+            ),
         };
     }
 
@@ -627,7 +1225,7 @@ async fn doctor_storage_policy_check(db: &sea_orm::DatabaseConnection) -> Doctor
             summary: "storage policy setup is incomplete".to_string(),
             details,
             suggestion: Some(
-                "先启动一次服务端，或手工补齐默认 storage policy / policy group 的种子数据"
+                "Start the server once or seed the default storage policy and policy group data manually."
                     .to_string(),
             ),
         }
@@ -709,12 +1307,12 @@ where
     let rows = db
         .query_all_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
 
     rows.into_iter()
         .map(|row| {
             row.try_get_by_index::<String>(0)
-                .map_err(|error| AsterError::database_operation(error.to_string()))
+                .map_aster_err(AsterError::database_operation)
         })
         .collect()
 }
@@ -748,11 +1346,11 @@ where
     let row = db
         .query_one_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?
+        .map_aster_err(AsterError::database_operation)?
         .ok_or_else(|| AsterError::database_operation("table existence query returned no rows"))?;
     let exists = row
         .try_get_by_index::<i64>(0)
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
     Ok(exists != 0)
 }
 

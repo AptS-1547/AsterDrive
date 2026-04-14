@@ -5,6 +5,6 @@ pub mod registry;
 pub mod s3;
 pub mod s3_config;
 
-pub use driver::StorageDriver;
+pub use driver::{StorageDriver, StoragePathVisitor};
 pub use policy_snapshot::PolicySnapshot;
 pub use registry::DriverRegistry;

@@ -157,7 +157,7 @@ ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true ./aster_drive
 
 最常见的三类命令是：
 
-- `doctor`：检查数据库、公开站点地址、邮件、预览应用和默认存储策略状态
+- `doctor`：默认检查数据库和关键运行时配置；加 `--deep` 可继续核对存储计数、Blob 引用、对象清单和目录树一致性，`--fix` 可修复部分计数漂移
 - `config`：离线查看、校验、设置、导入或导出系统设置
 - `database-migrate`：跨数据库后端搬迁业务数据
 

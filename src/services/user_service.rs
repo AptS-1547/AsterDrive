@@ -10,7 +10,7 @@ use crate::db::repository::{
     webdav_account_repo,
 };
 use crate::entities::user;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{auth_service, profile_service};
 use crate::types::{UserRole, UserStatus};
@@ -551,8 +551,7 @@ async fn save_preferences(
     if prefs.is_empty() {
         return Ok(());
     }
-    let json_str =
-        serde_json::to_string(&prefs).map_err(|e| AsterError::internal_error(e.to_string()))?;
+    let json_str = serde_json::to_string(&prefs).map_aster_err(AsterError::internal_error)?;
     let mut active = user.into_active_model();
     active.config = Set(Some(json_str));
     active.updated_at = Set(Utc::now());

@@ -162,8 +162,9 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 | `src/runtime/startup.rs` | 数据库连接、迁移、默认策略、默认策略组、默认运行时配置、缓存、缩略图 worker |
 | `src/api/` | REST 路由、OpenAPI、统一响应、认证与中间件 |
 | `src/services/` | 业务规则集中层，处理权限、团队成员关系、配额、去重、版本、回收站等语义 |
+| `src/services/integrity_service.rs` | `doctor --deep` 的一致性审计核心；批量核对存储计数、Blob 引用、对象清单和目录树 |
 | `src/db/repository/` | 面向实体的数据库访问封装 |
-| `src/storage/` | 存储抽象，封装本地与 S3 兼容后端 |
+| `src/storage/` | 存储抽象，封装本地与 S3 兼容后端，也负责对象路径分页/流式扫描接口 |
 | `src/webdav/` | WebDAV 文件系统、认证、数据库锁、DeltaV 最小子集 |
 | `src/cli.rs` | CLI 根入口；当前子命令包括 `serve`、`doctor`、`config`、`database-migrate` |
 | `frontend-panel/` | React 19 + Vite 前端，打包产物由后端服务 |
@@ -253,6 +254,37 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 - `blob_reconcile_interval_secs`
 
 这类配置更接近业务开关，而不是基础设施开关。
+
+## 运维完整性检查
+
+`doctor` 现在分成两层：
+
+- 默认检查：数据库连接、迁移状态、运行时配置、公开站点地址、邮件、预览应用、默认存储策略
+- 深度检查：`src/cli/doctor.rs` 调用 `src/services/integrity_service.rs`，继续核对存储一致性
+
+深度检查当前有四类：
+
+- `storage_usage`：对比 `users.storage_used` / `teams.storage_used` 和 `files`、`file_versions` 的实际累计大小
+- `blob_ref_counts`：对比 `file_blobs.ref_count` 和 `files`、`file_versions` 的真实引用数
+- `storage_objects`：遍历各存储策略的对象路径，找缺失 Blob、未追踪对象、孤儿缩略图
+- `folder_tree`：找缺失父目录、跨工作空间父目录、循环引用
+
+命令语义上还要记住这几点：
+
+- `--scope` 只裁剪 deep checks，不影响默认检查
+- `--policy-id` 只作用于 `blob_ref_counts` 和 `storage_objects`
+- `--fix` 目前只会修复 `storage_used` 与 `file_blobs.ref_count`
+
+实现上有两个关键约束：
+
+- 数据库审计一律走 keyset batch，不做整表 `.all()`；当前批大小在 `src/services/integrity_service.rs` 里固定为 `1000`
+- 对象存储扫描不再一次性收集全量路径。`src/storage/driver.rs` 提供 `scan_paths` visitor 接口，本地驱动按目录递增遍历，S3 驱动按 `list_objects_v2` continuation token 分页消费
+
+这套检查仍然是“路径级一致性校验”，不是内容级校验：
+
+- 不读取对象内容
+- 不计算 checksum
+- 不比较数据库记录和对象内容哈希是否一致
 
 ## 核心数据模型
 

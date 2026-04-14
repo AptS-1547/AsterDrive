@@ -40,7 +40,7 @@ pub fn ensure_supported_mime(mime: &str) -> Result<()> {
 }
 
 /// 计算缩略图在存储驱动中的路径
-fn thumb_path(blob_hash: &str) -> String {
+pub(crate) fn thumb_path(blob_hash: &str) -> String {
     format!(
         "{}/{}/{}/{}/{}.webp",
         THUMB_PREFIX,
@@ -51,7 +51,7 @@ fn thumb_path(blob_hash: &str) -> String {
     )
 }
 
-fn legacy_thumb_path(blob_hash: &str) -> String {
+pub(crate) fn legacy_thumb_path(blob_hash: &str) -> String {
     format!(
         "{}/{}/{}/{}.webp",
         THUMB_PREFIX,
@@ -63,6 +63,11 @@ fn legacy_thumb_path(blob_hash: &str) -> String {
 
 pub(crate) fn thumbnail_etag_value(blob_hash: &str) -> String {
     format!("thumb-{THUMB_VERSION}-{blob_hash}")
+}
+
+pub(crate) fn is_thumbnail_path(path: &str) -> bool {
+    path.trim_start_matches('/')
+        .starts_with(&format!("{THUMB_PREFIX}/"))
 }
 
 /// 尝试获取已有缩略图，如果不存在则入队后台生成并返回 None

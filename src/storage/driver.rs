@@ -9,6 +9,10 @@ pub struct BlobMetadata {
     pub content_type: Option<String>,
 }
 
+pub trait StoragePathVisitor: Send {
+    fn visit_path(&mut self, path: String) -> Result<()>;
+}
+
 #[async_trait]
 pub trait StorageDriver: Send + Sync {
     /// 写入文件，返回最终存储路径
@@ -28,6 +32,26 @@ pub trait StorageDriver: Send + Sync {
 
     /// 获取文件元信息
     async fn metadata(&self, path: &str) -> Result<BlobMetadata>;
+
+    /// 列出当前策略下的对象路径（相对路径）
+    async fn list_paths(&self, prefix: Option<&str>) -> Result<Vec<String>> {
+        let _ = prefix;
+        Err(crate::errors::AsterError::storage_driver_error(
+            "list_paths not supported by this driver",
+        ))
+    }
+
+    /// 逐条扫描当前策略下的对象路径（相对路径），避免一次性拉取整个列表
+    async fn scan_paths(
+        &self,
+        prefix: Option<&str>,
+        visitor: &mut dyn StoragePathVisitor,
+    ) -> Result<()> {
+        for path in self.list_paths(prefix).await? {
+            visitor.visit_path(path)?;
+        }
+        Ok(())
+    }
 
     /// 从本地文件路径写入存储（分片上传组装后用，避免全量读入内存）
     /// 默认实现：读取文件 → put，子类可覆盖为 rename/stream

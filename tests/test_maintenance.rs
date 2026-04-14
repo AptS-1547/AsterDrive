@@ -124,6 +124,15 @@ fn thumb_path(blob_hash: &str) -> String {
     )
 }
 
+fn current_thumb_path(blob_hash: &str) -> String {
+    format!(
+        "_thumb/v2/{}/{}/{}.webp",
+        &blob_hash[..2],
+        &blob_hash[2..4],
+        blob_hash
+    )
+}
+
 async fn create_blob(
     state: &aster_drive::runtime::AppState,
     hash: &str,
@@ -698,4 +707,210 @@ async fn test_batch_purge_releases_all_versioned_storage_used() {
 
     let after_purge = user_repo::find_by_id(&state.db, user.id).await.unwrap();
     assert_eq!(after_purge.storage_used, 0);
+}
+
+#[actix_web::test]
+async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
+    use aster_drive::db::repository::{file_repo, folder_repo, user_repo};
+    use aster_drive::entities::{file_blob, folder};
+    use aster_drive::services::{auth_service, integrity_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "audituser1", "audit1@test.com", "password123")
+        .await
+        .unwrap();
+    let policy = default_policy(&state).await;
+    let driver = state.driver_registry.get_driver(&policy).unwrap();
+
+    let live_file = store_test_file(&state, user.id, "audit.txt", b"audit blob").await;
+    let live_blob = file_repo::find_blob_by_id(&state.db, live_file.blob_id)
+        .await
+        .unwrap();
+
+    let mut user_active: aster_drive::entities::user::ActiveModel =
+        user_repo::find_by_id(&state.db, user.id)
+            .await
+            .unwrap()
+            .into();
+    user_active.storage_used = Set(999);
+    user_active.update(&state.db).await.unwrap();
+
+    let mut blob_active: file_blob::ActiveModel = live_blob.clone().into();
+    blob_active.ref_count = Set(7);
+    blob_active.updated_at = Set(Utc::now());
+    blob_active.update(&state.db).await.unwrap();
+
+    driver.delete(&live_blob.storage_path).await.unwrap();
+    driver.put("stray/untracked.bin", b"stray").await.unwrap();
+
+    let orphan_thumb_hash = "d".repeat(64);
+    driver
+        .put(&current_thumb_path(&orphan_thumb_hash), b"thumb")
+        .await
+        .unwrap();
+
+    let now = Utc::now();
+    let dangling_folder = folder_repo::create(
+        &state.db,
+        folder::ActiveModel {
+            name: Set("dangling".to_string()),
+            parent_id: Set(Some(999_999)),
+            user_id: Set(user.id),
+            team_id: Set(None),
+            policy_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let cycle_a = folder_repo::create(
+        &state.db,
+        folder::ActiveModel {
+            name: Set("cycle-a".to_string()),
+            parent_id: Set(None),
+            user_id: Set(user.id),
+            team_id: Set(None),
+            policy_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let cycle_b = folder_repo::create(
+        &state.db,
+        folder::ActiveModel {
+            name: Set("cycle-b".to_string()),
+            parent_id: Set(Some(cycle_a.id)),
+            user_id: Set(user.id),
+            team_id: Set(None),
+            policy_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut cycle_a_active: folder::ActiveModel = cycle_a.clone().into();
+    cycle_a_active.parent_id = Set(Some(cycle_b.id));
+    cycle_a_active.updated_at = Set(Utc::now());
+    cycle_a_active.update(&state.db).await.unwrap();
+
+    let usage_drifts = integrity_service::audit_storage_usage(&state.db)
+        .await
+        .unwrap();
+    assert!(usage_drifts.iter().any(|drift| {
+        drift.owner_kind == integrity_service::StorageOwnerKind::User
+            && drift.owner_id == user.id
+            && drift.recorded_bytes == 999
+    }));
+
+    let blob_drifts = integrity_service::audit_blob_ref_counts(&state.db, None)
+        .await
+        .unwrap();
+    assert!(blob_drifts.iter().any(|drift| {
+        drift.blob_id == live_blob.id
+            && drift.recorded_ref_count == 7
+            && drift.actual_ref_count == 1
+    }));
+
+    let storage_report =
+        integrity_service::audit_storage_objects(&state.db, state.driver_registry.as_ref(), None)
+            .await
+            .unwrap();
+    assert!(
+        storage_report
+            .missing_blob_objects
+            .iter()
+            .any(|issue| issue.blob_id == Some(live_blob.id))
+    );
+    assert!(
+        storage_report
+            .untracked_objects
+            .iter()
+            .any(|issue| issue.path == "stray/untracked.bin")
+    );
+    assert!(
+        storage_report
+            .orphan_thumbnails
+            .iter()
+            .any(|issue| issue.path == current_thumb_path(&orphan_thumb_hash))
+    );
+
+    let folder_issues = integrity_service::audit_folder_tree(&state.db)
+        .await
+        .unwrap();
+    assert!(folder_issues.iter().any(|issue| {
+        issue.kind == integrity_service::FolderTreeIssueKind::MissingParent
+            && issue.folder_id == dangling_folder.id
+    }));
+    assert!(
+        folder_issues
+            .iter()
+            .any(|issue| issue.kind == integrity_service::FolderTreeIssueKind::Cycle)
+    );
+}
+
+#[actix_web::test]
+async fn test_integrity_fix_repairs_storage_usage_and_blob_ref_counts() {
+    use aster_drive::db::repository::{file_repo, user_repo};
+    use aster_drive::entities::file_blob;
+    use aster_drive::services::{auth_service, integrity_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "audituser2", "audit2@test.com", "password123")
+        .await
+        .unwrap();
+    let file = store_test_file(&state, user.id, "repair.txt", b"repair blob").await;
+    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+        .await
+        .unwrap();
+
+    let mut user_active: aster_drive::entities::user::ActiveModel =
+        user_repo::find_by_id(&state.db, user.id)
+            .await
+            .unwrap()
+            .into();
+    user_active.storage_used = Set(0);
+    user_active.update(&state.db).await.unwrap();
+
+    let mut blob_active: file_blob::ActiveModel = blob.clone().into();
+    blob_active.ref_count = Set(0);
+    blob_active.updated_at = Set(Utc::now());
+    blob_active.update(&state.db).await.unwrap();
+
+    let usage_drifts = integrity_service::audit_storage_usage(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(usage_drifts.len(), 1);
+    integrity_service::fix_storage_usage_drifts(&state.db, &usage_drifts)
+        .await
+        .unwrap();
+    assert!(
+        integrity_service::audit_storage_usage(&state.db)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let blob_drifts = integrity_service::audit_blob_ref_counts(&state.db, None)
+        .await
+        .unwrap();
+    assert_eq!(blob_drifts.len(), 1);
+    integrity_service::fix_blob_ref_count_drifts(&state.db, &blob_drifts)
+        .await
+        .unwrap();
+    assert!(
+        integrity_service::audit_blob_ref_counts(&state.db, None)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

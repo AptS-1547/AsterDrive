@@ -15,7 +15,7 @@ use sea_orm::{
 use serde::Serialize;
 
 use crate::db;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::utils::hash::sha256_hex;
 
 use self::ui::ProgressReporter;
@@ -582,7 +582,7 @@ async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<ApplyExecution>
         .stage("structure_prepare", "preparing target schema");
     Migrator::up(ctx.target_db, None)
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
     let target_backend = ctx.target_db.get_database_backend();
     let target_pending_after =
         pending_migrations(ctx.target_db, target_backend, ctx.expected_migrations).await?;
@@ -821,12 +821,12 @@ where
     let rows = db
         .query_all_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
 
     rows.into_iter()
         .map(|row| {
             row.try_get_by_index::<String>(0)
-                .map_err(|error| AsterError::database_operation(error.to_string()))
+                .map_aster_err(AsterError::database_operation)
         })
         .collect()
 }
@@ -905,11 +905,11 @@ where
     let rows = source
         .query_all_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
     rows.into_iter()
         .map(|row| {
             row.try_get_by_index::<String>(0)
-                .map_err(|error| AsterError::database_operation(error.to_string()))
+                .map_aster_err(AsterError::database_operation)
         })
         .collect()
 }
@@ -990,19 +990,19 @@ where
     let rows = db
         .query_all_raw(Statement::from_string(DbBackend::Sqlite, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
 
     rows.into_iter()
         .map(|row| {
             let name: String = row
                 .try_get("", "name")
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             let raw_type: String = row
                 .try_get("", "type")
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             let pk_order: i32 = row
                 .try_get("", "pk")
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             Ok(ColumnSchema {
                 name,
                 binding_kind: binding_kind_from_raw_type(DbBackend::Sqlite, &raw_type),
@@ -1045,16 +1045,16 @@ where
     let rows = db
         .query_all_raw(Statement::from_string(DbBackend::Postgres, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
 
     rows.into_iter()
         .map(|row| {
             let name = row
                 .try_get_by_index::<String>(0)
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             let raw_type = row
                 .try_get_by_index::<String>(1)
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             Ok(ColumnSchema {
                 pk_order: *pk_lookup.get(&name).unwrap_or(&0),
                 binding_kind: binding_kind_from_raw_type(DbBackend::Postgres, &raw_type),
@@ -1094,16 +1094,16 @@ where
     let rows = db
         .query_all_raw(Statement::from_string(DbBackend::MySql, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
 
     rows.into_iter()
         .map(|row| {
             let name = row
                 .try_get_by_index::<String>(0)
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             let raw_type = row
                 .try_get_by_index::<String>(1)
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             Ok(ColumnSchema {
                 pk_order: *pk_lookup.get(&name).unwrap_or(&0),
                 binding_kind: binding_kind_from_raw_type(DbBackend::MySql, &raw_type),
@@ -1125,12 +1125,12 @@ where
     let rows = db
         .query_all_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
     let mut lookup = BTreeMap::new();
     for row in rows {
         let column_name = row
             .try_get_by_index::<String>(0)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?;
+            .map_aster_err(AsterError::database_operation)?;
         let ordinal = if let Ok(value) = row.try_get_by_index::<i32>(1) {
             value
         } else if let Ok(value) = row.try_get_by_index::<u32>(1) {
@@ -1233,7 +1233,7 @@ async fn copy_tables_with_resume(
             let txn = target
                 .begin()
                 .await
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             insert_batch(&txn, plan, &rows).await.map_err(|error| {
                 AsterError::database_operation(format!(
                     "failed to write target batch for '{}': {error}",
@@ -1251,7 +1251,7 @@ async fn copy_tables_with_resume(
             update_checkpoint(&txn, checkpoint).await?;
             txn.commit()
                 .await
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
 
             progress.batch(
                 table_index,
@@ -1316,7 +1316,7 @@ async fn fetch_source_batch(
     let rows = source
         .query_all_raw(Statement::from_string(source_backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
 
     rows.into_iter()
         .map(|row| decode_row_values(&row, plan, target_type_hints))
@@ -1566,7 +1566,7 @@ where
     for values in rows {
         insert
             .values(values.iter().cloned().map(Into::into))
-            .map_err(|error| AsterError::database_operation(error.to_string()))?;
+            .map_aster_err(AsterError::database_operation)?;
     }
 
     target.execute(&insert).await.map_err(|error| {
@@ -1596,7 +1596,7 @@ async fn reset_sequences(target: &DatabaseConnection, plans: &[TablePlan]) -> Re
                 target
                     .execute_raw(Statement::from_string(DbBackend::Postgres, sql))
                     .await
-                    .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                    .map_aster_err(AsterError::database_operation)?;
             }
             DbBackend::MySql => {
                 let next_id = scalar_i64(
@@ -1616,7 +1616,7 @@ async fn reset_sequences(target: &DatabaseConnection, plans: &[TablePlan]) -> Re
                 target
                     .execute_raw(Statement::from_string(DbBackend::MySql, sql))
                     .await
-                    .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                    .map_aster_err(AsterError::database_operation)?;
             }
             DbBackend::Sqlite => {
                 // SQLite 在显式插入主键后会自动维护 rowid/autoincrement 状态，
@@ -1705,7 +1705,7 @@ where
     let rows = db
         .query_all_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
 
     match backend {
         DbBackend::Sqlite => rows
@@ -1713,10 +1713,10 @@ where
             .map(|row| {
                 let name: String = row
                     .try_get("", "name")
-                    .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                    .map_aster_err(AsterError::database_operation)?;
                 let raw_type: String = row
                     .try_get("", "type")
-                    .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                    .map_aster_err(AsterError::database_operation)?;
                 Ok((name, raw_type))
             })
             .collect(),
@@ -1725,10 +1725,10 @@ where
             .map(|row| {
                 let name = row
                     .try_get_by_index::<String>(0)
-                    .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                    .map_aster_err(AsterError::database_operation)?;
                 let raw_type = row
                     .try_get_by_index::<String>(1)
-                    .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                    .map_aster_err(AsterError::database_operation)?;
                 Ok((name, raw_type))
             })
             .collect(),
@@ -1931,25 +1931,25 @@ where
             let rows = db
                 .query_all_raw(Statement::from_string(backend, sql))
                 .await
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             rows.into_iter()
                 .map(|row| {
                     Ok(UniqueIndex {
                         table: row
                             .try_get_by_index::<String>(0)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         name: row
                             .try_get_by_index::<String>(1)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         columns: row
                             .try_get_by_index::<String>(2)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?
+                            .map_aster_err(AsterError::database_operation)?
                             .split(',')
                             .map(str::to_string)
                             .collect(),
                         is_primary: row
                             .try_get_by_index::<bool>(3)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                     })
                 })
                 .collect()
@@ -1974,25 +1974,25 @@ where
             let rows = db
                 .query_all_raw(Statement::from_string(backend, sql))
                 .await
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             rows.into_iter()
                 .map(|row| {
                     Ok(UniqueIndex {
                         table: row
                             .try_get_by_index::<String>(0)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         name: row
                             .try_get_by_index::<String>(1)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         columns: row
                             .try_get_by_index::<String>(2)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?
+                            .map_aster_err(AsterError::database_operation)?
                             .split(',')
                             .map(str::to_string)
                             .collect(),
                         is_primary: row
                             .try_get_by_index::<bool>(3)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                     })
                 })
                 .collect()
@@ -2025,19 +2025,19 @@ where
         let rows = db
             .query_all_raw(Statement::from_string(DbBackend::Sqlite, sql))
             .await
-            .map_err(|error| AsterError::database_operation(error.to_string()))?;
+            .map_aster_err(AsterError::database_operation)?;
 
         for row in rows {
             let unique: i32 = row
                 .try_get("", "unique")
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             if unique == 0 {
                 continue;
             }
 
             let name: String = row
                 .try_get("", "name")
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             if matches!(
                 name.as_str(),
                 "idx_files_unique_live_name"
@@ -2049,17 +2049,17 @@ where
 
             let origin: String = row
                 .try_get("", "origin")
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             let info_sql = format!("PRAGMA index_info({})", quote_sqlite_literal(&name));
             let info_rows = db
                 .query_all_raw(Statement::from_string(DbBackend::Sqlite, info_sql))
                 .await
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             let mut columns = Vec::new();
             for info_row in info_rows {
                 let column_name = info_row
                     .try_get::<Option<String>>("", "name")
-                    .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                    .map_aster_err(AsterError::database_operation)?;
                 if let Some(column_name) = column_name {
                     columns.push(column_name);
                 }
@@ -2205,25 +2205,25 @@ where
             let rows = db
                 .query_all_raw(Statement::from_string(backend, sql))
                 .await
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             rows.into_iter()
                 .map(|row| {
                     Ok(ForeignKey {
                         table: row
                             .try_get_by_index::<String>(0)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         name: row
                             .try_get_by_index::<String>(1)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         column: row
                             .try_get_by_index::<String>(2)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         referenced_table: row
                             .try_get_by_index::<String>(3)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         referenced_column: row
                             .try_get_by_index::<String>(4)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                     })
                 })
                 .collect()
@@ -2241,25 +2241,25 @@ where
             let rows = db
                 .query_all_raw(Statement::from_string(backend, sql))
                 .await
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             rows.into_iter()
                 .map(|row| {
                     Ok(ForeignKey {
                         table: row
                             .try_get_by_index::<String>(0)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         name: row
                             .try_get_by_index::<String>(1)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         column: row
                             .try_get_by_index::<String>(2)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         referenced_table: row
                             .try_get_by_index::<String>(3)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                         referenced_column: row
                             .try_get_by_index::<String>(4)
-                            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                            .map_aster_err(AsterError::database_operation)?,
                     })
                 })
                 .collect()
@@ -2284,20 +2284,20 @@ where
         let rows = db
             .query_all_raw(Statement::from_string(DbBackend::Sqlite, sql))
             .await
-            .map_err(|error| AsterError::database_operation(error.to_string()))?;
+            .map_aster_err(AsterError::database_operation)?;
         for row in rows {
             let id: i64 = row
                 .try_get("", "id")
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             let referenced_table: String = row
                 .try_get("", "table")
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             let column: String = row
                 .try_get("", "from")
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             let referenced_column: String = row
                 .try_get("", "to")
-                .map_err(|error| AsterError::database_operation(error.to_string()))?;
+                .map_aster_err(AsterError::database_operation)?;
             foreign_keys.push(ForeignKey {
                 table: plan.name.clone(),
                 name: format!("{}_fk_{}", plan.name, id),
@@ -2376,7 +2376,7 @@ async fn ensure_checkpoint_table(target: &DatabaseConnection) -> Result<()> {
     target
         .execute_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
     Ok(())
 }
 
@@ -2480,7 +2480,7 @@ async fn load_checkpoint(
     let Some(row) = target
         .query_one_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?
+        .map_aster_err(AsterError::database_operation)?
     else {
         return Ok(None);
     };
@@ -2488,54 +2488,54 @@ async fn load_checkpoint(
     Ok(Some(MigrationCheckpoint {
         migration_key: row
             .try_get_by_index::<String>(0)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         source_database_url: redact_database_url(
             &row.try_get_by_index::<String>(1)
-                .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                .map_aster_err(AsterError::database_operation)?,
         ),
         target_database_url: redact_database_url(
             &row.try_get_by_index::<String>(2)
-                .map_err(|error| AsterError::database_operation(error.to_string()))?,
+                .map_aster_err(AsterError::database_operation)?,
         ),
         mode: row
             .try_get_by_index::<String>(3)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         status: row
             .try_get_by_index::<String>(4)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         stage: row
             .try_get_by_index::<String>(5)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         current_table: row
             .try_get_by_index::<Option<String>>(6)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         current_table_index: row
             .try_get_by_index::<i64>(7)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         current_table_offset: row
             .try_get_by_index::<i64>(8)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         copied_rows: row
             .try_get_by_index::<i64>(9)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         total_rows: row
             .try_get_by_index::<i64>(10)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         plan_json: row
             .try_get_by_index::<String>(11)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         result_json: row
             .try_get_by_index::<Option<String>>(12)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         last_error: row
             .try_get_by_index::<Option<String>>(13)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         heartbeat_at_ms: row
             .try_get_by_index::<i64>(14)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
         updated_at_ms: row
             .try_get_by_index::<i64>(15)
-            .map_err(|error| AsterError::database_operation(error.to_string()))?,
+            .map_aster_err(AsterError::database_operation)?,
     }))
 }
 
@@ -2593,7 +2593,7 @@ where
 
     db.execute_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
     Ok(())
 }
 
@@ -2657,7 +2657,7 @@ where
 
     db.execute_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
     Ok(())
 }
 
@@ -2692,7 +2692,7 @@ where
     let row = db
         .query_one_raw(Statement::from_string(backend, sql))
         .await
-        .map_err(|error| AsterError::database_operation(error.to_string()))?
+        .map_aster_err(AsterError::database_operation)?
         .ok_or_else(|| AsterError::database_operation(format!("query returned no rows: {sql}")))?;
 
     if let Ok(value) = row.try_get_by_index::<i64>(0) {

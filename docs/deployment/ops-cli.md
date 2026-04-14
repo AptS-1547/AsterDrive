@@ -37,7 +37,7 @@ docker exec -it asterdrive sh
   --database-url "sqlite:///var/lib/asterdrive/data/asterdrive.db?mode=rwc"
 ```
 
-它会检查这些最容易出问题的地方：
+默认模式会检查这些最容易出问题的地方：
 
 - 数据库能不能连上
 - 数据库里还有没有待执行迁移
@@ -69,6 +69,54 @@ docker exec -it asterdrive sh
 - 新部署后的首轮验收
 - 升级后补一轮健康检查
 - 改完 `公开站点地址`、邮件或预览应用后，确认没有把配置改坏
+
+如果你怀疑库里已经有“数据和存储不一致”的问题，可以再跑深度检查：
+
+```bash
+./aster_drive doctor \
+  --database-url "sqlite:///var/lib/asterdrive/data/asterdrive.db?mode=rwc" \
+  --deep
+```
+
+`--deep` 额外会做这些检查：
+
+- `storage-usage`：核对 `users.storage_used` / `teams.storage_used` 和文件、历史版本实际占用
+- `blob-ref-counts`：核对 `file_blobs.ref_count` 与 `files` / `file_versions` 的真实引用数
+- `storage-objects`：扫描每个存储策略下的对象路径，找出缺失 Blob、未追踪对象和孤儿缩略图
+- `folder-tree`：检查缺失父目录、跨工作空间父目录和目录循环引用
+
+如果你只想跑其中一部分，可以直接缩小范围：
+
+```bash
+./aster_drive doctor \
+  --database-url "sqlite:///var/lib/asterdrive/data/asterdrive.db?mode=rwc" \
+  --scope blob-ref-counts,storage-objects
+```
+
+如果你只想检查某个存储策略，可以再加：
+
+```bash
+./aster_drive doctor \
+  --database-url "sqlite:///var/lib/asterdrive/data/asterdrive.db?mode=rwc" \
+  --scope storage-objects \
+  --policy-id 3
+```
+
+发现计数漂移时，可以让 CLI 直接修：
+
+```bash
+./aster_drive doctor \
+  --database-url "sqlite:///var/lib/asterdrive/data/asterdrive.db?mode=rwc" \
+  --deep \
+  --fix
+```
+
+这里要注意四件事：
+
+- `--scope` 只影响 deep checks，不会关闭数据库连接、迁移、运行时配置这些基础检查
+- `--policy-id` 只作用于 `blob-ref-counts` 和 `storage-objects`；`storage-usage` 与 `folder-tree` 仍按全库核对
+- `--fix` 目前只会修复 `storage_used` 和 `file_blobs.ref_count` 两类计数，不会自动删对象或改目录结构
+- 深度扫描会按数据库批次和对象存储分页执行，但它只校验路径级存在性，不会读取对象内容或做 checksum
 
 ## 离线系统设置：`config`
 

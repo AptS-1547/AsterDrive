@@ -1,4 +1,4 @@
-use super::driver::{BlobMetadata, StorageDriver};
+use super::driver::{BlobMetadata, StorageDriver, StoragePathVisitor};
 use super::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
@@ -156,6 +156,16 @@ impl S3Driver {
                 path.trim_start_matches('/')
             )
         }
+    }
+
+    fn relative_key(&self, key: &str) -> String {
+        if self.base_path.is_empty() {
+            return key.trim_start_matches('/').to_string();
+        }
+
+        key.trim_start_matches(self.base_path.trim_end_matches('/'))
+            .trim_start_matches('/')
+            .to_string()
     }
 
     fn normalize_multipart_etag(etag: &str) -> String {
@@ -393,6 +403,86 @@ impl StorageDriver for S3Driver {
             size,
             content_type: resp.content_type,
         })
+    }
+
+    async fn list_paths(&self, prefix: Option<&str>) -> Result<Vec<String>> {
+        let full_prefix = prefix
+            .map(|prefix| self.full_key(prefix))
+            .unwrap_or_else(|| self.base_path.trim_end_matches('/').to_string());
+        let mut continuation: Option<String> = None;
+        let mut paths = Vec::new();
+
+        loop {
+            let mut request = self.client.list_objects_v2().bucket(&self.bucket);
+            if !full_prefix.is_empty() {
+                request = request.prefix(full_prefix.clone());
+            }
+            if let Some(token) = continuation.as_deref() {
+                request = request.continuation_token(token);
+            }
+
+            let response = request
+                .send()
+                .await
+                .map_err(|err| Self::map_sdk_error("S3 list_objects_v2 failed", err))?;
+
+            for object in response.contents() {
+                let Some(key) = object.key() else {
+                    continue;
+                };
+                paths.push(self.relative_key(key));
+            }
+
+            let truncated = response.is_truncated().unwrap_or(false);
+            continuation = response.next_continuation_token().map(ToOwned::to_owned);
+            if !truncated || continuation.is_none() {
+                break;
+            }
+        }
+
+        paths.sort();
+        Ok(paths)
+    }
+
+    async fn scan_paths(
+        &self,
+        prefix: Option<&str>,
+        visitor: &mut dyn StoragePathVisitor,
+    ) -> Result<()> {
+        let full_prefix = prefix
+            .map(|prefix| self.full_key(prefix))
+            .unwrap_or_else(|| self.base_path.trim_end_matches('/').to_string());
+        let mut continuation: Option<String> = None;
+
+        loop {
+            let mut request = self.client.list_objects_v2().bucket(&self.bucket);
+            if !full_prefix.is_empty() {
+                request = request.prefix(full_prefix.clone());
+            }
+            if let Some(token) = continuation.as_deref() {
+                request = request.continuation_token(token);
+            }
+
+            let response = request
+                .send()
+                .await
+                .map_err(|err| Self::map_sdk_error("S3 list_objects_v2 failed", err))?;
+
+            for object in response.contents() {
+                let Some(key) = object.key() else {
+                    continue;
+                };
+                visitor.visit_path(self.relative_key(key))?;
+            }
+
+            let truncated = response.is_truncated().unwrap_or(false);
+            continuation = response.next_continuation_token().map(ToOwned::to_owned);
+            if !truncated || continuation.is_none() {
+                break;
+            }
+        }
+
+        Ok(())
     }
 
     async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String> {

@@ -6,12 +6,14 @@ use std::process::Command;
 
 use aster_drive::config::DatabaseConfig;
 use aster_drive::db;
-use aster_drive::db::repository::{contact_verification_token_repo, user_repo};
+use aster_drive::db::repository::{
+    contact_verification_token_repo, file_repo, policy_repo, user_repo,
+};
 use aster_drive::entities::contact_verification_token;
 use aster_drive::types::{VerificationChannel, VerificationPurpose};
 use chrono::{Duration, Utc};
 use migration::{Migrator, MigratorTrait};
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Set, Statement};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbBackend, Set, Statement};
 use serde_json::Value;
 use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
@@ -280,6 +282,10 @@ async fn test_root_binary_doctor_help_is_available() {
     assert!(stdout.contains("--database-url"));
     assert!(stdout.contains("--output-format"));
     assert!(stdout.contains("--strict"));
+    assert!(stdout.contains("--deep"));
+    assert!(stdout.contains("--fix"));
+    assert!(stdout.contains("--scope"));
+    assert!(stdout.contains("--policy-id"));
 }
 
 #[tokio::test]
@@ -599,6 +605,151 @@ async fn test_root_binary_doctor_warns_when_public_site_url_uses_http() {
             .is_some_and(|details| details
                 .iter()
                 .any(|detail| detail.as_str() == Some("configured=http://drive.example.com")))
+    );
+}
+
+#[tokio::test]
+async fn test_root_binary_doctor_deep_fix_repairs_counters() {
+    let database_url = setup_database_url().await;
+    let state = common::setup_with_database_url(&database_url).await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let user = user_repo::find_by_email(&db, "test@example.com")
+        .await
+        .unwrap()
+        .expect("test user should exist");
+    let file = file_repo::find_by_id(&db, file_id).await.unwrap();
+    let blob = file_repo::find_blob_by_id(&db, file.blob_id).await.unwrap();
+
+    let mut user_active: aster_drive::entities::user::ActiveModel = user.into();
+    user_active.storage_used = Set(0);
+    user_active.update(&db).await.unwrap();
+
+    let mut blob_active: aster_drive::entities::file_blob::ActiveModel = blob.into();
+    blob_active.ref_count = Set(0);
+    blob_active.updated_at = Set(Utc::now());
+    blob_active.update(&db).await.unwrap();
+
+    let output = run_aster_drive(&["doctor", "--database-url", &database_url, "--deep", "--fix"]);
+    assert!(
+        output.status.success(),
+        "doctor --deep --fix stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("doctor stdout should be utf-8");
+    let report: Value = serde_json::from_str(&stdout).expect("doctor output should be json");
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["data"]["deep"], true);
+    assert_eq!(report["data"]["fix"], true);
+
+    let checks = report["data"]["checks"]
+        .as_array()
+        .expect("doctor checks should be an array");
+    let usage_check = checks
+        .iter()
+        .find(|check| check["name"] == "storage_usage_consistency")
+        .expect("storage usage check should exist");
+    assert_eq!(usage_check["status"], "ok");
+    assert!(
+        usage_check["summary"]
+            .as_str()
+            .is_some_and(|summary| summary.contains("fixed 1"))
+    );
+
+    let ref_count_check = checks
+        .iter()
+        .find(|check| check["name"] == "blob_ref_counts")
+        .expect("blob ref_count check should exist");
+    assert_eq!(ref_count_check["status"], "ok");
+    assert!(
+        ref_count_check["summary"]
+            .as_str()
+            .is_some_and(|summary| summary.contains("fixed 1"))
+    );
+}
+
+#[tokio::test]
+async fn test_root_binary_doctor_scope_and_policy_filter_limit_deep_checks() {
+    let database_url = setup_database_url().await;
+    let state = common::setup_with_database_url(&database_url).await;
+    let db = state.db.clone();
+    let policy = policy_repo::find_default(&db)
+        .await
+        .unwrap()
+        .expect("default policy should exist");
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let user = user_repo::find_by_email(&db, "test@example.com")
+        .await
+        .unwrap()
+        .expect("test user should exist");
+    let file = file_repo::find_by_id(&db, file_id).await.unwrap();
+    let blob = file_repo::find_blob_by_id(&db, file.blob_id).await.unwrap();
+
+    let mut user_active: aster_drive::entities::user::ActiveModel = user.into();
+    user_active.storage_used = Set(0);
+    user_active.update(&db).await.unwrap();
+
+    let mut blob_active: aster_drive::entities::file_blob::ActiveModel = blob.into();
+    blob_active.ref_count = Set(0);
+    blob_active.updated_at = Set(Utc::now());
+    blob_active.update(&db).await.unwrap();
+
+    let output = run_aster_drive(&[
+        "doctor",
+        "--database-url",
+        &database_url,
+        "--scope",
+        "blob-ref-counts",
+        "--policy-id",
+        &policy.id.to_string(),
+    ]);
+    assert!(
+        output.status.success(),
+        "doctor scoped stdout: {}\ndoctor scoped stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("doctor stdout should be utf-8");
+    let report: Value = serde_json::from_str(&stdout).expect("doctor output should be json");
+    assert_eq!(report["data"]["deep"], true);
+    assert_eq!(report["data"]["policy_id"], policy.id);
+    assert!(
+        report["data"]["scopes"]
+            .as_array()
+            .is_some_and(|scopes| scopes.len() == 1 && scopes[0] == "blob_ref_counts")
+    );
+
+    let checks = report["data"]["checks"]
+        .as_array()
+        .expect("doctor checks should be an array");
+    assert!(
+        checks
+            .iter()
+            .any(|check| check["name"] == "blob_ref_counts")
+    );
+    assert!(checks.iter().any(|check| check["name"] == "policy_filter"));
+    assert!(
+        !checks
+            .iter()
+            .any(|check| check["name"] == "storage_usage_consistency")
+    );
+    assert!(
+        !checks
+            .iter()
+            .any(|check| check["name"] == "tracked_blob_objects")
+    );
+    assert!(
+        !checks
+            .iter()
+            .any(|check| check["name"] == "folder_tree_integrity")
     );
 }
 

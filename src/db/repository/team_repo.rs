@@ -245,3 +245,18 @@ pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64
 
     Ok(())
 }
+
+pub async fn set_storage_used<C: ConnectionTrait>(db: &C, id: i64, value: i64) -> Result<()> {
+    let result = Team::update_many()
+        .col_expr(team::Column::StorageUsed, Expr::value(value))
+        .filter(team::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    if result.rows_affected == 0 {
+        return Err(AsterError::record_not_found(format!("team #{id}")));
+    }
+
+    Ok(())
+}
