@@ -11,6 +11,7 @@ const mockState = vi.hoisted(() => ({
 		user: null as { role?: string } | null,
 	},
 	brandingLoad: vi.fn(),
+	previewAppsLoad: vi.fn(),
 	setAuthState: vi.fn(),
 	themeInit: vi.fn(),
 }));
@@ -47,6 +48,14 @@ vi.mock("@/stores/brandingStore", () => ({
 	},
 }));
 
+vi.mock("@/stores/previewAppStore", () => ({
+	usePreviewAppStore: {
+		getState: () => ({
+			load: mockState.previewAppsLoad,
+		}),
+	},
+}));
+
 vi.mock("@/stores/themeStore", () => ({
 	useThemeStore: {
 		getState: () => ({
@@ -77,6 +86,7 @@ describe("App", () => {
 		mockState.authStore.isChecking = false;
 		mockState.authStore.user = null;
 		mockState.brandingLoad.mockReset();
+		mockState.previewAppsLoad.mockReset();
 		mockState.setAuthState.mockReset();
 		mockState.themeInit.mockReset();
 	});
@@ -90,6 +100,7 @@ describe("App", () => {
 
 		render(<App />);
 
+		expect(mockState.previewAppsLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.authStore.checkAuth).not.toHaveBeenCalled();
 		expect(mockState.setAuthState).toHaveBeenCalledWith({ isChecking: false });
 	});
@@ -99,6 +110,7 @@ describe("App", () => {
 
 		render(<App />);
 
+		expect(mockState.previewAppsLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.authStore.checkAuth).toHaveBeenCalledTimes(1);
 		expect(mockState.setAuthState).not.toHaveBeenCalled();
 	});

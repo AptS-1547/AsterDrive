@@ -62,6 +62,7 @@ import { cn } from "@/lib/utils";
 import { adminConfigService } from "@/services/adminService";
 import { useAuthStore } from "@/stores/authStore";
 import { useBrandingStore } from "@/stores/brandingStore";
+import { usePreviewAppStore } from "@/stores/previewAppStore";
 import { useThemeStore } from "@/stores/themeStore";
 import type {
 	ConfigSchemaItem,
@@ -1699,6 +1700,9 @@ export default function AdminSettingsPage({
 
 		try {
 			setSaving(true);
+			const previewAppsChanged = changedExistingConfigs.some(
+				(config) => config.key === PREVIEW_APPS_CONFIG_KEY,
+			);
 			const nextConfigsByKey = new Map(
 				configs.map((config) => [config.key, config] as const),
 			);
@@ -1734,6 +1738,10 @@ export default function AdminSettingsPage({
 				nextConfigsByKey.get(PUBLIC_SITE_URL_KEY)?.value;
 			if (nextPublicSiteUrl !== undefined) {
 				syncPublicSiteUrlRuntime(nextPublicSiteUrl);
+			}
+			if (previewAppsChanged) {
+				usePreviewAppStore.getState().invalidate();
+				void usePreviewAppStore.getState().load({ force: true });
 			}
 			toast.success(t("settings_saved"));
 		} catch (error) {

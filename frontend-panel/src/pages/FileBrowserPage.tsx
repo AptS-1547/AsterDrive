@@ -17,6 +17,7 @@ import { SortMenu } from "@/components/common/SortMenu";
 import { ToolbarBar } from "@/components/common/ToolbarBar";
 import { ViewToggle } from "@/components/common/ViewToggle";
 import { FileGrid } from "@/components/files/FileGrid";
+import { FilePreview } from "@/components/files/FilePreview";
 import { FileTable } from "@/components/files/FileTable";
 import {
 	UploadArea,
@@ -94,10 +95,6 @@ const FileInfoDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/FileInfoDialog");
 	return { default: module.FileInfoDialog };
 });
-const FilePreview = lazyWithPreload(async () => {
-	const module = await import("@/components/files/FilePreview");
-	return { default: module.FilePreview };
-});
 const RenameDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/RenameDialog");
 	return { default: module.RenameDialog };
@@ -116,7 +113,6 @@ const FILE_BROWSER_LAZY_PRELOADERS = [
 	CreateFileDialog,
 	CreateFolderDialog,
 	FileInfoDialog,
-	FilePreview,
 	RenameDialog,
 	ShareDialog,
 	VersionHistoryDialog,
@@ -427,7 +423,6 @@ export default function FileBrowserPage() {
 
 	const openPreview = useCallback(
 		(file: FileInfo | FileListItem, openMode: "auto" | "direct" | "picker") => {
-			void FilePreview.preload();
 			setPreviewState({ file, openMode });
 		},
 		[],
@@ -1052,20 +1047,18 @@ export default function FileBrowserPage() {
 				/>
 			</Suspense>
 			{previewState && (
-				<Suspense fallback={null}>
-					<FilePreview
-						file={previewState.file}
-						openMode={previewState.openMode}
-						onClose={() => setPreviewState(null)}
-						onFileUpdated={() => refresh()}
-						previewLinkFactory={() =>
-							fileService.createPreviewLink(previewState.file.id)
-						}
-						wopiSessionFactory={(appKey) =>
-							fileService.createWopiSession(previewState.file.id, appKey)
-						}
-					/>
-				</Suspense>
+				<FilePreview
+					file={previewState.file}
+					openMode={previewState.openMode}
+					onClose={() => setPreviewState(null)}
+					onFileUpdated={() => refresh()}
+					previewLinkFactory={() =>
+						fileService.createPreviewLink(previewState.file.id)
+					}
+					wopiSessionFactory={(appKey) =>
+						fileService.createWopiSession(previewState.file.id, appKey)
+					}
+				/>
 			)}
 			<Suspense fallback={null}>
 				<BatchTargetFolderDialog

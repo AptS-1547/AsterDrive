@@ -428,6 +428,22 @@ export function FilePreviewDialog({
 		};
 	}, [isDialogAnimationEnabled, showOpenMethodChooser]);
 
+	const handleDialogOpenChange = useCallback(
+		(open: boolean) => {
+			if (open) {
+				return;
+			}
+
+			if (showOpenMethodChooser) {
+				onClose();
+				return;
+			}
+
+			closeWithGuard();
+		},
+		[closeWithGuard, onClose, showOpenMethodChooser],
+	);
+
 	const body = (() => {
 		if (!previewAppsLoaded) {
 			return previewLoadingState;
@@ -531,224 +547,228 @@ export function FilePreviewDialog({
 		return <PreviewUnavailable />;
 	})();
 
-	return (
+	const dialogContentClassName = showOpenMethodChooser
+		? "flex max-h-[min(90vh,calc(100vh-2rem))] w-[min(96vw,32rem)] max-w-[min(96vw,32rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,32rem)]"
+		: cn(
+				"flex max-h-[90vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1200px)]",
+				(fillsViewportHeight || isExpanded) && "h-[90vh]",
+				isExpanded &&
+					"top-0 left-0 h-screen w-screen max-h-screen max-w-none translate-x-0 translate-y-0 rounded-none sm:max-w-none",
+			);
+
+	const chooserContent = (
 		<>
-			{showOpenMethodChooser ? (
-				<Dialog open onOpenChange={(open) => !open && onClose()}>
-					<DialogContent
-						keepMounted
-						className="flex max-h-[min(90vh,calc(100vh-2rem))] w-[min(96vw,32rem)] max-w-[min(96vw,32rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,32rem)]"
+			<DialogHeader className="border-b px-5 py-4">
+				<div className="flex items-center gap-3">
+					<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+						<FileTypeIcon
+							mimeType={file.mime_type}
+							fileName={file.name}
+							className="h-5 w-5"
+						/>
+					</div>
+					<div className="min-w-0 flex-1">
+						<DialogTitle className="truncate">
+							{t("files:choose_open_method")}
+						</DialogTitle>
+						<p className="mt-1 truncate text-sm text-muted-foreground">
+							{file.name} · {formatBytes(file.size)}
+						</p>
+					</div>
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						onClick={onClose}
+						aria-label={t("core:close")}
+						title={t("core:close")}
 					>
-						<DialogHeader className="border-b px-5 py-4">
-							<div className="flex items-center gap-3">
-								<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-									<FileTypeIcon
-										mimeType={file.mime_type}
-										fileName={file.name}
-										className="h-5 w-5"
+						<Icon name="X" className="h-4 w-4" />
+						<span className="sr-only">{t("core:close")}</span>
+					</Button>
+				</div>
+			</DialogHeader>
+			<div className="min-h-0 overflow-y-auto p-4">
+				<div className="grid gap-2">
+					{visibleOptions.map((option) => {
+						const isActive = option.key === activeMode;
+						return (
+							<Button
+								key={option.key}
+								variant="ghost"
+								className={cn(
+									"h-auto justify-start rounded-xl border px-3.5 py-2.5 text-left",
+									isActive && "border-primary bg-accent text-foreground",
+								)}
+								onClick={() => handleOpenMethodSelect(option.key)}
+							>
+								<div className="flex w-full items-center gap-2.5">
+									<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+										<PreviewAppIcon icon={option.icon} className="h-4 w-4" />
+									</div>
+									<div className="min-w-0 flex-1">
+										<div className="truncate font-medium">
+											{getOptionLabel(option)}
+										</div>
+									</div>
+									<Icon
+										name={isActive ? "Check" : "CaretRight"}
+										className="h-4 w-4 text-muted-foreground"
 									/>
 								</div>
-								<div className="min-w-0 flex-1">
-									<DialogTitle className="truncate">
-										{t("files:choose_open_method")}
-									</DialogTitle>
-									<p className="mt-1 truncate text-sm text-muted-foreground">
-										{file.name} · {formatBytes(file.size)}
-									</p>
-								</div>
-							</div>
-						</DialogHeader>
-						<div className="min-h-0 overflow-y-auto p-4">
-							<div className="grid gap-2">
-								{visibleOptions.map((option) => {
-									const isActive = option.key === activeMode;
-									return (
-										<Button
-											key={option.key}
-											variant="ghost"
-											className={cn(
-												"h-auto justify-start rounded-xl border px-3.5 py-2.5 text-left",
-												isActive && "border-primary bg-accent text-foreground",
-											)}
-											onClick={() => handleOpenMethodSelect(option.key)}
-										>
-											<div className="flex w-full items-center gap-2.5">
-												<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-													<PreviewAppIcon
-														icon={option.icon}
-														className="h-4 w-4"
-													/>
-												</div>
-												<div className="min-w-0 flex-1">
-													<div className="truncate font-medium">
-														{getOptionLabel(option)}
-													</div>
-												</div>
-												<Icon
-													name={isActive ? "Check" : "CaretRight"}
-													className="h-4 w-4 text-muted-foreground"
-												/>
-											</div>
-										</Button>
-									);
-								})}
-								<AnimatedCollapsible open={showAllOpenMethods}>
-									<div className="grid gap-2">
-										{hiddenOptions.map((option) => {
-											const isActive = option.key === activeMode;
-											return (
-												<Button
-													key={option.key}
-													variant="ghost"
-													className={cn(
-														"h-auto justify-start rounded-xl border px-3.5 py-2.5 text-left",
-														isActive &&
-															"border-primary bg-accent text-foreground",
-													)}
-													onClick={() => handleOpenMethodSelect(option.key)}
-												>
-													<div className="flex w-full items-center gap-2.5">
-														<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-															<PreviewAppIcon
-																icon={option.icon}
-																className="h-4 w-4"
-															/>
-														</div>
-														<div className="min-w-0 flex-1">
-															<div className="truncate font-medium">
-																{getOptionLabel(option)}
-															</div>
-														</div>
-														<Icon
-															name={isActive ? "Check" : "CaretRight"}
-															className="h-4 w-4 text-muted-foreground"
-														/>
-													</div>
-												</Button>
-											);
-										})}
-									</div>
-								</AnimatedCollapsible>
-								{!showAllOpenMethods && allOptions.length > 0 ? (
+							</Button>
+						);
+					})}
+					<AnimatedCollapsible open={showAllOpenMethods}>
+						<div className="grid gap-2">
+							{hiddenOptions.map((option) => {
+								const isActive = option.key === activeMode;
+								return (
 									<Button
+										key={option.key}
 										variant="ghost"
-										className="h-auto justify-start rounded-xl border border-dashed px-3.5 py-2.5 text-left text-muted-foreground"
-										onClick={() => setShowAllOpenMethods(true)}
+										className={cn(
+											"h-auto justify-start rounded-xl border px-3.5 py-2.5 text-left",
+											isActive && "border-primary bg-accent text-foreground",
+										)}
+										onClick={() => handleOpenMethodSelect(option.key)}
 									>
 										<div className="flex w-full items-center gap-2.5">
+											<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+												<PreviewAppIcon
+													icon={option.icon}
+													className="h-4 w-4"
+												/>
+											</div>
 											<div className="min-w-0 flex-1">
-												<div className="font-medium">
-													{t("files:more_open_methods")}
+												<div className="truncate font-medium">
+													{getOptionLabel(option)}
 												</div>
 											</div>
-											<Icon name="CaretDown" className="h-4 w-4" />
+											<Icon
+												name={isActive ? "Check" : "CaretRight"}
+												className="h-4 w-4 text-muted-foreground"
+											/>
 										</div>
 									</Button>
-								) : null}
-							</div>
+								);
+							})}
 						</div>
-					</DialogContent>
-				</Dialog>
-			) : null}
-			{showOpenMethodChooser ? null : (
-				<Dialog open onOpenChange={(open) => !open && closeWithGuard()}>
-					<DialogContent
-						animated={isDialogAnimationEnabled}
-						keepMounted
-						showCloseButton={false}
+					</AnimatedCollapsible>
+					{!showAllOpenMethods && allOptions.length > 0 ? (
+						<Button
+							variant="ghost"
+							className="h-auto justify-start rounded-xl border border-dashed px-3.5 py-2.5 text-left text-muted-foreground"
+							onClick={() => setShowAllOpenMethods(true)}
+						>
+							<div className="flex w-full items-center gap-2.5">
+								<div className="min-w-0 flex-1">
+									<div className="font-medium">
+										{t("files:more_open_methods")}
+									</div>
+								</div>
+								<Icon name="CaretDown" className="h-4 w-4" />
+							</div>
+						</Button>
+					) : null}
+				</div>
+			</div>
+		</>
+	);
+
+	const previewContent = (
+		<>
+			<DialogHeader className="gap-0 border-b px-4 py-3">
+				<div className="flex items-center gap-3">
+					<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+						<FileTypeIcon
+							mimeType={file.mime_type}
+							fileName={file.name}
+							className="h-5 w-5"
+						/>
+					</div>
+					<div className="min-w-0 flex-1">
+						<DialogTitle className="flex items-center gap-2 text-sm font-semibold">
+							<span className="min-w-0 truncate">{file.name}</span>
+							<span className="shrink-0 text-xs font-normal text-muted-foreground">
+								· {formatBytes(file.size)}
+							</span>
+						</DialogTitle>
+					</div>
+					<div className="flex items-center gap-1">
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							onClick={handleExpandToggle}
+							aria-label={t(
+								isExpanded
+									? "files:preview_exit_fullscreen"
+									: "files:preview_enter_fullscreen",
+							)}
+							title={t(
+								isExpanded
+									? "files:preview_exit_fullscreen"
+									: "files:preview_enter_fullscreen",
+							)}
+						>
+							<Icon
+								name={isExpanded ? "ArrowsInCardinal" : "ArrowsOutCardinal"}
+								className="h-4 w-4"
+							/>
+							<span className="sr-only">
+								{t(
+									isExpanded
+										? "files:preview_exit_fullscreen"
+										: "files:preview_enter_fullscreen",
+								)}
+							</span>
+						</Button>
+						<Button variant="ghost" size="icon-sm" onClick={closeWithGuard}>
+							<Icon name="X" className="h-4 w-4" />
+						</Button>
+					</div>
+				</div>
+			</DialogHeader>
+			{usesInnerScroll ? (
+				<div
+					className={cn(
+						"bg-muted/20 p-3",
+						(fillsViewportHeight || isExpanded) && "min-h-0 flex-1",
+					)}
+				>
+					{body}
+				</div>
+			) : (
+				<ScrollArea
+					className={cn(
+						"bg-muted/20",
+						(fillsViewportHeight || isExpanded) && "min-h-0 flex-1",
+					)}
+				>
+					<div
 						className={cn(
-							"flex max-h-[90vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1200px)]",
-							(fillsViewportHeight || isExpanded) && "h-[90vh]",
-							isExpanded &&
-								"top-0 left-0 h-screen w-screen max-h-screen max-w-none translate-x-0 translate-y-0 rounded-none sm:max-w-none",
+							"w-full p-3",
+							(fillsViewportHeight || isExpanded) && "h-full min-h-full",
 						)}
 					>
-						<DialogHeader className="gap-0 border-b px-4 py-3">
-							<div className="flex items-center gap-3">
-								<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-									<FileTypeIcon
-										mimeType={file.mime_type}
-										fileName={file.name}
-										className="h-5 w-5"
-									/>
-								</div>
-								<div className="min-w-0 flex-1">
-									<DialogTitle className="flex items-center gap-2 text-sm font-semibold">
-										<span className="min-w-0 truncate">{file.name}</span>
-										<span className="shrink-0 text-xs font-normal text-muted-foreground">
-											· {formatBytes(file.size)}
-										</span>
-									</DialogTitle>
-								</div>
-								<div className="flex items-center gap-1">
-									<Button
-										variant="ghost"
-										size="icon-sm"
-										onClick={handleExpandToggle}
-										aria-label={t(
-											isExpanded
-												? "files:preview_exit_fullscreen"
-												: "files:preview_enter_fullscreen",
-										)}
-										title={t(
-											isExpanded
-												? "files:preview_exit_fullscreen"
-												: "files:preview_enter_fullscreen",
-										)}
-									>
-										<Icon
-											name={
-												isExpanded ? "ArrowsInCardinal" : "ArrowsOutCardinal"
-											}
-											className="h-4 w-4"
-										/>
-										<span className="sr-only">
-											{t(
-												isExpanded
-													? "files:preview_exit_fullscreen"
-													: "files:preview_enter_fullscreen",
-											)}
-										</span>
-									</Button>
-									<Button
-										variant="ghost"
-										size="icon-sm"
-										onClick={closeWithGuard}
-									>
-										<Icon name="X" className="h-4 w-4" />
-									</Button>
-								</div>
-							</div>
-						</DialogHeader>
-						{usesInnerScroll ? (
-							<div
-								className={cn(
-									"bg-muted/20 p-3",
-									(fillsViewportHeight || isExpanded) && "min-h-0 flex-1",
-								)}
-							>
-								{body}
-							</div>
-						) : (
-							<ScrollArea
-								className={cn(
-									"bg-muted/20",
-									(fillsViewportHeight || isExpanded) && "min-h-0 flex-1",
-								)}
-							>
-								<div
-									className={cn(
-										"w-full p-3",
-										(fillsViewportHeight || isExpanded) && "h-full min-h-full",
-									)}
-								>
-									{body}
-								</div>
-							</ScrollArea>
-						)}
-					</DialogContent>
-				</Dialog>
+						{body}
+					</div>
+				</ScrollArea>
 			)}
+		</>
+	);
+
+	return (
+		<>
+			<Dialog open onOpenChange={handleDialogOpenChange}>
+				<DialogContent
+					animated={showOpenMethodChooser ? true : isDialogAnimationEnabled}
+					keepMounted
+					showCloseButton={false}
+					className={dialogContentClassName}
+				>
+					{showOpenMethodChooser ? chooserContent : previewContent}
+				</DialogContent>
+			</Dialog>
 			<UnsavedChangesGuard
 				open={confirmOpen}
 				onOpenChange={setConfirmOpen}

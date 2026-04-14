@@ -7,6 +7,7 @@ import { useStorageChangeEvents } from "@/hooks/useStorageChangeEvents";
 import { router } from "@/router";
 import { useAuthStore } from "@/stores/authStore";
 import { useBrandingStore } from "@/stores/brandingStore";
+import { usePreviewAppStore } from "@/stores/previewAppStore";
 import { useThemeStore } from "@/stores/themeStore";
 
 function shouldSkipInitialAuthCheck(pathname: string) {
@@ -24,6 +25,7 @@ function App() {
 
 	useEffect(() => {
 		void useBrandingStore.getState().load();
+		void usePreviewAppStore.getState().load();
 		if (!shouldSkipInitialAuthCheck(window.location.pathname)) {
 			checkAuth();
 		} else {
