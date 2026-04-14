@@ -117,7 +117,7 @@ export default defineConfig({
             { text: 'Docker 部署', link: '/deployment/docker' },
             { text: 'systemd', link: '/deployment/systemd' },
             { text: '运维 CLI', link: '/deployment/ops-cli' },
-            { text: '反向代理', link: '/deployment/proxy' },
+            { text: '反向代理', link: '/deployment/reverse-proxy' },
             { text: '首次启动检查', link: '/deployment/runtime-behavior' },
             { text: '升级与浏览器缓存', link: '/deployment/frontend-assets' }
           ]

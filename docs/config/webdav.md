@@ -72,4 +72,4 @@ https://你的域名/dav/
 - `Timeout`
 - `PROPFIND`、`MOVE`、`COPY`、`LOCK`、`UNLOCK` 等 WebDAV 方法
 
-完整示例见 [反向代理部署](/deployment/proxy)。
+完整示例见 [反向代理部署](/deployment/reverse-proxy)。

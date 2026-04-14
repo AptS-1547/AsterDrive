@@ -551,6 +551,57 @@ async fn test_root_binary_doctor_strict_turns_warnings_into_nonzero_exit() {
 }
 
 #[tokio::test]
+async fn test_root_binary_doctor_warns_when_public_site_url_uses_http() {
+    let database_url = setup_ready_database_url().await;
+
+    let set_output = run_aster_drive(&[
+        "config",
+        "--database-url",
+        &database_url,
+        "set",
+        "--key",
+        "public_site_url",
+        "--value",
+        "http://drive.example.com",
+    ]);
+    assert!(
+        set_output.status.success(),
+        "set stderr: {}",
+        String::from_utf8_lossy(&set_output.stderr)
+    );
+
+    let output = run_aster_drive(&["doctor", "--database-url", &database_url]);
+    assert!(
+        output.status.success(),
+        "doctor stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("doctor stdout should be utf-8");
+    let report: Value = serde_json::from_str(&stdout).expect("doctor output should be json");
+    let checks = report["data"]["checks"]
+        .as_array()
+        .expect("doctor checks should be an array");
+    let public_site_url_check = checks
+        .iter()
+        .find(|check| check["name"] == "public_site_url")
+        .expect("public_site_url check should exist");
+
+    assert_eq!(public_site_url_check["status"], "warn");
+    assert_eq!(
+        public_site_url_check["summary"],
+        "public_site_url uses insecure HTTP"
+    );
+    assert!(
+        public_site_url_check["details"]
+            .as_array()
+            .is_some_and(|details| details
+                .iter()
+                .any(|detail| detail.as_str() == Some("configured=http://drive.example.com")))
+    );
+}
+
+#[tokio::test]
 async fn test_root_binary_doctor_exits_nonzero_when_storage_policy_setup_is_missing() {
     let database_url = setup_database_url().await;
 

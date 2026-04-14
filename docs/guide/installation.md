@@ -38,7 +38,7 @@ AsterDrive 的部署重点很简单：
 
 ### 访问方式
 
-正式上线时，建议通过 HTTPS 提供服务，并保持：
+正式上线时，**必须**通过反向代理提供 HTTPS，并保持：
 
 ```toml
 [auth]
@@ -54,6 +54,9 @@ bootstrap_insecure_cookies = true
 
 这只会影响第一次初始化时浏览器 Cookie 是否允许在纯 HTTP 下发送。  
 一旦数据库里已经有 `auth_cookie_secure` 这个运行时设置，再改静态引导项不会自动回写旧值。
+
+别把 `:3000` 长期直接暴露到公网。  
+浏览器页面、WebDAV、分享页和 WOPI 都走同一个服务，正式部署应该统一挂在反向代理后面。
 
 ### 注册策略
 
@@ -196,7 +199,7 @@ http://服务器地址:3000
 
 ## 下一步该看哪里
 
-- 想挂 HTTPS、Caddy 或 Nginx：看 [反向代理](/deployment/proxy)
+- 想挂 HTTPS、Caddy、Nginx 或 Traefik：看 [反向代理](/deployment/reverse-proxy)
 - 想在命令行里做部署检查、离线配置或跨库迁移：看 [运维 CLI](/deployment/ops-cli)
 - 想确认默认目录、默认策略和后台任务是否按预期创建：看 [首次启动检查](/deployment/runtime-behavior)
 - 想改数据库、WebDAV、日志或系统设置：看 [配置说明](/config/)

@@ -42,7 +42,7 @@ AsterDrive 是单服务交付：
 
 ### 访问方式
 
-正式上线时，建议通过 HTTPS 提供服务，并保持：
+正式上线时，**必须**通过反向代理提供 HTTPS，并保持：
 
 ```toml
 [auth]
@@ -54,7 +54,7 @@ bootstrap_insecure_cookies = false
 
 如果站点要对外访问，最好同时确认：
 
-- `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 已经填成真实域名
+- `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 已经填成真实的 `https://` 域名
 - 如果要开放注册、找回密码或邮箱改绑，`管理 -> 系统设置 -> 邮件投递` 已经发通过测试邮件
 
 ### WebDAV
@@ -106,6 +106,6 @@ bootstrap_insecure_cookies = false
 - 用 Docker：看 [Docker 部署](/deployment/docker)
 - 用 systemd：看 [systemd 部署](/deployment/systemd)
 - 想在命令行里做部署检查、离线配置或跨数据库迁移：看 [运维 CLI](/deployment/ops-cli)
-- 准备挂 HTTPS：看 [反向代理](/deployment/proxy)
+- 准备挂 HTTPS：看 [反向代理](/deployment/reverse-proxy)
 - 想确认首次启动到底自动做了哪些事：看 [首次启动检查](/deployment/runtime-behavior)
 - 准备升级：看 [升级与浏览器缓存](/deployment/frontend-assets)

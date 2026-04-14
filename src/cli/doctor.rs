@@ -332,14 +332,34 @@ fn doctor_public_site_url_check(runtime_config: &crate::config::RuntimeConfig) -
     }
 
     match crate::config::site_url::normalize_public_site_url_config_value(&raw_value) {
-        Ok(normalized) => DoctorCheck {
-            name: "public_site_url",
-            label: "Public site URL",
-            status: DoctorStatus::Ok,
-            summary: format!("configured as {normalized}"),
-            details: Vec::new(),
-            suggestion: None,
-        },
+        Ok(normalized) => {
+            if normalized.starts_with("http://") {
+                return DoctorCheck {
+                    name: "public_site_url",
+                    label: "Public site URL",
+                    status: DoctorStatus::Warn,
+                    summary: "public_site_url uses insecure HTTP".to_string(),
+                    details: vec![
+                        format!("configured={normalized}"),
+                        "production deployments should terminate TLS at a reverse proxy"
+                            .to_string(),
+                    ],
+                    suggestion: Some(
+                        "把站点放到 HTTPS 反向代理后面，再把 public_site_url 改成 https:// 域名"
+                            .to_string(),
+                    ),
+                };
+            }
+
+            DoctorCheck {
+                name: "public_site_url",
+                label: "Public site URL",
+                status: DoctorStatus::Ok,
+                summary: format!("configured as {normalized}"),
+                details: Vec::new(),
+                suggestion: None,
+            }
+        }
         Err(err) => DoctorCheck {
             name: "public_site_url",
             label: "Public site URL",
@@ -796,5 +816,71 @@ fn redact_sqlite_database_url(database_url: &str) -> String {
     match query {
         Some(query) => format!("sqlite://{redacted_path}?{query}"),
         None => format!("sqlite://{redacted_path}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DoctorStatus, doctor_public_site_url_check};
+    use crate::config::RuntimeConfig;
+    use crate::config::site_url::PUBLIC_SITE_URL_KEY;
+    use crate::entities::system_config;
+    use chrono::Utc;
+
+    fn config_model(key: &str, value: &str) -> system_config::Model {
+        system_config::Model {
+            id: 1,
+            key: key.to_string(),
+            value: value.to_string(),
+            value_type: "string".to_string(),
+            requires_restart: false,
+            is_sensitive: false,
+            source: "system".to_string(),
+            namespace: String::new(),
+            category: "test".to_string(),
+            description: "test".to_string(),
+            updated_at: Utc::now(),
+            updated_by: None,
+        }
+    }
+
+    #[test]
+    fn doctor_public_site_url_warns_for_http_origins() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(
+            PUBLIC_SITE_URL_KEY,
+            "http://drive.example.com",
+        ));
+
+        let check = doctor_public_site_url_check(&runtime_config);
+
+        assert_eq!(check.status, DoctorStatus::Warn);
+        assert_eq!(check.summary, "public_site_url uses insecure HTTP");
+        assert!(
+            check
+                .details
+                .iter()
+                .any(|detail| { detail == "configured=http://drive.example.com" })
+        );
+        assert!(
+            check
+                .suggestion
+                .as_deref()
+                .is_some_and(|hint| hint.contains("https://"))
+        );
+    }
+
+    #[test]
+    fn doctor_public_site_url_accepts_https_origins() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(
+            PUBLIC_SITE_URL_KEY,
+            "https://drive.example.com",
+        ));
+
+        let check = doctor_public_site_url_check(&runtime_config);
+
+        assert_eq!(check.status, DoctorStatus::Ok);
+        assert_eq!(check.summary, "configured as https://drive.example.com");
     }
 }
