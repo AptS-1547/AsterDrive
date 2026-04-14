@@ -56,12 +56,13 @@ vi.mock("@/components/ui/button", () => ({
 		children,
 		onClick,
 		className,
+		...props
 	}: {
 		children: React.ReactNode;
 		onClick?: () => void;
 		className?: string;
-	}) => (
-		<button type="button" onClick={onClick} className={className}>
+	} & React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+		<button type="button" onClick={onClick} className={className} {...props}>
 			{children}
 		</button>
 	),
@@ -418,6 +419,47 @@ describe("FilePreviewDialog", () => {
 		await waitFor(() => {
 			expect(onClose).toHaveBeenCalledTimes(1);
 		});
+	});
+
+	it("expands the preview dialog to fill the window without leaving the page", async () => {
+		renderDialog();
+
+		await chooseOpenMethod("files:mode_code");
+		expect(
+			screen.getByTestId("dialog-content").className.split(/\s+/),
+		).not.toContain("top-0");
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "files:preview_enter_fullscreen",
+			}),
+		);
+
+		expect(
+			screen.getByRole("button", { name: "files:preview_exit_fullscreen" }),
+		).toBeInTheDocument();
+		expect(screen.getByTestId("dialog-content").className.split(/\s+/)).toEqual(
+			expect.arrayContaining([
+				"top-0",
+				"left-0",
+				"h-screen",
+				"w-screen",
+				"rounded-none",
+			]),
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "files:preview_exit_fullscreen",
+			}),
+		);
+
+		expect(
+			screen.getByRole("button", { name: "files:preview_enter_fullscreen" }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByTestId("dialog-content").className.split(/\s+/),
+		).not.toContain("top-0");
 	});
 
 	it("falls back to preview unavailable when the profile has no active mode", async () => {

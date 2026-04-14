@@ -56,10 +56,10 @@ describe("FileItemStatusIndicators", () => {
 	it("uses compact badge styling when requested", () => {
 		render(<FileItemStatusIndicators isShared compact />);
 
-		expect(screen.getByTestId("badge")).toHaveClass(
-			"h-5",
+		expect(screen.queryByTestId("badge")).not.toBeInTheDocument();
+		expect(screen.getByTitle("translated:share")).toHaveClass(
+			"size-5",
 			"rounded-full",
-			"text-[10px]",
 		);
 	});
 });

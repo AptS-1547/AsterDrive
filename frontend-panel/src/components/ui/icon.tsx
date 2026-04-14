@@ -6,6 +6,7 @@ import {
 	PiArrowLeft,
 	PiArrowSquareOut,
 	PiArrowsClockwise,
+	PiArrowsInCardinal,
 	PiArrowsOutCardinal,
 	PiArrowUp,
 	PiArrowUUpLeft,
@@ -81,6 +82,7 @@ export type IconName =
 	| "ArrowLeft"
 	| "ArrowSquareOut"
 	| "ArrowUp"
+	| "ArrowsInCardinal"
 	| "ArrowsClockwise"
 	| "ArrowsOutCardinal"
 	| "BracketsCurly"
@@ -155,6 +157,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	ArrowLeft: PiArrowLeft,
 	ArrowSquareOut: PiArrowSquareOut,
 	ArrowUp: PiArrowUp,
+	ArrowsInCardinal: PiArrowsInCardinal,
 	ArrowsClockwise: PiArrowsClockwise,
 	ArrowsOutCardinal: PiArrowsOutCardinal,
 	BracketsCurly: PiBracketsCurly,

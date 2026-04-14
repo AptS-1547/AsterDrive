@@ -79,6 +79,7 @@ const TextCodePreview = lazy(async () => {
 
 const MORE_METHODS_EXPAND_DURATION_MS = 220;
 const MORE_METHODS_COLLAPSE_DURATION_MS = 160;
+const PREVIEW_DIALOG_OPEN_ANIMATION_MS = 120;
 
 function AnimatedCollapsible({
 	children,
@@ -314,6 +315,9 @@ export function FilePreviewDialog({
 	}, [allOptions, profile]);
 
 	const [mode, setMode] = useState<OpenWithMode | null>(null);
+	const [isDialogAnimationEnabled, setIsDialogAnimationEnabled] =
+		useState(true);
+	const [isExpanded, setIsExpanded] = useState(false);
 	const previousFileIdRef = useRef(file.id);
 	const [hasConfirmedInitialMode, setHasConfirmedInitialMode] = useState(false);
 	useEffect(() => {
@@ -321,6 +325,7 @@ export function FilePreviewDialog({
 		if (hasFileChanged) {
 			previousFileIdRef.current = file.id;
 			setHasConfirmedInitialMode(false);
+			setIsExpanded(false);
 		}
 		setMode(preferredMode);
 	}, [file.id, preferredMode]);
@@ -393,6 +398,7 @@ export function FilePreviewDialog({
 	}, [isDirty, onClose]);
 
 	const handleOpenMethodSelect = useCallback((nextMode: OpenWithMode) => {
+		setIsDialogAnimationEnabled(true);
 		setMode(nextMode);
 		setHasConfirmedInitialMode(true);
 	}, []);
@@ -402,6 +408,25 @@ export function FilePreviewDialog({
 		setIsDirty(false);
 		onClose();
 	}, [onClose]);
+
+	const handleExpandToggle = useCallback(() => {
+		setIsDialogAnimationEnabled(false);
+		setIsExpanded((value) => !value);
+	}, []);
+
+	useEffect(() => {
+		if (showOpenMethodChooser || !isDialogAnimationEnabled) {
+			return;
+		}
+
+		const timer = window.setTimeout(() => {
+			setIsDialogAnimationEnabled(false);
+		}, PREVIEW_DIALOG_OPEN_ANIMATION_MS);
+
+		return () => {
+			window.clearTimeout(timer);
+		};
+	}, [isDialogAnimationEnabled, showOpenMethodChooser]);
 
 	const body = (() => {
 		if (!previewAppsLoaded) {
@@ -625,10 +650,13 @@ export function FilePreviewDialog({
 			{showOpenMethodChooser ? null : (
 				<Dialog open onOpenChange={(open) => !open && closeWithGuard()}>
 					<DialogContent
+						animated={isDialogAnimationEnabled}
 						showCloseButton={false}
 						className={cn(
 							"flex max-h-[90vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1200px)]",
-							fillsViewportHeight && "h-[90vh]",
+							(fillsViewportHeight || isExpanded) && "h-[90vh]",
+							isExpanded &&
+								"top-0 left-0 h-screen w-screen max-h-screen max-w-none translate-x-0 translate-y-0 rounded-none sm:max-w-none",
 						)}
 					>
 						<DialogHeader className="gap-0 border-b px-4 py-3">
@@ -648,16 +676,51 @@ export function FilePreviewDialog({
 										</span>
 									</DialogTitle>
 								</div>
-								<Button variant="ghost" size="icon-sm" onClick={closeWithGuard}>
-									<Icon name="X" className="h-4 w-4" />
-								</Button>
+								<div className="flex items-center gap-1">
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										onClick={handleExpandToggle}
+										aria-label={t(
+											isExpanded
+												? "files:preview_exit_fullscreen"
+												: "files:preview_enter_fullscreen",
+										)}
+										title={t(
+											isExpanded
+												? "files:preview_exit_fullscreen"
+												: "files:preview_enter_fullscreen",
+										)}
+									>
+										<Icon
+											name={
+												isExpanded ? "ArrowsInCardinal" : "ArrowsOutCardinal"
+											}
+											className="h-4 w-4"
+										/>
+										<span className="sr-only">
+											{t(
+												isExpanded
+													? "files:preview_exit_fullscreen"
+													: "files:preview_enter_fullscreen",
+											)}
+										</span>
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										onClick={closeWithGuard}
+									>
+										<Icon name="X" className="h-4 w-4" />
+									</Button>
+								</div>
 							</div>
 						</DialogHeader>
 						{usesInnerScroll ? (
 							<div
 								className={cn(
 									"bg-muted/20 p-3",
-									fillsViewportHeight && "min-h-0 flex-1",
+									(fillsViewportHeight || isExpanded) && "min-h-0 flex-1",
 								)}
 							>
 								{body}
@@ -666,13 +729,13 @@ export function FilePreviewDialog({
 							<ScrollArea
 								className={cn(
 									"bg-muted/20",
-									fillsViewportHeight && "min-h-0 flex-1",
+									(fillsViewportHeight || isExpanded) && "min-h-0 flex-1",
 								)}
 							>
 								<div
 									className={cn(
 										"w-full p-3",
-										fillsViewportHeight && "h-full min-h-full",
+										(fillsViewportHeight || isExpanded) && "h-full min-h-full",
 									)}
 								>
 									{body}
