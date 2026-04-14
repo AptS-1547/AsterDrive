@@ -5,6 +5,7 @@ use actix_web::{
 };
 use futures::future::{LocalBoxFuture, Ready, ok};
 use std::rc::Rc;
+use tracing::Instrument;
 
 /// 存储在请求扩展中的请求唯一标识
 #[derive(Clone, Debug)]
@@ -62,16 +63,18 @@ where
             path = %path,
         );
 
-        Box::pin(async move {
-            let _guard = span.enter();
-            let mut resp = svc.call(req).await?;
+        Box::pin(
+            async move {
+                let mut resp = svc.call(req).await?;
 
-            if let Ok(val) = HeaderValue::from_str(&request_id) {
-                resp.headers_mut()
-                    .insert(HeaderName::from_static("x-request-id"), val);
+                if let Ok(val) = HeaderValue::from_str(&request_id) {
+                    resp.headers_mut()
+                        .insert(HeaderName::from_static("x-request-id"), val);
+                }
+
+                Ok(resp)
             }
-
-            Ok(resp)
-        })
+            .instrument(span),
+        )
     }
 }
