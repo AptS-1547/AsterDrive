@@ -92,7 +92,7 @@ async fn test_path_resolver_resolves_deep_folder_file_and_parent_paths() {
         &state,
         "davresolverdeep",
         "davresolverdeep@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -141,7 +141,7 @@ async fn test_path_resolver_honors_scoped_root_semantics() {
         &state,
         "davresolverscope",
         "davresolverscope@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -197,7 +197,7 @@ async fn test_path_resolver_handles_root_level_and_missing_path_boundaries() {
         &state,
         "davresolverroot",
         "davresolverroot@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -283,7 +283,7 @@ async fn test_path_resolver_prefers_folder_when_file_and_folder_share_name() {
         &state,
         "davresolverdupe",
         "davresolverdupe@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -346,7 +346,7 @@ async fn test_path_resolver_hides_deleted_intermediate_folders() {
     use aster_drive::webdav::path_resolver::{resolve_parent, resolve_path};
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "davresdel", "davresdel@example.com", "pass123")
+    let user = auth_service::register(&state, "davresdel", "davresdel@example.com", "pass1234")
         .await
         .unwrap();
 
@@ -378,7 +378,7 @@ async fn test_aster_dav_fs_handles_deep_paths_inside_scoped_root() {
     use aster_drive::webdav::fs::AsterDavFs;
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "davfsdeep", "davfsdeep@example.com", "pass123")
+    let user = auth_service::register(&state, "davfsdeep", "davfsdeep@example.com", "pass1234")
         .await
         .unwrap();
 
@@ -459,7 +459,7 @@ async fn test_aster_dav_fs_deep_write_create_new_and_overwrite_boundaries() {
         &state,
         "davfswriteroot",
         "davfswriteroot@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -551,7 +551,7 @@ async fn test_aster_dav_fs_copy_file_publishes_storage_event() {
         &state,
         "davfscopyfile",
         "davfscopyfile@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -611,7 +611,7 @@ async fn test_aster_dav_fs_remove_dir_publishes_storage_event() {
         &state,
         "davfsremovedir",
         "davfsremovedir@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -666,7 +666,7 @@ async fn test_aster_dav_fs_copy_folder_publishes_storage_event() {
         &state,
         "davfscopyfolder",
         "davfscopyfolder@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();

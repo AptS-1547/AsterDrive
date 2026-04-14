@@ -616,7 +616,7 @@
 	"security_actions_desc": "Keep high-risk controls here, including password resets and forced sign-out.",
 	"reset_password": "Reset password",
 	"reset_password_desc": "Set a new local sign-in password for this user without requiring their current password.",
-	"reset_password_hint": "The new password must be 6-128 characters long.",
+	"reset_password_hint": "The new password must be 8-128 characters long.",
 	"revoke_sessions": "Revoke sessions",
 	"revoke_sessions_desc": "Invalidate this user's current access and refresh tokens across devices.",
 	"revoke_sessions_hint": "Use this to force a fresh sign-in after a security event, account status change, or administrator intervention.",

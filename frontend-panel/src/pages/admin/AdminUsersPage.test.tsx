@@ -631,7 +631,7 @@ describe("AdminUsersPage", () => {
 			target: { value: "bad" },
 		});
 		fireEvent.change(screen.getByLabelText("password"), {
-			target: { value: "123" },
+			target: { value: "1234567" },
 		});
 
 		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));

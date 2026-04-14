@@ -19,7 +19,12 @@ import {
 	getPasswordResetRedirectState,
 } from "@/lib/passwordResetRedirect";
 import { cn } from "@/lib/utils";
-import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
+import {
+	emailSchema,
+	existingPasswordSchema,
+	passwordSchema,
+	usernameSchema,
+} from "@/lib/validation";
 import { authService } from "@/services/authService";
 import { ApiError } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
@@ -411,7 +416,9 @@ export default function LoginPage() {
 				errs.extra = extraResult.error.issues[0]?.message ?? "";
 		}
 
-		const pwResult = passwordSchema.safeParse(password);
+		const passwordValidationSchema =
+			mode === "login" ? existingPasswordSchema : passwordSchema;
+		const pwResult = passwordValidationSchema.safeParse(password);
 		if (!pwResult.success)
 			errs.password = pwResult.error.issues[0]?.message ?? "";
 
@@ -910,12 +917,15 @@ export default function LoginPage() {
 												placeholder={t("password")}
 												value={password}
 												onChange={(e) => {
-													setPassword(e.target.value);
-													if (mode !== "login") {
+													const value = e.target.value;
+													setPassword(value);
+													if (mode !== "login" || errors.password) {
 														validateSingle(
 															"password",
-															e.target.value,
-															passwordSchema,
+															value,
+															mode === "login"
+																? existingPasswordSchema
+																: passwordSchema,
 														);
 													}
 												}}

@@ -1,5 +1,9 @@
 # Contributing to AsterDrive
 
+## Community Expectations
+
+Please read and follow the [Code of Conduct](CODE_OF_CONDUCT.md) before participating in issues, pull requests, discussions, and review threads.
+
 ## Getting Started
 
 1. Fork the repository

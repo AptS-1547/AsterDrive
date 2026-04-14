@@ -85,6 +85,22 @@ async fn test_auth_service_register_login() {
 }
 
 #[actix_web::test]
+async fn test_auth_service_rejects_password_shorter_than_eight_chars() {
+    let state = common::setup().await;
+
+    let err = aster_drive::services::auth_service::register(
+        &state,
+        "alice",
+        "alice@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(err.message(), "password must be at least 8 characters");
+}
+
+#[actix_web::test]
 async fn test_auth_service_change_password() {
     let state = common::setup().await;
 
@@ -147,11 +163,11 @@ async fn test_auth_service_set_password() {
 async fn test_auth_service_verify_token() {
     let state = common::setup().await;
 
-    aster_drive::services::auth_service::register(&state, "bobb", "bob@example.com", "pass123")
+    aster_drive::services::auth_service::register(&state, "bobb", "bob@example.com", "pass1234")
         .await
         .unwrap();
 
-    let login_result = aster_drive::services::auth_service::login(&state, "bobb", "pass123")
+    let login_result = aster_drive::services::auth_service::login(&state, "bobb", "pass1234")
         .await
         .unwrap();
 
@@ -178,7 +194,7 @@ async fn test_file_service_get_info() {
     let state = common::setup().await;
 
     let user =
-        aster_drive::services::auth_service::register(&state, "user1", "u1@example.com", "pass123")
+        aster_drive::services::auth_service::register(&state, "user1", "u1@example.com", "pass1234")
             .await
             .unwrap();
 
@@ -210,7 +226,7 @@ async fn test_file_service_get_info() {
 
     // 别人的文件
     let user2 =
-        aster_drive::services::auth_service::register(&state, "user2", "u2@example.com", "pass123")
+        aster_drive::services::auth_service::register(&state, "user2", "u2@example.com", "pass1234")
             .await
             .unwrap();
     let err = aster_drive::services::file_service::get_info(&state, file.id, user2.id).await;
@@ -526,7 +542,7 @@ async fn test_lock_service_lock_unlock() {
         &state,
         "locker",
         "locker@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -602,7 +618,7 @@ async fn test_lock_service_force_unlock() {
         &state,
         "admin1",
         "admin1@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -639,7 +655,7 @@ async fn test_lock_service_unlock_by_token_clears_file_lock_state() {
     use aster_drive::services::{auth_service, file_service, lock_service};
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "tokunlock", "tokunlock@example.com", "pass123")
+    let user = auth_service::register(&state, "tokunlock", "tokunlock@example.com", "pass1234")
         .await
         .unwrap();
 
@@ -696,7 +712,7 @@ async fn test_lock_service_cleanup_expired_unlocks_only_expired_resources() {
     use chrono::Duration;
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "lockcleanup", "lockcleanup@example.com", "pass123")
+    let user = auth_service::register(&state, "lockcleanup", "lockcleanup@example.com", "pass1234")
         .await
         .unwrap();
 
@@ -763,7 +779,7 @@ async fn test_version_service_list_delete() {
         &state,
         "veruser",
         "ver@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -841,7 +857,7 @@ async fn test_delete_version_keeps_history_numbers_dense() {
         &state,
         "densever",
         "densever@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -948,7 +964,7 @@ async fn test_version_storage_used_tracks_overwrite_delete_and_restore() {
         &state,
         "versionquota",
         "versionquota@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -1047,7 +1063,7 @@ async fn test_version_cleanup_excess_reclaims_storage_used() {
         &state,
         "versionlimit",
         "versionlimit@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -1121,7 +1137,7 @@ async fn test_version_restore_truncates_future_versions_without_deleting_target_
         &state,
         "restoreuser",
         "restore@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -1271,7 +1287,7 @@ async fn test_copy_file_naming() {
         &state,
         "copier",
         "copier@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -1307,7 +1323,7 @@ async fn test_folder_service_cycle_detection() {
     let state = common::setup().await;
 
     let user =
-        aster_drive::services::auth_service::register(&state, "cycl", "cyc@example.com", "pass123")
+        aster_drive::services::auth_service::register(&state, "cycl", "cyc@example.com", "pass1234")
             .await
             .unwrap();
 
@@ -1356,7 +1372,7 @@ async fn test_property_service_dav_readonly() {
         &state,
         "prop",
         "prop@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();

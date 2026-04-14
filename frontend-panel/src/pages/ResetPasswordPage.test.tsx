@@ -112,7 +112,7 @@ vi.mock("@/components/ui/label", () => ({
 vi.mock("@/lib/validation", () => ({
 	passwordSchema: {
 		safeParse: (value: string) =>
-			value.length >= 6
+			value.length >= 8
 				? { success: true }
 				: {
 						error: { issues: [{ message: "invalid-password" }] },

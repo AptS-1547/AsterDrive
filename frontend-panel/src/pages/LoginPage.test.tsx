@@ -126,9 +126,18 @@ vi.mock("@/lib/validation", () => ({
 						success: false,
 					},
 	},
+	existingPasswordSchema: {
+		safeParse: (value: string) =>
+			value.length > 0
+				? { success: true }
+				: {
+						error: { issues: [{ message: "password-required" }] },
+						success: false,
+					},
+	},
 	passwordSchema: {
 		safeParse: (value: string) =>
-			value.length >= 6
+			value.length >= 8
 				? { success: true }
 				: {
 						error: { issues: [{ message: "invalid-password" }] },
@@ -235,14 +244,14 @@ describe("LoginPage", () => {
 		});
 
 		fireEvent.change(screen.getByLabelText("password"), {
-			target: { value: "secret123" },
+			target: { value: "secret7" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "sign_in" }));
 
 		await waitFor(() => {
 			expect(mockState.login).toHaveBeenCalledWith(
 				"user@example.com",
-				"secret123",
+				"secret7",
 			);
 		});
 		await waitFor(() => {
@@ -578,7 +587,6 @@ describe("LoginPage", () => {
 		fireEvent.click(screen.getByRole("button", { name: "sign_in" }));
 
 		expect(screen.getByText("invalid-username")).toBeInTheDocument();
-		expect(screen.getByText("invalid-password")).toBeInTheDocument();
 
 		fireEvent.change(screen.getByLabelText("email_or_username"), {
 			target: { value: "user@example.com" },

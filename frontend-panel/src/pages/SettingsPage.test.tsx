@@ -424,7 +424,7 @@ describe("SettingsPage", () => {
 		fireEvent.change(
 			screen.getByLabelText("settings:settings_password_current"),
 			{
-				target: { value: "password123" },
+				target: { value: "pass123" },
 			},
 		);
 		fireEvent.change(screen.getByLabelText("settings:settings_password_new"), {
@@ -440,7 +440,7 @@ describe("SettingsPage", () => {
 
 		await waitFor(() =>
 			expect(mockState.authService.changePassword).toHaveBeenCalledWith({
-				current_password: "password123",
+				current_password: "pass123",
 				new_password: "newsecret456",
 			}),
 		);

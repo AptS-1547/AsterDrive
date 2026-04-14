@@ -284,9 +284,9 @@ fn validate_email(email: &str) -> Result<()> {
 }
 
 fn validate_password(password: &str) -> Result<()> {
-    if password.len() < 6 {
+    if password.len() < 8 {
         return Err(AsterError::validation_error(
-            "password must be at least 6 characters",
+            "password must be at least 8 characters",
         ));
     }
     if password.len() > 128 {

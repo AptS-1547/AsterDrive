@@ -56,7 +56,7 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
         &state,
         "davfilewriter",
         "davfilewriter@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -139,7 +139,7 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
     use sea_orm::{ActiveModelTrait, Set};
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "davfsprops", "davfsprops@example.com", "pass123")
+    let user = auth_service::register(&state, "davfsprops", "davfsprops@example.com", "pass1234")
         .await
         .unwrap();
 

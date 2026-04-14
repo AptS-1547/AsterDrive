@@ -81,7 +81,7 @@
 	"settings_password_current": "Current password",
 	"settings_password_new": "New password",
 	"settings_password_confirm": "Confirm new password",
-	"settings_password_hint": "Passwords must be 6-128 characters long.",
+	"settings_password_hint": "Passwords must be 8-128 characters long.",
 	"settings_password_confirm_mismatch": "The confirmation password does not match.",
 	"settings_password_updated": "Password updated.",
 	"settings_security_account": "Account",

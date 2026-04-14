@@ -22,7 +22,7 @@ async fn test_db_lock_system_deep_lock_supports_check_refresh_discover_and_delet
     use xmltree::Element;
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "davlocks", "davlocks@example.com", "pass123")
+    let user = auth_service::register(&state, "davlocks", "davlocks@example.com", "pass1234")
         .await
         .unwrap();
 
@@ -136,7 +136,7 @@ async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts
     use dav_server::ls::DavLockSystem;
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "davexpired", "davexpired@example.com", "pass123")
+    let user = auth_service::register(&state, "davexpired", "davexpired@example.com", "pass1234")
         .await
         .unwrap();
 

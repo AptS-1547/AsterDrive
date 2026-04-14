@@ -323,7 +323,7 @@ async fn test_webdav_account_test_connection() {
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
             "username": "test_conn",
-            "password": "pass123"
+            "password": "pass1234"
         }))
         .to_request();
     test::call_service(&app, req).await;
@@ -334,7 +334,7 @@ async fn test_webdav_account_test_connection() {
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
             "username": "test_conn",
-            "password": "pass123"
+            "password": "pass1234"
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;

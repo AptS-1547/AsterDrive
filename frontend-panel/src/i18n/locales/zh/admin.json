@@ -616,7 +616,7 @@
 	"security_actions_desc": "高风险操作集中在这里，可按需重置密码或强制使会话失效。",
 	"reset_password": "重置密码",
 	"reset_password_desc": "为该用户直接设置新的本地登录密码，无需输入对方当前密码。",
-	"reset_password_hint": "新密码长度需为 6-128 个字符。",
+	"reset_password_hint": "新密码长度需为 8-128 个字符。",
 	"revoke_sessions": "强制使会话失效",
 	"revoke_sessions_desc": "使该用户当前设备上的 access token 和 refresh token 全部失效。",
 	"revoke_sessions_hint": "适用于安全事件、账号状态变更后需要强制重新登录，或管理员需要主动终止用户当前会话。",

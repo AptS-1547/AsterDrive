@@ -1273,7 +1273,7 @@ async fn test_presigned_upload_s3_e2e() {
     // 创建 state（内存 SQLite）
     let state = common::setup().await;
 
-    let user = auth_service::register(&state, "s3user", "s3@test.com", "pass123")
+    let user = auth_service::register(&state, "s3user", "s3@test.com", "pass1234")
         .await
         .unwrap();
     let s3_policy = create_s3_default_policy(
@@ -1388,7 +1388,7 @@ async fn test_presigned_multipart_upload_s3_e2e() {
 
     let state = common::setup().await;
 
-    let user = auth_service::register(&state, "s3multipartuser", "s3multipart@test.com", "pass123")
+    let user = auth_service::register(&state, "s3multipartuser", "s3multipart@test.com", "pass1234")
         .await
         .unwrap();
     let s3_policy = create_s3_default_policy(
@@ -1513,7 +1513,7 @@ async fn test_create_empty_file_s3_no_dedup() {
     wait_for_s3_bucket(&endpoint, bucket).await;
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "s3empty", "s3-empty@test.com", "pass123")
+    let user = auth_service::register(&state, "s3empty", "s3-empty@test.com", "pass1234")
         .await
         .unwrap();
     let policy = create_s3_default_policy(
@@ -1526,7 +1526,7 @@ async fn test_create_empty_file_s3_no_dedup() {
         5_242_880,
     )
     .await;
-    let login = auth_service::login(&state, "s3empty", "pass123")
+    let login = auth_service::login(&state, "s3empty", "pass1234")
         .await
         .unwrap();
 
@@ -1603,7 +1603,7 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
     wait_for_s3_bucket(&endpoint, bucket).await;
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "relaydirect", "relay-direct@test.com", "pass123")
+    let user = auth_service::register(&state, "relaydirect", "relay-direct@test.com", "pass1234")
         .await
         .unwrap();
     let policy = create_s3_default_policy(
@@ -1616,7 +1616,7 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
         5_242_880,
     )
     .await;
-    let login = auth_service::login(&state, "relaydirect", "pass123")
+    let login = auth_service::login(&state, "relaydirect", "pass1234")
         .await
         .unwrap();
 
@@ -1726,7 +1726,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     wait_for_s3_bucket(&endpoint, bucket).await;
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "relayexact", "relay-exact@test.com", "pass123")
+    let user = auth_service::register(&state, "relayexact", "relay-exact@test.com", "pass1234")
         .await
         .unwrap();
     let policy = create_s3_default_policy(
@@ -1739,7 +1739,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
         5_242_880,
     )
     .await;
-    let login = auth_service::login(&state, "relayexact", "pass123")
+    let login = auth_service::login(&state, "relayexact", "pass1234")
         .await
         .unwrap();
 
@@ -1864,7 +1864,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     wait_for_s3_bucket(&endpoint, bucket).await;
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "relaychunked", "relay-chunked@test.com", "pass123")
+    let user = auth_service::register(&state, "relaychunked", "relay-chunked@test.com", "pass1234")
         .await
         .unwrap();
     let policy = create_s3_default_policy(

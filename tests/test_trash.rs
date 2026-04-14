@@ -557,7 +557,7 @@ async fn test_cleanup_expired_falls_back_to_default_retention_for_invalid_config
         &state,
         "trashcleanup",
         "trashcleanup@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();
@@ -653,7 +653,7 @@ async fn test_cleanup_expired_only_counts_top_level_deleted_folders() {
     use sea_orm::{ActiveModelTrait, Set};
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "trashnested", "trashnested@example.com", "pass123")
+    let user = auth_service::register(&state, "trashnested", "trashnested@example.com", "pass1234")
         .await
         .unwrap();
 
@@ -694,7 +694,7 @@ async fn test_cleanup_expired_keeps_recently_deleted_items() {
     use aster_drive::services::{auth_service, file_service, trash_service};
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "trashrecent", "trashrecent@example.com", "pass123")
+    let user = auth_service::register(&state, "trashrecent", "trashrecent@example.com", "pass1234")
         .await
         .unwrap();
 
@@ -728,7 +728,7 @@ async fn test_purge_all_processes_multiple_file_batches() {
     use aster_drive::services::{auth_service, file_service, trash_service};
 
     let state = common::setup().await;
-    let user = auth_service::register(&state, "tbfiles", "trashbatchfiles@example.com", "pass123")
+    let user = auth_service::register(&state, "tbfiles", "trashbatchfiles@example.com", "pass1234")
         .await
         .unwrap();
 
@@ -760,7 +760,7 @@ async fn test_purge_all_processes_multiple_folder_batches() {
         &state,
         "tbfolders",
         "trashbatchfolders@example.com",
-        "pass123",
+        "pass1234",
     )
     .await
     .unwrap();

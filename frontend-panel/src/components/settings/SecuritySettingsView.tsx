@@ -13,7 +13,11 @@ import {
 	clearContactVerificationRedirectSearch,
 	getContactVerificationRedirectState,
 } from "@/lib/contactVerificationRedirect";
-import { emailSchema, passwordSchema } from "@/lib/validation";
+import {
+	emailSchema,
+	existingPasswordSchema,
+	passwordSchema,
+} from "@/lib/validation";
 import { authService } from "@/services/authService";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -128,7 +132,7 @@ export function SecuritySettingsView() {
 
 	const validate = () => {
 		const nextErrors: FormErrors = {};
-		const currentResult = passwordSchema.safeParse(currentPassword);
+		const currentResult = existingPasswordSchema.safeParse(currentPassword);
 		if (!currentResult.success) {
 			nextErrors.currentPassword = currentResult.error.issues[0]?.message ?? "";
 		}

@@ -131,6 +131,7 @@ docker compose up -d
 - [快速开始](docs/guide/getting-started.md)
 - [安装与部署](docs/guide/installation.md)
 - [运维 CLI](docs/deployment/ops-cli.md)
+- [社区行为准则](CODE_OF_CONDUCT.md)
 - [开发者文档](developer-docs/README.md)
 - [架构文档](developer-docs/architecture.md)
 - [Docker 部署](docs/deployment/docker.md)

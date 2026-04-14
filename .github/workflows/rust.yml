@@ -41,6 +41,9 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
+      - name: Format check
+        run: cargo fmt -- --check
+
       - name: Run tests
         run: cargo test --no-fail-fast --verbose
 
