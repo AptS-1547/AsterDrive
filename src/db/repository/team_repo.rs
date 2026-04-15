@@ -1,11 +1,57 @@
 use crate::db::repository::pagination_repo::fetch_offset_page;
+use crate::db::repository::search_query::{
+    escape_like_query, lower_like_condition, mysql_boolean_mode_query, sqlite_fts_match_condition,
+    sqlite_match_query,
+};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    sea_query::{Expr, extension::postgres::PgExpr},
 };
 
 use crate::entities::team::{self, Entity as Team};
 use crate::errors::{AsterError, Result};
+
+const SQLITE_TEAMS_FTS_TABLE: &str = "teams_search_fts";
+
+fn team_keyword_like_condition(query: &str) -> Condition {
+    Condition::any()
+        .add(lower_like_condition(team::Column::Name, query))
+        .add(lower_like_condition(team::Column::Description, query))
+}
+
+fn team_keyword_condition(backend: DbBackend, query: &str) -> Condition {
+    match backend {
+        DbBackend::Postgres => {
+            let pattern = format!("%{}%", escape_like_query(query));
+            Condition::any()
+                .add(Expr::col(team::Column::Name).ilike(pattern.clone()))
+                .add(Expr::col(team::Column::Description).ilike(pattern))
+        }
+        DbBackend::MySql => mysql_boolean_mode_query(query)
+            .map(|boolean_query| {
+                Condition::all().add(Expr::cust_with_exprs(
+                    "MATCH(?, ?) AGAINST (? IN BOOLEAN MODE)",
+                    [
+                        Expr::col(team::Column::Name),
+                        Expr::col(team::Column::Description),
+                        Expr::val(boolean_query),
+                    ],
+                ))
+            })
+            .unwrap_or_else(|| team_keyword_like_condition(query)),
+        DbBackend::Sqlite => sqlite_match_query(query)
+            .map(|match_query| {
+                Condition::all().add(sqlite_fts_match_condition(
+                    team::Column::Id,
+                    SQLITE_TEAMS_FTS_TABLE,
+                    &match_query,
+                ))
+            })
+            .unwrap_or_else(|| team_keyword_like_condition(query)),
+        _ => team_keyword_like_condition(query),
+    }
+}
 
 pub async fn create<C: ConnectionTrait>(db: &C, model: team::ActiveModel) -> Result<team::Model> {
     model.insert(db).await.map_err(AsterError::from)
@@ -106,6 +152,8 @@ async fn find_paginated_by_archived_state<C: ConnectionTrait>(
     keyword: Option<&str>,
     archived: bool,
 ) -> Result<(Vec<team::Model>, u64)> {
+    let backend = db.get_database_backend();
+    let keyword = keyword.map(str::trim).filter(|keyword| !keyword.is_empty());
     let mut q = Team::find().order_by_asc(team::Column::Id);
 
     q = if archived {
@@ -114,13 +162,8 @@ async fn find_paginated_by_archived_state<C: ConnectionTrait>(
         q.filter(team::Column::ArchivedAt.is_null())
     };
 
-    if let Some(keyword) = keyword.filter(|s| !s.trim().is_empty()) {
-        let pattern = format!("%{}%", keyword.trim());
-        q = q.filter(
-            Condition::any()
-                .add(team::Column::Name.like(&pattern))
-                .add(team::Column::Description.like(&pattern)),
-        );
+    if let Some(keyword) = keyword {
+        q = q.filter(team_keyword_condition(backend, keyword));
     }
 
     fetch_offset_page(db, q, limit, offset).await
@@ -241,4 +284,66 @@ pub async fn set_storage_used<C: ConnectionTrait>(db: &C, id: i64, value: i64) -
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{DbBackend, QueryTrait};
+
+    #[test]
+    fn postgres_team_keyword_condition_uses_ilike() {
+        let sql: String = format!(
+            "{}",
+            Team::find()
+                .filter(team_keyword_condition(DbBackend::Postgres, "ops"))
+                .build(DbBackend::Postgres)
+        );
+
+        assert!(sql.as_str().contains(r#""name" ILIKE '%ops%'"#), "{sql}");
+        assert!(
+            sql.as_str().contains(r#""description" ILIKE '%ops%'"#),
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn mysql_team_keyword_condition_uses_match_against() {
+        let sql: String = format!(
+            "{}",
+            Team::find()
+                .filter(team_keyword_condition(DbBackend::MySql, "ops"))
+                .build(DbBackend::MySql)
+        );
+
+        assert!(sql.as_str().contains("MATCH("), "{sql}");
+        assert!(sql.as_str().contains("`name`"), "{sql}");
+        assert!(sql.as_str().contains("`description`"), "{sql}");
+        assert!(
+            sql.as_str()
+                .contains(r#"AGAINST ('\"ops\"' IN BOOLEAN MODE)"#),
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn mysql_team_keyword_condition_falls_back_to_like_for_punctuation() {
+        let sql: String = format!(
+            "{}",
+            Team::find()
+                .filter(team_keyword_condition(DbBackend::MySql, "ops-core"))
+                .build(DbBackend::MySql)
+        );
+
+        assert!(!sql.as_str().contains("MATCH("), "{sql}");
+        assert!(
+            sql.as_str().contains("LOWER(`name`) LIKE '%ops-core%'"),
+            "{sql}"
+        );
+        assert!(
+            sql.as_str()
+                .contains("LOWER(`description`) LIKE '%ops-core%'"),
+            "{sql}"
+        );
+    }
 }

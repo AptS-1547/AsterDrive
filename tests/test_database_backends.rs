@@ -62,7 +62,14 @@ async fn assert_postgres_search_objects(db: &DatabaseConnection) {
             DbBackend::Postgres,
             "SELECT indexname FROM pg_indexes \
              WHERE schemaname = 'public' \
-               AND indexname IN ('idx_files_live_name_trgm', 'idx_folders_live_name_trgm')",
+               AND indexname IN (\
+                   'idx_files_live_name_trgm', \
+                   'idx_folders_live_name_trgm', \
+                   'idx_teams_name_trgm', \
+                   'idx_teams_description_trgm', \
+                   'idx_users_username_trgm', \
+                   'idx_users_email_trgm'\
+               )",
         ))
         .await
         .unwrap();
@@ -76,6 +83,14 @@ async fn assert_postgres_search_objects(db: &DatabaseConnection) {
             .iter()
             .any(|name| name == "idx_folders_live_name_trgm")
     );
+    assert!(names.iter().any(|name| name == "idx_teams_name_trgm"));
+    assert!(
+        names
+            .iter()
+            .any(|name| name == "idx_teams_description_trgm")
+    );
+    assert!(names.iter().any(|name| name == "idx_users_username_trgm"));
+    assert!(names.iter().any(|name| name == "idx_users_email_trgm"));
 }
 
 async fn assert_mysql_search_objects(db: &DatabaseConnection) {
@@ -99,6 +114,24 @@ async fn assert_mysql_search_objects(db: &DatabaseConnection) {
         folder_index.is_some(),
         "folders fulltext index should exist"
     );
+
+    let user_index = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::MySql,
+            "SHOW INDEX FROM users WHERE Key_name = 'idx_users_search_fulltext'",
+        ))
+        .await
+        .unwrap();
+    assert!(user_index.is_some(), "users fulltext index should exist");
+
+    let team_index = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::MySql,
+            "SHOW INDEX FROM teams WHERE Key_name = 'idx_teams_search_fulltext'",
+        ))
+        .await
+        .unwrap();
+    assert!(team_index.is_some(), "teams fulltext index should exist");
 }
 
 #[actix_web::test]
@@ -156,6 +189,73 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
         .to_request();
     let register_resp = test::call_service(&app, register_req).await;
     assert_eq!(register_resp.status(), 201);
+
+    let create_team_req = test::TestRequest::post()
+        .uri("/api/v1/admin/teams")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Operations",
+            "description": "Shared operations workspace",
+            "admin_identifier": "backend-user"
+        }))
+        .to_request();
+    let create_team_resp = test::call_service(&app, create_team_req).await;
+    let create_team_status = create_team_resp.status();
+    if create_team_status != 201 {
+        let body = test::read_body(create_team_resp).await;
+        panic!(
+            "create team returned {create_team_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let create_team_body: Value = test::read_body_json(create_team_resp).await;
+    let team_id = create_team_body["data"]["id"]
+        .as_i64()
+        .expect("created team should return id");
+
+    let admin_team_search_req = test::TestRequest::get()
+        .uri("/api/v1/admin/teams?keyword=erat")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let admin_team_search_resp = test::call_service(&app, admin_team_search_req).await;
+    let admin_team_search_status = admin_team_search_resp.status();
+    if admin_team_search_status != 200 {
+        let body = test::read_body(admin_team_search_resp).await;
+        panic!(
+            "admin team search returned {admin_team_search_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let admin_team_search_body: Value = test::read_body_json(admin_team_search_resp).await;
+    assert_eq!(admin_team_search_body["data"]["total"], 1);
+    assert_eq!(admin_team_search_body["data"]["items"][0]["id"], team_id);
+
+    let admin_team_member_search_req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/admin/teams/{team_id}/members?keyword=end-u"
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let admin_team_member_search_resp =
+        test::call_service(&app, admin_team_member_search_req).await;
+    let admin_team_member_search_status = admin_team_member_search_resp.status();
+    if admin_team_member_search_status != 200 {
+        let body = test::read_body(admin_team_member_search_resp).await;
+        panic!(
+            "admin team member search returned {admin_team_member_search_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let admin_team_member_search_body: Value =
+        test::read_body_json(admin_team_member_search_resp).await;
+    assert_eq!(admin_team_member_search_body["data"]["total"], 1);
+    assert_eq!(
+        admin_team_member_search_body["data"]["items"][0]["username"],
+        "backend-user"
+    );
 
     let boundary = "----BackendBoundary123";
     let mut report_file_id = None;
@@ -300,6 +400,27 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
     let short_search_body: Value = test::read_body_json(short_search_resp).await;
     assert_eq!(short_search_body["data"]["total_files"], 1);
     assert_eq!(short_search_body["data"]["files"][0]["name"], "report.pdf");
+
+    let admin_user_search_req = test::TestRequest::get()
+        .uri("/api/v1/admin/users?keyword=end-u")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let admin_user_search_resp = test::call_service(&app, admin_user_search_req).await;
+    let admin_user_search_status = admin_user_search_resp.status();
+    if admin_user_search_status != 200 {
+        let body = test::read_body(admin_user_search_resp).await;
+        panic!(
+            "admin user search returned {admin_user_search_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let admin_user_search_body: Value = test::read_body_json(admin_user_search_resp).await;
+    assert_eq!(admin_user_search_body["data"]["total"], 1);
+    assert_eq!(
+        admin_user_search_body["data"]["items"][0]["username"],
+        "backend-user"
+    );
 
     let folder_search_req = test::TestRequest::get()
         .uri("/api/v1/search?type=folder&q=doc")

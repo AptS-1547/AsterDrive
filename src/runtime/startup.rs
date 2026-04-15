@@ -19,6 +19,13 @@ pub async fn prepare() -> Result<AppState> {
         .await
         .map_aster_err(AsterError::database_operation)?;
 
+    if let Some(sqlite_search) = db::sqlite_search::ensure_sqlite_search_ready(&database).await? {
+        tracing::info!(
+            sqlite_version = %sqlite_search.sqlite_version,
+            "SQLite search acceleration ready"
+        );
+    }
+
     // 3. 确保默认存储策略存在
     ensure_default_policy(&database).await?;
     crate::services::policy_service::ensure_policy_groups_seeded(&database).await?;

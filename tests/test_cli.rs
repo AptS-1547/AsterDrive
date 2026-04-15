@@ -609,6 +609,41 @@ async fn test_root_binary_doctor_warns_when_public_site_url_uses_http() {
 }
 
 #[tokio::test]
+async fn test_root_binary_doctor_reports_sqlite_search_acceleration_ready() {
+    let database_url = setup_ready_database_url().await;
+
+    let output = run_aster_drive(&["doctor", "--database-url", &database_url]);
+    assert!(
+        output.status.success(),
+        "doctor stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("doctor stdout should be utf-8");
+    let report: Value = serde_json::from_str(&stdout).expect("doctor output should be json");
+    let checks = report["data"]["checks"]
+        .as_array()
+        .expect("doctor checks should be an array");
+    let sqlite_search_check = checks
+        .iter()
+        .find(|check| check["name"] == "sqlite_search_acceleration")
+        .expect("sqlite_search_acceleration check should exist");
+
+    assert_eq!(sqlite_search_check["status"], "ok");
+    assert_eq!(
+        sqlite_search_check["summary"],
+        "FTS5 trigram search acceleration ready"
+    );
+    assert!(
+        sqlite_search_check["details"]
+            .as_array()
+            .is_some_and(|details| details.iter().any(|detail| detail
+                .as_str()
+                .is_some_and(|detail| detail.starts_with("sqlite_version="))))
+    );
+}
+
+#[tokio::test]
 async fn test_root_binary_doctor_deep_fix_repairs_counters() {
     let database_url = setup_database_url().await;
     let state = common::setup_with_database_url(&database_url).await;

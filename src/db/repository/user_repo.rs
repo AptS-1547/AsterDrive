@@ -1,11 +1,57 @@
 use crate::db::repository::pagination_repo::fetch_offset_page;
+use crate::db::repository::search_query::{
+    escape_like_query, lower_like_condition, mysql_boolean_mode_query, sqlite_fts_match_condition,
+    sqlite_match_query,
+};
 use crate::entities::user::{self, Entity as User};
 use crate::errors::{AsterError, Result};
 use crate::types::{UserRole, UserStatus};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
+    PaginatorTrait, QueryFilter, QueryOrder,
+    sea_query::{Expr, extension::postgres::PgExpr},
 };
+
+const SQLITE_USERS_FTS_TABLE: &str = "users_search_fts";
+
+fn user_keyword_like_condition(query: &str) -> Condition {
+    Condition::any()
+        .add(lower_like_condition(user::Column::Username, query))
+        .add(lower_like_condition(user::Column::Email, query))
+}
+
+fn user_keyword_condition(backend: DbBackend, query: &str) -> Condition {
+    match backend {
+        DbBackend::Postgres => {
+            let pattern = format!("%{}%", escape_like_query(query));
+            Condition::any()
+                .add(Expr::col(user::Column::Username).ilike(pattern.clone()))
+                .add(Expr::col(user::Column::Email).ilike(pattern))
+        }
+        DbBackend::MySql => mysql_boolean_mode_query(query)
+            .map(|boolean_query| {
+                Condition::all().add(Expr::cust_with_exprs(
+                    "MATCH(?, ?) AGAINST (? IN BOOLEAN MODE)",
+                    [
+                        Expr::col(user::Column::Username),
+                        Expr::col(user::Column::Email),
+                        Expr::val(boolean_query),
+                    ],
+                ))
+            })
+            .unwrap_or_else(|| user_keyword_like_condition(query)),
+        DbBackend::Sqlite => sqlite_match_query(query)
+            .map(|match_query| {
+                Condition::all().add(sqlite_fts_match_condition(
+                    user::Column::Id,
+                    SQLITE_USERS_FTS_TABLE,
+                    &match_query,
+                ))
+            })
+            .unwrap_or_else(|| user_keyword_like_condition(query)),
+        _ => user_keyword_like_condition(query),
+    }
+}
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<user::Model> {
     User::find_by_id(id)
@@ -96,15 +142,13 @@ pub async fn find_paginated<C: ConnectionTrait>(
     role: Option<UserRole>,
     status: Option<UserStatus>,
 ) -> Result<(Vec<user::Model>, u64)> {
+    let backend = db.get_database_backend();
+    let keyword = keyword.map(str::trim).filter(|keyword| !keyword.is_empty());
+
     let mut q = User::find().order_by_asc(user::Column::Id);
 
-    if let Some(keyword) = keyword.filter(|s| !s.trim().is_empty()) {
-        let pattern = format!("%{}%", keyword.trim());
-        q = q.filter(
-            sea_orm::Condition::any()
-                .add(user::Column::Username.like(&pattern))
-                .add(user::Column::Email.like(&pattern)),
-        );
+    if let Some(keyword) = keyword {
+        q = q.filter(user_keyword_condition(backend, keyword));
     }
     if let Some(role) = role {
         q = q.filter(user::Column::Role.eq(role));
@@ -199,38 +243,99 @@ mod tests {
     use sea_orm::{DbBackend, QueryTrait};
 
     #[test]
-    fn postgres_update_storage_used_sql_is_valid() {
-        let sql = User::update_many()
-            .col_expr(
-                user::Column::StorageUsed,
-                Expr::col(user::Column::StorageUsed).add(1i64),
-            )
-            .filter(user::Column::Id.eq(7))
-            .build(DbBackend::Postgres)
-            .to_string();
+    fn postgres_user_keyword_condition_uses_ilike() {
+        let sql: String = format!(
+            "{}",
+            User::find()
+                .filter(user_keyword_condition(DbBackend::Postgres, "alice"))
+                .build(DbBackend::Postgres)
+        );
 
         assert!(
-            sql.contains(r#""storage_used" = "storage_used" + 1"#),
+            sql.as_str().contains(r#""username" ILIKE '%alice%'"#),
             "{sql}"
         );
-        assert!(sql.contains(r#"WHERE "users"."id" = 7"#), "{sql}");
+        assert!(sql.as_str().contains(r#""email" ILIKE '%alice%'"#), "{sql}");
+    }
+
+    #[test]
+    fn mysql_user_keyword_condition_uses_match_against() {
+        let sql: String = format!(
+            "{}",
+            User::find()
+                .filter(user_keyword_condition(DbBackend::MySql, "alice"))
+                .build(DbBackend::MySql)
+        );
+
+        assert!(sql.as_str().contains("MATCH("), "{sql}");
+        assert!(sql.as_str().contains("`username`"), "{sql}");
+        assert!(sql.as_str().contains("`email`"), "{sql}");
+        assert!(
+            sql.as_str()
+                .contains(r#"AGAINST ('\"alice\"' IN BOOLEAN MODE)"#),
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn mysql_user_keyword_condition_falls_back_to_like_for_punctuation() {
+        let sql: String = format!(
+            "{}",
+            User::find()
+                .filter(user_keyword_condition(DbBackend::MySql, "end-u"))
+                .build(DbBackend::MySql)
+        );
+
+        assert!(!sql.as_str().contains("MATCH("), "{sql}");
+        assert!(
+            sql.as_str().contains("LOWER(`username`) LIKE '%end-u%'"),
+            "{sql}"
+        );
+        assert!(
+            sql.as_str().contains("LOWER(`email`) LIKE '%end-u%'"),
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn postgres_update_storage_used_sql_is_valid() {
+        let sql: String = format!(
+            "{}",
+            User::update_many()
+                .col_expr(
+                    user::Column::StorageUsed,
+                    Expr::col(user::Column::StorageUsed).add(1i64),
+                )
+                .filter(user::Column::Id.eq(7))
+                .build(DbBackend::Postgres)
+        );
+
+        assert!(
+            sql.as_str()
+                .contains(r#""storage_used" = "storage_used" + 1"#),
+            "{sql}"
+        );
+        assert!(sql.as_str().contains(r#"WHERE "users"."id" = 7"#), "{sql}");
     }
 
     #[test]
     fn postgres_bump_session_version_sql_is_valid() {
-        let sql = User::update_many()
-            .col_expr(
-                user::Column::SessionVersion,
-                Expr::col(user::Column::SessionVersion).add(1i64),
-            )
-            .filter(user::Column::Id.eq(9))
-            .build(DbBackend::Postgres)
-            .to_string();
+        let sql: String = format!(
+            "{}",
+            User::update_many()
+                .col_expr(
+                    user::Column::SessionVersion,
+                    Expr::col(user::Column::SessionVersion).add(1i64),
+                )
+                .filter(user::Column::Id.eq(9))
+                .build(DbBackend::Postgres)
+        );
 
         assert!(
-            sql.contains(r#""session_version" = "session_version" + 1"#),
+            sql.as_str()
+                .contains(r#""session_version" = "session_version" + 1"#),
             "{sql}"
         );
-        assert!(sql.contains(r#"WHERE "users"."id" = 9"#), "{sql}");
+        assert!(sql.as_str().contains(r#"WHERE "users"."id" = 9"#), "{sql}");
     }
 }

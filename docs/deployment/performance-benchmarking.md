@@ -83,6 +83,42 @@ k6 run tests/performance/k6/download.js
 
 现在下载、上传、WebDAV 和 `mixed-ramp.js` 的 summary 里都会带字节计数器，可以直接拿 `count` / `rate` 看有效吞吐，不用只看 `http_req_duration` 这种会把你带沟里的单请求延迟。
 
+## SQLite 搜索验证
+
+如果你的部署后端是 SQLite，跑搜索压测前先确认两件事：
+
+1. `doctor` 里 `SQLite search acceleration` 是 `ok`
+2. `EXPLAIN QUERY PLAN` 能看到 `files_name_fts` / `folders_name_fts` 的 `VIRTUAL TABLE INDEX`
+
+示例：
+
+```bash
+./aster_drive doctor \
+  --database-url "sqlite:///var/lib/asterdrive/data/asterdrive.db?mode=rwc" \
+  --output-format human
+
+sqlite3 /var/lib/asterdrive/data/asterdrive.db "
+EXPLAIN QUERY PLAN
+SELECT files.id, files.name, file_blobs.size
+FROM files_name_fts
+JOIN files ON files_name_fts.rowid = files.id
+JOIN file_blobs ON file_blobs.id = files.blob_id
+WHERE files_name_fts MATCH '\"needle\"'
+  AND files.deleted_at IS NULL
+  AND files.user_id = 1
+  AND files.team_id IS NULL
+ORDER BY files.name ASC
+LIMIT 50 OFFSET 0;
+"
+```
+
+你想看到的重点不是绝对数字，而是类似下面这种规划器输出：
+
+- `SCAN files_name_fts VIRTUAL TABLE INDEX ...`
+- `SEARCH files USING INTEGER PRIMARY KEY ...`
+
+如果你看到的是对 `files` / `folders` 的普通全表 `SCAN`，那就别拿这台实例的搜索压测结果当真，先把 SQLite 运行时和迁移状态查明白。
+
 ## 长稳测试
 
 `soak-mixed.js` 只负责持续制造混合流量；真正要看的是服务进程的 RSS、CPU、堆占用、延迟漂移和连接池行为。

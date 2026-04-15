@@ -316,31 +316,6 @@ pub async fn create_folder_file_preview_link(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::direct_routes;
-    use crate::config::RateLimitConfig;
-    use actix_web::{App, HttpResponse, http::StatusCode, test, web};
-
-    #[actix_web::test]
-    async fn direct_routes_do_not_shadow_later_root_services() {
-        let app = test::init_service(
-            App::new()
-                .service(direct_routes(&RateLimitConfig::default()))
-                .route(
-                    "/after",
-                    web::get().to(|| async { HttpResponse::Ok().finish() }),
-                ),
-        )
-        .await;
-
-        let req = test::TestRequest::get().uri("/after").to_request();
-        let resp = test::call_service(&app, req).await;
-
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-}
-
 #[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}/content",
@@ -519,4 +494,29 @@ pub async fn shared_folder_file_thumbnail(
         if_none_match,
         "public, max-age=0, must-revalidate".to_string(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::direct_routes;
+    use crate::config::RateLimitConfig;
+    use actix_web::{App, HttpResponse, http::StatusCode, test, web};
+
+    #[actix_web::test]
+    async fn direct_routes_do_not_shadow_later_root_services() {
+        let app = test::init_service(
+            App::new()
+                .service(direct_routes(&RateLimitConfig::default()))
+                .route(
+                    "/after",
+                    web::get().to(|| async { HttpResponse::Ok().finish() }),
+                ),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/after").to_request();
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
 }

@@ -87,6 +87,8 @@ docker compose up -d
 
 The current container image is an **Alpine runtime image** that runs as a non-root user and includes a `/health/ready` health check. The recommended persistent volume is `/data`.
 
+Default SQLite search acceleration now depends on `FTS5 + trigram tokenizer` support. After deployment, run `./aster_drive doctor` at least once and make sure the `SQLite search acceleration` check reports `ok`.
+
 See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`](docs/deployment/docker.md) for a complete deployment example.
 
 If you need offline deployment checks, runtime-config changes from the command line, or cross-database migration from SQLite to PostgreSQL / MySQL, start with [`docs/deployment/ops-cli.md`](docs/deployment/ops-cli.md).

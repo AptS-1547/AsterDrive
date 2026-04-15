@@ -363,6 +363,28 @@ async fn test_admin_team_crud() {
     assert_eq!(body["data"]["items"][0]["id"], team_id);
 
     let req = test::TestRequest::get()
+        .uri("/api/v1/admin/teams?keyword=erat")
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["items"][0]["id"], team_id);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/teams?keyword=op")
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["items"][0]["id"], team_id);
+
+    let req = test::TestRequest::get()
         .uri("/api/v1/teams")
         .insert_header(("Cookie", common::access_cookie_header(&team_admin_token)))
         .insert_header(common::csrf_header_for(&team_admin_token))
@@ -448,6 +470,30 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["role"], "admin");
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/admin/teams/{team_id}/members?keyword=naly"
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["items"][0]["username"], "team-analyst");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/teams/{team_id}/members?keyword=ly"))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["items"][0]["username"], "team-analyst");
 
     let req = test::TestRequest::get()
         .uri(&format!(
@@ -969,6 +1015,30 @@ async fn test_admin_users_server_side_filters() {
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/users?keyword=alice")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let items = body["data"]["items"].as_array().unwrap();
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(items[0]["username"], "filter-alice");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users?keyword=ice")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let items = body["data"]["items"].as_array().unwrap();
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(items[0]["username"], "filter-alice");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users?keyword=ce")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .to_request();

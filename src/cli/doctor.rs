@@ -230,38 +230,64 @@ pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
         return DoctorReport::new(args, redacted_database_url, backend, deep, scopes, checks);
     };
 
-    checks.push(match doctor_pending_migrations(&db, db_backend).await {
-        Ok(pending) if pending.is_empty() => DoctorCheck {
-            name: "database_migrations",
-            label: "Database migrations",
-            status: DoctorStatus::Ok,
-            summary: "no pending migrations".to_string(),
-            details: Vec::new(),
-            suggestion: None,
-        },
-        Ok(pending) => DoctorCheck {
-            name: "database_migrations",
-            label: "Database migrations",
-            status: DoctorStatus::Warn,
-            summary: format!("{} pending migration(s)", pending.len()),
-            details: pending,
-            suggestion: Some(
-                "Apply pending migrations before running maintenance-oriented CLI commands."
-                    .to_string(),
-            ),
-        },
-        Err(err) => DoctorCheck {
-            name: "database_migrations",
-            label: "Database migrations",
-            status: DoctorStatus::Fail,
-            summary: "failed to inspect migration history".to_string(),
-            details: vec![err.message().to_string()],
-            suggestion: Some(
-                "Check the seaql_migrations table and database permissions to ensure migration metadata is readable."
-                    .to_string(),
-            ),
-        },
-    });
+    let pending_migrations = match doctor_pending_migrations(&db, db_backend).await {
+        Ok(pending) => {
+            checks.push(if pending.is_empty() {
+                DoctorCheck {
+                    name: "database_migrations",
+                    label: "Database migrations",
+                    status: DoctorStatus::Ok,
+                    summary: "no pending migrations".to_string(),
+                    details: Vec::new(),
+                    suggestion: None,
+                }
+            } else {
+                DoctorCheck {
+                    name: "database_migrations",
+                    label: "Database migrations",
+                    status: DoctorStatus::Warn,
+                    summary: format!("{} pending migration(s)", pending.len()),
+                    details: pending.clone(),
+                    suggestion: Some(
+                        "Apply pending migrations before running maintenance-oriented CLI commands."
+                            .to_string(),
+                    ),
+                }
+            });
+            Some(pending)
+        }
+        Err(err) => {
+            checks.push(DoctorCheck {
+                name: "database_migrations",
+                label: "Database migrations",
+                status: DoctorStatus::Fail,
+                summary: "failed to inspect migration history".to_string(),
+                details: vec![err.message().to_string()],
+                suggestion: Some(
+                    "Check the seaql_migrations table and database permissions to ensure migration metadata is readable."
+                        .to_string(),
+                ),
+            });
+            None
+        }
+    };
+
+    if db_backend == DbBackend::Sqlite {
+        checks.push(match pending_migrations.as_ref() {
+            Some(pending) => doctor_sqlite_search_check(&db, pending).await,
+            None => DoctorCheck {
+                name: "sqlite_search_acceleration",
+                label: "SQLite search acceleration",
+                status: DoctorStatus::Fail,
+                summary: "failed to verify SQLite search acceleration".to_string(),
+                details: vec!["migration status is unavailable".to_string()],
+                suggestion: Some(
+                    "Fix migration metadata access first, then rerun doctor to validate SQLite FTS5 trigram support."
+                        .to_string(),
+                ),
+            },
+        });
+    }
 
     let runtime_config = crate::config::RuntimeConfig::new();
     let runtime_loaded = match runtime_config.reload(&db).await {
@@ -424,6 +450,83 @@ pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
     }
 
     DoctorReport::new(args, redacted_database_url, backend, deep, scopes, checks)
+}
+
+async fn doctor_sqlite_search_check(
+    db: &sea_orm::DatabaseConnection,
+    pending_migrations: &[String],
+) -> DoctorCheck {
+    match crate::db::sqlite_search::inspect_sqlite_search_status(db).await {
+        Ok(Some(status)) if status.is_ready() => DoctorCheck {
+            name: "sqlite_search_acceleration",
+            label: "SQLite search acceleration",
+            status: DoctorStatus::Ok,
+            summary: "FTS5 trigram search acceleration ready".to_string(),
+            details: status.detail_lines(),
+            suggestion: None,
+        },
+        Ok(Some(status))
+            if pending_migrations
+                .iter()
+                .any(|name| {
+                    crate::db::sqlite_search::SQLITE_SEARCH_MIGRATION_NAMES
+                        .contains(&name.as_str())
+                }) =>
+        {
+            DoctorCheck {
+                name: "sqlite_search_acceleration",
+                label: "SQLite search acceleration",
+                status: DoctorStatus::Warn,
+                summary: "SQLite search acceleration migration pending".to_string(),
+                details: status.detail_lines(),
+                suggestion: Some(
+                    "Apply pending migrations on a SQLite build that includes FTS5 with the trigram tokenizer."
+                        .to_string(),
+                ),
+            }
+        }
+        Ok(Some(status)) if !status.probe_supported() => DoctorCheck {
+            name: "sqlite_search_acceleration",
+            label: "SQLite search acceleration",
+            status: DoctorStatus::Fail,
+            summary: "SQLite build lacks FTS5 trigram search support".to_string(),
+            details: status.detail_lines(),
+            suggestion: Some(
+                "Use a SQLite build with FTS5 + trigram tokenizer support, or switch the deployment to PostgreSQL / MySQL."
+                    .to_string(),
+            ),
+        },
+        Ok(Some(status)) => DoctorCheck {
+            name: "sqlite_search_acceleration",
+            label: "SQLite search acceleration",
+            status: DoctorStatus::Fail,
+                summary: "SQLite search acceleration objects are missing".to_string(),
+                details: status.detail_lines(),
+                suggestion: Some(
+                "Apply the latest migrations and restore the files_name_fts / folders_name_fts / users_search_fts / teams_search_fts objects if they were removed manually."
+                    .to_string(),
+                ),
+            },
+        Ok(None) => DoctorCheck {
+            name: "sqlite_search_acceleration",
+            label: "SQLite search acceleration",
+            status: DoctorStatus::Ok,
+            summary: "not applicable".to_string(),
+            details: Vec::new(),
+            suggestion: None,
+        },
+        Err(err) => DoctorCheck {
+            name: "sqlite_search_acceleration",
+            label: "SQLite search acceleration",
+            status: DoctorStatus::Fail,
+            summary: "failed to verify SQLite search acceleration".to_string(),
+            details: vec![err.message().to_string()],
+            suggestion: Some(
+                "Check SQLite metadata access, then rerun doctor to validate FTS5 trigram support and search objects."
+                    .to_string(),
+            ),
+        },
+    }
 }
 
 pub fn render_doctor_success(format: OutputFormat, report: &DoctorReport) -> String {

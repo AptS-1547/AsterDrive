@@ -41,6 +41,10 @@ mod m20260413_000001_add_files_live_name_unique_index;
 mod m20260413_000002_add_folders_live_name_unique_index;
 mod m20260413_000003_add_contact_verification_single_active_index;
 mod m20260413_000004_add_user_profile_wopi_user_info;
+mod m20260415_000001_add_sqlite_search_fts;
+mod m20260415_000002_add_user_search_acceleration;
+mod m20260415_000003_add_team_search_acceleration;
+mod search_acceleration;
 
 pub struct Migrator;
 
@@ -89,6 +93,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260413_000002_add_folders_live_name_unique_index::Migration),
             Box::new(m20260413_000003_add_contact_verification_single_active_index::Migration),
             Box::new(m20260413_000004_add_user_profile_wopi_user_info::Migration),
+            Box::new(m20260415_000001_add_sqlite_search_fts::Migration),
+            Box::new(m20260415_000002_add_user_search_acceleration::Migration),
+            Box::new(m20260415_000003_add_team_search_acceleration::Migration),
         ]
     }
 }

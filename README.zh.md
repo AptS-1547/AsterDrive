@@ -87,6 +87,8 @@ docker compose up -d
 
 当前容器镜像为 **Alpine 运行镜像**，默认以非 root 用户运行，并内置基于 `/health/ready` 的健康检查；推荐使用 `/data` 作为持久化卷。
 
+默认 SQLite 搜索现在依赖 `FTS5 + trigram tokenizer`。部署完成后，建议至少跑一次 `./aster_drive doctor`，确认 `SQLite search acceleration` 检查是 `ok`。
+
 完整部署示例见 [`docker-compose.yml`](docker-compose.yml) 和 [`docs/deployment/docker.md`](docs/deployment/docker.md)。
 
 如果你部署完成后想在命令行里做离线检查、批量改系统设置，或者把 SQLite 迁到 PostgreSQL / MySQL，直接看 [`docs/deployment/ops-cli.md`](docs/deployment/ops-cli.md)。

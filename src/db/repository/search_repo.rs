@@ -1,22 +1,27 @@
-use chrono::{DateTime, Utc};
-use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait, FromQueryResult,
-    JoinType, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
-    sea_query::{Expr, Func},
+use crate::db::repository::search_query::{
+    escape_like_query, lower_like_condition, mysql_boolean_mode_query, sqlite_fts_match_condition,
+    sqlite_match_query,
 };
-use serde::Serialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
-
 use crate::entities::{
     file::{self, Entity as File},
     file_blob,
     folder::{self, Entity as Folder},
 };
 use crate::errors::{AsterError, Result};
+use chrono::{DateTime, Utc};
 use sea_orm::sea_query::extension::postgres::PgExpr;
+use sea_orm::{
+    ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, FromQueryResult, JoinType,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, sea_query::Expr,
+};
+use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use utoipa::ToSchema;
 
 type DateTimeUtc = DateTime<Utc>;
+
+const SQLITE_FILES_FTS_TABLE: &str = "files_name_fts";
+const SQLITE_FOLDERS_FTS_TABLE: &str = "folders_name_fts";
 
 #[derive(Clone, Copy)]
 enum SearchScope {
@@ -60,30 +65,6 @@ pub struct FileSearchItem {
     pub is_locked: bool,
 }
 
-/// Build a case-insensitive LIKE condition using LOWER() for cross-DB compatibility.
-/// Escapes `%` and `_` in the search query to prevent wildcard injection.
-fn escape_like_query(query: &str) -> String {
-    query.replace('%', "\\%").replace('_', "\\_")
-}
-
-fn name_like_condition(
-    column: impl sea_orm::sea_query::IntoColumnRef + Copy,
-    query: &str,
-) -> sea_orm::sea_query::SimpleExpr {
-    let escaped = escape_like_query(query);
-    let pattern = format!("%{escaped}%").to_lowercase();
-    Expr::expr(Func::lower(Expr::col(column))).like(pattern)
-}
-
-fn mysql_boolean_mode_query(query: &str) -> Option<String> {
-    if query.chars().count() < 2 {
-        return None;
-    }
-
-    let escaped = query.replace('\\', "\\\\").replace('"', "\\\"");
-    Some(format!("\"{escaped}\""))
-}
-
 fn name_search_condition(
     backend: DbBackend,
     column: impl sea_orm::sea_query::IntoColumnRef + Copy,
@@ -98,8 +79,8 @@ fn name_search_condition(
                     [Expr::col(column), Expr::val(boolean_query)],
                 )
             })
-            .unwrap_or_else(|| name_like_condition(column, query)),
-        _ => name_like_condition(column, query),
+            .unwrap_or_else(|| lower_like_condition(column, query)),
+        _ => lower_like_condition(column, query),
     }
 }
 
@@ -125,11 +106,27 @@ async fn search_files_in_scope<C: ConnectionTrait>(
     let mut blob_condition = Condition::all();
 
     if let Some(q) = query {
-        file_condition = file_condition.add(name_search_condition(
-            backend,
-            (File, file::Column::Name),
-            q,
-        ));
+        if backend == DbBackend::Sqlite {
+            if let Some(match_query) = sqlite_match_query(q) {
+                file_condition = file_condition.add(sqlite_fts_match_condition(
+                    (File, file::Column::Id),
+                    SQLITE_FILES_FTS_TABLE,
+                    &match_query,
+                ));
+            } else {
+                file_condition = file_condition.add(name_search_condition(
+                    backend,
+                    (File, file::Column::Name),
+                    q,
+                ));
+            }
+        } else {
+            file_condition = file_condition.add(name_search_condition(
+                backend,
+                (File, file::Column::Name),
+                q,
+            ));
+        }
     }
 
     if let Some(mt) = mime_type {
@@ -275,11 +272,27 @@ async fn search_folders_in_scope<C: ConnectionTrait>(
     let mut condition = folder_scope_condition(scope).add(folder::Column::DeletedAt.is_null());
 
     if let Some(q) = query {
-        condition = condition.add(name_search_condition(
-            backend,
-            (Folder, folder::Column::Name),
-            q,
-        ));
+        if backend == DbBackend::Sqlite {
+            if let Some(match_query) = sqlite_match_query(q) {
+                condition = condition.add(sqlite_fts_match_condition(
+                    (Folder, folder::Column::Id),
+                    SQLITE_FOLDERS_FTS_TABLE,
+                    &match_query,
+                ));
+            } else {
+                condition = condition.add(name_search_condition(
+                    backend,
+                    (Folder, folder::Column::Name),
+                    q,
+                ));
+            }
+        } else {
+            condition = condition.add(name_search_condition(
+                backend,
+                (Folder, folder::Column::Name),
+                q,
+            ));
+        }
     }
 
     if let Some(after) = created_after {
@@ -363,15 +376,15 @@ pub async fn search_team_folders<C: ConnectionTrait>(
 
 #[cfg(test)]
 mod tests {
-    use super::mysql_boolean_mode_query;
+    use super::*;
     use sea_orm::{
-        DbBackend,
+        DbBackend, JoinType, QueryFilter, QueryTrait, RelationTrait,
         sea_query::{MysqlQueryBuilder, Query},
     };
 
     #[test]
     fn mysql_match_against_sql_is_valid() {
-        let sql = Query::select()
+        let sql: String = Query::select()
             .expr(super::name_search_condition(
                 DbBackend::MySql,
                 super::file::Column::Name,
@@ -381,26 +394,31 @@ mod tests {
             .to_string(MysqlQueryBuilder);
 
         assert!(
-            sql.contains(r#"MATCH(`name`) AGAINST ('\"report\"' IN BOOLEAN MODE)"#),
+            sql.as_str()
+                .contains(r#"MATCH(`name`) AGAINST ('\"report\"' IN BOOLEAN MODE)"#),
             "{sql}"
         );
-        assert!(!sql.contains("$1"), "{sql}");
+        assert!(!sql.as_str().contains("$1"), "{sql}");
     }
 
     #[test]
-    fn mysql_boolean_mode_query_uses_phrase_search_for_multi_char_input() {
-        assert_eq!(
-            mysql_boolean_mode_query("report"),
-            Some("\"report\"".into())
+    fn sqlite_file_search_condition_qualifies_file_id_for_join_queries() {
+        let sql: String = format!(
+            "{}",
+            File::find()
+                .join(JoinType::InnerJoin, file::Relation::FileBlob.def())
+                .filter(sqlite_fts_match_condition(
+                    (File, file::Column::Id),
+                    SQLITE_FILES_FTS_TABLE,
+                    "\"report\"",
+                ))
+                .build(DbBackend::Sqlite)
         );
-        assert_eq!(
-            mysql_boolean_mode_query("report\"2026"),
-            Some("\"report\\\"2026\"".into())
-        );
-    }
 
-    #[test]
-    fn mysql_boolean_mode_query_falls_back_for_single_character_input() {
-        assert_eq!(mysql_boolean_mode_query("r"), None);
+        assert!(
+            sql.as_str()
+                .contains(r#""files"."id" IN (SELECT "rowid" FROM "files_name_fts""#),
+            "{sql}"
+        );
     }
 }

@@ -176,6 +176,88 @@ async fn test_search_by_name() {
 }
 
 #[actix_web::test]
+async fn test_search_by_name_preserves_substring_and_short_query_behavior() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let boundary = "----TestBoundary123";
+    let payload = upload_named_file("report.pdf", "pdf content", "application/pdf", boundary);
+    let upload_req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let upload_resp = test::call_service(&app, upload_req).await;
+    assert_eq!(upload_resp.status(), 201);
+    let upload_body: Value = test::read_body_json(upload_resp).await;
+    let file_id = upload_body["data"]["id"].as_i64().unwrap();
+
+    let middle_substring_req = test::TestRequest::get()
+        .uri("/api/v1/search?q=port")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let middle_substring_resp = test::call_service(&app, middle_substring_req).await;
+    assert_eq!(middle_substring_resp.status(), 200);
+    let middle_substring_body: Value = test::read_body_json(middle_substring_resp).await;
+    assert_eq!(middle_substring_body["data"]["total_files"], 1);
+    assert_eq!(
+        middle_substring_body["data"]["files"][0]["name"],
+        "report.pdf"
+    );
+
+    let short_query_req = test::TestRequest::get()
+        .uri("/api/v1/search?q=r")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let short_query_resp = test::call_service(&app, short_query_req).await;
+    assert_eq!(short_query_resp.status(), 200);
+    let short_query_body: Value = test::read_body_json(short_query_resp).await;
+    assert_eq!(short_query_body["data"]["total_files"], 1);
+    assert_eq!(short_query_body["data"]["files"][0]["name"], "report.pdf");
+
+    let rename_req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "ledger.pdf" }))
+        .to_request();
+    let rename_resp = test::call_service(&app, rename_req).await;
+    assert_eq!(rename_resp.status(), 200);
+
+    let renamed_search_req = test::TestRequest::get()
+        .uri("/api/v1/search?q=ledge")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let renamed_search_resp = test::call_service(&app, renamed_search_req).await;
+    assert_eq!(renamed_search_resp.status(), 200);
+    let renamed_search_body: Value = test::read_body_json(renamed_search_resp).await;
+    assert_eq!(renamed_search_body["data"]["total_files"], 1);
+    assert_eq!(
+        renamed_search_body["data"]["files"][0]["name"],
+        "ledger.pdf"
+    );
+
+    let stale_name_req = test::TestRequest::get()
+        .uri("/api/v1/search?q=report")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let stale_name_resp = test::call_service(&app, stale_name_req).await;
+    assert_eq!(stale_name_resp.status(), 200);
+    let stale_name_body: Value = test::read_body_json(stale_name_resp).await;
+    assert_eq!(stale_name_body["data"]["total_files"], 0);
+}
+
+#[actix_web::test]
 async fn test_search_rejects_invalid_type_and_dates() {
     let state = common::setup().await;
     let app = create_test_app!(state);

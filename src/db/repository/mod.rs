@@ -10,6 +10,7 @@ pub mod pagination_repo;
 pub mod policy_group_repo;
 pub mod policy_repo;
 pub mod property_repo;
+pub mod search_query;
 pub mod search_repo;
 pub mod share_repo;
 pub mod team_member_repo;

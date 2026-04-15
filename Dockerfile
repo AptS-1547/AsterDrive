@@ -35,7 +35,7 @@ ENV RUSTFLAGS="-C link-arg=-s"
 RUN cargo build --release --features "${CARGO_FEATURES}"
 
 # Stage 3: Alpine runtime
-FROM alpine:3.22
+FROM alpine:3.23
 
 RUN apk add --no-cache ca-certificates sqlite-libs && \
     addgroup -S -g 10001 aster && \

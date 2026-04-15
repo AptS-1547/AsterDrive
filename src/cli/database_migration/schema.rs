@@ -88,7 +88,7 @@ where
 pub(super) async fn load_source_plans(source: &DatabaseConnection) -> Result<Vec<TablePlan>> {
     let backend = source.get_database_backend();
     let existing_tables = source_table_names(source, backend).await?;
-    validate_source_tables(&existing_tables)?;
+    validate_source_tables(backend, &existing_tables)?;
 
     let existing_lookup: BTreeSet<&str> = existing_tables.iter().map(String::as_str).collect();
     let mut plans = Vec::with_capacity(COPY_TABLE_ORDER.len());
@@ -376,7 +376,7 @@ where
         .collect()
 }
 
-fn validate_source_tables(existing_tables: &[String]) -> Result<()> {
+fn validate_source_tables(backend: DbBackend, existing_tables: &[String]) -> Result<()> {
     let known: BTreeSet<&str> = COPY_TABLE_ORDER
         .iter()
         .copied()
@@ -384,7 +384,10 @@ fn validate_source_tables(existing_tables: &[String]) -> Result<()> {
         .collect();
     let unexpected: Vec<String> = existing_tables
         .iter()
-        .filter(|table| !known.contains(table.as_str()))
+        .filter(|table| {
+            !(known.contains(table.as_str())
+                || backend == DbBackend::Sqlite && db::sqlite_search::is_sqlite_search_table(table))
+        })
         .cloned()
         .collect();
 

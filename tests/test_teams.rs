@@ -118,6 +118,28 @@ async fn test_team_crud_and_member_lifecycle() {
     assert_eq!(body["data"]["items"][0]["username"], "member1");
 
     let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/teams/{team_id}/members?keyword=emb"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["items"][0]["username"], "member1");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/teams/{team_id}/members?keyword=be"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["items"][0]["username"], "member1");
+
+    let req = test::TestRequest::get()
         .uri("/api/v1/teams")
         .insert_header(("Cookie", common::access_cookie_header(&member_token)))
         .insert_header(common::csrf_header_for(&member_token))
