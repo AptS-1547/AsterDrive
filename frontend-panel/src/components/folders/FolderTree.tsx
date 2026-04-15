@@ -26,8 +26,9 @@ import {
 	workspaceKey,
 	workspaceRootPath,
 } from "@/lib/workspace";
-import { fileService } from "@/services/fileService";
+import { type FolderListParams, fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
+import type { SortBy, SortOrder } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { FolderListItem } from "@/types/api";
@@ -43,6 +44,8 @@ interface FolderTreeSnapshot {
 	loadedIds: number[];
 	nodeEntries: Array<[number, FolderTreeNode]>;
 	rootIds: number[];
+	sortBy: SortBy;
+	sortOrder: SortOrder;
 	userId: number | null;
 	workspaceKey: string;
 }
@@ -69,6 +72,18 @@ interface TreeNodeProps {
 }
 
 let folderTreeSnapshot: FolderTreeSnapshot | null = null;
+
+function getFolderTreeListParams(
+	sortBy: SortBy,
+	sortOrder: SortOrder,
+): FolderListParams {
+	return {
+		file_limit: 0,
+		folder_limit: FOLDER_LIMIT,
+		sort_by: sortBy,
+		sort_order: sortOrder,
+	};
+}
 
 function cloneNodeEntries(
 	nodeMap: Map<number, FolderTreeNode>,
@@ -292,10 +307,14 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 	const storeFolders = useFileStore((s) => s.folders);
 	const storeCurrentFolderId = useFileStore((s) => s.currentFolderId);
 	const storeLoading = useFileStore((s) => s.loading);
+	const sortBy = useFileStore((s) => s.sortBy);
+	const sortOrder = useFileStore((s) => s.sortOrder);
 	const isRootRoute = location.pathname === workspaceRootPath(workspace);
 	const cachedSnapshot =
 		folderTreeSnapshot?.userId === userId &&
-		folderTreeSnapshot.workspaceKey === currentWorkspaceKey
+		folderTreeSnapshot.workspaceKey === currentWorkspaceKey &&
+		folderTreeSnapshot.sortBy === sortBy &&
+		folderTreeSnapshot.sortOrder === sortOrder
 			? folderTreeSnapshot
 			: null;
 
@@ -338,7 +357,9 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 	useEffect(() => {
 		if (
 			folderTreeSnapshot?.userId === userId &&
-			folderTreeSnapshot.workspaceKey === currentWorkspaceKey
+			folderTreeSnapshot.workspaceKey === currentWorkspaceKey &&
+			folderTreeSnapshot.sortBy === sortBy &&
+			folderTreeSnapshot.sortOrder === sortOrder
 		)
 			return;
 		clearHoverExpandTimer();
@@ -352,7 +373,7 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 		setLoadingIds(new Set());
 		setLoadedIds(new Set());
 		setRootLoaded(false);
-	}, [clearHoverExpandTimer, currentWorkspaceKey, userId]);
+	}, [clearHoverExpandTimer, currentWorkspaceKey, sortBy, sortOrder, userId]);
 
 	useEffect(() => {
 		folderTreeSnapshot = {
@@ -360,10 +381,21 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 			loadedIds: Array.from(loadedIds),
 			nodeEntries: cloneNodeEntries(nodeMap),
 			rootIds,
+			sortBy,
+			sortOrder,
 			userId,
 			workspaceKey: currentWorkspaceKey,
 		};
-	}, [currentWorkspaceKey, expandedIds, loadedIds, nodeMap, rootIds, userId]);
+	}, [
+		currentWorkspaceKey,
+		expandedIds,
+		loadedIds,
+		nodeMap,
+		rootIds,
+		sortBy,
+		sortOrder,
+		userId,
+	]);
 
 	const syncFolderChildren = useCallback(
 		(parentId: number | null, folders: FolderListItem[]) => {
@@ -412,14 +444,13 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 				try {
 					const contents =
 						parentId === null
-							? await fileService.listRoot({
-									file_limit: 0,
-									folder_limit: FOLDER_LIMIT,
-								})
-							: await fileService.listFolder(parentId, {
-									file_limit: 0,
-									folder_limit: FOLDER_LIMIT,
-								});
+							? await fileService.listRoot(
+									getFolderTreeListParams(sortBy, sortOrder),
+								)
+							: await fileService.listFolder(
+									parentId,
+									getFolderTreeListParams(sortBy, sortOrder),
+								);
 					syncFolderChildren(parentId, contents.folders);
 				} finally {
 					if (parentId !== null) {
@@ -436,7 +467,7 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 			inflightLoadsRef.current.set(parentId, loadPromise);
 			await loadPromise;
 		},
-		[loadedIds, rootLoaded, syncFolderChildren],
+		[loadedIds, rootLoaded, sortBy, sortOrder, syncFolderChildren],
 	);
 
 	const refreshFolderChildren = useCallback(
@@ -445,10 +476,9 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 			inflightLoadsRef.current.delete(parentId);
 			if (parentId === null) {
 				setRootLoaded(false);
-				const contents = await fileService.listRoot({
-					file_limit: 0,
-					folder_limit: FOLDER_LIMIT,
-				});
+				const contents = await fileService.listRoot(
+					getFolderTreeListParams(sortBy, sortOrder),
+				);
 				syncFolderChildren(null, contents.folders);
 				return;
 			}
@@ -457,13 +487,13 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 				next.delete(parentId);
 				return next;
 			});
-			const contents = await fileService.listFolder(parentId, {
-				file_limit: 0,
-				folder_limit: FOLDER_LIMIT,
-			});
+			const contents = await fileService.listFolder(
+				parentId,
+				getFolderTreeListParams(sortBy, sortOrder),
+			);
 			syncFolderChildren(parentId, contents.folders);
 		},
-		[syncFolderChildren],
+		[sortBy, sortOrder, syncFolderChildren],
 	);
 
 	useEffect(() => {

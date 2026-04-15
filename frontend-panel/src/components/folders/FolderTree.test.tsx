@@ -28,6 +28,8 @@ const mockState = vi.hoisted(() => ({
 		folders: [] as Array<{ id: number; name: string }>,
 		loading: false,
 		moveToFolder: vi.fn(),
+		sortBy: "name" as "name" | "size" | "created_at" | "updated_at" | "type",
+		sortOrder: "asc" as "asc" | "desc",
 	},
 	pathname: "/",
 	writeInternalDragData: vi.fn(),
@@ -135,6 +137,8 @@ describe("FolderTree", () => {
 		mockState.fileStore.folders = [];
 		mockState.fileStore.loading = false;
 		mockState.fileStore.moveToFolder.mockResolvedValue(undefined);
+		mockState.fileStore.sortBy = "name";
+		mockState.fileStore.sortOrder = "asc";
 		mockState.pathname = "/";
 
 		mockState.getInvalidInternalDropReason.mockReturnValue(null);
@@ -170,6 +174,8 @@ describe("FolderTree", () => {
 		expect(mockState.listRoot).toHaveBeenCalledWith({
 			file_limit: 0,
 			folder_limit: FOLDER_LIMIT,
+			sort_by: "name",
+			sort_order: "asc",
 		});
 		expect(mockState.listRoot).toHaveBeenCalledTimes(1);
 
@@ -181,6 +187,24 @@ describe("FolderTree", () => {
 		expect(screen.getByText("Beta")).toBeInTheDocument();
 		expect(screen.queryByText("skeleton:4")).not.toBeInTheDocument();
 		expect(mockState.listRoot).toHaveBeenCalledTimes(1);
+	});
+
+	it("uses the current file sorting preferences for folder requests", async () => {
+		mockState.fileStore.sortBy = "updated_at";
+		mockState.fileStore.sortOrder = "desc";
+		mockState.listRoot.mockResolvedValue({
+			folders: [createFolder(2, "Beta"), createFolder(1, "Alpha")],
+		});
+
+		await renderTree();
+
+		await screen.findByText("Beta");
+		expect(mockState.listRoot).toHaveBeenCalledWith({
+			file_limit: 0,
+			folder_limit: FOLDER_LIMIT,
+			sort_by: "updated_at",
+			sort_order: "desc",
+		});
 	});
 
 	it("loads children while navigating by click and keyboard", async () => {
@@ -213,6 +237,8 @@ describe("FolderTree", () => {
 			expect(mockState.listFolder).toHaveBeenCalledWith(1, {
 				file_limit: 0,
 				folder_limit: FOLDER_LIMIT,
+				sort_by: "name",
+				sort_order: "asc",
 			});
 		});
 		expect(mockState.navigate).toHaveBeenCalledWith(
@@ -233,6 +259,8 @@ describe("FolderTree", () => {
 			expect(mockState.listFolder).toHaveBeenCalledWith(2, {
 				file_limit: 0,
 				folder_limit: FOLDER_LIMIT,
+				sort_by: "name",
+				sort_order: "asc",
 			});
 		});
 		expect(mockState.navigate).toHaveBeenCalledWith(
@@ -318,6 +346,8 @@ describe("FolderTree", () => {
 		expect(mockState.listFolder).toHaveBeenCalledWith(1, {
 			file_limit: 0,
 			folder_limit: FOLDER_LIMIT,
+			sort_by: "name",
+			sort_order: "asc",
 		});
 		vi.useRealTimers();
 		expect(await screen.findByText("Beta")).toBeInTheDocument();
@@ -382,11 +412,15 @@ describe("FolderTree", () => {
 			expect(mockState.listRoot).toHaveBeenCalledWith({
 				file_limit: 0,
 				folder_limit: FOLDER_LIMIT,
+				sort_by: "name",
+				sort_order: "asc",
 			});
 		});
 		expect(mockState.listFolder).toHaveBeenCalledWith(1, {
 			file_limit: 0,
 			folder_limit: FOLDER_LIMIT,
+			sort_by: "name",
+			sort_order: "asc",
 		});
 	});
 });
