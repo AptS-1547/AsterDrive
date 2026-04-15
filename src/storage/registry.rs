@@ -32,6 +32,11 @@ impl DriverRegistry {
         self.drivers.remove(&policy_id);
     }
 
+    #[cfg(test)]
+    pub fn insert_for_test(&self, policy_id: i64, driver: Arc<dyn StorageDriver>) {
+        self.drivers.insert(policy_id, driver);
+    }
+
     fn create_driver(&self, policy: &storage_policy::Model) -> Result<Arc<dyn StorageDriver>> {
         use super::s3::S3Driver;
         use crate::types::DriverType;

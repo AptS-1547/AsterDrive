@@ -897,41 +897,83 @@ async fn complete_upload_impl(
         drop(out_file);
 
         let now = Utc::now();
-        let txn = state.db.begin().await.map_err(AsterError::from)?;
-
-        let blob = if let Some(hasher) = hasher {
-            let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
-            let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-            let blob =
-                file_repo::find_or_create_blob(&txn, &file_hash, size, policy.id, &storage_path)
-                    .await?;
-            if blob.inserted {
-                // 零拷贝：LocalDriver rename，S3 流式上传，不读进内存
-                driver.put_file(&storage_path, &assembled_path).await?;
-            } else {
-                crate::utils::cleanup_temp_file(&assembled_path).await;
-            }
-            blob.model
-        } else if policy.driver_type == DriverType::S3 {
-            let blob = workspace_storage_service::create_s3_nondedup_blob(
-                &txn, size, policy.id, upload_id,
-            )
-            .await?;
-            driver.put_file(&blob.storage_path, &assembled_path).await?;
-            blob
+        let preuploaded_blob = if hasher.is_none() {
+            Some(workspace_storage_service::prepare_non_dedup_blob_upload(
+                &policy, size,
+            ))
         } else {
-            let blob =
-                workspace_storage_service::create_nondedup_blob(&txn, size, policy.id).await?;
-            driver.put_file(&blob.storage_path, &assembled_path).await?;
-            blob
+            None
         };
 
-        let created =
-            workspace_storage_service::finalize_upload_session_blob(&txn, &session, &blob, now)
-                .await?;
+        if let Some(preuploaded_blob) = preuploaded_blob.as_ref() {
+            workspace_storage_service::upload_temp_file_to_prepared_blob(
+                driver.as_ref(),
+                preuploaded_blob,
+                &assembled_path,
+            )
+            .await?;
+        }
 
-        txn.commit().await.map_err(AsterError::from)?;
-        Ok(created)
+        let create_result = async {
+            let txn = state.db.begin().await.map_err(AsterError::from)?;
+
+            let blob = if let Some(hasher) = hasher {
+                let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
+                let storage_path = crate::utils::storage_path_from_hash(&file_hash);
+                let blob = file_repo::find_or_create_blob(
+                    &txn,
+                    &file_hash,
+                    size,
+                    policy.id,
+                    &storage_path,
+                )
+                .await?;
+                if blob.inserted {
+                    // 零拷贝：LocalDriver rename，S3 流式上传，不读进内存
+                    driver.put_file(&storage_path, &assembled_path).await?;
+                } else {
+                    crate::utils::cleanup_temp_file(&assembled_path).await;
+                }
+                blob.model
+            } else if let Some(preuploaded_blob) = preuploaded_blob.as_ref() {
+                workspace_storage_service::persist_preuploaded_blob(&txn, preuploaded_blob).await?
+            } else if policy.driver_type == DriverType::S3 {
+                let blob = workspace_storage_service::create_s3_nondedup_blob(
+                    &txn, size, policy.id, upload_id,
+                )
+                .await?;
+                driver.put_file(&blob.storage_path, &assembled_path).await?;
+                blob
+            } else {
+                let blob =
+                    workspace_storage_service::create_nondedup_blob(&txn, size, policy.id).await?;
+                driver.put_file(&blob.storage_path, &assembled_path).await?;
+                blob
+            };
+
+            let created =
+                workspace_storage_service::finalize_upload_session_blob(&txn, &session, &blob, now)
+                    .await?;
+
+            txn.commit().await.map_err(AsterError::from)?;
+            Ok::<file::Model, AsterError>(created)
+        }
+        .await;
+
+        match create_result {
+            Ok(created) => Ok(created),
+            Err(error) => {
+                if let Some(preuploaded_blob) = preuploaded_blob.as_ref() {
+                    workspace_storage_service::cleanup_preuploaded_blob_upload(
+                        driver.as_ref(),
+                        preuploaded_blob,
+                        "chunked upload DB error after storing assembled blob",
+                    )
+                    .await;
+                }
+                Err(error)
+            }
+        }
     }
     .await;
 

@@ -36,22 +36,22 @@ pub(crate) fn local_content_dedup_enabled(policy: &crate::entities::storage_poli
             .unwrap_or(false)
 }
 
-pub(crate) async fn create_nondedup_blob<C: ConnectionTrait>(
+pub(crate) async fn create_nondedup_blob_with_key<C: ConnectionTrait>(
     db: &C,
     size: i64,
     policy_id: i64,
+    blob_key: &str,
+    storage_path: &str,
 ) -> Result<file_blob::Model> {
-    let blob_key = crate::utils::id::new_short_token();
-    let storage_path = crate::utils::storage_path_from_blob_key(&blob_key);
     let now = Utc::now();
 
     file_repo::create_blob(
         db,
         file_blob::ActiveModel {
-            hash: Set(blob_key),
+            hash: Set(blob_key.to_string()),
             size: Set(size),
             policy_id: Set(policy_id),
-            storage_path: Set(storage_path),
+            storage_path: Set(storage_path.to_string()),
             ref_count: Set(1),
             created_at: Set(now),
             updated_at: Set(now),
@@ -59,6 +59,17 @@ pub(crate) async fn create_nondedup_blob<C: ConnectionTrait>(
         },
     )
     .await
+}
+
+pub(crate) async fn create_nondedup_blob<C: ConnectionTrait>(
+    db: &C,
+    size: i64,
+    policy_id: i64,
+) -> Result<file_blob::Model> {
+    let blob_key = crate::utils::id::new_short_token();
+    let storage_path = crate::utils::storage_path_from_blob_key(&blob_key);
+
+    create_nondedup_blob_with_key(db, size, policy_id, &blob_key, &storage_path).await
 }
 
 pub(crate) async fn create_s3_nondedup_blob<C: ConnectionTrait>(
