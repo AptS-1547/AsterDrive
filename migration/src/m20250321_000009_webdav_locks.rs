@@ -27,11 +27,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(WebdavLocks::Path).string().not_null())
                     .col(ColumnDef::new(WebdavLocks::Principal).string().null())
                     .col(ColumnDef::new(WebdavLocks::OwnerXml).text().null())
-                    .col(
-                        ColumnDef::new(WebdavLocks::TimeoutAt)
-                            .timestamp_with_time_zone()
-                            .null(),
-                    )
+                    .col(crate::time::utc_date_time_column(manager, WebdavLocks::TimeoutAt).null())
                     .col(
                         ColumnDef::new(WebdavLocks::Shared)
                             .boolean()
@@ -45,8 +41,7 @@ impl MigrationTrait for Migration {
                             .default(false),
                     )
                     .col(
-                        ColumnDef::new(WebdavLocks::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, WebdavLocks::CreatedAt)
                             .not_null(),
                     )
                     .to_owned(),

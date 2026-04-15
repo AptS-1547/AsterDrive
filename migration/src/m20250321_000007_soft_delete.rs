@@ -11,11 +11,7 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Files::Table)
-                    .add_column(
-                        ColumnDef::new(Files::DeletedAt)
-                            .timestamp_with_time_zone()
-                            .null(),
-                    )
+                    .add_column(crate::time::utc_date_time_column(manager, Files::DeletedAt).null())
                     .to_owned(),
             )
             .await?;
@@ -26,9 +22,7 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Folders::Table)
                     .add_column(
-                        ColumnDef::new(Folders::DeletedAt)
-                            .timestamp_with_time_zone()
-                            .null(),
+                        crate::time::utc_date_time_column(manager, Folders::DeletedAt).null(),
                     )
                     .to_owned(),
             )

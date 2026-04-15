@@ -28,11 +28,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Shares::FileId).big_integer().null())
                     .col(ColumnDef::new(Shares::FolderId).big_integer().null())
                     .col(ColumnDef::new(Shares::Password).string_len(255).null())
-                    .col(
-                        ColumnDef::new(Shares::ExpiresAt)
-                            .timestamp_with_time_zone()
-                            .null(),
-                    )
+                    .col(crate::time::utc_date_time_column(manager, Shares::ExpiresAt).null())
                     .col(
                         ColumnDef::new(Shares::MaxDownloads)
                             .big_integer()
@@ -51,16 +47,8 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(0),
                     )
-                    .col(
-                        ColumnDef::new(Shares::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(Shares::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
+                    .col(crate::time::utc_date_time_column(manager, Shares::CreatedAt).not_null())
+                    .col(crate::time::utc_date_time_column(manager, Shares::UpdatedAt).not_null())
                     .foreign_key(
                         ForeignKey::create()
                             .from(Shares::Table, Shares::UserId)

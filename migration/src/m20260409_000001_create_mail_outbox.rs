@@ -56,29 +56,21 @@ impl MigrationTrait for Migration {
                             .default(0),
                     )
                     .col(
-                        ColumnDef::new(MailOutbox::NextAttemptAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, MailOutbox::NextAttemptAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(MailOutbox::ProcessingStartedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, MailOutbox::ProcessingStartedAt)
                             .null(),
                     )
-                    .col(
-                        ColumnDef::new(MailOutbox::SentAt)
-                            .timestamp_with_time_zone()
-                            .null(),
-                    )
+                    .col(crate::time::utc_date_time_column(manager, MailOutbox::SentAt).null())
                     .col(ColumnDef::new(MailOutbox::LastError).text().null())
                     .col(
-                        ColumnDef::new(MailOutbox::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, MailOutbox::CreatedAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(MailOutbox::UpdatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, MailOutbox::UpdatedAt)
                             .not_null(),
                     )
                     .to_owned(),

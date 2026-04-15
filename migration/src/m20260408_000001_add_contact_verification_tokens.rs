@@ -33,9 +33,7 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Users::Table)
                     .add_column(
-                        ColumnDef::new(Users::EmailVerifiedAt)
-                            .timestamp_with_time_zone()
-                            .null(),
+                        crate::time::utc_date_time_column(manager, Users::EmailVerifiedAt).null(),
                     )
                     .to_owned(),
             )
@@ -100,19 +98,25 @@ impl MigrationTrait for Migration {
                             .unique_key(),
                     )
                     .col(
-                        ColumnDef::new(ContactVerificationTokens::ExpiresAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
+                        crate::time::utc_date_time_column(
+                            manager,
+                            ContactVerificationTokens::ExpiresAt,
+                        )
+                        .not_null(),
                     )
                     .col(
-                        ColumnDef::new(ContactVerificationTokens::ConsumedAt)
-                            .timestamp_with_time_zone()
-                            .null(),
+                        crate::time::utc_date_time_column(
+                            manager,
+                            ContactVerificationTokens::ConsumedAt,
+                        )
+                        .null(),
                     )
                     .col(
-                        ColumnDef::new(ContactVerificationTokens::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
+                        crate::time::utc_date_time_column(
+                            manager,
+                            ContactVerificationTokens::CreatedAt,
+                        )
+                        .not_null(),
                     )
                     .foreign_key(
                         ForeignKey::create()

@@ -72,13 +72,11 @@ impl MigrationTrait for Migration {
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(WopiSessions::ExpiresAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, WopiSessions::ExpiresAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(WopiSessions::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, WopiSessions::CreatedAt)
                             .not_null(),
                     )
                     .foreign_key(

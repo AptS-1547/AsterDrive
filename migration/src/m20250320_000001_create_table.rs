@@ -68,16 +68,8 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(0),
                     )
-                    .col(
-                        ColumnDef::new(Users::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(Users::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
+                    .col(crate::time::utc_date_time_column(manager, Users::CreatedAt).not_null())
+                    .col(crate::time::utc_date_time_column(manager, Users::UpdatedAt).not_null())
                     .to_owned(),
             )
             .await?;
@@ -150,13 +142,11 @@ impl MigrationTrait for Migration {
                             .default(false),
                     )
                     .col(
-                        ColumnDef::new(StoragePolicies::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, StoragePolicies::CreatedAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(StoragePolicies::UpdatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, StoragePolicies::UpdatedAt)
                             .not_null(),
                     )
                     .to_owned(),
@@ -199,8 +189,7 @@ impl MigrationTrait for Migration {
                             .default(0),
                     )
                     .col(
-                        ColumnDef::new(UserStoragePolicies::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, UserStoragePolicies::CreatedAt)
                             .not_null(),
                     )
                     .foreign_key(
@@ -236,16 +225,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Folders::ParentId).big_integer().null())
                     .col(ColumnDef::new(Folders::UserId).big_integer().not_null())
                     .col(ColumnDef::new(Folders::PolicyId).big_integer().null())
-                    .col(
-                        ColumnDef::new(Folders::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(Folders::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
+                    .col(crate::time::utc_date_time_column(manager, Folders::CreatedAt).not_null())
+                    .col(crate::time::utc_date_time_column(manager, Folders::UpdatedAt).not_null())
                     .foreign_key(
                         ForeignKey::create()
                             .from(Folders::Table, Folders::UserId)
@@ -290,14 +271,10 @@ impl MigrationTrait for Migration {
                             .default(1),
                     )
                     .col(
-                        ColumnDef::new(FileBlobs::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
+                        crate::time::utc_date_time_column(manager, FileBlobs::CreatedAt).not_null(),
                     )
                     .col(
-                        ColumnDef::new(FileBlobs::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
+                        crate::time::utc_date_time_column(manager, FileBlobs::UpdatedAt).not_null(),
                     )
                     .foreign_key(
                         ForeignKey::create()
@@ -338,16 +315,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Files::BlobId).big_integer().not_null())
                     .col(ColumnDef::new(Files::UserId).big_integer().not_null())
                     .col(ColumnDef::new(Files::MimeType).string_len(128).not_null())
-                    .col(
-                        ColumnDef::new(Files::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(Files::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
+                    .col(crate::time::utc_date_time_column(manager, Files::CreatedAt).not_null())
+                    .col(crate::time::utc_date_time_column(manager, Files::UpdatedAt).not_null())
                     .foreign_key(
                         ForeignKey::create()
                             .from(Files::Table, Files::FolderId)
@@ -390,8 +359,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(SystemConfig::Value).text().not_null())
                     .col(
-                        ColumnDef::new(SystemConfig::UpdatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, SystemConfig::UpdatedAt)
                             .not_null(),
                     )
                     .col(ColumnDef::new(SystemConfig::UpdatedBy).big_integer().null())

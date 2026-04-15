@@ -44,7 +44,9 @@ mod m20260413_000004_add_user_profile_wopi_user_info;
 mod m20260415_000001_add_sqlite_search_fts;
 mod m20260415_000002_add_user_search_acceleration;
 mod m20260415_000003_add_team_search_acceleration;
+mod m20260415_000004_fix_mysql_utc_datetime_columns;
 mod search_acceleration;
+mod time;
 
 pub struct Migrator;
 
@@ -96,6 +98,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260415_000001_add_sqlite_search_fts::Migration),
             Box::new(m20260415_000002_add_user_search_acceleration::Migration),
             Box::new(m20260415_000003_add_team_search_acceleration::Migration),
+            Box::new(m20260415_000004_fix_mysql_utc_datetime_columns::Migration),
         ]
     }
 }

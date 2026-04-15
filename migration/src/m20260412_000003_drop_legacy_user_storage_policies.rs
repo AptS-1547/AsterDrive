@@ -52,8 +52,7 @@ impl MigrationTrait for Migration {
                             .default(0),
                     )
                     .col(
-                        ColumnDef::new(UserStoragePolicies::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, UserStoragePolicies::CreatedAt)
                             .not_null(),
                     )
                     .foreign_key(

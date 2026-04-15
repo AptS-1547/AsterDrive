@@ -112,7 +112,8 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 [dev-dependencies]
 aws-smithy-http-client = { version = "1.1.12", features = ["test-util"] }
 aws-smithy-types = "1.4.7"
-testcontainers = "0.27"
+fs2 = "0.4"
+testcontainers = { version = "0.27", features = ["reusable-containers"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [build-dependencies]

@@ -31,8 +31,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(FileVersions::Version).integer().not_null())
                     .col(ColumnDef::new(FileVersions::Size).big_integer().not_null())
                     .col(
-                        ColumnDef::new(FileVersions::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, FileVersions::CreatedAt)
                             .not_null(),
                     )
                     .to_owned(),

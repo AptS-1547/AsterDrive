@@ -41,13 +41,11 @@ impl MigrationTrait for Migration {
                             .default(true),
                     )
                     .col(
-                        ColumnDef::new(WebdavAccounts::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, WebdavAccounts::CreatedAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(WebdavAccounts::UpdatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, WebdavAccounts::UpdatedAt)
                             .not_null(),
                     )
                     .foreign_key(

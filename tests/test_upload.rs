@@ -11,6 +11,10 @@ use tokio::task::JoinSet;
 const TEST_CHUNK_SIZE: usize = 5_242_880;
 const RUSTFS_TEST_IMAGE_TAG: &str = "1.0.0-alpha.90";
 
+fn new_test_upload_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
 async fn reload_policy_snapshot(state: &aster_drive::runtime::AppState) {
     state.policy_snapshot.reload(&state.db).await.unwrap();
 }
@@ -694,7 +698,7 @@ async fn test_concurrent_chunk_upload_idempotent() {
     let user = auth_service::register(&state, "testuser", "test@example.com", "password123")
         .await
         .unwrap();
-    let upload_id = format!("concurrent-{}", uuid::Uuid::new_v4());
+    let upload_id = new_test_upload_id();
     create_upload_session(
         &state,
         user.id,
@@ -761,7 +765,7 @@ async fn test_upload_session_part_upsert_updates_existing_row_without_duplicates
     let user = auth_service::register(&state, "partuser", "part@test.com", "password123")
         .await
         .unwrap();
-    let upload_id = format!("parts-{}", uuid::Uuid::new_v4());
+    let upload_id = new_test_upload_id();
 
     create_upload_session(
         &state,
@@ -951,7 +955,7 @@ async fn test_upload_service_complete_rejects_assembling_session() {
     )
     .await
     .unwrap();
-    let upload_id = format!("assembling-{}", uuid::Uuid::new_v4());
+    let upload_id = new_test_upload_id();
     create_upload_session(
         &state,
         user.id,
@@ -980,7 +984,7 @@ async fn test_upload_service_complete_completed_without_file_id_returns_refresh_
     let user = auth_service::register(&state, "completeuser", "complete@test.com", "password123")
         .await
         .unwrap();
-    let upload_id = format!("completed-{}", uuid::Uuid::new_v4());
+    let upload_id = new_test_upload_id();
     create_upload_session(
         &state,
         user.id,
@@ -1015,7 +1019,7 @@ async fn test_upload_service_complete_presigned_multipart_requires_parts() {
     )
     .await
     .unwrap();
-    let upload_id = format!("multipart-{}", uuid::Uuid::new_v4());
+    let upload_id = new_test_upload_id();
     create_upload_session(
         &state,
         user.id,
@@ -1044,7 +1048,7 @@ async fn test_upload_service_get_progress_scans_and_sorts_local_chunks() {
     let user = auth_service::register(&state, "progressuser", "progress@test.com", "password123")
         .await
         .unwrap();
-    let upload_id = format!("progress-{}", uuid::Uuid::new_v4());
+    let upload_id = new_test_upload_id();
     create_upload_session(
         &state,
         user.id,
@@ -1119,7 +1123,7 @@ async fn test_upload_service_get_progress_uses_db_parts_for_terminal_relay_multi
         ("completed", UploadSessionStatus::Completed),
         ("failed", UploadSessionStatus::Failed),
     ] {
-        let upload_id = format!("relay-progress-{status_name}-{}", uuid::Uuid::new_v4());
+        let upload_id = new_test_upload_id();
         let now = Utc::now();
         upload_session_repo::create(
             &state.db,
@@ -1171,7 +1175,7 @@ async fn test_upload_service_presign_parts_rejects_non_multipart_session() {
     let user = auth_service::register(&state, "presignuser", "presign@test.com", "password123")
         .await
         .unwrap();
-    let upload_id = format!("presign-{}", uuid::Uuid::new_v4());
+    let upload_id = new_test_upload_id();
     create_upload_session(
         &state,
         user.id,
@@ -1202,7 +1206,7 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
         .await
         .unwrap();
 
-    let expired_id = format!("expired-{}", uuid::Uuid::new_v4());
+    let expired_id = new_test_upload_id();
     create_upload_session(
         &state,
         user.id,
@@ -1217,7 +1221,7 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
     )
     .await;
 
-    let completed_id = format!("completed-{}", uuid::Uuid::new_v4());
+    let completed_id = new_test_upload_id();
     create_upload_session(
         &state,
         user.id,

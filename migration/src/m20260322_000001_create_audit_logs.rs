@@ -27,9 +27,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(AuditLogs::IpAddress).string_len(45).null())
                     .col(ColumnDef::new(AuditLogs::UserAgent).string_len(512).null())
                     .col(
-                        ColumnDef::new(AuditLogs::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
+                        crate::time::utc_date_time_column(manager, AuditLogs::CreatedAt).not_null(),
                     )
                     .to_owned(),
             )

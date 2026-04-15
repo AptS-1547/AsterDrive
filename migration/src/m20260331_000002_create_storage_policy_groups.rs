@@ -79,13 +79,11 @@ impl MigrationTrait for Migration {
                             .default(false),
                     )
                     .col(
-                        ColumnDef::new(StoragePolicyGroups::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, StoragePolicyGroups::CreatedAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(StoragePolicyGroups::UpdatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, StoragePolicyGroups::UpdatedAt)
                             .not_null(),
                     )
                     .to_owned(),
@@ -133,9 +131,11 @@ impl MigrationTrait for Migration {
                             .default(0),
                     )
                     .col(
-                        ColumnDef::new(StoragePolicyGroupItems::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
+                        crate::time::utc_date_time_column(
+                            manager,
+                            StoragePolicyGroupItems::CreatedAt,
+                        )
+                        .not_null(),
                     )
                     .foreign_key(
                         ForeignKey::create()

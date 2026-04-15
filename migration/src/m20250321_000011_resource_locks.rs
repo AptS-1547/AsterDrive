@@ -49,9 +49,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(ResourceLocks::OwnerId).big_integer().null())
                     .col(ColumnDef::new(ResourceLocks::OwnerInfo).text().null())
                     .col(
-                        ColumnDef::new(ResourceLocks::TimeoutAt)
-                            .timestamp_with_time_zone()
-                            .null(),
+                        crate::time::utc_date_time_column(manager, ResourceLocks::TimeoutAt).null(),
                     )
                     .col(
                         ColumnDef::new(ResourceLocks::Shared)
@@ -66,8 +64,7 @@ impl MigrationTrait for Migration {
                             .default(false),
                     )
                     .col(
-                        ColumnDef::new(ResourceLocks::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, ResourceLocks::CreatedAt)
                             .not_null(),
                     )
                     .to_owned(),

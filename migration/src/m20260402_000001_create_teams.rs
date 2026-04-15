@@ -102,21 +102,9 @@ impl MigrationTrait for Migration {
                             .default(0),
                     )
                     .col(ColumnDef::new(Teams::PolicyGroupId).big_integer().null())
-                    .col(
-                        ColumnDef::new(Teams::CreatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(Teams::UpdatedAt)
-                            .timestamp_with_time_zone()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(Teams::ArchivedAt)
-                            .timestamp_with_time_zone()
-                            .null(),
-                    )
+                    .col(crate::time::utc_date_time_column(manager, Teams::CreatedAt).not_null())
+                    .col(crate::time::utc_date_time_column(manager, Teams::UpdatedAt).not_null())
+                    .col(crate::time::utc_date_time_column(manager, Teams::ArchivedAt).null())
                     .foreign_key(
                         ForeignKey::create()
                             .from(Teams::Table, Teams::CreatedBy)
@@ -182,13 +170,11 @@ impl MigrationTrait for Migration {
                             .default("member"),
                     )
                     .col(
-                        ColumnDef::new(TeamMembers::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, TeamMembers::CreatedAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(TeamMembers::UpdatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, TeamMembers::UpdatedAt)
                             .not_null(),
                     )
                     .check(Expr::col(TeamMembers::Role).is_in(["owner", "admin", "member"]))

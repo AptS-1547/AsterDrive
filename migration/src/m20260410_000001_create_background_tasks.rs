@@ -107,39 +107,35 @@ impl MigrationTrait for Migration {
                             .default(3),
                     )
                     .col(
-                        ColumnDef::new(BackgroundTasks::NextRunAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, BackgroundTasks::NextRunAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(BackgroundTasks::ProcessingStartedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(
+                            manager,
+                            BackgroundTasks::ProcessingStartedAt,
+                        )
+                        .null(),
+                    )
+                    .col(
+                        crate::time::utc_date_time_column(manager, BackgroundTasks::StartedAt)
                             .null(),
                     )
                     .col(
-                        ColumnDef::new(BackgroundTasks::StartedAt)
-                            .timestamp_with_time_zone()
-                            .null(),
-                    )
-                    .col(
-                        ColumnDef::new(BackgroundTasks::FinishedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, BackgroundTasks::FinishedAt)
                             .null(),
                     )
                     .col(ColumnDef::new(BackgroundTasks::LastError).text().null())
                     .col(
-                        ColumnDef::new(BackgroundTasks::ExpiresAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, BackgroundTasks::ExpiresAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(BackgroundTasks::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, BackgroundTasks::CreatedAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(BackgroundTasks::UpdatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, BackgroundTasks::UpdatedAt)
                             .not_null(),
                     )
                     .to_owned(),

@@ -15,7 +15,6 @@ use chrono::{Duration, Utc};
 use migration::{Migrator, MigratorTrait};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbBackend, Set, Statement};
 use serde_json::Value;
-use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
 fn aster_drive_bin() -> &'static str {
     env!("CARGO_BIN_EXE_aster_drive")
@@ -58,32 +57,36 @@ fn run_aster_drive_with_env(args: &[&str], envs: &[(&str, &str)]) -> std::proces
         .expect("aster_drive binary should run")
 }
 
-async fn wait_for_database(database_url: &str) {
-    let mut last_err: Option<String> = None;
-    let ready = tokio::time::timeout(std::time::Duration::from_secs(60), async {
-        loop {
-            let cfg = DatabaseConfig {
-                url: database_url.to_string(),
-                pool_size: 1,
-                retry_count: 0,
-            };
-            match db::connect(&cfg).await {
-                Ok(_) => break,
-                Err(err) => {
-                    last_err = Some(err.to_string());
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                }
-            }
-        }
-    })
-    .await;
-
-    if ready.is_err() {
-        panic!(
-            "timed out waiting for database {database_url}: {}",
-            last_err.unwrap_or_else(|| "unknown error".to_string())
-        );
+fn redact_database_url(database_url: &str) -> String {
+    if database_url == "sqlite::memory:" {
+        return database_url.to_string();
     }
+
+    if database_url.starts_with("sqlite:") {
+        let Some(path_and_query) = database_url.strip_prefix("sqlite://") else {
+            return database_url.to_string();
+        };
+        let (path, query) = path_and_query
+            .split_once('?')
+            .map_or((path_and_query, None), |(path, query)| (path, Some(query)));
+        let filename = std::path::Path::new(path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(path);
+        return match query {
+            Some(query) => format!("sqlite:///.../{filename}?{query}"),
+            None => format!("sqlite:///.../{filename}"),
+        };
+    }
+
+    let Some((scheme, rest)) = database_url.split_once("://") else {
+        return database_url.to_string();
+    };
+    let Some((_authority, suffix)) = rest.rsplit_once('@') else {
+        return database_url.to_string();
+    };
+
+    format!("{scheme}://***@{suffix}")
 }
 
 async fn scalar_i64(db: &DatabaseConnection, backend: DbBackend, sql: &str) -> i64 {
@@ -850,20 +853,7 @@ async fn test_root_binary_database_migrate_sqlite_to_postgres_happy_path() {
     let source_database_url = format!("sqlite://{}?mode=rwc", source_db_path.display());
     let file_id = seed_migration_fixture(&source_database_url).await;
 
-    let container = GenericImage::new("postgres", "16")
-        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(5432))
-        .with_env_var("POSTGRES_USER", "postgres")
-        .with_env_var("POSTGRES_PASSWORD", "postgres")
-        .with_env_var("POSTGRES_DB", "asterdrive")
-        .start()
-        .await
-        .expect("failed to start postgres container");
-    let port = container
-        .get_host_port_ipv4(testcontainers::core::IntoContainerPort::tcp(5432))
-        .await
-        .expect("postgres port should be exposed");
-    let target_database_url = format!("postgres://postgres:postgres@127.0.0.1:{port}/asterdrive");
-    wait_for_database(&target_database_url).await;
+    let target_database_url = common::postgres_test_database_url().await;
 
     let output = run_aster_drive(&[
         "database-migrate",
@@ -898,7 +888,7 @@ async fn test_root_binary_database_migrate_sqlite_to_postgres_happy_path() {
     );
     assert_eq!(
         output_json["data"]["target"]["database_url"],
-        format!("postgres://***@127.0.0.1:{port}/asterdrive")
+        redact_database_url(&target_database_url)
     );
 
     let target_db = db::connect(&DatabaseConfig {
@@ -934,38 +924,10 @@ async fn test_root_binary_database_migrate_sqlite_to_postgres_happy_path() {
 
 #[tokio::test]
 async fn test_root_binary_database_migrate_postgres_to_mysql_with_progress() {
-    let source_container = GenericImage::new("postgres", "16")
-        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(5432))
-        .with_env_var("POSTGRES_USER", "postgres")
-        .with_env_var("POSTGRES_PASSWORD", "postgres")
-        .with_env_var("POSTGRES_DB", "asterdrive")
-        .start()
-        .await
-        .expect("failed to start postgres source container");
-    let source_port = source_container
-        .get_host_port_ipv4(testcontainers::core::IntoContainerPort::tcp(5432))
-        .await
-        .expect("postgres source port should be exposed");
-    let source_database_url =
-        format!("postgres://postgres:postgres@127.0.0.1:{source_port}/asterdrive");
-    wait_for_database(&source_database_url).await;
+    let source_database_url = common::postgres_test_database_url().await;
     let file_id = seed_migration_fixture(&source_database_url).await;
 
-    let target_container = GenericImage::new("mysql", "8.4")
-        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(3306))
-        .with_env_var("MYSQL_DATABASE", "asterdrive")
-        .with_env_var("MYSQL_USER", "aster")
-        .with_env_var("MYSQL_PASSWORD", "asterpass")
-        .with_env_var("MYSQL_ROOT_PASSWORD", "rootpass")
-        .start()
-        .await
-        .expect("failed to start mysql target container");
-    let target_port = target_container
-        .get_host_port_ipv4(testcontainers::core::IntoContainerPort::tcp(3306))
-        .await
-        .expect("mysql target port should be exposed");
-    let target_database_url = format!("mysql://aster:asterpass@127.0.0.1:{target_port}/asterdrive");
-    wait_for_database(&target_database_url).await;
+    let target_database_url = common::mysql_test_database_url().await;
 
     let output = run_aster_drive_with_env(
         &[
@@ -1000,21 +962,7 @@ async fn test_root_binary_database_migrate_postgres_to_mysql_with_progress() {
 
 #[tokio::test]
 async fn test_root_binary_database_migrate_mysql_to_sqlite_happy_path() {
-    let source_container = GenericImage::new("mysql", "8.4")
-        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(3306))
-        .with_env_var("MYSQL_DATABASE", "asterdrive")
-        .with_env_var("MYSQL_USER", "aster")
-        .with_env_var("MYSQL_PASSWORD", "asterpass")
-        .with_env_var("MYSQL_ROOT_PASSWORD", "rootpass")
-        .start()
-        .await
-        .expect("failed to start mysql source container");
-    let source_port = source_container
-        .get_host_port_ipv4(testcontainers::core::IntoContainerPort::tcp(3306))
-        .await
-        .expect("mysql source port should be exposed");
-    let source_database_url = format!("mysql://aster:asterpass@127.0.0.1:{source_port}/asterdrive");
-    wait_for_database(&source_database_url).await;
+    let source_database_url = common::mysql_test_database_url().await;
     let file_id = seed_migration_fixture(&source_database_url).await;
 
     let target_db_path = std::env::temp_dir().join(format!(

@@ -81,18 +81,15 @@ impl MigrationTrait for Migration {
                             .default("uploading"),
                     )
                     .col(
-                        ColumnDef::new(UploadSessions::CreatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, UploadSessions::CreatedAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(UploadSessions::ExpiresAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, UploadSessions::ExpiresAt)
                             .not_null(),
                     )
                     .col(
-                        ColumnDef::new(UploadSessions::UpdatedAt)
-                            .timestamp_with_time_zone()
+                        crate::time::utc_date_time_column(manager, UploadSessions::UpdatedAt)
                             .not_null(),
                     )
                     .foreign_key(

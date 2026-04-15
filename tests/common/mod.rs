@@ -1,7 +1,14 @@
 use aster_drive::runtime::AppState;
+use fs2::FileExt;
+use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
     collections::HashMap,
+    fs::{File, OpenOptions},
+    hash::{Hash, Hasher},
+    io::{Read, Seek, SeekFrom, Write},
+    path::{Path, PathBuf},
+    process::Command,
     sync::{Arc, Mutex, OnceLock},
 };
 
@@ -21,9 +28,10 @@ fn lock_csrf_registry() -> std::sync::MutexGuard<'static, HashMap<String, String
 }
 
 const TEST_DATABASE_BACKEND_ENV: &str = "ASTER_TEST_DATABASE_BACKEND";
+const SHARED_TEST_CONTAINER_STATE_DIR: &str = "/tmp/asterdrive-testcontainers";
 // Keep the year within MySQL TIMESTAMP's supported range.
 #[allow(dead_code)]
-pub const TEST_FUTURE_SHARE_EXPIRY_RFC3339: &str = "2037-04-02T12:00:00Z";
+pub const TEST_FUTURE_SHARE_EXPIRY_RFC3339: &str = "2099-12-31T23:59:59Z";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestDatabaseBackend {
@@ -34,6 +42,7 @@ enum TestDatabaseBackend {
 
 struct SharedTestDatabaseContainer {
     _container: testcontainers::ContainerAsync<testcontainers::GenericImage>,
+    _lease: SharedTestContainerLease,
     admin_database_url: String,
     database_url: String,
 }
@@ -42,6 +51,204 @@ static POSTGRES_TEST_CONTAINER: tokio::sync::OnceCell<SharedTestDatabaseContaine
     tokio::sync::OnceCell::const_new();
 static MYSQL_TEST_CONTAINER: tokio::sync::OnceCell<SharedTestDatabaseContainer> =
     tokio::sync::OnceCell::const_new();
+
+#[derive(Default, Deserialize, Serialize)]
+struct SharedTestContainerState {
+    pids: Vec<u32>,
+}
+
+struct SharedTestContainerLease {
+    backend: TestDatabaseBackend,
+}
+
+impl Drop for SharedTestContainerLease {
+    fn drop(&mut self) {
+        release_shared_test_container(self.backend);
+    }
+}
+
+impl SharedTestContainerLease {
+    fn new(backend: TestDatabaseBackend) -> Self {
+        Self { backend }
+    }
+}
+
+impl TestDatabaseBackend {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Sqlite => "sqlite",
+            Self::Postgres => "postgres",
+            Self::MySql => "mysql",
+        }
+    }
+
+    fn container_port(self) -> u16 {
+        match self {
+            Self::Sqlite => 0,
+            Self::Postgres => 5432,
+            Self::MySql => 3306,
+        }
+    }
+
+    fn shared_container_name(self) -> String {
+        format!("asterdrive-test-{}-{}", test_workspace_id(), self.as_str())
+    }
+
+    fn shared_state_path(self) -> PathBuf {
+        shared_test_container_state_dir().join(format!(
+            "{}-{}.json",
+            test_workspace_id(),
+            self.as_str()
+        ))
+    }
+
+    fn shared_lock_path(self) -> PathBuf {
+        shared_test_container_state_dir().join(format!(
+            "{}-{}.lock",
+            test_workspace_id(),
+            self.as_str()
+        ))
+    }
+
+    fn database_url(self, port: u16) -> String {
+        match self {
+            Self::Sqlite => "sqlite::memory:".to_string(),
+            Self::Postgres => format!("postgres://postgres:postgres@127.0.0.1:{port}/asterdrive"),
+            Self::MySql => format!("mysql://aster:asterpass@127.0.0.1:{port}/asterdrive"),
+        }
+    }
+
+    fn admin_database_url(self, port: u16) -> String {
+        match self {
+            Self::Sqlite => "sqlite::memory:".to_string(),
+            Self::Postgres => self.database_url(port),
+            Self::MySql => format!("mysql://root:rootpass@127.0.0.1:{port}/asterdrive"),
+        }
+    }
+}
+
+fn test_workspace_id() -> &'static str {
+    static WORKSPACE_ID: OnceLock<String> = OnceLock::new();
+    WORKSPACE_ID.get_or_init(|| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        env!("CARGO_MANIFEST_DIR").hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    })
+}
+
+fn shared_test_container_state_dir() -> &'static Path {
+    static STATE_DIR: OnceLock<PathBuf> = OnceLock::new();
+    STATE_DIR
+        .get_or_init(|| {
+            let path = PathBuf::from(SHARED_TEST_CONTAINER_STATE_DIR);
+            std::fs::create_dir_all(&path).expect("shared test container state dir should exist");
+            path
+        })
+        .as_path()
+}
+
+fn lock_shared_test_container_state(backend: TestDatabaseBackend) -> File {
+    let lock_path = backend.shared_lock_path();
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(lock_path)
+        .expect("shared test container lock file should open");
+    file.lock_exclusive()
+        .expect("shared test container lock should be acquired");
+    file
+}
+
+fn load_shared_test_container_state(
+    file: &mut File,
+    backend: TestDatabaseBackend,
+) -> SharedTestContainerState {
+    let state_path = backend.shared_state_path();
+    if !state_path.exists() {
+        return SharedTestContainerState::default();
+    }
+
+    file.seek(SeekFrom::Start(0))
+        .expect("state lock file should seek");
+    let mut raw = String::new();
+    File::open(state_path)
+        .and_then(|mut state_file| state_file.read_to_string(&mut raw))
+        .expect("shared test container state should be readable");
+
+    if raw.trim().is_empty() {
+        SharedTestContainerState::default()
+    } else {
+        serde_json::from_str(&raw).expect("shared test container state should be valid json")
+    }
+}
+
+fn save_shared_test_container_state(
+    file: &mut File,
+    backend: TestDatabaseBackend,
+    state: &SharedTestContainerState,
+) {
+    let state_path = backend.shared_state_path();
+    file.seek(SeekFrom::Start(0))
+        .expect("state lock file should seek");
+
+    let json = serde_json::to_vec(state).expect("shared test container state should serialize");
+    let mut state_file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(state_path)
+        .expect("shared test container state file should open");
+    state_file
+        .write_all(&json)
+        .expect("shared test container state should write");
+    state_file
+        .write_all(b"\n")
+        .expect("shared test container state should end with newline");
+    state_file
+        .flush()
+        .expect("shared test container state should flush");
+    let _ = file.flush();
+}
+
+fn process_is_running(pid: u32) -> bool {
+    if pid == std::process::id() {
+        return true;
+    }
+
+    Command::new("/bin/kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn remove_shared_test_container_if_exists(backend: TestDatabaseBackend) {
+    let _ = Command::new("docker")
+        .args(["rm", "-f", &backend.shared_container_name()])
+        .output();
+}
+
+fn prune_shared_test_container_state(
+    backend: TestDatabaseBackend,
+    state: &mut SharedTestContainerState,
+) {
+    state.pids.retain(|pid| process_is_running(*pid));
+
+    if state.pids.is_empty() {
+        remove_shared_test_container_if_exists(backend);
+    }
+}
+
+fn release_shared_test_container(backend: TestDatabaseBackend) {
+    let mut lock_file = lock_shared_test_container_state(backend);
+    let mut state = load_shared_test_container_state(&mut lock_file, backend);
+    let current_pid = std::process::id();
+    state.pids.retain(|pid| *pid != current_pid);
+    prune_shared_test_container_state(backend, &mut state);
+    save_shared_test_container_state(&mut lock_file, backend, &state);
+}
 
 #[allow(dead_code)]
 pub fn remember_csrf_token(session_token: &str, csrf_token: &str) {
@@ -166,10 +373,25 @@ async fn wait_for_database(database_url: &str) {
 }
 
 async fn start_postgres_test_container() -> SharedTestDatabaseContainer {
-    use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+    use testcontainers::{GenericImage, ImageExt, ReuseDirective, runners::AsyncRunner};
+
+    let backend = TestDatabaseBackend::Postgres;
+    let mut lock_file = lock_shared_test_container_state(backend);
+    let mut state = load_shared_test_container_state(&mut lock_file, backend);
+    prune_shared_test_container_state(backend, &mut state);
+    let current_pid = std::process::id();
+    if !state.pids.contains(&current_pid) {
+        state.pids.push(current_pid);
+        state.pids.sort_unstable();
+        state.pids.dedup();
+    }
 
     let container = GenericImage::new("postgres", "16")
-        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(5432))
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(
+            backend.container_port(),
+        ))
+        .with_container_name(backend.shared_container_name())
+        .with_reuse(ReuseDirective::Always)
         .with_env_var("POSTGRES_USER", "postgres")
         .with_env_var("POSTGRES_PASSWORD", "postgres")
         .with_env_var("POSTGRES_DB", "asterdrive")
@@ -177,25 +399,44 @@ async fn start_postgres_test_container() -> SharedTestDatabaseContainer {
         .await
         .expect("failed to start postgres test container");
     let port = container
-        .get_host_port_ipv4(testcontainers::core::IntoContainerPort::tcp(5432))
+        .get_host_port_ipv4(testcontainers::core::IntoContainerPort::tcp(
+            backend.container_port(),
+        ))
         .await
         .expect("postgres test port should be exposed");
-    let database_url = format!("postgres://postgres:postgres@127.0.0.1:{port}/asterdrive");
+    let database_url = backend.database_url(port);
 
     wait_for_database(&database_url).await;
+    save_shared_test_container_state(&mut lock_file, backend, &state);
 
     SharedTestDatabaseContainer {
         _container: container,
-        admin_database_url: database_url.clone(),
+        _lease: SharedTestContainerLease::new(backend),
+        admin_database_url: backend.admin_database_url(port),
         database_url,
     }
 }
 
 async fn start_mysql_test_container() -> SharedTestDatabaseContainer {
-    use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+    use testcontainers::{GenericImage, ImageExt, ReuseDirective, runners::AsyncRunner};
+
+    let backend = TestDatabaseBackend::MySql;
+    let mut lock_file = lock_shared_test_container_state(backend);
+    let mut state = load_shared_test_container_state(&mut lock_file, backend);
+    prune_shared_test_container_state(backend, &mut state);
+    let current_pid = std::process::id();
+    if !state.pids.contains(&current_pid) {
+        state.pids.push(current_pid);
+        state.pids.sort_unstable();
+        state.pids.dedup();
+    }
 
     let container = GenericImage::new("mysql", "8.4")
-        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(3306))
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(
+            backend.container_port(),
+        ))
+        .with_container_name(backend.shared_container_name())
+        .with_reuse(ReuseDirective::Always)
         .with_env_var("MYSQL_DATABASE", "asterdrive")
         .with_env_var("MYSQL_USER", "aster")
         .with_env_var("MYSQL_PASSWORD", "asterpass")
@@ -204,17 +445,20 @@ async fn start_mysql_test_container() -> SharedTestDatabaseContainer {
         .await
         .expect("failed to start mysql test container");
     let port = container
-        .get_host_port_ipv4(testcontainers::core::IntoContainerPort::tcp(3306))
+        .get_host_port_ipv4(testcontainers::core::IntoContainerPort::tcp(
+            backend.container_port(),
+        ))
         .await
         .expect("mysql test port should be exposed");
-    let database_url = format!("mysql://aster:asterpass@127.0.0.1:{port}/asterdrive");
-    let admin_database_url = format!("mysql://root:rootpass@127.0.0.1:{port}/asterdrive");
+    let database_url = backend.database_url(port);
 
     wait_for_database(&database_url).await;
+    save_shared_test_container_state(&mut lock_file, backend, &state);
 
     SharedTestDatabaseContainer {
         _container: container,
-        admin_database_url,
+        _lease: SharedTestContainerLease::new(backend),
+        admin_database_url: backend.admin_database_url(port),
         database_url,
     }
 }
@@ -352,10 +596,23 @@ async fn provision_isolated_test_database_url(
     replace_database_name(parsed_url, &isolated_name)
 }
 
-async fn resolve_test_database_url() -> String {
-    let backend = configured_test_database_backend();
+async fn resolve_test_database_url_for(backend: TestDatabaseBackend) -> String {
     let (admin_database_url, database_url) = shared_test_database_urls(backend).await;
     provision_isolated_test_database_url(&admin_database_url, &database_url).await
+}
+
+async fn resolve_test_database_url() -> String {
+    resolve_test_database_url_for(configured_test_database_backend()).await
+}
+
+#[allow(dead_code)]
+pub async fn postgres_test_database_url() -> String {
+    resolve_test_database_url_for(TestDatabaseBackend::Postgres).await
+}
+
+#[allow(dead_code)]
+pub async fn mysql_test_database_url() -> String {
+    resolve_test_database_url_for(TestDatabaseBackend::MySql).await
 }
 
 /// 构建一个干净的测试 AppState。
@@ -502,9 +759,27 @@ pub async fn flush_mail_outbox_with(
     runtime_config: &std::sync::Arc<aster_drive::config::RuntimeConfig>,
     mail_sender: &std::sync::Arc<dyn aster_drive::services::mail_service::MailSender>,
 ) {
-    aster_drive::services::mail_outbox_service::drain_with(db, runtime_config, mail_sender)
-        .await
-        .expect("mail outbox drain should succeed");
+    const MAX_ATTEMPTS: usize = 8;
+    const RETRY_DELAY_MS: u64 = 25;
+
+    for attempt in 0..MAX_ATTEMPTS {
+        aster_drive::services::mail_outbox_service::drain_with(db, runtime_config, mail_sender)
+            .await
+            .expect("mail outbox drain should succeed");
+
+        let active = aster_drive::db::repository::mail_outbox_repo::count_active(db)
+            .await
+            .expect("mail outbox active count should succeed");
+        if active == 0 {
+            return;
+        }
+
+        if attempt + 1 < MAX_ATTEMPTS {
+            tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS)).await;
+        }
+    }
+
+    panic!("mail outbox should drain in tests");
 }
 
 /// 从 Set-Cookie header 提取指定 cookie 的值

@@ -6,7 +6,6 @@ mod common;
 use actix_web::test;
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use serde_json::Value;
-use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 use tokio::time::{Duration, timeout};
 
 fn upload_named_file(name: &str, content: &str, mime: &str, boundary: &str) -> String {
@@ -132,6 +131,41 @@ async fn assert_mysql_search_objects(db: &DatabaseConnection) {
         .await
         .unwrap();
     assert!(team_index.is_some(), "teams fulltext index should exist");
+
+    let timestamp_count = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::MySql,
+            "SELECT COUNT(*) \
+             FROM INFORMATION_SCHEMA.COLUMNS \
+             WHERE TABLE_SCHEMA = DATABASE() \
+               AND TABLE_NAME <> 'seaql_migrations' \
+               AND DATA_TYPE = 'timestamp'",
+        ))
+        .await
+        .unwrap()
+        .expect("timestamp count query should return one row");
+    let timestamp_count: i64 = timestamp_count.try_get_by_index(0).unwrap();
+    assert_eq!(
+        timestamp_count, 0,
+        "application tables should not retain MySQL TIMESTAMP columns after the 2038 fix"
+    );
+
+    let shares_expires_at = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::MySql,
+            "SELECT DATA_TYPE, DATETIME_PRECISION \
+             FROM INFORMATION_SCHEMA.COLUMNS \
+             WHERE TABLE_SCHEMA = DATABASE() \
+               AND TABLE_NAME = 'shares' \
+               AND COLUMN_NAME = 'expires_at'",
+        ))
+        .await
+        .unwrap()
+        .expect("shares.expires_at column should exist");
+    let data_type: String = shares_expires_at.try_get_by_index(0).unwrap();
+    let precision: Option<u64> = shares_expires_at.try_get_by_index(1).unwrap();
+    assert_eq!(data_type, "datetime");
+    assert_eq!(precision, Some(6));
 }
 
 #[actix_web::test]
@@ -177,6 +211,81 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
 
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
+
+    let share_file_boundary = "----BackendShareBoundary123";
+    let share_payload = upload_named_file(
+        "shared.txt",
+        "shared content",
+        "text/plain",
+        share_file_boundary,
+    );
+    let share_upload_req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={share_file_boundary}"),
+        ))
+        .set_payload(share_payload)
+        .to_request();
+    let share_upload_resp = test::call_service(&app, share_upload_req).await;
+    let share_upload_status = share_upload_resp.status();
+    if share_upload_status != 201 {
+        let body = test::read_body(share_upload_resp).await;
+        panic!(
+            "share upload returned {share_upload_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let share_upload_body: Value = test::read_body_json(share_upload_resp).await;
+    let share_file_id = share_upload_body["data"]["id"]
+        .as_i64()
+        .expect("share upload should return file id");
+
+    let create_share_req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "file_id": share_file_id }))
+        .to_request();
+    let create_share_resp = test::call_service(&app, create_share_req).await;
+    let create_share_status = create_share_resp.status();
+    if create_share_status != 201 {
+        let body = test::read_body(create_share_resp).await;
+        panic!(
+            "create share returned {create_share_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let create_share_body: Value = test::read_body_json(create_share_resp).await;
+    let share_id = create_share_body["data"]["id"]
+        .as_i64()
+        .expect("create share should return id");
+
+    let update_share_req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/shares/{share_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "expires_at": common::TEST_FUTURE_SHARE_EXPIRY_RFC3339,
+            "max_downloads": 2
+        }))
+        .to_request();
+    let update_share_resp = test::call_service(&app, update_share_req).await;
+    let update_share_status = update_share_resp.status();
+    if update_share_status != 200 {
+        let body = test::read_body(update_share_resp).await;
+        panic!(
+            "update share with far-future expiry returned {update_share_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let update_share_body: Value = test::read_body_json(update_share_resp).await;
+    assert_eq!(
+        update_share_body["data"]["expires_at"],
+        common::TEST_FUTURE_SHARE_EXPIRY_RFC3339
+    );
 
     let register_req = test::TestRequest::post()
         .uri("/api/v1/auth/register")
@@ -398,8 +507,21 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
         );
     }
     let short_search_body: Value = test::read_body_json(short_search_resp).await;
-    assert_eq!(short_search_body["data"]["total_files"], 1);
-    assert_eq!(short_search_body["data"]["files"][0]["name"], "report.pdf");
+    let short_search_files = short_search_body["data"]["files"]
+        .as_array()
+        .expect("short search files should be an array");
+    assert!(
+        short_search_body["data"]["total_files"]
+            .as_u64()
+            .expect("short search total should be numeric")
+            >= 1
+    );
+    assert!(
+        short_search_files
+            .iter()
+            .any(|file| file["name"] == "report.pdf"),
+        "short search should include report.pdf: {short_search_body}"
+    );
 
     let admin_user_search_req = test::TestRequest::get()
         .uri("/api/v1/admin/users?keyword=end-u")
@@ -460,41 +582,20 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
     let overview_body: Value = test::read_body_json(overview_resp).await;
     assert_eq!(overview_body["data"]["days"], 3);
     assert_eq!(overview_body["data"]["stats"]["total_users"], 2);
-    assert_eq!(overview_body["data"]["stats"]["total_files"], 2);
-    assert_eq!(overview_body["data"]["stats"]["uploads_today"], 3);
+    assert_eq!(overview_body["data"]["stats"]["total_files"], 3);
+    assert_eq!(overview_body["data"]["stats"]["uploads_today"], 4);
 }
 
 #[actix_web::test]
 async fn test_postgres_smoke_search_and_admin_overview() {
-    let container = GenericImage::new("postgres", "16")
-        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(5432))
-        .with_env_var("POSTGRES_USER", "postgres")
-        .with_env_var("POSTGRES_PASSWORD", "postgres")
-        .with_env_var("POSTGRES_DB", "asterdrive")
-        .start()
-        .await
-        .expect("failed to start postgres container");
-
-    let port = container.get_host_port_ipv4(5432).await.unwrap();
-    let database_url = format!("postgres://postgres:postgres@127.0.0.1:{port}/asterdrive");
+    let database_url = common::postgres_test_database_url().await;
 
     exercise_backend_smoke(&database_url, DbBackend::Postgres).await;
 }
 
 #[actix_web::test]
 async fn test_mysql_smoke_search_and_admin_overview() {
-    let container = GenericImage::new("mysql", "8.4")
-        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(3306))
-        .with_env_var("MYSQL_DATABASE", "asterdrive")
-        .with_env_var("MYSQL_USER", "aster")
-        .with_env_var("MYSQL_PASSWORD", "asterpass")
-        .with_env_var("MYSQL_ROOT_PASSWORD", "rootpass")
-        .start()
-        .await
-        .expect("failed to start mysql container");
-
-    let port = container.get_host_port_ipv4(3306).await.unwrap();
-    let database_url = format!("mysql://aster:asterpass@127.0.0.1:{port}/asterdrive");
+    let database_url = common::mysql_test_database_url().await;
 
     exercise_backend_smoke(&database_url, DbBackend::MySql).await;
 }
