@@ -235,7 +235,7 @@ async fn test_share_update_replaces_password_and_limits_without_changing_token()
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "password": "new-secret",
-            "expires_at": "2099-04-02T12:00:00Z",
+            "expires_at": common::TEST_FUTURE_SHARE_EXPIRY_RFC3339,
             "max_downloads": 2
         }))
         .to_request();
@@ -259,7 +259,7 @@ async fn test_share_update_replaces_password_and_limits_without_changing_token()
     assert_eq!(body["data"]["items"][0]["max_downloads"], 2);
     assert_eq!(
         body["data"]["items"][0]["expires_at"],
-        "2099-04-02T12:00:00Z"
+        common::TEST_FUTURE_SHARE_EXPIRY_RFC3339
     );
 
     let req = test::TestRequest::post()

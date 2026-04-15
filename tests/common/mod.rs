@@ -21,6 +21,9 @@ fn lock_csrf_registry() -> std::sync::MutexGuard<'static, HashMap<String, String
 }
 
 const TEST_DATABASE_BACKEND_ENV: &str = "ASTER_TEST_DATABASE_BACKEND";
+// Keep the year within MySQL TIMESTAMP's supported range.
+#[allow(dead_code)]
+pub const TEST_FUTURE_SHARE_EXPIRY_RFC3339: &str = "2037-04-02T12:00:00Z";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestDatabaseBackend {

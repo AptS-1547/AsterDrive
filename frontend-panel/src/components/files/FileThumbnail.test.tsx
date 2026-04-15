@@ -147,6 +147,43 @@ describe("FileThumbnail", () => {
 		expect(screen.getByTestId("file-type-icon")).toHaveClass("h-4", "w-4");
 	});
 
+	it("renders medium thumbnails across loading, fallback, and success states", () => {
+		mockState.useBlobUrl.mockReturnValue({
+			blobUrl: null,
+			error: false,
+			loading: true,
+		});
+
+		const { container, rerender } = render(
+			<FileThumbnail file={imageFile} size="md" />,
+		);
+
+		expect(screen.getByTestId("thumbnail-loading")).toHaveClass("h-4", "w-4");
+
+		mockState.useBlobUrl.mockReturnValue({
+			blobUrl: null,
+			error: true,
+			loading: false,
+		});
+		rerender(<FileThumbnail file={imageFile} size="md" />);
+
+		expect(screen.getByTestId("file-type-icon")).toHaveClass("h-5", "w-5");
+
+		mockState.useBlobUrl.mockReturnValue({
+			blobUrl: "blob:3",
+			error: false,
+			loading: false,
+		});
+		rerender(<FileThumbnail file={imageFile} size="md" />);
+
+		expect(container.querySelector("img")).toHaveAttribute("src", "blob:3");
+		expect(container.querySelector("img")).toHaveClass(
+			"h-full",
+			"w-full",
+			"object-cover",
+		);
+	});
+
 	it("renders a large image preview when a blob URL is available", () => {
 		mockState.useBlobUrl.mockReturnValue({
 			blobUrl: "blob:2",
@@ -163,6 +200,19 @@ describe("FileThumbnail", () => {
 			"shrink-0",
 			"max-w-none",
 		);
+	});
+
+	it("shows a large spinner while a large image thumbnail is still loading", () => {
+		mockState.useBlobUrl.mockReturnValue({
+			blobUrl: null,
+			error: false,
+			loading: true,
+		});
+
+		render(<FileThumbnail file={imageFile} size="lg" />);
+
+		expect(screen.getByTestId("thumbnail-loading")).toHaveClass("h-5", "w-5");
+		expect(screen.queryByTestId("file-type-icon")).not.toBeInTheDocument();
 	});
 
 	it("shows a spinner while an image thumbnail is still loading", () => {

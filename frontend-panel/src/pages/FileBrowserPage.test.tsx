@@ -1,4 +1,5 @@
 import {
+	act,
 	fireEvent,
 	render,
 	screen,
@@ -14,6 +15,8 @@ const mockState = vi.hoisted(() => ({
 	batchDelete: vi.fn(),
 	copyFile: vi.fn(),
 	copyFolder: vi.fn(),
+	createPreviewLink: vi.fn(),
+	createWopiSession: vi.fn(),
 	streamArchiveDownload: vi.fn(),
 	dispatchEvent: vi.fn(),
 	fileBrowserContext: null as Record<string, unknown> | null,
@@ -155,7 +158,21 @@ vi.mock("@/stores/previewAppStore", () => ({
 }));
 
 vi.mock("@/components/common/BatchActionBar", () => ({
-	BatchActionBar: () => <div>batch-action-bar</div>,
+	BatchActionBar: ({
+		onArchiveDownload,
+	}: {
+		onArchiveDownload: (
+			fileIds: number[],
+			folderIds: number[],
+		) => Promise<void>;
+	}) => (
+		<div>
+			<div>batch-action-bar</div>
+			<button type="button" onClick={() => void onArchiveDownload([], [])}>
+				batch-archive-empty
+			</button>
+		</div>
+	),
 }));
 
 vi.mock("@/components/common/EmptyState", () => ({
@@ -383,10 +400,12 @@ vi.mock("@/components/files/FileTable", () => ({
 
 vi.mock("@/components/files/BatchTargetFolderDialog", () => ({
 	BatchTargetFolderDialog: ({
+		onOpenChange,
 		mode,
 		onConfirm,
 		open,
 	}: {
+		onOpenChange?: (open: boolean) => void;
 		mode: string;
 		onConfirm: (targetFolderId: number | null) => Promise<void>;
 		open: boolean;
@@ -396,6 +415,9 @@ vi.mock("@/components/files/BatchTargetFolderDialog", () => ({
 				<div>{`batch-dialog:${mode}`}</div>
 				<button type="button" onClick={() => void onConfirm(20)}>
 					confirm-batch-dialog
+				</button>
+				<button type="button" onClick={() => onOpenChange?.(false)}>
+					{`close-batch-dialog:${mode}`}
 				</button>
 			</div>
 		) : null,
@@ -428,15 +450,30 @@ vi.mock("@/components/files/FilePreview", () => ({
 		file,
 		openMode,
 		onClose,
+		onFileUpdated,
+		previewLinkFactory,
+		wopiSessionFactory,
 	}: {
 		file: { name: string };
 		openMode?: string;
 		onClose: () => void;
+		onFileUpdated?: () => void;
+		previewLinkFactory?: () => unknown;
+		wopiSessionFactory?: (appKey: string) => unknown;
 	}) => (
 		<div>
 			<div>{`preview:${file.name}:${openMode ?? "auto"}`}</div>
 			<button type="button" onClick={onClose}>
 				close-preview
+			</button>
+			<button type="button" onClick={onFileUpdated}>
+				refresh-preview-file
+			</button>
+			<button type="button" onClick={() => previewLinkFactory?.()}>
+				create-preview-link
+			</button>
+			<button type="button" onClick={() => wopiSessionFactory?.("office")}>
+				create-wopi-session
 			</button>
 		</div>
 	),
@@ -455,13 +492,23 @@ vi.mock("@/components/files/RenameDialog", () => ({
 vi.mock("@/components/files/ShareDialog", () => ({
 	ShareDialog: ({
 		name,
+		onOpenChange,
 		open,
 		initialMode,
 	}: {
 		name: string;
+		onOpenChange?: (open: boolean) => void;
 		open: boolean;
 		initialMode?: "page" | "direct";
-	}) => (open ? <div>{`share:${name}:${initialMode ?? "page"}`}</div> : null),
+	}) =>
+		open ? (
+			<div>
+				<div>{`share:${name}:${initialMode ?? "page"}`}</div>
+				<button type="button" onClick={() => onOpenChange?.(false)}>
+					close-share-dialog
+				</button>
+			</div>
+		) : null,
 }));
 
 vi.mock("@/components/files/UploadArea", () => ({
@@ -481,8 +528,26 @@ vi.mock("@/components/files/UploadArea", () => ({
 }));
 
 vi.mock("@/components/files/VersionHistoryDialog", () => ({
-	VersionHistoryDialog: ({ open }: { open: boolean }) =>
-		open ? <div>version-history-dialog</div> : null,
+	VersionHistoryDialog: ({
+		onOpenChange,
+		onRestored,
+		open,
+	}: {
+		onOpenChange?: (open: boolean) => void;
+		onRestored?: () => void;
+		open: boolean;
+	}) =>
+		open ? (
+			<div>
+				<div>version-history-dialog</div>
+				<button type="button" onClick={() => onOpenChange?.(false)}>
+					close-version-history
+				</button>
+				<button type="button" onClick={onRestored}>
+					restore-version-history
+				</button>
+			</div>
+		) : null,
 }));
 
 vi.mock("@/components/layout/AppLayout", () => ({
@@ -676,6 +741,10 @@ vi.mock("@/services/fileService", () => ({
 	fileService: {
 		copyFile: (...args: unknown[]) => mockState.copyFile(...args),
 		copyFolder: (...args: unknown[]) => mockState.copyFolder(...args),
+		createPreviewLink: (...args: unknown[]) =>
+			mockState.createPreviewLink(...args),
+		createWopiSession: (...args: unknown[]) =>
+			mockState.createWopiSession(...args),
 		downloadUrl: (id: number) => `https://download/${id}`,
 		setFileLock: (...args: unknown[]) => mockState.setFileLock(...args),
 		setFolderLock: (...args: unknown[]) => mockState.setFolderLock(...args),
@@ -730,6 +799,28 @@ function createFile(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function getFileBrowserContext() {
+	const context = mockState.fileBrowserContext as {
+		onDelete: (type: "file" | "folder", id: number) => Promise<void>;
+		onDownload: (fileId: number, fileName: string) => void;
+		onInfo: (type: "file" | "folder", id: number) => void;
+		onMove: (type: "file" | "folder", id: number) => void;
+		onRename: (type: "file" | "folder", id: number, name: string) => void;
+		onToggleLock: (
+			type: "file" | "folder",
+			id: number,
+			locked: boolean,
+		) => Promise<boolean>;
+		onVersions: (fileId: number) => void;
+	} | null;
+
+	if (!context) {
+		throw new Error("missing file browser context");
+	}
+
+	return context;
+}
+
 describe("FileBrowserPage", () => {
 	beforeEach(() => {
 		vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
@@ -747,6 +838,8 @@ describe("FileBrowserPage", () => {
 		mockState.batchDelete.mockReset();
 		mockState.copyFile.mockReset();
 		mockState.copyFolder.mockReset();
+		mockState.createPreviewLink.mockReset();
+		mockState.createWopiSession.mockReset();
 		mockState.streamArchiveDownload.mockReset();
 		mockState.dispatchEvent.mockReset();
 		mockState.fileBrowserContext = null;
@@ -809,6 +902,8 @@ describe("FileBrowserPage", () => {
 		mockState.batchDelete.mockResolvedValue({ ok: true });
 		mockState.copyFile.mockResolvedValue(undefined);
 		mockState.copyFolder.mockResolvedValue(undefined);
+		mockState.createPreviewLink.mockResolvedValue("preview-link");
+		mockState.createWopiSession.mockResolvedValue({ session: "wopi" });
 		mockState.formatBatchToast.mockImplementation((_t, action: string) => ({
 			description: `${action}:desc`,
 			title: `${action}:ok`,
@@ -1106,6 +1201,224 @@ describe("FileBrowserPage", () => {
 		expect(mockState.refreshUser).toHaveBeenCalledTimes(1);
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("delete:ok", {
 			description: "delete:desc",
+		});
+	});
+
+	it("restores preview state from search navigation and supports preview callbacks", async () => {
+		const previewFile = createFile({
+			id: 31,
+			name: "from-search.txt",
+		});
+		mockState.location = {
+			pathname: "/folder/12",
+			search: "?name=Projects",
+			state: {
+				searchPreviewFile: previewFile,
+			},
+		};
+
+		render(<FileBrowserPage />);
+
+		expect(
+			await screen.findByText("preview:from-search.txt:auto"),
+		).toBeInTheDocument();
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			{
+				pathname: "/folder/12",
+				search: "?name=Projects",
+			},
+			{
+				replace: true,
+				state: null,
+			},
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "refresh-preview-file" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "create-preview-link" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "create-wopi-session" }),
+		);
+
+		expect(mockState.store.refresh).toHaveBeenCalledTimes(1);
+		expect(mockState.createPreviewLink).toHaveBeenCalledWith(31);
+		expect(mockState.createWopiSession).toHaveBeenCalledWith(31, "office");
+
+		fireEvent.click(screen.getByRole("button", { name: "close-preview" }));
+		expect(
+			screen.queryByText("preview:from-search.txt:auto"),
+		).not.toBeInTheDocument();
+	});
+
+	it("handles rename requests and browser item actions through the file browser context", async () => {
+		render(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(mockState.store.navigateTo).toHaveBeenCalledWith(12, "Projects");
+		});
+
+		document.body.dispatchEvent(
+			new CustomEvent("rename-request", {
+				bubbles: true,
+				detail: {
+					type: "file",
+					id: 3,
+					name: "renamed-from-event.txt",
+				},
+			}),
+		);
+		expect(
+			await screen.findByText("rename:renamed-from-event.txt"),
+		).toBeInTheDocument();
+
+		const context = getFileBrowserContext();
+		const createElement = document.createElement.bind(document);
+		const anchor = createElement("a");
+		const clickSpy = vi.spyOn(anchor, "click").mockImplementation(() => {});
+		const createElementSpy = vi
+			.spyOn(document, "createElement")
+			.mockImplementation(((tagName: string) =>
+				tagName === "a"
+					? anchor
+					: createElement(tagName)) as typeof document.createElement);
+
+		context.onDownload(3, "notes.txt");
+		expect(anchor.href).toBe("https://download/3");
+		expect(anchor.download).toBe("");
+		expect(clickSpy).toHaveBeenCalledTimes(1);
+
+		await expect(context.onToggleLock("file", 3, false)).resolves.toBe(true);
+		await expect(context.onToggleLock("folder", 5, true)).resolves.toBe(true);
+		expect(mockState.setFileLock).toHaveBeenCalledWith(3, true);
+		expect(mockState.setFolderLock).toHaveBeenCalledWith(5, false);
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("lock_success");
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("unlock_success");
+
+		const lockError = new Error("lock failed");
+		mockState.setFileLock.mockRejectedValueOnce(lockError);
+		await expect(context.onToggleLock("file", 9, false)).resolves.toBe(false);
+		expect(mockState.handleApiError).toHaveBeenCalledWith(lockError);
+
+		await context.onDelete("file", 3);
+		await context.onDelete("folder", 5);
+		expect(mockState.store.deleteFile).toHaveBeenCalledWith(3);
+		expect(mockState.store.deleteFolder).toHaveBeenCalledWith(5);
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("delete_success");
+
+		const deleteError = new Error("delete failed");
+		mockState.store.deleteFile.mockRejectedValueOnce(deleteError);
+		await context.onDelete("file", 3);
+		expect(mockState.handleApiError).toHaveBeenCalledWith(deleteError);
+
+		act(() => {
+			context.onMove("file", 3);
+		});
+		expect(await screen.findByText("batch-dialog:move")).toBeInTheDocument();
+		fireEvent.click(
+			screen.getByRole("button", { name: "close-batch-dialog:move" }),
+		);
+		expect(screen.queryByText("batch-dialog:move")).not.toBeInTheDocument();
+
+		act(() => {
+			context.onVersions(3);
+		});
+		expect(
+			await screen.findByText("version-history-dialog"),
+		).toBeInTheDocument();
+		fireEvent.click(
+			screen.getByRole("button", { name: "restore-version-history" }),
+		);
+		await waitFor(() => {
+			expect(mockState.store.refresh).toHaveBeenCalled();
+		});
+
+		createElementSpy.mockRestore();
+		clickSpy.mockRestore();
+	});
+
+	it("updates open info panels when the backing file or folder changes", async () => {
+		const { rerender } = render(<FileBrowserPage />);
+
+		const context = getFileBrowserContext();
+
+		act(() => {
+			context.onInfo("file", 3);
+		});
+		expect(await screen.findByText("info:notes.txt")).toBeInTheDocument();
+
+		mockState.store.files = [createFile({ id: 3, name: "notes-updated.txt" })];
+		rerender(<FileBrowserPage />);
+		expect(
+			await screen.findByText("info:notes-updated.txt"),
+		).toBeInTheDocument();
+
+		act(() => {
+			context.onInfo("folder", 5);
+		});
+		expect(await screen.findByText("info:Docs")).toBeInTheDocument();
+
+		mockState.store.folders = [createFolder({ id: 5, name: "Docs Updated" })];
+		rerender(<FileBrowserPage />);
+		expect(await screen.findByText("info:Docs Updated")).toBeInTheDocument();
+	});
+
+	it("uses search refresh after trash drops while searching and skips empty archive batches", async () => {
+		mockState.store.searchQuery = "budget";
+
+		render(<FileBrowserPage />);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "batch-archive-empty" }),
+		);
+		expect(mockState.streamArchiveDownload).not.toHaveBeenCalled();
+
+		vi.useFakeTimers();
+
+		fireEvent.click(screen.getByRole("button", { name: "layout-trash" }));
+
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(mockState.batchDelete).toHaveBeenCalledWith([1], [2]);
+		await vi.advanceTimersByTimeAsync(FILE_BROWSER_FEEDBACK_DURATION_MS);
+		await Promise.resolve();
+		await Promise.resolve();
+		vi.useRealTimers();
+
+		expect(mockState.store.search).toHaveBeenCalledWith("budget");
+		expect(mockState.store.refresh).not.toHaveBeenCalled();
+		expect(mockState.refreshUser).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows error batch toasts for move results and closes share dialogs", async () => {
+		mockState.formatBatchToast.mockImplementation(() => ({
+			description: "move:error-desc",
+			title: "move:error",
+			variant: "error",
+		}));
+
+		render(<FileBrowserPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "share-folder" }));
+		expect(await screen.findByText("share:Docs A:page")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "close-share-dialog" }));
+		expect(screen.queryByText("share:Docs A:page")).not.toBeInTheDocument();
+
+		vi.useFakeTimers();
+
+		fireEvent.click(screen.getByRole("button", { name: "layout-move" }));
+
+		await Promise.resolve();
+		await Promise.resolve();
+		await vi.advanceTimersByTimeAsync(FILE_BROWSER_FEEDBACK_DURATION_MS);
+		await Promise.resolve();
+		await Promise.resolve();
+		vi.useRealTimers();
+
+		expect(mockState.toastError).toHaveBeenCalledWith("move:error", {
+			description: "move:error-desc",
 		});
 	});
 });

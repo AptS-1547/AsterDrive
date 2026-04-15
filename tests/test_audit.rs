@@ -406,12 +406,19 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "expires_at": "2099-04-02T12:00:00Z",
+            "expires_at": common::TEST_FUTURE_SHARE_EXPIRY_RFC3339,
             "max_downloads": 3
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    let status = resp.status();
+    if status != 200 {
+        let body = test::read_body(resp).await;
+        panic!(
+            "share update returned {status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/shares/{share_id}"))

@@ -156,4 +156,33 @@ describe("AppLayout", () => {
 			"true",
 		);
 	});
+
+	it("opens search with Ctrl+K and prevents the browser shortcut", () => {
+		render(<AppLayout>Page Content</AppLayout>);
+
+		const prevented = !fireEvent.keyDown(document, {
+			cancelable: true,
+			ctrlKey: true,
+			key: "k",
+		});
+
+		expect(prevented).toBe(true);
+		expect(screen.getByTestId("global-search-dialog")).toHaveAttribute(
+			"data-open",
+			"true",
+		);
+	});
+
+	it("ignores global shortcuts when the target should be skipped", () => {
+		mockState.shouldIgnoreKeyboardTarget.mockReturnValue(true);
+
+		render(<AppLayout>Page Content</AppLayout>);
+
+		fireEvent.keyDown(document, { key: "/" });
+
+		expect(screen.getByTestId("global-search-dialog")).toHaveAttribute(
+			"data-open",
+			"false",
+		);
+	});
 });

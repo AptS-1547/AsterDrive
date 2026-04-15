@@ -74,6 +74,10 @@ vi.mock("@/components/files/FileThumbnail", () => ({
 	FileThumbnail: () => <span data-testid="file-thumbnail">thumb</span>,
 }));
 
+function waitForSearchDebounce() {
+	return new Promise((resolve) => window.setTimeout(resolve, 220));
+}
+
 describe("GlobalSearchDialog", () => {
 	beforeEach(() => {
 		mockState.getFile.mockReset();
@@ -132,7 +136,7 @@ describe("GlobalSearchDialog", () => {
 		fireEvent.change(screen.getByPlaceholderText("search:placeholder"), {
 			target: { value: "report" },
 		});
-		await new Promise((resolve) => window.setTimeout(resolve, 220));
+		await waitForSearchDebounce();
 
 		await waitFor(() => {
 			expect(mockState.search).toHaveBeenCalledWith(
@@ -175,7 +179,7 @@ describe("GlobalSearchDialog", () => {
 		fireEvent.change(screen.getByPlaceholderText("search:placeholder"), {
 			target: { value: "report" },
 		});
-		await new Promise((resolve) => window.setTimeout(resolve, 220));
+		await waitForSearchDebounce();
 		expect(await screen.findByText("report.txt")).toBeInTheDocument();
 
 		fireEvent.click(screen.getByText("report.txt"));
@@ -231,7 +235,7 @@ describe("GlobalSearchDialog", () => {
 		fireEvent.change(screen.getByPlaceholderText("search:placeholder"), {
 			target: { value: "report" },
 		});
-		await new Promise((resolve) => window.setTimeout(resolve, 220));
+		await waitForSearchDebounce();
 		expect(await screen.findByText("report-1.txt")).toBeInTheDocument();
 		expect(screen.getByText("report-1.txt")).toBeInTheDocument();
 
@@ -262,5 +266,243 @@ describe("GlobalSearchDialog", () => {
 			);
 		});
 		expect(await screen.findByText("report-2.txt")).toBeInTheDocument();
+	});
+
+	it("opens folder results directly with a view transition", async () => {
+		const onOpenChange = vi.fn();
+		const folder: FolderListItem = {
+			id: 3,
+			is_locked: false,
+			is_shared: false,
+			name: "Reports",
+			updated_at: "2026-04-15T12:00:00Z",
+		};
+		mockState.search.mockResolvedValue({
+			files: [],
+			folders: [folder],
+			total_files: 0,
+			total_folders: 1,
+		});
+
+		render(<GlobalSearchDialog open onOpenChange={onOpenChange} />);
+
+		fireEvent.change(screen.getByPlaceholderText("search:placeholder"), {
+			target: { value: "reports" },
+		});
+		await waitForSearchDebounce();
+		expect(await screen.findByText("Reports")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByText("Reports"));
+
+		expect(onOpenChange).toHaveBeenCalledWith(false);
+		expect(mockState.navigate).toHaveBeenCalledWith("/folder/3?name=Reports", {
+			viewTransition: true,
+		});
+	});
+
+	it("updates the filter and opens the active file from keyboard navigation", async () => {
+		const onOpenChange = vi.fn();
+		const folder: FolderListItem = {
+			id: 3,
+			is_locked: false,
+			is_shared: false,
+			name: "Reports",
+			updated_at: "2026-04-15T12:00:00Z",
+		};
+		const file: FileListItem = {
+			id: 7,
+			is_locked: true,
+			is_shared: false,
+			mime_type: "text/plain",
+			name: "report.txt",
+			size: 2048,
+			updated_at: "2026-04-15T12:00:00Z",
+		};
+		mockState.search.mockResolvedValue({
+			files: [file],
+			folders: [folder],
+			total_files: 1,
+			total_folders: 1,
+		});
+		mockState.getFile.mockResolvedValue({
+			folder_id: 42,
+		});
+
+		render(<GlobalSearchDialog open onOpenChange={onOpenChange} />);
+
+		const input = screen.getByPlaceholderText("search:placeholder");
+		fireEvent.change(input, {
+			target: { value: "report" },
+		});
+		await waitForSearchDebounce();
+		expect(await screen.findByText("report.txt")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "search:files_only" }));
+		await waitForSearchDebounce();
+
+		await waitFor(() => {
+			expect(mockState.search).toHaveBeenLastCalledWith(
+				{
+					q: "report",
+					type: "file",
+					limit: 10,
+				},
+				{ signal: expect.any(AbortSignal) },
+			);
+		});
+
+		fireEvent.keyDown(input, { key: "ArrowUp" });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => {
+			expect(mockState.getFile).toHaveBeenCalledWith(7);
+		});
+		expect(onOpenChange).toHaveBeenCalledWith(false);
+		expect(mockState.navigate).toHaveBeenCalledWith("/folder/42", {
+			state: {
+				searchPreviewFile: file,
+			},
+			viewTransition: true,
+		});
+	});
+
+	it("shows an empty state when a query has no matches", async () => {
+		mockState.search.mockResolvedValue({
+			files: [],
+			folders: [],
+			total_files: 0,
+			total_folders: 0,
+		});
+
+		render(<GlobalSearchDialog open onOpenChange={vi.fn()} />);
+
+		fireEvent.change(screen.getByPlaceholderText("search:placeholder"), {
+			target: { value: "unknown" },
+		});
+		await waitForSearchDebounce();
+		await waitFor(() => {
+			expect(mockState.search).toHaveBeenCalledTimes(1);
+		});
+
+		await waitFor(() => {
+			expect(screen.queryByText("search:searching")).not.toBeInTheDocument();
+			expect(screen.getByText("search:no_results")).toBeInTheDocument();
+		});
+	});
+
+	it("shows a search error message when the request fails", async () => {
+		mockState.search.mockRejectedValue(new Error("search exploded"));
+
+		render(<GlobalSearchDialog open onOpenChange={vi.fn()} />);
+
+		fireEvent.change(screen.getByPlaceholderText("search:placeholder"), {
+			target: { value: "broken" },
+		});
+		await waitForSearchDebounce();
+		await waitFor(() => {
+			expect(mockState.search).toHaveBeenCalledTimes(1);
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText("search:search_error")).toBeInTheDocument();
+		});
+	});
+
+	it("closes on escape and resets stale results when reopened", async () => {
+		const onOpenChange = vi.fn();
+		const file: FileListItem = {
+			id: 7,
+			is_locked: false,
+			is_shared: false,
+			mime_type: "text/plain",
+			name: "report.txt",
+			size: 2048,
+			updated_at: "2026-04-15T12:00:00Z",
+		};
+		mockState.search.mockResolvedValue({
+			files: [file],
+			folders: [],
+			total_files: 1,
+			total_folders: 0,
+		});
+
+		const { rerender } = render(
+			<GlobalSearchDialog open onOpenChange={onOpenChange} />,
+		);
+
+		const input = screen.getByPlaceholderText("search:placeholder");
+		fireEvent.change(input, {
+			target: { value: "report" },
+		});
+		await waitForSearchDebounce();
+		expect(await screen.findByText("report.txt")).toBeInTheDocument();
+
+		fireEvent.keyDown(input, { key: "Escape" });
+		expect(onOpenChange).toHaveBeenCalledWith(false);
+
+		rerender(<GlobalSearchDialog open={false} onOpenChange={onOpenChange} />);
+		rerender(<GlobalSearchDialog open onOpenChange={onOpenChange} />);
+
+		expect(screen.getByPlaceholderText("search:placeholder")).toHaveValue("");
+		expect(screen.queryByText("report.txt")).not.toBeInTheDocument();
+		expect(screen.getByText("search:start_typing_desc")).toBeInTheDocument();
+	});
+
+	it("ignores duplicate file opens while a result is already opening", async () => {
+		const file: FileListItem = {
+			id: 7,
+			is_locked: false,
+			is_shared: false,
+			mime_type: "text/plain",
+			name: "report.txt",
+			size: 2048,
+			updated_at: "2026-04-15T12:00:00Z",
+		};
+		let resolveFile: ((value: { folder_id: number }) => void) | undefined;
+		mockState.search.mockResolvedValue({
+			files: [file],
+			folders: [],
+			total_files: 1,
+			total_folders: 0,
+		});
+		mockState.getFile.mockReturnValue(
+			new Promise((resolve: (value: { folder_id: number }) => void) => {
+				resolveFile = resolve;
+			}),
+		);
+
+		render(<GlobalSearchDialog open onOpenChange={vi.fn()} />);
+
+		fireEvent.change(screen.getByPlaceholderText("search:placeholder"), {
+			target: { value: "report" },
+		});
+		await waitForSearchDebounce();
+		expect(await screen.findByText("report.txt")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByText("report.txt"));
+
+		await waitFor(() => {
+			expect(mockState.getFile).toHaveBeenCalledTimes(1);
+		});
+		await waitFor(() => {
+			expect(
+				screen
+					.getAllByTestId("icon")
+					.some((icon) => icon.getAttribute("data-name") === "Spinner"),
+			).toBe(true);
+		});
+
+		fireEvent.click(screen.getByText("report.txt"));
+		expect(mockState.getFile).toHaveBeenCalledTimes(1);
+
+		resolveFile?.({ folder_id: 42 });
+		await waitFor(() => {
+			expect(mockState.navigate).toHaveBeenCalledWith("/folder/42", {
+				state: {
+					searchPreviewFile: file,
+				},
+				viewTransition: true,
+			});
+		});
 	});
 });

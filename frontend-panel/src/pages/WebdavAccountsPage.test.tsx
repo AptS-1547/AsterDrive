@@ -321,6 +321,7 @@ describe("WebdavAccountsPage", () => {
 				folder_limit: 1000,
 			});
 		});
+		await screen.findByDisplayValue("http://localhost:3000/dav/");
 		expect(screen.getByText("dav-user")).toBeInTheDocument();
 		expect(screen.getByText("date:2026-03-28T00:00:00Z")).toBeInTheDocument();
 
