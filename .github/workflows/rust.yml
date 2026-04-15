@@ -66,7 +66,7 @@ jobs:
 
       - name: Generate HTML coverage report
         if: success()
-        run: cargo llvm-cov report --workspace --html --output-dir coverage/rust/html
+        run: cargo llvm-cov report --html --output-dir coverage/rust/html
 
       - name: Publish coverage summary
         if: always() && hashFiles('coverage/rust/lcov.info') != ''

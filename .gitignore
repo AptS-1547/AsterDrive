@@ -4,6 +4,7 @@
 /tmp
 
 # 测试结果
+/coverage/
 /tests/performance/results/
 
 # 运行时生成
