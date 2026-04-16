@@ -1,0 +1,121 @@
+use std::collections::{HashMap, HashSet};
+
+use chrono::{Duration, Utc};
+
+use crate::db::repository::{file_repo, folder_repo};
+use crate::entities::{file, folder};
+use crate::errors::Result;
+use crate::runtime::AppState;
+use crate::services::{file_service, workspace_storage_service::WorkspaceStorageScope};
+
+use super::DEFAULT_RETENTION_DAYS;
+use super::common::recursive_purge_folder_in_scope;
+
+/// 自动清理过期回收站条目（后台任务调用）
+pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
+    let retention_days = state
+        .runtime_config
+        .get_i64("trash_retention_days")
+        .unwrap_or_else(|| {
+            if let Some(raw) = state.runtime_config.get("trash_retention_days") {
+                tracing::warn!(
+                    "invalid trash_retention_days value '{}', using default",
+                    raw
+                );
+            }
+            DEFAULT_RETENTION_DAYS
+        });
+
+    let cutoff = Utc::now() - Duration::days(retention_days);
+    let mut count: u32 = 0;
+
+    // 清理过期文件（批量）
+    let expired_files = file_repo::find_expired_deleted(&state.db, cutoff).await?;
+    let mut by_user: HashMap<i64, Vec<file::Model>> = HashMap::new();
+    let mut by_team: HashMap<i64, Vec<file::Model>> = HashMap::new();
+    for file in expired_files {
+        if let Some(team_id) = file.team_id {
+            by_team.entry(team_id).or_default().push(file);
+        } else {
+            by_user.entry(file.user_id).or_default().push(file);
+        }
+    }
+
+    for (user_id, files) in by_user {
+        match file_service::batch_purge_in_scope(
+            state,
+            WorkspaceStorageScope::Personal { user_id },
+            files,
+        )
+        .await
+        {
+            Ok(purged) => count += purged,
+            Err(error) => {
+                tracing::warn!("trash cleanup expired files for user #{user_id} failed: {error}")
+            }
+        }
+    }
+
+    for (team_id, files) in by_team {
+        match file_service::batch_purge_in_scope(
+            state,
+            WorkspaceStorageScope::Team {
+                team_id,
+                actor_user_id: 0,
+            },
+            files,
+        )
+        .await
+        {
+            Ok(purged) => count += purged,
+            Err(error) => {
+                tracing::warn!("trash cleanup expired files for team #{team_id} failed: {error}")
+            }
+        }
+    }
+
+    // 清理过期文件夹，只处理顶层，父文件夹会递归覆盖子项。
+    let expired_folders = folder_repo::find_expired_deleted(&state.db, cutoff).await?;
+    let expired_folder_ids: HashSet<i64> = expired_folders.iter().map(|folder| folder.id).collect();
+    let top_level_folders: Vec<&folder::Model> = expired_folders
+        .iter()
+        .filter(|folder| {
+            folder
+                .parent_id
+                .is_none_or(|parent_id| !expired_folder_ids.contains(&parent_id))
+        })
+        .collect();
+
+    for folder in top_level_folders {
+        let result = if let Some(team_id) = folder.team_id {
+            recursive_purge_folder_in_scope(
+                state,
+                WorkspaceStorageScope::Team {
+                    team_id,
+                    actor_user_id: 0,
+                },
+                folder.id,
+            )
+            .await
+        } else {
+            recursive_purge_folder_in_scope(
+                state,
+                WorkspaceStorageScope::Personal {
+                    user_id: folder.user_id,
+                },
+                folder.id,
+            )
+            .await
+        };
+
+        match result {
+            Ok(()) => count += 1,
+            Err(error) => tracing::warn!("trash cleanup folder {} failed: {error}", folder.id),
+        }
+    }
+
+    if count > 0 {
+        tracing::info!("trash cleanup: purged {count} expired items (retention={retention_days}d)");
+    }
+    Ok(count)
+}

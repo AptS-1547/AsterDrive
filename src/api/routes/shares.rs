@@ -10,9 +10,7 @@ use crate::runtime::AppState;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::services::batch_service;
 use crate::services::{
-    audit_service::{self, AuditContext},
-    auth_service::Claims,
-    share_service,
+    audit_service::AuditContext, auth_service::Claims, share_service,
     workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_governor::Governor;
@@ -227,26 +225,17 @@ pub(crate) async fn create_share_response(
     scope: WorkspaceStorageScope,
     body: &CreateShareReq,
 ) -> Result<HttpResponse> {
-    let share = share_service::create_share_in_scope(
+    let ctx = AuditContext::from_request(req, claims);
+    let share = share_service::create_share_in_scope_with_audit(
         state,
         scope,
         body.target,
         body.password.clone(),
         body.expires_at,
         body.max_downloads,
+        &ctx,
     )
     .await?;
-    let ctx = AuditContext::from_request(req, claims);
-    audit_service::log(
-        state,
-        &ctx,
-        audit_service::AuditAction::ShareCreate,
-        None,
-        Some(share.id),
-        None,
-        None,
-    )
-    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(share)))
 }
 
@@ -273,31 +262,17 @@ pub(crate) async fn update_share_response(
     share_id: i64,
     body: &UpdateShareReq,
 ) -> Result<HttpResponse> {
-    let outcome = share_service::update_share_in_scope(
+    let ctx = AuditContext::from_request(req, claims);
+    let share = share_service::update_share_in_scope_with_audit(
         state,
         scope,
         share_id,
         body.password.clone(),
         body.expires_at,
         body.max_downloads,
+        &ctx,
     )
     .await?;
-    let share = outcome.share;
-    let ctx = AuditContext::from_request(req, claims);
-    audit_service::log(
-        state,
-        &ctx,
-        audit_service::AuditAction::ShareUpdate,
-        Some("share"),
-        Some(share.id),
-        Some(&share.token),
-        audit_service::details(audit_service::ShareUpdateDetails {
-            has_password: outcome.has_password,
-            expires_at: share.expires_at,
-            max_downloads: share.max_downloads,
-        }),
-    )
-    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(share)))
 }
 
@@ -308,18 +283,8 @@ pub(crate) async fn delete_share_response(
     scope: WorkspaceStorageScope,
     share_id: i64,
 ) -> Result<HttpResponse> {
-    share_service::delete_share_in_scope(state, scope, share_id).await?;
     let ctx = AuditContext::from_request(req, claims);
-    audit_service::log(
-        state,
-        &ctx,
-        audit_service::AuditAction::ShareDelete,
-        None,
-        Some(share_id),
-        None,
-        None,
-    )
-    .await;
+    share_service::delete_share_in_scope_with_audit(state, scope, share_id, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -330,22 +295,9 @@ pub(crate) async fn batch_delete_shares_response(
     scope: WorkspaceStorageScope,
     body: &BatchDeleteSharesReq,
 ) -> Result<HttpResponse> {
-    share_service::validate_batch_share_ids(&body.share_ids)?;
-    let result = share_service::batch_delete_shares_in_scope(state, scope, &body.share_ids).await?;
     let ctx = AuditContext::from_request(req, claims);
-    audit_service::log(
-        state,
-        &ctx,
-        audit_service::AuditAction::ShareBatchDelete,
-        None,
-        None,
-        None,
-        audit_service::details(audit_service::ShareBatchDeleteDetails {
-            share_ids: &body.share_ids,
-            succeeded: result.succeeded,
-            failed: result.failed,
-        }),
-    )
-    .await;
+    let result =
+        share_service::batch_delete_shares_in_scope_with_audit(state, scope, &body.share_ids, &ctx)
+            .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }

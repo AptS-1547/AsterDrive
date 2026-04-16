@@ -1,0 +1,402 @@
+use chrono::Utc;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, PaginatorTrait,
+    QueryFilter, Set, TryInsertResult, sea_query::Expr,
+};
+
+use crate::entities::file_blob::{self, Entity as FileBlob};
+use crate::errors::{AsterError, Result};
+
+pub struct FindOrCreateBlobResult {
+    pub model: file_blob::Model,
+    pub inserted: bool,
+}
+
+// `find_or_create_blob()` only retries short-lived races:
+// 1. another transaction inserted the same (hash, policy_id) row but has not become visible yet;
+// 2. a cleanup worker deleted a zero-ref blob after we read it but before we bumped ref_count.
+//
+// Those windows should resolve after the competing transaction commits, so we use a small
+// exponential backoff budget instead of a fixed 1s spin loop. Total sleep is capped at
+// 5 + 10 + 20 + 40 + 80 + 80 = 235ms across 7 attempts.
+const FIND_OR_CREATE_BLOB_MAX_ATTEMPTS: usize = 7;
+const FIND_OR_CREATE_BLOB_INITIAL_DELAY_MS: u64 = 5;
+const FIND_OR_CREATE_BLOB_MAX_DELAY_MS: u64 = 80;
+
+pub async fn find_blob_by_hash<C: ConnectionTrait>(
+    db: &C,
+    hash: &str,
+    policy_id: i64,
+) -> Result<Option<file_blob::Model>> {
+    FileBlob::find()
+        .filter(file_blob::Column::Hash.eq(hash))
+        .filter(file_blob::Column::PolicyId.eq(policy_id))
+        .one(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_active_blob_by_hash<C: ConnectionTrait>(
+    db: &C,
+    hash: &str,
+    policy_id: i64,
+) -> Result<Option<file_blob::Model>> {
+    FileBlob::find()
+        .filter(file_blob::Column::Hash.eq(hash))
+        .filter(file_blob::Column::PolicyId.eq(policy_id))
+        .filter(file_blob::Column::RefCount.gte(0))
+        .one(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn create_blob<C: ConnectionTrait>(
+    db: &C,
+    model: file_blob::ActiveModel,
+) -> Result<file_blob::Model> {
+    model.insert(db).await.map_err(AsterError::from)
+}
+
+/// Blob 去重：查找已有 blob 则原子递增 ref_count 并返回，否则新建 ref_count=1。
+pub async fn find_or_create_blob<C: ConnectionTrait>(
+    db: &C,
+    hash: &str,
+    size: i64,
+    policy_id: i64,
+    storage_path: &str,
+) -> Result<FindOrCreateBlobResult> {
+    for attempt in 0..FIND_OR_CREATE_BLOB_MAX_ATTEMPTS {
+        if let Some(existing) = find_active_blob_by_hash(db, hash, policy_id).await? {
+            match increment_blob_ref_count(db, existing.id).await {
+                Ok(()) => {
+                    return Ok(FindOrCreateBlobResult {
+                        model: find_blob_by_id(db, existing.id).await?,
+                        inserted: false,
+                    });
+                }
+                Err(e) if e.code() == "E006" => {
+                    if attempt + 1 == FIND_OR_CREATE_BLOB_MAX_ATTEMPTS {
+                        break;
+                    }
+                    tokio::time::sleep(find_or_create_blob_retry_delay(attempt)).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        let now = Utc::now();
+        let inserted = match FileBlob::insert(file_blob::ActiveModel {
+            hash: Set(hash.to_string()),
+            size: Set(size),
+            policy_id: Set(policy_id),
+            storage_path: Set(storage_path.to_string()),
+            ref_count: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        })
+        .on_conflict_do_nothing_on([file_blob::Column::Hash, file_blob::Column::PolicyId])
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?
+        {
+            TryInsertResult::Inserted(_) => true,
+            TryInsertResult::Conflicted => false,
+            TryInsertResult::Empty => {
+                return Err(AsterError::internal_error(
+                    "find_or_create_blob produced empty insert result",
+                ));
+            }
+        };
+
+        if inserted {
+            return Ok(FindOrCreateBlobResult {
+                model: find_blob_by_hash(db, hash, policy_id).await?.ok_or_else(|| {
+                    AsterError::internal_error(format!(
+                        "find_or_create_blob could not reload inserted blob for hash={hash}, policy_id={policy_id}"
+                    ))
+                })?,
+                inserted: true,
+            });
+        }
+
+        if attempt + 1 == FIND_OR_CREATE_BLOB_MAX_ATTEMPTS {
+            break;
+        }
+        tokio::time::sleep(find_or_create_blob_retry_delay(attempt)).await;
+    }
+
+    Err(AsterError::internal_error(format!(
+        "find_or_create_blob exceeded contention retry budget after {FIND_OR_CREATE_BLOB_MAX_ATTEMPTS} attempts for hash={hash}, policy_id={policy_id}"
+    )))
+}
+
+fn find_or_create_blob_retry_delay(attempt: usize) -> std::time::Duration {
+    let backoff_ms = FIND_OR_CREATE_BLOB_INITIAL_DELAY_MS.saturating_mul(1_u64 << attempt.min(4));
+    std::time::Duration::from_millis(std::cmp::min(backoff_ms, FIND_OR_CREATE_BLOB_MAX_DELAY_MS))
+}
+
+/// 原子递增 blob ref_count（防止并发丢更新）
+pub async fn increment_blob_ref_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    let result = FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::RefCount,
+            Expr::col(file_blob::Column::RefCount).add(1i32),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .filter(file_blob::Column::RefCount.gte(0))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    if result.rows_affected == 0 {
+        return Err(AsterError::record_not_found(format!("file_blob #{id}")));
+    }
+    Ok(())
+}
+
+/// 原子增加 blob ref_count（可变增量，批量复制用）
+pub async fn increment_blob_ref_count_by<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    delta: i32,
+) -> Result<()> {
+    if delta < 0 {
+        return Err(AsterError::internal_error(format!(
+            "increment_blob_ref_count_by requires positive delta, got {delta}"
+        )));
+    }
+    if delta == 0 {
+        return Ok(());
+    }
+    let result = FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::RefCount,
+            Expr::col(file_blob::Column::RefCount).add(delta),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .filter(file_blob::Column::RefCount.gte(0))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    if result.rows_affected == 0 {
+        return Err(AsterError::record_not_found(format!("file_blob #{id}")));
+    }
+    Ok(())
+}
+
+/// 原子递减 blob ref_count（floor 0，防止并发丢更新）
+pub async fn decrement_blob_ref_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::RefCount,
+            Expr::case(Expr::col(file_blob::Column::RefCount).lt(1i32), 0)
+                .finally(Expr::col(file_blob::Column::RefCount).sub(1i32))
+                .into(),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 原子递减 blob ref_count（可变减量，floor 0）
+pub async fn decrement_blob_ref_count_by<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    delta: i32,
+) -> Result<()> {
+    if delta < 0 {
+        return Err(AsterError::internal_error(format!(
+            "decrement_blob_ref_count_by requires positive delta, got {delta}"
+        )));
+    }
+    if delta == 0 {
+        return Ok(());
+    }
+    FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::RefCount,
+            Expr::case(Expr::col(file_blob::Column::RefCount).lt(delta), 0)
+                .finally(Expr::col(file_blob::Column::RefCount).sub(delta))
+                .into(),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 统计某存储策略下的 blob 数量（策略删除保护用）
+pub async fn count_blobs_by_policy<C: ConnectionTrait>(db: &C, policy_id: i64) -> Result<u64> {
+    FileBlob::find()
+        .filter(file_blob::Column::PolicyId.eq(policy_id))
+        .count(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_blob_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file_blob::Model> {
+    FileBlob::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(AsterError::from)?
+        .ok_or_else(|| AsterError::record_not_found(format!("file_blob #{id}")))
+}
+
+/// 批量查询 blob，返回 id → Model 的映射
+pub async fn find_blobs_by_ids<C: ConnectionTrait>(
+    db: &C,
+    ids: &[i64],
+) -> Result<std::collections::HashMap<i64, file_blob::Model>> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let blobs = FileBlob::find()
+        .filter(file_blob::Column::Id.is_in(ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(blobs.into_iter().map(|b| (b.id, b)).collect())
+}
+
+/// 批量硬删除 blob 记录
+pub async fn delete_blobs<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    FileBlob::delete_many()
+        .filter(file_blob::Column::Id.is_in(ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 批量原子递减 blob ref_count
+pub async fn decrement_blob_ref_counts<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::RefCount,
+            Expr::case(Expr::col(file_blob::Column::RefCount).lt(1i32), 0)
+                .finally(Expr::col(file_blob::Column::RefCount).sub(1i32))
+                .into(),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.is_in(ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+pub async fn delete_blob<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    FileBlob::delete_by_id(id)
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+pub async fn claim_blob_cleanup<C: ConnectionTrait>(db: &C, id: i64) -> Result<bool> {
+    let result = FileBlob::update_many()
+        .col_expr(file_blob::Column::RefCount, Expr::value(-1i32))
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .filter(file_blob::Column::RefCount.eq(0))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+pub async fn restore_blob_cleanup_claim<C: ConnectionTrait>(db: &C, id: i64) -> Result<bool> {
+    let result = FileBlob::update_many()
+        .col_expr(file_blob::Column::RefCount, Expr::value(0i32))
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .filter(file_blob::Column::RefCount.eq(-1))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+pub async fn delete_blob_if_cleanup_claimed<C: ConnectionTrait>(db: &C, id: i64) -> Result<bool> {
+    let result = FileBlob::delete_many()
+        .filter(file_blob::Column::Id.eq(id))
+        .filter(file_blob::Column::RefCount.eq(-1))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{DbBackend, QueryTrait};
+    use std::time::Duration;
+
+    #[test]
+    fn find_or_create_blob_retry_delay_grows_exponentially_and_caps() {
+        assert_eq!(find_or_create_blob_retry_delay(0), Duration::from_millis(5));
+        assert_eq!(
+            find_or_create_blob_retry_delay(1),
+            Duration::from_millis(10)
+        );
+        assert_eq!(
+            find_or_create_blob_retry_delay(2),
+            Duration::from_millis(20)
+        );
+        assert_eq!(
+            find_or_create_blob_retry_delay(3),
+            Duration::from_millis(40)
+        );
+        assert_eq!(
+            find_or_create_blob_retry_delay(4),
+            Duration::from_millis(80)
+        );
+        assert_eq!(
+            find_or_create_blob_retry_delay(5),
+            Duration::from_millis(80)
+        );
+        assert_eq!(
+            find_or_create_blob_retry_delay(99),
+            Duration::from_millis(80)
+        );
+    }
+
+    #[test]
+    fn postgres_find_or_create_blob_insert_sql_uses_valid_on_conflict() {
+        let now = Utc::now();
+        let sql = FileBlob::insert(file_blob::ActiveModel {
+            hash: Set("hash".to_string()),
+            size: Set(1),
+            policy_id: Set(2),
+            storage_path: Set("files/hash".to_string()),
+            ref_count: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        })
+        .on_conflict_do_nothing_on([file_blob::Column::Hash, file_blob::Column::PolicyId])
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(
+            sql.contains(r#"ON CONFLICT ("hash", "policy_id") DO NOTHING"#),
+            "{sql}"
+        );
+        assert!(!sql.contains(" WHERE "), "{sql}");
+    }
+}

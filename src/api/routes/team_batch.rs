@@ -1,11 +1,11 @@
-#[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::response::ApiResponse;
-use crate::api::routes::{batch, team_scope};
+use crate::api::routes::team_scope;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::auth_service::Claims;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use crate::services::batch_service;
+use crate::services::{
+    audit_service::AuditContext, auth_service::Claims, batch_service, stream_ticket_service,
+    task_service,
+};
 use actix_web::{HttpRequest, HttpResponse, web};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -45,14 +45,16 @@ pub async fn batch_delete(
 ) -> Result<HttpResponse> {
     let team_id = *path;
     let body = body.into_inner();
-    batch::batch_delete_response(
+    let ctx = AuditContext::from_request(&req, &claims);
+    let result = batch_service::batch_delete_in_scope_with_audit(
         &state,
-        &claims,
-        &req,
         team_scope(team_id, claims.user_id),
-        &body,
+        &body.file_ids,
+        &body.folder_ids,
+        &ctx,
     )
-    .await
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }
 
 #[api_docs_macros::path(
@@ -79,14 +81,17 @@ pub async fn batch_move(
 ) -> Result<HttpResponse> {
     let team_id = *path;
     let body = body.into_inner();
-    batch::batch_move_response(
+    let ctx = AuditContext::from_request(&req, &claims);
+    let result = batch_service::batch_move_in_scope_with_audit(
         &state,
-        &claims,
-        &req,
         team_scope(team_id, claims.user_id),
-        &body,
+        &body.file_ids,
+        &body.folder_ids,
+        body.target_folder_id,
+        &ctx,
     )
-    .await
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }
 
 #[api_docs_macros::path(
@@ -113,14 +118,17 @@ pub async fn batch_copy(
 ) -> Result<HttpResponse> {
     let team_id = *path;
     let body = body.into_inner();
-    batch::batch_copy_response(
+    let ctx = AuditContext::from_request(&req, &claims);
+    let result = batch_service::batch_copy_in_scope_with_audit(
         &state,
-        &claims,
-        &req,
         team_scope(team_id, claims.user_id),
-        &body,
+        &body.file_ids,
+        &body.folder_ids,
+        body.target_folder_id,
+        &ctx,
     )
-    .await
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }
 
 #[api_docs_macros::path(
@@ -146,8 +154,18 @@ pub async fn archive_download(
 ) -> Result<HttpResponse> {
     let team_id = *path;
     let body = body.into_inner();
-    batch::archive_download_ticket_response(&state, team_scope(team_id, claims.user_id), &body)
-        .await
+    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
+    let ticket = stream_ticket_service::create_archive_download_ticket_in_scope(
+        &state,
+        team_scope(team_id, claims.user_id),
+        &task_service::CreateArchiveTaskParams {
+            file_ids: body.file_ids,
+            folder_ids: body.folder_ids,
+            archive_name: body.archive_name,
+        },
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(ticket)))
 }
 
 #[api_docs_macros::path(
@@ -173,7 +191,19 @@ pub async fn archive_compress(
 ) -> Result<HttpResponse> {
     let team_id = *path;
     let body = body.into_inner();
-    batch::archive_compress_response(&state, team_scope(team_id, claims.user_id), &body).await
+    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
+    let task = task_service::create_archive_compress_task_in_scope(
+        &state,
+        team_scope(team_id, claims.user_id),
+        task_service::CreateArchiveCompressTaskParams {
+            file_ids: body.file_ids,
+            folder_ids: body.folder_ids,
+            archive_name: body.archive_name,
+            target_folder_id: body.target_folder_id,
+        },
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(task)))
 }
 
 #[api_docs_macros::path(
@@ -199,6 +229,9 @@ pub async fn archive_download_stream(
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse> {
     let (team_id, token) = path.into_inner();
-    batch::archive_download_stream_response(&state, team_scope(team_id, claims.user_id), &token)
-        .await
+    let scope = team_scope(team_id, claims.user_id);
+    let params =
+        stream_ticket_service::resolve_archive_download_ticket_in_scope(&state, scope, &token)
+            .await?;
+    task_service::stream_archive_download_in_scope(&state, scope, params).await
 }

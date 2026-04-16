@@ -1,0 +1,157 @@
+use chrono::Utc;
+use sea_orm::{ConnectionTrait, TransactionTrait};
+
+use crate::db::repository::{
+    file_repo, folder_repo, lock_repo, property_repo, share_repo, team_repo, upload_session_repo,
+};
+use crate::entities::{team, upload_session};
+use crate::errors::{AsterError, Result};
+use crate::runtime::AppState;
+use crate::services::audit_service;
+use crate::services::workspace_storage_service::WorkspaceStorageScope;
+use crate::types::EntityType;
+
+const DEFAULT_TEAM_ARCHIVE_RETENTION_DAYS: i64 = 7;
+
+fn load_team_archive_retention_days(state: &AppState) -> i64 {
+    let Some(raw) = state.runtime_config.get("team_archive_retention_days") else {
+        return DEFAULT_TEAM_ARCHIVE_RETENTION_DAYS;
+    };
+
+    match raw.trim().parse::<i64>() {
+        Ok(value) if value >= 0 => value,
+        Ok(_) | Err(_) => {
+            tracing::warn!(
+                "invalid team_archive_retention_days value '{}', using default",
+                raw
+            );
+            DEFAULT_TEAM_ARCHIVE_RETENTION_DAYS
+        }
+    }
+}
+
+async fn cleanup_team_upload_sessions(
+    state: &AppState,
+    sessions: &[upload_session::Model],
+) -> Result<()> {
+    for session in sessions {
+        if let Some(temp_key) = session.s3_temp_key.as_deref()
+            && let Some(policy) = state.policy_snapshot.get_policy(session.policy_id)
+            && let Ok(driver) = state.driver_registry.get_driver(&policy)
+        {
+            if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
+                if let Err(err) = driver.abort_multipart_upload(temp_key, multipart_id).await {
+                    tracing::warn!(
+                        upload_id = %session.id,
+                        "failed to abort team multipart upload during cleanup: {err}"
+                    );
+                }
+            } else if let Err(err) = driver.delete(temp_key).await {
+                tracing::warn!(
+                    upload_id = %session.id,
+                    "failed to delete team temp upload object during cleanup: {err}"
+                );
+            }
+        }
+
+        let temp_dir =
+            crate::utils::paths::upload_temp_dir(&state.config.server.upload_temp_dir, &session.id);
+        crate::utils::cleanup_temp_dir(&temp_dir).await;
+    }
+
+    Ok(())
+}
+
+fn is_missing_cleanup_target(err: &AsterError) -> bool {
+    matches!(err.code(), "E006" | "E020" | "E040")
+}
+
+async fn clear_team_locks<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<()> {
+    let prefix = format!("/teams/{team_id}/");
+    let locks = lock_repo::find_by_path_prefix(db, &prefix).await?;
+    for lock in &locks {
+        if let Err(err) = crate::services::lock_service::set_entity_locked(
+            db,
+            lock.entity_type,
+            lock.entity_id,
+            false,
+        )
+        .await
+            && !is_missing_cleanup_target(&err)
+        {
+            tracing::warn!(
+                lock_id = lock.id,
+                team_id,
+                "failed to clear team lock flag during cleanup: {err}"
+            );
+        }
+    }
+    lock_repo::delete_by_path_prefix(db, &prefix).await?;
+    Ok(())
+}
+
+async fn force_delete_archived_team(state: &AppState, team: team::Model) -> Result<()> {
+    let team_id = team.id;
+    let upload_sessions = upload_session_repo::find_by_team(&state.db, team_id).await?;
+    cleanup_team_upload_sessions(state, &upload_sessions).await?;
+
+    let all_files = file_repo::find_all_by_team(&state.db, team_id).await?;
+    crate::services::file_service::batch_purge_in_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: team.created_by,
+        },
+        all_files,
+    )
+    .await?;
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    team_repo::lock_archived_by_id(&txn, team_id).await?;
+    upload_session_repo::delete_all_by_team(&txn, team_id).await?;
+    clear_team_locks(&txn, team_id).await?;
+    share_repo::delete_all_by_team(&txn, team_id).await?;
+
+    let all_folders = folder_repo::find_all_by_team(&txn, team_id).await?;
+    let folder_ids: Vec<i64> = all_folders.iter().map(|folder| folder.id).collect();
+    property_repo::delete_all_for_entities(&txn, EntityType::Folder, &folder_ids).await?;
+    folder_repo::delete_many(&txn, &folder_ids).await?;
+    team_repo::delete(&txn, team_id).await?;
+    txn.commit().await.map_err(AsterError::from)?;
+
+    Ok(())
+}
+
+pub async fn cleanup_expired_archived_teams(state: &AppState) -> Result<u64> {
+    let retention_days = load_team_archive_retention_days(state);
+    let cutoff = Utc::now() - chrono::Duration::days(retention_days);
+    let expired = team_repo::find_archived_before(&state.db, cutoff).await?;
+
+    let mut deleted = 0u64;
+    let ctx = audit_service::AuditContext::system();
+    for team in expired {
+        let team_id = team.id;
+        let team_name = team.name.clone();
+        let archived_at = team.archived_at;
+        if let Err(err) = force_delete_archived_team(state, team).await {
+            tracing::warn!(team_id, "failed to delete expired archived team: {err}");
+            continue;
+        }
+        audit_service::log(
+            state,
+            &ctx,
+            audit_service::AuditAction::TeamCleanupExpired,
+            Some("team"),
+            Some(team_id),
+            Some(&team_name),
+            audit_service::details(audit_service::TeamCleanupAuditDetails {
+                archived_at,
+                retention_days,
+            }),
+        )
+        .await;
+        deleted += 1;
+    }
+
+    Ok(deleted)
+}

@@ -1,11 +1,10 @@
-#[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::response::ApiResponse;
-use crate::api::routes::{search, team_scope};
+use crate::api::routes::team_scope;
 use crate::errors::Result;
 use crate::runtime::AppState;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::services::search_service::SearchResults;
-use crate::services::{auth_service::Claims, search_service::SearchParams};
+use crate::services::{auth_service::Claims, search_service, search_service::SearchParams};
 use actix_web::{HttpResponse, web};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -35,5 +34,7 @@ pub async fn search(
     query: web::Query<SearchParams>,
 ) -> Result<HttpResponse> {
     let query = query.into_inner();
-    search::search_response(&state, team_scope(*path, claims.user_id), &query).await
+    let results =
+        search_service::search_in_scope(&state, team_scope(*path, claims.user_id), &query).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(results)))
 }

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -11,7 +19,8 @@ import { Icon } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { formatDateAbsolute } from "@/lib/format";
+import { formatDateAbsolute, formatNumber } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { workspaceFolderPath } from "@/lib/workspace";
 import { taskService } from "@/services/taskService";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
@@ -30,6 +39,10 @@ const ACTIVE_TASK_STATUSES = new Set<BackgroundTaskStatus>([
 	"processing",
 	"retry",
 ]);
+const TASK_DETAILS_EXPAND_DURATION_MS = 280;
+const TASK_DETAILS_COLLAPSE_DURATION_MS = 240;
+const TASK_DETAILS_EXPAND_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+const TASK_DETAILS_COLLAPSE_EASING = "cubic-bezier(0.32, 0, 0.67, 0.96)";
 
 function statusBadgeVariant(status: BackgroundTaskStatus) {
 	switch (status) {
@@ -43,6 +56,21 @@ function statusBadgeVariant(status: BackgroundTaskStatus) {
 			return "destructive";
 		case "canceled":
 			return "outline";
+	}
+}
+
+function taskMetaTextClass(status: BackgroundTaskStatus) {
+	switch (status) {
+		case "processing":
+		case "retry":
+			return "text-primary";
+		case "succeeded":
+			return "text-foreground";
+		case "failed":
+			return "text-destructive";
+		case "pending":
+		case "canceled":
+			return "text-muted-foreground";
 	}
 }
 
@@ -123,6 +151,121 @@ function currentTaskStep(task: TaskInfo) {
 	);
 }
 
+function AnimatedTaskDetails({
+	children,
+	className,
+	open,
+}: {
+	children: ReactNode;
+	className?: string;
+	open: boolean;
+}) {
+	const containerRef = useRef<HTMLDivElement | null>(null);
+	const contentRef = useRef<HTMLDivElement | null>(null);
+	const [mounted, setMounted] = useState(open);
+
+	useEffect(() => {
+		if (typeof window === "undefined") {
+			setMounted(open);
+			return;
+		}
+
+		if (open) {
+			setMounted(true);
+		}
+	}, [open]);
+
+	useLayoutEffect(() => {
+		if (typeof window === "undefined" || !mounted) {
+			return;
+		}
+
+		const container = containerRef.current;
+		const content = contentRef.current;
+		if (!container || !content) {
+			return;
+		}
+
+		const prefersReducedMotion =
+			typeof window.matchMedia === "function" &&
+			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+		const duration = prefersReducedMotion
+			? 0
+			: open
+				? TASK_DETAILS_EXPAND_DURATION_MS
+				: TASK_DETAILS_COLLAPSE_DURATION_MS;
+		let frameA: number | null = null;
+		let frameB: number | null = null;
+		let timer: number | null = null;
+		const fullHeight = `${content.scrollHeight}px`;
+
+		container.style.overflow = "hidden";
+		container.style.transitionProperty = "max-height, opacity, transform";
+		container.style.transitionDuration = `${duration}ms`;
+		container.style.transitionTimingFunction = open
+			? TASK_DETAILS_EXPAND_EASING
+			: TASK_DETAILS_COLLAPSE_EASING;
+
+		if (open) {
+			container.style.maxHeight = "0px";
+			container.style.opacity = "0";
+			container.style.transform = "translateY(-6px)";
+			frameA = window.requestAnimationFrame(() => {
+				frameB = window.requestAnimationFrame(() => {
+					container.style.maxHeight = fullHeight;
+					container.style.opacity = "1";
+					container.style.transform = "translateY(0)";
+				});
+			});
+			timer = window.setTimeout(() => {
+				container.style.maxHeight = "none";
+				container.style.opacity = "1";
+				container.style.transform = "translateY(0)";
+			}, duration);
+		} else {
+			container.style.maxHeight = fullHeight;
+			container.style.opacity = "1";
+			container.style.transform = "translateY(0)";
+			frameA = window.requestAnimationFrame(() => {
+				container.style.maxHeight = "0px";
+				container.style.opacity = "0";
+				container.style.transform = "translateY(-6px)";
+			});
+			timer = window.setTimeout(() => {
+				setMounted(false);
+			}, duration);
+		}
+
+		return () => {
+			if (frameA !== null) {
+				window.cancelAnimationFrame(frameA);
+			}
+			if (frameB !== null) {
+				window.cancelAnimationFrame(frameB);
+			}
+			if (timer !== null) {
+				window.clearTimeout(timer);
+			}
+		};
+	}, [mounted, open]);
+
+	if (!mounted) {
+		return null;
+	}
+
+	return (
+		<div
+			ref={containerRef}
+			aria-hidden={!open}
+			className={cn("overflow-hidden", className)}
+		>
+			<div ref={contentRef} className="min-h-0">
+				{children}
+			</div>
+		</div>
+	);
+}
+
 export default function TasksPage() {
 	const { t } = useTranslation(["core", "tasks"]);
 	const navigate = useNavigate();
@@ -132,6 +275,9 @@ export default function TasksPage() {
 	const [loading, setLoading] = useState(true);
 	const [tasks, setTasks] = useState<TaskInfo[]>([]);
 	const [total, setTotal] = useState(0);
+	const [expandedTaskIds, setExpandedTaskIds] = useState<Set<number>>(
+		() => new Set(),
+	);
 	const [retryingTaskId, setRetryingTaskId] = useState<number | null>(null);
 
 	const loadPage = useCallback(
@@ -182,6 +328,28 @@ export default function TasksPage() {
 
 		return () => window.clearInterval(timer);
 	}, [hasActiveTasks, loadPage, page]);
+
+	useEffect(() => {
+		setExpandedTaskIds((prev) => {
+			if (prev.size === 0) {
+				return prev;
+			}
+
+			const visibleTaskIds = new Set(tasks.map((task) => task.id));
+			const next = new Set<number>();
+			let changed = false;
+
+			for (const taskId of prev) {
+				if (visibleTaskIds.has(taskId)) {
+					next.add(taskId);
+				} else {
+					changed = true;
+				}
+			}
+
+			return changed ? next : prev;
+		});
+	}, [tasks]);
 
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -251,25 +419,111 @@ export default function TasksPage() {
 		[loadPage, page, t],
 	);
 
-	const renderTaskMeta = (task: TaskInfo) => {
-		const lines = [
-			t("tasks:task_id_label", { id: task.id }),
-			t("tasks:created_at", { date: formatDateAbsolute(task.created_at) }),
+	const toggleTaskDetails = useCallback((taskId: number) => {
+		setExpandedTaskIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(taskId)) {
+				next.delete(taskId);
+			} else {
+				next.add(taskId);
+			}
+			return next;
+		});
+	}, []);
+
+	const formatProgressCounts = (current: number, total: number) =>
+		`${formatNumber(current)} / ${formatNumber(total)}`;
+
+	const renderTaskSummaryTimestamp = (task: TaskInfo) => {
+		switch (task.status) {
+			case "pending":
+				return t("tasks:summary_created_at", {
+					date: formatDateAbsolute(task.created_at),
+				});
+			case "processing":
+			case "retry":
+				if (task.started_at) {
+					return t("tasks:summary_started_at", {
+						date: formatDateAbsolute(task.started_at),
+					});
+				}
+				return t("tasks:summary_created_at", {
+					date: formatDateAbsolute(task.created_at),
+				});
+			case "succeeded":
+				if (task.finished_at) {
+					return t("tasks:summary_finished_at", {
+						date: formatDateAbsolute(task.finished_at),
+					});
+				}
+				if (task.started_at) {
+					return t("tasks:summary_started_at", {
+						date: formatDateAbsolute(task.started_at),
+					});
+				}
+				return t("tasks:summary_created_at", {
+					date: formatDateAbsolute(task.created_at),
+				});
+			case "failed":
+				if (task.finished_at) {
+					return t("tasks:summary_failed_at", {
+						date: formatDateAbsolute(task.finished_at),
+					});
+				}
+				if (task.started_at) {
+					return t("tasks:summary_started_at", {
+						date: formatDateAbsolute(task.started_at),
+					});
+				}
+				return t("tasks:summary_created_at", {
+					date: formatDateAbsolute(task.created_at),
+				});
+			case "canceled":
+				if (task.finished_at) {
+					return t("tasks:summary_canceled_at", {
+						date: formatDateAbsolute(task.finished_at),
+					});
+				}
+				if (task.started_at) {
+					return t("tasks:summary_started_at", {
+						date: formatDateAbsolute(task.started_at),
+					});
+				}
+				return t("tasks:summary_created_at", {
+					date: formatDateAbsolute(task.created_at),
+				});
+		}
+	};
+
+	const buildTaskTimeline = (task: TaskInfo) => {
+		const timeline = [
+			{
+				label: t("tasks:timeline_created_label"),
+				value: formatDateAbsolute(task.created_at),
+			},
 		];
 
 		if (task.started_at) {
-			lines.push(
-				t("tasks:started_at", { date: formatDateAbsolute(task.started_at) }),
-			);
+			timeline.push({
+				label: t("tasks:timeline_started_label"),
+				value: formatDateAbsolute(task.started_at),
+			});
 		}
 
 		if (task.finished_at) {
-			lines.push(
-				t("tasks:finished_at", { date: formatDateAbsolute(task.finished_at) }),
-			);
+			const labelKey =
+				task.status === "failed"
+					? "tasks:timeline_failed_label"
+					: task.status === "canceled"
+						? "tasks:timeline_canceled_label"
+						: "tasks:timeline_finished_label";
+			timeline.push({
+				label: t(labelKey),
+				value: formatDateAbsolute(task.finished_at),
+			});
 		}
 
-		return lines.join(" · ");
+		return timeline;
 	};
 
 	const parseTaskResult = (task: TaskInfo) => {
@@ -351,6 +605,23 @@ export default function TasksPage() {
 							{tasks.map((task) => {
 								const parsedResult = parseTaskResult(task);
 								const activeStep = currentTaskStep(task);
+								const taskTimeline = buildTaskTimeline(task);
+								const activeStepDetail = activeStep?.detail?.trim() ?? null;
+								const statusText = task.status_text?.trim() ?? null;
+								const summaryTimestamp = renderTaskSummaryTimestamp(task);
+								const detailsExpanded = expandedTaskIds.has(task.id);
+								const detailsSectionId = `task-details-${task.id}`;
+								const hasExpandableDetails =
+									task.steps.length > 0 ||
+									task.last_error !== null ||
+									(task.status === "succeeded" && parsedResult !== null);
+								const taskSummaryText =
+									statusText && activeStepDetail
+										? statusText.toLocaleLowerCase() ===
+											activeStepDetail.toLocaleLowerCase()
+											? activeStepDetail
+											: statusText
+										: statusText || activeStepDetail;
 								const progressValue =
 									task.status === "succeeded"
 										? 100
@@ -379,11 +650,57 @@ export default function TasksPage() {
 															{formatTaskKind(task.kind)}
 														</Badge>
 													</div>
-													<p className="text-sm text-muted-foreground">
-														{renderTaskMeta(task)}
-													</p>
+													<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+														<span className="text-muted-foreground">
+															{t("tasks:task_id_label", { id: task.id })}
+														</span>
+														{summaryTimestamp ? (
+															<>
+																<span className="text-border">·</span>
+																<span
+																	className={`font-medium ${taskMetaTextClass(task.status)}`}
+																>
+																	{summaryTimestamp}
+																</span>
+															</>
+														) : null}
+													</div>
 												</div>
 												<div className="flex shrink-0 items-center gap-2">
+													{task.status === "succeeded" && parsedResult ? (
+														<Button
+															variant="outline"
+															size="sm"
+															onClick={() =>
+																openTaskTargetFolder(
+																	parsedResult.target_folder_id ?? null,
+																)
+															}
+														>
+															<Icon
+																name="FolderOpen"
+																className="mr-1 h-4 w-4"
+															/>
+															{t("tasks:open_target_folder")}
+														</Button>
+													) : null}
+													{hasExpandableDetails ? (
+														<Button
+															variant="outline"
+															size="sm"
+															aria-controls={detailsSectionId}
+															aria-expanded={detailsExpanded}
+															onClick={() => toggleTaskDetails(task.id)}
+														>
+															<Icon
+																name={detailsExpanded ? "CaretUp" : "CaretDown"}
+																className="mr-1 h-4 w-4"
+															/>
+															{detailsExpanded
+																? t("tasks:hide_details")
+																: t("tasks:show_details")}
+														</Button>
+													) : null}
 													{task.can_retry ? (
 														<Button
 															variant="outline"
@@ -414,154 +731,178 @@ export default function TasksPage() {
 													<span className="text-muted-foreground">
 														{t("tasks:progress_label")}
 													</span>
-													<span className="font-medium">
-														{progressText
-															? `${progressValue}% · ${progressText}`
-															: `${progressValue}%`}
+													<span className="font-medium tabular-nums">
+														{progressValue}%
 													</span>
 												</div>
 												<Progress value={progressValue} className="h-2" />
-												{task.status_text ? (
+												{taskSummaryText ? (
 													<p className="text-sm text-muted-foreground">
-														{t("tasks:status_text_label")}: {task.status_text}
+														{t("tasks:status_text_label")}: {taskSummaryText}
 													</p>
 												) : null}
 											</div>
 
-											{task.steps.length > 0 ? (
-												<div className="space-y-3 rounded-lg border bg-muted/15 px-3 py-3">
-													<div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-														<span className="font-medium">
-															{t("tasks:steps_label")}
-														</span>
-														{activeStep ? (
-															<span className="text-muted-foreground">
-																{t("tasks:current_step_label")}:{" "}
-																{formatTaskStepTitle(task.kind, activeStep)}
-															</span>
-														) : null}
-													</div>
-													<div className="overflow-x-auto pb-1">
-														<div className="flex min-w-max items-start px-1 py-2">
-															{task.steps.map((step, index) => (
-																<div
-																	key={`${task.id}-${step.key}`}
-																	className="contents"
-																>
-																	<div className="w-44 shrink-0">
-																		<div className="flex flex-col items-center text-center">
-																			<div className="relative flex h-12 w-12 items-center justify-center">
-																				{step.status === "active" ? (
-																					<span className="absolute inset-0 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-																				) : null}
-																				<span
-																					className={`relative flex h-9 w-9 items-center justify-center rounded-full border text-sm font-semibold transition-colors ${stepCircleClass(step.status)}`}
-																				>
-																					{stepCircleLabel(index, step.status)}
-																				</span>
+											<AnimatedTaskDetails
+												open={detailsExpanded}
+												className="space-y-2.5"
+											>
+												<div
+													id={detailsSectionId}
+													className="space-y-2.5 pt-0.5"
+												>
+													<div className="rounded-lg border bg-background/70 px-3 py-3">
+														<div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(16rem,0.65fr)] lg:items-start">
+															<div className="space-y-2">
+																<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+																	{t("tasks:timeline_label")}
+																</div>
+																<div className="flex flex-wrap gap-2">
+																	{taskTimeline.map((entry) => (
+																		<div
+																			key={`${task.id}-${entry.label}`}
+																			className="min-w-[11rem] flex-1 rounded-md bg-muted/25 px-2.5 py-2"
+																		>
+																			<div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+																				{entry.label}
 																			</div>
-																			<div className="mt-3 space-y-1">
-																				<p className="text-sm font-semibold leading-snug">
-																					{index + 1}.{" "}
-																					{formatTaskStepTitle(task.kind, step)}
-																				</p>
-																				<p
-																					className={`text-xs font-medium ${stepStatusTextClass(step.status)}`}
-																				>
-																					{formatTaskStepStatus(step.status)}
-																				</p>
+																			<div className="mt-1 text-sm font-medium tabular-nums text-foreground">
+																				{entry.value}
 																			</div>
 																		</div>
+																	))}
+																</div>
+															</div>
+															<div className="space-y-2 rounded-lg bg-muted/20 px-3 py-2.5">
+																<div className="flex items-end justify-between gap-3">
+																	<div className="space-y-1">
+																		<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+																			{t("tasks:progress_label")}
+																		</div>
+																		<div className="text-3xl font-semibold tracking-tight tabular-nums">
+																			{progressValue}%
+																		</div>
 																	</div>
-																	{index < task.steps.length - 1 ? (
-																		<div className="flex h-12 w-16 shrink-0 items-center px-2">
-																			<div
-																				className={`h-1 w-full rounded-full ${stepConnectorClass(step.status)}`}
-																			/>
+																	{progressText ? (
+																		<div className="text-right text-xs text-muted-foreground">
+																			<div>
+																				{t("tasks:progress_ratio_label")}
+																			</div>
+																			<div className="font-medium text-foreground tabular-nums">
+																				{formatProgressCounts(
+																					task.progress_current,
+																					task.progress_total,
+																				)}
+																			</div>
 																		</div>
 																	) : null}
 																</div>
-															))}
+																<Progress
+																	value={progressValue}
+																	className="h-2"
+																/>
+															</div>
 														</div>
 													</div>
-													{activeStep ? (
-														<div className="rounded-lg border bg-background/70 px-3 py-3">
-															<div className="flex flex-wrap items-center justify-between gap-2">
+
+													{task.steps.length > 0 ? (
+														<div className="space-y-2.5 rounded-lg border bg-muted/15 px-3 py-3">
+															<div className="flex flex-wrap items-start justify-between gap-2">
 																<div className="text-sm font-medium">
-																	{task.steps.findIndex(
-																		(step) => step.key === activeStep.key,
-																	) + 1}
-																	. {formatTaskStepTitle(task.kind, activeStep)}
+																	{t("tasks:steps_label")}
 																</div>
-																<span
-																	className={`text-xs font-medium ${stepStatusTextClass(activeStep.status)}`}
-																>
-																	{formatTaskStepStatus(activeStep.status)}
-																</span>
-															</div>
-															{activeStep.detail ? (
-																<p className="mt-2 text-sm text-muted-foreground">
-																	{activeStep.detail}
-																</p>
-															) : null}
-															{activeStep.progress_total > 0 ? (
-																<div className="mt-3 space-y-2">
-																	<div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-																		<span>
-																			{t("tasks:step_progress_label")}
-																		</span>
-																		<span>
+																{activeStep && activeStep.progress_total > 0 ? (
+																	<div className="text-right text-xs text-muted-foreground">
+																		<div>{t("tasks:step_progress_label")}</div>
+																		<div className="font-medium tabular-nums text-foreground">
 																			{stepProgressPercent(activeStep)}% ·{" "}
-																			{t("tasks:progress_ratio", {
-																				current: activeStep.progress_current,
-																				total: activeStep.progress_total,
-																			})}
-																		</span>
+																			{formatProgressCounts(
+																				activeStep.progress_current,
+																				activeStep.progress_total,
+																			)}
+																		</div>
 																	</div>
-																	<Progress
-																		value={stepProgressPercent(activeStep)}
-																		className="h-1.5"
-																	/>
+																) : null}
+															</div>
+															<div className="overflow-x-auto pb-0.5">
+																<div className="w-full">
+																	<div className="mx-auto flex w-fit min-w-max items-start px-0.5 py-1.5">
+																		{task.steps.map((step, index) => (
+																			<div
+																				key={`${task.id}-${step.key}`}
+																				className="contents"
+																			>
+																				<div className="w-32 shrink-0 md:w-36 lg:w-40">
+																					<div className="flex flex-col items-center text-center">
+																						<div className="relative flex h-10 w-10 items-center justify-center md:h-11 md:w-11">
+																							{step.status === "active" ? (
+																								<span className="absolute inset-0 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+																							) : null}
+																							<span
+																								className={`relative flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold transition-colors md:h-9 md:w-9 md:text-sm ${stepCircleClass(step.status)}`}
+																							>
+																								{stepCircleLabel(
+																									index,
+																									step.status,
+																								)}
+																							</span>
+																						</div>
+																						<div className="mt-2 space-y-0.5 md:mt-2.5">
+																							<p className="text-xs font-semibold leading-snug md:text-sm">
+																								{index + 1}.{" "}
+																								{formatTaskStepTitle(
+																									task.kind,
+																									step,
+																								)}
+																							</p>
+																							<p
+																								className={`text-[11px] font-medium ${stepStatusTextClass(step.status)}`}
+																							>
+																								{formatTaskStepStatus(
+																									step.status,
+																								)}
+																							</p>
+																						</div>
+																					</div>
+																				</div>
+																				{index < task.steps.length - 1 ? (
+																					<div className="flex h-10 w-10 shrink-0 items-center px-1 md:h-11 md:w-12 md:px-1.5">
+																						<div
+																							className={`h-1 w-full rounded-full ${stepConnectorClass(step.status)}`}
+																						/>
+																					</div>
+																				) : null}
+																			</div>
+																		))}
+																	</div>
 																</div>
-															) : null}
+															</div>
+														</div>
+													) : null}
+
+													{task.last_error ? (
+														<div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+															<span className="font-medium">
+																{t("tasks:error_label")}:
+															</span>{" "}
+															{task.last_error}
+														</div>
+													) : null}
+
+													{task.status === "succeeded" && parsedResult ? (
+														<div className="rounded-lg border bg-muted/20 px-3 py-3 text-sm">
+															<div className="min-w-0">
+																<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+																	{t("tasks:result_path_label")}
+																</div>
+																<div className="mt-1 truncate text-foreground">
+																	{parsedResult.target_path}
+																</div>
+															</div>
 														</div>
 													) : null}
 												</div>
-											) : null}
-
-											{task.last_error ? (
-												<div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-													<span className="font-medium">
-														{t("tasks:error_label")}:
-													</span>{" "}
-													{task.last_error}
-												</div>
-											) : null}
-
-											{task.status === "succeeded" && parsedResult ? (
-												<div className="flex flex-col gap-3 rounded-lg border bg-muted/20 px-3 py-3 text-sm">
-													<div>
-														<span className="font-medium">
-															{t("tasks:result_path_label")}:
-														</span>{" "}
-														<span className="text-muted-foreground">
-															{parsedResult.target_path}
-														</span>
-													</div>
-													<Button
-														variant="outline"
-														size="sm"
-														onClick={() =>
-															openTaskTargetFolder(
-																parsedResult.target_folder_id ?? null,
-															)
-														}
-													>
-														<Icon name="FolderOpen" className="mr-1 h-4 w-4" />
-														{t("tasks:open_target_folder")}
-													</Button>
-												</div>
-											) : null}
+											</AnimatedTaskDetails>
 										</div>
 									</Card>
 								);

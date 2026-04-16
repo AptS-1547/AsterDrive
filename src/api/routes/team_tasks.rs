@@ -1,12 +1,11 @@
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
-#[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::response::ApiResponse;
-use crate::api::routes::{tasks, team_scope};
+use crate::api::routes::team_scope;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::auth_service::Claims;
+use crate::services::{auth_service::Claims, task_service};
 use actix_web::{HttpResponse, web};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -38,7 +37,14 @@ pub async fn list_tasks(
     path: web::Path<i64>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    tasks::list_tasks_response(&state, team_scope(*path, claims.user_id), &query).await
+    let page = task_service::list_tasks_paginated_in_scope(
+        &state,
+        team_scope(*path, claims.user_id),
+        query.limit_or(20, 100),
+        query.offset(),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(page)))
 }
 
 #[api_docs_macros::path(
@@ -64,7 +70,10 @@ pub async fn get_task(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, task_id) = path.into_inner();
-    tasks::get_task_response(&state, team_scope(team_id, claims.user_id), task_id).await
+    let task =
+        task_service::get_task_in_scope(&state, team_scope(team_id, claims.user_id), task_id)
+            .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(task)))
 }
 
 #[api_docs_macros::path(
@@ -91,5 +100,8 @@ pub async fn retry_task(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, task_id) = path.into_inner();
-    tasks::retry_task_response(&state, team_scope(team_id, claims.user_id), task_id).await
+    let task =
+        task_service::retry_task_in_scope(&state, team_scope(team_id, claims.user_id), task_id)
+            .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(task)))
 }

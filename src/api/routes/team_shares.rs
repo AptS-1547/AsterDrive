@@ -1,14 +1,13 @@
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
-#[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::response::ApiResponse;
-use crate::api::routes::{shares, team_scope};
+use crate::api::routes::team_scope;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::auth_service::Claims;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::services::batch_service;
+use crate::services::{audit_service::AuditContext, auth_service::Claims, share_service};
 use actix_web::{HttpRequest, HttpResponse, web};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -43,14 +42,18 @@ pub async fn create_share(
 ) -> Result<HttpResponse> {
     let team_id = *path;
     let body = body.into_inner();
-    shares::create_share_response(
+    let ctx = AuditContext::from_request(&req, &claims);
+    let share = share_service::create_share_in_scope_with_audit(
         &state,
-        &claims,
-        &req,
         team_scope(team_id, claims.user_id),
-        &body,
+        body.target,
+        body.password,
+        body.expires_at,
+        body.max_downloads,
+        &ctx,
     )
-    .await
+    .await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(share)))
 }
 
 #[api_docs_macros::path(
@@ -75,7 +78,14 @@ pub async fn list_shares(
     path: web::Path<i64>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    shares::list_shares_response(&state, team_scope(*path, claims.user_id), &query).await
+    let shares = share_service::list_shares_paginated_in_scope(
+        &state,
+        team_scope(*path, claims.user_id),
+        query.limit_or(50, 100),
+        query.offset(),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(shares)))
 }
 
 #[api_docs_macros::path(
@@ -106,15 +116,18 @@ pub async fn update_share(
 ) -> Result<HttpResponse> {
     let (team_id, share_id) = path.into_inner();
     let body = body.into_inner();
-    shares::update_share_response(
+    let ctx = AuditContext::from_request(&req, &claims);
+    let share = share_service::update_share_in_scope_with_audit(
         &state,
-        &claims,
-        &req,
         team_scope(team_id, claims.user_id),
         share_id,
-        &body,
+        body.password,
+        body.expires_at,
+        body.max_downloads,
+        &ctx,
     )
-    .await
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(share)))
 }
 
 #[api_docs_macros::path(
@@ -141,14 +154,15 @@ pub async fn delete_share(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, share_id) = path.into_inner();
-    shares::delete_share_response(
+    let ctx = AuditContext::from_request(&req, &claims);
+    share_service::delete_share_in_scope_with_audit(
         &state,
-        &claims,
-        &req,
         team_scope(team_id, claims.user_id),
         share_id,
+        &ctx,
     )
-    .await
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
 #[api_docs_macros::path(
@@ -175,12 +189,13 @@ pub async fn batch_delete_shares(
 ) -> Result<HttpResponse> {
     let team_id = *path;
     let body = body.into_inner();
-    shares::batch_delete_shares_response(
+    let ctx = AuditContext::from_request(&req, &claims);
+    let result = share_service::batch_delete_shares_in_scope_with_audit(
         &state,
-        &claims,
-        &req,
         team_scope(team_id, claims.user_id),
-        &body,
+        &body.share_ids,
+        &ctx,
     )
-    .await
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }

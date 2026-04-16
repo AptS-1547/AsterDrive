@@ -5,6 +5,7 @@ import {
 	formatDateAbsolute,
 	formatDateShort,
 	formatDateTime,
+	formatNumber,
 } from "@/lib/format";
 
 describe("format helpers", () => {
@@ -16,6 +17,13 @@ describe("format helpers", () => {
 		expect(formatBytes(0)).toBe("0 B");
 		expect(formatBytes(1536)).toBe("1.5 KB");
 		expect(formatBytes(1024 * 1024)).toBe("1.0 MB");
+	});
+
+	it("formats integers with locale separators", () => {
+		expect(formatNumber(0)).toBe(new Intl.NumberFormat().format(0));
+		expect(formatNumber(4152537914)).toBe(
+			new Intl.NumberFormat().format(4152537914),
+		);
 	});
 
 	it("formats relative dates across time ranges", () => {

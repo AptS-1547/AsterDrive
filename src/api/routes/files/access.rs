@@ -1,0 +1,310 @@
+use crate::api::response::ApiResponse;
+use crate::errors::Result;
+use crate::runtime::AppState;
+use crate::services::{
+    audit_service::{self, AuditContext},
+    auth_service::Claims,
+    direct_link_service, file_service, preview_link_service, thumbnail_service, wopi_service,
+    workspace_models::FileInfo,
+    workspace_storage_service::WorkspaceStorageScope,
+};
+use actix_web::{HttpRequest, HttpResponse, web};
+use serde::Deserialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use utoipa::ToSchema;
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/files/{id}",
+    tag = "files",
+    operation_id = "get_file",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "File info", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_file(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    get_file_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/files/{id}/direct-link",
+    tag = "files",
+    operation_id = "get_file_direct_link",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "Direct link token", body = inline(ApiResponse<crate::services::direct_link_service::DirectLinkTokenInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_direct_link(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    direct_link_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/files/{id}/preview-link",
+    tag = "files",
+    operation_id = "create_file_preview_link",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "Preview link", body = inline(ApiResponse<crate::services::preview_link_service::PreviewLinkInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_preview_link(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    preview_link_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+    )
+    .await
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct OpenWopiRequest {
+    pub app_key: String,
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/files/{id}/wopi/open",
+    tag = "files",
+    operation_id = "open_file_with_wopi",
+    params(("id" = i64, Path, description = "File ID")),
+    request_body = OpenWopiRequest,
+    responses(
+        (status = 200, description = "WOPI launch session", body = inline(ApiResponse<wopi_service::WopiLaunchSession>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn open_wopi(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<OpenWopiRequest>,
+) -> Result<HttpResponse> {
+    open_wopi_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+        &body.app_key,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/files/{id}/download",
+    tag = "files",
+    operation_id = "download_file",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "File content"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn download(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    download_response(
+        &state,
+        &claims,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/files/{id}/thumbnail",
+    tag = "files",
+    operation_id = "get_thumbnail",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 304, description = "Thumbnail not modified"),
+        (status = 202, description = "Thumbnail generation in progress"),
+        (status = 400, description = "Thumbnail not supported for this file type"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+        (status = 500, description = "Thumbnail generation failed"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_thumbnail(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    get_thumbnail_response(
+        &state,
+        &req,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+    )
+    .await
+}
+
+pub(crate) async fn get_file_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    let file = file_service::get_info_in_scope(state, scope, file_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(FileInfo::from(file))))
+}
+
+pub(crate) async fn direct_link_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    let token = direct_link_service::create_token_in_scope(state, scope, file_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(token)))
+}
+
+pub(crate) async fn preview_link_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    let link = preview_link_service::create_token_for_file_in_scope(state, scope, file_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
+}
+
+pub(crate) async fn open_wopi_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    app_key: &str,
+) -> Result<HttpResponse> {
+    let session =
+        wopi_service::create_launch_session_in_scope(state, scope, file_id, app_key).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(session)))
+}
+
+pub(crate) async fn download_response(
+    state: &AppState,
+    claims: &Claims,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    let if_none_match = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|value| value.to_str().ok());
+    let response = file_service::download_in_scope(state, scope, file_id, if_none_match).await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::FileDownload,
+        Some("file"),
+        Some(file_id),
+        None,
+        None,
+    )
+    .await;
+    Ok(response)
+}
+
+pub(crate) async fn get_thumbnail_response(
+    state: &AppState,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    let if_none_match = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|value| value.to_str().ok());
+
+    match file_service::get_thumbnail_data_in_scope(state, scope, file_id).await? {
+        Some(result) => Ok(thumbnail_response(
+            result,
+            if_none_match,
+            "private, max-age=0, must-revalidate".to_string(),
+        )),
+        None => Ok(HttpResponse::Accepted()
+            .insert_header(("Retry-After", "2"))
+            .json(ApiResponse::<()>::ok_empty())),
+    }
+}
+
+pub(crate) fn thumbnail_response(
+    result: file_service::ThumbnailResult,
+    if_none_match: Option<&str>,
+    cache_control: String,
+) -> HttpResponse {
+    let etag_value = thumbnail_service::thumbnail_etag_value(&result.blob_hash);
+    let etag = format!("\"{etag_value}\"");
+    if let Some(if_none_match) = if_none_match
+        && file_service::if_none_match_matches_value(if_none_match, &etag_value)
+    {
+        return HttpResponse::NotModified()
+            .insert_header(("ETag", etag))
+            .insert_header(("Cache-Control", cache_control))
+            .finish();
+    }
+
+    HttpResponse::Ok()
+        .content_type("image/webp")
+        .insert_header(("ETag", etag))
+        .insert_header(("Cache-Control", cache_control))
+        .body(result.data)
+}

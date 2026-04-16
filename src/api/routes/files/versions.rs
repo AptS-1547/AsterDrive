@@ -1,0 +1,84 @@
+use crate::api::response::ApiResponse;
+use crate::errors::Result;
+use crate::runtime::AppState;
+use crate::services::{auth_service::Claims, version_service};
+use actix_web::{HttpResponse, web};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct VersionPath {
+    pub id: i64,
+    pub version_id: i64,
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/files/{id}/versions",
+    tag = "files",
+    operation_id = "list_versions",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "File versions", body = inline(ApiResponse<Vec<crate::services::workspace_models::FileVersion>>)),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_versions(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let versions = version_service::list_versions(&state, *path, claims.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(versions)))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/files/{id}/versions/{version_id}/restore",
+    tag = "files",
+    operation_id = "restore_version",
+    params(
+        ("id" = i64, Path, description = "File ID"),
+        ("version_id" = i64, Path, description = "Version ID"),
+    ),
+    responses(
+        (status = 200, description = "Version restored", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Version not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn restore_version(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<VersionPath>,
+) -> Result<HttpResponse> {
+    let file =
+        version_service::restore_version(&state, path.id, path.version_id, claims.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+}
+
+#[api_docs_macros::path(
+    delete,
+    path = "/api/v1/files/{id}/versions/{version_id}",
+    tag = "files",
+    operation_id = "delete_version",
+    params(
+        ("id" = i64, Path, description = "File ID"),
+        ("version_id" = i64, Path, description = "Version ID"),
+    ),
+    responses(
+        (status = 200, description = "Version deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Version not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_version(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<VersionPath>,
+) -> Result<HttpResponse> {
+    version_service::delete_version(&state, path.id, path.version_id, claims.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}

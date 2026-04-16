@@ -1,0 +1,214 @@
+use std::collections::HashSet;
+use std::path::{Component, Path, PathBuf};
+
+use tokio::io::AsyncWriteExt;
+
+use crate::db::repository::file_repo;
+use crate::entities::file;
+use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::runtime::AppState;
+use crate::services::task_service::TaskStepInfo;
+
+use super::super::super::steps::{
+    TASK_STEP_EXTRACT_ARCHIVE, set_task_step_active, set_task_step_succeeded,
+};
+
+#[derive(Debug)]
+pub(super) struct StagedArchiveStats {
+    pub(super) total_bytes: i64,
+    pub(super) total_progress: i64,
+    pub(super) file_count: i64,
+    pub(super) directory_count: i64,
+}
+
+pub(super) async fn download_file_to_temp(
+    state: &AppState,
+    source_file: &file::Model,
+    temp_path: &Path,
+) -> Result<()> {
+    let blob = file_repo::find_blob_by_id(&state.db, source_file.blob_id).await?;
+    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+    let mut stream = driver.get_stream(&blob.storage_path).await?;
+    let mut output = tokio::fs::File::create(temp_path).await.map_aster_err_ctx(
+        "create source archive temp file",
+        AsterError::storage_driver_error,
+    )?;
+    tokio::io::copy(&mut stream, &mut output)
+        .await
+        .map_aster_err_ctx("download source archive", AsterError::storage_driver_error)?;
+    output.flush().await.map_aster_err_ctx(
+        "flush source archive temp file",
+        AsterError::storage_driver_error,
+    )?;
+    Ok(())
+}
+
+pub(super) fn stage_zip_archive_for_extract(
+    handle: &tokio::runtime::Handle,
+    db: &sea_orm::DatabaseConnection,
+    task_id: i64,
+    archive_path: &str,
+    stage_root: &str,
+    steps: &mut [TaskStepInfo],
+) -> Result<StagedArchiveStats> {
+    let file = std::fs::File::open(archive_path)
+        .map_aster_err_ctx("open source archive", AsterError::storage_driver_error)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_aster_err_with(|| AsterError::validation_error("invalid zip archive"))?;
+    let mut total_bytes = 0_i64;
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_aster_err_with(|| AsterError::validation_error("invalid zip archive entry"))?;
+        if entry.is_dir() {
+            continue;
+        }
+        total_bytes =
+            total_bytes
+                .checked_add(i64::try_from(entry.size()).map_err(|_| {
+                    AsterError::internal_error("archive entry size exceeds i64 range")
+                })?)
+                .ok_or_else(|| AsterError::internal_error("archive extract size overflow"))?;
+    }
+    let total_progress = total_bytes
+        .checked_mul(2)
+        .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
+    set_task_step_active(
+        steps,
+        TASK_STEP_EXTRACT_ARCHIVE,
+        Some("Reading archive"),
+        Some((0, total_bytes)),
+    )?;
+    handle.block_on(async {
+        super::super::super::update_task_progress_db(
+            db,
+            task_id,
+            0,
+            total_progress,
+            Some("Reading archive"),
+            steps,
+        )
+        .await
+    })?;
+
+    let mut processed_bytes = 0_i64;
+    let mut created_dirs = HashSet::new();
+    let mut file_count = 0_i64;
+
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_aster_err_with(|| AsterError::validation_error("invalid zip archive entry"))?;
+        let enclosed_path = entry.enclosed_name().ok_or_else(|| {
+            AsterError::validation_error(format!(
+                "archive entry '{}' contains unsafe path",
+                entry.name()
+            ))
+        })?;
+        let relative_path = normalize_archive_entry_path(&enclosed_path)?;
+        let target_path = Path::new(stage_root).join(&relative_path);
+        if entry.is_dir() {
+            register_relative_dirs(&mut created_dirs, &relative_path);
+            std::fs::create_dir_all(&target_path).map_aster_err_ctx(
+                "create extracted directory",
+                AsterError::storage_driver_error,
+            )?;
+            continue;
+        }
+
+        if let Some(parent) = relative_path.parent() {
+            register_relative_dirs(&mut created_dirs, parent);
+        }
+        if let Some(parent) = target_path.parent() {
+            std::fs::create_dir_all(parent).map_aster_err_ctx(
+                "create extracted parent directory",
+                AsterError::storage_driver_error,
+            )?;
+        }
+
+        let mut output = std::fs::File::create(&target_path)
+            .map_aster_err_ctx("create extracted file", AsterError::storage_driver_error)?;
+        let copied = std::io::copy(&mut entry, &mut output)
+            .map_aster_err_ctx("extract zip entry", AsterError::storage_driver_error)?;
+        processed_bytes = processed_bytes
+            .checked_add(
+                i64::try_from(copied)
+                    .map_err(|_| AsterError::internal_error("extracted bytes exceed i64 range"))?,
+            )
+            .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
+        file_count += 1;
+
+        let status_text = format!("Extracting {}", relative_path.to_string_lossy());
+        set_task_step_active(
+            steps,
+            TASK_STEP_EXTRACT_ARCHIVE,
+            Some(&status_text),
+            Some((processed_bytes, total_bytes)),
+        )?;
+        handle.block_on(async {
+            super::super::super::update_task_progress_db(
+                db,
+                task_id,
+                processed_bytes,
+                total_progress,
+                Some(&status_text),
+                steps,
+            )
+            .await
+        })?;
+    }
+
+    set_task_step_succeeded(
+        steps,
+        TASK_STEP_EXTRACT_ARCHIVE,
+        Some("Archive extracted to staging"),
+        Some((total_bytes, total_bytes)),
+    )?;
+
+    Ok(StagedArchiveStats {
+        total_bytes,
+        total_progress,
+        file_count,
+        directory_count: i64::try_from(created_dirs.len())
+            .map_err(|_| AsterError::internal_error("directory count exceeds i64 range"))?,
+    })
+}
+
+fn normalize_archive_entry_path(path: &Path) -> Result<PathBuf> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(name) => {
+                let name = name.to_str().ok_or_else(|| {
+                    AsterError::validation_error("archive entry name must be valid UTF-8")
+                })?;
+                crate::utils::validate_name(name)?;
+                normalized.push(name);
+            }
+            _ => {
+                return Err(AsterError::validation_error(format!(
+                    "archive entry '{}' contains invalid path component",
+                    path.display()
+                )));
+            }
+        }
+    }
+
+    if normalized.as_os_str().is_empty() {
+        return Err(AsterError::validation_error(
+            "archive entry path cannot be empty",
+        ));
+    }
+    Ok(normalized)
+}
+
+fn register_relative_dirs(created_dirs: &mut HashSet<PathBuf>, path: &Path) {
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        if let Component::Normal(name) = component {
+            current.push(name);
+            created_dirs.insert(current.clone());
+        }
+    }
+}

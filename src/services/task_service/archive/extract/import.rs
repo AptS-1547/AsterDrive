@@ -1,0 +1,156 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+use crate::entities::{background_task, folder};
+use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::runtime::AppState;
+use crate::services::task_service::TaskStepInfo;
+use crate::services::{
+    workspace_storage_service, workspace_storage_service::WorkspaceStorageScope,
+};
+
+use super::super::super::mark_task_progress;
+use super::super::super::steps::{TASK_STEP_IMPORT_RESULT, set_task_step_active};
+use super::super::common::create_folder_exact_in_scope;
+
+#[derive(Debug, Default)]
+struct StagedArchiveTree {
+    directories: Vec<PathBuf>,
+    files: Vec<PathBuf>,
+}
+
+pub(super) async fn materialize_archive_extract_stage(
+    state: &AppState,
+    task: &background_task::Model,
+    scope: WorkspaceStorageScope,
+    stage_root: &Path,
+    extracted_bytes: i64,
+    root_folder: &folder::Model,
+    steps: &mut [TaskStepInfo],
+) -> Result<()> {
+    let tree = collect_staged_archive_tree(stage_root)?;
+    let mut folder_ids = HashMap::new();
+    folder_ids.insert(PathBuf::new(), root_folder.id);
+    let mut imported_bytes = 0_i64;
+    let total_progress = extracted_bytes
+        .checked_mul(2)
+        .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
+
+    for relative_dir in &tree.directories {
+        let parent_relative = relative_dir.parent().unwrap_or_else(|| Path::new(""));
+        let parent_id = *folder_ids.get(parent_relative).ok_or_else(|| {
+            AsterError::internal_error(format!(
+                "missing parent folder mapping for '{}'",
+                parent_relative.display()
+            ))
+        })?;
+        let name = relative_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| {
+                AsterError::validation_error("archive directory name must be valid UTF-8")
+            })?;
+        let created = create_folder_exact_in_scope(state, scope, Some(parent_id), name).await?;
+        folder_ids.insert(relative_dir.clone(), created.id);
+    }
+
+    for relative_file in &tree.files {
+        let parent_relative = relative_file.parent().unwrap_or_else(|| Path::new(""));
+        let parent_id = *folder_ids.get(parent_relative).ok_or_else(|| {
+            AsterError::internal_error(format!(
+                "missing parent folder mapping for '{}'",
+                parent_relative.display()
+            ))
+        })?;
+        let name = relative_file
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| AsterError::validation_error("archive file name must be valid UTF-8"))?;
+        let temp_path = stage_root.join(relative_file);
+        let metadata = tokio::fs::metadata(&temp_path).await.map_aster_err_ctx(
+            "read extracted file metadata",
+            AsterError::storage_driver_error,
+        )?;
+        let size = i64::try_from(metadata.len())
+            .map_err(|_| AsterError::internal_error("extracted file size exceeds i64 range"))?;
+        workspace_storage_service::store_from_temp_exact_name_with_hints(
+            state,
+            scope,
+            Some(parent_id),
+            name,
+            &temp_path.to_string_lossy(),
+            size,
+            None,
+            false,
+            None,
+            None,
+        )
+        .await?;
+        imported_bytes = imported_bytes
+            .checked_add(size)
+            .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
+        let status_text = format!("Importing {}", relative_file.to_string_lossy());
+        set_task_step_active(
+            steps,
+            TASK_STEP_IMPORT_RESULT,
+            Some(&status_text),
+            Some((imported_bytes, extracted_bytes)),
+        )?;
+        mark_task_progress(
+            state,
+            task.id,
+            extracted_bytes
+                .checked_add(imported_bytes)
+                .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?,
+            total_progress,
+            Some(&status_text),
+            steps,
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+fn collect_staged_archive_tree(stage_root: &Path) -> Result<StagedArchiveTree> {
+    let mut tree = StagedArchiveTree::default();
+    let mut stack = vec![PathBuf::new()];
+
+    while let Some(current_relative) = stack.pop() {
+        let current_dir = if current_relative.as_os_str().is_empty() {
+            stage_root.to_path_buf()
+        } else {
+            stage_root.join(&current_relative)
+        };
+        let mut children = std::fs::read_dir(&current_dir)
+            .map_aster_err_ctx(
+                "read extracted staging directory",
+                AsterError::storage_driver_error,
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_aster_err_ctx(
+                "read extracted staging directory entry",
+                AsterError::storage_driver_error,
+            )?;
+        children.sort_by_key(|entry| entry.file_name());
+
+        for child in children {
+            let child_name = child.file_name();
+            let child_relative = current_relative.join(&child_name);
+            let file_type = child.file_type().map_aster_err_ctx(
+                "read extracted staging file type",
+                AsterError::storage_driver_error,
+            )?;
+            if file_type.is_dir() {
+                tree.directories.push(child_relative.clone());
+                stack.push(child_relative);
+            } else if file_type.is_file() {
+                tree.files.push(child_relative);
+            }
+        }
+    }
+
+    tree.directories.sort();
+    tree.files.sort();
+    Ok(tree)
+}

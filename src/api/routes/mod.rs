@@ -14,6 +14,7 @@ pub mod share_public;
 pub mod shares;
 pub mod tasks;
 pub mod team_batch;
+pub mod team_requests;
 pub mod team_search;
 pub mod team_shares;
 pub mod team_space;

@@ -22,6 +22,11 @@ vi.mock("react-i18next", () => ({
 				key === "tasks:pagination_desc" ||
 				key === "tasks:progress_ratio" ||
 				key === "tasks:task_id_label" ||
+				key === "tasks:summary_created_at" ||
+				key === "tasks:summary_started_at" ||
+				key === "tasks:summary_finished_at" ||
+				key === "tasks:summary_failed_at" ||
+				key === "tasks:summary_canceled_at" ||
 				key === "tasks:created_at" ||
 				key === "tasks:started_at" ||
 				key === "tasks:finished_at"
@@ -59,6 +64,8 @@ vi.mock("@/components/ui/badge", () => ({
 
 vi.mock("@/components/ui/button", () => ({
 	Button: (props: {
+		"aria-controls"?: string;
+		"aria-expanded"?: boolean;
 		"aria-label"?: string;
 		children: React.ReactNode;
 		disabled?: boolean;
@@ -67,6 +74,8 @@ vi.mock("@/components/ui/button", () => ({
 	}) => (
 		<button
 			type="button"
+			aria-controls={props["aria-controls"]}
+			aria-expanded={props["aria-expanded"]}
 			aria-label={props["aria-label"]}
 			disabled={props.disabled}
 			onClick={props.onClick}
@@ -104,6 +113,7 @@ vi.mock("@/hooks/usePageTitle", () => ({
 vi.mock("@/lib/format", () => ({
 	formatBytes: (value: number) => `bytes:${value}`,
 	formatDateAbsolute: (value: string) => `date:${value}`,
+	formatNumber: (value: number) => `num:${value}`,
 }));
 
 vi.mock("@/lib/workspace", () => ({
@@ -470,7 +480,7 @@ describe("TasksPage", () => {
 		});
 	});
 
-	it("renders task steps as a horizontal flow and shows the highlighted step detail", async () => {
+	it("keeps task details collapsed until expanded and removes duplicate active step headings", async () => {
 		mockState.listInWorkspace.mockResolvedValue({
 			items: [
 				createTask({
@@ -487,16 +497,63 @@ describe("TasksPage", () => {
 
 		render(<TasksPage />);
 
+		await screen.findByText("Extract archive");
+		expect(screen.queryByText("1. Waiting")).not.toBeInTheDocument();
+		expect(screen.queryByText("num:20 / num:50")).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByText("tasks:show_details"));
+
 		expect(await screen.findByText("1. Waiting")).toBeInTheDocument();
 		expect(screen.getByText("2. Prepare archive sources")).toBeInTheDocument();
-		expect(screen.getAllByText("3. Build archive")).toHaveLength(2);
+		expect(screen.getAllByText("3. Build archive")).toHaveLength(1);
 		expect(screen.getByText("4. Save archive")).toBeInTheDocument();
+		expect(screen.getByText(/Packing archive/)).toBeInTheDocument();
+		expect(screen.getByText("tasks:timeline_label")).toBeInTheDocument();
+		expect(screen.getByText("tasks:step_progress_label")).toBeInTheDocument();
+		expect(screen.getByText("tasks:progress_ratio_label")).toBeInTheDocument();
+		expect(screen.getByText("num:35 / num:100")).toBeInTheDocument();
+		expect(screen.getByText(/num:20 \/ num:50/)).toBeInTheDocument();
+	});
+
+	it("renders summary timestamps by status and keeps detailed times in the expanded panel", async () => {
+		mockState.listInWorkspace.mockResolvedValue({
+			items: [
+				createTask({
+					finished_at: "2026-04-10T00:03:10Z",
+					progress_current: 4152537914,
+					progress_percent: 100,
+					progress_total: 4152537914,
+					status: "succeeded",
+					status_text: null,
+				}),
+			],
+			total: 1,
+		});
+
+		render(<TasksPage />);
+
 		expect(
-			screen.getByText("tasks:current_step_label: Build archive"),
+			await screen.findByText(
+				'tasks:summary_finished_at:{"date":"date:2026-04-10T00:03:10Z"}',
+			),
 		).toBeInTheDocument();
-		expect(screen.getByText("Packing archive")).toBeInTheDocument();
 		expect(
-			screen.getByText('40% · tasks:progress_ratio:{"current":20,"total":50}'),
+			screen.queryByText("num:4152537914 / num:4152537914"),
+		).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByText("tasks:show_details"));
+
+		expect(
+			await screen.findByText("tasks:timeline_created_label"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("tasks:timeline_started_label"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("tasks:timeline_finished_label"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("num:4152537914 / num:4152537914"),
 		).toBeInTheDocument();
 	});
 
@@ -523,8 +580,11 @@ describe("TasksPage", () => {
 
 		render(<TasksPage />);
 
+		await screen.findByText("Extract archive");
+		fireEvent.click(screen.getByText("tasks:show_details"));
+
 		expect(
-			await screen.findByText("tasks:result_path_label:"),
+			await screen.findByText("tasks:result_path_label"),
 		).toBeInTheDocument();
 		expect(screen.getByText("/Archives/bundle")).toBeInTheDocument();
 
