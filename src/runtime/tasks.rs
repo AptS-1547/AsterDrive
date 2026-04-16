@@ -108,8 +108,11 @@ where
     })
 }
 
-async fn run_periodic_iteration<F, Fut>(name: &'static str, state: &web::Data<AppState>, task_fn: &F)
-where
+async fn run_periodic_iteration<F, Fut>(
+    name: &'static str,
+    state: &web::Data<AppState>,
+    task_fn: &F,
+) where
     F: Fn(web::Data<AppState>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
@@ -136,8 +139,7 @@ fn periodic_sleep_duration(base_interval: Duration, jitter_cap: Option<Duration>
         return base_interval;
     }
 
-    let jitter_ms = rand::rng()
-        .random_range(0..=max_jitter_ms.min(u128::from(u64::MAX)) as u64);
+    let jitter_ms = rand::rng().random_range(0..=max_jitter_ms.min(u128::from(u64::MAX)) as u64);
     base_interval.saturating_add(Duration::from_millis(jitter_ms))
 }
 

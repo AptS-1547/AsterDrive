@@ -7,7 +7,7 @@ use sea_orm::{
 use crate::entities::folder::{self, Entity as Folder};
 use crate::errors::{AsterError, Result};
 
-use super::query::find_by_id;
+use super::query::{find_by_id, find_by_name_in_parent};
 
 #[derive(Debug, Clone, FromQueryResult)]
 struct ResolvedPathFolderRow {
@@ -213,6 +213,27 @@ fn build_resolve_path_chain_query(
     with_clause.query(final_select)
 }
 
+async fn resolve_path_chain_iteratively<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    root_parent_id: Option<i64>,
+    segments: &[String],
+) -> Result<Vec<folder::Model>> {
+    let mut resolved = Vec::with_capacity(segments.len());
+    let mut current_parent = root_parent_id;
+
+    for segment in segments {
+        let Some(folder) = find_by_name_in_parent(db, user_id, current_parent, segment).await?
+        else {
+            break;
+        };
+        current_parent = Some(folder.id);
+        resolved.push(folder);
+    }
+
+    Ok(resolved)
+}
+
 /// 批量解析路径前缀中的文件夹链，避免逐段 round-trip。
 ///
 /// `resolve_path_chain` only resolves personal user-space folders.
@@ -229,6 +250,13 @@ pub async fn resolve_path_chain<C: ConnectionTrait>(
 ) -> Result<Vec<folder::Model>> {
     if segments.is_empty() {
         return Ok(vec![]);
+    }
+
+    if matches!(db.get_database_backend(), sea_orm::DbBackend::MySql) {
+        // SeaQuery builds this walk with a recursive CTE over an inline VALUES list.
+        // PostgreSQL / SQLite accept that shape, but MySQL does not reliably support it.
+        // WebDAV only needs path resolution here, so fall back to indexed per-segment lookups.
+        return resolve_path_chain_iteratively(db, user_id, root_parent_id, segments).await;
     }
 
     // The recursive walk keeps hitting idx_folders_user_deleted_parent_name instead of issuing

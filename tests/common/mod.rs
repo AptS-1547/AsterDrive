@@ -33,6 +33,13 @@ const SHARED_TEST_CONTAINER_STATE_DIR: &str = "/tmp/asterdrive-testcontainers";
 #[allow(dead_code)]
 pub const TEST_FUTURE_SHARE_EXPIRY_RFC3339: &str = "2099-12-31T23:59:59Z";
 
+fn init_test_process_state() {
+    static INIT: OnceLock<()> = OnceLock::new();
+    INIT.get_or_init(|| {
+        aster_drive::utils::hash::enable_fast_password_hash_for_test();
+    });
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestDatabaseBackend {
     Sqlite,
@@ -47,9 +54,22 @@ struct SharedTestDatabaseContainer {
     database_url: String,
 }
 
+struct MySqlSchemaTemplate {
+    database_name: String,
+    create_table_sql: Vec<String>,
+}
+
+struct PostgresDatabaseTemplate {
+    database_name: String,
+}
+
 static POSTGRES_TEST_CONTAINER: tokio::sync::OnceCell<SharedTestDatabaseContainer> =
     tokio::sync::OnceCell::const_new();
 static MYSQL_TEST_CONTAINER: tokio::sync::OnceCell<SharedTestDatabaseContainer> =
+    tokio::sync::OnceCell::const_new();
+static POSTGRES_DATABASE_TEMPLATE: tokio::sync::OnceCell<PostgresDatabaseTemplate> =
+    tokio::sync::OnceCell::const_new();
+static MYSQL_SCHEMA_TEMPLATE: tokio::sync::OnceCell<MySqlSchemaTemplate> =
     tokio::sync::OnceCell::const_new();
 
 #[derive(Default, Deserialize, Serialize)]
@@ -665,9 +685,10 @@ fn quote_mysql_string(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
-async fn provision_isolated_test_database_url(
+async fn provision_isolated_test_database_url_with_template(
     admin_database_url: &str,
     database_url: &str,
+    template_database_name: Option<&str>,
 ) -> String {
     if database_url == "sqlite::memory:" || database_url.starts_with("sqlite://") {
         return database_url.to_string();
@@ -694,18 +715,78 @@ async fn provision_isolated_test_database_url(
         .expect("isolated database provisioning only supports postgres/mysql");
     remember_shared_test_database(test_backend, &isolated_name);
 
-    let create_sql = format!(
-        "CREATE DATABASE {}",
-        quote_database_identifier(backend, &isolated_name)
-    );
+    let create_sql = match (backend, template_database_name) {
+        (sea_orm::DbBackend::Postgres, Some(template_database_name)) => format!(
+            "CREATE DATABASE {} TEMPLATE {}",
+            quote_database_identifier(backend, &isolated_name),
+            quote_database_identifier(backend, template_database_name)
+        ),
+        _ => format!(
+            "CREATE DATABASE {}",
+            quote_database_identifier(backend, &isolated_name)
+        ),
+    };
     admin_db.execute_unprepared(&create_sql).await.unwrap();
 
     replace_database_name(parsed_url, &isolated_name)
 }
 
+async fn provision_isolated_test_database_url(
+    admin_database_url: &str,
+    database_url: &str,
+) -> String {
+    provision_isolated_test_database_url_with_template(admin_database_url, database_url, None).await
+}
+
+async fn build_postgres_database_template() -> PostgresDatabaseTemplate {
+    let (admin_database_url, database_url) =
+        shared_test_database_urls(TestDatabaseBackend::Postgres).await;
+    let template_database_url =
+        provision_isolated_test_database_url(&admin_database_url, &database_url).await;
+
+    let db_cfg = aster_drive::config::DatabaseConfig {
+        url: template_database_url.clone(),
+        pool_size: 1,
+        retry_count: 0,
+    };
+    let db = aster_drive::db::connect(&db_cfg)
+        .await
+        .expect("postgres template database connection should succeed");
+
+    use migration::{Migrator, MigratorTrait};
+    Migrator::up(&db, None)
+        .await
+        .expect("postgres template database migrations should succeed");
+    db.close()
+        .await
+        .expect("postgres template database should close cleanly");
+
+    let template_database_name = reqwest::Url::parse(&template_database_url)
+        .ok()
+        .and_then(|url| database_name_from_url(&url))
+        .expect("postgres template database name should exist");
+
+    PostgresDatabaseTemplate {
+        database_name: template_database_name,
+    }
+}
+
 async fn resolve_test_database_url_for(backend: TestDatabaseBackend) -> String {
     let (admin_database_url, database_url) = shared_test_database_urls(backend).await;
-    provision_isolated_test_database_url(&admin_database_url, &database_url).await
+    match backend {
+        TestDatabaseBackend::Postgres => {
+            let template = POSTGRES_DATABASE_TEMPLATE
+                .get_or_init(build_postgres_database_template)
+                .await;
+            provision_isolated_test_database_url_with_template(
+                &admin_database_url,
+                &database_url,
+                Some(&template.database_name),
+            )
+            .await
+        }
+        _ => provision_isolated_test_database_url(&admin_database_url, &database_url).await,
+    }
 }
 
 async fn resolve_test_database_url() -> String {
@@ -728,12 +809,125 @@ pub async fn mysql_test_database_url() -> String {
 /// 会自动启动一个共享 testcontainers 容器，并为当前测试实例分配独立数据库。
 #[allow(dead_code)]
 pub async fn setup() -> AppState {
+    init_test_process_state();
     let database_url = resolve_test_database_url().await;
     setup_with_database_url(&database_url).await
 }
 
+fn should_use_mysql_schema_template(database_url: &str) -> bool {
+    database_url.starts_with("mysql://")
+        && configured_test_database_backend() == TestDatabaseBackend::MySql
+}
+
+async fn load_mysql_schema_template(
+    db: &sea_orm::DatabaseConnection,
+    database_name: String,
+) -> MySqlSchemaTemplate {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let tables = db
+        .query_all_raw(Statement::from_string(
+            sea_orm::DbBackend::MySql,
+            "SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'",
+        ))
+        .await
+        .expect("mysql schema template should list tables");
+
+    let mut table_names: Vec<String> = tables
+        .into_iter()
+        .map(|row| {
+            row.try_get_by_index(0)
+                .expect("mysql schema template table name should exist")
+        })
+        .collect();
+    table_names.sort();
+
+    let mut create_table_sql = Vec::with_capacity(table_names.len());
+    for table_name in &table_names {
+        let ddl_row = db
+            .query_one_raw(Statement::from_string(
+                sea_orm::DbBackend::MySql,
+                format!(
+                    "SHOW CREATE TABLE {}",
+                    quote_database_identifier(sea_orm::DbBackend::MySql, table_name)
+                ),
+            ))
+            .await
+            .expect("mysql schema template should load table ddl")
+            .expect("mysql schema template show create table should return one row");
+
+        let ddl: String = ddl_row
+            .try_get_by_index(1)
+            .expect("mysql schema template ddl should exist");
+        create_table_sql.push(ddl);
+    }
+
+    MySqlSchemaTemplate {
+        database_name,
+        create_table_sql,
+    }
+}
+
+async fn build_mysql_schema_template() -> MySqlSchemaTemplate {
+    let (admin_database_url, database_url) =
+        shared_test_database_urls(TestDatabaseBackend::MySql).await;
+    let template_database_url =
+        provision_isolated_test_database_url(&admin_database_url, &database_url).await;
+
+    let db_cfg = aster_drive::config::DatabaseConfig {
+        url: template_database_url.clone(),
+        pool_size: 1,
+        retry_count: 0,
+    };
+    let db = aster_drive::db::connect(&db_cfg)
+        .await
+        .expect("mysql schema template connection should succeed");
+
+    use migration::{Migrator, MigratorTrait};
+    Migrator::up(&db, None)
+        .await
+        .expect("mysql schema template migrations should succeed");
+
+    let template_database_name = reqwest::Url::parse(&template_database_url)
+        .ok()
+        .and_then(|url| database_name_from_url(&url))
+        .expect("mysql schema template database name should exist");
+
+    load_mysql_schema_template(&db, template_database_name).await
+}
+
+async fn clone_mysql_schema_from_template(db: &sea_orm::DatabaseConnection) {
+    use sea_orm::ConnectionTrait;
+
+    let template = MYSQL_SCHEMA_TEMPLATE
+        .get_or_init(build_mysql_schema_template)
+        .await;
+
+    db.execute_unprepared("SET FOREIGN_KEY_CHECKS = 0;")
+        .await
+        .expect("mysql schema clone should disable foreign key checks");
+
+    for ddl in &template.create_table_sql {
+        db.execute_unprepared(ddl)
+            .await
+            .expect("mysql schema clone should create table");
+    }
+
+    db.execute_unprepared(&format!(
+        "INSERT INTO seaql_migrations SELECT * FROM {}.seaql_migrations",
+        quote_database_identifier(sea_orm::DbBackend::MySql, &template.database_name)
+    ))
+    .await
+    .expect("mysql schema clone should copy seaql_migrations rows");
+
+    db.execute_unprepared("SET FOREIGN_KEY_CHECKS = 1;")
+        .await
+        .expect("mysql schema clone should restore foreign key checks");
+}
+
 /// 构建一个干净的测试 AppState（指定数据库 URL）
 pub async fn setup_with_database_url(database_url: &str) -> AppState {
+    init_test_process_state();
     let db_cfg = aster_drive::config::DatabaseConfig {
         url: database_url.to_string(),
         pool_size: 1,
@@ -743,7 +937,11 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
 
     // 跑迁移
     use migration::{Migrator, MigratorTrait};
-    Migrator::up(&db, None).await.unwrap();
+    if should_use_mysql_schema_template(database_url) {
+        clone_mysql_schema_from_template(&db).await;
+    } else {
+        Migrator::up(&db, None).await.unwrap();
+    }
 
     // 每个测试用独立临时目录避免并行竞争
     let test_dir = format!("/tmp/asterdrive-test-{}", uuid::Uuid::new_v4());
