@@ -9,6 +9,7 @@ use std::collections::HashMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
+use crate::db::repository::background_task_repo;
 use crate::entities::{
     audit_log::{self, Entity as AuditLog},
     file::{self, Entity as File},
@@ -19,7 +20,7 @@ use crate::entities::{
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::audit_service;
-use crate::types::UserStatus;
+use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, UserStatus};
 
 type DateTimeUtc = DateTime<Utc>;
 
@@ -89,6 +90,28 @@ pub struct AdminOverviewDailyReport {
 
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminBackgroundTaskEvent {
+    pub id: i64,
+    pub kind: BackgroundTaskKind,
+    pub status: BackgroundTaskStatus,
+    pub display_name: String,
+    pub creator_user_id: Option<i64>,
+    pub team_id: Option<i64>,
+    pub status_text: Option<String>,
+    pub last_error: Option<String>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: DateTimeUtc,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub started_at: Option<DateTimeUtc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub finished_at: Option<DateTimeUtc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: DateTimeUtc,
+    pub duration_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminOverview {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub generated_at: DateTimeUtc,
@@ -97,6 +120,7 @@ pub struct AdminOverview {
     pub stats: AdminOverviewStats,
     pub daily_reports: Vec<AdminOverviewDailyReport>,
     pub recent_events: Vec<audit_service::AuditLogEntry>,
+    pub recent_background_tasks: Vec<AdminBackgroundTaskEvent>,
 }
 
 pub async fn get_overview(
@@ -156,6 +180,11 @@ pub async fn get_overview(
     )
     .await?
     .items;
+    let recent_background_tasks = background_task_repo::list_recent(&state.db, event_limit)
+        .await?
+        .into_iter()
+        .map(build_background_task_event)
+        .collect();
 
     Ok(AdminOverview {
         generated_at,
@@ -177,7 +206,36 @@ pub async fn get_overview(
         },
         daily_reports,
         recent_events,
+        recent_background_tasks,
     })
+}
+
+fn build_background_task_event(
+    task: crate::entities::background_task::Model,
+) -> AdminBackgroundTaskEvent {
+    let duration_ms = match (task.started_at, task.finished_at) {
+        (Some(started_at), Some(finished_at)) => Some(std::cmp::max(
+            (finished_at - started_at).num_milliseconds(),
+            0,
+        )),
+        _ => None,
+    };
+
+    AdminBackgroundTaskEvent {
+        id: task.id,
+        kind: task.kind,
+        status: task.status,
+        display_name: task.display_name,
+        creator_user_id: task.creator_user_id,
+        team_id: task.team_id,
+        status_text: task.status_text,
+        last_error: task.last_error,
+        created_at: task.created_at,
+        started_at: task.started_at,
+        finished_at: task.finished_at,
+        updated_at: task.updated_at,
+        duration_ms,
+    }
 }
 
 async fn build_daily_reports(

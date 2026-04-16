@@ -9,9 +9,11 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::task_service::TaskStepInfo;
 
+use super::super::super::TaskLeaseGuard;
 use super::super::super::steps::{
     TASK_STEP_EXTRACT_ARCHIVE, set_task_step_active, set_task_step_succeeded,
 };
+use super::super::common::copy_reader_to_writer_with_lease;
 
 #[derive(Debug)]
 pub(super) struct StagedArchiveStats {
@@ -47,7 +49,7 @@ pub(super) async fn download_file_to_temp(
 pub(super) fn stage_zip_archive_for_extract(
     handle: &tokio::runtime::Handle,
     db: &sea_orm::DatabaseConnection,
-    task_id: i64,
+    lease_guard: &TaskLeaseGuard,
     archive_path: &str,
     stage_root: &str,
     steps: &mut [TaskStepInfo],
@@ -83,7 +85,7 @@ pub(super) fn stage_zip_archive_for_extract(
     handle.block_on(async {
         super::super::super::update_task_progress_db(
             db,
-            task_id,
+            lease_guard,
             0,
             total_progress,
             Some("Reading archive"),
@@ -97,6 +99,7 @@ pub(super) fn stage_zip_archive_for_extract(
     let mut file_count = 0_i64;
 
     for index in 0..archive.len() {
+        lease_guard.ensure_active()?;
         let mut entry = archive
             .by_index(index)
             .map_aster_err_with(|| AsterError::validation_error("invalid zip archive entry"))?;
@@ -129,8 +132,7 @@ pub(super) fn stage_zip_archive_for_extract(
 
         let mut output = std::fs::File::create(&target_path)
             .map_aster_err_ctx("create extracted file", AsterError::storage_driver_error)?;
-        let copied = std::io::copy(&mut entry, &mut output)
-            .map_aster_err_ctx("extract zip entry", AsterError::storage_driver_error)?;
+        let copied = copy_reader_to_writer_with_lease(Some(lease_guard), &mut entry, &mut output)?;
         processed_bytes = processed_bytes
             .checked_add(
                 i64::try_from(copied)
@@ -149,7 +151,7 @@ pub(super) fn stage_zip_archive_for_extract(
         handle.block_on(async {
             super::super::super::update_task_progress_db(
                 db,
-                task_id,
+                lease_guard,
                 processed_bytes,
                 total_progress,
                 Some(&status_text),

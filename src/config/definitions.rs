@@ -203,6 +203,30 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Seconds between background task dispatch polls",
     },
     ConfigDef {
+        key: "background_task_max_concurrency",
+        label_i18n_key: "settings_item_background_task_max_concurrency_label",
+        description_i18n_key: "settings_item_background_task_max_concurrency_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "operations",
+        description: "Maximum number of background tasks the server may execute at the same time",
+    },
+    ConfigDef {
+        key: "background_task_max_attempts",
+        label_i18n_key: "settings_item_background_task_max_attempts_label",
+        description_i18n_key: "settings_item_background_task_max_attempts_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || crate::config::operations::DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS.to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "operations",
+        description: "Maximum number of attempts for workspace background tasks before they permanently fail",
+    },
+    ConfigDef {
         key: "maintenance_cleanup_interval_secs",
         label_i18n_key: "settings_item_maintenance_cleanup_interval_secs_label",
         description_i18n_key: "settings_item_maintenance_cleanup_interval_secs_desc",
@@ -291,7 +315,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         requires_restart: false,
         is_sensitive: false,
         category: "storage",
-        description: "Hours before completed background tasks and task artifacts are permanently deleted",
+        description: "Hours before temporary background task artifacts expire; task records remain as history",
     },
     ConfigDef {
         key: "default_storage_quota",

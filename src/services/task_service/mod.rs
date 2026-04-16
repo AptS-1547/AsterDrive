@@ -1,11 +1,15 @@
 mod archive;
 mod dispatch;
+mod runtime;
 mod steps;
 mod types;
 
 use chrono::{Duration, Utc};
+use parking_lot::Mutex;
 use sea_orm::{DatabaseConnection, Set};
 use serde::Serialize;
+use std::sync::Arc;
+use std::time::{Duration as StdDuration, Instant};
 
 use crate::api::pagination::OffsetPage;
 use crate::config::operations;
@@ -21,21 +25,118 @@ pub(crate) use archive::{
     prepare_archive_download_in_scope, stream_archive_download_in_scope,
 };
 pub use dispatch::{DispatchStats, cleanup_expired, dispatch_due, drain};
+pub use runtime::{RuntimeTaskRunOutcome, record_runtime_task_run};
 use steps::{initial_task_steps, parse_task_steps_json, serialize_task_steps};
 pub use types::{
     ArchiveCompressTaskPayload, ArchiveCompressTaskResult, ArchiveExtractTaskPayload,
     ArchiveExtractTaskResult, CreateArchiveCompressTaskParams, CreateArchiveExtractTaskParams,
-    CreateArchiveTaskParams, TaskInfo, TaskPayload, TaskResult, TaskStepInfo, TaskStepStatus,
+    CreateArchiveTaskParams, RuntimeTaskPayload, RuntimeTaskResult, TaskInfo, TaskPayload,
+    TaskResult, TaskStepInfo, TaskStepStatus,
 };
 use types::{parse_task_payload_info, parse_task_result_info, serialize_task_payload};
 
 pub(super) const DEFAULT_TASK_RETENTION_HOURS: i64 = 24;
-pub(super) const TASK_DISPATCH_BATCH_SIZE: u64 = 8;
+pub(super) const TASK_HEARTBEAT_INTERVAL_SECS: u64 = 10;
 pub(super) const TASK_PROCESSING_STALE_SECS: i64 = 60;
 pub(super) const TASK_LAST_ERROR_MAX_LEN: usize = 1024;
 pub(super) const TASK_STATUS_TEXT_MAX_LEN: usize = 255;
 pub(super) const TASK_DRAIN_MAX_ROUNDS: usize = 32;
-pub(super) const TASK_CLEANUP_BATCH_SIZE: u64 = 64;
+const TASK_LEASE_LOST_MESSAGE_PREFIX: &str = "background task lease lost";
+const TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX: &str = "background task lease renewal timed out";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TaskLease {
+    // processing_token 是持久化的 fencing token，不跟进程生命周期绑定。
+    // 任务每次被重新认领时都会拿到更大的 token，旧 worker 之后的写入必须被拒绝。
+    // 这里的 lease 只表达“当前这次处理资格”，不表达任务本身的业务内容。
+    pub(super) task_id: i64,
+    pub(super) processing_token: i64,
+}
+
+impl TaskLease {
+    pub(super) fn new(task_id: i64, processing_token: i64) -> Self {
+        Self {
+            task_id,
+            processing_token,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TaskLeaseGuard {
+    // TaskLeaseGuard 是进程内的“租约看门狗”：
+    // 1. 它持有当前 worker 的 task_id + processing_token；
+    // 2. 只要心跳、进度写库、完成写库任意一次成功，就刷新 last_renewed_at；
+    // 3. 如果 token 不再匹配，或者连续太久没有任何成功续约，就让当前执行流自我终止。
+    //
+    // processing_token 负责“防旧 worker 回写数据库”；
+    // lease guard 负责“防旧 worker 在本地继续做副作用”。
+    lease: TaskLease,
+    renewal_timeout: StdDuration,
+    state: Arc<Mutex<TaskLeaseGuardState>>,
+}
+
+#[derive(Debug)]
+struct TaskLeaseGuardState {
+    last_renewed_at: Instant,
+    termination: Option<TaskLeaseTermination>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskLeaseTermination {
+    Lost,
+    RenewalTimedOut,
+}
+
+impl TaskLeaseGuard {
+    pub(super) fn new(lease: TaskLease) -> Self {
+        Self::with_renewal_timeout(lease, task_lease_renewal_timeout())
+    }
+
+    pub(super) fn with_renewal_timeout(lease: TaskLease, renewal_timeout: StdDuration) -> Self {
+        Self {
+            lease,
+            renewal_timeout,
+            state: Arc::new(Mutex::new(TaskLeaseGuardState {
+                last_renewed_at: Instant::now(),
+                termination: None,
+            })),
+        }
+    }
+
+    pub(super) fn lease(&self) -> TaskLease {
+        self.lease
+    }
+
+    pub(super) fn record_renewed(&self) {
+        let mut state = self.state.lock();
+        if state.termination.is_none() {
+            state.last_renewed_at = Instant::now();
+        }
+    }
+
+    pub(super) fn mark_lost(&self) -> AsterError {
+        let mut state = self.state.lock();
+        state.termination = Some(TaskLeaseTermination::Lost);
+        task_lease_lost(self.lease)
+    }
+
+    pub(super) fn ensure_active(&self) -> Result<()> {
+        let mut state = self.state.lock();
+        match state.termination {
+            Some(TaskLeaseTermination::Lost) => return Err(task_lease_lost(self.lease)),
+            Some(TaskLeaseTermination::RenewalTimedOut) => {
+                return Err(task_lease_renewal_timed_out(self.lease));
+            }
+            None => {}
+        }
+        if state.last_renewed_at.elapsed() >= self.renewal_timeout {
+            state.termination = Some(TaskLeaseTermination::RenewalTimedOut);
+            return Err(task_lease_renewal_timed_out(self.lease));
+        }
+        Ok(())
+    }
+}
 
 pub(crate) async fn list_tasks_paginated_in_scope(
     state: &AppState,
@@ -54,6 +155,22 @@ pub(crate) async fn list_tasks_paginated_in_scope(
             background_task_repo::find_paginated_team(&state.db, team_id, limit, offset).await?
         }
     };
+
+    let mut items = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        items.push(build_task_info(state, task).await?);
+    }
+
+    Ok(OffsetPage::new(items, total, limit, offset))
+}
+
+pub(crate) async fn list_tasks_paginated_for_admin(
+    state: &AppState,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<TaskInfo>> {
+    let limit = limit.clamp(1, operations::task_list_max_limit(&state.runtime_config));
+    let (tasks, total) = background_task_repo::find_paginated_all(&state.db, limit, offset).await?;
 
     let mut items = Vec::with_capacity(tasks.len());
     for task in tasks {
@@ -91,12 +208,14 @@ pub(crate) async fn retry_task_in_scope(
 
     cleanup_task_temp_dir_for_task(state, task.id).await?;
     let steps_json = serialize_task_steps(&initial_task_steps(task.kind))?;
+    let max_attempts = configured_task_max_attempts(state, task.kind);
 
     let now = Utc::now();
     if !background_task_repo::reset_for_manual_retry(
         &state.db,
         task.id,
         now,
+        max_attempts,
         Some(steps_json.as_ref()),
     )
     .await?
@@ -144,6 +263,7 @@ async fn build_task_info(_state: &AppState, task: background_task::Model) -> Res
         result,
         steps,
         can_retry: task.status == BackgroundTaskStatus::Failed,
+        lease_expires_at: task.lease_expires_at,
         started_at: task.started_at,
         finished_at: task.finished_at,
         expires_at: task.expires_at,
@@ -163,6 +283,9 @@ pub(super) async fn create_task_record<T: Serialize>(
     let payload_json = serialize_task_payload(payload)?;
     let steps_json = serialize_task_steps(&initial_task_steps(kind))?;
 
+    // expires_at 代表“任务临时产物何时可以清理”，不是“任务记录何时删库”。
+    // 我们保留 background_task 行作为历史留档；真正会按这个时间被清掉的是
+    // temp/tasks/{task_id}/... 下面的中间产物。
     background_task_repo::create(
         &state.db,
         background_task::ActiveModel {
@@ -179,9 +302,12 @@ pub(super) async fn create_task_record<T: Serialize>(
             progress_total: Set(0),
             status_text: Set(None),
             attempt_count: Set(0),
-            max_attempts: Set(1),
+            max_attempts: Set(configured_task_max_attempts(state, kind)),
             next_run_at: Set(now),
+            processing_token: Set(0),
             processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            lease_expires_at: Set(None),
             started_at: Set(None),
             finished_at: Set(None),
             last_error: Set(None),
@@ -211,18 +337,18 @@ pub(super) fn task_scope(task: &background_task::Model) -> Result<WorkspaceStora
 
 pub(super) async fn mark_task_progress(
     state: &AppState,
-    task_id: i64,
+    lease_guard: &TaskLeaseGuard,
     current: i64,
     total: i64,
     status_text: Option<&str>,
     steps: &[TaskStepInfo],
 ) -> Result<()> {
-    update_task_progress_db(&state.db, task_id, current, total, status_text, steps).await
+    update_task_progress_db(&state.db, lease_guard, current, total, status_text, steps).await
 }
 
 pub(super) async fn update_task_progress_db(
     db: &DatabaseConnection,
-    task_id: i64,
+    lease_guard: &TaskLeaseGuard,
     current: i64,
     total: i64,
     status_text: Option<&str>,
@@ -230,9 +356,14 @@ pub(super) async fn update_task_progress_db(
 ) -> Result<()> {
     let status_text = status_text.map(truncate_status_text);
     let steps_json = serialize_task_steps(steps)?;
+    let lease = lease_guard.lease();
+    let now = Utc::now();
     if background_task_repo::mark_progress(
         db,
-        task_id,
+        lease.task_id,
+        lease.processing_token,
+        now,
+        task_lease_expires_at(now),
         current,
         total,
         status_text.as_deref(),
@@ -240,18 +371,16 @@ pub(super) async fn update_task_progress_db(
     )
     .await?
     {
+        lease_guard.record_renewed();
         Ok(())
     } else {
-        Err(AsterError::internal_error(format!(
-            "failed to update background task #{} progress",
-            task_id
-        )))
+        Err(lease_guard.mark_lost())
     }
 }
 
 pub(super) async fn mark_task_succeeded(
     state: &AppState,
-    task_id: i64,
+    lease_guard: &TaskLeaseGuard,
     result_json: Option<&StoredTaskResult>,
     current: i64,
     total: i64,
@@ -261,9 +390,11 @@ pub(super) async fn mark_task_succeeded(
     let now = Utc::now();
     let status_text = status_text.map(truncate_status_text);
     let steps_json = serialize_task_steps(steps)?;
+    let lease = lease_guard.lease();
     if background_task_repo::mark_succeeded(
         &state.db,
-        task_id,
+        lease.task_id,
+        lease.processing_token,
         result_json.map(AsRef::as_ref),
         Some(steps_json.as_ref()),
         current,
@@ -274,18 +405,25 @@ pub(super) async fn mark_task_succeeded(
     )
     .await?
     {
+        lease_guard.record_renewed();
         Ok(())
     } else {
-        Err(AsterError::internal_error(format!(
-            "failed to mark background task #{} as succeeded",
-            task_id
-        )))
+        Err(lease_guard.mark_lost())
     }
 }
 
-pub(super) async fn prepare_task_temp_dir(state: &AppState, task_id: i64) -> Result<String> {
-    cleanup_task_temp_dir_for_task(state, task_id).await?;
-    let task_temp_dir = crate::utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
+pub(super) async fn prepare_task_temp_dir(state: &AppState, lease: TaskLease) -> Result<String> {
+    // 临时目录按 task_id/token 隔离：
+    // temp/tasks/{task_id}/{processing_token}
+    //
+    // 这样任务被 stale reclaim 后，新旧 worker 不会写进同一个目录。
+    // 这里也只清当前 lease 的 token 目录，避免旧 worker 启动时把新 lease 的产物删掉。
+    cleanup_task_temp_dir_for_lease(state, lease).await?;
+    let task_temp_dir = crate::utils::paths::task_token_temp_dir(
+        &state.config.server.temp_dir,
+        lease.task_id,
+        lease.processing_token,
+    );
     tokio::fs::create_dir_all(&task_temp_dir)
         .await
         .map_err(|error| {
@@ -294,7 +432,22 @@ pub(super) async fn prepare_task_temp_dir(state: &AppState, task_id: i64) -> Res
     Ok(task_temp_dir)
 }
 
+pub(super) async fn cleanup_task_temp_dir_for_lease(
+    state: &AppState,
+    lease: TaskLease,
+) -> Result<()> {
+    crate::utils::cleanup_temp_dir(&crate::utils::paths::task_token_temp_dir(
+        &state.config.server.temp_dir,
+        lease.task_id,
+        lease.processing_token,
+    ))
+    .await;
+    Ok(())
+}
+
 pub(super) async fn cleanup_task_temp_dir_for_task(state: &AppState, task_id: i64) -> Result<()> {
+    // 成功路径会删整个任务根目录，因为到这里说明已经没有活跃 lease 需要保留产物了。
+    // 如果任务在失败/崩溃/重启中断时没走到这里，后续由 task-cleanup 周期任务兜底清理。
     crate::utils::cleanup_temp_dir(&crate::utils::paths::task_temp_dir(
         &state.config.server.temp_dir,
         task_id,
@@ -330,6 +483,21 @@ pub(super) fn task_expiration_from(
     now + Duration::hours(load_task_retention_hours(state))
 }
 
+pub(super) fn task_lease_expires_at(
+    now: chrono::DateTime<chrono::Utc>,
+) -> chrono::DateTime<chrono::Utc> {
+    now + Duration::seconds(TASK_PROCESSING_STALE_SECS.max(1))
+}
+
+fn configured_task_max_attempts(state: &AppState, kind: BackgroundTaskKind) -> i32 {
+    match kind {
+        BackgroundTaskKind::SystemRuntime => 1,
+        BackgroundTaskKind::ArchiveCompress | BackgroundTaskKind::ArchiveExtract => {
+            operations::background_task_max_attempts(&state.runtime_config)
+        }
+    }
+}
+
 fn load_task_retention_hours(state: &AppState) -> i64 {
     let Some(raw) = state.runtime_config.get("task_retention_hours") else {
         return DEFAULT_TASK_RETENTION_HOURS;
@@ -344,6 +512,42 @@ fn load_task_retention_hours(state: &AppState) -> i64 {
             DEFAULT_TASK_RETENTION_HOURS
         }
     }
+}
+
+pub(super) fn task_lease_lost(lease: TaskLease) -> AsterError {
+    AsterError::precondition_failed(format!(
+        "{TASK_LEASE_LOST_MESSAGE_PREFIX} for task #{} with token {}",
+        lease.task_id, lease.processing_token
+    ))
+}
+
+pub(super) fn task_lease_renewal_timed_out(lease: TaskLease) -> AsterError {
+    AsterError::precondition_failed(format!(
+        "{TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX} for task #{} with token {}",
+        lease.task_id, lease.processing_token
+    ))
+}
+
+pub(super) fn is_task_lease_lost(error: &AsterError) -> bool {
+    matches!(
+        error,
+        AsterError::PreconditionFailed(message)
+            if message.starts_with(TASK_LEASE_LOST_MESSAGE_PREFIX)
+    )
+}
+
+pub(super) fn is_task_lease_renewal_timed_out(error: &AsterError) -> bool {
+    matches!(
+        error,
+        AsterError::PreconditionFailed(message)
+            if message.starts_with(TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX)
+    )
+}
+
+fn task_lease_renewal_timeout() -> StdDuration {
+    let stale_secs = TASK_PROCESSING_STALE_SECS.max(1) as u64;
+    let heartbeat_secs = TASK_HEARTBEAT_INTERVAL_SECS.max(1);
+    StdDuration::from_secs(stale_secs.saturating_sub(heartbeat_secs).max(1))
 }
 
 pub(super) fn truncate_status_text(value: &str) -> String {

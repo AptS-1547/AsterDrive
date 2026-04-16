@@ -28,6 +28,7 @@ import type {
 	StoragePolicyPage,
 	SystemConfig,
 	SystemConfigPage,
+	TaskPage,
 	TeamAuditPage,
 	TeamMemberPage,
 	TeamMemberRole,
@@ -311,6 +312,16 @@ export const adminShareService = {
 		),
 
 	delete: (id: number) => api.delete<void>(`/admin/shares/${id}`),
+};
+
+export const adminTaskService = {
+	list: (params?: { limit?: number; offset?: number }) =>
+		api.get<TaskPage>(
+			withQuery("/admin/tasks", {
+				limit: params?.limit,
+				offset: params?.offset,
+			}),
+		),
 };
 
 export const adminLockService = {

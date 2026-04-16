@@ -308,6 +308,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_list_tasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/teams": {
         parameters: {
             query?: never;
@@ -2614,6 +2630,25 @@ export interface components {
             /** Format: int64 */
             user_id?: number | null;
         };
+        AdminBackgroundTaskEvent: {
+            created_at: string;
+            /** Format: int64 */
+            creator_user_id?: number | null;
+            display_name: string;
+            /** Format: int64 */
+            duration_ms?: number | null;
+            finished_at?: string | null;
+            /** Format: int64 */
+            id: number;
+            kind: components["schemas"]["BackgroundTaskKind"];
+            last_error?: string | null;
+            started_at?: string | null;
+            status: components["schemas"]["BackgroundTaskStatus"];
+            status_text?: string | null;
+            /** Format: int64 */
+            team_id?: number | null;
+            updated_at: string;
+        };
         AdminCreateTeamReq: {
             admin_identifier?: string | null;
             /** Format: int64 */
@@ -2628,6 +2663,7 @@ export interface components {
             /** Format: int32 */
             days: number;
             generated_at: string;
+            recent_background_tasks: components["schemas"]["AdminBackgroundTaskEvent"][];
             recent_events: components["schemas"]["AuditLogEntry"][];
             stats: components["schemas"]["AdminOverviewStats"];
             timezone: string;
@@ -2846,7 +2882,7 @@ export interface components {
          * @description 后台任务类型
          * @enum {string}
          */
-        BackgroundTaskKind: "archive_extract" | "archive_compress";
+        BackgroundTaskKind: "archive_extract" | "archive_compress" | "system_runtime";
         /**
          * @description 后台任务状态
          * @enum {string}
@@ -3763,6 +3799,14 @@ export interface components {
             /** @enum {string} */
             kind: "text";
         });
+        RuntimeTaskPayload: {
+            task_name: string;
+        };
+        RuntimeTaskResult: {
+            /** Format: int64 */
+            duration_ms: number;
+            summary?: string | null;
+        };
         /**
          * @description S3 下载传输策略（存储策略 options JSON）
          * @enum {string}
@@ -4045,6 +4089,9 @@ export interface components {
         }) | (components["schemas"]["ArchiveExtractTaskPayload"] & {
             /** @enum {string} */
             kind: "archive_extract";
+        }) | (components["schemas"]["RuntimeTaskPayload"] & {
+            /** @enum {string} */
+            kind: "system_runtime";
         });
         TaskResult: (components["schemas"]["ArchiveCompressTaskResult"] & {
             /** @enum {string} */
@@ -4052,6 +4099,9 @@ export interface components {
         }) | (components["schemas"]["ArchiveExtractTaskResult"] & {
             /** @enum {string} */
             kind: "archive_extract";
+        }) | (components["schemas"]["RuntimeTaskResult"] & {
+            /** @enum {string} */
+            kind: "system_runtime";
         });
         TaskStepInfo: {
             detail?: string | null;
@@ -5011,6 +5061,7 @@ export interface operations {
                             /** Format: int32 */
                             days: number;
                             generated_at: string;
+                            recent_background_tasks: components["schemas"]["AdminBackgroundTaskEvent"][];
                             recent_events: components["schemas"]["AuditLogEntry"][];
                             stats: components["schemas"]["AdminOverviewStats"];
                             timezone: string;
@@ -5871,6 +5922,88 @@ export interface operations {
             };
             /** @description Share not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_list_tasks: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All background tasks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            items: {
+                                /** Format: int32 */
+                                attempt_count: number;
+                                can_retry: boolean;
+                                created_at: string;
+                                /** Format: int64 */
+                                creator_user_id?: number | null;
+                                display_name: string;
+                                expires_at: string;
+                                finished_at?: string | null;
+                                /** Format: int64 */
+                                id: number;
+                                kind: components["schemas"]["BackgroundTaskKind"];
+                                last_error?: string | null;
+                                /** Format: int32 */
+                                max_attempts: number;
+                                payload: components["schemas"]["TaskPayload"];
+                                /** Format: int64 */
+                                progress_current: number;
+                                /** Format: int32 */
+                                progress_percent: number;
+                                /** Format: int64 */
+                                progress_total: number;
+                                result?: null | components["schemas"]["TaskResult"];
+                                /** Format: int64 */
+                                share_id?: number | null;
+                                started_at?: string | null;
+                                status: components["schemas"]["BackgroundTaskStatus"];
+                                status_text?: string | null;
+                                steps: components["schemas"]["TaskStepInfo"][];
+                                /** Format: int64 */
+                                team_id?: number | null;
+                                updated_at: string;
+                            }[];
+                            /** Format: int64 */
+                            limit: number;
+                            /** Format: int64 */
+                            offset: number;
+                            /** Format: int64 */
+                            total: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

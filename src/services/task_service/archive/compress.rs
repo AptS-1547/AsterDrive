@@ -18,8 +18,8 @@ use super::super::types::{
     CreateArchiveTaskParams, TaskStepInfo, parse_task_payload, serialize_task_result,
 };
 use super::super::{
-    cleanup_task_temp_dir_for_task, create_task_record, mark_task_progress, mark_task_succeeded,
-    prepare_task_temp_dir, task_scope,
+    TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_task_record, mark_task_progress,
+    mark_task_succeeded, prepare_task_temp_dir, task_scope,
 };
 use super::common::{build_file_display_path, write_archive_to_sink};
 use super::selection::{
@@ -70,6 +70,7 @@ pub(crate) async fn create_archive_compress_task_in_scope(
 pub(super) async fn process_archive_compress_task(
     state: &AppState,
     task: &background_task::Model,
+    lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
     let scope = task_scope(task)?;
     let payload: ArchiveCompressTaskPayload = parse_task_payload(task)?;
@@ -116,7 +117,7 @@ pub(super) async fn process_archive_compress_task(
     )?;
     mark_task_progress(
         state,
-        task.id,
+        &lease_guard,
         0,
         progress_total,
         Some("Preparing archive"),
@@ -124,7 +125,7 @@ pub(super) async fn process_archive_compress_task(
     )
     .await?;
 
-    let task_temp_dir = prepare_task_temp_dir(state, task.id).await?;
+    let task_temp_dir = prepare_task_temp_dir(state, lease_guard.lease()).await?;
     let archive_temp_path = Path::new(&task_temp_dir).join(&payload.archive_name);
     let archive_temp_path_string = archive_temp_path.to_string_lossy().to_string();
     let archive_temp_path_for_worker = archive_temp_path_string.clone();
@@ -132,7 +133,7 @@ pub(super) async fn process_archive_compress_task(
     let db = state.db.clone();
     let driver_registry = state.driver_registry.clone();
     let policy_snapshot = state.policy_snapshot.clone();
-    let task_id = task.id;
+    let lease_guard_for_worker = lease_guard.clone();
     let steps_for_worker = steps.clone();
 
     let (archive_size, mut steps) =
@@ -146,6 +147,7 @@ pub(super) async fn process_archive_compress_task(
                 &db,
                 driver_registry.as_ref(),
                 policy_snapshot.as_ref(),
+                Some(&lease_guard_for_worker),
                 entries,
                 progress_total,
                 writer,
@@ -160,7 +162,7 @@ pub(super) async fn process_archive_compress_task(
                     handle.block_on(async {
                         super::super::update_task_progress_db(
                             &db,
-                            task_id,
+                            &lease_guard_for_worker,
                             current,
                             progress_total,
                             Some(&status_text),
@@ -203,7 +205,7 @@ pub(super) async fn process_archive_compress_task(
     )?;
     mark_task_progress(
         state,
-        task.id,
+        &lease_guard,
         progress_total,
         progress_total,
         Some("Saving archive"),
@@ -238,7 +240,7 @@ pub(super) async fn process_archive_compress_task(
     let result_json = serialize_task_result(&result)?;
     mark_task_succeeded(
         state,
-        task.id,
+        &lease_guard,
         Some(&result_json),
         progress_total,
         progress_total,

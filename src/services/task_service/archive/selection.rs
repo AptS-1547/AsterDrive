@@ -51,6 +51,7 @@ pub(crate) async fn stream_archive_download_in_scope(
             &db,
             driver_registry.as_ref(),
             policy_snapshot.as_ref(),
+            None,
             entries,
             total_bytes,
             writer,

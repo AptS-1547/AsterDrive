@@ -376,6 +376,8 @@ export default function TasksPage() {
 				return t("tasks:kind_archive_extract");
 			case "archive_compress":
 				return t("tasks:kind_archive_compress");
+			case "system_runtime":
+				return t("tasks:kind_system_runtime");
 		}
 	};
 

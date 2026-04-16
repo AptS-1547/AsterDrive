@@ -97,10 +97,24 @@ pub struct ArchiveExtractTaskResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RuntimeTaskPayload {
+    pub task_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RuntimeTaskResult {
+    pub duration_ms: i64,
+    pub summary: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskPayload {
     ArchiveCompress(ArchiveCompressTaskPayload),
     ArchiveExtract(ArchiveExtractTaskPayload),
+    SystemRuntime(RuntimeTaskPayload),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,6 +123,7 @@ pub enum TaskPayload {
 pub enum TaskResult {
     ArchiveCompress(ArchiveCompressTaskResult),
     ArchiveExtract(ArchiveExtractTaskResult),
+    SystemRuntime(RuntimeTaskResult),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -132,6 +147,8 @@ pub struct TaskInfo {
     pub result: Option<TaskResult>,
     pub steps: Vec<TaskStepInfo>,
     pub can_retry: bool,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub lease_expires_at: Option<chrono::DateTime<chrono::Utc>>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub started_at: Option<chrono::DateTime<chrono::Utc>>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
@@ -165,6 +182,9 @@ pub(super) fn parse_task_payload_info(task: &background_task::Model) -> Result<T
         BackgroundTaskKind::ArchiveExtract => {
             Ok(TaskPayload::ArchiveExtract(parse_task_payload(task)?))
         }
+        BackgroundTaskKind::SystemRuntime => {
+            Ok(TaskPayload::SystemRuntime(parse_task_payload(task)?))
+        }
     }
 }
 
@@ -185,6 +205,15 @@ pub(super) fn parse_task_result_info(task: &background_task::Model) -> Result<Op
             })?,
         ))),
         BackgroundTaskKind::ArchiveExtract => Ok(Some(TaskResult::ArchiveExtract(
+            serde_json::from_str(raw.as_ref()).map_err(|error| {
+                AsterError::internal_error(format!(
+                    "parse result for task #{} ({}): {error}",
+                    task.id,
+                    task.kind.to_value()
+                ))
+            })?,
+        ))),
+        BackgroundTaskKind::SystemRuntime => Ok(Some(TaskResult::SystemRuntime(
             serde_json::from_str(raw.as_ref()).map_err(|error| {
                 AsterError::internal_error(format!(
                     "parse result for task #{} ({}): {error}",

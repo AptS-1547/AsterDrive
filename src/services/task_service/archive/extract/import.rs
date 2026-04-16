@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::entities::{background_task, folder};
+use crate::entities::folder;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::task_service::TaskStepInfo;
@@ -9,8 +9,8 @@ use crate::services::{
     workspace_storage_service, workspace_storage_service::WorkspaceStorageScope,
 };
 
-use super::super::super::mark_task_progress;
 use super::super::super::steps::{TASK_STEP_IMPORT_RESULT, set_task_step_active};
+use super::super::super::{TaskLeaseGuard, mark_task_progress};
 use super::super::common::create_folder_exact_in_scope;
 
 #[derive(Debug, Default)]
@@ -21,13 +21,14 @@ struct StagedArchiveTree {
 
 pub(super) async fn materialize_archive_extract_stage(
     state: &AppState,
-    task: &background_task::Model,
+    lease_guard: &TaskLeaseGuard,
     scope: WorkspaceStorageScope,
     stage_root: &Path,
     extracted_bytes: i64,
     root_folder: &folder::Model,
     steps: &mut [TaskStepInfo],
 ) -> Result<()> {
+    lease_guard.ensure_active()?;
     let tree = collect_staged_archive_tree(stage_root)?;
     let mut folder_ids = HashMap::new();
     folder_ids.insert(PathBuf::new(), root_folder.id);
@@ -37,6 +38,7 @@ pub(super) async fn materialize_archive_extract_stage(
         .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
 
     for relative_dir in &tree.directories {
+        lease_guard.ensure_active()?;
         let parent_relative = relative_dir.parent().unwrap_or_else(|| Path::new(""));
         let parent_id = *folder_ids.get(parent_relative).ok_or_else(|| {
             AsterError::internal_error(format!(
@@ -55,6 +57,7 @@ pub(super) async fn materialize_archive_extract_stage(
     }
 
     for relative_file in &tree.files {
+        lease_guard.ensure_active()?;
         let parent_relative = relative_file.parent().unwrap_or_else(|| Path::new(""));
         let parent_id = *folder_ids.get(parent_relative).ok_or_else(|| {
             AsterError::internal_error(format!(
@@ -98,7 +101,7 @@ pub(super) async fn materialize_archive_extract_stage(
         )?;
         mark_task_progress(
             state,
-            task.id,
+            lease_guard,
             extracted_bytes
                 .checked_add(imported_bytes)
                 .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?,

@@ -11,6 +11,7 @@ pub(crate) mod locks;
 pub(crate) mod overview;
 pub(crate) mod policies;
 pub(crate) mod shares;
+pub(crate) mod tasks;
 pub(crate) mod teams;
 pub(crate) mod users;
 
@@ -30,6 +31,7 @@ pub use policies::{
     update_policy, update_policy_group,
 };
 pub use shares::{admin_delete_share, list_all_shares};
+pub use tasks::list_tasks;
 pub use teams::{
     AdminCreateTeamReq, AdminPatchTeamReq, AdminTeamListQuery, add_team_member, create_team,
     delete_team, delete_team_member, get_team, list_team_audit_logs, list_team_members, list_teams,
@@ -108,6 +110,8 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                     // shares
                     .route("/shares", web::get().to(list_all_shares))
                     .route("/shares/{id}", web::delete().to(admin_delete_share))
+                    // tasks
+                    .route("/tasks", web::get().to(list_tasks))
                     // config
                     .route("/config", web::get().to(list_config))
                     .route("/config/schema", web::get().to(config_schema))

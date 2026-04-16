@@ -23,8 +23,8 @@ use super::super::types::{
     parse_task_payload, serialize_task_result,
 };
 use super::super::{
-    cleanup_task_temp_dir_for_task, create_task_record, mark_task_progress, mark_task_succeeded,
-    prepare_task_temp_dir, task_scope,
+    TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_task_record, mark_task_progress,
+    mark_task_succeeded, prepare_task_temp_dir, task_scope,
 };
 use super::common::{build_folder_display_path, create_unique_folder_in_scope};
 use import::materialize_archive_extract_stage;
@@ -69,6 +69,7 @@ pub(crate) async fn create_archive_extract_task_in_scope(
 pub(super) async fn process_archive_extract_task(
     state: &AppState,
     task: &background_task::Model,
+    lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
     let scope = task_scope(task)?;
     let payload: ArchiveExtractTaskPayload = parse_task_payload(task)?;
@@ -96,14 +97,14 @@ pub(super) async fn process_archive_extract_task(
     )?;
     mark_task_progress(
         state,
-        task.id,
+        &lease_guard,
         0,
         0,
         Some("Downloading source archive"),
         &steps,
     )
     .await?;
-    let task_temp_dir = prepare_task_temp_dir(state, task.id).await?;
+    let task_temp_dir = prepare_task_temp_dir(state, lease_guard.lease()).await?;
     let task_temp_path = Path::new(&task_temp_dir);
     let source_archive_path = task_temp_path.join("source.zip");
     let stage_root = task_temp_path.join("extract");
@@ -124,7 +125,7 @@ pub(super) async fn process_archive_extract_task(
 
     let db = state.db.clone();
     let handle = tokio::runtime::Handle::current();
-    let task_id = task.id;
+    let lease_guard_for_worker = lease_guard.clone();
     let source_archive_path_string = source_archive_path.to_string_lossy().to_string();
     let stage_root_string = stage_root.to_string_lossy().to_string();
     let (staged, mut steps) = tokio::task::spawn_blocking(move || {
@@ -132,7 +133,7 @@ pub(super) async fn process_archive_extract_task(
         let staged = stage_zip_archive_for_extract(
             &handle,
             &db,
-            task_id,
+            &lease_guard_for_worker,
             &source_archive_path_string,
             &stage_root_string,
             &mut steps,
@@ -170,7 +171,7 @@ pub(super) async fn process_archive_extract_task(
     )?;
     mark_task_progress(
         state,
-        task.id,
+        &lease_guard,
         staged.total_bytes,
         staged.total_progress,
         Some("Importing extracted files"),
@@ -179,7 +180,7 @@ pub(super) async fn process_archive_extract_task(
     .await?;
     materialize_archive_extract_stage(
         state,
-        task,
+        &lease_guard,
         scope,
         &stage_root,
         staged.total_bytes,
@@ -206,7 +207,7 @@ pub(super) async fn process_archive_extract_task(
     let progress_total = staged.total_progress;
     mark_task_succeeded(
         state,
-        task.id,
+        &lease_guard,
         Some(&result_json),
         progress_total,
         progress_total,

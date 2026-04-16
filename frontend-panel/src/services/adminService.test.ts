@@ -6,6 +6,7 @@ import {
 	adminPolicyGroupService,
 	adminPolicyService,
 	adminShareService,
+	adminTaskService,
 	adminUserService,
 } from "@/services/adminService";
 
@@ -147,6 +148,17 @@ describe("adminService", () => {
 		await expect(adminPolicyGroupService.listAll(100)).rejects.toThrow(
 			"pagination exceeded max iterations",
 		);
+	});
+
+	it("builds admin task list endpoints", () => {
+		adminTaskService.list({ limit: 12, offset: 24 });
+		adminTaskService.list();
+
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			1,
+			"/admin/tasks?limit=12&offset=24",
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/admin/tasks");
 	});
 
 	it("uses the expected detail and mutation endpoints", () => {

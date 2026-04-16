@@ -19,6 +19,18 @@ vi.mock("react-i18next", () => ({
 			if (key === "overview_generated_at") {
 				return `generated:${options?.date}`;
 			}
+			if (key === "overview_background_tasks_duration") {
+				return `duration:${options?.duration}`;
+			}
+			if (key === "overview_background_tasks_source_system") {
+				return "source:system";
+			}
+			if (key === "overview_background_tasks_source_user") {
+				return `source:user:${options?.id}`;
+			}
+			if (key === "overview_background_tasks_source_team") {
+				return `source:team:${options?.id}`;
+			}
 			if (key === "overview_today_new_users_badge") {
 				return `new-users:${options?.count}`;
 			}
@@ -281,6 +293,23 @@ function createOverview() {
 				user_id: 9,
 			},
 		],
+		recent_background_tasks: [
+			{
+				created_at: "2026-03-29T09:20:00Z",
+				creator_user_id: null,
+				display_name: "Trash cleanup",
+				duration_ms: 1250,
+				finished_at: "2026-03-29T09:21:00Z",
+				id: 17,
+				kind: "system_runtime",
+				last_error: null,
+				started_at: "2026-03-29T09:20:58Z",
+				status: "succeeded",
+				status_text: "cleaned up 2 expired trash entries",
+				team_id: null,
+				updated_at: "2026-03-29T09:21:00Z",
+			},
+		],
 		stats: {
 			active_users: 11,
 			audit_events_today: 12,
@@ -314,6 +343,7 @@ describe("AdminOverviewPage", () => {
 		expect(screen.getAllByText(/skeleton:/i).length).toBeGreaterThan(0);
 		expect(screen.getByText("skeleton-table:7:7")).toBeInTheDocument();
 		expect(screen.getByText("skeleton-table:4:8")).toBeInTheDocument();
+		expect(screen.getByText("skeleton-table:5:6")).toBeInTheDocument();
 	});
 
 	it("renders overview stats and refreshes on demand", async () => {
@@ -332,6 +362,12 @@ describe("AdminOverviewPage", () => {
 		expect(screen.getByText("bytes:4096")).toBeInTheDocument();
 		expect(screen.getByText("bytes:2048")).toBeInTheDocument();
 		expect(screen.getByText("report.pdf")).toBeInTheDocument();
+		expect(screen.getByText("Trash cleanup")).toBeInTheDocument();
+		expect(
+			screen.getByText("cleaned up 2 expired trash entries"),
+		).toBeInTheDocument();
+		expect(screen.getByText("source:system")).toBeInTheDocument();
+		expect(screen.getByText("tasks:status_succeeded")).toBeInTheDocument();
 		expect(screen.getByText("new-users:2")).toBeInTheDocument();
 		expect(screen.getByText("uploads:5")).toBeInTheDocument();
 		expect(screen.getByText("shares:3")).toBeInTheDocument();

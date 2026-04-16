@@ -125,6 +125,12 @@ where
         | operations::BLOB_RECONCILE_INTERVAL_SECS_KEY => {
             operations::normalize_interval_config_value(key, value)
         }
+        operations::BACKGROUND_TASK_MAX_CONCURRENCY_KEY => {
+            operations::normalize_concurrency_config_value(key, value)
+        }
+        operations::BACKGROUND_TASK_MAX_ATTEMPTS_KEY => {
+            operations::normalize_attempts_config_value(key, value)
+        }
         operations::TEAM_MEMBER_LIST_MAX_LIMIT_KEY | operations::TASK_LIST_MAX_LIMIT_KEY => {
             operations::normalize_list_max_limit_config_value(key, value)
         }

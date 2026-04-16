@@ -105,6 +105,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::admin::config::execute_config_action,
         crate::api::routes::admin::shares::list_all_shares,
         crate::api::routes::admin::shares::admin_delete_share,
+        crate::api::routes::admin::tasks::list_tasks,
         crate::api::routes::admin::locks::list_locks,
         crate::api::routes::admin::locks::force_unlock,
         crate::api::routes::admin::locks::cleanup_expired_locks,

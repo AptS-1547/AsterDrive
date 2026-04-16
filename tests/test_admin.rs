@@ -2,8 +2,14 @@
 mod common;
 
 use actix_web::test;
+use chrono::{Duration, Utc};
+use sea_orm::Set;
 use serde_json::Value;
 use std::io::Cursor;
+
+use aster_drive::db::repository::background_task_repo;
+use aster_drive::entities::background_task;
+use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload};
 
 fn avatar_upload_payload() -> (String, Vec<u8>) {
     let boundary = "----AsterAvatarBoundary".to_string();
@@ -96,6 +102,7 @@ async fn test_admin_scope_allows_admin_users() {
     assert!(keys.contains(&"background_task_dispatch_interval_secs"));
     assert!(keys.contains(&"maintenance_cleanup_interval_secs"));
     assert!(keys.contains(&"blob_reconcile_interval_secs"));
+    assert!(keys.contains(&"background_task_max_attempts"));
     assert!(keys.contains(&"team_member_list_max_limit"));
     assert!(keys.contains(&"task_list_max_limit"));
     assert!(keys.contains(&"avatar_max_upload_size_bytes"));
@@ -132,6 +139,21 @@ async fn test_admin_scope_allows_admin_users() {
     assert_eq!(
         register_toggle["description_i18n_key"],
         "settings_item_auth_allow_user_registration_desc"
+    );
+
+    let task_attempts = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["key"] == "background_task_max_attempts")
+        .unwrap();
+    assert_eq!(
+        task_attempts["label_i18n_key"],
+        "settings_item_background_task_max_attempts_label"
+    );
+    assert_eq!(
+        task_attempts["description_i18n_key"],
+        "settings_item_background_task_max_attempts_desc"
     );
     assert_eq!(register_toggle["category"], "user.registration_and_login");
 
@@ -672,8 +694,9 @@ async fn test_admin_team_crud() {
 #[actix_web::test]
 async fn test_admin_overview() {
     let state = common::setup().await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
+    let now = Utc::now();
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/register")
@@ -686,6 +709,40 @@ async fn test_admin_overview() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
+
+    background_task_repo::create(
+        &state.db,
+        background_task::ActiveModel {
+            kind: Set(BackgroundTaskKind::SystemRuntime),
+            status: Set(BackgroundTaskStatus::Succeeded),
+            creator_user_id: Set(None),
+            team_id: Set(None),
+            share_id: Set(None),
+            display_name: Set("Trash cleanup".to_string()),
+            payload_json: Set(StoredTaskPayload(
+                r#"{"task_name":"trash-cleanup"}"#.to_string(),
+            )),
+            result_json: Set(None),
+            steps_json: Set(None),
+            progress_current: Set(1),
+            progress_total: Set(1),
+            status_text: Set(Some("cleaned up 2 expired trash entries".to_string())),
+            attempt_count: Set(0),
+            max_attempts: Set(1),
+            next_run_at: Set(now),
+            processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            started_at: Set(Some(now - Duration::seconds(5))),
+            finished_at: Set(Some(now - Duration::seconds(1))),
+            last_error: Set(None),
+            expires_at: Set(now + Duration::hours(24)),
+            created_at: Set(now - Duration::seconds(5)),
+            updated_at: Set(now - Duration::seconds(1)),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("background task event should be inserted");
 
     let file_id = upload_test_file!(app, token);
 
@@ -758,6 +815,16 @@ async fn test_admin_overview() {
     let events = data["recent_events"].as_array().unwrap();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0]["action"], "share_create");
+
+    let background_tasks = data["recent_background_tasks"].as_array().unwrap();
+    assert_eq!(background_tasks.len(), 1);
+    assert_eq!(background_tasks[0]["kind"], "system_runtime");
+    assert_eq!(background_tasks[0]["display_name"], "Trash cleanup");
+    assert_eq!(background_tasks[0]["status"], "succeeded");
+    assert_eq!(
+        background_tasks[0]["status_text"],
+        "cleaned up 2 expired trash entries"
+    );
 }
 
 #[actix_web::test]
@@ -773,6 +840,177 @@ async fn test_admin_overview_rejects_invalid_timezone() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
+}
+
+#[actix_web::test]
+async fn test_admin_tasks_lists_all_recorded_tasks() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let now = Utc::now();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Admin Tasks Team"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let team_body: Value = test::read_body_json(resp).await;
+    let team_id = team_body["data"]["id"].as_i64().unwrap();
+
+    let system_task = background_task_repo::create(
+        &state.db,
+        background_task::ActiveModel {
+            kind: Set(BackgroundTaskKind::SystemRuntime),
+            status: Set(BackgroundTaskStatus::Succeeded),
+            creator_user_id: Set(None),
+            team_id: Set(None),
+            share_id: Set(None),
+            display_name: Set("Blob reconcile".to_string()),
+            payload_json: Set(StoredTaskPayload(
+                r#"{"task_name":"blob-reconcile"}"#.to_string(),
+            )),
+            result_json: Set(None),
+            steps_json: Set(None),
+            progress_current: Set(1),
+            progress_total: Set(1),
+            status_text: Set(Some("reconciled 12 blobs".to_string())),
+            attempt_count: Set(0),
+            max_attempts: Set(1),
+            next_run_at: Set(now),
+            processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            started_at: Set(Some(now - Duration::minutes(4))),
+            finished_at: Set(Some(now - Duration::minutes(3))),
+            last_error: Set(None),
+            expires_at: Set(now + Duration::hours(24)),
+            created_at: Set(now - Duration::minutes(4)),
+            updated_at: Set(now - Duration::minutes(3)),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("system task should be inserted");
+
+    let team_task = background_task_repo::create(
+        &state.db,
+        background_task::ActiveModel {
+            kind: Set(BackgroundTaskKind::ArchiveCompress),
+            status: Set(BackgroundTaskStatus::Failed),
+            creator_user_id: Set(Some(1)),
+            team_id: Set(Some(team_id)),
+            share_id: Set(None),
+            display_name: Set("Compress team archive".to_string()),
+            payload_json: Set(StoredTaskPayload(
+                r#"{"file_ids":[],"folder_ids":[1],"archive_name":"team.zip","target_folder_id":null}"#
+                    .to_string(),
+            )),
+            result_json: Set(None),
+            steps_json: Set(None),
+            progress_current: Set(2),
+            progress_total: Set(4),
+            status_text: Set(Some("compressing".to_string())),
+            attempt_count: Set(1),
+            max_attempts: Set(3),
+            next_run_at: Set(now),
+            processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            started_at: Set(Some(now - Duration::minutes(2))),
+            finished_at: Set(Some(now - Duration::minutes(1))),
+            last_error: Set(Some("zip writer failed".to_string())),
+            expires_at: Set(now + Duration::hours(24)),
+            created_at: Set(now - Duration::minutes(2)),
+            updated_at: Set(now - Duration::minutes(1)),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("team task should be inserted");
+
+    let personal_task = background_task_repo::create(
+        &state.db,
+        background_task::ActiveModel {
+            kind: Set(BackgroundTaskKind::ArchiveExtract),
+            status: Set(BackgroundTaskStatus::Processing),
+            creator_user_id: Set(Some(1)),
+            team_id: Set(None),
+            share_id: Set(None),
+            display_name: Set("Extract upload".to_string()),
+            payload_json: Set(StoredTaskPayload(
+                r##"{"file_id":1,"source_file_name":"upload.zip","target_folder_id":2,"output_folder_name":"upload"}"##
+                    .to_string(),
+            )),
+            result_json: Set(None),
+            steps_json: Set(None),
+            progress_current: Set(3),
+            progress_total: Set(5),
+            status_text: Set(Some("extracting files".to_string())),
+            attempt_count: Set(0),
+            max_attempts: Set(1),
+            next_run_at: Set(now),
+            processing_started_at: Set(Some(now - Duration::seconds(40))),
+            last_heartbeat_at: Set(Some(now - Duration::seconds(5))),
+            lease_expires_at: Set(Some(now + Duration::seconds(55))),
+            started_at: Set(Some(now - Duration::seconds(40))),
+            finished_at: Set(None),
+            last_error: Set(None),
+            expires_at: Set(now + Duration::hours(24)),
+            created_at: Set(now - Duration::seconds(40)),
+            updated_at: Set(now - Duration::seconds(5)),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("personal task should be inserted");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/tasks?limit=2")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+
+    assert_eq!(body["data"]["limit"], 2);
+    assert_eq!(body["data"]["offset"], 0);
+    assert_eq!(body["data"]["total"], 3);
+
+    let items = body["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["id"], personal_task.id);
+    assert_eq!(items[0]["kind"], "archive_extract");
+    assert_eq!(items[0]["status"], "processing");
+    assert_eq!(items[0]["creator_user_id"], 1);
+    assert!(items[0]["team_id"].is_null());
+    assert_eq!(items[0]["progress_percent"], 60);
+    assert!(items[0]["lease_expires_at"].is_string());
+
+    assert_eq!(items[1]["id"], team_task.id);
+    assert_eq!(items[1]["kind"], "archive_compress");
+    assert_eq!(items[1]["status"], "failed");
+    assert_eq!(items[1]["creator_user_id"], 1);
+    assert_eq!(items[1]["team_id"], team_id);
+    assert_eq!(items[1]["last_error"], "zip writer failed");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/tasks?limit=2&offset=2")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let items = body["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["id"], system_task.id);
+    assert_eq!(items[0]["kind"], "system_runtime");
+    assert!(items[0]["creator_user_id"].is_null());
+    assert!(items[0]["team_id"].is_null());
 }
 
 #[actix_web::test]
@@ -1155,6 +1393,19 @@ async fn test_admin_config() {
     let body: Value = test::read_body_json(resp).await;
     assert!(!body["data"]["items"].as_array().unwrap().is_empty());
     assert!(body["data"]["total"].as_u64().unwrap() >= 1);
+
+    // schema 里应暴露后台任务并发上限配置
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/config/schema")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"].as_array().unwrap().iter().any(|item| {
+        item["key"] == "background_task_max_concurrency" && item["category"] == "operations"
+    }));
 
     // 删除配置
     let req = test::TestRequest::delete()

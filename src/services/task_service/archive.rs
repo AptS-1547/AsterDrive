@@ -11,16 +11,20 @@ use crate::entities::background_task;
 use crate::errors::Result;
 use crate::runtime::AppState;
 
+use super::TaskLeaseGuard;
+
 pub(super) async fn process_archive_compress_task(
     state: &AppState,
     task: &background_task::Model,
+    lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
-    compress::process_archive_compress_task(state, task).await
+    compress::process_archive_compress_task(state, task, lease_guard).await
 }
 
 pub(super) async fn process_archive_extract_task(
     state: &AppState,
     task: &background_task::Model,
+    lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
-    extract::process_archive_extract_task(state, task).await
+    extract::process_archive_extract_task(state, task, lease_guard).await
 }

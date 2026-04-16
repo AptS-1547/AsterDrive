@@ -48,6 +48,7 @@ mod m20260415_000004_fix_mysql_utc_datetime_columns;
 mod m20260415_000005_add_background_task_steps;
 mod m20260416_000001_add_shares_exact_target_check;
 mod m20260416_000002_add_shares_token_length_check;
+mod m20260417_000001_add_background_task_heartbeat;
 mod search_acceleration;
 mod time;
 
@@ -105,6 +106,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260415_000005_add_background_task_steps::Migration),
             Box::new(m20260416_000001_add_shares_exact_target_check::Migration),
             Box::new(m20260416_000002_add_shares_token_length_check::Migration),
+            Box::new(m20260417_000001_add_background_task_heartbeat::Migration),
         ]
     }
 }

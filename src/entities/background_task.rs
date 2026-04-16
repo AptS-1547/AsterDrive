@@ -32,8 +32,13 @@ pub struct Model {
     pub max_attempts: i32,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub next_run_at: DateTimeUtc,
+    pub processing_token: i64,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub processing_started_at: Option<DateTimeUtc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub last_heartbeat_at: Option<DateTimeUtc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub lease_expires_at: Option<DateTimeUtc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub started_at: Option<DateTimeUtc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]

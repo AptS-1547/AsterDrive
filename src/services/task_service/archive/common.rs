@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 
 use chrono::Utc;
 use sea_orm::{DatabaseConnection, Set};
@@ -7,6 +7,7 @@ use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
+use crate::services::task_service::TaskLeaseGuard;
 use crate::services::{folder_service, workspace_storage_service::WorkspaceStorageScope};
 use crate::storage::{DriverRegistry, PolicySnapshot};
 
@@ -140,6 +141,7 @@ pub(super) fn write_archive_to_sink<W, F>(
     db: &DatabaseConnection,
     driver_registry: &DriverRegistry,
     policy_snapshot: &PolicySnapshot,
+    lease_guard: Option<&TaskLeaseGuard>,
     entries: Vec<ArchiveEntry>,
     total_bytes: i64,
     output: W,
@@ -157,6 +159,7 @@ where
     let mut processed_bytes = 0_i64;
 
     for entry in entries {
+        ensure_task_lease_active(lease_guard)?;
         match entry {
             ArchiveEntry::Directory { entry_path } => {
                 zip.add_directory(&entry_path, dir_options)
@@ -174,8 +177,7 @@ where
                 })?;
 
                 let mut reader = tokio_util::io::SyncIoBridge::new(stream);
-                let copied = std::io::copy(&mut reader, &mut zip)
-                    .map_aster_err_ctx("stream file into zip", AsterError::storage_driver_error)?;
+                let copied = copy_reader_to_writer_with_lease(lease_guard, &mut reader, &mut zip)?;
                 processed_bytes = processed_bytes
                     .checked_add(i64::try_from(copied).map_err(|_| {
                         AsterError::internal_error(format!(
@@ -200,4 +202,92 @@ pub(super) fn is_client_disconnect_error_text(error_text: &str) -> bool {
     error_text.contains("Broken pipe")
         || error_text.contains("Connection reset by peer")
         || error_text.contains("connection closed")
+}
+
+pub(super) fn copy_reader_to_writer_with_lease<R: Read, W: Write>(
+    lease_guard: Option<&TaskLeaseGuard>,
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<u64> {
+    let mut copied = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+
+    loop {
+        ensure_task_lease_active(lease_guard)?;
+        let read = reader.read(&mut buffer).map_aster_err_ctx(
+            "read archive stream chunk",
+            AsterError::storage_driver_error,
+        )?;
+        if read == 0 {
+            break;
+        }
+        writer.write_all(&buffer[..read]).map_aster_err_ctx(
+            "write archive stream chunk",
+            AsterError::storage_driver_error,
+        )?;
+        copied = copied
+            .checked_add(u64::try_from(read).map_err(|_| {
+                AsterError::internal_error("archive stream chunk size exceeds u64 range")
+            })?)
+            .ok_or_else(|| AsterError::internal_error("archive stream byte counter overflow"))?;
+    }
+
+    Ok(copied)
+}
+
+fn ensure_task_lease_active(lease_guard: Option<&TaskLeaseGuard>) -> Result<()> {
+    if let Some(lease_guard) = lease_guard {
+        lease_guard.ensure_active()?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+    use std::thread;
+    use std::time::Duration;
+
+    use crate::services::task_service::{
+        TaskLease, TaskLeaseGuard, is_task_lease_renewal_timed_out,
+    };
+
+    use super::copy_reader_to_writer_with_lease;
+
+    struct SlowSingleChunkReader {
+        chunk: Vec<u8>,
+        delay: Duration,
+        consumed: bool,
+    }
+
+    impl Read for SlowSingleChunkReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.consumed {
+                return Ok(0);
+            }
+            thread::sleep(self.delay);
+            let len = self.chunk.len().min(buf.len());
+            buf[..len].copy_from_slice(&self.chunk[..len]);
+            self.consumed = true;
+            Ok(len)
+        }
+    }
+
+    #[test]
+    fn copy_reader_to_writer_with_lease_stops_after_renewal_timeout() {
+        let lease_guard =
+            TaskLeaseGuard::with_renewal_timeout(TaskLease::new(42, 7), Duration::from_millis(20));
+        let mut reader = SlowSingleChunkReader {
+            chunk: b"chunk".to_vec(),
+            delay: Duration::from_millis(30),
+            consumed: false,
+        };
+        let mut writer = Vec::new();
+
+        let error = copy_reader_to_writer_with_lease(Some(&lease_guard), &mut reader, &mut writer)
+            .expect_err("expired lease should stop blocking copy loop");
+
+        assert!(is_task_lease_renewal_timed_out(&error));
+        assert_eq!(writer, b"chunk");
+    }
 }

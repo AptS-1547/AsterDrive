@@ -57,6 +57,7 @@ fn task_step_specs(kind: BackgroundTaskKind) -> &'static [TaskStepSpec] {
                 title: "Import extracted files",
             },
         ],
+        BackgroundTaskKind::SystemRuntime => &[],
     }
 }
 

@@ -98,6 +98,7 @@ describe("router", () => {
 		expect(
 			allRoutes.some((route) => route.path === "/admin/settings/mail"),
 		).toBe(true);
+		expect(allRoutes.some((route) => route.path === "/admin/tasks")).toBe(true);
 		expect(allRoutes.some((route) => route.path === "/tasks")).toBe(true);
 		expect(allRoutes.some((route) => route.path === "tasks")).toBe(true);
 		expect(allRoutes.some((route) => route.path === "/verify-contact")).toBe(
