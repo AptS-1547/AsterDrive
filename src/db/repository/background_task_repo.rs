@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveEnum, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait,
+    ActiveEnum, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
     QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
 };
 
@@ -91,10 +91,7 @@ pub async fn try_claim<C: ConnectionTrait>(
         )
         .col_expr(
             background_task::Column::StartedAt,
-            Expr::cust_with_values(
-                "CASE WHEN started_at IS NULL THEN ? ELSE started_at END",
-                [now],
-            ),
+            Expr::col(background_task::Column::StartedAt).if_null(now),
         )
         .col_expr(background_task::Column::UpdatedAt, Expr::value(now))
         .filter(background_task::Column::Id.eq(id))

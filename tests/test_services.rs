@@ -3,6 +3,51 @@ mod common;
 
 use std::collections::BTreeSet;
 
+fn assert_share_target_check_violation(db: &sea_orm::DatabaseConnection, err: &sea_orm::DbErr) {
+    let message = err.to_string();
+    let lower_message = message.to_ascii_lowercase();
+    let matches_named_constraint = message.contains("chk_shares_exactly_one_target");
+    let matches_generic_check_failure = lower_message.contains("check constraint failed");
+
+    match db.get_database_backend() {
+        sea_orm::DbBackend::Sqlite => assert!(
+            matches_named_constraint || matches_generic_check_failure,
+            "unexpected sqlite share target violation: {message}"
+        ),
+        _ => assert!(
+            matches_named_constraint,
+            "expected named share target constraint violation, got: {message}"
+        ),
+    }
+}
+
+fn assert_share_token_length_violation(db: &sea_orm::DatabaseConnection, err: &sea_orm::DbErr) {
+    let message = err.to_string();
+    let lower_message = message.to_ascii_lowercase();
+    let matches_named_constraint = message.contains("chk_shares_token_length_32");
+    let matches_generic_check_failure = lower_message.contains("check constraint failed");
+    let matches_postgres_varchar_error =
+        lower_message.contains("value too long for type character varying(32)");
+    let matches_mysql_length_error =
+        lower_message.contains("data too long for column") && lower_message.contains("token");
+
+    match db.get_database_backend() {
+        sea_orm::DbBackend::Sqlite => assert!(
+            matches_named_constraint || matches_generic_check_failure,
+            "unexpected sqlite share token length violation: {message}"
+        ),
+        sea_orm::DbBackend::Postgres => assert!(
+            matches_named_constraint || matches_postgres_varchar_error,
+            "unexpected postgres share token length violation: {message}"
+        ),
+        sea_orm::DbBackend::MySql => assert!(
+            matches_named_constraint || matches_mysql_length_error,
+            "unexpected mysql share token length violation: {message}"
+        ),
+        _ => panic!("unsupported database backend for share token length assertion: {message}"),
+    }
+}
+
 async fn set_foreign_key_checks(
     db: &sea_orm::DatabaseConnection,
     enabled: bool,
@@ -1618,7 +1663,7 @@ async fn test_share_target_check_constraint_rejects_zero_or_multiple_targets() {
     let now = chrono::Utc::now();
 
     let err = aster_drive::entities::share::ActiveModel {
-        token: Set(format!("share-none-{}", uuid::Uuid::new_v4())),
+        token: Set(uuid::Uuid::new_v4().simple().to_string()),
         user_id: Set(user.id),
         team_id: Set(None),
         file_id: Set(None),
@@ -1635,10 +1680,10 @@ async fn test_share_target_check_constraint_rejects_zero_or_multiple_targets() {
     .insert(&state.db)
     .await
     .unwrap_err();
-    assert!(err.to_string().contains("chk_shares_exactly_one_target"));
+    assert_share_target_check_violation(&state.db, &err);
 
     let err = aster_drive::entities::share::ActiveModel {
-        token: Set(format!("share-both-{}", uuid::Uuid::new_v4())),
+        token: Set(uuid::Uuid::new_v4().simple().to_string()),
         user_id: Set(user.id),
         team_id: Set(None),
         file_id: Set(Some(file_id)),
@@ -1655,7 +1700,46 @@ async fn test_share_target_check_constraint_rejects_zero_or_multiple_targets() {
     .insert(&state.db)
     .await
     .unwrap_err();
-    assert!(err.to_string().contains("chk_shares_exactly_one_target"));
+    assert_share_target_check_violation(&state.db, &err);
+}
+
+#[actix_web::test]
+async fn test_share_token_length_constraint_rejects_tokens_longer_than_32_chars() {
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let state = common::setup().await;
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "sharetokenlen",
+        "sharetokenlen@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let file_id = store_service_file(&state, user.id, None, "token-length.txt", "body").await;
+    let now = chrono::Utc::now();
+
+    let err = aster_drive::entities::share::ActiveModel {
+        token: Set("x".repeat(33)),
+        user_id: Set(user.id),
+        team_id: Set(None),
+        file_id: Set(Some(file_id)),
+        folder_id: Set(None),
+        password: Set(None),
+        expires_at: Set(None),
+        max_downloads: Set(0),
+        download_count: Set(0),
+        view_count: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await
+    .unwrap_err();
+
+    assert_share_token_length_violation(&state.db, &err);
 }
 
 #[actix_web::test]
