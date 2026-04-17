@@ -893,7 +893,7 @@ async fn test_runtime_cors_enabled_without_whitelist_passthrough_has_no_cors_hea
 }
 
 #[actix_web::test]
-async fn test_runtime_cors_public_site_url_is_implicitly_allowed_without_whitelist() {
+async fn test_runtime_cors_public_site_url_does_not_bypass_empty_whitelist() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
@@ -910,18 +910,15 @@ async fn test_runtime_cors_public_site_url_is_implicitly_allowed_without_whiteli
     let resp = test::call_service(&app, req).await;
 
     assert_eq!(resp.status(), 200);
-    assert_eq!(
+    assert!(
         resp.headers()
             .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "https://drive.example.com"
+            .is_none()
     );
 }
 
 #[actix_web::test]
-async fn test_runtime_cors_public_site_url_is_implicitly_allowed_even_if_not_in_whitelist() {
+async fn test_runtime_cors_public_site_url_still_requires_whitelist_match() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
@@ -944,19 +941,12 @@ async fn test_runtime_cors_public_site_url_is_implicitly_allowed_even_if_not_in_
         .to_request();
     let resp = test::call_service(&app, req).await;
 
-    assert_eq!(resp.status(), 200);
-    assert_eq!(
-        resp.headers()
-            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "https://drive.example.com"
-    );
+    assert_eq!(resp.status(), 403);
+    header_contains(&resp, header::VARY, "Origin");
 }
 
 #[actix_web::test]
-async fn test_runtime_cors_public_site_url_header_is_added_to_passthrough_response() {
+async fn test_runtime_cors_public_site_url_is_not_added_to_passthrough_response() {
     let state = common::setup().await;
     let app = create_test_app_with_cors!(state);
     let (token, _) = register_and_login!(app);
@@ -969,12 +959,9 @@ async fn test_runtime_cors_public_site_url_header_is_added_to_passthrough_respon
     let resp = test::call_service(&app, req).await;
 
     assert_eq!(resp.status(), 200);
-    assert_eq!(
+    assert!(
         resp.headers()
             .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "https://drive.example.com"
+            .is_none()
     );
 }

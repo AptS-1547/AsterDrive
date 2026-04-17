@@ -192,3 +192,119 @@ pub(crate) fn validate_public_file_name(file: &file::Model, requested_name: &str
         file.id
     )))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encode_base62_zero_returns_a() {
+        assert_eq!(encode_base62(0), "a");
+    }
+
+    #[test]
+    fn encode_base62_roundtrip() {
+        let original: u64 = 12345678901234567890;
+        let encoded = encode_base62(original);
+        let decoded = decode_base62(&encoded).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn decode_base62_empty_returns_none() {
+        assert_eq!(decode_base62(""), None);
+    }
+
+    #[test]
+    fn decode_base62_invalid_char_returns_none() {
+        assert_eq!(decode_base62("!@#$"), None);
+    }
+
+    #[test]
+    fn encode_base62_fixed_width_exact() {
+        // value that fits exactly in 6 chars
+        let value: u64 = 62 * 62 * 62; // small enough
+        let encoded = encode_base62_fixed(value, 6).unwrap();
+        assert_eq!(encoded.len(), 6);
+    }
+
+    #[test]
+    fn encode_base62_fixed_overflow_fails() {
+        // u64::MAX doesn't fit in 6 chars
+        let result = encode_base62_fixed(u64::MAX, 6);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_token_valid() {
+        // "a" encoded 0 + 6 char signature = "aaaaaa"
+        let token = "baaaaaa"; // file_part + signature
+        let (file_id, signature) = parse_token(token).unwrap();
+        assert_eq!(file_id, 1); // "b" is 1 in base62
+        assert_eq!(signature, "aaaaaa");
+    }
+
+    #[test]
+    fn parse_token_too_short_fails() {
+        let result = parse_token("short");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_public_file_name_exact_match() {
+        let file = crate::entities::file::Model {
+            id: 1,
+            name: "test.txt".to_string(),
+            folder_id: None,
+            team_id: None,
+            blob_id: 1,
+            size: 100,
+            user_id: 1,
+            mime_type: "text/plain".to_string(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            deleted_at: None,
+            is_locked: false,
+        };
+        assert!(validate_public_file_name(&file, "test.txt").is_ok());
+    }
+
+    #[test]
+    fn validate_public_file_name_url_encoded_match() {
+        let file = crate::entities::file::Model {
+            id: 1,
+            name: "hello world.txt".to_string(),
+            folder_id: None,
+            team_id: None,
+            blob_id: 1,
+            size: 100,
+            user_id: 1,
+            mime_type: "text/plain".to_string(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            deleted_at: None,
+            is_locked: false,
+        };
+        // URL encoded space as %20
+        assert!(validate_public_file_name(&file, "hello%20world.txt").is_ok());
+    }
+
+    #[test]
+    fn validate_public_file_name_mismatch_fails() {
+        let file = crate::entities::file::Model {
+            id: 1,
+            name: "test.txt".to_string(),
+            folder_id: None,
+            team_id: None,
+            blob_id: 1,
+            size: 100,
+            user_id: 1,
+            mime_type: "text/plain".to_string(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            deleted_at: None,
+            is_locked: false,
+        };
+        assert!(validate_public_file_name(&file, "wrong.txt").is_err());
+    }
+}

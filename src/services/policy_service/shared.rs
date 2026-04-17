@@ -269,3 +269,43 @@ pub(super) async fn ensure_singleton_group_for_policy<C: sea_orm::ConnectionTrai
     .await?;
     Ok(group.id)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_group_assignment_blocker_empty_returns_none() {
+        assert_eq!(format_group_assignment_blocker("delete", 0, 0), None);
+    }
+
+    #[test]
+    fn format_group_assignment_blocker_users_only() {
+        let msg = format_group_assignment_blocker("delete", 5, 0).unwrap();
+        assert!(msg.contains("delete"));
+        assert!(msg.contains("5 user"));
+        assert!(!msg.contains("team"));
+    }
+
+    #[test]
+    fn format_group_assignment_blocker_teams_only() {
+        let msg = format_group_assignment_blocker("disable", 0, 3).unwrap();
+        assert!(msg.contains("disable"));
+        assert!(msg.contains("3 team"));
+    }
+
+    #[test]
+    fn format_group_assignment_blocker_both() {
+        let msg = format_group_assignment_blocker("delete", 2, 4).unwrap();
+        assert!(msg.contains("2 user") || msg.contains("4 team"));
+        assert!(msg.contains("and"));
+    }
+
+    #[test]
+    fn normalize_connection_fields_local_trims() {
+        let (endpoint, bucket) =
+            normalize_connection_fields(DriverType::Local, "  /data/uploads  ", "  ").unwrap();
+        assert_eq!(endpoint, "/data/uploads");
+        assert_eq!(bucket, "");
+    }
+}

@@ -106,28 +106,14 @@ where
                 .app_data::<web::Data<AppState>>()
                 .ok_or_else(|| AsterError::internal_error("AppState not found"))?;
             let policy = RuntimeCorsPolicy::from_runtime_config(&state.runtime_config);
-            let public_site_origin =
-                crate::config::site_url::public_site_url(&state.runtime_config);
 
             // Static assets and public pages don't need CORS enforcement
             if is_cors_exempt_path(req.path()) {
-                let mut response = svc.call(req).await?.map_into_left_body();
-                apply_public_site_origin_headers(
-                    response.headers_mut(),
-                    &policy,
-                    public_site_origin.as_deref(),
-                )?;
-                return Ok(response);
+                return Ok(svc.call(req).await?.map_into_left_body());
             }
 
             let Some(origin_header) = req.headers().get(header::ORIGIN).cloned() else {
-                let mut response = svc.call(req).await?.map_into_left_body();
-                apply_public_site_origin_headers(
-                    response.headers_mut(),
-                    &policy,
-                    public_site_origin.as_deref(),
-                )?;
-                return Ok(response);
+                return Ok(svc.call(req).await?.map_into_left_body());
             };
 
             let origin = crate::config::cors::normalize_origin(
@@ -137,42 +123,12 @@ where
                 false,
             )?;
 
-            if origin_matches_public_site_url(public_site_origin.as_deref(), &origin) {
-                if is_preflight_request(&req) {
-                    if !requested_method_is_allowed(&req) || !requested_headers_are_allowed(&req)? {
-                        return Ok(forbidden(req).map_into_right_body());
-                    }
-
-                    let mut response = HttpResponse::NoContent().finish();
-                    apply_origin_headers(response.headers_mut(), &policy, &origin)?;
-                    apply_preflight_headers(response.headers_mut(), &policy);
-                    return Ok(req.into_response(response).map_into_right_body());
-                }
-
-                let mut response = svc.call(req).await?.map_into_left_body();
-                apply_origin_headers(response.headers_mut(), &policy, &origin)?;
-                apply_actual_headers(response.headers_mut(), &policy);
-                return Ok(response);
-            }
-
             if !policy.enforces_requests() {
-                let mut response = svc.call(req).await?.map_into_left_body();
-                apply_public_site_origin_headers(
-                    response.headers_mut(),
-                    &policy,
-                    public_site_origin.as_deref(),
-                )?;
-                return Ok(response);
+                return Ok(svc.call(req).await?.map_into_left_body());
             }
 
             if request_is_same_origin(&req, &origin) {
-                let mut response = svc.call(req).await?.map_into_left_body();
-                apply_public_site_origin_headers(
-                    response.headers_mut(),
-                    &policy,
-                    public_site_origin.as_deref(),
-                )?;
-                return Ok(response);
+                return Ok(svc.call(req).await?.map_into_left_body());
             }
 
             if !policy.allows_origin(&origin) {
@@ -270,10 +226,6 @@ fn requested_headers_are_allowed(req: &ServiceRequest) -> Result<bool, AsterErro
     Ok(true)
 }
 
-fn origin_matches_public_site_url(public_site_origin: Option<&str>, origin: &str) -> bool {
-    public_site_origin == Some(origin)
-}
-
 fn apply_origin_headers(
     headers: &mut HeaderMap,
     policy: &RuntimeCorsPolicy,
@@ -334,22 +286,6 @@ fn apply_actual_headers(headers: &mut HeaderMap, _policy: &RuntimeCorsPolicy) {
     );
 }
 
-fn apply_public_site_origin_headers(
-    headers: &mut HeaderMap,
-    policy: &RuntimeCorsPolicy,
-    public_site_origin: Option<&str>,
-) -> Result<(), AsterError> {
-    if !policy.enabled {
-        return Ok(());
-    }
-
-    let Some(public_site_origin) = public_site_origin else {
-        return Ok(());
-    };
-
-    apply_origin_headers(headers, policy, public_site_origin)
-}
-
 fn ensure_vary(headers: &mut HeaderMap, value: &str) -> Result<(), AsterError> {
     let mut vary_values = BTreeSet::new();
 
@@ -386,9 +322,8 @@ fn forbidden(req: ServiceRequest) -> ServiceResponse {
 #[cfg(test)]
 mod tests {
     use super::{
-        ALLOWED_HEADERS, ALLOWED_METHODS, RuntimeCors, apply_origin_headers,
-        apply_public_site_origin_headers, ensure_vary, is_cors_exempt_path,
-        origin_matches_public_site_url, request_is_same_origin, requested_headers_are_allowed,
+        ALLOWED_HEADERS, ALLOWED_METHODS, RuntimeCors, apply_origin_headers, ensure_vary,
+        is_cors_exempt_path, request_is_same_origin, requested_headers_are_allowed,
         requested_method_is_allowed,
     };
     use crate::cache;
@@ -490,22 +425,6 @@ mod tests {
 
         assert!(!is_cors_exempt_path("/api/v1/auth/check"));
         assert!(!is_cors_exempt_path("/manifest.json"));
-    }
-
-    #[test]
-    fn public_site_origin_matching_is_exact() {
-        assert!(origin_matches_public_site_url(
-            Some("https://drive.example.com"),
-            "https://drive.example.com",
-        ));
-        assert!(!origin_matches_public_site_url(
-            Some("https://drive.example.com"),
-            "https://cdn.example.com",
-        ));
-        assert!(!origin_matches_public_site_url(
-            None,
-            "https://drive.example.com",
-        ));
     }
 
     #[actix_web::test]
@@ -643,64 +562,6 @@ mod tests {
     }
 
     #[test]
-    fn apply_public_site_origin_headers_noop_when_disabled_or_origin_missing() {
-        let mut headers = HeaderMap::new();
-        apply_public_site_origin_headers(
-            &mut headers,
-            &test_policy(false, CorsAllowedOrigins::None, false),
-            Some("https://drive.example.com"),
-        )
-        .unwrap();
-        assert!(headers.get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
-
-        apply_public_site_origin_headers(
-            &mut headers,
-            &test_policy(true, CorsAllowedOrigins::None, false),
-            None,
-        )
-        .unwrap();
-        assert!(headers.get(header::ACCESS_CONTROL_ALLOW_ORIGIN).is_none());
-    }
-
-    #[test]
-    fn apply_public_site_origin_headers_uses_public_site_url_and_respects_existing_header() {
-        let mut headers = HeaderMap::new();
-        apply_public_site_origin_headers(
-            &mut headers,
-            &test_policy(true, CorsAllowedOrigins::None, false),
-            Some("https://drive.example.com"),
-        )
-        .unwrap();
-        assert_eq!(
-            headers
-                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            "https://drive.example.com"
-        );
-
-        headers.insert(
-            header::ACCESS_CONTROL_ALLOW_ORIGIN,
-            HeaderValue::from_static("https://existing.example.com"),
-        );
-        apply_public_site_origin_headers(
-            &mut headers,
-            &test_policy(true, CorsAllowedOrigins::None, false),
-            Some("https://drive.example.com"),
-        )
-        .unwrap();
-        assert_eq!(
-            headers
-                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            "https://existing.example.com"
-        );
-    }
-
-    #[test]
     fn ensure_vary_deduplicates_values() {
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -718,7 +579,7 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn middleware_allows_public_site_origin_preflight_without_whitelist() {
+    async fn middleware_does_not_allow_public_site_origin_preflight_without_whitelist() {
         let state = test_state(&[
             ("cors_enabled", "true"),
             ("public_site_url", "https://drive.example.com"),
@@ -744,19 +605,17 @@ mod tests {
             .to_request();
         let resp = actix_test::call_service(&app, req).await;
 
-        assert_eq!(resp.status(), 204);
-        assert_eq!(
+        assert_eq!(resp.status(), 404);
+        assert!(
             resp.headers()
                 .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            "https://drive.example.com"
+                .is_none()
         );
     }
 
     #[actix_web::test]
-    async fn middleware_adds_public_site_origin_to_passthrough_response_without_origin_header() {
+    async fn middleware_does_not_add_public_site_origin_to_passthrough_response_without_origin_header()
+     {
         let state = test_state(&[
             ("cors_enabled", "true"),
             ("public_site_url", "https://drive.example.com"),
@@ -777,18 +636,15 @@ mod tests {
         let resp = actix_test::call_service(&app, req).await;
 
         assert_eq!(resp.status(), 200);
-        assert_eq!(
+        assert!(
             resp.headers()
                 .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            "https://drive.example.com"
+                .is_none()
         );
     }
 
     #[actix_web::test]
-    async fn middleware_does_not_override_existing_allow_origin_header() {
+    async fn middleware_preserves_existing_allow_origin_header() {
         let state = test_state(&[
             ("cors_enabled", "true"),
             ("public_site_url", "https://drive.example.com"),

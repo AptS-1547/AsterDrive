@@ -32,6 +32,14 @@ pub fn u64_to_i64(value: u64, value_name: &str) -> Result<i64> {
     })
 }
 
+pub fn u64_to_usize(value: u64, value_name: &str) -> Result<usize> {
+    usize::try_from(value).map_aster_err_with(|| {
+        AsterError::internal_error(format!(
+            "{value_name} exceeds platform usize range: {value}"
+        ))
+    })
+}
+
 pub fn usize_to_i32(value: usize, value_name: &str) -> Result<i32> {
     i32::try_from(value).map_aster_err_with(|| {
         AsterError::internal_error(format!("{value_name} exceeds i32 range: {value}"))
@@ -133,6 +141,22 @@ mod tests {
     #[test]
     fn u64_to_i64_rejects_overflow() {
         let err = u64_to_i64((i64::MAX as u64) + 1, "test").unwrap_err();
+        assert_eq!(err.code(), "E004");
+    }
+
+    #[test]
+    fn u64_to_usize_accepts_within_platform_range() {
+        assert_eq!(u64_to_usize(0, "test").unwrap(), 0);
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(u64_to_usize(u64::MAX, "test").unwrap(), usize::MAX);
+        // on 32-bit this would reject overflow
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "32")]
+    fn u64_to_usize_rejects_overflow() {
+        // u64::MAX won't fit in usize on 32-bit targets
+        let err = u64_to_usize(u64::MAX, "cursor_value").unwrap_err();
         assert_eq!(err.code(), "E004");
     }
 
