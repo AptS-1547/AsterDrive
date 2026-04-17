@@ -1,10 +1,10 @@
 use crate::config::DatabaseConfig;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection};
+use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, SqlxSqliteConnector};
 
 pub async fn connect(cfg: &DatabaseConfig) -> Result<DatabaseConnection> {
     let url = normalize_database_url(&cfg.url);
-    let is_sqlite = url.contains("sqlite");
+    let is_sqlite = url.starts_with("sqlite:");
     // SQLite relies on a single pooled connection so concurrent writers are serialized at
     // connection acquisition; repo-layer "lock" helpers do not emulate row locks there.
     let max_connections = if is_sqlite { 1 } else { cfg.pool_size };
@@ -15,9 +15,18 @@ pub async fn connect(cfg: &DatabaseConfig) -> Result<DatabaseConnection> {
         .sqlx_logging(false)
         .test_before_acquire(true);
 
-    let db = Database::connect(opt)
-        .await
-        .map_aster_err(AsterError::database_operation)?;
+    // SeaORM's generic Database::connect() pre-validates URLs with url::Url::parse(),
+    // which rejects Windows-style SQLite paths containing backslashes. Route SQLite
+    // through sqlx's dedicated connector instead so platform-native paths keep working.
+    let db = if is_sqlite {
+        SqlxSqliteConnector::connect(opt)
+            .await
+            .map_aster_err(AsterError::database_operation)?
+    } else {
+        Database::connect(opt)
+            .await
+            .map_aster_err(AsterError::database_operation)?
+    };
 
     let backend = db.get_database_backend();
     tracing::info!(backend = ?backend, "database connected");
@@ -66,6 +75,8 @@ fn install_db_metrics(db: &mut DatabaseConnection) {
 #[cfg(test)]
 mod tests {
     use super::normalize_database_url;
+    use crate::config::DatabaseConfig;
+    use sea_orm::ConnectionTrait;
 
     #[test]
     fn sqlite_urls_without_query_default_to_rwc_mode() {
@@ -90,5 +101,24 @@ mod tests {
             normalize_database_url("postgres://user:pass@localhost/asterdrive"),
             "postgres://user:pass@localhost/asterdrive"
         );
+    }
+
+    #[tokio::test]
+    async fn sqlite_connector_accepts_windows_style_urls() {
+        let url = format!(
+            "sqlite://windows\\sqlite-url-{}?mode=memory&cache=shared",
+            uuid::Uuid::new_v4()
+        );
+        let db = super::connect(&DatabaseConfig {
+            url,
+            pool_size: 10,
+            retry_count: 3,
+        })
+        .await
+        .expect("sqlite connection should succeed for Windows-style URL");
+
+        db.execute_unprepared("SELECT 1;")
+            .await
+            .expect("sqlite query should succeed");
     }
 }
