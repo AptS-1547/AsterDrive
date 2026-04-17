@@ -291,6 +291,8 @@ pub enum BackgroundTaskKind {
     ArchiveExtract,
     #[sea_orm(string_value = "archive_compress")]
     ArchiveCompress,
+    #[sea_orm(string_value = "thumbnail_generate")]
+    ThumbnailGenerate,
     #[sea_orm(string_value = "system_runtime")]
     SystemRuntime,
 }

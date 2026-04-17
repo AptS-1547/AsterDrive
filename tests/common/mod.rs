@@ -1035,7 +1035,6 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
     policy_snapshot.reload(&db).await.unwrap();
     let mail_sender = aster_drive::services::mail_service::memory_sender();
 
-    let (thumbnail_tx, _thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(16);
     let (storage_change_tx, _) = tokio::sync::broadcast::channel(
         aster_drive::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
     );
@@ -1048,7 +1047,6 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
         config,
         cache,
         mail_sender,
-        thumbnail_tx,
         storage_change_tx,
     }
 }

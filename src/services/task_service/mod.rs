@@ -2,6 +2,7 @@ mod archive;
 mod dispatch;
 mod runtime;
 mod steps;
+mod thumbnail;
 mod types;
 
 use chrono::{Duration, Utc};
@@ -27,11 +28,13 @@ pub(crate) use archive::{
 pub use dispatch::{DispatchStats, cleanup_expired, dispatch_due, drain};
 pub use runtime::{RuntimeTaskRunOutcome, record_runtime_task_run};
 use steps::{initial_task_steps, parse_task_steps_json, serialize_task_steps};
+pub(crate) use thumbnail::ensure_thumbnail_task;
 pub use types::{
     ArchiveCompressTaskPayload, ArchiveCompressTaskResult, ArchiveExtractTaskPayload,
     ArchiveExtractTaskResult, CreateArchiveCompressTaskParams, CreateArchiveExtractTaskParams,
     CreateArchiveTaskParams, RuntimeTaskPayload, RuntimeTaskResult, TaskInfo, TaskPayload,
-    TaskResult, TaskStepInfo, TaskStepStatus,
+    TaskResult, TaskStepInfo, TaskStepStatus, ThumbnailGenerateTaskPayload,
+    ThumbnailGenerateTaskResult,
 };
 use types::{parse_task_payload_info, parse_task_result_info, serialize_task_payload};
 
@@ -492,7 +495,9 @@ pub(super) fn task_lease_expires_at(
 fn configured_task_max_attempts(state: &AppState, kind: BackgroundTaskKind) -> i32 {
     match kind {
         BackgroundTaskKind::SystemRuntime => 1,
-        BackgroundTaskKind::ArchiveCompress | BackgroundTaskKind::ArchiveExtract => {
+        BackgroundTaskKind::ArchiveCompress
+        | BackgroundTaskKind::ArchiveExtract
+        | BackgroundTaskKind::ThumbnailGenerate => {
             operations::background_task_max_attempts(&state.runtime_config)
         }
     }

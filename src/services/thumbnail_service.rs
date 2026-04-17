@@ -1,25 +1,20 @@
-use std::collections::HashSet;
 use std::io::Cursor;
-use std::sync::Arc;
 
 use image::ImageFormat;
 use image::imageops::FilterType;
 use image::{ImageReader, Limits};
-use tokio::sync::{Mutex, Semaphore, mpsc};
 
 use crate::config::operations;
-use crate::db::repository::file_repo;
 use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::storage::{DriverRegistry, PolicySnapshot};
+use crate::storage::StorageDriver;
 
 const THUMB_MAX_DIM: u32 = 200;
 const THUMB_PREFIX: &str = "_thumb";
 const THUMB_VERSION: &str = "v2";
 /// 单次解码最大内存分配（防止恶意/超大图 OOM）
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
-const MAX_THUMB_WORKERS: usize = 2;
 
 /// 判断 MIME 类型是否支持生成缩略图
 pub fn is_supported_mime(mime: &str) -> bool {
@@ -70,61 +65,63 @@ pub(crate) fn is_thumbnail_path(path: &str) -> bool {
         .starts_with(&format!("{THUMB_PREFIX}/"))
 }
 
-/// 尝试获取已有缩略图，如果不存在则入队后台生成并返回 None
-pub async fn get_or_enqueue(state: &AppState, blob: &file_blob::Model) -> Result<Option<Vec<u8>>> {
+/// 尝试获取已有缩略图，如果不存在则返回 None。
+pub async fn load_thumbnail_if_exists(
+    state: &AppState,
+    blob: &file_blob::Model,
+) -> Result<Option<Vec<u8>>> {
     ensure_source_size_supported(
         blob,
         operations::thumbnail_max_source_bytes(&state.runtime_config),
     )?;
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let driver = thumbnail_driver(state, blob)?;
     let path = thumb_path(&blob.hash);
 
-    // 已存在 → 直接返回
-    if let Ok(data) = driver.get(&path).await {
-        return Ok(Some(data));
+    match driver.get(&path).await {
+        Ok(data) => Ok(Some(data)),
+        Err(_) => Ok(None),
     }
-
-    // 入队后台生成（非阻塞，队列满时 drop）
-    if let Err(e) = state.thumbnail_tx.try_send(blob.id) {
-        tracing::warn!(
-            blob_id = blob.id,
-            "thumbnail queue full, dropping request: {e}"
-        );
-    }
-
-    Ok(None)
 }
 
 /// 获取或同步生成缩略图（仅用于公开分享等无法等待的场景）
 pub async fn get_or_generate(state: &AppState, blob: &file_blob::Model) -> Result<Vec<u8>> {
-    ensure_source_size_supported(
-        blob,
-        operations::thumbnail_max_source_bytes(&state.runtime_config),
-    )?;
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-    let path = thumb_path(&blob.hash);
-
-    // 已存在 → 直接返回
-    if let Ok(data) = driver.get(&path).await {
+    if let Some(data) = load_thumbnail_if_exists(state, blob).await? {
         return Ok(data);
     }
 
-    // 同步生成（CPU 密集部分走 blocking 线程池）
-    let original = driver.get(&blob.storage_path).await?;
-    let webp_bytes = tokio::task::spawn_blocking(move || generate_thumbnail(original))
-        .await
-        .map_aster_err_ctx(
-            "thumbnail task panicked",
-            AsterError::thumbnail_generation_failed,
-        )??;
+    let driver = thumbnail_driver(state, blob)?;
+    let path = thumb_path(&blob.hash);
+    let webp_bytes = render_thumbnail_bytes(driver.as_ref(), blob).await?;
 
     if let Err(e) = driver.put(&path, &webp_bytes).await {
         tracing::warn!("failed to store thumbnail {path}: {e}");
     }
 
     Ok(webp_bytes)
+}
+
+/// 严格生成并写回缩略图。
+///
+/// 如果缩略图已存在，会直接复用并返回 `(path, true)`。
+/// 如果本次成功生成并持久化，会返回 `(path, false)`。
+pub async fn generate_and_store(
+    state: &AppState,
+    blob: &file_blob::Model,
+) -> Result<(String, bool)> {
+    ensure_source_size_supported(
+        blob,
+        operations::thumbnail_max_source_bytes(&state.runtime_config),
+    )?;
+    let driver = thumbnail_driver(state, blob)?;
+    let path = thumb_path(&blob.hash);
+
+    if driver.exists(&path).await.unwrap_or(false) {
+        return Ok((path, true));
+    }
+
+    let webp_bytes = render_thumbnail_bytes(driver.as_ref(), blob).await?;
+    driver.put(&path, &webp_bytes).await?;
+    Ok((path, false))
 }
 
 /// 删除缩略图（blob 物理删除时调用）
@@ -178,105 +175,25 @@ fn encode_webp(img: &image::DynamicImage) -> Result<Vec<u8>> {
     Ok(buf.into_inner())
 }
 
-/// 并发上限：避免大量图片同时解码导致内存峰值
-fn max_concurrent_thumbnails() -> usize {
-    num_cpus::get().min(MAX_THUMB_WORKERS)
+fn thumbnail_driver(
+    state: &AppState,
+    blob: &file_blob::Model,
+) -> Result<std::sync::Arc<dyn StorageDriver>> {
+    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    state.driver_registry.get_driver(&policy)
 }
 
-/// 启动后台缩略图 worker（并发处理，Semaphore 限流，panic-safe）
-pub fn spawn_worker(
-    db: actix_web::web::Data<sea_orm::DatabaseConnection>,
-    driver_registry: Arc<DriverRegistry>,
-    runtime_config: Arc<crate::config::RuntimeConfig>,
-    policy_snapshot: Arc<PolicySnapshot>,
-    mut rx: mpsc::Receiver<i64>,
-) {
-    let pending = Arc::new(Mutex::new(HashSet::<i64>::new()));
-    let semaphore = Arc::new(Semaphore::new(max_concurrent_thumbnails()));
-
-    tokio::spawn(async move {
-        tracing::info!(
-            "thumbnail worker started (concurrency={})",
-            max_concurrent_thumbnails()
-        );
-
-        while let Some(blob_id) = rx.recv().await {
-            // 去重检查
-            {
-                let mut set = pending.lock().await;
-                if set.contains(&blob_id) {
-                    continue;
-                }
-                set.insert(blob_id);
-            }
-
-            let db = db.clone();
-            let registry = driver_registry.clone();
-            let runtime_config = runtime_config.clone();
-            let policy_snapshot = policy_snapshot.clone();
-            let pending_inner = pending.clone();
-            let sem = semaphore.clone();
-
-            // 并发派发，由 Semaphore 控制同时处理数量
-            tokio::spawn(async move {
-                // 获取许可（背压：队列消费速度受限于并发上限）
-                let _permit = sem.acquire().await;
-
-                if let Err(e) = process_one_thumbnail(
-                    &db,
-                    &registry,
-                    runtime_config.as_ref(),
-                    &policy_snapshot,
-                    blob_id,
-                )
-                .await
-                {
-                    tracing::warn!("thumbnail generation failed for blob #{blob_id}: {e}");
-                }
-
-                pending_inner.lock().await.remove(&blob_id);
-            });
-        }
-
-        tracing::info!("thumbnail worker stopped");
-    });
-}
-
-/// 处理单个 blob 的缩略图生成
-async fn process_one_thumbnail(
-    db: &sea_orm::DatabaseConnection,
-    driver_registry: &DriverRegistry,
-    runtime_config: &crate::config::RuntimeConfig,
-    policy_snapshot: &PolicySnapshot,
-    blob_id: i64,
-) -> Result<()> {
-    let blob = file_repo::find_blob_by_id(db, blob_id).await?;
-    ensure_source_size_supported(
-        &blob,
-        operations::thumbnail_max_source_bytes(runtime_config),
-    )?;
-    let policy = policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = driver_registry.get_driver(&policy)?;
-    let path = thumb_path(&blob.hash);
-
-    // 再次检查（可能已由其他路径生成）
-    if driver.exists(&path).await.unwrap_or(false) {
-        return Ok(());
-    }
-
-    // 读取原文件 + 生成缩略图（CPU 密集部分走 blocking 线程池）
+async fn render_thumbnail_bytes(
+    driver: &dyn StorageDriver,
+    blob: &file_blob::Model,
+) -> Result<Vec<u8>> {
     let original = driver.get(&blob.storage_path).await?;
-    let webp_bytes = tokio::task::spawn_blocking(move || generate_thumbnail(original))
+    tokio::task::spawn_blocking(move || generate_thumbnail(original))
         .await
         .map_aster_err_ctx(
             "thumbnail task panicked",
             AsterError::thumbnail_generation_failed,
-        )??;
-
-    driver.put(&path, &webp_bytes).await?;
-
-    tracing::debug!("thumbnail generated for blob #{blob_id}");
-    Ok(())
+        )?
 }
 
 fn ensure_source_size_supported(blob: &file_blob::Model, max_source_bytes: i64) -> Result<()> {
@@ -292,10 +209,7 @@ fn ensure_source_size_supported(blob: &file_blob::Model, max_source_bytes: i64) 
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        MAX_THUMB_WORKERS, ensure_source_size_supported, max_concurrent_thumbnails, thumb_path,
-        thumbnail_etag_value,
-    };
+    use super::{ensure_source_size_supported, thumb_path, thumbnail_etag_value};
     use crate::config::operations::DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES;
     use crate::entities::file_blob;
     use chrono::Utc;
@@ -333,12 +247,6 @@ mod tests {
             )
             .is_err()
         );
-    }
-
-    #[test]
-    fn thumbnail_worker_concurrency_is_memory_bounded() {
-        assert!(max_concurrent_thumbnails() <= MAX_THUMB_WORKERS);
-        assert!(max_concurrent_thumbnails() >= 1);
     }
 
     #[test]

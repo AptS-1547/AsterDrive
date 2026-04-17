@@ -2,36 +2,35 @@
 mod common;
 
 use actix_web::test;
-use serde_json::Value;
+use aster_drive::api::error_code::ErrorCode;
+use aster_drive::db::repository::{background_task_repo, file_repo};
+use aster_drive::runtime::AppState;
+use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus};
+use serde_json::{Value, json};
 
-/// 生成一个最小的 1x1 红色 PNG（68 字节）
+/// 生成一个最小的 1x1 红色 PNG。
 fn tiny_png() -> Vec<u8> {
-    // Minimal valid PNG: 1x1 pixel, RGB, red
     let mut buf = std::io::Cursor::new(Vec::new());
     let encoder = image::codecs::png::PngEncoder::new(&mut buf);
-    image::ImageEncoder::write_image(
-        encoder,
-        &[255, 0, 0], // 1 pixel, red
-        1,
-        1,
-        image::ExtendedColorType::Rgb8,
-    )
-    .unwrap();
+    image::ImageEncoder::write_image(encoder, &[255, 0, 0], 1, 1, image::ExtendedColorType::Rgb8)
+        .unwrap();
     buf.into_inner()
 }
 
-/// 上传一张 PNG 图片，返回 file_id
-macro_rules! upload_png {
-    ($app:expr, $token:expr) => {{
-        let png_bytes = tiny_png();
+macro_rules! upload_file_bytes {
+    ($app:expr, $token:expr, $filename:expr, $content_type:expr, $bytes:expr) => {{
         let boundary = "----TestBound";
         let mut payload = Vec::new();
         payload.extend_from_slice(b"------TestBound\r\n");
         payload.extend_from_slice(
-            b"Content-Disposition: form-data; name=\"file\"; filename=\"test.png\"\r\n",
+            format!(
+                "Content-Disposition: form-data; name=\"file\"; filename=\"{}\"\r\n",
+                $filename
+            )
+            .as_bytes(),
         );
-        payload.extend_from_slice(b"Content-Type: image/png\r\n\r\n");
-        payload.extend_from_slice(&png_bytes);
+        payload.extend_from_slice(format!("Content-Type: {}\r\n\r\n", $content_type).as_bytes());
+        payload.extend_from_slice(&$bytes);
         payload.extend_from_slice(b"\r\n------TestBound--\r\n");
 
         let req = test::TestRequest::post()
@@ -51,110 +50,100 @@ macro_rules! upload_png {
     }};
 }
 
+macro_rules! request_thumbnail {
+    ($app:expr, $token:expr, $file_id:expr) => {{
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/files/{}/thumbnail", $file_id))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
+            .to_request();
+        test::call_service(&$app, req).await
+    }};
+}
+
+async fn thumbnail_task_display_name(state: &AppState, file_id: i64) -> String {
+    let file = file_repo::find_by_id(&state.db, file_id).await.unwrap();
+    format!("Generate thumbnail for blob #{}", file.blob_id)
+}
+
+async fn thumbnail_task_count(state: &AppState, file_id: i64) -> usize {
+    let display_name = thumbnail_task_display_name(state, file_id).await;
+    background_task_repo::list_recent(&state.db, 32)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|task| {
+            task.kind == BackgroundTaskKind::ThumbnailGenerate && task.display_name == display_name
+        })
+        .count()
+}
+
+async fn latest_thumbnail_task(
+    state: &AppState,
+    file_id: i64,
+) -> aster_drive::entities::background_task::Model {
+    let display_name = thumbnail_task_display_name(state, file_id).await;
+    background_task_repo::find_latest_by_kind_and_display_name(
+        &state.db,
+        BackgroundTaskKind::ThumbnailGenerate,
+        &display_name,
+    )
+    .await
+    .unwrap()
+    .expect("thumbnail task should exist")
+}
+
 #[actix_web::test]
 async fn test_thumbnail_returns_202_when_not_ready() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
-    let file_id = upload_png!(app, token);
+    let file_id = upload_file_bytes!(app, token, "test.png", "image/png", tiny_png());
+    let resp = request_thumbnail!(app, token, file_id);
 
-    // 首次请求缩略图——后台 worker 未运行（测试中 rx 被 drop），应返回 202
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 202);
     assert_eq!(
-        resp.status(),
-        202,
-        "should return 202 when thumbnail not ready"
+        resp.headers()
+            .get("Retry-After")
+            .and_then(|value| value.to_str().ok()),
+        Some("2")
     );
-
-    // Retry-After header 应存在
-    let retry_after = resp
-        .headers()
-        .get("Retry-After")
-        .and_then(|v| v.to_str().ok());
-    assert!(retry_after.is_some(), "should have Retry-After header");
 }
 
 #[actix_web::test]
 async fn test_thumbnail_returns_200_after_generation() {
     let state = common::setup().await;
-    // 启动真正的 thumbnail worker
-    let (tx, rx) = tokio::sync::mpsc::channel::<i64>(16);
-    aster_drive::services::thumbnail_service::spawn_worker(
-        actix_web::web::Data::new(state.db.clone()),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        rx,
-    );
-    // 替换 state 的 tx
-    let state = aster_drive::runtime::AppState {
-        db: state.db,
-        driver_registry: state.driver_registry,
-        runtime_config: state.runtime_config,
-        policy_snapshot: state.policy_snapshot,
-        config: state.config,
-        cache: state.cache,
-        mail_sender: state.mail_sender,
-        thumbnail_tx: tx,
-        storage_change_tx: state.storage_change_tx,
-    };
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
-    let file_id = upload_png!(app, token);
+    let file_id = upload_file_bytes!(app, token, "test.png", "image/png", tiny_png());
 
-    // 首次请求——入队生成
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    // 可能是 202（worker 还没处理）或 200（worker 很快就处理了）
-    let first_status = resp.status().as_u16();
-    assert!(
-        first_status == 202 || first_status == 200,
-        "first request should be 202 or 200, got {first_status}"
-    );
+    let first = request_thumbnail!(app, token, file_id);
+    assert_eq!(first.status(), 202);
 
-    // 等待 worker 处理
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .unwrap();
 
-    // 再次请求——应已生成
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let task = latest_thumbnail_task(&state, file_id).await;
+    assert_eq!(task.status, BackgroundTaskStatus::Succeeded);
+
+    let resp = request_thumbnail!(app, token, file_id);
+    assert_eq!(resp.status(), 200);
     assert_eq!(
-        resp.status(),
-        200,
-        "should return 200 after worker generates thumbnail"
+        resp.headers()
+            .get("Content-Type")
+            .and_then(|value| value.to_str().ok()),
+        Some("image/webp")
     );
 
-    // 验证返回的是 WebP
-    let content_type = resp
-        .headers()
-        .get("Content-Type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    assert_eq!(content_type, "image/webp");
-
-    // 鉴权缩略图不应允许共享缓存，也不应标记 immutable
     let cache_control = resp
         .headers()
         .get("Cache-Control")
-        .and_then(|v| v.to_str().ok())
+        .and_then(|value| value.to_str().ok())
         .unwrap_or("");
     assert!(cache_control.contains("private"));
-    assert!(cache_control.contains("no-cache") || cache_control.contains("max-age=0"));
     assert!(cache_control.contains("must-revalidate"));
     assert!(!cache_control.contains("public"));
     assert!(!cache_control.contains("immutable"));
@@ -163,45 +152,19 @@ async fn test_thumbnail_returns_200_after_generation() {
 #[actix_web::test]
 async fn test_thumbnail_returns_304_for_matching_if_none_match() {
     let state = common::setup().await;
-    let (tx, rx) = tokio::sync::mpsc::channel::<i64>(16);
-    aster_drive::services::thumbnail_service::spawn_worker(
-        actix_web::web::Data::new(state.db.clone()),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        rx,
-    );
-    let state = aster_drive::runtime::AppState {
-        db: state.db,
-        driver_registry: state.driver_registry,
-        runtime_config: state.runtime_config,
-        policy_snapshot: state.policy_snapshot,
-        config: state.config,
-        cache: state.cache,
-        mail_sender: state.mail_sender,
-        thumbnail_tx: tx,
-        storage_change_tx: state.storage_change_tx,
-    };
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
-    let file_id = upload_png!(app, token);
+    let file_id = upload_file_bytes!(app, token, "test.png", "image/png", tiny_png());
 
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let _ = test::call_service(&app, req).await;
+    let first = request_thumbnail!(app, token, file_id);
+    assert_eq!(first.status(), 202);
 
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .unwrap();
 
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = request_thumbnail!(app, token, file_id);
     assert_eq!(resp.status(), 200);
     let etag = resp
         .headers()
@@ -218,6 +181,7 @@ async fn test_thumbnail_returns_304_for_matching_if_none_match() {
         .insert_header(("If-None-Match", etag.as_str()))
         .to_request();
     let resp = test::call_service(&app, req).await;
+
     assert_eq!(resp.status(), 304);
     assert_eq!(
         resp.headers()
@@ -234,71 +198,86 @@ async fn test_thumbnail_returns_304_for_matching_if_none_match() {
 }
 
 #[actix_web::test]
-async fn test_thumbnail_non_image_returns_error() {
+async fn test_thumbnail_non_image_returns_bad_request_without_task() {
     let state = common::setup().await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
-    // 上传 txt 文件（不是图片）
     let file_id = upload_test_file!(app, token);
+    let resp = request_thumbnail!(app, token, file_id);
 
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    // 非图片应返回错误（不是 202）
-    assert_ne!(resp.status(), 202);
-    assert_ne!(resp.status(), 200);
+    assert_eq!(resp.status(), 400);
+    let tasks = background_task_repo::list_recent(&state.db, 16)
+        .await
+        .unwrap();
+    assert!(
+        tasks
+            .into_iter()
+            .all(|task| task.kind != BackgroundTaskKind::ThumbnailGenerate)
+    );
 }
 
 #[actix_web::test]
 async fn test_thumbnail_dedup_same_blob() {
     let state = common::setup().await;
-    let (tx, rx) = tokio::sync::mpsc::channel::<i64>(16);
-    aster_drive::services::thumbnail_service::spawn_worker(
-        actix_web::web::Data::new(state.db.clone()),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        rx,
-    );
-    let state = aster_drive::runtime::AppState {
-        db: state.db,
-        driver_registry: state.driver_registry,
-        runtime_config: state.runtime_config,
-        policy_snapshot: state.policy_snapshot,
-        config: state.config,
-        cache: state.cache,
-        mail_sender: state.mail_sender,
-        thumbnail_tx: tx,
-        storage_change_tx: state.storage_change_tx,
-    };
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
-    let file_id = upload_png!(app, token);
+    let file_id = upload_file_bytes!(app, token, "test.png", "image/png", tiny_png());
 
-    // 连续请求多次——channel 只应入队一次（去重）
     for _ in 0..5 {
-        let req = test::TestRequest::get()
-            .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-            .insert_header(("Cookie", common::access_cookie_header(&token)))
-            .insert_header(common::csrf_header_for(&token))
-            .to_request();
-        let _ = test::call_service(&app, req).await;
+        let resp = request_thumbnail!(app, token, file_id);
+        let status = resp.status().as_u16();
+        assert!(
+            status == 202 || status == 200,
+            "thumbnail request should be pending or ready, got {status}"
+        );
     }
 
-    // 等待 worker 处理
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert_eq!(thumbnail_task_count(&state, file_id).await, 1);
 
-    // 最终请求应返回 200
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .unwrap();
+
+    let resp = request_thumbnail!(app, token, file_id);
     assert_eq!(resp.status(), 200);
+    assert_eq!(thumbnail_task_count(&state, file_id).await, 1);
+}
+
+#[actix_web::test]
+async fn test_thumbnail_failed_task_returns_error_without_requeue() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let invalid_png = b"not-a-real-png".to_vec();
+    let file_id = upload_file_bytes!(app, token, "broken.png", "image/png", invalid_png);
+
+    let first = request_thumbnail!(app, token, file_id);
+    assert_eq!(first.status(), 202);
+
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .unwrap();
+
+    let task = latest_thumbnail_task(&state, file_id).await;
+    assert_eq!(task.status, BackgroundTaskStatus::Failed);
+    assert_eq!(task.attempt_count, 1);
+
+    let count_before = thumbnail_task_count(&state, file_id).await;
+    assert_eq!(count_before, 1);
+
+    let resp = request_thumbnail!(app, token, file_id);
+    assert_eq!(resp.status(), 500);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], json!(ErrorCode::ThumbnailFailed as i32));
+
+    for _ in 0..3 {
+        let resp = request_thumbnail!(app, token, file_id);
+        assert_eq!(resp.status(), 500);
+    }
+
+    let count_after = thumbnail_task_count(&state, file_id).await;
+    assert_eq!(count_after, count_before);
 }

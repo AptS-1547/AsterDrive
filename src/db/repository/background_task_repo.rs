@@ -7,7 +7,7 @@ use sea_orm::{
 use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::background_task::{self, Entity as BackgroundTask};
 use crate::errors::{AsterError, Result};
-use crate::types::BackgroundTaskStatus;
+use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 pub async fn create<C: ConnectionTrait>(
     db: &C,
@@ -81,6 +81,20 @@ pub async fn list_recent<C: ConnectionTrait>(
         .order_by_desc(background_task::Column::UpdatedAt)
         .limit(limit)
         .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_latest_by_kind_and_display_name<C: ConnectionTrait>(
+    db: &C,
+    kind: BackgroundTaskKind,
+    display_name: &str,
+) -> Result<Option<background_task::Model>> {
+    BackgroundTask::find()
+        .filter(background_task::Column::Kind.eq(kind))
+        .filter(background_task::Column::DisplayName.eq(display_name))
+        .order_by_desc(background_task::Column::CreatedAt)
+        .one(db)
         .await
         .map_err(AsterError::from)
 }

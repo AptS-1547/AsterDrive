@@ -212,7 +212,6 @@ async fn build_test_state() -> (AppState, PathBuf, storage_policy::Model, user::
     config.server.temp_dir = temp_root.join(".tmp").to_string_lossy().into_owned();
     config.server.upload_temp_dir = temp_root.join(".uploads").to_string_lossy().into_owned();
 
-    let (thumbnail_tx, _thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(1);
     let (storage_change_tx, _) = tokio::sync::broadcast::channel(
         crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
     );
@@ -225,7 +224,6 @@ async fn build_test_state() -> (AppState, PathBuf, storage_policy::Model, user::
         config: Arc::new(config),
         cache,
         mail_sender: mail_service::runtime_sender(runtime_config),
-        thumbnail_tx,
         storage_change_tx,
     };
 

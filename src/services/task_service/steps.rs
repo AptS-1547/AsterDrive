@@ -12,6 +12,9 @@ pub(super) const TASK_STEP_STORE_RESULT: &str = "store_result";
 pub(super) const TASK_STEP_DOWNLOAD_SOURCE: &str = "download_source";
 pub(super) const TASK_STEP_EXTRACT_ARCHIVE: &str = "extract_archive";
 pub(super) const TASK_STEP_IMPORT_RESULT: &str = "import_result";
+pub(super) const TASK_STEP_INSPECT_SOURCE: &str = "inspect_source";
+pub(super) const TASK_STEP_RENDER_THUMBNAIL: &str = "render_thumbnail";
+pub(super) const TASK_STEP_PERSIST_THUMBNAIL: &str = "persist_thumbnail";
 
 #[derive(Debug, Clone, Copy)]
 struct TaskStepSpec {
@@ -55,6 +58,24 @@ fn task_step_specs(kind: BackgroundTaskKind) -> &'static [TaskStepSpec] {
             TaskStepSpec {
                 key: TASK_STEP_IMPORT_RESULT,
                 title: "Import extracted files",
+            },
+        ],
+        BackgroundTaskKind::ThumbnailGenerate => &[
+            TaskStepSpec {
+                key: TASK_STEP_WAITING,
+                title: "Waiting",
+            },
+            TaskStepSpec {
+                key: TASK_STEP_INSPECT_SOURCE,
+                title: "Inspect source blob",
+            },
+            TaskStepSpec {
+                key: TASK_STEP_RENDER_THUMBNAIL,
+                title: "Render thumbnail",
+            },
+            TaskStepSpec {
+                key: TASK_STEP_PERSIST_THUMBNAIL,
+                title: "Persist thumbnail",
             },
         ],
         BackgroundTaskKind::SystemRuntime => &[],

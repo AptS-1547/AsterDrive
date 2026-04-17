@@ -548,6 +548,8 @@ export default function AdminOverviewPage() {
 				return t("tasks:kind_archive_compress");
 			case "system_runtime":
 				return t("tasks:kind_system_runtime");
+			default:
+				return String(kind).replaceAll("_", " ");
 		}
 	};
 

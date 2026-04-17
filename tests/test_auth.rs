@@ -1666,7 +1666,6 @@ async fn test_user_status_cached_in_auth_middleware() {
         config: base.config,
         cache,
         mail_sender: base.mail_sender,
-        thumbnail_tx: base.thumbnail_tx,
         storage_change_tx: base.storage_change_tx,
     };
     let app = create_test_app!(state);
@@ -1711,7 +1710,6 @@ async fn test_disable_user_invalidates_status_cache() {
         config: base.config,
         cache,
         mail_sender: base.mail_sender,
-        thumbnail_tx: base.thumbnail_tx,
         storage_change_tx: base.storage_change_tx,
     };
     let app = create_test_app!(state);

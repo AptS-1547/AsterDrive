@@ -56,8 +56,7 @@ pub async fn prepare() -> Result<AppState> {
     let cache = crate::cache::create_cache(&cfg.cache).await;
     let mail_sender = crate::services::mail_service::runtime_sender(runtime_config.clone());
 
-    // 9. 缩略图后台队列（channel 容量 1024，溢出时 drop）
-    let (thumbnail_tx, thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(1024);
+    // 9. 文件变更广播（SSE 消费）
     let (storage_change_tx, _) = tokio::sync::broadcast::channel(
         crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
     );
@@ -76,20 +75,8 @@ pub async fn prepare() -> Result<AppState> {
         config: cfg,
         cache,
         mail_sender,
-        thumbnail_tx,
         storage_change_tx,
     };
-
-    // 启动缩略图后台 worker（需要在返回 AppState 之前拿到 rx）
-    // 先保存 rx，由 tasks::spawn_background_tasks 消费
-    // 但 rx 不能 Clone，所以在这里直接 spawn
-    crate::services::thumbnail_service::spawn_worker(
-        actix_web::web::Data::new(state.db.clone()),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        thumbnail_rx,
-    );
 
     Ok(state)
 }

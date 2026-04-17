@@ -21,8 +21,6 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub cache: Arc<dyn CacheBackend>,
     pub mail_sender: Arc<dyn MailSender>,
-    /// 缩略图生成队列（blob_id），后台 worker 消费
-    pub thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
     /// 文件/文件夹变更广播（SSE 消费）
     pub storage_change_tx: tokio::sync::broadcast::Sender<StorageChangeEvent>,
 }

@@ -14,6 +14,7 @@ use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 use super::archive;
 use super::steps::{mark_active_step_failed, parse_task_steps_json, serialize_task_steps};
+use super::thumbnail;
 use super::{
     TASK_DRAIN_MAX_ROUNDS, TASK_HEARTBEAT_INTERVAL_SECS, TASK_PROCESSING_STALE_SECS, TaskLease,
     TaskLeaseGuard, is_task_lease_lost, is_task_lease_renewal_timed_out, task_expiration_from,
@@ -176,7 +177,8 @@ async fn process_claimed_task(
             let error_message = truncate_error(&error.to_string());
             let failed_steps_json =
                 build_failed_task_steps_json(state, task.id, task.kind, &error_message).await;
-            if attempt_count >= task.max_attempts {
+            let should_retry = should_retry_task_error(task.kind, &error);
+            if attempt_count >= task.max_attempts || !should_retry {
                 let failed = background_task_repo::mark_failed(
                     &state.db,
                     task.id,
@@ -412,6 +414,9 @@ async fn process_task(
         BackgroundTaskKind::ArchiveExtract => {
             archive::process_archive_extract_task(state, task, lease_guard).await
         }
+        BackgroundTaskKind::ThumbnailGenerate => {
+            thumbnail::process_thumbnail_generate_task(state, task, lease_guard).await
+        }
         BackgroundTaskKind::SystemRuntime => Err(crate::errors::AsterError::internal_error(
             format!("system runtime task #{} should not be dispatched", task.id),
         )),
@@ -424,6 +429,20 @@ fn retry_delay_secs(attempt_count: i32) -> i64 {
         2 => 15,
         3 => 60,
         _ => 300,
+    }
+}
+
+fn should_retry_task_error(kind: BackgroundTaskKind, error: &AsterError) -> bool {
+    match kind {
+        BackgroundTaskKind::ThumbnailGenerate => matches!(
+            error,
+            AsterError::DatabaseConnection(_)
+                | AsterError::DatabaseOperation(_)
+                | AsterError::StorageDriverError(_)
+        ),
+        BackgroundTaskKind::ArchiveCompress
+        | BackgroundTaskKind::ArchiveExtract
+        | BackgroundTaskKind::SystemRuntime => true,
     }
 }
 
