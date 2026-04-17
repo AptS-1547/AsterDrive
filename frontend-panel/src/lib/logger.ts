@@ -12,7 +12,7 @@ function error(msg: string, ...args: unknown[]) {
 
 function debug(msg: string, ...args: unknown[]) {
 	if (runtimeFlags.isDev) {
-		console.log(PREFIX, msg, ...args);
+		console.debug(PREFIX, msg, ...args);
 	}
 }
 

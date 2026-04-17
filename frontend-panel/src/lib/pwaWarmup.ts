@@ -1,4 +1,5 @@
 import { runtimeFlags } from "@/config/runtime";
+import { logger } from "@/lib/logger";
 import {
 	adminRouteWarmupLoaders,
 	filePreviewWarmupLoaders,
@@ -12,12 +13,11 @@ const CHUNK_DELAY_MS = 1200;
 const RUNTIME_CHUNK_CACHE_NAME = "asset-chunks";
 
 function logWarmup(message: string, extra?: unknown) {
-	if (!runtimeFlags.isDev) return;
 	if (extra === undefined) {
-		console.debug(`[pwa-warmup] ${message}`);
+		logger.debug(`[pwa-warmup] ${message}`);
 		return;
 	}
-	console.debug(`[pwa-warmup] ${message}`, extra);
+	logger.debug(`[pwa-warmup] ${message}`, extra);
 }
 
 function scheduleIdle(task: () => void) {

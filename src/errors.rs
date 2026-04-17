@@ -1,5 +1,11 @@
 use actix_web::http::StatusCode;
 
+/// 计数宏：计算传入标识符的数量（放在 define_errors! 之前，因为后者在展开时会调用此宏）
+macro_rules! count {
+    () => { 0 };
+    ($head:ident $($tail:ident)*) => { 1 + count!($($tail)*) };
+}
+
 /// 内部错误类型，字符串错误码（E001-E0xx），用于 Rust 内部、日志、调试
 macro_rules! define_errors {
     ($(
@@ -9,6 +15,9 @@ macro_rules! define_errors {
         pub enum AsterError {
             $($variant(String),)*
         }
+
+        /// 变体总数，用于 error_code.rs 编译期穷举检查
+        pub const ASTER_ERROR_VARIANT_COUNT: usize = count!($($variant)*);
 
         impl AsterError {
             /// 内部错误码（字符串，如 "E001"），用于日志和调试

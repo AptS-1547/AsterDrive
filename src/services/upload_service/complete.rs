@@ -15,6 +15,7 @@ use crate::services::{
 };
 use crate::storage::driver::StorageDriver;
 use crate::types::{DriverType, UploadSessionStatus};
+use crate::utils::numbers::u64_to_i64;
 use crate::utils::paths;
 
 /// 完成分片上传：组装 → 按策略决定是否计算 hash / 去重 → 写入最终存储
@@ -273,7 +274,7 @@ async fn ensure_uploaded_s3_object_size(
         .metadata(temp_key)
         .await
         .map_aster_err_with(|| AsterError::upload_assembly_failed(missing_message))?;
-    let actual_size = meta.size as i64;
+    let actual_size = u64_to_i64(meta.size, "blob_size")?;
 
     if actual_size != declared_size {
         if let Err(error) = driver.delete(temp_key).await {

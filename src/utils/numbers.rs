@@ -26,6 +26,12 @@ pub fn i64_to_u64(value: i64, value_name: &str) -> Result<u64> {
     })
 }
 
+pub fn u64_to_i64(value: u64, value_name: &str) -> Result<i64> {
+    i64::try_from(value).map_aster_err_with(|| {
+        AsterError::internal_error(format!("{value_name} exceeds i64 range: {value}"))
+    })
+}
+
 pub fn usize_to_i32(value: usize, value_name: &str) -> Result<i32> {
     i32::try_from(value).map_aster_err_with(|| {
         AsterError::internal_error(format!("{value_name} exceeds i32 range: {value}"))

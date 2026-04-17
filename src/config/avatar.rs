@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::config::RuntimeConfig;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 
 pub const AVATAR_DIR_KEY: &str = "avatar_dir";
 pub const DEFAULT_AVATAR_DIR: &str = "avatar";
@@ -44,9 +44,9 @@ pub fn resolve_local_avatar_root_dir(runtime_config: &RuntimeConfig) -> Result<P
 
     std::env::current_dir()
         .map(|cwd| cwd.join(DEFAULT_DATA_DIR).join(configured_path))
-        .map_err(|e| {
-            AsterError::storage_driver_error(format!("resolve avatar_dir '{configured}': {e}"))
-        })
+        .map_aster_err(|e| AsterError::storage_driver_error(format!(
+            "resolve avatar_dir '{configured}': {e}"
+        )))
 }
 
 #[cfg(test)]

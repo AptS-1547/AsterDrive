@@ -202,7 +202,9 @@ pub async fn delete_thumbnail(state: &AppState, blob: &file_blob::Model) -> Resu
             driver.delete(&path).await?;
         }
     }
-    let _ = file_repo::clear_thumbnail_metadata(&state.db, blob.id).await;
+    if let Err(e) = file_repo::clear_thumbnail_metadata(&state.db, blob.id).await {
+        tracing::warn!(blob_id = %blob.id, "failed to clear thumbnail metadata: {e}");
+    }
     Ok(())
 }
 

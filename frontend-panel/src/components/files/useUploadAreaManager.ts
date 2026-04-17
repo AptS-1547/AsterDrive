@@ -15,6 +15,7 @@ import {
 	type UploadMode,
 } from "@/components/files/uploadResume";
 import { formatBytes } from "@/lib/format";
+import { logger } from "@/lib/logger";
 import {
 	clearDeferredStorageRefresh,
 	consumeDeferredStorageRefresh,
@@ -340,7 +341,7 @@ export function useUploadAreaManager({
 			const { session, progress } = result.value;
 			if (!progress?.status) {
 				if (process.env.NODE_ENV === "development") {
-					console.warn(
+					logger.warn(
 						"skipping restored upload session because progress is missing a status",
 						{
 							progress,

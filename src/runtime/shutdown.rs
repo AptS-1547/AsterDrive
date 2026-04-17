@@ -1,13 +1,16 @@
 use super::tasks::BackgroundTasks;
 use sea_orm::DatabaseConnection;
-use tokio::signal;
+use tokio::signal::unix::{signal, SignalKind};
 
-/// 等待 Ctrl-C 信号，然后进行优雅关闭
+/// 等待 SIGINT 或 SIGTERM 信号，然后进行优雅关闭
 pub async fn wait_for_signal() {
-    signal::ctrl_c()
-        .await
-        .expect("failed to install Ctrl+C handler");
-    tracing::info!("received shutdown signal, shutting down gracefully...");
+    let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
+    let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+
+    tokio::select! {
+        _ = sigint.recv() => tracing::info!("received SIGINT, shutting down gracefully..."),
+        _ = sigterm.recv() => tracing::info!("received SIGTERM, shutting down gracefully..."),
+    }
 }
 
 /// 执行关闭流程：先停止后台任务，再关闭数据库连接并记录日志

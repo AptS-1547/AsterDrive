@@ -105,10 +105,7 @@ where
 
     match result {
         Ok(()) => txn.commit().await.map_err(AsterError::from),
-        Err(err) => {
-            txn.rollback().await.map_err(AsterError::from)?;
-            Err(err)
-        }
+        Err(err) => Err(err),
     }
 }
 

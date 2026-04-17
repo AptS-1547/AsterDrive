@@ -326,7 +326,8 @@ impl MigrationTrait for Migration {
                     .foreign_key(
                         ForeignKey::create()
                             .from(Files::Table, Files::BlobId)
-                            .to(FileBlobs::Table, FileBlobs::Id),
+                            .to(FileBlobs::Table, FileBlobs::Id)
+                            .on_delete(ForeignKeyAction::Restrict),
                     )
                     .foreign_key(
                         ForeignKey::create()

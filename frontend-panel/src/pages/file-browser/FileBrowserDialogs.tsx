@@ -1,0 +1,201 @@
+import { Suspense } from "react";
+import { BatchActionBar } from "@/components/common/BatchActionBar";
+import { FilePreview } from "@/components/files/FilePreview";
+import {
+	ArchiveTaskNameDialog,
+	BatchTargetFolderDialog,
+	CreateFileDialog,
+	CreateFolderDialog,
+	RenameDialog,
+	ShareDialog,
+	VersionHistoryDialog,
+} from "@/pages/file-browser/fileBrowserLazy";
+import type {
+	FileBrowserArchiveTaskTarget,
+	FileBrowserCopyTarget,
+	FileBrowserMoveTarget,
+	FileBrowserPreviewState,
+	FileBrowserRenameTarget,
+	FileBrowserShareTarget,
+	FileBrowserVersionTarget,
+} from "@/pages/file-browser/types";
+import { fileService } from "@/services/fileService";
+import type { BreadcrumbItem } from "@/stores/fileStore";
+
+interface FileBrowserDialogsProps {
+	archiveTaskTarget: FileBrowserArchiveTaskTarget | null;
+	breadcrumb: BreadcrumbItem[];
+	copyTarget: FileBrowserCopyTarget | null;
+	createFileOpen: boolean;
+	createFolderOpen: boolean;
+	currentFolderId: number | null;
+	moveTarget: FileBrowserMoveTarget | null;
+	previewState: FileBrowserPreviewState | null;
+	renameTarget: FileBrowserRenameTarget | null;
+	shareTarget: FileBrowserShareTarget | null;
+	versionTarget: FileBrowserVersionTarget | null;
+	onArchiveCompress: (fileIds: number[], folderIds: number[]) => Promise<void>;
+	onArchiveDownload: (fileIds: number[], folderIds: number[]) => Promise<void>;
+	onArchiveTaskClose: () => void;
+	onArchiveTaskSubmit: (name: string | undefined) => Promise<void>;
+	onCopyClose: () => void;
+	onCopyConfirm: (targetFolderId: number | null) => Promise<void>;
+	onCreateFileOpenChange: (open: boolean) => void;
+	onCreateFolderOpenChange: (open: boolean) => void;
+	onMoveClose: () => void;
+	onMoveConfirm: (targetFolderId: number | null) => Promise<void>;
+	onPreviewClose: () => void;
+	onPreviewFileUpdated: () => void | Promise<void>;
+	onRenameClose: () => void;
+	onShareClose: () => void;
+	onVersionClose: () => void;
+	onVersionRestored: () => void | Promise<void>;
+}
+
+export function FileBrowserDialogs({
+	archiveTaskTarget,
+	breadcrumb,
+	copyTarget,
+	createFileOpen,
+	createFolderOpen,
+	currentFolderId,
+	moveTarget,
+	previewState,
+	renameTarget,
+	shareTarget,
+	versionTarget,
+	onArchiveCompress,
+	onArchiveDownload,
+	onArchiveTaskClose,
+	onArchiveTaskSubmit,
+	onCopyClose,
+	onCopyConfirm,
+	onCreateFileOpenChange,
+	onCreateFolderOpenChange,
+	onMoveClose,
+	onMoveConfirm,
+	onPreviewClose,
+	onPreviewFileUpdated,
+	onRenameClose,
+	onShareClose,
+	onVersionClose,
+	onVersionRestored,
+}: FileBrowserDialogsProps) {
+	return (
+		<>
+			<Suspense fallback={null}>
+				<CreateFolderDialog
+					open={createFolderOpen}
+					onOpenChange={onCreateFolderOpenChange}
+				/>
+			</Suspense>
+
+			<Suspense fallback={null}>
+				<CreateFileDialog
+					open={createFileOpen}
+					onOpenChange={onCreateFileOpenChange}
+				/>
+			</Suspense>
+
+			<BatchActionBar
+				onArchiveCompress={onArchiveCompress}
+				onArchiveDownload={onArchiveDownload}
+			/>
+
+			<Suspense fallback={null}>
+				<ArchiveTaskNameDialog
+					open={archiveTaskTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) onArchiveTaskClose();
+					}}
+					mode={archiveTaskTarget?.mode ?? "compress"}
+					initialName={archiveTaskTarget?.initialName ?? ""}
+					onSubmit={onArchiveTaskSubmit}
+				/>
+			</Suspense>
+
+			<Suspense fallback={null}>
+				<ShareDialog
+					open={shareTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) onShareClose();
+					}}
+					fileId={shareTarget?.fileId}
+					folderId={shareTarget?.folderId}
+					name={shareTarget?.name ?? ""}
+					initialMode={shareTarget?.initialMode}
+				/>
+			</Suspense>
+
+			{previewState ? (
+				<FilePreview
+					file={previewState.file}
+					openMode={previewState.openMode}
+					onClose={onPreviewClose}
+					onFileUpdated={onPreviewFileUpdated}
+					previewLinkFactory={() =>
+						fileService.createPreviewLink(previewState.file.id)
+					}
+					wopiSessionFactory={(appKey) =>
+						fileService.createWopiSession(previewState.file.id, appKey)
+					}
+				/>
+			) : null}
+
+			<Suspense fallback={null}>
+				<BatchTargetFolderDialog
+					open={copyTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) onCopyClose();
+					}}
+					mode="copy"
+					onConfirm={onCopyConfirm}
+					currentFolderId={currentFolderId}
+					initialBreadcrumb={breadcrumb}
+					selectedFolderIds={
+						copyTarget?.type === "folder" ? [copyTarget.id] : []
+					}
+				/>
+			</Suspense>
+
+			<Suspense fallback={null}>
+				<BatchTargetFolderDialog
+					open={moveTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) onMoveClose();
+					}}
+					mode="move"
+					onConfirm={onMoveConfirm}
+					currentFolderId={currentFolderId}
+					initialBreadcrumb={breadcrumb}
+					selectedFolderIds={moveTarget?.folderIds ?? []}
+				/>
+			</Suspense>
+
+			<Suspense fallback={null}>
+				<VersionHistoryDialog
+					open={versionTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) onVersionClose();
+					}}
+					fileId={versionTarget?.fileId ?? 0}
+					fileName={versionTarget?.fileName ?? ""}
+					mimeType={versionTarget?.mimeType}
+					onRestored={onVersionRestored}
+				/>
+			</Suspense>
+
+			<Suspense fallback={null}>
+				<RenameDialog
+					open={renameTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) onRenameClose();
+					}}
+					type={renameTarget?.type ?? "file"}
+					id={renameTarget?.id ?? 0}
+					currentName={renameTarget?.name ?? ""}
+				/>
+			</Suspense>
+		</>
+	);
+}
