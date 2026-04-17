@@ -22,7 +22,7 @@ use super::{
 };
 
 struct BlockingPutFileDriver {
-    inner: crate::storage::local::LocalDriver,
+    inner: crate::storage::drivers::local::LocalDriver,
     put_file_entered: Mutex<Option<oneshot::Sender<()>>>,
     release_put_file: Arc<Notify>,
 }
@@ -33,7 +33,7 @@ impl BlockingPutFileDriver {
         let release_put_file = Arc::new(Notify::new());
         (
             Self {
-                inner: crate::storage::local::LocalDriver::new(policy)
+                inner: crate::storage::drivers::local::LocalDriver::new(policy)
                     .expect("blocking test driver should initialize"),
                 put_file_entered: Mutex::new(Some(entered_tx)),
                 release_put_file: release_put_file.clone(),

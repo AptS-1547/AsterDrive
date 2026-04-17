@@ -1,7 +1,8 @@
-use super::driver::{BlobMetadata, StorageDriver, StoragePathVisitor};
 use super::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::storage::driver::{BlobMetadata, StorageDriver, StoragePathVisitor};
+use crate::storage::multipart::MultipartStorageDriver;
 use crate::utils::numbers;
 use async_trait::async_trait;
 use aws_credential_types::Credentials;
@@ -532,7 +533,7 @@ impl StorageDriver for S3Driver {
         &self,
         path: &str,
         expires: Duration,
-        options: super::driver::PresignedDownloadOptions,
+        options: crate::storage::driver::PresignedDownloadOptions,
     ) -> Result<Option<String>> {
         let key = self.full_key(path);
         let presign_config = PresigningConfig::builder()
@@ -595,8 +596,13 @@ impl StorageDriver for S3Driver {
         Ok(dest_path.to_string())
     }
 
-    // ── S3 Multipart Upload ──────────────────────────────────────────
+    fn as_multipart(&self) -> Option<&dyn crate::storage::multipart::MultipartStorageDriver> {
+        Some(self)
+    }
+}
 
+#[async_trait]
+impl MultipartStorageDriver for S3Driver {
     async fn create_multipart_upload(&self, path: &str) -> Result<String> {
         let key = self.full_key(path);
         let resp = self

@@ -248,10 +248,21 @@ async fn cleanup_broken_completed_session_object(
     };
 
     if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
-        let mut abort_error = None;
+        let Ok(multipart) = state.driver_registry.get_multipart_driver(&policy) else {
+            // 策略不支持 multipart（如已切换为 Local），跳过 abort 直接删 key
+            if let Err(e) = driver.delete(temp_key).await {
+                tracing::warn!(
+                    session_id = %session.id,
+                    temp_key = %temp_key,
+                    "failed to delete stale temp object for completed session: {e}"
+                );
+            }
+            return;
+        };
 
+        let mut abort_error = None;
         for attempt in 1..=MULTIPART_ABORT_MAX_ATTEMPTS {
-            match driver.abort_multipart_upload(temp_key, multipart_id).await {
+            match multipart.abort_multipart_upload(temp_key, multipart_id).await {
                 Ok(()) => {
                     abort_error = None;
                     break;
@@ -261,7 +272,6 @@ async fn cleanup_broken_completed_session_object(
                         abort_error = Some(err);
                         break;
                     }
-
                     let backoff_ms = MULTIPART_ABORT_INITIAL_BACKOFF_MS * (1_u64 << (attempt - 1));
                     tracing::warn!(
                         session_id = %session.id,

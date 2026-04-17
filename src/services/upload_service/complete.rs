@@ -352,6 +352,8 @@ async fn complete_s3_multipart_upload_session(
 
     let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
+    let multipart = state.driver_registry.get_multipart_driver(&policy)?;
+    let driver_ref = driver.as_ref() as &dyn crate::storage::StorageDriver;
     let upload_id = session.id.clone();
 
     tracing::debug!(
@@ -369,12 +371,12 @@ async fn complete_s3_multipart_upload_session(
     let result = async {
         completed_parts.sort_by_key(|(part_number, _)| *part_number);
         // multipart complete 之前要先把 part 列表排序；驱动层依赖有序 part 序列。
-        driver
+        multipart
             .complete_multipart_upload(&temp_key, &multipart_id, completed_parts)
             .await?;
 
         let actual_size = ensure_uploaded_s3_object_size(
-            driver.as_ref(),
+            driver_ref,
             &temp_key,
             session.total_size,
             missing_message,

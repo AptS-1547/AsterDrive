@@ -7,11 +7,10 @@ use futures::future::{LocalBoxFuture, Ready, ok};
 use std::rc::Rc;
 
 use crate::api::middleware::csrf::{self, RequestSourceMode};
+use crate::api::request_auth::{access_cookie_token, bearer_token};
 use crate::errors::AsterError;
 use crate::runtime::AppState;
 use crate::services::auth_service;
-
-const ACCESS_COOKIE: &str = "aster_access";
 
 /// JWT 认证中间件
 /// 优先从 cookie 取 token，fallback 到 Authorization: Bearer header
@@ -60,7 +59,7 @@ where
 
             // 1. Cookie 优先
             // 2. Authorization: Bearer fallback
-            let cookie_token = req.cookie(ACCESS_COOKIE).map(|c| c.value().to_string());
+            let cookie_token = access_cookie_token(req.request());
             if cookie_token.is_some() && csrf::is_unsafe_method(req.method()) {
                 csrf::ensure_service_request_source_allowed(
                     &req,
@@ -70,13 +69,7 @@ where
                 csrf::ensure_service_double_submit_token(&req)?;
             }
 
-            let token = cookie_token.or_else(|| {
-                req.headers()
-                    .get("Authorization")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.strip_prefix("Bearer "))
-                    .map(|s| s.to_string())
-            });
+            let token = cookie_token.or_else(|| bearer_token(req.request()));
 
             match token {
                 None => Err(AsterError::auth_invalid_credentials("missing token").into()),

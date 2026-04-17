@@ -87,6 +87,24 @@ function clearRefreshTimer() {
 	}
 }
 
+function applyServerPreferences(prefs: UserPreferences): void {
+	const themeStore = useThemeStore.getState();
+	const fileStore = useFileStore.getState();
+
+	themeStore._applyFromServer({
+		mode: (prefs.theme_mode as ThemeMode) ?? themeStore.mode,
+		colorPreset: (prefs.color_preset as ColorPreset) ?? themeStore.colorPreset,
+	});
+	fileStore._applyFromServer({
+		viewMode: (prefs.view_mode as ViewMode) ?? fileStore.viewMode,
+		browserOpenMode:
+			(prefs.browser_open_mode as BrowserOpenMode) ?? fileStore.browserOpenMode,
+		sortBy: (prefs.sort_by as SortBy) ?? fileStore.sortBy,
+		sortOrder: (prefs.sort_order as SortOrder) ?? fileStore.sortOrder,
+	});
+	if (prefs.language) void i18n.changeLanguage(prefs.language);
+}
+
 interface AuthState {
 	isAuthenticated: boolean;
 	isChecking: boolean;
@@ -124,29 +142,12 @@ const LOGGED_OUT_STATE = {
 	| "expiresAt"
 >;
 
-function applyServerPreferences(prefs: UserPreferences): void {
-	const themeStore = useThemeStore.getState();
-	const fileStore = useFileStore.getState();
-
-	themeStore._applyFromServer({
-		mode: (prefs.theme_mode as ThemeMode) ?? themeStore.mode,
-		colorPreset: (prefs.color_preset as ColorPreset) ?? themeStore.colorPreset,
-	});
-	fileStore._applyFromServer({
-		viewMode: (prefs.view_mode as ViewMode) ?? fileStore.viewMode,
-		browserOpenMode:
-			(prefs.browser_open_mode as BrowserOpenMode) ?? fileStore.browserOpenMode,
-		sortBy: (prefs.sort_by as SortBy) ?? fileStore.sortBy,
-		sortOrder: (prefs.sort_order as SortOrder) ?? fileStore.sortOrder,
-	});
-	if (prefs.language) void i18n.changeLanguage(prefs.language);
-}
-
 function applyLoggedOutState(
 	setAuthState: (state: Partial<AuthState>) => void,
 ) {
 	cancelPreferenceSync();
 	clearRefreshTimer();
+	// teamStore 是独立的子状态，登出时直接清空
 	useTeamStore.getState().clear();
 	setStoredExpiresAt(null);
 	setCachedUser(null);
@@ -166,6 +167,21 @@ function mergeUserPreferences(
 	};
 }
 
+// ── Subscription: 用户偏好同步 ────────────────────────────────────────────────
+//
+// 当 user 对象变化且处于已认证状态时，将服务端偏好同步到 themeStore / fileStore。
+// authStore 只管自身状态，跨 store 写入统一通过此 subscription 完成，
+// 而不是在每个 login / checkAuth / refreshUser 中重复调用。
+function handleAuthStateChange(state: AuthState, prevState: AuthState) {
+	if (
+		state.user !== prevState.user &&
+		state.isAuthenticated &&
+		state.user?.preferences
+	) {
+		applyServerPreferences(state.user.preferences);
+	}
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
 	isAuthenticated: initialCachedUser !== null,
 	isChecking: true,
@@ -177,7 +193,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 	login: async (identifier, password) => {
 		const session = await authService.login(identifier, password);
 		const user = await authService.me();
-		if (user.preferences) applyServerPreferences(user.preferences);
 		setCachedUser(user);
 		set({
 			isAuthenticated: true,
@@ -191,7 +206,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 	logout: async () => {
 		get().stopAutoRefresh();
-		setStoredExpiresAt(null);
 		try {
 			await authService.logout();
 		} catch {
@@ -206,7 +220,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 			const user = await authService.me();
 			const expiresAt =
 				getExpiresAtFromUser(user) ?? get().expiresAt ?? getStoredExpiresAt();
-			if (user.preferences) applyServerPreferences(user.preferences);
 			setCachedUser(user);
 			if (expiresAt !== null) setStoredExpiresAt(expiresAt);
 			set({
@@ -288,7 +301,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 			const user = await authService.me();
 			const expiresAt =
 				getExpiresAtFromUser(user) ?? get().expiresAt ?? getStoredExpiresAt();
-			if (user.preferences) applyServerPreferences(user.preferences);
 			setCachedUser(user);
 			if (expiresAt !== null) {
 				setStoredExpiresAt(expiresAt);
@@ -361,6 +373,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 	},
 }));
 
+// store 创建后注册订阅，避免 store 定义体内循环引用
+useAuthStore.subscribe(handleAuthStateChange);
+
 export function forceLogout() {
-	applyLoggedOutState((state) => useAuthStore.setState(state));
+	applyLoggedOutState(useAuthStore.setState.bind(useAuthStore));
 }

@@ -1,8 +1,8 @@
 use crate::api::middleware::csrf;
+use crate::api::request_auth::ACCESS_COOKIE;
 use actix_web::cookie::time::Duration as CookieDuration;
 use actix_web::cookie::{Cookie, SameSite};
 
-pub(super) const ACCESS_COOKIE: &str = "aster_access";
 pub(super) const REFRESH_COOKIE: &str = "aster_refresh";
 const ACCESS_COOKIE_PATH: &str = "/";
 const REFRESH_COOKIE_PATH: &str = "/api/v1/auth/refresh";

@@ -49,6 +49,12 @@ pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file::Mod
         .ok_or_else(|| AsterError::file_not_found(format!("file #{id}")))
 }
 
+/// 以排他锁读取文件记录，用于防止并发操作同一文件时的竞态。
+///
+/// - Postgres/MySQL：使用 `SELECT ... FOR UPDATE`，有真正的行锁保障。
+/// - SQLite：`FOR UPDATE` 不被支持，fallback 到普通读。SQLite 的写操作本身依赖 WAL 写锁，
+///   对于 AsterDrive 的写入场景（覆盖上传等）已有 blob ref_count 原子操作兜底，
+///   此函数在 SQLite 上的并发保护能力有限，设计上接受这一限制。
 pub async fn lock_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file::Model> {
     match db.get_database_backend() {
         DbBackend::Postgres | DbBackend::MySql => File::find_by_id(id)

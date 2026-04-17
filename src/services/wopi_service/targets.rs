@@ -304,7 +304,7 @@ pub(crate) async fn store_relative_target_from_bytes(
         let should_dedup = workspace_storage_service::local_content_dedup_enabled(&resolved_policy);
         let staging_token = format!("{}.upload", uuid::Uuid::new_v4());
         let staging_path =
-            crate::storage::local::upload_staging_path(&resolved_policy, &staging_token);
+            crate::storage::drivers::local::upload_staging_path(&resolved_policy, &staging_token);
         if let Some(parent) = staging_path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await

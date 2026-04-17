@@ -5,7 +5,7 @@ use crate::db::repository::{policy_group_repo, policy_repo};
 use crate::entities::{storage_policy, storage_policy_group, storage_policy_group_item};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::storage::s3_config::normalize_s3_endpoint_and_bucket;
+use crate::storage::drivers::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::types::{
     DriverType, StoragePolicyOptions, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
     serialize_storage_policy_allowed_types, serialize_storage_policy_options,

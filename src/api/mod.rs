@@ -4,6 +4,7 @@ pub mod middleware;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 pub mod openapi;
 pub mod pagination;
+pub(crate) mod request_auth;
 pub mod response;
 pub mod routes;
 

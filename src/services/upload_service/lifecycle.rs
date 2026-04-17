@@ -52,8 +52,13 @@ async fn cancel_upload_impl(state: &AppState, session: upload_session::Model) ->
         let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
         if let Ok(driver) = state.driver_registry.get_driver(&policy) {
             if let Some(ref multipart_id) = session.s3_multipart_id {
-                if let Err(error) = driver.abort_multipart_upload(temp_key, multipart_id).await {
-                    tracing::warn!("failed to abort S3 multipart upload: {error}");
+                if let Some(multipart) = driver.as_multipart() {
+                    if let Err(error) = multipart
+                        .abort_multipart_upload(temp_key, multipart_id)
+                        .await
+                    {
+                        tracing::warn!("failed to abort S3 multipart upload: {error}");
+                    }
                 }
                 if let Err(error) = driver.delete(temp_key).await {
                     tracing::warn!("failed to delete S3 temp object after abort: {error}");
@@ -95,8 +100,13 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
             && let Ok(driver) = state.driver_registry.get_driver(&policy)
         {
             if let Some(ref multipart_id) = session.s3_multipart_id {
-                if let Err(error) = driver.abort_multipart_upload(temp_key, multipart_id).await {
-                    tracing::warn!("failed to abort expired S3 multipart upload: {error}");
+                if let Some(multipart) = driver.as_multipart() {
+                    if let Err(error) = multipart
+                        .abort_multipart_upload(temp_key, multipart_id)
+                        .await
+                    {
+                        tracing::warn!("failed to abort expired S3 multipart upload: {error}");
+                    }
                 }
                 if let Err(error) = driver.delete(temp_key).await {
                     tracing::warn!("failed to delete expired S3 temp object after abort: {error}");

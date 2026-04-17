@@ -101,70 +101,10 @@ pub trait StorageDriver: Send + Sync {
         ))
     }
 
-    // ── S3 Multipart Upload ──────────────────────────────────────────
-
-    /// 创建 S3 multipart upload，返回 AWS upload_id
-    async fn create_multipart_upload(&self, path: &str) -> Result<String> {
-        let _ = path;
-        Err(crate::errors::AsterError::storage_driver_error(
-            "multipart upload not supported by this driver",
-        ))
-    }
-
-    /// 为指定 part 生成 presigned PUT URL
-    async fn presigned_upload_part_url(
-        &self,
-        path: &str,
-        upload_id: &str,
-        part_number: i32,
-        expires: Duration,
-    ) -> Result<String> {
-        let _ = (path, upload_id, part_number, expires);
-        Err(crate::errors::AsterError::storage_driver_error(
-            "multipart upload not supported by this driver",
-        ))
-    }
-
-    /// 完成 S3 multipart upload（parts: Vec<(part_number, etag)>）
-    async fn complete_multipart_upload(
-        &self,
-        path: &str,
-        upload_id: &str,
-        parts: Vec<(i32, String)>,
-    ) -> Result<()> {
-        let _ = (path, upload_id, parts);
-        Err(crate::errors::AsterError::storage_driver_error(
-            "multipart upload not supported by this driver",
-        ))
-    }
-
-    /// 服务端直接上传一个 multipart part，返回该 part 的 ETag
-    async fn upload_multipart_part(
-        &self,
-        path: &str,
-        upload_id: &str,
-        part_number: i32,
-        data: &[u8],
-    ) -> Result<String> {
-        let _ = (path, upload_id, part_number, data);
-        Err(crate::errors::AsterError::storage_driver_error(
-            "multipart upload not supported by this driver",
-        ))
-    }
-
-    /// 取消 S3 multipart upload（清理已上传的 parts）
-    async fn abort_multipart_upload(&self, path: &str, upload_id: &str) -> Result<()> {
-        let _ = (path, upload_id);
-        Err(crate::errors::AsterError::storage_driver_error(
-            "multipart upload not supported by this driver",
-        ))
-    }
-
-    /// 列出已上传的 parts（返回 part numbers，用于断点续传进度查询）
-    async fn list_uploaded_parts(&self, path: &str, upload_id: &str) -> Result<Vec<i32>> {
-        let _ = (path, upload_id);
-        Err(crate::errors::AsterError::storage_driver_error(
-            "multipart upload not supported by this driver",
-        ))
+    /// 将 self 向下转换为 `MultipartStorageDriver`（仅 S3 类驱动）。
+    ///
+    /// LocalDriver 返回 `None`；S3Driver 返回 `Some(self)`。
+    fn as_multipart(&self) -> Option<&dyn super::multipart::MultipartStorageDriver> {
+        None
     }
 }

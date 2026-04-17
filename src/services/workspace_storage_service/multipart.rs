@@ -65,7 +65,8 @@ async fn upload_local_direct(
             crate::utils::validate_name(&filename)?;
 
             let staging_token = format!("{}.upload", crate::utils::id::new_uuid());
-            let staging_path = crate::storage::local::upload_staging_path(policy, &staging_token);
+            let staging_path =
+                crate::storage::drivers::local::upload_staging_path(policy, &staging_token);
             if let Some(parent) = staging_path.parent() {
                 tokio::fs::create_dir_all(parent).await.map_aster_err_ctx(
                     "create local staging dir",

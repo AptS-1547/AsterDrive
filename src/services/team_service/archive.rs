@@ -40,11 +40,16 @@ async fn cleanup_team_upload_sessions(
             && let Ok(driver) = state.driver_registry.get_driver(&policy)
         {
             if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
-                if let Err(err) = driver.abort_multipart_upload(temp_key, multipart_id).await {
-                    tracing::warn!(
-                        upload_id = %session.id,
-                        "failed to abort team multipart upload during cleanup: {err}"
-                    );
+                if let Some(multipart) = driver.as_multipart() {
+                    if let Err(err) = multipart
+                        .abort_multipart_upload(temp_key, multipart_id)
+                        .await
+                    {
+                        tracing::warn!(
+                            upload_id = %session.id,
+                            "failed to abort team multipart upload during cleanup: {err}"
+                        );
+                    }
                 }
             } else if let Err(err) = driver.delete(temp_key).await {
                 tracing::warn!(

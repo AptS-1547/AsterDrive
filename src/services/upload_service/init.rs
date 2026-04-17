@@ -163,7 +163,8 @@ async fn init_upload_for_scope(
 
             // 大文件 presigned multipart：服务端仍然不接管数据流，但必须保留 session，
             // 用来记录 multipart upload_id、分片总数以及后续 complete 阶段的收口点。
-            let s3_upload_id = driver.create_multipart_upload(&temp_key).await?;
+            let multipart = state.driver_registry.get_multipart_driver(&policy)?;
+            let s3_upload_id = multipart.create_multipart_upload(&temp_key).await?;
             let total_chunks =
                 numbers::calc_total_chunks(total_size, chunk_size, "presigned multipart upload")?;
 
@@ -232,10 +233,10 @@ async fn init_upload_for_scope(
             }
 
             // relay_stream + 大文件：客户端仍然分片传给服务端，服务端再逐片上传到 S3 multipart。
-            let driver = state.driver_registry.get_driver(&policy)?;
+            let multipart = state.driver_registry.get_multipart_driver(&policy)?;
             let upload_id = generate_upload_id(db).await?;
             let temp_key = format!("files/{upload_id}");
-            let s3_upload_id = driver.create_multipart_upload(&temp_key).await?;
+            let s3_upload_id = multipart.create_multipart_upload(&temp_key).await?;
             let total_chunks =
                 numbers::calc_total_chunks(total_size, chunk_size, "relay multipart upload")?;
             let now = Utc::now();

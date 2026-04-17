@@ -248,8 +248,8 @@ pub async fn test_connection(state: &AppState, id: i64) -> Result<()> {
 }
 
 pub async fn test_connection_params(input: StoragePolicyConnectionInput) -> Result<()> {
-    use crate::storage::local::LocalDriver;
-    use crate::storage::s3::S3Driver;
+    use crate::storage::drivers::local::LocalDriver;
+    use crate::storage::drivers::s3::S3Driver;
 
     let StoragePolicyConnectionInput {
         driver_type,

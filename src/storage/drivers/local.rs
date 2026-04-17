@@ -1,6 +1,6 @@
-use super::driver::{BlobMetadata, StorageDriver, StoragePathVisitor};
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::storage::driver::{BlobMetadata, StorageDriver, StoragePathVisitor};
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -225,7 +225,7 @@ impl StorageDriver for LocalDriver {
         &self,
         _path: &str,
         _expires: Duration,
-        _options: super::driver::PresignedDownloadOptions,
+        _options: crate::storage::driver::PresignedDownloadOptions,
     ) -> Result<Option<String>> {
         Ok(None)
     }

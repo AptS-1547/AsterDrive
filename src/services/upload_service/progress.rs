@@ -48,8 +48,10 @@ async fn get_progress_impl(
                 if session.status == UploadSessionStatus::Presigned =>
             {
                 if let Some(temp_key) = session.s3_temp_key.as_deref() {
-                    let driver = state.driver_registry.get_driver(&policy)?;
-                    driver.list_uploaded_parts(temp_key, multipart_id).await?
+                    state.driver_registry
+                        .get_multipart_driver(&policy)?
+                        .list_uploaded_parts(temp_key, multipart_id)
+                        .await?
                 } else {
                     scan_received_chunks(state, &session.id).await
                 }
@@ -128,12 +130,12 @@ async fn presign_parts_impl(
         .ok_or_else(|| AsterError::validation_error("missing s3_temp_key"))?;
 
     let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let multipart = state.driver_registry.get_multipart_driver(&policy)?;
 
     let expires = std::time::Duration::from_secs(HOUR_SECS);
     let mut urls = HashMap::new();
     for part_num in part_numbers {
-        let url = driver
+        let url = multipart
             .presigned_upload_part_url(temp_key, multipart_id, part_num, expires)
             .await?;
         urls.insert(part_num, url);

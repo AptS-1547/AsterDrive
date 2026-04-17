@@ -105,7 +105,7 @@ impl AsterDavFile {
             if policy.driver_type == crate::types::DriverType::Local {
                 let staging_token = format!("{}.upload", crate::utils::id::new_uuid());
                 let staging_path =
-                    crate::storage::local::upload_staging_path(&policy, &staging_token);
+                    crate::storage::drivers::local::upload_staging_path(&policy, &staging_token);
                 if let Some(parent) = staging_path.parent() {
                     tokio::fs::create_dir_all(parent)
                         .await

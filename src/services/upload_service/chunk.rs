@@ -113,8 +113,8 @@ async fn upload_chunk_impl(
         }
 
         let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-        let driver = state.driver_registry.get_driver(&policy)?;
-        let etag = match driver
+        let multipart = state.driver_registry.get_multipart_driver(&policy)?;
+        let etag = match multipart
             .upload_multipart_part(temp_key, multipart_id, s3_part_number, data)
             .await
         {

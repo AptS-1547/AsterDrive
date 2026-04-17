@@ -18,11 +18,12 @@ use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 
 use self::cookies::{
-    ACCESS_COOKIE, REFRESH_COOKIE, build_access_cookie, build_csrf_cookie, build_refresh_cookie,
+    REFRESH_COOKIE, build_access_cookie, build_csrf_cookie, build_refresh_cookie,
     clear_access_cookie, clear_csrf_cookie, clear_refresh_cookie,
 };
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::middleware::rate_limit;
+use crate::api::request_auth::{access_cookie_token, access_token, bearer_token};
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 
 pub use crate::services::user_service::{MeResponse, UpdatePreferencesReq, UserInfo};
@@ -187,14 +188,6 @@ async fn apply_auth_mail_response_floor(started_at: tokio::time::Instant) {
     }
 }
 
-fn bearer_token(req: &actix_web::HttpRequest) -> Option<String> {
-    req.headers()
-        .get("Authorization")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::to_string)
-}
-
 #[derive(Clone, Copy)]
 enum ContactVerificationRedirectStatus {
     EmailChanged,
@@ -217,12 +210,7 @@ impl ContactVerificationRedirectStatus {
 }
 
 async fn request_has_active_access_session(state: &AppState, req: &HttpRequest) -> bool {
-    let token = req
-        .cookie(ACCESS_COOKIE)
-        .map(|cookie| cookie.value().to_string())
-        .or_else(|| bearer_token(req));
-
-    let Some(token) = token else {
+    let Some(token) = access_token(req) else {
         return false;
     };
 
@@ -841,7 +829,7 @@ pub async fn refresh(
     ),
 )]
 pub async fn logout(state: web::Data<AppState>, req: actix_web::HttpRequest) -> HttpResponse {
-    if req.cookie(ACCESS_COOKIE).is_some() || req.cookie(REFRESH_COOKIE).is_some() {
+    if access_cookie_token(&req).is_some() || req.cookie(REFRESH_COOKIE).is_some() {
         if let Err(error) = csrf::ensure_request_source_allowed(
             &req,
             &state.runtime_config,
@@ -857,8 +845,7 @@ pub async fn logout(state: web::Data<AppState>, req: actix_web::HttpRequest) -> 
     for token in [
         req.cookie(REFRESH_COOKIE)
             .map(|cookie| cookie.value().to_string()),
-        req.cookie(ACCESS_COOKIE)
-            .map(|cookie| cookie.value().to_string()),
+        access_cookie_token(&req),
         bearer_token(&req),
     ]
     .into_iter()

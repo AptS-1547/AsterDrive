@@ -47,7 +47,7 @@ pub(crate) fn prepare_non_dedup_blob_upload(
     } else {
         let blob_key = crate::utils::id::new_short_token();
         PreparedNonDedupBlobUpload::Local {
-            base_path: crate::storage::local::effective_base_path(policy),
+            base_path: crate::storage::drivers::local::effective_base_path(policy),
             storage_path: crate::utils::storage_path_from_blob_key(&blob_key),
             blob_key,
             size,

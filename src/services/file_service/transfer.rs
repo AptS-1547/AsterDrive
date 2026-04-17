@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, Set};
 
 use crate::db::repository::file_repo;
 use crate::entities::file;
@@ -132,7 +132,7 @@ async fn batch_duplicate_file_records_with_specs_in_scope(
 
     workspace_storage_service::check_quota(&state.db, scope, total_size).await?;
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     workspace_storage_service::check_quota(&txn, scope, total_size).await?;
 
     let mut blob_counts: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
@@ -202,7 +202,7 @@ pub(crate) async fn duplicate_file_record_in_scope(
     let now = Utc::now();
     let blob_size = blob.size;
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     workspace_storage_service::check_quota(&txn, scope, blob_size).await?;
 
     file_repo::increment_blob_ref_count(&txn, blob.id).await?;
