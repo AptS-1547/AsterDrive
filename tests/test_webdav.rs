@@ -2,7 +2,43 @@
 mod common;
 
 use actix_web::test;
+use actix_web::{App, web};
 use base64::Engine;
+
+fn snapshot_dir_tree(
+    path: &std::path::Path,
+) -> std::io::Result<std::collections::BTreeSet<String>> {
+    fn walk(
+        root: &std::path::Path,
+        current: &std::path::Path,
+        entries: &mut std::collections::BTreeSet<String>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(current)? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                entries.insert(format!("{relative}/"));
+                walk(root, &path, entries)?;
+            } else {
+                entries.insert(relative);
+            }
+        }
+        Ok(())
+    }
+
+    let mut entries = std::collections::BTreeSet::new();
+    if !path.exists() {
+        return Ok(entries);
+    }
+    walk(path, path, &mut entries)?;
+    Ok(entries)
+}
 
 #[actix_web::test]
 async fn test_webdav_propfind_root() {
@@ -104,6 +140,197 @@ async fn test_webdav_put_get_delete() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
+}
+
+#[actix_web::test]
+async fn test_webdav_get_and_head_do_not_create_runtime_temp_files() {
+    let state = common::setup().await;
+    let runtime_temp_dir =
+        aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let db1 = state.db.clone();
+    let db2 = state.db.clone();
+    let webdav_config = aster_drive::config::WebDavConfig::default();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state))
+            .configure(move |cfg| {
+                aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                aster_drive::api::configure(cfg, &db1);
+            }),
+    )
+    .await;
+
+    let (token, _) = register_and_login!(app);
+    upload_test_file_named!(app, token, "streamed-read.txt");
+    let auth = format!("Bearer {token}");
+    let runtime_path = std::path::Path::new(&runtime_temp_dir);
+
+    let temp_snapshot_before_get = snapshot_dir_tree(runtime_path).unwrap();
+    let req = test::TestRequest::get()
+        .uri("/webdav/streamed-read.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "GET should return 200");
+    let body = test::read_body(resp).await;
+    assert!(
+        String::from_utf8_lossy(&body).contains("test content"),
+        "GET content mismatch"
+    );
+    let temp_snapshot_after_get = snapshot_dir_tree(runtime_path).unwrap();
+    assert_eq!(
+        temp_snapshot_after_get, temp_snapshot_before_get,
+        "WebDAV GET should stream from storage without creating runtime temp files"
+    );
+
+    let temp_snapshot_before_head = snapshot_dir_tree(runtime_path).unwrap();
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::HEAD)
+        .uri("/webdav/streamed-read.txt")
+        .insert_header(("Authorization", auth))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "HEAD should return 200");
+    assert_eq!(
+        resp.headers()
+            .get("Content-Length")
+            .and_then(|value| value.to_str().ok()),
+        Some("12"),
+        "HEAD should keep the file size header"
+    );
+    let temp_snapshot_after_head = snapshot_dir_tree(runtime_path).unwrap();
+    assert_eq!(
+        temp_snapshot_after_head, temp_snapshot_before_head,
+        "WebDAV HEAD should not create runtime temp files"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_put_local_fast_path_avoids_runtime_temp_files() {
+    let state = common::setup().await;
+    let runtime_temp_dir =
+        aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let db1 = state.db.clone();
+    let db2 = state.db.clone();
+    let webdav_config = aster_drive::config::WebDavConfig::default();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state))
+            .configure(move |cfg| {
+                aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                aster_drive::api::configure(cfg, &db1);
+            }),
+    )
+    .await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = format!("Bearer {token}");
+    let runtime_path = std::path::Path::new(&runtime_temp_dir);
+    let temp_snapshot_before_put = snapshot_dir_tree(runtime_path).unwrap();
+
+    let body = "WebDAV local fast path";
+    let req = test::TestRequest::put()
+        .uri("/webdav/local-fast-path.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "text/plain"))
+        .insert_header(("Content-Length", body.len().to_string()))
+        .set_payload(body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 201 || resp.status() == 204,
+        "PUT should return 201 or 204, got {}",
+        resp.status()
+    );
+
+    let temp_snapshot_after_put = snapshot_dir_tree(runtime_path).unwrap();
+    assert_eq!(
+        temp_snapshot_after_put, temp_snapshot_before_put,
+        "WebDAV PUT should use local staging instead of runtime temp when size is known"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/local-fast-path.txt")
+        .insert_header(("Authorization", auth))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert!(
+        String::from_utf8_lossy(&body).contains("WebDAV local fast path"),
+        "GET content mismatch after local fast-path PUT"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_put_without_content_length_avoids_runtime_temp_files() {
+    let state = common::setup().await;
+    let runtime_temp_dir =
+        aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let upload_temp_dir = state.config.server.upload_temp_dir.clone();
+    let db1 = state.db.clone();
+    let db2 = state.db.clone();
+    let webdav_config = aster_drive::config::WebDavConfig::default();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state))
+            .configure(move |cfg| {
+                aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                aster_drive::api::configure(cfg, &db1);
+            }),
+    )
+    .await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = format!("Bearer {token}");
+    let runtime_path = std::path::Path::new(&runtime_temp_dir);
+    let upload_path = std::path::Path::new(&upload_temp_dir);
+    let runtime_snapshot_before_put = snapshot_dir_tree(runtime_path).unwrap();
+    let upload_snapshot_before_put = snapshot_dir_tree(upload_path).unwrap();
+
+    let body = "WebDAV unknown size fallback";
+    let req = test::TestRequest::put()
+        .uri("/webdav/unknown-size.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "text/plain"))
+        .set_payload(body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 201 || resp.status() == 204,
+        "PUT should return 201 or 204, got {}",
+        resp.status()
+    );
+
+    let runtime_snapshot_after_put = snapshot_dir_tree(runtime_path).unwrap();
+    assert_eq!(
+        runtime_snapshot_after_put, runtime_snapshot_before_put,
+        "WebDAV PUT without Content-Length should not create runtime temp files"
+    );
+
+    let upload_snapshot_after_put = snapshot_dir_tree(upload_path).unwrap();
+    assert_eq!(
+        upload_snapshot_after_put, upload_snapshot_before_put,
+        "WebDAV fallback staging should be cleaned up from upload temp dir"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/unknown-size.txt")
+        .insert_header(("Authorization", auth))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert!(
+        String::from_utf8_lossy(&body).contains("WebDAV unknown size fallback"),
+        "GET content mismatch after unknown-size PUT"
+    );
 }
 
 #[actix_web::test]

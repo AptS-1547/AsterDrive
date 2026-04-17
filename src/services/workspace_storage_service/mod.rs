@@ -19,13 +19,13 @@ pub(crate) use crate::services::workspace_storage_core::{
 };
 
 pub(crate) use blob_upload::{
-    cleanup_preuploaded_blob_upload, persist_preuploaded_blob, prepare_non_dedup_blob_upload,
-    upload_temp_file_to_prepared_blob,
+    PreparedNonDedupBlobUpload, cleanup_preuploaded_blob_upload, persist_preuploaded_blob,
+    prepare_non_dedup_blob_upload, upload_temp_file_to_prepared_blob,
 };
-pub(crate) use multipart::upload;
+pub(crate) use multipart::{relay_stream_direct_upload_eligible, upload};
 pub(crate) use store::{
     create_empty, store_from_temp, store_from_temp_exact_name_with_hints,
-    store_from_temp_with_hints,
+    store_from_temp_with_hints, store_preuploaded_nondedup,
 };
 
 const HASH_BUF_SIZE: usize = 65536;

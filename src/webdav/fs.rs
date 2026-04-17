@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use futures::stream;
 use sea_orm::DatabaseConnection;
-use tokio::io::AsyncWriteExt;
+use tokio::io::AsyncRead;
 
 use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
 use crate::runtime::AppState;
@@ -47,6 +47,39 @@ impl AsterDavFs {
     fn app_state(&self) -> AppState {
         self.state.clone()
     }
+
+    pub(crate) async fn open_read_stream(
+        &self,
+        path: &DavPath,
+    ) -> Result<Box<dyn AsyncRead + Unpin + Send>, FsError> {
+        let node =
+            path_resolver::resolve_path(&self.state.db, self.user_id, path, self.root_folder_id)
+                .await?;
+
+        let file = match node {
+            ResolvedNode::File(file) => file,
+            _ => return Err(FsError::Forbidden),
+        };
+
+        let blob = file_repo::find_blob_by_id(&self.state.db, file.blob_id)
+            .await
+            .map_err(|_| FsError::GeneralFailure)?;
+        let policy = self
+            .state
+            .policy_snapshot
+            .get_policy(blob.policy_id)
+            .ok_or(FsError::GeneralFailure)?;
+        let driver = self
+            .state
+            .driver_registry
+            .get_driver(&policy)
+            .map_err(|_| FsError::GeneralFailure)?;
+
+        driver
+            .get_stream(&blob.storage_path)
+            .await
+            .map_err(|_| FsError::NotFound)
+    }
 }
 
 impl DavFileSystem for AsterDavFs {
@@ -90,74 +123,15 @@ impl DavFileSystem for AsterDavFs {
                     parent_id,
                     filename,
                     existing_file_id,
+                    options.size,
                 )
                 .await?;
 
                 Ok(Box::new(dav_file) as Box<dyn DavFile>)
             } else {
-                // 读模式：从存储复制到临时文件，避免全量加载到内存
-                let node = path_resolver::resolve_path(
-                    &self.state.db,
-                    self.user_id,
-                    path,
-                    self.root_folder_id,
-                )
-                .await?;
-
-                match node {
-                    ResolvedNode::File(f) => {
-                        let blob = file_repo::find_blob_by_id(&self.state.db, f.blob_id)
-                            .await
-                            .map_err(|_| FsError::GeneralFailure)?;
-                        let policy = self
-                            .state
-                            .policy_snapshot
-                            .get_policy(blob.policy_id)
-                            .ok_or(FsError::GeneralFailure)?;
-                        let driver = self
-                            .state
-                            .driver_registry
-                            .get_driver(&policy)
-                            .map_err(|_| FsError::GeneralFailure)?;
-                        let meta = AsterDavMeta::from_file(&f, &blob);
-
-                        // 流式复制到临时文件
-                        let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(
-                            &self.state.config.server.temp_dir,
-                        );
-                        let temp_path = crate::utils::paths::runtime_temp_file_path(
-                            &self.state.config.server.temp_dir,
-                            &uuid::Uuid::new_v4().to_string(),
-                        );
-                        tokio::fs::create_dir_all(&runtime_temp_dir)
-                            .await
-                            .map_err(|_| FsError::GeneralFailure)?;
-
-                        let mut stream = driver
-                            .get_stream(&blob.storage_path)
-                            .await
-                            .map_err(|_| FsError::NotFound)?;
-                        let mut temp_file = tokio::fs::File::create(&temp_path)
-                            .await
-                            .map_err(|_| FsError::GeneralFailure)?;
-                        tokio::io::copy(&mut stream, &mut temp_file)
-                            .await
-                            .map_err(|_| FsError::GeneralFailure)?;
-                        temp_file
-                            .flush()
-                            .await
-                            .map_err(|_| FsError::GeneralFailure)?;
-
-                        // 重新打开用于读取（seek 到开头）
-                        let read_file = tokio::fs::File::open(&temp_path)
-                            .await
-                            .map_err(|_| FsError::GeneralFailure)?;
-
-                        Ok(Box::new(AsterDavFile::for_read(read_file, temp_path, meta))
-                            as Box<dyn DavFile>)
-                    }
-                    _ => Err(FsError::Forbidden),
-                }
+                let _ = path;
+                // 读路径只允许 GET/HEAD 通过 open_read_stream 访问，避免回退到临时文件兜底。
+                Err(FsError::Forbidden)
             }
         })
     }

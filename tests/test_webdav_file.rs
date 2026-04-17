@@ -3,7 +3,7 @@ mod common;
 
 use std::io::SeekFrom;
 
-use aster_drive::webdav::dav::{DavFile, FsError};
+use aster_drive::webdav::dav::{DavFile, DavFileSystem, FsError, OpenOptions};
 use bytes::Bytes;
 
 fn write_temp_fixture(name: &str, contents: &str) -> String {
@@ -14,35 +14,39 @@ fn write_temp_fixture(name: &str, contents: &str) -> String {
     path
 }
 
-#[actix_web::test]
-async fn test_aster_dav_file_read_mode_enforces_read_only_behaviour() {
-    use aster_drive::webdav::file::AsterDavFile;
-    use aster_drive::webdav::metadata::AsterDavMeta;
+fn snapshot_dir_tree(
+    path: &std::path::Path,
+) -> std::io::Result<std::collections::BTreeSet<String>> {
+    fn walk(
+        root: &std::path::Path,
+        current: &std::path::Path,
+        entries: &mut std::collections::BTreeSet<String>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(current)? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                entries.insert(format!("{relative}/"));
+                walk(root, &path, entries)?;
+            } else {
+                entries.insert(relative);
+            }
+        }
+        Ok(())
+    }
 
-    let temp_path = write_temp_fixture("read-only.txt", "abcdef");
-    let file = tokio::fs::File::open(&temp_path).await.unwrap();
-    let mut dav_file = AsterDavFile::for_read(file, temp_path, AsterDavMeta::root());
-
-    dav_file.metadata().await.unwrap();
-
-    assert_eq!(
-        dav_file.read_bytes(3).await.unwrap(),
-        Bytes::from_static(b"abc")
-    );
-    assert_eq!(dav_file.seek(SeekFrom::Start(0)).await.unwrap(), 0);
-    assert_eq!(
-        dav_file.read_bytes(6).await.unwrap(),
-        Bytes::from_static(b"abcdef")
-    );
-    assert!(dav_file.read_bytes(1).await.unwrap().is_empty());
-    assert!(matches!(
-        dav_file.write_bytes(Bytes::from_static(b"x")).await,
-        Err(FsError::Forbidden)
-    ));
-    assert!(matches!(
-        dav_file.write_buf(Box::new(Bytes::from_static(b"x"))).await,
-        Err(FsError::Forbidden)
-    ));
+    let mut entries = std::collections::BTreeSet::new();
+    if !path.exists() {
+        return Ok(entries);
+    }
+    walk(path, path, &mut entries)?;
+    Ok(entries)
 }
 
 #[actix_web::test]
@@ -66,6 +70,7 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
         user.id,
         None,
         "empty-dav-file.txt".to_string(),
+        None,
         None,
     )
     .await
@@ -91,6 +96,7 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
         user.id,
         None,
         "buffered-dav-file.txt".to_string(),
+        None,
         None,
     )
     .await
@@ -219,4 +225,53 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
         dav_fs.get_props(&missing_path, false).await,
         Err(FsError::NotFound)
     ));
+}
+
+#[actix_web::test]
+async fn test_aster_dav_fs_open_read_is_rejected_without_temp_files() {
+    use aster_drive::services::{auth_service, file_service};
+    use aster_drive::webdav::dav::DavPath;
+    use aster_drive::webdav::fs::AsterDavFs;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "davreadfb", "davreadfb@example.com", "pass1234")
+        .await
+        .unwrap();
+
+    let content = "buffered read fallback";
+    let temp_path = write_temp_fixture("read-fallback.txt", content);
+    file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "read-fallback.txt",
+        &temp_path,
+        content.len() as i64,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+
+    let runtime_temp_dir =
+        aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let runtime_path = std::path::Path::new(&runtime_temp_dir);
+    let snapshot_before = snapshot_dir_tree(runtime_path).unwrap();
+
+    let dav_fs = AsterDavFs::new(state.clone(), user.id, None);
+    assert!(matches!(
+        dav_fs
+            .open(
+                &DavPath::new("/read-fallback.txt").unwrap(),
+                OpenOptions::read(),
+            )
+            .await,
+        Err(FsError::Forbidden)
+    ));
+
+    let snapshot_after = snapshot_dir_tree(runtime_path).unwrap();
+    assert_eq!(
+        snapshot_after, snapshot_before,
+        "rejecting WebDAV open(read) should not create runtime temp files"
+    );
 }

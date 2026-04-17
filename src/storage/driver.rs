@@ -60,14 +60,11 @@ pub trait StorageDriver: Send + Sync {
         Ok(())
     }
 
-    /// 从本地文件路径写入存储（分片上传组装后用，避免全量读入内存）
-    /// 默认实现：读取文件 → put，子类可覆盖为 rename/stream
-    async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String> {
-        let data = tokio::fs::read(local_path).await.map_err(|e| {
-            crate::errors::AsterError::storage_driver_error(format!("read file: {e}"))
-        })?;
-        self.put(storage_path, &data).await
-    }
+    /// 从本地文件路径写入存储（分片上传组装后用，避免全量读入内存）。
+    ///
+    /// 这里故意不提供默认实现，防止新 driver 误用 “读完整文件到内存再 put”
+    /// 的退化路径。
+    async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String>;
 
     /// 从 reader 流式写入存储，适用于不应先落本地临时文件的上传路径
     async fn put_reader(

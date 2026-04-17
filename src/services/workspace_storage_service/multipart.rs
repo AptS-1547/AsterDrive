@@ -20,7 +20,7 @@ use super::{
     verify_folder_access,
 };
 
-fn relay_stream_direct_upload_eligible(
+pub(crate) fn relay_stream_direct_upload_eligible(
     policy: &crate::entities::storage_policy::Model,
     declared_size: i64,
 ) -> bool {

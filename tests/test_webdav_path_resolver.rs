@@ -413,26 +413,10 @@ async fn test_aster_dav_fs_handles_deep_paths_inside_scoped_root() {
     }
     assert_eq!(dir_names, vec!["q1.txt"]);
 
-    let mut dav_file = dav_fs
-        .open(
-            &file_path,
-            OpenOptions {
-                read: true,
-                write: false,
-                append: false,
-                truncate: false,
-                create: false,
-                create_new: false,
-                size: None,
-                checksum: None,
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        dav_file.read_bytes(contents.len()).await.unwrap(),
-        Bytes::from(contents)
-    );
+    assert!(matches!(
+        dav_fs.open(&file_path, OpenOptions::read()).await,
+        Err(FsError::Forbidden)
+    ));
 }
 
 #[actix_web::test]

@@ -25,7 +25,7 @@ pub(crate) enum PreparedNonDedupBlobUpload {
 }
 
 impl PreparedNonDedupBlobUpload {
-    fn storage_path(&self) -> &str {
+    pub(crate) fn storage_path(&self) -> &str {
         match self {
             Self::Local { storage_path, .. } | Self::S3 { storage_path, .. } => storage_path,
         }
