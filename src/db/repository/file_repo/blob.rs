@@ -91,6 +91,8 @@ pub async fn find_or_create_blob<C: ConnectionTrait>(
             size: Set(size),
             policy_id: Set(policy_id),
             storage_path: Set(storage_path.to_string()),
+            thumbnail_path: Set(None),
+            thumbnail_version: Set(None),
             ref_count: Set(1),
             created_at: Set(now),
             updated_at: Set(now),
@@ -341,6 +343,47 @@ pub async fn delete_blob_if_cleanup_claimed<C: ConnectionTrait>(db: &C, id: i64)
     Ok(result.rows_affected == 1)
 }
 
+pub async fn set_thumbnail_metadata<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    thumbnail_path: &str,
+    thumbnail_version: &str,
+) -> Result<bool> {
+    let result = FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::ThumbnailPath,
+            Expr::value(Some(thumbnail_path.to_string())),
+        )
+        .col_expr(
+            file_blob::Column::ThumbnailVersion,
+            Expr::value(Some(thumbnail_version.to_string())),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+pub async fn clear_thumbnail_metadata<C: ConnectionTrait>(db: &C, id: i64) -> Result<bool> {
+    let result = FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::ThumbnailPath,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            file_blob::Column::ThumbnailVersion,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,6 +427,8 @@ mod tests {
             size: Set(1),
             policy_id: Set(2),
             storage_path: Set("files/hash".to_string()),
+            thumbnail_path: Set(None),
+            thumbnail_version: Set(None),
             ref_count: Set(1),
             created_at: Set(now),
             updated_at: Set(now),

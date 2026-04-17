@@ -578,6 +578,9 @@ async fn load_blob_expectations_for_policy<C: ConnectionTrait>(
         for blob in blobs {
             blob_ids_by_path.insert(blob.storage_path.clone(), blob.id);
             tracked_blobs.insert(blob.storage_path.clone());
+            if let Some(thumbnail_path) = blob.thumbnail_path.clone() {
+                tracked_thumbnails.insert(thumbnail_path);
+            }
             tracked_thumbnails.insert(thumbnail_service::thumb_path(&blob.hash));
             tracked_thumbnails.insert(thumbnail_service::legacy_thumb_path(&blob.hash));
         }

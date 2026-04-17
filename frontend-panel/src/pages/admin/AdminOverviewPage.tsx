@@ -54,14 +54,13 @@ const DEFAULT_EVENT_LIMIT = 10;
 
 type DailyReport = AdminOverview["daily_reports"][number];
 type BackgroundTaskEvent = AdminOverview["recent_background_tasks"][number];
-type TrendSeriesKey = "newUsers" | "shareCreations" | "totalEvents" | "uploads";
+type TrendSeriesKey = "newUsers" | "shareCreations" | "uploads";
 
 interface TrendPoint {
 	date: string;
 	label: string;
 	newUsers: number;
 	shareCreations: number;
-	totalEvents: number;
 	uploads: number;
 }
 
@@ -186,7 +185,6 @@ function createTrendData(reports: DailyReport[]): TrendPoint[] {
 		label: formatTrendDayLabel(report.date),
 		newUsers: report.new_users,
 		shareCreations: report.share_creations,
-		totalEvents: report.total_events,
 		uploads: report.uploads,
 	}));
 }
@@ -246,7 +244,6 @@ interface OverviewTrendChartProps {
 	reports: DailyReport[];
 	emptyTitle: string;
 	emptyDescription: string;
-	totalLabel: string;
 	averageLabel: string;
 	latestLabel: string;
 	peakLabel: string;
@@ -257,7 +254,6 @@ function OverviewTrendChart({
 	reports,
 	emptyTitle,
 	emptyDescription,
-	totalLabel,
 	averageLabel,
 	latestLabel,
 	peakLabel,
@@ -346,21 +342,12 @@ function OverviewTrendChart({
 									name={seriesItem.label}
 									stroke={seriesItem.stroke}
 									strokeWidth={seriesItem.strokeWidth}
-									dot={
-										seriesItem.key === "totalEvents"
-											? {
-													r: 4,
-													fill: "var(--background)",
-													stroke: seriesItem.stroke,
-													strokeWidth: 3,
-												}
-											: false
-									}
+									dot={false}
 									activeDot={{
-										r: seriesItem.key === "totalEvents" ? 6 : 4,
+										r: 4,
 										fill: "var(--background)",
 										stroke: seriesItem.stroke,
-										strokeWidth: seriesItem.key === "totalEvents" ? 3 : 2,
+										strokeWidth: 2,
 									}}
 								/>
 							))}
@@ -369,15 +356,7 @@ function OverviewTrendChart({
 				</div>
 			</div>
 
-			<div className="grid content-start gap-3 sm:grid-cols-3 xl:grid-cols-1">
-				<Card size="sm" className="border-0 shadow-none ring-1 ring-border/70">
-					<CardContent className="space-y-1 p-4">
-						<CardDescription className="text-xs">{totalLabel}</CardDescription>
-						<p className="text-xl font-semibold tracking-tight">
-							{COUNT_FORMATTER.format(totalEvents)}
-						</p>
-					</CardContent>
-				</Card>
+			<div className="grid content-start gap-3 sm:grid-cols-2 xl:grid-cols-1">
 				<Card size="sm" className="border-0 shadow-none ring-1 ring-border/70">
 					<CardContent className="space-y-1 p-4">
 						<CardDescription className="text-xs">
@@ -410,13 +389,6 @@ export default function AdminOverviewPage() {
 	usePageTitle(t("overview"));
 	const timezone = resolveBrowserTimeZone();
 	const trendSeries: TrendSeries[] = [
-		{
-			badgeClass: "border-primary/20 bg-primary/10 text-primary",
-			key: "totalEvents",
-			label: t("overview_report_total_events"),
-			stroke: "var(--primary)",
-			strokeWidth: 3,
-		},
 		{
 			badgeClass:
 				"border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -637,8 +609,8 @@ export default function AdminOverviewPage() {
 							</div>
 							<div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
 								<Skeleton className="h-[320px] w-full rounded-2xl" />
-								<div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-									{Array.from({ length: 3 }).map((_, index) => (
+								<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+									{Array.from({ length: 2 }).map((_, index) => (
 										<Skeleton
 											// biome-ignore lint/suspicious/noArrayIndexKey: static loading placeholders
 											key={`overview-chart-summary-${index}`}
@@ -655,7 +627,6 @@ export default function AdminOverviewPage() {
 									reports={overview.daily_reports}
 									emptyTitle={t("overview_daily_trend_empty")}
 									emptyDescription={t("overview_daily_trend_empty_desc")}
-									totalLabel={t("overview_daily_trend_total")}
 									averageLabel={t("overview_daily_trend_average")}
 									latestLabel={t("overview_daily_trend_latest")}
 									peakLabel={t("overview_daily_trend_peak")}

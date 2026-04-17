@@ -99,6 +99,8 @@ pub async fn get_shared_thumbnail(
 
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
     let data = crate::services::thumbnail_service::get_or_generate(state, &blob).await?;
+    let thumbnail_version =
+        crate::services::thumbnail_service::thumbnail_version(&blob).to_string();
     tracing::debug!(
         share_id = share.id,
         file_id = file.id,
@@ -108,6 +110,7 @@ pub async fn get_shared_thumbnail(
     Ok(file_service::ThumbnailResult {
         data,
         blob_hash: blob.hash,
+        thumbnail_version: Some(thumbnail_version),
     })
 }
 
@@ -123,6 +126,8 @@ pub async fn get_shared_folder_file_thumbnail(
 
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
     let data = crate::services::thumbnail_service::get_or_generate(state, &blob).await?;
+    let thumbnail_version =
+        crate::services::thumbnail_service::thumbnail_version(&blob).to_string();
     tracing::debug!(
         file_id = file.id,
         blob_id = blob.id,
@@ -131,6 +136,7 @@ pub async fn get_shared_folder_file_thumbnail(
     Ok(file_service::ThumbnailResult {
         data,
         blob_hash: blob.hash,
+        thumbnail_version: Some(thumbnail_version),
     })
 }
 

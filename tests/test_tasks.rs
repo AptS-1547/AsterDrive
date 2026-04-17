@@ -482,14 +482,16 @@ async fn test_processing_token_fences_stale_worker_updates_after_reclaim() {
 
     let stale_progress = background_task_repo::mark_progress(
         &state.db,
-        task.id,
-        task.processing_token,
-        Utc::now(),
-        Utc::now() + Duration::seconds(60),
-        1,
-        2,
-        Some("stale update"),
-        None,
+        background_task_repo::TaskProgressUpdate {
+            id: task.id,
+            processing_token: task.processing_token,
+            now: Utc::now(),
+            lease_expires_at: Utc::now() + Duration::seconds(60),
+            current: 1,
+            total: 2,
+            status_text: Some("stale update"),
+            steps_json: None,
+        },
     )
     .await
     .expect("stale worker progress update should be rejected");

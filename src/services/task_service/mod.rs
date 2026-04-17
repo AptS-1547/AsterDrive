@@ -363,14 +363,16 @@ pub(super) async fn update_task_progress_db(
     let now = Utc::now();
     if background_task_repo::mark_progress(
         db,
-        lease.task_id,
-        lease.processing_token,
-        now,
-        task_lease_expires_at(now),
-        current,
-        total,
-        status_text.as_deref(),
-        Some(steps_json.as_ref()),
+        background_task_repo::TaskProgressUpdate {
+            id: lease.task_id,
+            processing_token: lease.processing_token,
+            now,
+            lease_expires_at: task_lease_expires_at(now),
+            current,
+            total,
+            status_text: status_text.as_deref(),
+            steps_json: Some(steps_json.as_ref()),
+        },
     )
     .await?
     {
@@ -494,10 +496,8 @@ pub(super) fn task_lease_expires_at(
 
 fn configured_task_max_attempts(state: &AppState, kind: BackgroundTaskKind) -> i32 {
     match kind {
-        BackgroundTaskKind::SystemRuntime => 1,
-        BackgroundTaskKind::ArchiveCompress
-        | BackgroundTaskKind::ArchiveExtract
-        | BackgroundTaskKind::ThumbnailGenerate => {
+        BackgroundTaskKind::SystemRuntime | BackgroundTaskKind::ThumbnailGenerate => 1,
+        BackgroundTaskKind::ArchiveCompress | BackgroundTaskKind::ArchiveExtract => {
             operations::background_task_max_attempts(&state.runtime_config)
         }
     }

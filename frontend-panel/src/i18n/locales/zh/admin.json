@@ -32,7 +32,7 @@
 	"overview_today_shares_badge": "今日分享 {{count}}",
 	"overview_daily_trend_total": "7 天总事件",
 	"overview_daily_trend_average": "日均事件",
-	"overview_daily_trend_latest": "最近一天",
+	"overview_daily_trend_latest": "今日事件",
 	"overview_daily_trend_peak": "峰值日期",
 	"overview_daily_trend_empty": "暂无趋势数据",
 	"overview_daily_trend_empty_desc": "系统产生审计日志后，这里会显示最近 7 天的变化。",

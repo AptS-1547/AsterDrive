@@ -163,46 +163,53 @@ pub async fn try_claim<C: ConnectionTrait>(
     Ok(result.rows_affected == 1)
 }
 
+pub struct TaskProgressUpdate<'a> {
+    pub id: i64,
+    pub processing_token: i64,
+    pub now: DateTime<Utc>,
+    pub lease_expires_at: DateTime<Utc>,
+    pub current: i64,
+    pub total: i64,
+    pub status_text: Option<&'a str>,
+    pub steps_json: Option<&'a str>,
+}
+
 pub async fn mark_progress<C: ConnectionTrait>(
     db: &C,
-    id: i64,
-    processing_token: i64,
-    now: DateTime<Utc>,
-    lease_expires_at: DateTime<Utc>,
-    current: i64,
-    total: i64,
-    status_text: Option<&str>,
-    steps_json: Option<&str>,
+    update: TaskProgressUpdate<'_>,
 ) -> Result<bool> {
-    let mut update = BackgroundTask::update_many()
+    let mut statement = BackgroundTask::update_many()
         .col_expr(
             background_task::Column::ProgressCurrent,
-            Expr::value(current),
+            Expr::value(update.current),
         )
-        .col_expr(background_task::Column::ProgressTotal, Expr::value(total))
+        .col_expr(
+            background_task::Column::ProgressTotal,
+            Expr::value(update.total),
+        )
         .col_expr(
             background_task::Column::StatusText,
-            Expr::value(status_text.map(str::to_string)),
+            Expr::value(update.status_text.map(str::to_string)),
         )
         .col_expr(
             background_task::Column::LastHeartbeatAt,
-            Expr::value(Some(now)),
+            Expr::value(Some(update.now)),
         )
         .col_expr(
             background_task::Column::LeaseExpiresAt,
-            Expr::value(Some(lease_expires_at)),
+            Expr::value(Some(update.lease_expires_at)),
         )
-        .col_expr(background_task::Column::UpdatedAt, Expr::value(now))
-        .filter(background_task::Column::Id.eq(id))
+        .col_expr(background_task::Column::UpdatedAt, Expr::value(update.now))
+        .filter(background_task::Column::Id.eq(update.id))
         .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
-        .filter(background_task::Column::ProcessingToken.eq(processing_token));
-    if let Some(steps_json) = steps_json {
-        update = update.col_expr(
+        .filter(background_task::Column::ProcessingToken.eq(update.processing_token));
+    if let Some(steps_json) = update.steps_json {
+        statement = statement.col_expr(
             background_task::Column::StepsJson,
             Expr::value(Some(steps_json.to_string())),
         );
     }
-    let result = update.exec(db).await.map_err(AsterError::from)?;
+    let result = statement.exec(db).await.map_err(AsterError::from)?;
     Ok(result.rows_affected == 1)
 }
 
@@ -321,24 +328,28 @@ pub async fn mark_retry<C: ConnectionTrait>(
     Ok(result.rows_affected == 1)
 }
 
+pub struct TaskFailureUpdate<'a> {
+    pub id: i64,
+    pub processing_token: i64,
+    pub attempt_count: i32,
+    pub last_error: &'a str,
+    pub finished_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub steps_json: Option<&'a str>,
+}
+
 pub async fn mark_failed<C: ConnectionTrait>(
     db: &C,
-    id: i64,
-    processing_token: i64,
-    attempt_count: i32,
-    last_error: &str,
-    finished_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
-    steps_json: Option<&str>,
+    update: TaskFailureUpdate<'_>,
 ) -> Result<bool> {
-    let mut update = BackgroundTask::update_many()
+    let mut statement = BackgroundTask::update_many()
         .col_expr(
             background_task::Column::Status,
             Expr::value(BackgroundTaskStatus::Failed.to_value()),
         )
         .col_expr(
             background_task::Column::AttemptCount,
-            Expr::value(attempt_count),
+            Expr::value(update.attempt_count),
         )
         .col_expr(
             background_task::Column::ProcessingStartedAt,
@@ -358,24 +369,30 @@ pub async fn mark_failed<C: ConnectionTrait>(
         )
         .col_expr(
             background_task::Column::LastError,
-            Expr::value(Some(last_error.to_string())),
+            Expr::value(Some(update.last_error.to_string())),
         )
         .col_expr(
             background_task::Column::FinishedAt,
-            Expr::value(Some(finished_at)),
+            Expr::value(Some(update.finished_at)),
         )
-        .col_expr(background_task::Column::ExpiresAt, Expr::value(expires_at))
-        .col_expr(background_task::Column::UpdatedAt, Expr::value(finished_at))
-        .filter(background_task::Column::Id.eq(id))
+        .col_expr(
+            background_task::Column::ExpiresAt,
+            Expr::value(update.expires_at),
+        )
+        .col_expr(
+            background_task::Column::UpdatedAt,
+            Expr::value(update.finished_at),
+        )
+        .filter(background_task::Column::Id.eq(update.id))
         .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
-        .filter(background_task::Column::ProcessingToken.eq(processing_token));
-    if let Some(steps_json) = steps_json {
-        update = update.col_expr(
+        .filter(background_task::Column::ProcessingToken.eq(update.processing_token));
+    if let Some(steps_json) = update.steps_json {
+        statement = statement.col_expr(
             background_task::Column::StepsJson,
             Expr::value(Some(steps_json.to_string())),
         );
     }
-    let result = update.exec(db).await.map_err(AsterError::from)?;
+    let result = statement.exec(db).await.map_err(AsterError::from)?;
     Ok(result.rows_affected == 1)
 }
 

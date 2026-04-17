@@ -11,6 +11,7 @@ use super::get_info_in_scope;
 pub struct ThumbnailResult {
     pub data: Vec<u8>,
     pub blob_hash: String,
+    pub thumbnail_version: Option<String>,
 }
 
 pub(crate) async fn get_thumbnail_data_in_scope(
@@ -22,10 +23,14 @@ pub(crate) async fn get_thumbnail_data_in_scope(
     thumbnail_service::ensure_supported_mime(&f.mime_type)?;
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
     match thumbnail_service::load_thumbnail_if_exists(state, &blob).await? {
-        Some(data) => Ok(Some(ThumbnailResult {
-            data,
-            blob_hash: blob.hash,
-        })),
+        Some(data) => {
+            let thumbnail_version = thumbnail_service::thumbnail_version(&blob).to_string();
+            Ok(Some(ThumbnailResult {
+                data,
+                blob_hash: blob.hash,
+                thumbnail_version: Some(thumbnail_version),
+            }))
+        }
         None => {
             task_service::ensure_thumbnail_task(state, &blob, &f.mime_type).await?;
             Ok(None)

@@ -291,7 +291,10 @@ pub(crate) fn thumbnail_response(
     if_none_match: Option<&str>,
     cache_control: String,
 ) -> HttpResponse {
-    let etag_value = thumbnail_service::thumbnail_etag_value(&result.blob_hash);
+    let etag_value = thumbnail_service::thumbnail_etag_value_for(
+        &result.blob_hash,
+        result.thumbnail_version.as_deref(),
+    );
     let etag = format!("\"{etag_value}\"");
     if let Some(if_none_match) = if_none_match
         && file_service::if_none_match_matches_value(if_none_match, &etag_value)

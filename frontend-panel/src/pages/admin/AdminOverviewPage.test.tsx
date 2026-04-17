@@ -385,10 +385,10 @@ describe("AdminOverviewPage", () => {
 			),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText(
+			screen.queryByText(
 				"recharts-line:totalEvents:overview_report_total_events",
 			),
-		).toBeInTheDocument();
+		).not.toBeInTheDocument();
 		expect(
 			screen.getByText("recharts-line:uploads:overview_report_uploads"),
 		).toBeInTheDocument();

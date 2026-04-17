@@ -17,6 +17,15 @@ fn tiny_png() -> Vec<u8> {
     buf.into_inner()
 }
 
+fn current_thumb_path(blob_hash: &str) -> String {
+    format!(
+        "_thumb/v2/{}/{}/{}.webp",
+        &blob_hash[..2],
+        &blob_hash[2..4],
+        blob_hash
+    )
+}
+
 macro_rules! upload_file_bytes {
     ($app:expr, $token:expr, $filename:expr, $content_type:expr, $bytes:expr) => {{
         let boundary = "----TestBound";
@@ -64,6 +73,13 @@ macro_rules! request_thumbnail {
 async fn thumbnail_task_display_name(state: &AppState, file_id: i64) -> String {
     let file = file_repo::find_by_id(&state.db, file_id).await.unwrap();
     format!("Generate thumbnail for blob #{}", file.blob_id)
+}
+
+async fn blob_for_file(state: &AppState, file_id: i64) -> aster_drive::entities::file_blob::Model {
+    let file = file_repo::find_by_id(&state.db, file_id).await.unwrap();
+    file_repo::find_blob_by_id(&state.db, file.blob_id)
+        .await
+        .unwrap()
 }
 
 async fn thumbnail_task_count(state: &AppState, file_id: i64) -> usize {
@@ -128,6 +144,14 @@ async fn test_thumbnail_returns_200_after_generation() {
 
     let task = latest_thumbnail_task(&state, file_id).await;
     assert_eq!(task.status, BackgroundTaskStatus::Succeeded);
+    assert_eq!(task.max_attempts, 1);
+    let blob = blob_for_file(&state, file_id).await;
+    let expected_thumbnail_path = current_thumb_path(&blob.hash);
+    assert_eq!(
+        blob.thumbnail_path.as_deref(),
+        Some(expected_thumbnail_path.as_str())
+    );
+    assert_eq!(blob.thumbnail_version.as_deref(), Some("v2"));
 
     let resp = request_thumbnail!(app, token, file_id);
     assert_eq!(resp.status(), 200);

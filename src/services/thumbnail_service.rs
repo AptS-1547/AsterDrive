@@ -5,6 +5,7 @@ use image::imageops::FilterType;
 use image::{ImageReader, Limits};
 
 use crate::config::operations;
+use crate::db::repository::file_repo;
 use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -56,8 +57,15 @@ pub(crate) fn legacy_thumb_path(blob_hash: &str) -> String {
     )
 }
 
-pub(crate) fn thumbnail_etag_value(blob_hash: &str) -> String {
-    format!("thumb-{THUMB_VERSION}-{blob_hash}")
+pub(crate) fn thumbnail_etag_value_for(blob_hash: &str, thumbnail_version: Option<&str>) -> String {
+    format!(
+        "thumb-{}-{blob_hash}",
+        thumbnail_version.unwrap_or(THUMB_VERSION)
+    )
+}
+
+pub(crate) fn thumbnail_version(blob: &file_blob::Model) -> &str {
+    blob.thumbnail_version.as_deref().unwrap_or(THUMB_VERSION)
 }
 
 pub(crate) fn is_thumbnail_path(path: &str) -> bool {
@@ -74,12 +82,35 @@ pub async fn load_thumbnail_if_exists(
         blob,
         operations::thumbnail_max_source_bytes(&state.runtime_config),
     )?;
+    let Some(path) = blob.thumbnail_path.as_deref() else {
+        return Ok(None);
+    };
     let driver = thumbnail_driver(state, blob)?;
-    let path = thumb_path(&blob.hash);
-
-    match driver.get(&path).await {
+    match driver.get(path).await {
         Ok(data) => Ok(Some(data)),
-        Err(_) => Ok(None),
+        Err(error) => match driver.exists(path).await {
+            Ok(false) => {
+                if let Err(clear_error) =
+                    file_repo::clear_thumbnail_metadata(&state.db, blob.id).await
+                {
+                    tracing::warn!(
+                        blob_id = blob.id,
+                        path,
+                        "failed to clear stale thumbnail metadata: {clear_error}"
+                    );
+                }
+                Ok(None)
+            }
+            Ok(true) => Err(error),
+            Err(exists_error) => {
+                tracing::warn!(
+                    blob_id = blob.id,
+                    path,
+                    "thumbnail get failed and existence recheck also failed: {exists_error}"
+                );
+                Err(error)
+            }
+        },
     }
 }
 
@@ -91,10 +122,30 @@ pub async fn get_or_generate(state: &AppState, blob: &file_blob::Model) -> Resul
 
     let driver = thumbnail_driver(state, blob)?;
     let path = thumb_path(&blob.hash);
+    if driver.exists(&path).await.unwrap_or(false) {
+        if let Err(error) =
+            file_repo::set_thumbnail_metadata(&state.db, blob.id, &path, THUMB_VERSION).await
+        {
+            tracing::warn!(
+                blob_id = blob.id,
+                path,
+                "failed to persist existing thumbnail metadata: {error}"
+            );
+        }
+        return driver.get(&path).await;
+    }
     let webp_bytes = render_thumbnail_bytes(driver.as_ref(), blob).await?;
 
     if let Err(e) = driver.put(&path, &webp_bytes).await {
         tracing::warn!("failed to store thumbnail {path}: {e}");
+    } else if let Err(error) =
+        file_repo::set_thumbnail_metadata(&state.db, blob.id, &path, THUMB_VERSION).await
+    {
+        tracing::warn!(
+            blob_id = blob.id,
+            path,
+            "failed to persist thumbnail metadata after synchronous generation: {error}"
+        );
     }
 
     Ok(webp_bytes)
@@ -116,12 +167,22 @@ pub async fn generate_and_store(
     let path = thumb_path(&blob.hash);
 
     if driver.exists(&path).await.unwrap_or(false) {
+        if let Err(error) =
+            file_repo::set_thumbnail_metadata(&state.db, blob.id, &path, THUMB_VERSION).await
+        {
+            tracing::warn!(
+                blob_id = blob.id,
+                path,
+                "failed to persist existing thumbnail metadata: {error}"
+            );
+        }
         return Ok((path, true));
     }
 
     let webp_bytes = render_thumbnail_bytes(driver.as_ref(), blob).await?;
-    driver.put(&path, &webp_bytes).await?;
-    Ok((path, false))
+    let stored_path = driver.put(&path, &webp_bytes).await?;
+    file_repo::set_thumbnail_metadata(&state.db, blob.id, &stored_path, THUMB_VERSION).await?;
+    Ok((stored_path, false))
 }
 
 /// 删除缩略图（blob 物理删除时调用）
@@ -129,11 +190,19 @@ pub async fn delete_thumbnail(state: &AppState, blob: &file_blob::Model) -> Resu
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
 
-    for path in [thumb_path(&blob.hash), legacy_thumb_path(&blob.hash)] {
+    let mut paths = std::collections::BTreeSet::new();
+    if let Some(path) = blob.thumbnail_path.as_ref() {
+        paths.insert(path.clone());
+    }
+    paths.insert(thumb_path(&blob.hash));
+    paths.insert(legacy_thumb_path(&blob.hash));
+
+    for path in paths {
         if driver.exists(&path).await.unwrap_or(false) {
             driver.delete(&path).await?;
         }
     }
+    let _ = file_repo::clear_thumbnail_metadata(&state.db, blob.id).await;
     Ok(())
 }
 
@@ -209,7 +278,7 @@ fn ensure_source_size_supported(blob: &file_blob::Model, max_source_bytes: i64) 
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_source_size_supported, thumb_path, thumbnail_etag_value};
+    use super::{ensure_source_size_supported, thumb_path, thumbnail_etag_value_for};
     use crate::config::operations::DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES;
     use crate::entities::file_blob;
     use chrono::Utc;
@@ -221,6 +290,8 @@ mod tests {
             size,
             policy_id: 1,
             storage_path: "files/test".to_string(),
+            thumbnail_path: None,
+            thumbnail_version: None,
             ref_count: 1,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -258,6 +329,18 @@ mod tests {
     #[test]
     fn thumbnail_etag_uses_thumbnail_version_namespace() {
         let hash = "abc".repeat(21) + "a";
-        assert_eq!(thumbnail_etag_value(&hash), format!("thumb-v2-{hash}"));
+        assert_eq!(
+            thumbnail_etag_value_for(&hash, None),
+            format!("thumb-v2-{hash}")
+        );
+    }
+
+    #[test]
+    fn thumbnail_etag_can_use_persisted_thumbnail_version() {
+        let hash = "abc".repeat(21) + "a";
+        assert_eq!(
+            thumbnail_etag_value_for(&hash, Some("v3")),
+            format!("thumb-v3-{hash}")
+        );
     }
 }

@@ -32,7 +32,7 @@
 	"overview_today_shares_badge": "{{count}} shares today",
 	"overview_daily_trend_total": "7-day total",
 	"overview_daily_trend_average": "Average per day",
-	"overview_daily_trend_latest": "Latest day",
+	"overview_daily_trend_latest": "Today's events",
 	"overview_daily_trend_peak": "Peak day",
 	"overview_daily_trend_empty": "No trend data yet",
 	"overview_daily_trend_empty_desc": "The chart will appear here once audit activity is recorded across the last 7 days.",

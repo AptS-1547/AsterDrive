@@ -179,15 +179,18 @@ async fn process_claimed_task(
                 build_failed_task_steps_json(state, task.id, task.kind, &error_message).await;
             let should_retry = should_retry_task_error(task.kind, &error);
             if attempt_count >= task.max_attempts || !should_retry {
+                let finished_at = Utc::now();
                 let failed = background_task_repo::mark_failed(
                     &state.db,
-                    task.id,
-                    lease.processing_token,
-                    attempt_count,
-                    &error_message,
-                    Utc::now(),
-                    task_expiration_from(state, Utc::now()),
-                    failed_steps_json.as_deref(),
+                    background_task_repo::TaskFailureUpdate {
+                        id: task.id,
+                        processing_token: lease.processing_token,
+                        attempt_count,
+                        last_error: &error_message,
+                        finished_at,
+                        expires_at: task_expiration_from(state, finished_at),
+                        steps_json: failed_steps_json.as_deref(),
+                    },
                 )
                 .await?;
                 if !failed {
