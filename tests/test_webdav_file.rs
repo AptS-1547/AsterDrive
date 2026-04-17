@@ -3,8 +3,8 @@ mod common;
 
 use std::io::SeekFrom;
 
+use aster_drive::webdav::dav::{DavFile, FsError};
 use bytes::Bytes;
-use dav_server::fs::{DavFile, FsError};
 
 fn write_temp_fixture(name: &str, contents: &str) -> String {
     let dir = format!("/tmp/asterdrive-webdav-file-test-{}", uuid::Uuid::new_v4());
@@ -119,9 +119,8 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
 async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
     use aster_drive::db::repository::user_repo;
     use aster_drive::services::{auth_service, file_service};
+    use aster_drive::webdav::dav::{DavFileSystem, DavPath, DavProp};
     use aster_drive::webdav::fs::AsterDavFs;
-    use dav_server::davpath::DavPath;
-    use dav_server::fs::{DavFileSystem, DavProp};
     use sea_orm::{ActiveModelTrait, Set};
 
     let state = common::setup().await;

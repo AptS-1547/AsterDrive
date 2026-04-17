@@ -22,7 +22,7 @@ use super::get_info_in_scope;
 /// `existing_file_id`: Some 时覆盖现有文件，None 时新建
 ///
 /// 返回创建/更新的文件记录。临时文件可能被 put_file rename 走，调用方不要依赖它存在。
-/// `skip_lock_check`: WebDAV 持锁者写入时为 true（dav-server 已验证 lock token）
+/// `skip_lock_check`: WebDAV 持锁者写入时为 true（WebDAV handler 已验证 lock token）
 #[allow(clippy::too_many_arguments)]
 pub async fn store_from_temp(
     state: &AppState,

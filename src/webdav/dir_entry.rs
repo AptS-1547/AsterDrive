@@ -1,6 +1,5 @@
-use dav_server::fs::{DavDirEntry, DavMetaData, FsFuture};
-
 use crate::entities::{file, file_blob, folder};
+use crate::webdav::dav::{DavDirEntry, DavMetaData, FsFuture};
 use crate::webdav::metadata::AsterDavMeta;
 
 #[derive(Debug)]

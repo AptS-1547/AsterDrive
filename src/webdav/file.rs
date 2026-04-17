@@ -1,10 +1,10 @@
 use std::io::SeekFrom;
 
 use bytes::Bytes;
-use dav_server::fs::{DavFile, DavMetaData, FsError, FsFuture};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use crate::runtime::AppState;
+use crate::webdav::dav::{DavFile, DavMetaData, FsError, FsFuture};
 use crate::webdav::metadata::AsterDavMeta;
 
 /// DavFile 实现，使用临时文件避免大文件内存爆炸
@@ -227,7 +227,7 @@ impl DavFile for AsterDavFile {
                 temp_path,
                 *written as i64,
                 *existing_file_id,
-                true, // WebDAV: skip lock check, dav-server validates lock token
+                true, // WebDAV: skip lock check, handler 已验证 lock token
             )
             .await
             .map_err(|e| {

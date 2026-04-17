@@ -2,14 +2,13 @@ use std::io::Cursor;
 use std::time::{Duration, SystemTime};
 
 use chrono::Utc;
-use dav_server::davpath::DavPath;
-use dav_server::ls::{DavLock, DavLockSystem};
 use sea_orm::DatabaseConnection;
 use xmltree::Element;
 
 use crate::db::repository::lock_repo;
 use crate::entities::resource_lock;
 use crate::types::EntityType;
+use crate::webdav::dav::{DavLock, DavLockSystem, DavPath, LsFuture};
 use crate::webdav::path_resolver::{self, ResolvedNode};
 
 /// 数据库支持的 WebDAV 锁系统
@@ -31,8 +30,6 @@ impl DbLockSystem {
         })
     }
 }
-
-type LsFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
 impl DavLockSystem for DbLockSystem {
     fn lock(

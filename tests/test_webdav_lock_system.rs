@@ -16,9 +16,8 @@ fn write_temp_fixture(name: &str, contents: &str) -> String {
 async fn test_db_lock_system_deep_lock_supports_check_refresh_discover_and_delete() {
     use aster_drive::db::repository::{folder_repo, lock_repo};
     use aster_drive::services::{auth_service, file_service, folder_service};
+    use aster_drive::webdav::dav::{DavLockSystem, DavPath};
     use aster_drive::webdav::db_lock_system::DbLockSystem;
-    use dav_server::davpath::DavPath;
-    use dav_server::ls::DavLockSystem;
     use xmltree::Element;
 
     let state = common::setup().await;
@@ -130,10 +129,9 @@ async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts
     use aster_drive::db::repository::{file_repo, lock_repo};
     use aster_drive::services::{auth_service, file_service, lock_service};
     use aster_drive::types::EntityType;
+    use aster_drive::webdav::dav::{DavLockSystem, DavPath};
     use aster_drive::webdav::db_lock_system::DbLockSystem;
     use chrono::Duration as ChronoDuration;
-    use dav_server::davpath::DavPath;
-    use dav_server::ls::DavLockSystem;
 
     let state = common::setup().await;
     let user = auth_service::register(&state, "davexpired", "davexpired@example.com", "pass1234")

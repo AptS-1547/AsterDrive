@@ -1,9 +1,8 @@
-use dav_server::davpath::DavPath;
-use dav_server::fs::FsError;
 use sea_orm::DatabaseConnection;
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
+use crate::webdav::dav::{DavPath, FsError};
 
 /// 路径解析结果
 #[derive(Debug, Clone)]

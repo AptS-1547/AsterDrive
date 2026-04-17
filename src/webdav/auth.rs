@@ -19,12 +19,12 @@ pub struct WebdavAuthResult {
 /// 1. `Authorization: Basic base64(username:password)` — 查 webdav_accounts 表
 /// 2. `Authorization: Bearer <jwt_token>` — JWT 认证（API 客户端用，全部访问权限）
 pub async fn authenticate_webdav(
-    headers: &http::HeaderMap,
+    headers: &actix_web::http::header::HeaderMap,
     state: &AppState,
 ) -> Result<WebdavAuthResult, AsterError> {
     let auth_header = headers
-        .get(http::header::AUTHORIZATION)
-        .and_then(|v: &http::HeaderValue| v.to_str().ok())
+        .get(actix_web::http::header::AUTHORIZATION)
+        .and_then(|v: &actix_web::http::header::HeaderValue| v.to_str().ok())
         .ok_or_else(|| AsterError::auth_token_invalid("missing Authorization header"))?;
 
     if let Some(basic) = auth_header.strip_prefix("Basic ") {

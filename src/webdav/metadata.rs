@@ -1,8 +1,7 @@
 use std::time::SystemTime;
 
-use dav_server::fs::{DavMetaData, FsResult};
-
 use crate::entities::{file, file_blob, folder};
+use crate::webdav::dav::{DavMetaData, FsResult};
 
 /// 将 chrono DateTimeUtc 转换为 SystemTime
 fn to_system_time(dt: chrono::DateTime<chrono::Utc>) -> SystemTime {

@@ -1,10 +1,5 @@
 use std::pin::Pin;
 
-use dav_server::davpath::DavPath;
-use dav_server::fs::{
-    DavDirEntry, DavFile, DavFileSystem, DavMetaData, DavProp, FsError, FsFuture, FsStream,
-    OpenOptions, ReadDirMeta,
-};
 use futures::stream;
 use sea_orm::DatabaseConnection;
 use tokio::io::AsyncWriteExt;
@@ -13,6 +8,10 @@ use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
 use crate::runtime::AppState;
 use crate::services::{file_service, folder_service, webdav_service};
 use crate::types::{EntityType, NullablePatch};
+use crate::webdav::dav::{
+    DavDirEntry, DavFile, DavFileSystem, DavMetaData, DavPath, DavProp, FsError, FsFuture,
+    FsStream, OpenOptions, ReadDirMeta,
+};
 use crate::webdav::dir_entry::AsterDavDirEntry;
 use crate::webdav::file::AsterDavFile;
 use crate::webdav::metadata::AsterDavMeta;
@@ -76,9 +75,8 @@ impl DavFileSystem for AsterDavFs {
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
-                // 注意：WebDAV 写操作不检查 is_locked
-                // dav-server 通过 lock token 验证保证只有持锁者能写
-                // is_locked 只挡 REST API / 前端操作
+                // WebDAV handler 会在入口处做 lock token 校验，
+                // 这里不要再用 is_locked 把合法持锁写入挡掉。
 
                 let existing_file_id = existing_file.map(|f| f.id);
 
@@ -274,9 +272,6 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::Folder(f) => f,
                 _ => return Err(FsError::Forbidden),
             };
-            if folder.is_locked {
-                return Err(FsError::Forbidden);
-            }
 
             let state = self.app_state();
             webdav_service::recursive_soft_delete(&state, self.user_id, folder.id)
@@ -300,9 +295,6 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::File(f) => f,
                 _ => return Err(FsError::Forbidden),
             };
-            if file.is_locked {
-                return Err(FsError::Forbidden);
-            }
 
             let state = self.app_state();
             file_service::delete(&state, file.id, self.user_id)
@@ -322,13 +314,6 @@ impl DavFileSystem for AsterDavFs {
                 self.root_folder_id,
             )
             .await?;
-
-            // 检查源是否锁定
-            match &node {
-                ResolvedNode::File(f) if f.is_locked => return Err(FsError::Forbidden),
-                ResolvedNode::Folder(f) if f.is_locked => return Err(FsError::Forbidden),
-                _ => {}
-            }
 
             let (dest_parent_id, dest_name) = path_resolver::resolve_parent(
                 &self.state.db,

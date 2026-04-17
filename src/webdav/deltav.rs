@@ -1,28 +1,28 @@
 //! RFC3253 DeltaV 最小子集 — 版本历史查询
 //!
-//! dav-server 不支持 DeltaV，我们在 webdav_handler 中拦截 REPORT / VERSION-CONTROL
-//! 方法，利用已有的 file_versions 表返回版本信息。
+//! 自研 WebDAV handler 在这里承接 REPORT / VERSION-CONTROL，
+//! 利用已有的 file_versions 表返回最小 DeltaV 能力。
 
 use std::io::Cursor;
 
-use bytes::Bytes;
-use dav_server::body::Body;
-use http::Response;
+use actix_web::HttpResponse;
+use actix_web::http::{StatusCode, Uri};
 use sea_orm::DatabaseConnection;
 use xmltree::Element;
 
 use crate::db::repository::{file_repo, user_repo, version_repo};
 use crate::webdav::auth::WebdavAuthResult;
+use crate::webdav::dav::DavPath;
 use crate::webdav::path_resolver::{self, ResolvedNode};
 
 /// 处理 REPORT 方法（cadaver `history` 发送 `DAV:version-tree`）
 pub async fn handle_report(
-    uri: &http::Uri,
+    uri: &Uri,
     body_bytes: &[u8],
     db: &DatabaseConnection,
     auth: &WebdavAuthResult,
     prefix: &str,
-) -> Response<Body> {
+) -> HttpResponse {
     // 解析 XML body，确认是 version-tree 报告
     let root = match Element::parse(Cursor::new(body_bytes)) {
         Ok(el) => el,
@@ -38,7 +38,7 @@ pub async fn handle_report(
     let relative = path_str.strip_prefix(prefix).unwrap_or(path_str);
 
     // 构造一个 DavPath 用于路径解析
-    let dav_path = match dav_server::davpath::DavPath::new(relative) {
+    let dav_path = match DavPath::new(relative) {
         Ok(p) => p,
         Err(_) => return error_response(400, "Invalid path"),
     };
@@ -114,33 +114,28 @@ pub async fn handle_report(
         return error_response(500, "Failed to serialize XML");
     }
 
-    Response::builder()
-        .status(207)
-        .header("Content-Type", "application/xml; charset=utf-8")
-        .body(Body::from(Bytes::from(xml_buf)))
-        .unwrap()
+    HttpResponse::build(StatusCode::from_u16(207).unwrap())
+        .content_type("application/xml; charset=utf-8")
+        .body(xml_buf)
 }
 
 /// 处理 VERSION-CONTROL 方法（所有文件自动版本控制，直接返回 200）
 pub async fn handle_version_control(
-    uri: &http::Uri,
+    uri: &Uri,
     db: &DatabaseConnection,
     auth: &WebdavAuthResult,
     prefix: &str,
-) -> Response<Body> {
+) -> HttpResponse {
     let path_str = uri.path();
     let relative = path_str.strip_prefix(prefix).unwrap_or(path_str);
 
-    let dav_path = match dav_server::davpath::DavPath::new(relative) {
+    let dav_path = match DavPath::new(relative) {
         Ok(p) => p,
         Err(_) => return error_response(400, "Invalid path"),
     };
 
     match path_resolver::resolve_path(db, auth.user_id, &dav_path, auth.root_folder_id).await {
-        Ok(ResolvedNode::File(_)) => Response::builder()
-            .status(200)
-            .body(Body::from("Already under version control"))
-            .unwrap(),
+        Ok(ResolvedNode::File(_)) => HttpResponse::Ok().body("Already under version control"),
         Ok(_) => error_response(409, "Only files support version control"),
         Err(_) => error_response(404, "Not Found"),
     }
@@ -207,9 +202,6 @@ fn build_version_response(
     response
 }
 
-fn error_response(status: u16, msg: &str) -> Response<Body> {
-    Response::builder()
-        .status(status)
-        .body(Body::from(msg.to_string()))
-        .unwrap()
+fn error_response(status: u16, msg: &str) -> HttpResponse {
+    HttpResponse::build(StatusCode::from_u16(status).unwrap()).body(msg.to_string())
 }

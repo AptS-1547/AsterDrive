@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod dav;
 pub mod db_lock_system;
 pub mod deltav;
 pub mod dir_entry;
@@ -7,155 +8,1432 @@ pub mod fs;
 pub mod metadata;
 pub mod path_resolver;
 
-use actix_web::web;
-use dav_server::actix::{DavRequest, DavResponse};
-use dav_server::{DavConfig, DavHandler};
-use sea_orm::DatabaseConnection;
+use std::collections::BTreeMap;
+use std::io::Cursor;
+use std::time::Duration;
+
+use actix_web::error::ErrorInternalServerError;
+use actix_web::http::{StatusCode, header};
+use actix_web::{HttpRequest, HttpResponse, web};
+use async_stream::stream;
+use futures::{StreamExt, pin_mut};
+use xmltree::{Element, XMLNode};
 
 use crate::config::WebDavConfig;
 use crate::runtime::AppState;
+use crate::webdav::dav::{
+    DavFileSystem, DavLock, DavLockSystem, DavMetaData, DavPath, DavProp, FsError, OpenOptions,
+    ReadDirMeta,
+};
+
+const XML_CONTENT_TYPE: &str = "application/xml; charset=utf-8";
+const CHUNK_SIZE: usize = 16 * 1024;
 
 /// WebDAV 共享状态（单例）
 pub struct WebDavState {
-    pub handler: DavHandler,
     pub prefix: String,
-    pub db: DatabaseConnection,
 }
 
-/// WebDAV handler — 所有 HTTP 方法都路由到这里，由 dav-server 内部分派
+struct RequestedProp {
+    name: String,
+    namespace: Option<String>,
+    prefix: Option<String>,
+}
+
+enum PropfindKind {
+    AllProp,
+    PropName,
+    Prop(Vec<RequestedProp>),
+}
+
+struct PropfindResource {
+    path: DavPath,
+    relative: String,
+    meta: Box<dyn DavMetaData>,
+}
+
+/// WebDAV handler — 所有协议方法都由自研分发层处理
 pub async fn webdav_handler(
-    dav_req: DavRequest,
+    req: HttpRequest,
+    mut payload: web::Payload,
     state: web::Data<AppState>,
     webdav: web::Data<WebDavState>,
-) -> DavResponse {
-    // 1. 检查运行时开关 (system_config: webdav_enabled)
-    let enabled = state.runtime_config.get_bool_or("webdav_enabled", true);
-
-    if !enabled {
-        return http::Response::builder()
-            .status(503)
-            .body(dav_server::body::Body::from("WebDAV is disabled"))
-            .unwrap()
-            .into();
+) -> HttpResponse {
+    if !state.runtime_config.get_bool_or("webdav_enabled", true) {
+        return HttpResponse::ServiceUnavailable().body("WebDAV is disabled");
     }
 
-    // 2. 认证
-    let auth_result = match auth::authenticate_webdav(dav_req.request.headers(), &state).await {
-        Ok(r) => r,
-        Err(_) => {
-            return http::Response::builder()
-                .status(401)
-                .header("WWW-Authenticate", "Basic realm=\"AsterDrive WebDAV\"")
-                .body(dav_server::body::Body::from("Unauthorized"))
-                .unwrap()
-                .into();
-        }
+    let auth_result = match auth::authenticate_webdav(req.headers(), &state).await {
+        Ok(result) => result,
+        Err(_) => return unauthorized_response(),
     };
 
-    // 3. DeltaV 方法拦截（dav-server 不支持 RFC3253）
-    let method = dav_req.request.method().to_string();
-    match method.as_str() {
-        "REPORT" => {
-            // 消费请求，分离 URI 和 body
-            let (parts, body) = dav_req.request.into_parts();
-            let body_bytes = collect_body(body).await;
-            return deltav::handle_report(
-                &parts.uri,
-                &body_bytes,
-                &state.db,
-                &auth_result,
-                &webdav.prefix,
-            )
-            .await
-            .into();
-        }
-        "VERSION-CONTROL" => {
-            return deltav::handle_version_control(
-                dav_req.request.uri(),
-                &state.db,
-                &auth_result,
-                &webdav.prefix,
-            )
-            .await
-            .into();
-        }
-        _ => {}
-    }
-
-    // 4. 创建 per-user 文件系统（可能限制到指定文件夹）
     let dav_fs = fs::AsterDavFs::new(
         state.get_ref().clone(),
         auth_result.user_id,
         auth_result.root_folder_id,
     );
-
-    // 5. Per-request 锁系统（需要 user_id 做 path → entity 解析）
     let lock_system = db_lock_system::DbLockSystem::new(
-        webdav.db.clone(),
+        state.db.clone(),
         auth_result.user_id,
         auth_result.root_folder_id,
     );
 
-    // 6. 构建 per-request 配置
-    let config = DavConfig::new()
-        .filesystem(Box::new(dav_fs))
-        .locksystem(lock_system)
-        .strip_prefix(&webdav.prefix);
-
-    // 7. 交给 dav-server 处理
-    let response: DavResponse = webdav
-        .handler
-        .handle_with(config, dav_req.request)
-        .await
-        .into();
-
-    // 8. OPTIONS 响应追加 DeltaV 版本控制标记
-    if method == "OPTIONS" {
-        return append_deltav_header(response);
+    match req.method().as_str() {
+        "OPTIONS" => handle_options(),
+        "REPORT" => match collect_payload(&mut payload).await {
+            Ok(body) => {
+                deltav::handle_report(req.uri(), &body, &state.db, &auth_result, &webdav.prefix)
+                    .await
+            }
+            Err(resp) => resp,
+        },
+        "VERSION-CONTROL" => {
+            deltav::handle_version_control(req.uri(), &state.db, &auth_result, &webdav.prefix).await
+        }
+        "PROPFIND" => match collect_payload(&mut payload).await {
+            Ok(body) => {
+                handle_propfind(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, &body).await
+            }
+            Err(resp) => resp,
+        },
+        "PROPPATCH" => match collect_payload(&mut payload).await {
+            Ok(body) => {
+                handle_proppatch(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, &body).await
+            }
+            Err(resp) => resp,
+        },
+        "GET" => handle_get_head(&req, &dav_fs, &webdav.prefix, false).await,
+        "HEAD" => handle_get_head(&req, &dav_fs, &webdav.prefix, true).await,
+        "PUT" => {
+            handle_put(
+                &req,
+                &dav_fs,
+                lock_system.as_ref(),
+                &webdav.prefix,
+                &mut payload,
+            )
+            .await
+        }
+        "MKCOL" => {
+            handle_mkcol(
+                &req,
+                &dav_fs,
+                lock_system.as_ref(),
+                &webdav.prefix,
+                &mut payload,
+            )
+            .await
+        }
+        "DELETE" => handle_delete(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix).await,
+        "COPY" => {
+            handle_copy_move(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, false).await
+        }
+        "MOVE" => handle_copy_move(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, true).await,
+        "LOCK" => match collect_payload(&mut payload).await {
+            Ok(body) => {
+                handle_lock(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, &body).await
+            }
+            Err(resp) => resp,
+        },
+        "UNLOCK" => handle_unlock(&req, lock_system.as_ref(), &webdav.prefix).await,
+        _ => HttpResponse::MethodNotAllowed()
+            .insert_header((header::ALLOW, allow_header_value()))
+            .finish(),
     }
-
-    response
 }
 
-/// 从 http_body::Body 中收集全部字节
-async fn collect_body<B>(body: B) -> Vec<u8>
-where
-    B: http_body::Body<Data = bytes::Bytes>,
-{
-    let mut body = Box::pin(body);
+async fn collect_payload(payload: &mut web::Payload) -> Result<Vec<u8>, HttpResponse> {
     let mut data = Vec::new();
-    while let Some(Ok(frame)) = std::future::poll_fn(|cx| body.as_mut().poll_frame(cx)).await {
-        if let Ok(chunk) = frame.into_data() {
-            data.extend_from_slice(&chunk);
-        }
+    while let Some(chunk) = payload.next().await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) => return Err(HttpResponse::BadRequest().body("Failed to read request body")),
+        };
+        data.extend_from_slice(&chunk);
     }
-    data
+    Ok(data)
 }
 
-/// 在 OPTIONS 响应的 DAV 头中追加 version-control 合规标记
-fn append_deltav_header(response: DavResponse) -> DavResponse {
-    let DavResponse(mut resp) = response;
-    if let Some(dav_value) = resp.headers().get("DAV").cloned()
-        && let Ok(s) = dav_value.to_str()
+fn handle_options() -> HttpResponse {
+    HttpResponse::Ok()
+        .insert_header((header::ALLOW, allow_header_value()))
+        .insert_header(("DAV", "1, 2, version-control"))
+        .insert_header(("MS-Author-Via", "DAV"))
+        .finish()
+}
+
+async fn handle_get_head(
+    req: &HttpRequest,
+    dav_fs: &fs::AsterDavFs,
+    prefix: &str,
+    head_only: bool,
+) -> HttpResponse {
+    let (path, relative) = match request_path(req, prefix) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+
+    let meta = match dav_fs.metadata(&path).await {
+        Ok(meta) => meta,
+        Err(err) => return fs_error_response(err),
+    };
+    if meta.is_dir() {
+        return HttpResponse::MethodNotAllowed().finish();
+    }
+
+    let mut file = match dav_fs.open(&path, OpenOptions::read()).await {
+        Ok(file) => file,
+        Err(err) => return fs_error_response(err),
+    };
+    let content_length = meta.len().to_string();
+    let content_type = mime_guess::from_path(relative.trim_end_matches('/'))
+        .first_or_octet_stream()
+        .essence_str()
+        .to_string();
+
+    let mut response = HttpResponse::Ok();
+    response.insert_header((header::CONTENT_LENGTH, content_length));
+    response.insert_header((header::CONTENT_TYPE, content_type));
+    if let Some(etag) = meta.etag() {
+        response.insert_header((header::ETAG, format!("\"{etag}\"")));
+    }
+
+    if head_only {
+        return response.finish();
+    }
+
+    let body = stream! {
+        loop {
+            let chunk = match file.read_bytes(CHUNK_SIZE).await {
+                Ok(chunk) => chunk,
+                Err(err) => {
+                    yield Err(ErrorInternalServerError(format!("webdav read failed: {err}")));
+                    break;
+                }
+            };
+            if chunk.is_empty() {
+                break;
+            }
+            yield Ok::<_, actix_web::Error>(chunk);
+        }
+    };
+    response.streaming(body)
+}
+
+async fn handle_put(
+    req: &HttpRequest,
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    prefix: &str,
+    payload: &mut web::Payload,
+) -> HttpResponse {
+    let (path, relative) = match request_path(req, prefix) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    let existed = dav_fs.metadata(&path).await.is_ok();
+
+    if let Err(resp) = ensure_unlocked(lock_system, &path, false, req.headers()).await {
+        return resp;
+    }
+
+    let create_new = header_equals(req.headers(), header::IF_NONE_MATCH, "*");
+    let create = !header_equals(req.headers(), header::IF_MATCH, "*");
+    let mut options = OpenOptions::write();
+    options.create = create;
+    options.create_new = create_new;
+    options.truncate = true;
+
+    let mut file = match dav_fs.open(&path, options).await {
+        Ok(file) => file,
+        Err(FsError::Exists) => return HttpResponse::PreconditionFailed().finish(),
+        Err(FsError::NotFound) => return HttpResponse::Conflict().finish(),
+        Err(err) => return fs_error_response(err),
+    };
+
+    while let Some(chunk) = payload.next().await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) => return HttpResponse::BadRequest().body("Failed to read request body"),
+        };
+        if let Err(err) = file.write_bytes(chunk).await {
+            return fs_error_response(err);
+        }
+    }
+
+    if let Err(err) = file.flush().await {
+        return fs_error_response(err);
+    }
+
+    if existed {
+        HttpResponse::NoContent().finish()
+    } else {
+        HttpResponse::Created()
+            .insert_header((
+                header::CONTENT_LOCATION,
+                href_for_relative(prefix, &relative),
+            ))
+            .finish()
+    }
+}
+
+async fn handle_mkcol(
+    req: &HttpRequest,
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    prefix: &str,
+    payload: &mut web::Payload,
+) -> HttpResponse {
+    if let Err(resp) = ensure_empty_body(payload).await {
+        return resp;
+    }
+
+    let (path, relative) = match request_path(req, prefix) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    if relative == "/" {
+        return HttpResponse::MethodNotAllowed().finish();
+    }
+
+    if let Err(resp) = ensure_parent_exists(dav_fs, &relative).await {
+        return resp;
+    }
+    if let Err(resp) = ensure_unlocked(lock_system, &path, false, req.headers()).await {
+        return resp;
+    }
+
+    match dav_fs.create_dir(&path).await {
+        Ok(()) => HttpResponse::Created()
+            .insert_header((
+                header::CONTENT_LOCATION,
+                href_for_relative(prefix, &relative),
+            ))
+            .finish(),
+        Err(FsError::Exists) => HttpResponse::MethodNotAllowed().finish(),
+        Err(FsError::NotFound) => HttpResponse::Conflict().finish(),
+        Err(err) => fs_error_response(err),
+    }
+}
+
+async fn handle_delete(
+    req: &HttpRequest,
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    prefix: &str,
+) -> HttpResponse {
+    let (path, _) = match request_path(req, prefix) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+
+    let meta = match dav_fs.metadata(&path).await {
+        Ok(meta) => meta,
+        Err(err) => return fs_error_response(err),
+    };
+    if let Err(resp) = ensure_unlocked(lock_system, &path, true, req.headers()).await {
+        return resp;
+    }
+
+    let result = if meta.is_dir() {
+        dav_fs.remove_dir(&path).await
+    } else {
+        dav_fs.remove_file(&path).await
+    };
+    match result {
+        Ok(()) => {
+            let _ = lock_system.delete(&path).await;
+            HttpResponse::NoContent().finish()
+        }
+        Err(err) => fs_error_response(err),
+    }
+}
+
+async fn handle_copy_move(
+    req: &HttpRequest,
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    prefix: &str,
+    is_move: bool,
+) -> HttpResponse {
+    let (source, source_relative) = match request_path(req, prefix) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+
+    let destination_relative = match destination_relative_path(req, prefix) {
+        Ok(path) => path,
+        Err(resp) => return resp,
+    };
+    if source_relative == destination_relative {
+        return HttpResponse::Forbidden().finish();
+    }
+    if let Err(resp) = ensure_parent_exists(dav_fs, &destination_relative).await {
+        return resp;
+    }
+
+    let destination = match DavPath::new(&destination_relative) {
+        Ok(path) => path,
+        Err(_) => return HttpResponse::BadRequest().body("Invalid destination path"),
+    };
+    if is_move && let Err(resp) = ensure_unlocked(lock_system, &source, true, req.headers()).await {
+        return resp;
+    }
+    if let Err(resp) = ensure_unlocked(lock_system, &destination, true, req.headers()).await {
+        return resp;
+    }
+
+    let destination_exists = dav_fs.metadata(&destination).await.is_ok();
+    if !overwrite_enabled(req.headers()) && destination_exists {
+        return HttpResponse::PreconditionFailed().finish();
+    }
+
+    let result = if is_move {
+        dav_fs.rename(&source, &destination).await
+    } else {
+        dav_fs.copy(&source, &destination).await
+    };
+
+    match result {
+        Ok(()) => {
+            if is_move {
+                let _ = lock_system.delete(&source).await;
+            }
+            if destination_exists {
+                HttpResponse::NoContent().finish()
+            } else {
+                HttpResponse::Created().finish()
+            }
+        }
+        Err(err) => fs_error_response(err),
+    }
+}
+
+async fn handle_propfind(
+    req: &HttpRequest,
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    prefix: &str,
+    body: &[u8],
+) -> HttpResponse {
+    let (path, relative) = match request_path(req, prefix) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    let depth = match parse_propfind_depth(req.headers()) {
+        Ok(depth) => depth,
+        Err(resp) => return resp,
+    };
+    let request_kind = match parse_propfind_request(body) {
+        Ok(kind) => kind,
+        Err(resp) => return resp,
+    };
+
+    let mut resources = match collect_propfind_resources(dav_fs, &path, &relative, depth).await {
+        Ok(resources) => resources,
+        Err(err) => return fs_error_response(err),
+    };
+
+    let mut multistatus = dav_element("multistatus");
+    multistatus
+        .attributes
+        .insert("xmlns:D".to_string(), "DAV:".to_string());
+
+    for resource in resources.drain(..) {
+        let response =
+            match build_propfind_response(dav_fs, lock_system, prefix, &request_kind, resource)
+                .await
+            {
+                Ok(response) => response,
+                Err(resp) => return resp,
+            };
+        multistatus.children.push(XMLNode::Element(response));
+    }
+
+    xml_response(multistatus, multi_status())
+}
+
+async fn handle_proppatch(
+    req: &HttpRequest,
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    prefix: &str,
+    body: &[u8],
+) -> HttpResponse {
+    let (path, _) = match request_path(req, prefix) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    if let Err(resp) = ensure_unlocked(lock_system, &path, false, req.headers()).await {
+        return resp;
+    }
+
+    let root = match Element::parse(Cursor::new(body)) {
+        Ok(root) => root,
+        Err(_) => return HttpResponse::BadRequest().body("Invalid XML body"),
+    };
+    if root.name != "propertyupdate" {
+        return HttpResponse::BadRequest().body("Invalid PROPPATCH body");
+    }
+
+    let mut patches = Vec::new();
+    for action in child_elements(&root) {
+        let set = match action.name.as_str() {
+            "set" => true,
+            "remove" => false,
+            _ => continue,
+        };
+        for prop_container in child_elements(action).filter(|elem| elem.name == "prop") {
+            for prop in child_elements(prop_container) {
+                patches.push((set, prop_from_xml(prop)));
+            }
+        }
+    }
+
+    let results = match dav_fs.patch_props(&path, patches).await {
+        Ok(results) => results,
+        Err(err) => return fs_error_response(err),
+    };
+
+    let mut multistatus = dav_element("multistatus");
+    multistatus
+        .attributes
+        .insert("xmlns:D".to_string(), "DAV:".to_string());
+
+    let mut response = dav_element("response");
+    response.children.push(XMLNode::Element(text_element(
+        "D:href",
+        &href_for_relative(prefix, path.as_str()),
+    )));
+
+    let mut groups: BTreeMap<u16, Vec<DavProp>> = BTreeMap::new();
+    for (status, prop) in results {
+        groups.entry(status.as_u16()).or_default().push(prop);
+    }
+
+    for (status_code, props) in groups {
+        let status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let mut propstat = dav_element("propstat");
+        let mut prop = dav_element("prop");
+        for item in props {
+            prop.children
+                .push(XMLNode::Element(prop_element(&item, None)));
+        }
+        propstat.children.push(XMLNode::Element(prop));
+        propstat
+            .children
+            .push(XMLNode::Element(status_element(status)));
+        response.children.push(XMLNode::Element(propstat));
+    }
+
+    multistatus.children.push(XMLNode::Element(response));
+    xml_response(multistatus, multi_status())
+}
+
+async fn handle_lock(
+    req: &HttpRequest,
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    prefix: &str,
+    body: &[u8],
+) -> HttpResponse {
+    let (path, _) = match request_path(req, prefix) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+
+    if body.is_empty() {
+        let tokens = submitted_lock_tokens(req.headers());
+        if tokens.len() != 1 {
+            return HttpResponse::BadRequest().finish();
+        }
+        if lock_system
+            .check(&path, None, false, false, &tokens)
+            .await
+            .is_err()
+        {
+            return HttpResponse::PreconditionFailed().finish();
+        }
+        let lock = match lock_system
+            .refresh(&path, &tokens[0], parse_timeout(req.headers()))
+            .await
+        {
+            Ok(lock) => lock,
+            Err(_) => return HttpResponse::PreconditionFailed().finish(),
+        };
+        return lock_response(lock, StatusCode::OK);
+    }
+
+    let depth = match parse_lock_depth(req.headers()) {
+        Ok(depth) => depth,
+        Err(resp) => return resp,
+    };
+
+    let tree = match Element::parse(Cursor::new(body)) {
+        Ok(tree) => tree,
+        Err(_) => return HttpResponse::BadRequest().body("Invalid XML body"),
+    };
+    if tree.name != "lockinfo" {
+        return HttpResponse::BadRequest().body("Invalid LOCK body");
+    }
+
+    let mut shared = None;
+    let mut owner = None;
+    let mut write_lock = false;
+    for elem in child_elements(&tree) {
+        match elem.name.as_str() {
+            "lockscope" => {
+                let scope = child_elements(elem).next().map(|child| child.name.as_str());
+                match scope {
+                    Some("exclusive") => shared = Some(false),
+                    Some("shared") => shared = Some(true),
+                    _ => return HttpResponse::BadRequest().finish(),
+                }
+            }
+            "locktype" => {
+                write_lock = child_elements(elem).any(|child| child.name == "write");
+            }
+            "owner" => owner = Some(elem.clone()),
+            _ => return HttpResponse::BadRequest().finish(),
+        }
+    }
+    if shared.is_none() || !write_lock {
+        return HttpResponse::BadRequest().finish();
+    }
+
+    let lock = match lock_system
+        .lock(
+            &path,
+            None,
+            owner.as_ref(),
+            parse_timeout(req.headers()),
+            shared.unwrap_or(false),
+            depth,
+        )
+        .await
     {
-        let new_value = format!("{s}, version-control");
-        if let Ok(hv) = http::HeaderValue::from_str(&new_value) {
-            resp.headers_mut().insert("DAV", hv);
-        }
-    }
-    DavResponse(resp)
+        Ok(lock) => lock,
+        Err(_) => return HttpResponse::Locked().finish(),
+    };
+
+    let status = if dav_fs.metadata(&path).await.is_ok() {
+        StatusCode::OK
+    } else {
+        StatusCode::CREATED
+    };
+    lock_response(lock, status)
 }
 
-/// 注册 WebDAV 路由（需要 db 来创建 per-request DbLockSystem）
+async fn handle_unlock(
+    req: &HttpRequest,
+    lock_system: &dyn DavLockSystem,
+    prefix: &str,
+) -> HttpResponse {
+    let (path, _) = match request_path(req, prefix) {
+        Ok(v) => v,
+        Err(resp) => return resp,
+    };
+    let token = match req
+        .headers()
+        .get("Lock-Token")
+        .and_then(|value| value.to_str().ok())
+    {
+        Some(token) => token.trim().trim_matches(|c| c == '<' || c == '>'),
+        None => return HttpResponse::BadRequest().finish(),
+    };
+
+    match lock_system.unlock(&path, token).await {
+        Ok(()) => HttpResponse::NoContent().finish(),
+        Err(()) => HttpResponse::Conflict().finish(),
+    }
+}
+
+async fn ensure_empty_body(payload: &mut web::Payload) -> Result<(), HttpResponse> {
+    if collect_payload(payload).await?.is_empty() {
+        Ok(())
+    } else {
+        Err(HttpResponse::UnsupportedMediaType().finish())
+    }
+}
+
+async fn ensure_parent_exists(dav_fs: &fs::AsterDavFs, relative: &str) -> Result<(), HttpResponse> {
+    let Some(parent) = parent_relative_path(relative) else {
+        return Err(HttpResponse::MethodNotAllowed().finish());
+    };
+    if parent == "/" {
+        return Ok(());
+    }
+    let parent_path = DavPath::new(&parent).map_err(|_| HttpResponse::BadRequest().finish())?;
+    match dav_fs.metadata(&parent_path).await {
+        Ok(meta) if meta.is_dir() => Ok(()),
+        Ok(_) => Err(HttpResponse::Conflict().finish()),
+        Err(FsError::NotFound) => Err(HttpResponse::Conflict().finish()),
+        Err(err) => Err(fs_error_response(err)),
+    }
+}
+
+async fn ensure_unlocked(
+    lock_system: &dyn DavLockSystem,
+    path: &DavPath,
+    deep: bool,
+    headers: &header::HeaderMap,
+) -> Result<(), HttpResponse> {
+    let tokens = submitted_lock_tokens(headers);
+    match lock_system.check(path, None, false, deep, &tokens).await {
+        Ok(()) => Ok(()),
+        Err(_) => Err(HttpResponse::Locked().finish()),
+    }
+}
+
+fn request_path(req: &HttpRequest, prefix: &str) -> Result<(DavPath, String), HttpResponse> {
+    let relative = normalize_relative_path(req.path().strip_prefix(prefix).unwrap_or(req.path()));
+    let path = DavPath::new(&relative)
+        .map_err(|_| HttpResponse::BadRequest().body("Invalid request path"))?;
+    Ok((path, relative))
+}
+
+fn destination_relative_path(req: &HttpRequest, prefix: &str) -> Result<String, HttpResponse> {
+    let raw = req
+        .headers()
+        .get("Destination")
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| HttpResponse::BadRequest().body("Missing Destination header"))?;
+    let path = if raw.starts_with("http://") || raw.starts_with("https://") {
+        let uri: http::Uri = raw
+            .parse()
+            .map_err(|_| HttpResponse::BadRequest().body("Invalid Destination header"))?;
+        uri.path().to_string()
+    } else {
+        raw.to_string()
+    };
+    let relative = path.strip_prefix(prefix).ok_or_else(|| {
+        HttpResponse::BadRequest().body("Destination must stay under WebDAV prefix")
+    })?;
+    Ok(normalize_relative_path(relative))
+}
+
+fn normalize_relative_path(path: &str) -> String {
+    if path.is_empty() || path == "/" {
+        return "/".to_string();
+    }
+    if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    }
+}
+
+fn parent_relative_path(relative: &str) -> Option<String> {
+    if relative == "/" {
+        return None;
+    }
+    let trimmed = relative.trim_end_matches('/');
+    let segments: Vec<_> = trimmed
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    if segments.len() <= 1 {
+        return Some("/".to_string());
+    }
+    Some(format!("/{}/", segments[..segments.len() - 1].join("/")))
+}
+
+fn parse_propfind_depth(headers: &header::HeaderMap) -> Result<u8, HttpResponse> {
+    match headers.get("Depth").and_then(|value| value.to_str().ok()) {
+        Some("0") => Ok(0),
+        Some("1") => Ok(1),
+        Some("infinity") => Err(HttpResponse::NotImplemented().finish()),
+        Some(_) => Err(HttpResponse::BadRequest().finish()),
+        None => Ok(0),
+    }
+}
+
+fn parse_lock_depth(headers: &header::HeaderMap) -> Result<bool, HttpResponse> {
+    match headers.get("Depth").and_then(|value| value.to_str().ok()) {
+        None | Some("infinity") => Ok(true),
+        Some("0") => Ok(false),
+        Some(_) => Err(HttpResponse::BadRequest().finish()),
+    }
+}
+
+fn parse_timeout(headers: &header::HeaderMap) -> Option<Duration> {
+    let raw = headers
+        .get("Timeout")
+        .and_then(|value| value.to_str().ok())?;
+    let candidate = raw.split(',').map(str::trim).next()?;
+    if candidate.eq_ignore_ascii_case("Infinite") {
+        return None;
+    }
+    let seconds = candidate.strip_prefix("Second-")?.parse::<u64>().ok()?;
+    Some(Duration::from_secs(seconds))
+}
+
+fn overwrite_enabled(headers: &header::HeaderMap) -> bool {
+    headers
+        .get("Overwrite")
+        .and_then(|value| value.to_str().ok())
+        .is_none_or(|value| !value.eq_ignore_ascii_case("F"))
+}
+
+fn header_equals(headers: &header::HeaderMap, name: header::HeaderName, expected: &str) -> bool {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.trim() == expected)
+}
+
+fn submitted_lock_tokens(headers: &header::HeaderMap) -> Vec<String> {
+    let mut tokens = Vec::new();
+
+    if let Some(token) = headers
+        .get("Lock-Token")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.trim().trim_matches(|c| c == '<' || c == '>'))
+        .filter(|token| !token.is_empty())
+    {
+        tokens.push(token.to_string());
+    }
+
+    if let Some(if_header) = headers.get("If").and_then(|value| value.to_str().ok()) {
+        let mut rest = if_header;
+        while let Some(start) = rest.find('<') {
+            let next = &rest[start + 1..];
+            let Some(end) = next.find('>') else {
+                break;
+            };
+            let token = &next[..end];
+            if !token.is_empty() {
+                tokens.push(token.to_string());
+            }
+            rest = &next[end + 1..];
+        }
+    }
+
+    tokens.sort();
+    tokens.dedup();
+    tokens
+}
+
+fn parse_propfind_request(body: &[u8]) -> Result<PropfindKind, HttpResponse> {
+    if body.is_empty() {
+        return Ok(PropfindKind::AllProp);
+    }
+
+    let root = Element::parse(Cursor::new(body))
+        .map_err(|_| HttpResponse::BadRequest().body("Invalid XML body"))?;
+    if root.name != "propfind" {
+        return Err(HttpResponse::BadRequest().body("Invalid PROPFIND body"));
+    }
+
+    for child in child_elements(&root) {
+        match child.name.as_str() {
+            "propname" => return Ok(PropfindKind::PropName),
+            "allprop" => return Ok(PropfindKind::AllProp),
+            "prop" => {
+                let props = child_elements(child).map(RequestedProp::from).collect();
+                return Ok(PropfindKind::Prop(props));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(PropfindKind::AllProp)
+}
+
+async fn collect_propfind_resources(
+    dav_fs: &fs::AsterDavFs,
+    path: &DavPath,
+    relative: &str,
+    depth: u8,
+) -> Result<Vec<PropfindResource>, FsError> {
+    let root_meta = dav_fs.metadata(path).await?;
+    let root_is_dir = root_meta.is_dir();
+    let mut resources = vec![PropfindResource {
+        path: path.clone(),
+        relative: relative.to_string(),
+        meta: root_meta,
+    }];
+
+    if depth == 1 && root_is_dir {
+        let entries = dav_fs.read_dir(path, ReadDirMeta::Data).await?;
+        pin_mut!(entries);
+        while let Some(entry) = entries.next().await {
+            let entry = entry?;
+            let meta = entry.metadata().await?;
+            let child_relative = child_relative_path(relative, &entry.name(), meta.is_dir());
+            let child_path = DavPath::new(&child_relative).map_err(|_| FsError::GeneralFailure)?;
+            resources.push(PropfindResource {
+                path: child_path,
+                relative: child_relative,
+                meta,
+            });
+        }
+    }
+
+    Ok(resources)
+}
+
+async fn build_propfind_response(
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    prefix: &str,
+    request_kind: &PropfindKind,
+    resource: PropfindResource,
+) -> Result<Element, HttpResponse> {
+    let mut response = dav_element("response");
+    response.children.push(XMLNode::Element(text_element(
+        "D:href",
+        &href_for_relative(prefix, &resource.relative),
+    )));
+
+    let propstats = match request_kind {
+        PropfindKind::AllProp => vec![(
+            StatusCode::OK,
+            all_prop_elements(dav_fs, lock_system, &resource).await?,
+        )],
+        PropfindKind::PropName => {
+            vec![(
+                StatusCode::OK,
+                prop_name_elements(dav_fs, lock_system, &resource).await?,
+            )]
+        }
+        PropfindKind::Prop(requested) => {
+            requested_prop_elements(dav_fs, lock_system, &resource, requested).await?
+        }
+    };
+
+    for (status, props) in propstats {
+        if props.is_empty() {
+            continue;
+        }
+        let mut propstat = dav_element("propstat");
+        let mut prop = dav_element("prop");
+        for item in props {
+            prop.children.push(XMLNode::Element(item));
+        }
+        propstat.children.push(XMLNode::Element(prop));
+        propstat
+            .children
+            .push(XMLNode::Element(status_element(status)));
+        response.children.push(XMLNode::Element(propstat));
+    }
+
+    Ok(response)
+}
+
+async fn all_prop_elements(
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    resource: &PropfindResource,
+) -> Result<Vec<Element>, HttpResponse> {
+    let mut props = standard_prop_name_list()
+        .into_iter()
+        .map(|prop| RequestedProp {
+            name: prop.to_string(),
+            namespace: Some("DAV:".to_string()),
+            prefix: Some("D".to_string()),
+        })
+        .collect::<Vec<_>>();
+    let custom_props = if is_root_resource(resource) {
+        Vec::new()
+    } else {
+        dav_fs
+            .get_props(&resource.path, true)
+            .await
+            .map_err(fs_error_response)?
+    };
+    let mut elements = Vec::new();
+    for requested in props.drain(..) {
+        if let Some(element) = standard_prop_element(lock_system, resource, &requested).await? {
+            elements.push(element);
+        }
+    }
+    for prop in custom_props {
+        elements.push(prop_element(&prop, None));
+    }
+    Ok(elements)
+}
+
+async fn prop_name_elements(
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    resource: &PropfindResource,
+) -> Result<Vec<Element>, HttpResponse> {
+    let mut elements = Vec::new();
+    for name in standard_prop_name_list() {
+        let requested = RequestedProp {
+            name: name.to_string(),
+            namespace: Some("DAV:".to_string()),
+            prefix: Some("D".to_string()),
+        };
+        if standard_prop_element(lock_system, resource, &requested)
+            .await?
+            .is_some()
+        {
+            elements.push(requested.empty_element());
+        }
+    }
+    let custom_props = if is_root_resource(resource) {
+        Vec::new()
+    } else {
+        dav_fs
+            .get_props(&resource.path, false)
+            .await
+            .map_err(fs_error_response)?
+    };
+    for prop in custom_props {
+        elements.push(prop_element(
+            &prop,
+            Some(&RequestedProp {
+                name: prop.name.clone(),
+                namespace: prop.namespace.clone(),
+                prefix: prop.prefix.clone(),
+            }),
+        ));
+    }
+    Ok(elements)
+}
+
+async fn requested_prop_elements(
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    resource: &PropfindResource,
+    requested: &[RequestedProp],
+) -> Result<Vec<(StatusCode, Vec<Element>)>, HttpResponse> {
+    let custom_props = if is_root_resource(resource) {
+        Vec::new()
+    } else {
+        dav_fs
+            .get_props(&resource.path, true)
+            .await
+            .map_err(fs_error_response)?
+    };
+    let mut ok = Vec::new();
+    let mut missing = Vec::new();
+
+    for prop in requested {
+        if let Some(element) = standard_prop_element(lock_system, resource, prop).await? {
+            ok.push(element);
+            continue;
+        }
+
+        if let Some(stored) = custom_props
+            .iter()
+            .find(|candidate| prop.matches(candidate))
+        {
+            ok.push(prop_element(stored, Some(prop)));
+        } else {
+            missing.push(prop.empty_element());
+        }
+    }
+
+    let mut result = Vec::new();
+    if !ok.is_empty() {
+        result.push((StatusCode::OK, ok));
+    }
+    if !missing.is_empty() {
+        result.push((StatusCode::NOT_FOUND, missing));
+    }
+    Ok(result)
+}
+
+async fn standard_prop_element(
+    lock_system: &dyn DavLockSystem,
+    resource: &PropfindResource,
+    requested: &RequestedProp,
+) -> Result<Option<Element>, HttpResponse> {
+    if requested.namespace.as_deref().unwrap_or("DAV:") != "DAV:" {
+        return Ok(None);
+    }
+
+    let mut element = requested.empty_element();
+    match requested.name.as_str() {
+        "displayname" => {
+            let display = display_name(&resource.relative);
+            if !display.is_empty() {
+                element.children.push(XMLNode::Text(display.to_string()));
+            }
+            Ok(Some(element))
+        }
+        "resourcetype" => {
+            if resource.meta.is_dir() {
+                element
+                    .children
+                    .push(XMLNode::Element(dav_element("collection")));
+            }
+            Ok(Some(element))
+        }
+        "getcontentlength" => {
+            element
+                .children
+                .push(XMLNode::Text(resource.meta.len().to_string()));
+            Ok(Some(element))
+        }
+        "getlastmodified" => {
+            let modified = resource.meta.modified().map_err(fs_error_response)?;
+            element
+                .children
+                .push(XMLNode::Text(format_http_date(modified)));
+            Ok(Some(element))
+        }
+        "creationdate" => {
+            let created = resource.meta.created().map_err(fs_error_response)?;
+            element
+                .children
+                .push(XMLNode::Text(format_creation_date(created)));
+            Ok(Some(element))
+        }
+        "getetag" => {
+            if let Some(etag) = resource.meta.etag() {
+                element.children.push(XMLNode::Text(format!("\"{etag}\"")));
+            }
+            Ok(Some(element))
+        }
+        "supportedlock" => {
+            let supported = supportedlock_element();
+            Ok(Some(supported))
+        }
+        "lockdiscovery" => {
+            let locks = lock_system.discover(&resource.path).await;
+            Ok(Some(lockdiscovery_element(&locks)))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn prop_from_xml(prop: &Element) -> DavProp {
+    DavProp {
+        name: prop.name.clone(),
+        prefix: prop.prefix.clone(),
+        namespace: prop.namespace.clone(),
+        xml: prop.get_text().map(|text| text.into_owned().into_bytes()),
+    }
+}
+
+fn prop_element(prop: &DavProp, requested: Option<&RequestedProp>) -> Element {
+    let requested_prefix = requested.and_then(|prop| prop.prefix.as_deref());
+    let requested_namespace = requested.and_then(|prop| prop.namespace.as_deref());
+    let namespace = requested_namespace.or(prop.namespace.as_deref());
+    let prefix = requested_prefix
+        .or(prop.prefix.as_deref())
+        .unwrap_or_else(|| default_prefix(namespace));
+    let tag = if namespace.is_some() {
+        format!("{prefix}:{}", prop.name)
+    } else {
+        prop.name.clone()
+    };
+    let mut element = Element::new(&tag);
+    if let Some(namespace) = namespace
+        && namespace != "DAV:"
+    {
+        element
+            .attributes
+            .insert(format!("xmlns:{prefix}"), namespace.to_string());
+    }
+    if let Some(xml) = &prop.xml
+        && !xml.is_empty()
+    {
+        element
+            .children
+            .push(XMLNode::Text(String::from_utf8_lossy(xml).into_owned()));
+    }
+    element
+}
+
+fn supportedlock_element() -> Element {
+    let mut supported = dav_element("supportedlock");
+
+    let mut exclusive = dav_element("lockentry");
+    let mut exclusive_scope = dav_element("lockscope");
+    exclusive_scope
+        .children
+        .push(XMLNode::Element(dav_element("exclusive")));
+    exclusive.children.push(XMLNode::Element(exclusive_scope));
+    let mut exclusive_type = dav_element("locktype");
+    exclusive_type
+        .children
+        .push(XMLNode::Element(dav_element("write")));
+    exclusive.children.push(XMLNode::Element(exclusive_type));
+    supported.children.push(XMLNode::Element(exclusive));
+
+    let mut shared = dav_element("lockentry");
+    let mut shared_scope = dav_element("lockscope");
+    shared_scope
+        .children
+        .push(XMLNode::Element(dav_element("shared")));
+    shared.children.push(XMLNode::Element(shared_scope));
+    let mut shared_type = dav_element("locktype");
+    shared_type
+        .children
+        .push(XMLNode::Element(dav_element("write")));
+    shared.children.push(XMLNode::Element(shared_type));
+    supported.children.push(XMLNode::Element(shared));
+
+    supported
+}
+
+fn lockdiscovery_element(locks: &[DavLock]) -> Element {
+    let mut discovery = dav_element("lockdiscovery");
+    for lock in locks {
+        discovery
+            .children
+            .push(XMLNode::Element(active_lock_element(lock)));
+    }
+    discovery
+}
+
+fn active_lock_element(lock: &DavLock) -> Element {
+    let mut active = dav_element("activelock");
+
+    let mut lockscope = dav_element("lockscope");
+    lockscope.children.push(XMLNode::Element(if lock.shared {
+        dav_element("shared")
+    } else {
+        dav_element("exclusive")
+    }));
+    active.children.push(XMLNode::Element(lockscope));
+
+    let mut locktype = dav_element("locktype");
+    locktype
+        .children
+        .push(XMLNode::Element(dav_element("write")));
+    active.children.push(XMLNode::Element(locktype));
+
+    if let Some(owner) = &lock.owner {
+        active.children.push(XMLNode::Element((**owner).clone()));
+    }
+
+    let mut timeout = dav_element("timeout");
+    let timeout_value = lock
+        .timeout
+        .map(|duration| format!("Second-{}", duration.as_secs()))
+        .unwrap_or_else(|| "Infinite".to_string());
+    timeout.children.push(XMLNode::Text(timeout_value));
+    active.children.push(XMLNode::Element(timeout));
+
+    let mut token = dav_element("locktoken");
+    token
+        .children
+        .push(XMLNode::Element(text_element("D:href", &lock.token)));
+    active.children.push(XMLNode::Element(token));
+
+    let mut depth = dav_element("depth");
+    depth.children.push(XMLNode::Text(if lock.deep {
+        "Infinity".to_string()
+    } else {
+        "0".to_string()
+    }));
+    active.children.push(XMLNode::Element(depth));
+
+    active
+}
+
+fn lock_response(lock: DavLock, status: StatusCode) -> HttpResponse {
+    let mut prop = dav_element("prop");
+    prop.attributes
+        .insert("xmlns:D".to_string(), "DAV:".to_string());
+    prop.children.push(XMLNode::Element(lockdiscovery_element(
+        std::slice::from_ref(&lock),
+    )));
+
+    let body = match xml_bytes(&prop) {
+        Ok(body) => body,
+        Err(resp) => return resp,
+    };
+
+    HttpResponse::build(status)
+        .insert_header(("Lock-Token", format!("<{}>", lock.token)))
+        .content_type(XML_CONTENT_TYPE)
+        .body(body)
+}
+
+fn xml_response(root: Element, status: StatusCode) -> HttpResponse {
+    match xml_bytes(&root) {
+        Ok(body) => HttpResponse::build(status)
+            .content_type(XML_CONTENT_TYPE)
+            .body(body),
+        Err(resp) => resp,
+    }
+}
+
+fn xml_bytes(root: &Element) -> Result<Vec<u8>, HttpResponse> {
+    let mut buffer = Vec::new();
+    root.write(&mut buffer)
+        .map_err(|_| HttpResponse::InternalServerError().finish())?;
+    Ok(buffer)
+}
+
+fn dav_element(name: &str) -> Element {
+    Element::new(&format!("D:{name}"))
+}
+
+fn text_element(tag: &str, text: &str) -> Element {
+    let mut element = Element::new(tag);
+    element.children.push(XMLNode::Text(text.to_string()));
+    element
+}
+
+fn status_element(status: StatusCode) -> Element {
+    text_element(
+        "D:status",
+        &format!(
+            "HTTP/1.1 {} {}",
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("Unknown"),
+        ),
+    )
+}
+
+fn child_elements(element: &Element) -> impl Iterator<Item = &Element> {
+    element.children.iter().filter_map(|child| match child {
+        XMLNode::Element(element) => Some(element),
+        _ => None,
+    })
+}
+
+fn child_relative_path(parent: &str, name: &[u8], is_dir: bool) -> String {
+    let name = String::from_utf8_lossy(name);
+    let mut relative = if parent == "/" {
+        format!("/{name}")
+    } else if parent.ends_with('/') {
+        format!("{parent}{name}")
+    } else {
+        format!("{parent}/{name}")
+    };
+    if is_dir && !relative.ends_with('/') {
+        relative.push('/');
+    }
+    relative
+}
+
+fn href_for_relative(prefix: &str, relative: &str) -> String {
+    if relative == "/" {
+        format!("{prefix}/")
+    } else {
+        format!("{prefix}{relative}")
+    }
+}
+
+fn display_name(relative: &str) -> &str {
+    if relative == "/" {
+        ""
+    } else {
+        relative
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+    }
+}
+
+fn is_root_resource(resource: &PropfindResource) -> bool {
+    resource.relative == "/"
+}
+
+fn standard_prop_name_list() -> [&'static str; 8] {
+    [
+        "displayname",
+        "resourcetype",
+        "getcontentlength",
+        "getlastmodified",
+        "creationdate",
+        "getetag",
+        "lockdiscovery",
+        "supportedlock",
+    ]
+}
+
+fn default_prefix(namespace: Option<&str>) -> &str {
+    match namespace {
+        Some("DAV:") => "D",
+        Some(_) => "A",
+        None => "",
+    }
+}
+
+fn fs_error_response(err: FsError) -> HttpResponse {
+    HttpResponse::build(fs_error_status(&err)).finish()
+}
+
+fn fs_error_status(err: &FsError) -> StatusCode {
+    match err {
+        FsError::NotFound => StatusCode::NOT_FOUND,
+        FsError::Forbidden => StatusCode::FORBIDDEN,
+        FsError::Exists => StatusCode::CONFLICT,
+        FsError::InsufficientStorage => StatusCode::INSUFFICIENT_STORAGE,
+        FsError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+        FsError::GeneralFailure => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+fn format_http_date(time: std::time::SystemTime) -> String {
+    chrono::DateTime::<chrono::Utc>::from(time)
+        .format("%a, %d %b %Y %H:%M:%S GMT")
+        .to_string()
+}
+
+fn format_creation_date(time: std::time::SystemTime) -> String {
+    chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339()
+}
+
+fn allow_header_value() -> &'static str {
+    "OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, COPY, MOVE, PROPFIND, PROPPATCH, LOCK, UNLOCK, REPORT, VERSION-CONTROL"
+}
+
+fn multi_status() -> StatusCode {
+    StatusCode::from_u16(207).unwrap()
+}
+
+fn unauthorized_response() -> HttpResponse {
+    HttpResponse::Unauthorized()
+        .insert_header(("WWW-Authenticate", "Basic realm=\"AsterDrive WebDAV\""))
+        .body("Unauthorized")
+}
+
+impl RequestedProp {
+    fn from(element: &Element) -> Self {
+        Self {
+            name: element.name.clone(),
+            namespace: element.namespace.clone(),
+            prefix: element.prefix.clone(),
+        }
+    }
+
+    fn empty_element(&self) -> Element {
+        let prefix = self
+            .prefix
+            .as_deref()
+            .unwrap_or_else(|| default_prefix(self.namespace.as_deref()));
+        let tag = if self.namespace.is_some() {
+            format!("{prefix}:{}", self.name)
+        } else {
+            self.name.clone()
+        };
+        let mut element = Element::new(&tag);
+        if let Some(namespace) = &self.namespace
+            && namespace != "DAV:"
+        {
+            element
+                .attributes
+                .insert(format!("xmlns:{prefix}"), namespace.clone());
+        }
+        element
+    }
+
+    fn matches(&self, prop: &DavProp) -> bool {
+        self.name == prop.name && self.namespace.as_deref() == prop.namespace.as_deref()
+    }
+}
+
+/// 注册 WebDAV 路由
 pub fn configure(
     cfg: &mut web::ServiceConfig,
     webdav_config: &WebDavConfig,
-    db: &DatabaseConnection,
+    _db: &sea_orm::DatabaseConnection,
 ) {
     let webdav_state = web::Data::new(WebDavState {
-        handler: DavHandler::builder().build_handler(),
         prefix: webdav_config.prefix.clone(),
-        db: db.clone(),
     });
 
     cfg.app_data(webdav_state).service(
