@@ -1,3 +1,8 @@
+//! 后台任务 dispatcher。
+//!
+//! 这层负责从数据库认领可执行任务、按并发上限驱动执行，并在 lease 丢失时
+//! 阻止旧 worker 继续把状态写回数据库。
+
 use std::future::Future;
 
 use chrono::{Duration, Utc};
@@ -62,6 +67,8 @@ pub async fn dispatch_due(state: &AppState) -> Result<DispatchStats> {
         let next_processing_token = task.processing_token.checked_add(1).ok_or_else(|| {
             AsterError::internal_error("background task processing token overflow")
         })?;
+        // `try_claim` 是真正的 CAS 关口：即使多台进程同时看到同一条 due task，
+        // 也只有 token/状态仍匹配的那个 worker 能把它认领成功。
         if !background_task_repo::try_claim(
             &state.db,
             task_id,
@@ -80,6 +87,7 @@ pub async fn dispatch_due(state: &AppState) -> Result<DispatchStats> {
         claimed_tasks.push((task, TaskLease::new(task_id, next_processing_token)));
     }
 
+    // 先把认领结果固定下来，再按并发上限执行，避免边迭代边改库时混淆统计口径。
     let results = run_with_concurrency_limit(claimed_tasks, concurrency, |(task, lease)| {
         let state = state.clone();
         async move { process_claimed_task(&state, task, lease).await }

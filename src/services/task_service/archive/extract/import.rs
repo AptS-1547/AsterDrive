@@ -74,8 +74,9 @@ pub(super) async fn materialize_archive_extract_stage(
             "read extracted file metadata",
             AsterError::storage_driver_error,
         )?;
-        let size = i64::try_from(metadata.len())
-            .map_err(|_| AsterError::internal_error("extracted file size exceeds i64 range"))?;
+        let size = i64::try_from(metadata.len()).map_aster_err_with(|| {
+            AsterError::internal_error("extracted file size exceeds i64 range")
+        })?;
         workspace_storage_service::store_from_temp_exact_name_with_hints(
             state,
             scope,

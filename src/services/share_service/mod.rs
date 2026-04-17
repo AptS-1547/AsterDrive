@@ -1,3 +1,9 @@
+//! 分享服务的聚合入口。
+//!
+//! 这里把“管理侧 share CRUD”和“公开 token 访问内容”两条路径收在同一模块下，
+//! 但故意拆成不同子模块：管理逻辑走已登录 scope 校验，公开访问逻辑只认分享本身
+//! 的状态与范围，不复用内部登录态。
+
 mod access;
 mod content;
 mod management;
@@ -33,6 +39,8 @@ pub(crate) use management::{
     list_shares_paginated_in_scope, update_share_in_scope,
 };
 
+// audit 包装放在入口层，而不是塞进 management 核心逻辑里。
+// 这样基础 share service 仍然可以在测试和其他内部流程里被纯粹复用。
 pub(crate) async fn create_share_in_scope_with_audit(
     state: &AppState,
     scope: WorkspaceStorageScope,

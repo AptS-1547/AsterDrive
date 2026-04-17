@@ -495,6 +495,91 @@ async fn test_update_storage_used_is_atomic_under_concurrency() {
     );
 }
 
+/// 验证 update_storage_used 在并发场景下，超过 quota 的请求会被 SQL CAS 拒绝。
+///
+/// 历史漏洞：check_quota 是 SELECT-then-compare，并发请求可同时通过预检后超额提交。
+/// 修复后：update_storage_used 在 SQL WHERE 子句中加 `storage_used + delta <= storage_quota`，
+/// 真正的 race winner 才能成功，loser 收到 storage_quota_exceeded。
+#[actix_web::test]
+async fn test_concurrent_quota_overrun_is_rejected_by_cas() {
+    use aster_drive::db::repository::user_repo;
+    use aster_drive::entities::user;
+    use aster_drive::services::auth_service;
+    use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
+
+    let state = common::setup().await;
+    let registered =
+        auth_service::register(&state, "quotaov", "quotaov@test.com", "password123")
+            .await
+            .unwrap();
+
+    // 设 quota = 100 字节，并发提交 20 个 +10 字节请求（总需求 200，超额一倍）
+    let model = user::Entity::find_by_id(registered.id)
+        .one(&state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut active = model.into_active_model();
+    active.storage_quota = Set(100);
+    active.update(&state.db).await.unwrap();
+
+    let mut tasks = JoinSet::new();
+    for _ in 0..20 {
+        let db = state.db.clone();
+        let user_id = registered.id;
+        tasks.spawn(async move { user_repo::update_storage_used(&db, user_id, 10).await });
+    }
+
+    let mut succeeded = 0;
+    let mut quota_exceeded = 0;
+    let mut other_errors = 0;
+    while let Some(result) = tasks.join_next().await {
+        match result.unwrap() {
+            Ok(()) => succeeded += 1,
+            Err(e) if e.code() == "E032" => quota_exceeded += 1, // StorageQuotaExceeded
+            Err(_) => other_errors += 1,
+        }
+    }
+
+    assert_eq!(other_errors, 0, "should only see Ok or quota_exceeded");
+    assert_eq!(succeeded, 10, "exactly 10 requests should fit in quota=100");
+    assert_eq!(quota_exceeded, 10, "remaining 10 must be rejected");
+
+    let final_state = user_repo::find_by_id(&state.db, registered.id).await.unwrap();
+    assert_eq!(final_state.storage_used, 100, "must not exceed quota");
+}
+
+/// 验证 check_quota 对 i64 加法溢出有防护（之前会 wrap 成负数反而通过校验）
+#[actix_web::test]
+async fn test_check_quota_rejects_integer_overflow() {
+    use aster_drive::db::repository::user_repo;
+    use aster_drive::entities::user;
+    use aster_drive::services::auth_service;
+    use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
+
+    let state = common::setup().await;
+    let registered =
+        auth_service::register(&state, "ovflu", "ovflu@test.com", "password123")
+            .await
+            .unwrap();
+
+    // 把 storage_used 调到接近 i64::MAX，再传一个会触发溢出的 delta
+    let model = user::Entity::find_by_id(registered.id)
+        .one(&state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut active = model.into_active_model();
+    active.storage_used = Set(i64::MAX - 100);
+    active.storage_quota = Set(0); // 不限，证明检查的是溢出本身而非配额
+    active.update(&state.db).await.unwrap();
+
+    // 不限配额下，i64 加法溢出本来会 wrap 成负数通过 check，现在必须明确拒绝
+    let result = user_repo::check_quota(&state.db, registered.id, 200).await;
+    let err = result.expect_err("overflow must be rejected");
+    assert_eq!(err.code(), "E004", "expected internal_error for overflow");
+}
+
 #[actix_web::test]
 async fn test_s3_relay_stream_download_e2e() {
     let state = common::setup().await;

@@ -1,8 +1,18 @@
+//! 统一描述“当前操作落在哪个工作空间里”。
+//!
+//! 个人空间和团队空间共用大部分文件主链路，但权限和资源归属并不完全相同。
+//! 这里负责把 scope 相关规则收口，避免每个上层 service 都自己拼一套
+//! `user_id` / `team_id` / `actor_user_id` 判断。
+
 use crate::db::repository::{file_repo, folder_repo, team_member_repo, team_repo};
 use crate::entities::{file, folder, team};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 
+/// scope 同时表达“资源属于哪个空间”和“是谁在操作”。
+///
+/// 个人空间里两者通常是同一个人；团队空间里则必须同时保留 `team_id`
+/// 和 `actor_user_id`，否则后续无法同时做成员校验和归属校验。
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum WorkspaceStorageScope {
     Personal { user_id: i64 },
@@ -29,6 +39,8 @@ pub(crate) async fn require_scope_access(
     state: &AppState,
     scope: WorkspaceStorageScope,
 ) -> Result<()> {
+    // 个人空间天然只需要“用户正在操作自己的空间”这个前提；
+    // 团队空间则必须先确认 actor 当前仍然是团队成员。
     if let WorkspaceStorageScope::Team {
         team_id,
         actor_user_id,
@@ -164,6 +176,8 @@ pub(crate) async fn verify_folder_access(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
+    // 先校验当前 scope 还有效，再取实体做归属检查。
+    // 这样所有调用方都能拿到“存在 + 属于当前空间 + 未进回收站”的 folder。
     require_scope_access(state, scope).await?;
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
     ensure_active_folder_scope(&folder, scope)?;
@@ -176,6 +190,8 @@ pub(crate) async fn verify_file_access(
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
+    // 文件访问和文件夹访问保持同样语义：返回值一旦成功，就已经完成 scope
+    // 校验和 trash 过滤，上层不需要再手写重复判断。
     require_scope_access(state, scope).await?;
     let file = file_repo::find_by_id(&state.db, file_id).await?;
     ensure_active_file_scope(&file, scope)?;

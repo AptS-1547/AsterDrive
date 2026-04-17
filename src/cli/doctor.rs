@@ -1,3 +1,8 @@
+//! `aster_drive doctor` 的聚合入口。
+//!
+//! 这里负责把环境检查、运行时配置检查和深度一致性审计组合成一份结构化报告；
+//! 真正的全局数据核对逻辑则下沉在 `integrity_service`。
+
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -186,6 +191,8 @@ fn doctor_scope_enabled(scopes: &[DoctorDeepScope], target: DoctorDeepScope) -> 
 
 pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
     let redacted_database_url = redact_database_url(&args.database_url);
+    // `--fix`、`--scope`、`--policy-id` 都意味着用户已经在请求深度审计；
+    // 不要求再额外显式带 `--deep`，避免 CLI 使用上出现重复开关。
     let deep = args.deep || args.fix || !args.scopes.is_empty() || args.policy_id.is_some();
     let scopes = if deep {
         effective_deep_scopes(args)
@@ -392,6 +399,8 @@ pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
 
     if deep && doctor_scope_enabled(&scopes, DoctorDeepScope::StorageObjects) && policy_filter_valid
     {
+        // storage object 扫描会真实触达底层驱动，和前面的纯数据库检查分开汇总，
+        // 这样运维侧能一眼区分“库里坏了”还是“对象存储不可达/有漂移”。
         match doctor_storage_scan_checks(&db, effective_policy_id).await {
             Ok(storage_checks) => checks.extend(storage_checks),
             Err(err) => checks.extend([

@@ -1,3 +1,11 @@
+//! 团队服务聚合入口。
+//!
+//! 团队相关逻辑拆成两层：
+//! - `team` / `members` / `archive` 这些核心业务语义
+//! - 这里的 audit 包装与导出入口
+//!
+//! 团队空间文件操作本身不在这里实现，而是复用 workspace/file/folder/upload 等服务。
+
 mod admin;
 mod archive;
 mod members;
@@ -29,6 +37,7 @@ pub use team::{
     archive_team, create_team, get_team, list_teams, list_user_team_ids, restore_team, update_team,
 };
 
+// 和其他 service 一样，audit 放在聚合层，核心 team/member 逻辑保持纯业务语义。
 fn team_audit_details(team: &TeamInfo) -> Option<serde_json::Value> {
     audit_service::details(audit_service::TeamAuditDetails {
         description: &team.description,
@@ -57,6 +66,7 @@ pub(crate) async fn create_team_with_audit(
     input: CreateTeamInput,
     audit_ctx: &AuditContext,
 ) -> Result<TeamInfo> {
+    // 当前产品约束下，普通用户不能自助创建团队；团队创建入口收敛在系统管理员。
     let snapshot = auth_service::get_auth_snapshot(state, actor_user_id).await?;
     if !snapshot.role.is_admin() {
         return Err(AsterError::auth_forbidden(

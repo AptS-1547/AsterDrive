@@ -1,3 +1,8 @@
+//! 分享管理侧逻辑。
+//!
+//! 这里处理的是“谁可以创建、查看、删除 share”，而不是公开 token 访问。
+//! 因此所有入口都先建立在 `WorkspaceStorageScope` 之上，再进入 share 记录本身。
+
 use std::collections::HashMap;
 
 use chrono::Utc;
@@ -53,6 +58,8 @@ pub(crate) async fn create_share_in_scope(
     let txn = db.begin().await.map_err(AsterError::from)?;
     lock_share_resource_in_scope(&txn, scope, file_id, folder_id).await?;
 
+    // share 对同一资源只允许保留一条活跃记录。
+    // 这里在锁住目标资源后再检查，可避免并发创建时双写活跃 share。
     let existing = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
             share_repo::find_active_by_resource(&txn, user_id, file_id, folder_id).await?

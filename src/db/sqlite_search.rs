@@ -1,4 +1,4 @@
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use std::collections::HashSet;
 
@@ -151,7 +151,7 @@ async fn sqlite_scalar_string<C: ConnectionTrait>(db: &C, sql: &str) -> Result<S
         .ok_or_else(|| AsterError::database_operation("SQLite scalar query returned no rows"))?;
 
     row.try_get_by_index::<String>(0)
-        .map_err(|err| AsterError::database_operation(err.to_string()))
+        .map_aster_err(AsterError::database_operation)
 }
 
 async fn sqlite_existing_objects<C: ConnectionTrait>(db: &C) -> Result<HashSet<String>> {
@@ -172,7 +172,7 @@ async fn sqlite_existing_objects<C: ConnectionTrait>(db: &C) -> Result<HashSet<S
     rows.into_iter()
         .map(|row| {
             row.try_get_by_index::<String>(0)
-                .map_err(|err| AsterError::database_operation(err.to_string()))
+                .map_aster_err(AsterError::database_operation)
         })
         .collect()
 }

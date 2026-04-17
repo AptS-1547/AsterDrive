@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::entities::background_task;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -258,11 +258,11 @@ pub(super) fn parse_task_result_info(task: &background_task::Model) -> Result<Op
 pub(super) fn serialize_task_payload<T: Serialize>(payload: &T) -> Result<StoredTaskPayload> {
     serde_json::to_string(payload)
         .map(StoredTaskPayload)
-        .map_err(|error| AsterError::internal_error(format!("serialize task payload: {error}")))
+        .map_aster_err_ctx("serialize task payload", AsterError::internal_error)
 }
 
 pub(super) fn serialize_task_result<T: Serialize>(result: &T) -> Result<StoredTaskResult> {
     serde_json::to_string(result)
         .map(StoredTaskResult)
-        .map_err(|error| AsterError::internal_error(format!("serialize task result: {error}")))
+        .map_aster_err_ctx("serialize task result", AsterError::internal_error)
 }

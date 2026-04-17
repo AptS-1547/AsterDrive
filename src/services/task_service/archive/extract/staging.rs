@@ -135,8 +135,9 @@ pub(super) fn stage_zip_archive_for_extract(
         let copied = copy_reader_to_writer_with_lease(Some(lease_guard), &mut entry, &mut output)?;
         processed_bytes = processed_bytes
             .checked_add(
-                i64::try_from(copied)
-                    .map_err(|_| AsterError::internal_error("extracted bytes exceed i64 range"))?,
+                i64::try_from(copied).map_aster_err_with(|| {
+                    AsterError::internal_error("extracted bytes exceed i64 range")
+                })?,
             )
             .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
         file_count += 1;
@@ -172,8 +173,9 @@ pub(super) fn stage_zip_archive_for_extract(
         total_bytes,
         total_progress,
         file_count,
-        directory_count: i64::try_from(created_dirs.len())
-            .map_err(|_| AsterError::internal_error("directory count exceeds i64 range"))?,
+        directory_count: i64::try_from(created_dirs.len()).map_aster_err_with(|| {
+            AsterError::internal_error("directory count exceeds i64 range")
+        })?,
     })
 }
 

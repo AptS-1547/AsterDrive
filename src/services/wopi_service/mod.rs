@@ -1,3 +1,8 @@
+//! WOPI 集成入口。
+//!
+//! 这组模块把“预览应用发现、会话 token、锁、文件读写和 PUT_RELATIVE / rename”
+//! 这些 WOPI 语义拆开处理。调用方通常只看这里导出的高层操作函数。
+
 mod discovery;
 mod locks;
 mod operations;

@@ -180,13 +180,13 @@ pub(super) async fn process_archive_compress_task(
             )?;
             writer
                 .into_inner()
-                .map_err(|error| AsterError::storage_driver_error(error.to_string()))?;
+                .map_aster_err(AsterError::storage_driver_error)?;
             let metadata = std::fs::metadata(&archive_temp_path_for_worker).map_aster_err_ctx(
                 "read archive temp file metadata",
                 AsterError::storage_driver_error,
             )?;
             Ok((
-                i64::try_from(metadata.len()).map_err(|_| {
+                i64::try_from(metadata.len()).map_aster_err_with(|| {
                     AsterError::internal_error("archive temp file exceeds i64 range")
                 })?,
                 steps,

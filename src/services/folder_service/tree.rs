@@ -1,3 +1,8 @@
+//! 递归收集目录树。
+//!
+//! 删除、复制、归档、分享范围校验等流程都会用到“从一组根目录向下收集全部子孙”。
+//! 这里把这件事单独抽出来，避免每个业务流程都自己写一套 BFS / scope 过滤逻辑。
+
 use std::collections::HashSet;
 
 use crate::db::repository::{file_repo, folder_repo};
@@ -38,6 +43,8 @@ pub(crate) async fn collect_folder_forest_in_scope(
     let mut seen_folder_ids = HashSet::new();
     let mut frontier = root_folder_ids.to_vec();
 
+    // 这里按“当前层 frontier -> 下一层 children”的方式做 BFS。
+    // 相比递归 DFS，更容易批量查询当前层所有 children，减少数据库 round-trip。
     while !frontier.is_empty() {
         frontier.sort_unstable();
         frontier.dedup();
@@ -49,6 +56,8 @@ pub(crate) async fn collect_folder_forest_in_scope(
         folder_ids.extend(frontier.iter().copied());
 
         if include_deleted {
+            // 带 deleted 节点的场景通常是回收站恢复/清理，不适合走普通 repo 过滤器，
+            // 所以先拉全量 children，再在内存里按 scope 过滤。
             files.extend(
                 file_repo::find_all_in_folders(db, &frontier)
                     .await?

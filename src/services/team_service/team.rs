@@ -1,3 +1,8 @@
+//! 团队本体 CRUD。
+//!
+//! 这里只处理 team 自身的创建、更新、归档、恢复和“当前用户能看到哪些团队”，
+//! 成员增删改在 `members.rs`，管理员越权入口在 `admin.rs`。
+
 use std::collections::HashSet;
 
 use crate::db::repository::{team_member_repo, team_repo};
@@ -56,6 +61,8 @@ async fn list_user_team_memberships(
     user_id: i64,
     archived: bool,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
+    // 用户视角列团队时，本质是“先看 membership，再带 team”。
+    // 这样角色信息和 archived 过滤能保持一致，不会出现“能看到 team 但没有 membership”的状态。
     if archived {
         team_member_repo::list_by_user_with_archived_team(&state.db, user_id).await
     } else {
@@ -68,6 +75,8 @@ pub async fn create_team(
     creator_user_id: i64,
     input: CreateTeamInput,
 ) -> Result<TeamInfo> {
+    // 创建团队时会同时把创建者加入 team_members，并赋予 owner。
+    // 这里返回的 TeamInfo 因此天然带 `my_role = Owner`。
     let policy_group_id = resolve_required_policy_group_id(state, None).await?;
     let created_team = create_team_record(
         state,
@@ -104,6 +113,7 @@ pub async fn archive_team(state: &AppState, team_id: i64, actor_user_id: i64) ->
         return Err(AsterError::auth_forbidden("team owner role is required"));
     }
 
+    // 归档团队不删除成员关系，恢复时仍依赖原 membership 判断谁可以解封。
     archive_team_record(state, team).await
 }
 

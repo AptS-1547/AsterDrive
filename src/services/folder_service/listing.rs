@@ -1,3 +1,9 @@
+//! 目录列表查询。
+//!
+//! 这里的一个关键取舍是：文件夹和文件分别分页。
+//! 文件夹用 offset，文件用 cursor，这样目录页可以稳定展示大量文件而不要求
+//! 文件夹列表也跟着使用 cursor。
+
 use crate::db::repository::{file_repo, folder_repo, share_repo};
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -19,6 +25,8 @@ async fn build_folder_contents(
     sort_by: crate::api::pagination::SortBy,
     file_limit: u64,
 ) -> Result<FolderContents> {
+    // 列表接口除了返回文件/目录本身，还要顺手标注“是否已有活跃分享”。
+    // 这里一次性批量查 share 状态，避免前端列表页出现 N+1。
     let next_file_cursor = if files.len() as u64 == file_limit && file_limit > 0 {
         files.last().map(|f| FileCursor {
             value: crate::api::pagination::SortBy::cursor_value(f, sort_by),
@@ -85,6 +93,8 @@ pub(crate) async fn list_in_scope(
         workspace_storage_service::verify_folder_access(state, scope, parent_id).await?;
     }
 
+    // 目录和文件分开查询，是因为它们的分页策略不同：
+    // folders 走 offset，files 走 cursor；最终再拼成同一个 FolderContents。
     let (folders, folders_total, files, files_total) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
             let folder_task = async {
@@ -266,6 +276,7 @@ pub async fn list_shared(
     );
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
     let contents = if let Some(team_id) = folder.team_id {
+        // 公开分享页不再校验“当前用户是不是团队成员”，但数据边界仍然是团队空间。
         let (folders, folders_total) = folder_repo::find_team_children_paginated(
             &state.db,
             team_id,
@@ -290,6 +301,7 @@ pub async fn list_shared(
         build_folder_contents(
             state,
             WorkspaceStorageScope::Team {
+                // 分享页没有真实 actor，这里仅借用 folder 所属空间来复用 DTO 构建逻辑。
                 team_id,
                 actor_user_id: folder.user_id,
             },

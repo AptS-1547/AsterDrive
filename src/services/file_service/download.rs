@@ -1,3 +1,11 @@
+//! 文件下载主链路。
+//!
+//! 下载有两种真正的出站方式：
+//! - 服务端自己流式读取并回给客户端
+//! - 对满足条件的 S3 附件下载返回 presigned redirect
+//!
+//! route / scope 层只决定“是否允许下载”，真正的传输策略在这里统一收口。
+
 use std::time::Duration;
 
 use actix_web::{HttpResponse, http::header};
@@ -114,6 +122,8 @@ pub(crate) async fn build_download_response_with_disposition(
     if let Some(if_none_match) = if_none_match
         && if_none_match_matches(if_none_match, &blob.hash)
     {
+        // 命中 If-None-Match 时仍走统一 response builder，
+        // 这样 304 和 200 会共享相同的缓存头 / sandbox 头策略。
         return build_stream_response_with_disposition(
             state,
             f,
@@ -131,6 +141,8 @@ pub(crate) async fn build_download_response_with_disposition(
         && options.effective_s3_download_strategy() == S3DownloadStrategy::Presigned;
 
     if should_presign {
+        // 只有“附件下载 + S3 + 策略允许”才走 presigned redirect。
+        // inline 预览仍由服务端统一加 CSP 和缓存头，避免把浏览器安全策略交给外部存储。
         return build_presigned_redirect_response(state, &policy, f, blob).await;
     }
 
@@ -241,7 +253,8 @@ pub(crate) async fn build_stream_response_with_disposition(
         response.insert_header(("Content-Security-Policy", inline_sandbox_csp()));
         response.insert_header(("X-Content-Type-Options", "nosniff"));
     }
-    // 跳过全局 Compress 中间件，避免压缩编码器缓冲导致内存暴涨
+    // 跳过全局 Compress 中间件，避免压缩编码器为了攒出更大的压缩块而额外缓存，
+    // 让大文件下载从“稳定流式”退化成高内存占用。
     response.insert_header(("Content-Encoding", "identity"));
     Ok(response.streaming(reader_stream))
 }

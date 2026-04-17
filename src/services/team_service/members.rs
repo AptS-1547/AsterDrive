@@ -1,3 +1,10 @@
+//! 团队成员管理。
+//!
+//! 这里最重要的不是 CRUD 本身，而是角色变更和移除时的安全边界：
+//! - 只有 manager 能管理成员
+//! - owner 相关操作只能由 owner 执行
+//! - 不能把团队降成“没有 owner”或“没有任何 manager”
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, IntoActiveModel, Set, TransactionTrait};
 
@@ -56,6 +63,7 @@ pub async fn add_admin_member(
     let txn = state.db.begin().await.map_err(AsterError::from)?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
+    // 先锁团队再查 membership，避免并发添加把同一用户重复插入 team_members。
     if team_member_repo::find_by_team_and_user(&txn, team_id, target_user.id)
         .await?
         .is_some()
@@ -188,6 +196,7 @@ pub async fn add_member(
         .await?
         .ok_or_else(|| AsterError::auth_forbidden("not a member of this team"))?;
     ensure_can_manage_team(actor_membership.role)?;
+    // admin 可以添加普通成员 / admin，但不能凭空再造 owner。
     if !actor_membership.role.is_owner() && input.role.is_owner() {
         return Err(AsterError::auth_forbidden(
             "only a team owner can assign owner role",
@@ -240,6 +249,8 @@ pub async fn update_member_role(
             AsterError::record_not_found(format!("team member user #{member_user_id}"))
         })?;
 
+    // owner 相关角色变更比普通 admin 更严格：
+    // 非 owner 既不能降 owner，也不能把别人升成 owner。
     if !actor_membership.role.is_owner() && (target_membership.role.is_owner() || role.is_owner()) {
         return Err(AsterError::auth_forbidden(
             "only a team owner can manage owner memberships",
@@ -280,6 +291,7 @@ pub async fn remove_member(
             AsterError::record_not_found(format!("team member user #{member_user_id}"))
         })?;
 
+    // 成员可以自行退出团队；只有在“替别人移除成员”时才强制要求 manager 权限。
     if actor_user_id != member_user_id {
         ensure_can_manage_team(actor_membership.role)?;
         if !actor_membership.role.is_owner() && target_membership.role.is_owner() {

@@ -1,3 +1,11 @@
+//! 上传初始化阶段。
+//!
+//! 这里不真正写入文件内容，只负责：
+//! - 解析目标路径和目录自动创建
+//! - 解析存储策略与大小限制
+//! - 协商最终上传模式
+//! - 在需要 session 的模式下预先写入 upload_sessions
+
 use chrono::{Duration, Utc};
 use sea_orm::Set;
 
@@ -39,6 +47,8 @@ async fn init_upload_for_scope(
 
     let (resolved_folder_id, resolved_filename) = match relative_path {
         Some(path) => {
+            // 目录上传会把 `relative_path` 拆成“父目录链 + 最终文件名”。
+            // 这里就把目录路径补齐，后续模式选择和 session 记录都只看解析后的最终目标。
             let parsed = workspace_storage_service::parse_relative_upload_path(
                 state, scope, folder_id, path,
             )
@@ -63,6 +73,7 @@ async fn init_upload_for_scope(
         "resolved upload session target"
     );
 
+    // upload 模式协商建立在“最终会写到哪条策略”之上，而不是客户端自己传 mode。
     let policy = workspace_storage_service::resolve_policy_for_size(
         state,
         scope,
@@ -98,6 +109,8 @@ async fn init_upload_for_scope(
             let temp_key = format!("files/{upload_id}");
             let chunk_size = effective_s3_multipart_chunk_size(policy.chunk_size);
 
+            // 小文件 presigned：客户端直接 PUT 到最终 temp object，不经过服务端 relay，
+            // 也不需要 chunk bookkeeping。
             if policy.chunk_size == 0 || total_size <= chunk_size {
                 let presigned_url = driver
                     .presigned_put_url(&temp_key, std::time::Duration::from_secs(HOUR_SECS))
@@ -148,6 +161,8 @@ async fn init_upload_for_scope(
                 });
             }
 
+            // 大文件 presigned multipart：服务端仍然不接管数据流，但必须保留 session，
+            // 用来记录 multipart upload_id、分片总数以及后续 complete 阶段的收口点。
             let s3_upload_id = driver.create_multipart_upload(&temp_key).await?;
             let total_chunks =
                 numbers::calc_total_chunks(total_size, chunk_size, "presigned multipart upload")?;
@@ -198,6 +213,7 @@ async fn init_upload_for_scope(
 
         if strategy == S3UploadStrategy::RelayStream {
             let chunk_size = effective_s3_multipart_chunk_size(policy.chunk_size);
+            // relay_stream + 小文件：直接走普通上传接口，让服务端把字节流转发到驱动。
             if policy.chunk_size == 0 || total_size <= chunk_size {
                 tracing::debug!(
                     scope = ?scope,
@@ -215,6 +231,7 @@ async fn init_upload_for_scope(
                 });
             }
 
+            // relay_stream + 大文件：客户端仍然分片传给服务端，服务端再逐片上传到 S3 multipart。
             let driver = state.driver_registry.get_driver(&policy)?;
             let upload_id = generate_upload_id(db).await?;
             let temp_key = format!("files/{upload_id}");
@@ -266,6 +283,7 @@ async fn init_upload_for_scope(
         }
     }
 
+    // 非 S3 或未启用 multipart 时，小文件直接走 direct upload，不需要 upload session。
     if policy.chunk_size == 0 || total_size <= policy.chunk_size {
         tracing::debug!(
             scope = ?scope,
@@ -283,6 +301,8 @@ async fn init_upload_for_scope(
         });
     }
 
+    // 本地 / 其他非 direct 场景：服务端维护分片目录与 upload session，
+    // complete 阶段会把这些 chunk 组装成最终文件。
     let chunk_size = policy.chunk_size;
     let total_chunks = numbers::calc_total_chunks(total_size, chunk_size, "chunked upload")?;
     let upload_id = generate_upload_id(db).await?;
@@ -355,6 +375,7 @@ pub async fn init_upload(
     .await
 }
 
+/// 团队空间上传协商：规则和个人空间一致，但路径归属与配额都落在团队 scope。
 pub async fn init_upload_for_team(
     state: &AppState,
     team_id: i64,

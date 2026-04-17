@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::types::{BackgroundTaskKind, StoredTaskSteps};
 
 use super::types::{TaskStepInfo, TaskStepStatus};
@@ -122,7 +122,7 @@ pub(super) fn parse_task_steps_json(
 ) -> Result<Vec<TaskStepInfo>> {
     match steps_json {
         Some(raw) if !raw.trim().is_empty() => serde_json::from_str(raw)
-            .map_err(|error| AsterError::internal_error(format!("parse task steps json: {error}"))),
+            .map_aster_err_ctx("parse task steps json", AsterError::internal_error),
         _ => Ok(Vec::new()),
     }
 }
@@ -130,7 +130,7 @@ pub(super) fn parse_task_steps_json(
 pub(super) fn serialize_task_steps(steps: &[TaskStepInfo]) -> Result<StoredTaskSteps> {
     serde_json::to_string(steps)
         .map(StoredTaskSteps)
-        .map_err(|error| AsterError::internal_error(format!("serialize task steps: {error}")))
+        .map_aster_err_ctx("serialize task steps", AsterError::internal_error)
 }
 
 fn find_task_step_mut<'a>(

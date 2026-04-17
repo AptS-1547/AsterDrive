@@ -1,3 +1,9 @@
+//! WOPI 文件操作入口。
+//!
+//! 这些函数把 WOPI 协议动作翻译回项目内部的 file/profile service。
+//! 重点不是重新实现一套文件系统，而是复用已有的文件主链路，同时补上
+//! WOPI 专用的 lock、rename、PUT_RELATIVE 语义。
+
 use crate::db::repository::file_repo;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -77,6 +83,7 @@ pub async fn put_file_contents(
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiPutFileResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
+    // WOPI 写回必须先走锁校验；否则外部编辑器会绕过项目内部锁系统直接覆盖内容。
     if let Some(conflict) =
         ensure_wopi_lock_matches(state, &resolved.payload, resolved.file.id, requested_lock).await?
     {
@@ -124,6 +131,7 @@ pub async fn put_relative_file(
 
     let target_file = match request.target_mode {
         PutRelativeTargetMode::Suggested(target_name) => {
+            // SuggestedTarget 永远表示“新建一个可用名称”，不会覆盖现有文件。
             store_relative_target_from_bytes(
                 state,
                 scope,
@@ -139,6 +147,8 @@ pub async fn put_relative_file(
             target_name,
             overwrite,
         } => {
+            // RelativeTarget 先找目标名是否已存在，再根据 overwrite / 锁状态决定
+            // 冲突、覆盖还是新建。
             let existing =
                 find_file_by_name_in_scope(&state.db, scope, resolved.file.folder_id, &target_name)
                     .await?;
@@ -256,6 +266,8 @@ pub async fn rename_file(
     {
         Ok(updated) => updated,
         Err(err) if file_repo::is_duplicate_name_error(&err, &final_name) => {
+            // 即使前面已经算过一个可用名字，这里仍然要接受并发重命名造成的唯一键冲突，
+            // 然后再退一步建议新的可用名。
             final_name = suggest_available_relative_target(
                 state,
                 scope,

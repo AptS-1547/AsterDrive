@@ -1,3 +1,10 @@
+//! 分享服务内部共用的边界校验。
+//!
+//! 这层负责回答几个核心问题：
+//! - 某条 share 是否仍然属于当前工作空间
+//! - 公开 token 是否仍有效
+//! - 被访问的 file / folder 是否仍在分享声明的范围内
+
 use std::collections::HashMap;
 
 use chrono::Utc;
@@ -52,6 +59,8 @@ pub(super) async fn lock_share_resource_in_scope<C: sea_orm::ConnectionTrait>(
     file_id: Option<i64>,
     folder_id: Option<i64>,
 ) -> Result<()> {
+    // 创建分享前先锁目标资源，避免并发请求同时通过“当前没有活跃分享”的检查，
+    // 最终写出多条针对同一资源的活跃 share。
     if let Some(file_id) = file_id {
         let file = file_repo::lock_by_id(db, file_id).await?;
         workspace_storage_service::ensure_active_file_scope(&file, scope)?;
@@ -86,6 +95,8 @@ pub(super) async fn load_share_record(state: &AppState, token: &str) -> Result<s
     let share = share_repo::find_by_token(&state.db, token)
         .await?
         .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+    // 团队分享如果指向的团队已被归档 / 删除，对外表现应当像 share 不存在，
+    // 不再向匿名访问者暴露“token 有效但团队没了”这种内部状态。
     if let Some(team_id) = share.team_id {
         match team_repo::find_active_by_id(&state.db, team_id).await {
             Ok(_) => {}
@@ -206,6 +217,8 @@ pub(super) async fn load_shared_folder_file_target(
             "file #{file_id} is in trash"
         )));
     }
+    // 文件夹分享的授权边界不是“同一个 user/team 就行”，而是必须位于
+    // share 根目录的子树内；否则同空间的任意文件都会被越权读到。
     let file_folder_id = file
         .folder_id
         .ok_or_else(|| AsterError::auth_forbidden("file is outside shared folder scope"))?;
@@ -231,6 +244,8 @@ pub(super) async fn load_shared_subfolder_target(
 }
 
 pub(super) fn validate_share(share: &share::Model) -> Result<()> {
+    // 这里仅验证 share 自身状态是否还能继续使用。
+    // 目标资源是否存在、是否仍在分享范围内，由具体 file / folder 加载函数负责。
     share_target_for_share(share)?;
 
     if let Some(exp) = share.expires_at

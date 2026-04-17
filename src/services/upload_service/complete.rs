@@ -1,3 +1,13 @@
+//! 上传完成阶段。
+//!
+//! 这里把各种“临时上传状态”收口成正式文件：
+//! - 本地 chunk 文件组装
+//! - presigned 单文件确认
+//! - presigned multipart 完成
+//! - relay multipart 完成
+//!
+//! 目标都是在最后统一落到 `workspace_storage_service` 的文件创建语义上。
+
 use chrono::Utc;
 use sea_orm::TransactionTrait;
 
@@ -58,10 +68,13 @@ async fn complete_upload_impl(
             })?;
             return complete_s3_multipart(state, session, parts).await;
         }
+        // presigned 单文件没有分片清单，只需要校验 temp object 真实存在且大小匹配。
         return complete_presigned_upload(state, session).await;
     }
 
     if session.status == UploadSessionStatus::Uploading && session.s3_multipart_id.is_some() {
+        // relay multipart 的 completed parts 由服务端在 chunk 阶段自行收集，
+        // complete 时无需客户端再次回传。
         return complete_s3_relay_multipart(state, session).await;
     }
 
@@ -105,6 +118,9 @@ async fn complete_upload_impl(
         let mut size: i64 = 0;
         let mut buffer = vec![0u8; ASSEMBLY_BUFFER_SIZE];
 
+        // 本地 chunk 模式：先按顺序把所有 chunk 拼成 assembled 文件。
+        // 如果 local 策略启用了 dedup，会在拼装过程中顺便流式计算 hash，
+        // 避免第二遍再把 assembled 文件完整读一遍。
         for i in 0..session.total_chunks {
             let chunk_path =
                 paths::upload_chunk_path(&state.config.server.upload_temp_dir, upload_id, i);
@@ -141,6 +157,7 @@ async fn complete_upload_impl(
 
         let now = Utc::now();
         let preuploaded_blob = if hasher.is_none() {
+            // 不做 dedup 的情况下，先为 blob 预分配最终 key，再把 assembled 文件传上去。
             Some(workspace_storage_service::prepare_non_dedup_blob_upload(
                 &policy, size,
             ))
@@ -171,6 +188,8 @@ async fn complete_upload_impl(
                     &storage_path,
                 )
                 .await?;
+                // dedup 插入成功时，assembled 文件要真正进存储；
+                // 如果 blob 已存在，说明别处已经持有同内容对象，临时 assembled 文件即可清理。
                 if blob.inserted {
                     driver.put_file(&storage_path, &assembled_path).await?;
                 } else {
@@ -233,6 +252,8 @@ async fn complete_upload_impl(
             Ok(created)
         }
         Err(error) => {
+            // session 一旦进入 failed，就不允许客户端继续 retry 当前 upload_id，
+            // 必须重新 init 一个新的会话，避免半成品状态被反复叠加。
             mark_session_failed(db, upload_id).await;
             Err(error)
         }
@@ -296,6 +317,8 @@ async fn finalize_s3_upload_session(
     storage_path: &str,
     size: i64,
 ) -> Result<file::Model> {
+    // S3 直传模式不会经过本地 assembled 文件，complete 阶段只负责把已经存在的对象
+    // 记成 blob + file，并原子更新配额和 session 状态。
     workspace_storage_service::finalize_upload_session_file(
         state,
         session,
@@ -345,6 +368,7 @@ async fn complete_s3_multipart_upload_session(
 
     let result = async {
         completed_parts.sort_by_key(|(part_number, _)| *part_number);
+        // multipart complete 之前要先把 part 列表排序；驱动层依赖有序 part 序列。
         driver
             .complete_multipart_upload(&temp_key, &multipart_id, completed_parts)
             .await?;
@@ -384,6 +408,8 @@ async fn complete_presigned_upload(
     state: &AppState,
     session: upload_session::Model,
 ) -> Result<file::Model> {
+    // presigned 单文件的 complete 阶段，本质是“确认对象存在且大小正确”，
+    // 然后把 temp_key 直接认领成正式 blob。
     let db = &state.db;
     let temp_key = session
         .s3_temp_key

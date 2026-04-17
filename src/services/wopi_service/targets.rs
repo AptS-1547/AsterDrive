@@ -1,3 +1,8 @@
+//! WOPI PUT_RELATIVE / rename 目标名处理。
+//!
+//! 这些 helper 的职责是把 WOPI 头部里的目标名规范化，再映射回项目内部
+//! “文件名必须合法、不能越界、必要时要生成唯一副本名”的语义。
+
 use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
@@ -36,6 +41,8 @@ pub(crate) fn parse_put_relative_request(
     size_header: Option<&str>,
     body_len: usize,
 ) -> Result<ParsedPutRelativeRequest> {
+    // WOPI 规范要求 SuggestedTarget 和 RelativeTarget 二选一。
+    // 这里先把 header 级别的协议约束收口，再交给后续逻辑处理实际文件操作。
     if let Some(size_header) = size_header {
         let declared_size = size_header.parse::<usize>().map_aster_err_with(|| {
             AsterError::validation_error("X-WOPI-Size header must be a non-negative integer")
@@ -103,6 +110,8 @@ pub(crate) fn normalize_requested_rename_target(
         return Err("X-WOPI-RequestedName header is required".to_string());
     };
 
+    // rename 的 header 可能只传 stem，不带原扩展名。
+    // 这里会按 WOPI 约定把扩展名拼回去，并尽量把非法名字降级成可接受的候选值。
     let decoded = decode_wopi_filename(requested_name).map_err(|err| err.message().to_string())?;
     match build_requested_rename_filename(source_file_name, &decoded) {
         Ok(name) => Ok(name),
@@ -290,6 +299,8 @@ pub(crate) async fn store_relative_target_from_bytes(
         workspace_storage_service::resolve_policy_for_size(state, scope, folder_id, size).await?;
 
     if resolved_policy.driver_type == crate::types::DriverType::Local {
+        // Local + PUT_RELATIVE：先把 body 落到 staging，再复用统一 store_from_temp 语义，
+        // 这样 dedup、覆盖、配额、版本等规则都和普通写入保持一致。
         let should_dedup = workspace_storage_service::local_content_dedup_enabled(&resolved_policy);
         let staging_token = format!("{}.upload", uuid::Uuid::new_v4());
         let staging_path =
@@ -341,6 +352,8 @@ pub(crate) async fn store_relative_target_from_bytes(
         crate::utils::cleanup_temp_file(&staging_path).await;
         result
     } else {
+        // 非 local 路径没有“先写 staging 文件再 rename”的优势，直接写 runtime temp，
+        // 然后走统一的 store_from_temp* 入口。
         let temp_dir = &state.config.server.temp_dir;
         let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(temp_dir);
         let temp_path = crate::utils::paths::runtime_temp_file_path(

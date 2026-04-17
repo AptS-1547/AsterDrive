@@ -1,3 +1,8 @@
+//! WOPI launch session 与 access token 解析。
+//!
+//! 这里的 token 不是普通登录 JWT，而是“某个用户、某个 app、某个 file、某个 session_version”
+//! 的一次性 WOPI 访问授权。所有后续 WOPI 操作都会先在这里解出作用域和目标文件。
+
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
@@ -37,6 +42,8 @@ pub(crate) async fn create_launch_session_in_scope(
     file_id: i64,
     app_key: &str,
 ) -> Result<WopiLaunchSession> {
+    // launch 阶段做的是“把内部 file 访问权翻译成外部 WOPI app 可用的 action_url +
+    // access_token”，并不是立刻打开文档。
     let file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
     let auth_snapshot = auth_service::get_auth_snapshot(state, scope.actor_user_id()).await?;
     let app = preview_app_service::get_public_preview_apps(state)
@@ -125,6 +132,8 @@ pub(crate) async fn resolve_access_token(
             "WOPI token does not match file #{file_id}",
         )));
     }
+    // session_version 绑定的是“登录态快照”而不是 WOPI session 自身。
+    // 用户登出、改密或被强制刷新会话后，旧的 WOPI token 会一起失效。
     let auth_snapshot = auth_service::get_auth_snapshot(state, payload.actor_user_id).await?;
     if !auth_snapshot.status.is_active() {
         wopi_session_repo::delete_by_id(&state.db, session.id).await?;
@@ -154,6 +163,7 @@ pub(crate) async fn resolve_access_token(
     }
     ensure_request_source_allowed(&app, request_source)?;
 
+    // 最终仍回到统一文件 scope 校验：WOPI 只是另一个接入层，不应绕开个人/团队边界。
     let file =
         workspace_storage_service::verify_file_access(state, scope_from_payload(&payload), file_id)
             .await?;

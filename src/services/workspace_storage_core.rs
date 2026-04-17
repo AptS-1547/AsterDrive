@@ -1,3 +1,9 @@
+//! 工作空间文件主链路的稳定核心动作。
+//!
+//! 这里尽量只保留“上传方式无关、HTTP 接入无关”的底层语义，例如：
+//! 策略解析、目录路径补齐、blob / 文件记录创建、配额读写和 upload session
+//! 最终落账。这样不同入口才能共享同一套文件一致性规则。
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ConnectionTrait, Set, TransactionTrait};
 
@@ -152,6 +158,8 @@ pub(crate) async fn resolve_policy_for_size(
     folder_id: Option<i64>,
     file_size: i64,
 ) -> Result<crate::entities::storage_policy::Model> {
+    // 文件夹级策略覆盖优先级最高。
+    // 只有目标文件夹没有显式绑定策略时，才回退到个人默认策略 / 团队策略组。
     if let Some(folder_id) = folder_id {
         let folder = verify_folder_access(state, scope, folder_id).await?;
 
@@ -182,6 +190,8 @@ async fn ensure_folder_in_parent<C: ConnectionTrait>(
     parent_id: Option<i64>,
     name: &str,
 ) -> Result<folder::Model> {
+    // 目录上传 / 解压导入会并发命中同一路径。
+    // 这里先查后建，并在插入冲突后回读，保证“得到该目录”的语义是幂等的。
     crate::utils::validate_name(name)?;
 
     match scope {
@@ -316,6 +326,7 @@ pub(crate) async fn ensure_upload_parent_path(
     let txn = state.db.begin().await.map_err(AsterError::from)?;
     let mut current_parent = parsed.base_folder_id;
 
+    // 整条父路径在一个事务里补齐，避免目录上传时只创建出半截层级。
     for segment in &parsed.parent_segments {
         let folder = ensure_folder_in_parent(&txn, scope, current_parent, segment).await?;
         current_parent = Some(folder.id);
@@ -365,6 +376,8 @@ async fn create_file_from_blob_with_name_mode<C: ConnectionTrait>(
         NewFileNameMode::Exact => 1,
     };
 
+    // `resolve_unique_*` 只能减少冲突，不能彻底消灭并发窗口。
+    // 这里仍然依赖数据库唯一约束兜底，并在冲突时继续推进到下一个副本名。
     for attempt in 0..max_attempts {
         let created = file::ActiveModel {
             name: Set(final_name.clone()),
@@ -476,6 +489,8 @@ pub(crate) async fn update_storage_used<C: ConnectionTrait>(
 }
 
 fn scope_from_session(session: &upload_session::Model) -> WorkspaceStorageScope {
+    // upload session 已经把“文件最终归属到个人还是团队”持久化下来了，
+    // 因此最终装配阶段不需要再回看 route 层上下文。
     match session.team_id {
         Some(team_id) => WorkspaceStorageScope::Team {
             team_id,
@@ -493,6 +508,9 @@ pub(crate) async fn finalize_upload_session_blob<C: ConnectionTrait>(
     blob: &file_blob::Model,
     now: chrono::DateTime<Utc>,
 ) -> Result<file::Model> {
+    // “最终完成一个 upload session”在数据库侧必须保持固定顺序：
+    // 先建文件，再记配额，最后把 session 状态切到 completed。
+    // 这样调用方只要看到 completed，就能推定文件记录已经可见且额度已落账。
     let scope = scope_from_session(session);
     let created =
         create_new_file_from_blob(db, scope, session.folder_id, &session.filename, blob, now)

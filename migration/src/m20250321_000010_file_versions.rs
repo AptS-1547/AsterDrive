@@ -34,6 +34,14 @@ impl MigrationTrait for Migration {
                         crate::time::utc_date_time_column(manager, FileVersions::CreatedAt)
                             .not_null(),
                     )
+                    // blob 生命周期由应用层 ref_count 管理，DB 层不级联删除；
+                    // 若还有 file_version 引用该 blob，就阻止 blob 被删，作为兜底。
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(FileVersions::Table, FileVersions::BlobId)
+                            .to(FileBlobs::Table, FileBlobs::Id)
+                            .on_delete(ForeignKeyAction::Restrict),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -65,4 +73,10 @@ enum FileVersions {
     Version,
     Size,
     CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum FileBlobs {
+    Table,
+    Id,
 }

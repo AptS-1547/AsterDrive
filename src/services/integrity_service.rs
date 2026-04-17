@@ -1,3 +1,8 @@
+//! 跨数据库 / 跨存储的一致性审计。
+//!
+//! 这些检查都不是在线请求路径上的业务逻辑，而是偏运维的“全局事实核对”：
+//! 例如配额计数漂移、blob 引用计数漂移、对象存储孤儿文件和目录树损坏。
+
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -19,6 +24,7 @@ use crate::errors::{AsterError, Result};
 use crate::services::thumbnail_service;
 use crate::storage::{DriverRegistry, StoragePathVisitor};
 
+// 审计走全表扫描，但必须控制单批内存占用；因此统一按主键顺序分批拉取。
 const INTEGRITY_BATCH_SIZE: u64 = 1_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -112,6 +118,10 @@ impl StoragePathVisitor for StorageAuditVisitor<'_> {
     fn visit_path(&mut self, path: String) -> Result<()> {
         self.report.scanned_objects += 1;
 
+        // 对象扫描的目标不是“列出全部文件”，而是把存储中的路径分流成三类：
+        // 1. 已被数据库跟踪的 blob / thumbnail / 临时对象；
+        // 2. 数据库预期存在但存储里缺失的对象（后续在遍历结束后得出）；
+        // 3. 存储里存在但数据库没在追踪的孤儿对象。
         if path.starts_with(".staging/") {
             self.report.ignored_paths += 1;
             return Ok(());
@@ -157,6 +167,8 @@ fn add_usage(
 async fn load_actual_storage_usage<C: ConnectionTrait>(
     db: &C,
 ) -> Result<HashMap<StorageOwner, i64>> {
+    // `storage_used` 的真实值来自“当前文件 + 历史版本”的总占用，而不是某一张表。
+    // 这里分两段批量扫描，避免把全量 file / version 记录一次性装进内存。
     let mut totals = HashMap::new();
     let mut last_file_id: Option<i64> = None;
     loop {
@@ -291,6 +303,8 @@ async fn load_actual_blob_ref_counts<C: ConnectionTrait>(
     db: &C,
     policy_id: Option<i64>,
 ) -> Result<HashMap<i64, i64>> {
+    // blob 的实际引用数来自 files 和 file_versions 两边的总和。
+    // 先聚合出“理论真值”，再和 file_blobs.ref_count 做逐行比较。
     let mut actual = HashMap::new();
 
     let mut file_refs_query = File::find()
@@ -415,6 +429,8 @@ pub async fn fix_blob_ref_count_drifts<C: ConnectionTrait>(
 }
 
 pub async fn audit_folder_tree<C: ConnectionTrait>(db: &C) -> Result<Vec<FolderTreeIssue>> {
+    // 目录树审计只关心结构完整性，不关心 deleted_at；
+    // 已删除节点如果 parent 指错、跨 scope 或形成环，一样会污染后续恢复/清理逻辑。
     let mut folder_by_id = HashMap::<i64, FolderNode>::new();
     let mut ordered_folder_ids = Vec::new();
     let mut last_folder_id: Option<i64> = None;

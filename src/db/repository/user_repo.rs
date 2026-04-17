@@ -171,9 +171,18 @@ pub async fn create<C: ConnectionTrait>(db: &C, model: user::ActiveModel) -> Res
 }
 
 /// 检查用户配额是否足够。quota=0 表示不限。
+///
+/// 注意：这只是 fast-fail 预检，并发场景下两个请求可能同时通过此检查后超额。
+/// 真正的原子保证在 [`update_storage_used`] 内通过 SQL CAS 完成。
 pub async fn check_quota<C: ConnectionTrait>(db: &C, user_id: i64, needed_size: i64) -> Result<()> {
     let user = find_by_id(db, user_id).await?;
-    if user.storage_quota > 0 && user.storage_used + needed_size > user.storage_quota {
+    let projected_storage_used = user.storage_used.checked_add(needed_size).ok_or_else(|| {
+        AsterError::internal_error(format!(
+            "user storage usage overflow: used {}, delta {}",
+            user.storage_used, needed_size
+        ))
+    })?;
+    if user.storage_quota > 0 && projected_storage_used > user.storage_quota {
         return Err(AsterError::storage_quota_exceeded(format!(
             "quota {}, used {}, need {}",
             user.storage_quota, user.storage_used, needed_size
@@ -182,6 +191,13 @@ pub async fn check_quota<C: ConnectionTrait>(db: &C, user_id: i64, needed_size: 
     Ok(())
 }
 
+/// 原子更新用户已用配额。
+///
+/// 正向增量（delta > 0）受配额上限保护：SQL 层用 `WHERE storage_used + delta <= storage_quota`
+/// 做 compare-and-swap，并发请求中只有不超额的才会成功提交。
+///
+/// 配额超额时返回 [`AsterError::storage_quota_exceeded`]，记录不存在时返回
+/// [`AsterError::record_not_found`]，调用方需要根据错误类型区分处理。
 pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64) -> Result<()> {
     let expr = if delta >= 0 {
         Expr::col(user::Column::StorageUsed).add(delta)
@@ -192,14 +208,40 @@ pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64
             .into()
     };
 
-    let result = User::update_many()
+    let mut query = User::update_many()
         .col_expr(user::Column::StorageUsed, expr)
-        .filter(user::Column::Id.eq(id))
-        .exec(db)
-        .await
-        .map_err(AsterError::from)?;
+        .filter(user::Column::Id.eq(id));
+
+    if delta >= 0 {
+        // 正向增量必须满足：quota=0（不限）或 used + delta <= quota
+        query = query.filter(
+            Condition::any().add(user::Column::StorageQuota.eq(0)).add(
+                Expr::col(user::Column::StorageUsed)
+                    .add(delta)
+                    .lte(Expr::col(user::Column::StorageQuota)),
+            ),
+        );
+    }
+
+    let result = query.exec(db).await.map_err(AsterError::from)?;
 
     if result.rows_affected == 0 {
+        // 0 行受影响有两种可能：用户不存在，或者并发场景下 CAS 失败（超配额）
+        if delta >= 0 {
+            let user = find_by_id(db, id).await?;
+            let projected_storage_used = user.storage_used.checked_add(delta).ok_or_else(|| {
+                AsterError::internal_error(format!(
+                    "user storage usage overflow: used {}, delta {}",
+                    user.storage_used, delta
+                ))
+            })?;
+            if user.storage_quota > 0 && projected_storage_used > user.storage_quota {
+                return Err(AsterError::storage_quota_exceeded(format!(
+                    "quota {}, used {}, need {}",
+                    user.storage_quota, user.storage_used, delta
+                )));
+            }
+        }
         return Err(AsterError::record_not_found(format!("user #{id}")));
     }
 

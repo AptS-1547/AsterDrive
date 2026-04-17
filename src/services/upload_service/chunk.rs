@@ -1,3 +1,9 @@
+//! 分片上传阶段。
+//!
+//! 这里处理两类“已经进入分片模式”的 session：
+//! - 服务端本地暂存 chunk 文件
+//! - 服务端 relay 到 S3 multipart，并把 ETag 记入 upload_session_parts
+
 use chrono::Utc;
 use sea_orm::TransactionTrait;
 
@@ -36,6 +42,8 @@ async fn increment_session_received_count<C: sea_orm::ConnectionTrait>(
         return Ok(());
     }
 
+    // 计数自增失败不代表数据库坏了，更常见的是 session 状态已经不再允许继续上传。
+    // 回读最新 session 后返回更准确的业务错误，避免客户端只看到模糊的 DB 失败。
     match upload_session_repo::find_by_id(db, upload_id).await {
         Ok(session) => Err(upload_session_chunk_unavailable_error(&session)),
         Err(error) => Err(error),
@@ -85,6 +93,8 @@ async fn upload_chunk_impl(
     ) {
         let s3_part_number = chunk_number + 1;
 
+        // relay multipart 下，先 claim part 再上传到 S3。
+        // 否则并发重试会把同一个 part 号重复上传，最后谁的 ETag 留库就会变得不确定。
         if !upload_session_part_repo::try_claim_part(db, upload_id, s3_part_number).await? {
             let updated = upload_session_repo::find_by_id(db, upload_id).await?;
             tracing::debug!(
@@ -128,6 +138,8 @@ async fn upload_chunk_impl(
 
         let txn = db.begin().await.map_err(AsterError::from)?;
         let finalize_result = async {
+            // S3 上传成功以后，必须把 part 元数据和 received_count 放在同一事务里提交；
+            // 否则 complete 阶段会看到“不完整的 part 清单”。
             upload_session_part_repo::upsert_part(
                 &txn,
                 upload_id,
@@ -211,6 +223,8 @@ async fn upload_chunk_impl(
         }
     }
 
+    // 本地 chunk 模式的幂等语义靠 `create_new(true)` 保证：同一块重复上传不会覆盖旧文件，
+    // 而是直接回读 session 进度返回给客户端。
     increment_session_received_count(db, upload_id).await?;
 
     let updated = upload_session_repo::find_by_id(db, upload_id).await?;

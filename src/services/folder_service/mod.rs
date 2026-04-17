@@ -1,3 +1,12 @@
+//! 文件夹服务聚合入口。
+//!
+//! 目录相关功能被拆成几块：
+//! - access: scope / share 边界
+//! - listing: 目录列表
+//! - mutation: 新建、重命名、移动、删除
+//! - tree: 递归收集整棵子树
+//! - hierarchy: breadcrumb / ancestor
+
 mod access;
 mod copy;
 mod hierarchy;
@@ -34,6 +43,7 @@ pub(crate) use mutation::{
 };
 pub(crate) use tree::{collect_folder_forest_in_scope, collect_folder_tree_in_scope};
 
+// 和其他 service 一样，审计包装留在聚合层，避免核心目录逻辑被日志副作用污染。
 pub(crate) async fn create_in_scope_with_audit(
     state: &AppState,
     scope: WorkspaceStorageScope,

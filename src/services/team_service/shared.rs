@@ -1,3 +1,10 @@
+//! 团队服务内部共用 helper。
+//!
+//! 这层主要负责：
+//! - Team / TeamMember DTO 构建
+//! - 常见权限断言
+//! - “至少保留一个 owner/manager”这类跨入口共用约束
+
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -194,6 +201,8 @@ pub(super) async fn load_team_member_page(
     limit: u64,
     offset: u64,
 ) -> Result<TeamMemberPage> {
+    // 成员列表页除了 items 之外，还顺手带回 owner/admin 计数，
+    // 这样前端改角色时可以直接展示“至少保留一个管理员”的上下文信息。
     let effective_limit = limit.clamp(
         1,
         operations::team_member_list_max_limit(&state.runtime_config),
@@ -255,6 +264,8 @@ pub(super) async fn require_team_membership(
     team_id: i64,
     user_id: i64,
 ) -> Result<(team::Model, team_member::Model)> {
+    // 这里故意只接受 active team。
+    // 对归档团队的访问需要走专门恢复 / admin 流程，避免普通团队 API 混入 archived 语义。
     let team = team_repo::find_active_by_id(&state.db, team_id).await?;
     let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, user_id)
         .await?
@@ -272,6 +283,7 @@ pub(super) fn ensure_can_manage_team(role: TeamMemberRole) -> Result<()> {
 }
 
 pub(super) async fn ensure_not_last_owner<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<()> {
+    // owner 是团队最终兜底权限，任何降级/移除操作都不能把数量减到 0。
     let owner_count =
         team_member_repo::count_by_team_and_role(db, team_id, TeamMemberRole::Owner).await?;
     if owner_count <= 1 {
@@ -286,6 +298,8 @@ pub(super) async fn ensure_not_last_manager<C: ConnectionTrait>(
     db: &C,
     team_id: i64,
 ) -> Result<()> {
+    // manager = owner + admin。很多团队管理操作只要求“还有一个能管事的人”，
+    // 因此这里的约束比 owner 更宽一点。
     let owner_count =
         team_member_repo::count_by_team_and_role(db, team_id, TeamMemberRole::Owner).await?;
     let admin_count =

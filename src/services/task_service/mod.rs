@@ -1,3 +1,9 @@
+//! 持久化后台任务子系统。
+//!
+//! 这里既管理用户可见的异步任务，也记录系统周期任务的执行结果。关键设计点是：
+//! 任务状态留在数据库里，dispatcher 通过 lease + fencing token 防止旧 worker
+//! 覆盖新 worker 的结果。
+
 mod archive;
 mod dispatch;
 mod runtime;
@@ -210,6 +216,8 @@ pub(crate) async fn retry_task_in_scope(
     }
 
     cleanup_task_temp_dir_for_task(state, task.id).await?;
+    // 手动重试会复用同一条任务记录，而不是新建“子任务”。
+    // 这样前端和审计侧只需要跟踪一个稳定 task_id。
     let steps_json = serialize_task_steps(&initial_task_steps(task.kind))?;
     let max_attempts = configured_task_max_attempts(state, task.kind);
 
@@ -233,6 +241,8 @@ pub(crate) async fn retry_task_in_scope(
 }
 
 async fn build_task_info(_state: &AppState, task: background_task::Model) -> Result<TaskInfo> {
+    // 数据库存的是通用 JSON 负载和步骤快照；这里统一把它们解包成 API 可读结构，
+    // 让列表页和详情页不必了解任务种类内部的存储格式。
     let progress_percent = if task.progress_total <= 0 {
         if task.status == BackgroundTaskStatus::Succeeded {
             100
