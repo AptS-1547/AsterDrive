@@ -1,3 +1,5 @@
+//! 归档解包任务子模块：`import`。
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

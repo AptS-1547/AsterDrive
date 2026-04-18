@@ -1,3 +1,5 @@
+//! 数据库迁移 crate 入口。
+
 pub use sea_orm_migration::prelude::*;
 
 mod m20250320_000001_create_table;

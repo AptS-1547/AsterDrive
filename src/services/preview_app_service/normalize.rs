@@ -1,3 +1,5 @@
+//! 预览应用服务子模块：`normalize`。
+
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::errors::{AsterError, Result};

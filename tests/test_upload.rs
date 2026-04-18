@@ -454,6 +454,37 @@ async fn test_chunked_upload_flow() {
 }
 
 #[actix_web::test]
+async fn test_init_upload_validates_filename_and_total_size() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload/init")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "filename": "",
+            "total_size": 1024
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload/init")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "filename": "valid.bin",
+            "total_size": 0
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+}
+
+#[actix_web::test]
 async fn test_update_storage_used_is_atomic_under_concurrency() {
     use aster_drive::db::repository::user_repo;
     use aster_drive::services::auth_service;

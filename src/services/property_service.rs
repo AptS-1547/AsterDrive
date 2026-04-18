@@ -1,3 +1,5 @@
+//! 服务模块：`property_service`。
+
 use crate::db::repository::{file_repo, folder_repo, property_repo};
 use crate::entities::entity_property;
 use crate::errors::{AsterError, Result};

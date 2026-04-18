@@ -1,19 +1,24 @@
+//! `folders` API DTO 定义。
+
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
+use validator::Validate;
 
 /// Create a new folder.
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CreateFolderReq {
+    #[validate(custom(function = "crate::api::dto::validation::validate_name"))]
     pub name: String,
     pub parent_id: Option<i64>,
 }
 
 /// Patch (partial update) a folder.
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PatchFolderReq {
+    #[validate(custom(function = "crate::api::dto::validation::validate_name"))]
     pub name: Option<String>,
     #[serde(default)]
     #[cfg_attr(

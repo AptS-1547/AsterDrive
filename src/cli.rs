@@ -1,3 +1,5 @@
+//! CLI 聚合入口。
+
 mod config;
 mod database_migration;
 mod doctor;

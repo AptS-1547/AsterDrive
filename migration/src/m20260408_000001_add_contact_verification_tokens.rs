@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_contact_verification_tokens`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

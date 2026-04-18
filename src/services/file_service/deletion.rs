@@ -1,3 +1,5 @@
+//! 文件服务子模块：`deletion`。
+
 use futures::{StreamExt, stream};
 
 use crate::db::repository::file_repo;

@@ -1,3 +1,5 @@
+//! 共享领域类型定义。
+
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

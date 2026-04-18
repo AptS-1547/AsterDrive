@@ -1,3 +1,5 @@
+//! 数据库子模块：`retry`。
+
 use std::time::Duration;
 use tokio::time::sleep;
 

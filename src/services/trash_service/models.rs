@@ -1,3 +1,5 @@
+//! 回收站服务子模块：`models`。
+
 use serde::Serialize;
 
 #[cfg(all(debug_assertions, feature = "openapi"))]

@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_team_scope_to_shares`。
+
 use sea_orm::DatabaseBackend;
 use sea_orm_migration::prelude::*;
 

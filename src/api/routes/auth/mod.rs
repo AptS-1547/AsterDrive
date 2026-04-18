@@ -1,3 +1,5 @@
+//! 认证 API 路由聚合入口。
+
 pub use crate::api::dto::auth::*;
 use crate::api::middleware::rate_limit;
 use crate::api::request_auth::access_token;

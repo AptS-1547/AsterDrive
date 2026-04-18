@@ -1,3 +1,5 @@
+//! 团队服务子模块：`models`。
+
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;

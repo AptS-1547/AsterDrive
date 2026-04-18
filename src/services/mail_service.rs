@@ -1,3 +1,5 @@
+//! 服务模块：`mail_service`。
+
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

@@ -1,3 +1,5 @@
+//! CORS 中间件模块入口。
+
 mod constants;
 
 #[cfg(test)]

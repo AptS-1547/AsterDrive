@@ -1,3 +1,5 @@
+//! 认证 API 路由：`cookies`。
+
 use crate::api::middleware::csrf;
 use crate::api::request_auth::ACCESS_COOKIE;
 use actix_web::cookie::time::Duration as CookieDuration;

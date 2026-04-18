@@ -1,3 +1,5 @@
+//! 存储策略服务子模块：`groups`。
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
 
@@ -26,7 +28,7 @@ where
     };
 
     let txn = crate::db::transaction::begin(db).await?;
-    let result = async {
+    let result: Result<()> = async {
         let default_group = match policy_group_repo::find_default_group(&txn).await? {
             Some(group) => {
                 let items = policy_group_repo::find_group_items(&txn, group.id).await?;
@@ -106,10 +108,8 @@ where
     }
     .await;
 
-    match result {
-        Ok(()) => crate::db::transaction::commit(txn).await,
-        Err(err) => Err(err),
-    }
+    result?;
+    crate::db::transaction::commit(txn).await
 }
 
 pub async fn list_groups_paginated(

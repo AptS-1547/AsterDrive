@@ -1,3 +1,5 @@
+//! WebDAV 子模块：`db_lock_system`。
+
 use std::io::Cursor;
 use std::time::{Duration, SystemTime};
 

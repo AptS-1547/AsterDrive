@@ -1,3 +1,5 @@
+//! 后台任务服务子模块：`runtime`。
+
 use chrono::{DateTime, Utc};
 use sea_orm::Set;
 

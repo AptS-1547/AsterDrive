@@ -1,3 +1,5 @@
+//! 存储策略服务子模块：`models`。
+
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;

@@ -216,7 +216,11 @@ async fn build_presigned_redirect_outcome(
     blob: &file_blob::Model,
 ) -> Result<DownloadOutcome> {
     let driver = state.driver_registry.get_driver(policy)?;
-    let url = driver
+    let presigned = driver.as_presigned().ok_or_else(|| {
+        AsterError::storage_driver_error("presigned download not supported by driver")
+    })?;
+
+    let url = presigned
         .presigned_url(
             &blob.storage_path,
             Duration::from_secs(PRESIGNED_DOWNLOAD_TTL_SECS),
@@ -384,7 +388,6 @@ mod tests {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
-    use std::time::Duration;
     use tokio::io::{AsyncRead, AsyncWriteExt};
 
     #[derive(Clone)]
@@ -448,23 +451,6 @@ mod tests {
                 size: self.bytes.len() as u64,
                 content_type: Some("text/plain".to_string()),
             })
-        }
-
-        async fn put_file(
-            &self,
-            storage_path: &str,
-            _local_path: &str,
-        ) -> crate::errors::Result<String> {
-            Ok(storage_path.to_string())
-        }
-
-        async fn presigned_url(
-            &self,
-            _path: &str,
-            _expires: Duration,
-            _options: crate::storage::driver::PresignedDownloadOptions,
-        ) -> crate::errors::Result<Option<String>> {
-            Ok(None)
         }
     }
 

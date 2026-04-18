@@ -1,3 +1,5 @@
+//! WebDAV 模块导出。
+
 pub mod auth;
 pub mod dav;
 pub mod db_lock_system;
@@ -1486,7 +1488,7 @@ mod tests {
     use crate::runtime::AppState;
     use crate::services::{mail_service, policy_service};
     use crate::storage::driver::BlobMetadata;
-    use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver};
+    use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver, StreamUploadDriver};
     use crate::types::{
         DriverType, S3UploadStrategy, StoragePolicyOptions, StoredStoragePolicyAllowedTypes,
         UserRole, UserStatus, serialize_storage_policy_options,
@@ -1783,23 +1785,6 @@ mod tests {
                 content_type: Some("text/plain".to_string()),
             })
         }
-
-        async fn put_file(
-            &self,
-            storage_path: &str,
-            _local_path: &str,
-        ) -> crate::errors::Result<String> {
-            Ok(storage_path.to_string())
-        }
-
-        async fn presigned_url(
-            &self,
-            _path: &str,
-            _expires: Duration,
-            _options: crate::storage::driver::PresignedDownloadOptions,
-        ) -> crate::errors::Result<Option<String>> {
-            Ok(None)
-        }
     }
 
     #[derive(Clone, Default)]
@@ -1870,7 +1855,7 @@ mod tests {
                 .lock()
                 .expect("direct upload test driver lock should succeed")
                 .get(path)
-                .map(|bytes| bytes.len() as u64)
+                .map(|bytes| u64::try_from(bytes.len()).expect("mock object size should fit u64"))
                 .unwrap_or(0);
             Ok(BlobMetadata {
                 size,
@@ -1878,6 +1863,13 @@ mod tests {
             })
         }
 
+        fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
+            Some(self)
+        }
+    }
+
+    #[async_trait]
+    impl StreamUploadDriver for CountingDirectUploadDriver {
         async fn put_file(
             &self,
             storage_path: &str,
@@ -1914,15 +1906,6 @@ mod tests {
                 .expect("direct upload test driver lock should succeed")
                 .insert(storage_path.to_string(), data);
             Ok(storage_path.to_string())
-        }
-
-        async fn presigned_url(
-            &self,
-            _path: &str,
-            _expires: Duration,
-            _options: crate::storage::driver::PresignedDownloadOptions,
-        ) -> crate::errors::Result<Option<String>> {
-            Ok(None)
         }
     }
 
@@ -2108,7 +2091,10 @@ mod tests {
             .await
             .expect("stored WebDAV file lookup should succeed")
             .expect("direct WebDAV PUT should create a file");
-        assert_eq!(stored.size, body.len() as i64);
+        assert_eq!(
+            stored.size,
+            i64::try_from(body.len()).expect("request body length should fit i64")
+        );
         assert!(
             driver
                 .objects

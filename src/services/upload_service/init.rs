@@ -112,7 +112,10 @@ async fn init_upload_for_scope(
             // 小文件 presigned：客户端直接 PUT 到最终 temp object，不经过服务端 relay，
             // 也不需要 chunk bookkeeping。
             if policy.chunk_size == 0 || total_size <= chunk_size {
-                let presigned_url = driver
+                let presigned_driver = driver.as_presigned().ok_or_else(|| {
+                    AsterError::storage_driver_error("presigned PUT not supported by driver")
+                })?;
+                let presigned_url = presigned_driver
                     .presigned_put_url(&temp_key, std::time::Duration::from_secs(HOUR_SECS))
                     .await?
                     .ok_or_else(|| {

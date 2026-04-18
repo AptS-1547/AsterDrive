@@ -1,3 +1,5 @@
+//! API 中间件：`rate_limit`。
+
 use actix_governor::{
     GovernorConfig, GovernorConfigBuilder, KeyExtractor, SimpleKeyExtractionError,
 };
@@ -49,8 +51,8 @@ impl KeyExtractor for AsterIpKeyExtractor {
 pub fn build_governor(tier: &RateLimitTier) -> GovernorConfig<AsterIpKeyExtractor, NoOpMiddleware> {
     GovernorConfigBuilder::default()
         .key_extractor(AsterIpKeyExtractor)
-        .seconds_per_request(tier.seconds_per_request)
-        .burst_size(tier.burst_size)
+        .seconds_per_request(tier.seconds_per_request.get())
+        .burst_size(tier.burst_size.get())
         .finish()
-        .expect("invalid rate limit config")
+        .expect("non-zero rate limit tier should always build")
 }

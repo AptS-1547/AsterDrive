@@ -1,4 +1,5 @@
 #![cfg(all(debug_assertions, feature = "openapi"))]
+//! OpenAPI 生成测试。
 
 use aster_drive::api::openapi::ApiDoc;
 use std::fs;

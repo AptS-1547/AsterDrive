@@ -1,3 +1,5 @@
+//! 文件服务子模块：`transfer`。
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 

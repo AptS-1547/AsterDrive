@@ -1,3 +1,5 @@
+//! 管理员 API 路由聚合入口。
+
 use crate::api::middleware::{admin::RequireAdmin, auth::JwtAuth, rate_limit};
 use crate::config::RateLimitConfig;
 use actix_governor::Governor;

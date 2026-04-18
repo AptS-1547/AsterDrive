@@ -1,3 +1,5 @@
+//! 仓储模块：`audit_log_repo`。
+
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,

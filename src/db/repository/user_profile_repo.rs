@@ -1,3 +1,5 @@
+//! 仓储模块：`user_profile_repo`。
+
 use std::collections::HashMap;
 
 use crate::entities::user_profile::{self, Entity as UserProfile};

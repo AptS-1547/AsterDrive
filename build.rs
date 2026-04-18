@@ -1,3 +1,5 @@
+//! 构建脚本：注入构建时间并兜底生成前端占位产物。
+
 use std::env;
 use std::fs;
 use std::path::Path;

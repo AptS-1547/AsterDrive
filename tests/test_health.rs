@@ -1,3 +1,5 @@
+//! 集成测试：`health`。
+
 #[macro_use]
 mod common;
 

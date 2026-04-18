@@ -1,3 +1,5 @@
+//! 预览应用服务聚合入口。
+
 mod defaults;
 mod normalize;
 #[cfg(test)]

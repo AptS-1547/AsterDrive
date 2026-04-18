@@ -1,3 +1,5 @@
+//! CLI 子模块：`schema`。
+
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use migration::{Migrator, MigratorTrait};

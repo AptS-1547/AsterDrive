@@ -1,3 +1,5 @@
+//! 集成测试：`webdav_path_resolver`。
+
 #[macro_use]
 mod common;
 

@@ -1,3 +1,5 @@
+//! 配置模块导出与全局入口。
+
 pub mod auth_runtime;
 pub mod avatar;
 pub mod branding;

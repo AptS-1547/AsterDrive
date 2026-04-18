@@ -1,3 +1,5 @@
+//! 集成测试：`admin`。
+
 #[macro_use]
 mod common;
 

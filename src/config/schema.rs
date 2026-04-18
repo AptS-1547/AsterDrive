@@ -1,4 +1,7 @@
+//! 配置子模块：`schema`。
+
 use serde::{Deserialize, Serialize};
+use std::num::{NonZeroU32, NonZeroU64};
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct Config {
@@ -272,26 +275,26 @@ impl RateLimitConfig {
     }
     fn default_auth() -> RateLimitTier {
         RateLimitTier {
-            seconds_per_request: 2,
-            burst_size: 5,
+            seconds_per_request: NonZeroU64::new(2).expect("rate limit default must be non-zero"),
+            burst_size: NonZeroU32::new(5).expect("rate limit default must be non-zero"),
         }
     }
     fn default_public() -> RateLimitTier {
         RateLimitTier {
-            seconds_per_request: 1,
-            burst_size: 30,
+            seconds_per_request: NonZeroU64::new(1).expect("rate limit default must be non-zero"),
+            burst_size: NonZeroU32::new(30).expect("rate limit default must be non-zero"),
         }
     }
     fn default_api() -> RateLimitTier {
         RateLimitTier {
-            seconds_per_request: 1,
-            burst_size: 120,
+            seconds_per_request: NonZeroU64::new(1).expect("rate limit default must be non-zero"),
+            burst_size: NonZeroU32::new(120).expect("rate limit default must be non-zero"),
         }
     }
     fn default_write() -> RateLimitTier {
         RateLimitTier {
-            seconds_per_request: 2,
-            burst_size: 10,
+            seconds_per_request: NonZeroU64::new(2).expect("rate limit default must be non-zero"),
+            burst_size: NonZeroU32::new(10).expect("rate limit default must be non-zero"),
         }
     }
 }
@@ -299,9 +302,9 @@ impl RateLimitConfig {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct RateLimitTier {
     #[serde(default = "RateLimitTier::default_seconds")]
-    pub seconds_per_request: u64,
+    pub seconds_per_request: NonZeroU64,
     #[serde(default = "RateLimitTier::default_burst")]
-    pub burst_size: u32,
+    pub burst_size: NonZeroU32,
 }
 
 impl Default for RateLimitTier {
@@ -314,10 +317,10 @@ impl Default for RateLimitTier {
 }
 
 impl RateLimitTier {
-    fn default_seconds() -> u64 {
-        1
+    fn default_seconds() -> NonZeroU64 {
+        NonZeroU64::new(1).expect("rate limit default must be non-zero")
     }
-    fn default_burst() -> u32 {
-        60
+    fn default_burst() -> NonZeroU32 {
+        NonZeroU32::new(60).expect("rate limit default must be non-zero")
     }
 }

@@ -1,3 +1,5 @@
+//! CLI 子模块：`ui`。
+
 use std::io::{self, IsTerminal, Write};
 
 use clap::ValueEnum;

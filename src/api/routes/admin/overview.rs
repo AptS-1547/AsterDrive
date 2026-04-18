@@ -1,3 +1,5 @@
+//! 管理员 API 路由：`overview`。
+
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;

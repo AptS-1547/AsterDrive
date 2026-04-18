@@ -1,3 +1,5 @@
+//! WebDAV 子模块：`dav`。
+
 use std::future::Future;
 use std::io::SeekFrom;
 use std::pin::Pin;

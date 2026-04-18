@@ -1,3 +1,5 @@
+//! 管理员 API 路由：`policies`。
+
 use crate::api::dto::admin as dto;
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]

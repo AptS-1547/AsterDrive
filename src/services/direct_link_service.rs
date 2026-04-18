@@ -1,3 +1,5 @@
+//! 服务模块：`direct_link_service`。
+
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 #[cfg(all(debug_assertions, feature = "openapi"))]

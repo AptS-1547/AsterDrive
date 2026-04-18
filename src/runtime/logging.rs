@@ -1,3 +1,5 @@
+//! 运行时子模块：`logging`。
+
 use crate::config::LoggingConfig;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling;

@@ -1,3 +1,5 @@
+//! 文件服务子模块：`thumbnail`。
+
 use crate::db::repository::file_repo;
 use crate::errors::Result;
 use crate::runtime::AppState;

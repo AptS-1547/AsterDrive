@@ -1,3 +1,5 @@
+//! CLI 子模块：`copy`。
+
 use std::collections::BTreeMap;
 
 use sea_orm::sea_query::{Alias, Query};

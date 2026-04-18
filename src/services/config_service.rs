@@ -1,3 +1,5 @@
+//! 服务模块：`config_service`。
+
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::config::auth_runtime;
 use crate::config::branding;

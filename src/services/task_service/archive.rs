@@ -1,3 +1,5 @@
+//! 后台任务服务子模块：`archive`。
+
 mod common;
 mod compress;
 mod extract;

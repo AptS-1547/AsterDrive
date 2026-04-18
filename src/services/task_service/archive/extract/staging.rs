@@ -1,3 +1,5 @@
+//! 归档解包任务子模块：`staging`。
+
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 

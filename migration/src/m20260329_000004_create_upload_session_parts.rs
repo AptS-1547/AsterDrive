@@ -1,3 +1,5 @@
+//! 数据库迁移：`create_upload_session_parts`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

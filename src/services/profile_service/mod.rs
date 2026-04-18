@@ -1,3 +1,5 @@
+//! 用户资料服务聚合入口。
+
 mod avatar;
 mod avatar_image;
 mod avatar_storage;

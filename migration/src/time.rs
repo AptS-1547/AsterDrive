@@ -1,3 +1,5 @@
+//! 迁移里的时间表达式 helper。
+
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::DatabaseBackend;
 

@@ -1,3 +1,5 @@
+//! 认证服务子模块：`session`。
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 

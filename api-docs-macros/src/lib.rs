@@ -1,3 +1,5 @@
+//! OpenAPI 辅助宏 crate 入口。
+
 extern crate proc_macro;
 
 use proc_macro::TokenStream;

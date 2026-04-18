@@ -1,3 +1,5 @@
+//! `folder_repo` 仓储子模块：`path`。
+
 use sea_orm::{
     Condition, ConnectionTrait, EntityTrait, ExprTrait, FromQueryResult,
     entity::prelude::DeriveIden,

@@ -1,3 +1,5 @@
+//! 缓存实现：`memory`。
+
 use super::CacheBackend;
 use async_trait::async_trait;
 use moka::future::Cache;

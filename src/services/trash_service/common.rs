@@ -1,3 +1,5 @@
+//! 回收站服务子模块：`common`。
+
 use std::collections::{BTreeSet, HashMap};
 
 use sea_orm::DatabaseConnection;

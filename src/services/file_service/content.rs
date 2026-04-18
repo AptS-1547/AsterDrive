@@ -1,3 +1,5 @@
+//! 文件服务子模块：`content`。
+
 use actix_web::web::Bytes;
 use sha2::{Digest, Sha256};
 

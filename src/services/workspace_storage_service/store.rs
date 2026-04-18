@@ -1,3 +1,5 @@
+//! 工作空间存储服务子模块：`store`。
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 use sha2::{Digest, Sha256};
@@ -232,7 +234,10 @@ async fn store_from_temp_internal(
                 file_repo::find_or_create_blob(&txn, file_hash, size, policy.id, storage_path)
                     .await?;
             if blob.inserted {
-                driver.put_file(storage_path, temp_path).await?;
+                let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+                    crate::errors::AsterError::storage_driver_error("stream upload not supported")
+                })?;
+                stream_driver.put_file(storage_path, temp_path).await?;
             }
             blob.model
         } else if let Some(preuploaded_blob) = preuploaded_blob.as_ref() {
@@ -240,11 +245,21 @@ async fn store_from_temp_internal(
         } else if policy.driver_type == crate::types::DriverType::S3 {
             let upload_id = crate::utils::id::new_uuid();
             let blob = create_s3_nondedup_blob(&txn, size, policy.id, &upload_id).await?;
-            driver.put_file(&blob.storage_path, temp_path).await?;
+            let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+                crate::errors::AsterError::storage_driver_error("stream upload not supported")
+            })?;
+            stream_driver
+                .put_file(&blob.storage_path, temp_path)
+                .await?;
             blob
         } else {
             let blob = create_nondedup_blob(&txn, size, policy.id).await?;
-            driver.put_file(&blob.storage_path, temp_path).await?;
+            let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+                crate::errors::AsterError::storage_driver_error("stream upload not supported")
+            })?;
+            stream_driver
+                .put_file(&blob.storage_path, temp_path)
+                .await?;
             blob
         };
 

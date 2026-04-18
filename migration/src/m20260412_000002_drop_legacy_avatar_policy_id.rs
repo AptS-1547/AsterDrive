@@ -1,3 +1,5 @@
+//! 数据库迁移：`drop_legacy_avatar_policy_id`。
+
 use sea_orm::{ConnectionTrait, DbBackend, DbErr, Statement};
 use sea_orm_migration::prelude::*;
 

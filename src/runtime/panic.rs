@@ -1,3 +1,5 @@
+//! 运行时子模块：`panic`。
+
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::panic;

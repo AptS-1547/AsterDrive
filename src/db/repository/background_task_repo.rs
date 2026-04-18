@@ -1,3 +1,5 @@
+//! 仓储模块：`background_task_repo`。
+
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveEnum, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,

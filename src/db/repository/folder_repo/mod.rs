@@ -1,3 +1,5 @@
+//! `folder_repo` 仓储聚合入口。
+
 mod common;
 mod mutation;
 mod path;

@@ -1,3 +1,5 @@
+//! 服务模块：`user_service`。
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
 use serde::{Deserialize, Serialize};

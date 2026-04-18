@@ -1,3 +1,5 @@
+//! 仓储层模块导出。
+
 pub mod audit_log_repo;
 pub mod background_task_repo;
 pub mod config_repo;

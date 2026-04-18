@@ -1,3 +1,5 @@
+//! 预览应用服务子模块：`types`。
+
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Deserializer, Serialize};

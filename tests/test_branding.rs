@@ -1,3 +1,5 @@
+//! 集成测试：`branding`。
+
 #[macro_use]
 mod common;
 

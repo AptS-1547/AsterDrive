@@ -1,3 +1,5 @@
+//! 认证服务子模块：`shared`。
+
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, DbErr, IntoActiveModel, Set, SqlErr};
 

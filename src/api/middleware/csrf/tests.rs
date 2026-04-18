@@ -1,3 +1,5 @@
+//! CSRF 中间件测试。
+
 use actix_web::cookie::Cookie;
 
 use super::source::ensure_headers_allowed;

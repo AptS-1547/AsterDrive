@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_team_search_acceleration`。
+
 use crate::search_acceleration::{
     SqliteFtsConfig, ensure_postgres_extension, execute_sqlite_statements,
     mysql_fulltext_index_sql, postgres_drop_index, postgres_trigram_index,

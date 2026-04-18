@@ -1,11 +1,11 @@
+//! API 路由：`teams`。
+
 pub use crate::api::dto::teams::*;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::LimitOffsetQuery;
 use crate::api::response::ApiResponse;
-use crate::api::routes::{
-    team_batch, team_search, team_shares, team_space, team_tasks, team_trash,
-};
+use crate::api::routes::{batch, folders, search, shares, tasks, trash};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -42,12 +42,12 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
             "/{id}/members/{member_user_id}",
             web::delete().to(delete_member),
         )
-        .service(team_batch::routes())
-        .service(team_search::routes())
-        .service(team_shares::routes())
-        .service(team_trash::routes())
-        .service(team_tasks::routes())
-        .service(team_space::routes(rl))
+        .service(batch::team_routes())
+        .service(search::team_routes())
+        .service(shares::team_routes())
+        .service(trash::team_routes())
+        .service(tasks::team_routes())
+        .service(folders::team_routes())
 }
 
 #[api_docs_macros::path(

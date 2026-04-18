@@ -1,3 +1,5 @@
+//! 用户资料服务子模块：`avatar_storage`。
+
 use std::path::Component;
 use std::path::{Path, PathBuf};
 

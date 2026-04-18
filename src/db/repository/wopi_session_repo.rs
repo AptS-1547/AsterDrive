@@ -1,3 +1,5 @@
+//! 仓储模块：`wopi_session_repo`。
+
 use crate::entities::wopi_session::{self, Entity as WopiSession};
 use crate::errors::{AsterError, Result};
 use chrono::Utc;

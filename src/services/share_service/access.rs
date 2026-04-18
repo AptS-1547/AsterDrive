@@ -1,3 +1,5 @@
+//! 分享服务子模块：`access`。
+
 use chrono::Utc;
 
 use crate::db::repository::{share_repo, user_profile_repo, user_repo};

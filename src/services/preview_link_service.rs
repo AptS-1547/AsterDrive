@@ -1,3 +1,5 @@
+//! 服务模块：`preview_link_service`。
+
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};

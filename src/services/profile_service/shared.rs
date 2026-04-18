@@ -1,3 +1,5 @@
+//! 用户资料服务子模块：`shared`。
+
 use chrono::{DateTime, Utc};
 use sea_orm::Set;
 

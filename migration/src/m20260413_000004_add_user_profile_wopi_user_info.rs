@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_user_profile_wopi_user_info`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

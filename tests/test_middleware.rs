@@ -1,3 +1,5 @@
+//! 集成测试：`middleware`。
+
 #[macro_use]
 mod common;
 

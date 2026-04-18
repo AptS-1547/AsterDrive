@@ -1,3 +1,5 @@
+//! 归档任务子模块：`selection`。
+
 use std::collections::{HashMap, HashSet};
 
 use actix_web::HttpResponse;

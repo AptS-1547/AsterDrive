@@ -1,10 +1,14 @@
+//! 工作空间存储服务测试。
+
 use crate::cache;
 use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
 use crate::entities::{file_blob, storage_policy, user};
 use crate::runtime::AppState;
 use crate::services::mail_service;
 use crate::storage::driver::{BlobMetadata, StoragePathVisitor};
-use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver};
+use crate::storage::{
+    DriverRegistry, ListStorageDriver, PolicySnapshot, StorageDriver, StreamUploadDriver,
+};
 use crate::types::{DriverType, UserRole, UserStatus};
 use async_trait::async_trait;
 use chrono::Utc;
@@ -73,6 +77,17 @@ impl StorageDriver for BlockingPutFileDriver {
         self.inner.metadata(path).await
     }
 
+    fn as_list(&self) -> Option<&dyn ListStorageDriver> {
+        Some(self)
+    }
+
+    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
+        Some(self)
+    }
+}
+
+#[async_trait]
+impl ListStorageDriver for BlockingPutFileDriver {
     async fn list_paths(&self, prefix: Option<&str>) -> crate::errors::Result<Vec<String>> {
         self.inner.list_paths(prefix).await
     }
@@ -84,7 +99,10 @@ impl StorageDriver for BlockingPutFileDriver {
     ) -> crate::errors::Result<()> {
         self.inner.scan_paths(prefix, visitor).await
     }
+}
 
+#[async_trait]
+impl StreamUploadDriver for BlockingPutFileDriver {
     async fn put_file(
         &self,
         storage_path: &str,
@@ -102,13 +120,13 @@ impl StorageDriver for BlockingPutFileDriver {
         self.inner.put_file(storage_path, local_path).await
     }
 
-    async fn presigned_url(
+    async fn put_reader(
         &self,
-        path: &str,
-        expires: Duration,
-        options: crate::storage::driver::PresignedDownloadOptions,
-    ) -> crate::errors::Result<Option<String>> {
-        self.inner.presigned_url(path, expires, options).await
+        storage_path: &str,
+        reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
+        size: i64,
+    ) -> crate::errors::Result<String> {
+        self.inner.put_reader(storage_path, reader, size).await
     }
 }
 

@@ -1,3 +1,5 @@
+//! 存储子模块：`policy_snapshot`。
+
 use std::collections::HashMap;
 
 use parking_lot::RwLock;

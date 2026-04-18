@@ -1,3 +1,5 @@
+//! API 路由：`frontend`。
+
 use crate::config::branding;
 use crate::runtime::AppState;
 use actix_web::{HttpRequest, HttpResponse, web};

@@ -1,3 +1,5 @@
+//! 工具子模块：`numbers`。
+
 use crate::errors::{AsterError, MapAsterErr, Result};
 
 pub fn bytes_to_usize(bytes: i64, value_name: &str) -> Result<usize> {

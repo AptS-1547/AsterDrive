@@ -1,3 +1,5 @@
+//! `file_repo` 仓储子模块：`common`。
+
 use sea_orm::{ColumnTrait, Condition, DbErr, SqlErr};
 
 use crate::entities::file;

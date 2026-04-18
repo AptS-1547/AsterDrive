@@ -1,3 +1,5 @@
+//! 团队服务子模块：`admin`。
+
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::team_repo;
 use crate::errors::{AsterError, Result};

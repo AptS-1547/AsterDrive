@@ -1,3 +1,5 @@
+//! 缓存抽象与实现导出。
+
 mod memory;
 mod noop;
 mod redis_cache;

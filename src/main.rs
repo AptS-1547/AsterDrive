@@ -1,3 +1,5 @@
+//! AsterDrive 服务端与 CLI 启动入口。
+
 use actix_web::{App, HttpServer, web};
 #[cfg(feature = "cli")]
 use clap::{Parser, Subcommand};

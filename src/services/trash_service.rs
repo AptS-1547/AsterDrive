@@ -1,3 +1,5 @@
+//! 回收站服务聚合入口。
+
 mod cleanup;
 mod common;
 mod listing;

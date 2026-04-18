@@ -1,3 +1,5 @@
+//! 运行时子模块：`startup`。
+
 use super::AppState;
 use crate::config;
 use crate::config::auth_runtime::AUTH_COOKIE_SECURE_KEY;

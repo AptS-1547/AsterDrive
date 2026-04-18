@@ -1,3 +1,5 @@
+//! 工作空间存储服务子模块：`blob_upload`。
+
 use sea_orm::ConnectionTrait;
 use std::path::{Component, Path, PathBuf};
 
@@ -176,7 +178,14 @@ pub(crate) async fn upload_temp_file_to_prepared_blob(
     prepared: &PreparedNonDedupBlobUpload,
     temp_path: &str,
 ) -> Result<()> {
-    if let Err(error) = driver.put_file(prepared.storage_path(), temp_path).await {
+    let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+        crate::errors::AsterError::storage_driver_error("stream upload not supported")
+    })?;
+
+    if let Err(error) = stream_driver
+        .put_file(prepared.storage_path(), temp_path)
+        .await
+    {
         cleanup_preuploaded_blob_upload(driver, prepared, "upload error").await;
         return Err(error);
     }

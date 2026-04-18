@@ -1,3 +1,5 @@
+//! 集成测试：`gravatar_config`。
+
 #[macro_use]
 mod common;
 

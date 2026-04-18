@@ -1,3 +1,5 @@
+//! 存储驱动实现：`s3_config`。
+
 use crate::errors::{AsterError, Result};
 use http::Uri;
 

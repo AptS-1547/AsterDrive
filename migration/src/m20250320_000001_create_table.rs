@@ -1,3 +1,5 @@
+//! 数据库迁移：`create_table`。
+
 use sea_orm::{ConnectionTrait, DbBackend};
 use sea_orm_migration::prelude::*;
 

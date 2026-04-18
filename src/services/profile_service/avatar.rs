@@ -1,3 +1,5 @@
+//! 用户资料服务子模块：`avatar`。
+
 use actix_multipart::Multipart;
 use actix_web::HttpResponse;
 use chrono::Utc;

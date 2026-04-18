@@ -1,3 +1,5 @@
+//! 服务模块：`lock_service`。
+
 use std::io::Cursor;
 
 use chrono::{Duration, Utc};

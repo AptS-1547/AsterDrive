@@ -1,3 +1,5 @@
+//! 集成测试：`refactor_contracts`。
+
 // Issue #37 refactor contract tests — 验证 service 层 API 契约未因重构破坏
 #[macro_use]
 mod common;

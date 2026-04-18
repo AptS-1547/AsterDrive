@@ -1,3 +1,5 @@
+//! `file_repo` 仓储子模块：`blob`。
+
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,

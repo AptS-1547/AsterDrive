@@ -1,3 +1,5 @@
+//! 文件服务子模块：`lock`。
+
 use crate::entities::file;
 use crate::errors::Result;
 use crate::runtime::AppState;

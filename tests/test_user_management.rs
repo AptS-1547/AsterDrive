@@ -1,3 +1,5 @@
+//! 集成测试：`user_management`。
+
 #[macro_use]
 mod common;
 

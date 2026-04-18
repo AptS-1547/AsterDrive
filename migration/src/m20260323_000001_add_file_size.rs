@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_file_size`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

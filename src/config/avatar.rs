@@ -1,3 +1,5 @@
+//! 配置子模块：`avatar`。
+
 use std::path::{Path, PathBuf};
 
 use crate::config::RuntimeConfig;

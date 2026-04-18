@@ -1,3 +1,5 @@
+//! 集成测试：`cli`。
+
 #[macro_use]
 mod common;
 

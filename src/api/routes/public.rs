@@ -1,3 +1,5 @@
+//! API 路由：`public`。
+
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;

@@ -1,3 +1,5 @@
+//! 数据库子模块：`sqlite_search`。
+
 use crate::errors::{AsterError, MapAsterErr, Result};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use std::collections::HashSet;

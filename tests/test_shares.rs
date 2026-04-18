@@ -1,3 +1,5 @@
+//! 集成测试：`shares`。
+
 #[macro_use]
 mod common;
 

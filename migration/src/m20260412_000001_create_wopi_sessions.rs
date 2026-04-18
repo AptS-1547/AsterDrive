@@ -1,3 +1,5 @@
+//! 数据库迁移：`create_wopi_sessions`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

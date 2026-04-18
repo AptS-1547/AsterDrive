@@ -1,3 +1,5 @@
+//! 集成测试：`maintenance`。
+
 mod common;
 
 use chrono::{Duration, Utc};

@@ -1,3 +1,5 @@
+//! 集成测试：`search`。
+
 #[macro_use]
 mod common;
 

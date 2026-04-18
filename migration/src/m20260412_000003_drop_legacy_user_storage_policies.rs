@@ -1,3 +1,5 @@
+//! 数据库迁移：`drop_legacy_user_storage_policies`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

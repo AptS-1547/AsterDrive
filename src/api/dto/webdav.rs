@@ -1,3 +1,5 @@
+//! `webdav` API DTO 定义。
+
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;

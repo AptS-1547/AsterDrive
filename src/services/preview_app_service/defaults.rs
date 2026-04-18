@@ -1,3 +1,5 @@
+//! 预览应用服务子模块：`defaults`。
+
 use std::collections::BTreeMap;
 
 use super::{

@@ -1,3 +1,5 @@
+//! 服务模块：`version_service`。
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 

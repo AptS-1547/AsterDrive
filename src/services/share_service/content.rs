@@ -1,3 +1,5 @@
+//! 分享服务子模块：`content`。
+
 use crate::db::repository::{file_repo, share_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};

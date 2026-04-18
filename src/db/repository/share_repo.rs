@@ -1,3 +1,5 @@
+//! 仓储模块：`share_repo`。
+
 use chrono::Utc;
 use std::collections::HashSet;
 

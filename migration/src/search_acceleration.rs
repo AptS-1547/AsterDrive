@@ -1,3 +1,5 @@
+//! 搜索加速相关迁移 helper。
+
 use sea_orm::{ConnectionTrait, DbErr};
 use sea_orm_migration::prelude::*;
 use sea_query::{Alias, IntoIndexColumn, PostgresQueryBuilder, extension::postgres::Extension};

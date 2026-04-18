@@ -1,3 +1,5 @@
+//! 文件夹服务子模块：`copy`。
+
 use chrono::Utc;
 use sea_orm::Set;
 

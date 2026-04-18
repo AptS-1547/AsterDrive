@@ -1,3 +1,5 @@
+//! API 路由聚合入口。
+
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 
 pub mod admin;
@@ -13,13 +15,7 @@ pub mod search;
 pub mod share_public;
 pub mod shares;
 pub mod tasks;
-pub mod team_batch;
 pub mod team_requests;
-pub mod team_search;
-pub mod team_shares;
-pub mod team_space;
-pub mod team_tasks;
-pub mod team_trash;
 pub mod teams;
 pub mod trash;
 pub mod webdav_accounts;

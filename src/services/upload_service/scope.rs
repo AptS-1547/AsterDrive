@@ -1,3 +1,5 @@
+//! 上传服务子模块：`scope`。
+
 use crate::db::repository::upload_session_repo;
 use crate::entities::upload_session;
 use crate::errors::{AsterError, Result};

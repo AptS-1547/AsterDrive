@@ -1,3 +1,5 @@
+//! 集成测试：`pagination`。
+
 #[macro_use]
 mod common;
 

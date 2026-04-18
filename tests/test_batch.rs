@@ -1,3 +1,5 @@
+//! 集成测试：`batch`。
+
 #[macro_use]
 mod common;
 

@@ -1,3 +1,5 @@
+//! 文件夹服务子模块：`mutation`。
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 

@@ -1,3 +1,5 @@
+//! 认证服务子模块：`password`。
+
 use crate::db::repository::user_repo;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;

@@ -656,7 +656,9 @@ pub async fn audit_storage_objects<C: ConnectionTrait>(
                 tracked_temp_paths: &tracked_temp_paths,
                 report: &mut report,
             };
-            driver.scan_paths(None, &mut visitor).await?;
+            if let Some(list_driver) = driver.as_list() {
+                list_driver.scan_paths(None, &mut visitor).await?;
+            }
         }
 
         for path in tracked_blobs {

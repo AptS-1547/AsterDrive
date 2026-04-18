@@ -1,3 +1,5 @@
+//! 工作空间存储服务子模块：`multipart`。
+
 use actix_multipart::Multipart;
 use chrono::Utc;
 use futures::StreamExt;
@@ -183,6 +185,9 @@ async fn upload_s3_relay_direct(
             let (writer, reader) = tokio::io::duplex(RELAY_DIRECT_BUFFER_SIZE);
             let upload_driver = driver.clone();
             let upload_storage_path = storage_path.clone();
+            let stream_driver = upload_driver.as_stream_upload().ok_or_else(|| {
+                crate::errors::AsterError::storage_driver_error("stream upload not supported")
+            })?;
             let (upload_result, relay_result) = tokio::task::LocalSet::new()
                 .run_until(async move {
                     let relay_task = tokio::task::spawn_local(async move {
@@ -201,7 +206,7 @@ async fn upload_s3_relay_direct(
                         Ok::<(), AsterError>(())
                     });
 
-                    let upload_result = upload_driver
+                    let upload_result = stream_driver
                         .put_reader(&upload_storage_path, Box::new(reader), declared_size)
                         .await;
                     let relay_result = relay_task.await.map_err(|err| {

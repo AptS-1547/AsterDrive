@@ -1,3 +1,5 @@
+//! 上传服务子模块：`lifecycle`。
+
 use chrono::{Duration, Utc};
 
 use crate::db::repository::upload_session_repo;

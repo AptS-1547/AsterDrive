@@ -1,3 +1,5 @@
+//! 服务模块：`webdav_service`。
+
 use std::future::Future;
 use std::pin::Pin;
 

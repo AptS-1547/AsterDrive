@@ -1,3 +1,5 @@
+//! 数据库迁移：`config_source_namespace`。
+
 use sea_orm::{ConnectionTrait, DbBackend};
 use sea_orm_migration::prelude::*;
 

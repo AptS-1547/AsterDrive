@@ -1,3 +1,5 @@
+//! 服务模块：`workspace_models`。
+
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]

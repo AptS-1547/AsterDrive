@@ -1,3 +1,5 @@
+//! 仓储模块：`contact_verification_token_repo`。
+
 use crate::entities::contact_verification_token::{self, Entity as ContactVerificationToken};
 use crate::errors::{AsterError, Result};
 use crate::types::{VerificationChannel, VerificationPurpose};

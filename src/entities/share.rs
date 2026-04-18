@@ -1,3 +1,5 @@
+//! SeaORM 实体定义：`share`。
+
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]

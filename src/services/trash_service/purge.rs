@@ -1,3 +1,5 @@
+//! 回收站服务子模块：`purge`。
+
 use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::Result;
 use crate::runtime::AppState;

@@ -1,3 +1,5 @@
+//! 数据库层模块导出。
+
 pub mod connection;
 pub mod repository;
 pub mod retry;

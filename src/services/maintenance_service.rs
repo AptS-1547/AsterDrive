@@ -1,3 +1,5 @@
+//! 服务模块：`maintenance_service`。
+
 use std::collections::HashSet;
 
 use chrono::Utc;

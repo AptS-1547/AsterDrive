@@ -1,3 +1,5 @@
+//! 集成测试：`db_indexes`。
+
 #[macro_use]
 mod common;
 

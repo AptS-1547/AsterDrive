@@ -1,3 +1,5 @@
+//! 后台任务服务子模块：`types`。
+
 use sea_orm::ActiveEnum;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]

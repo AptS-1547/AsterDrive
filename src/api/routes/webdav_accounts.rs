@@ -1,3 +1,5 @@
+//! API 路由：`webdav_accounts`。
+
 use crate::api::dto::webdav::{CreateWebdavAccountReq, TestConnectionReq, WebdavSettingsInfo};
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;

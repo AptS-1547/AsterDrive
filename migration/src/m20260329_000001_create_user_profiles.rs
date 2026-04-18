@@ -1,3 +1,5 @@
+//! 数据库迁移：`create_user_profiles`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

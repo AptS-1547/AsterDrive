@@ -1,3 +1,5 @@
+//! 仓储模块：`policy_group_repo`。
+
 use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::{
     storage_policy_group::{self, Entity as StoragePolicyGroup},

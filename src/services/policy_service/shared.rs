@@ -1,3 +1,5 @@
+//! 存储策略服务子模块：`shared`。
+
 use chrono::Utc;
 use sea_orm::{DbBackend, EntityTrait, QuerySelect, Set};
 

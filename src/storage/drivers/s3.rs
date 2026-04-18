@@ -1,7 +1,10 @@
+//! 存储驱动实现：`s3`。
+
 use super::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::storage::driver::{BlobMetadata, StorageDriver, StoragePathVisitor};
+use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions, StorageDriver};
+use crate::storage::extensions::{ListStorageDriver, PresignedStorageDriver, StreamUploadDriver};
 use crate::storage::multipart::MultipartStorageDriver;
 use crate::utils::numbers;
 use async_trait::async_trait;
@@ -303,6 +306,10 @@ impl S3Driver {
     }
 }
 
+// =============================================================================
+// StorageDriver 核心 trait
+// =============================================================================
+
 #[async_trait]
 impl StorageDriver for S3Driver {
     async fn put(&self, path: &str, data: &[u8]) -> Result<String> {
@@ -349,6 +356,35 @@ impl StorageDriver for S3Driver {
             .send()
             .await
             .map_err(|err| Self::map_sdk_error("S3 get_stream failed", err))?;
+
+        Ok(Box::new(resp.body.into_async_read()))
+    }
+
+    async fn get_range(
+        &self,
+        path: &str,
+        offset: u64,
+        length: Option<u64>,
+    ) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
+        let key = self.full_key(path);
+        // HTTP Range 规范使用闭区间 [start, end]
+        let range = match length {
+            Some(len) if len > 0 => format!("bytes={}-{}", offset, offset + len - 1),
+            Some(_) => {
+                // 0 长度：直接返回空流，避免给 S3 发 "bytes=X-(X-1)" 这种非法 range
+                return Ok(Box::new(tokio::io::empty()));
+            }
+            None => format!("bytes={offset}-"),
+        };
+        let resp = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .range(range)
+            .send()
+            .await
+            .map_err(|err| Self::map_sdk_error("S3 get_range failed", err))?;
 
         Ok(Box::new(resp.body.into_async_read()))
     }
@@ -410,130 +446,60 @@ impl StorageDriver for S3Driver {
         })
     }
 
-    async fn list_paths(&self, prefix: Option<&str>) -> Result<Vec<String>> {
-        let full_prefix = prefix
-            .map(|prefix| self.full_key(prefix))
-            .unwrap_or_else(|| self.base_path.trim_end_matches('/').to_string());
-        let mut continuation: Option<String> = None;
-        let mut paths = Vec::new();
-
-        loop {
-            let mut request = self.client.list_objects_v2().bucket(&self.bucket);
-            if !full_prefix.is_empty() {
-                request = request.prefix(full_prefix.clone());
-            }
-            if let Some(token) = continuation.as_deref() {
-                request = request.continuation_token(token);
-            }
-
-            let response = request
-                .send()
-                .await
-                .map_err(|err| Self::map_sdk_error("S3 list_objects_v2 failed", err))?;
-
-            for object in response.contents() {
-                let Some(key) = object.key() else {
-                    continue;
-                };
-                paths.push(self.relative_key(key));
-            }
-
-            let truncated = response.is_truncated().unwrap_or(false);
-            continuation = response.next_continuation_token().map(ToOwned::to_owned);
-            if !truncated || continuation.is_none() {
-                break;
-            }
-        }
-
-        paths.sort();
-        Ok(paths)
-    }
-
-    async fn scan_paths(
-        &self,
-        prefix: Option<&str>,
-        visitor: &mut dyn StoragePathVisitor,
-    ) -> Result<()> {
-        let full_prefix = prefix
-            .map(|prefix| self.full_key(prefix))
-            .unwrap_or_else(|| self.base_path.trim_end_matches('/').to_string());
-        let mut continuation: Option<String> = None;
-
-        loop {
-            let mut request = self.client.list_objects_v2().bucket(&self.bucket);
-            if !full_prefix.is_empty() {
-                request = request.prefix(full_prefix.clone());
-            }
-            if let Some(token) = continuation.as_deref() {
-                request = request.continuation_token(token);
-            }
-
-            let response = request
-                .send()
-                .await
-                .map_err(|err| Self::map_sdk_error("S3 list_objects_v2 failed", err))?;
-
-            for object in response.contents() {
-                let Some(key) = object.key() else {
-                    continue;
-                };
-                visitor.visit_path(self.relative_key(key))?;
-            }
-
-            let truncated = response.is_truncated().unwrap_or(false);
-            continuation = response.next_continuation_token().map(ToOwned::to_owned);
-            if !truncated || continuation.is_none() {
-                break;
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String> {
-        let key = self.full_key(storage_path);
-        let body = ByteStream::from_path(local_path)
-            .await
-            .map_aster_err_ctx("S3 read file", AsterError::storage_driver_error)?;
-        self.client
-            .put_object()
-            .bucket(&self.bucket)
-            .key(&key)
-            .body(body)
-            .send()
-            .await
-            .map_err(|err| Self::map_sdk_error("S3 put_file failed", err))?;
-        Ok(storage_path.to_string())
-    }
-
-    async fn put_reader(
-        &self,
-        storage_path: &str,
-        reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
-        size: i64,
-    ) -> Result<String> {
-        let key = self.full_key(storage_path);
-        let content_length = numbers::i64_to_u64(size, "S3 put_reader content_length")?;
-        let body = ByteStream::from_body_1_x(SizedReaderBody::new(reader, content_length));
+    async fn copy_object(&self, src_path: &str, dest_path: &str) -> Result<String> {
+        let src_key = self.full_key(src_path);
+        let dest_key = self.full_key(dest_path);
+        // CopySource 形如 "{bucket}/{key}"，bucket 与 key 中的特殊字符（空格、中文、
+        // `+`、`#` 等）必须做 percent-encoding，否则 SigV4 会拒绝签名。
+        // 复用 aws-smithy-http 的 httpLabel Greedy 编码器，与 SDK 内部对 S3 key
+        // 的编码策略保持一致（保留 `/` 作为分隔符）。
+        use aws_smithy_http::label::{EncodingStrategy, fmt_string};
+        let copy_source = format!(
+            "{}/{}",
+            fmt_string(&self.bucket, EncodingStrategy::Greedy),
+            fmt_string(&src_key, EncodingStrategy::Greedy),
+        );
 
         self.client
-            .put_object()
+            .copy_object()
             .bucket(&self.bucket)
-            .key(&key)
-            .content_length(size)
-            .body(body)
+            .copy_source(&copy_source)
+            .key(&dest_key)
             .send()
             .await
-            .map_err(|err| Self::map_sdk_error("S3 put_reader failed", err))?;
+            .map_err(|err| Self::map_sdk_error("S3 copy_object failed", err))?;
 
-        Ok(storage_path.to_string())
+        Ok(dest_path.to_string())
     }
 
+    fn as_presigned(&self) -> Option<&dyn PresignedStorageDriver> {
+        Some(self)
+    }
+
+    fn as_list(&self) -> Option<&dyn ListStorageDriver> {
+        Some(self)
+    }
+
+    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
+        Some(self)
+    }
+
+    fn as_multipart(&self) -> Option<&dyn MultipartStorageDriver> {
+        Some(self)
+    }
+}
+
+// =============================================================================
+// PresignedStorageDriver 扩展
+// =============================================================================
+
+#[async_trait]
+impl PresignedStorageDriver for S3Driver {
     async fn presigned_url(
         &self,
         path: &str,
         expires: Duration,
-        options: crate::storage::driver::PresignedDownloadOptions,
+        options: PresignedDownloadOptions,
     ) -> Result<Option<String>> {
         let key = self.full_key(path);
         let presign_config = PresigningConfig::builder()
@@ -578,28 +544,144 @@ impl StorageDriver for S3Driver {
 
         Ok(Some(url.uri().to_string()))
     }
+}
 
-    async fn copy_object(&self, src_path: &str, dest_path: &str) -> Result<String> {
-        let src_key = self.full_key(src_path);
-        let dest_key = self.full_key(dest_path);
-        let copy_source = format!("{}/{}", self.bucket, src_key);
+// =============================================================================
+// ListStorageDriver 扩展
+// =============================================================================
 
-        self.client
-            .copy_object()
-            .bucket(&self.bucket)
-            .copy_source(&copy_source)
-            .key(&dest_key)
-            .send()
-            .await
-            .map_err(|err| Self::map_sdk_error("S3 copy_object failed", err))?;
+#[async_trait]
+impl ListStorageDriver for S3Driver {
+    async fn list_paths(&self, prefix: Option<&str>) -> Result<Vec<String>> {
+        let full_prefix = prefix
+            .map(|prefix| self.full_key(prefix))
+            .unwrap_or_else(|| self.base_path.trim_end_matches('/').to_string());
+        let mut continuation: Option<String> = None;
+        let mut paths = Vec::new();
 
-        Ok(dest_path.to_string())
+        loop {
+            let mut request = self.client.list_objects_v2().bucket(&self.bucket);
+            if !full_prefix.is_empty() {
+                request = request.prefix(full_prefix.clone());
+            }
+            if let Some(token) = continuation.as_deref() {
+                request = request.continuation_token(token);
+            }
+
+            let response = request
+                .send()
+                .await
+                .map_err(|err| Self::map_sdk_error("S3 list_objects_v2 failed", err))?;
+
+            for object in response.contents() {
+                let Some(key) = object.key() else {
+                    continue;
+                };
+                paths.push(self.relative_key(key));
+            }
+
+            let truncated = response.is_truncated().unwrap_or(false);
+            continuation = response.next_continuation_token().map(ToOwned::to_owned);
+            if !truncated || continuation.is_none() {
+                break;
+            }
+        }
+
+        paths.sort();
+        Ok(paths)
     }
 
-    fn as_multipart(&self) -> Option<&dyn crate::storage::multipart::MultipartStorageDriver> {
-        Some(self)
+    async fn scan_paths(
+        &self,
+        prefix: Option<&str>,
+        visitor: &mut dyn crate::storage::driver::StoragePathVisitor,
+    ) -> Result<()> {
+        let full_prefix = prefix
+            .map(|prefix| self.full_key(prefix))
+            .unwrap_or_else(|| self.base_path.trim_end_matches('/').to_string());
+        let mut continuation: Option<String> = None;
+
+        loop {
+            let mut request = self.client.list_objects_v2().bucket(&self.bucket);
+            if !full_prefix.is_empty() {
+                request = request.prefix(full_prefix.clone());
+            }
+            if let Some(token) = continuation.as_deref() {
+                request = request.continuation_token(token);
+            }
+
+            let response = request
+                .send()
+                .await
+                .map_err(|err| Self::map_sdk_error("S3 list_objects_v2 failed", err))?;
+
+            for object in response.contents() {
+                let Some(key) = object.key() else {
+                    continue;
+                };
+                visitor.visit_path(self.relative_key(key))?;
+            }
+
+            let truncated = response.is_truncated().unwrap_or(false);
+            continuation = response.next_continuation_token().map(ToOwned::to_owned);
+            if !truncated || continuation.is_none() {
+                break;
+            }
+        }
+
+        Ok(())
     }
 }
+
+// =============================================================================
+// StreamUploadDriver 扩展
+// =============================================================================
+
+#[async_trait]
+impl StreamUploadDriver for S3Driver {
+    async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String> {
+        let key = self.full_key(storage_path);
+        let body = ByteStream::from_path(local_path)
+            .await
+            .map_aster_err_ctx("S3 read file", AsterError::storage_driver_error)?;
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .body(body)
+            .send()
+            .await
+            .map_err(|err| Self::map_sdk_error("S3 put_file failed", err))?;
+        Ok(storage_path.to_string())
+    }
+
+    async fn put_reader(
+        &self,
+        storage_path: &str,
+        reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
+        size: i64,
+    ) -> Result<String> {
+        let key = self.full_key(storage_path);
+        let content_length = numbers::i64_to_u64(size, "S3 put_reader content_length")?;
+        let body = ByteStream::from_body_1_x(SizedReaderBody::new(reader, content_length));
+
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .content_length(size)
+            .body(body)
+            .send()
+            .await
+            .map_err(|err| Self::map_sdk_error("S3 put_reader failed", err))?;
+
+        Ok(storage_path.to_string())
+    }
+}
+
+// =============================================================================
+// MultipartStorageDriver 扩展
+// =============================================================================
 
 #[async_trait]
 impl MultipartStorageDriver for S3Driver {
@@ -758,6 +840,10 @@ impl MultipartStorageDriver for S3Driver {
         Ok(part_numbers)
     }
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -927,5 +1013,86 @@ mod tests {
             "expected raw body preview in '{}'",
             err.message()
         );
+    }
+
+    #[tokio::test]
+    async fn copy_object_url_encodes_source_key() {
+        let response = http::Response::builder()
+            .status(200)
+            .body(SdkBody::from(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <CopyObjectResult><ETag>"abc"</ETag></CopyObjectResult>"#,
+            ))
+            .expect("mocked response");
+        let (driver, request) = mocked_driver(response);
+
+        driver
+            .copy_object("folder with space/中文 file+1.txt", "dest/key")
+            .await
+            .expect("copy should succeed");
+
+        let captured = request.expect_request();
+        let copy_source = captured
+            .headers()
+            .get("x-amz-copy-source")
+            .expect("copy-source header");
+        // 空格 → %20，中文 → UTF-8 percent-encoded，`+` → %2B
+        assert!(
+            copy_source.contains("%20"),
+            "expected space encoded in '{copy_source}'"
+        );
+        assert!(
+            copy_source.contains("%2B"),
+            "expected '+' encoded in '{copy_source}'"
+        );
+        assert!(
+            !copy_source.contains(' '),
+            "raw space should not remain in '{copy_source}'"
+        );
+        // bucket 与 key 之间的 `/` 必须保留为分隔符
+        assert!(
+            copy_source.starts_with("test-bucket/"),
+            "bucket prefix missing in '{copy_source}'"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_range_sends_native_range_header() {
+        let response = http::Response::builder()
+            .status(206)
+            .body(SdkBody::from("world"))
+            .expect("mocked response");
+        let (driver, request) = mocked_driver(response);
+
+        driver
+            .get_range("obj", 7, Some(5))
+            .await
+            .expect("range should succeed");
+
+        let captured = request.expect_request();
+        let range = captured
+            .headers()
+            .get("range")
+            .expect("Range header must be sent");
+        // HTTP Range 闭区间，7..=11
+        assert_eq!(range, "bytes=7-11");
+    }
+
+    #[tokio::test]
+    async fn get_range_without_length_sends_open_ended_range() {
+        let response = http::Response::builder()
+            .status(206)
+            .body(SdkBody::from("tail"))
+            .expect("mocked response");
+        let (driver, request) = mocked_driver(response);
+
+        driver
+            .get_range("obj", 100, None)
+            .await
+            .expect("open-ended range should succeed");
+
+        let captured = request.expect_request();
+        let range = captured.headers().get("range").expect("Range header");
+        assert_eq!(range, "bytes=100-");
     }
 }

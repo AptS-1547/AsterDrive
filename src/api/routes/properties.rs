@@ -1,3 +1,5 @@
+//! API 路由：`properties`。
+
 use crate::api::dto::properties::{EntityPath, PropPath, SetPropReq};
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;

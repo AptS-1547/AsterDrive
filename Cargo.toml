@@ -64,6 +64,7 @@ base64 = "0.22"
 bytes = "1"
 aws-credential-types = { version = "1.2.14", features = ["hardcoded-credentials"] }
 aws-sdk-s3 = { version = "1.129.0", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
+aws-smithy-http = "0.63"
 chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 chrono-tz = "0.10"
 clap = { version = "4", features = ["derive", "env"], optional = true }
@@ -99,6 +100,7 @@ serde_repr = "0.1.20"
 sha2 = "0.11"
 sha2_10 = { package = "sha2", version = "0.10" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "io-util"] }
+tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["io", "io-util"] }
 toml = "1.1"
 tracing = { version = "0.1.44", default-features = false}
@@ -108,6 +110,7 @@ utoipa = { version = "5.4.0", features = ["chrono", "actix_extras", "repr"], opt
 utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"], optional = true }
 urlencoding = "2"
 uuid = { version = "1", features = ["v4"] }
+validator = { version = "0.20", features = ["derive"] }
 xmltree = "0.12"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 

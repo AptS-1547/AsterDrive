@@ -1,3 +1,5 @@
+//! 堆分配跟踪与统计 helper。
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 

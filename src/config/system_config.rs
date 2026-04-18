@@ -1,3 +1,5 @@
+//! 配置子模块：`system_config`。
+
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 

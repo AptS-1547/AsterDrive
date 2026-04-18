@@ -1,3 +1,5 @@
+//! 集成测试：`files`。
+
 #[macro_use]
 mod common;
 

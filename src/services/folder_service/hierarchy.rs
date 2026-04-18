@@ -1,3 +1,5 @@
+//! 文件夹服务子模块：`hierarchy`。
+
 use std::collections::{HashMap, HashSet};
 
 use crate::db::repository::folder_repo;

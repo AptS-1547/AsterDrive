@@ -1,3 +1,5 @@
+//! 集成测试：`auth`。
+
 #[macro_use]
 mod common;
 

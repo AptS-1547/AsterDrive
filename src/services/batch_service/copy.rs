@@ -1,3 +1,5 @@
+//! 批量操作服务子模块：`copy`。
+
 use std::collections::HashSet;
 
 use crate::errors::{AsterError, Result};

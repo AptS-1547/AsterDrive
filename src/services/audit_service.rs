@@ -1,3 +1,5 @@
+//! 服务模块：`audit_service`。
+
 use actix_web::HttpRequest;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::Set;

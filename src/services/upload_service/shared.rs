@@ -1,3 +1,5 @@
+//! 上传服务子模块：`shared`。
+
 use chrono::{DateTime, Utc};
 use sea_orm::{ConnectionTrait, Set};
 

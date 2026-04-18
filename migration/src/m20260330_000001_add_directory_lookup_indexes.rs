@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_directory_lookup_indexes`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

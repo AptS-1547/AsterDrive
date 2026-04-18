@@ -23,8 +23,8 @@ use crate::services::{
     workspace_storage_service::{self},
 };
 use crate::storage::driver::StorageDriver;
-use crate::types::{DriverType, UploadSessionStatus};
-use crate::utils::numbers::u64_to_i64;
+use crate::types::UploadSessionStatus;
+use crate::utils::numbers::{u64_to_i64, usize_to_i64};
 use crate::utils::paths;
 
 /// 完成分片上传：组装 → 按策略决定是否计算 hash / 去重 → 写入最终存储
@@ -141,7 +141,10 @@ async fn complete_upload_impl(
                 if let Some(hasher) = hasher.as_mut() {
                     hasher.update(data);
                 }
-                size += n as i64;
+                let chunk_len = usize_to_i64(n, "assembled chunk length")?;
+                size = size.checked_add(chunk_len).ok_or_else(|| {
+                    AsterError::upload_assembly_failed("assembled upload size exceeds i64 range")
+                })?;
                 out_file
                     .write_all(data)
                     .await
@@ -173,42 +176,47 @@ async fn complete_upload_impl(
             .await?;
         }
 
+        // 事务外预先把 assembled 文件推到内容寻址路径。
+        // 这样事务里只剩纯 DB 操作，不会出现“commit 失败但对象已落盘”需要补偿的情况；
+        // 失败只会留下孤儿 storage 对象，由 blob GC 自然回收。
+        let dedup_context = if let Some(hasher) = hasher {
+            let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
+            let storage_path = crate::utils::storage_path_from_hash(&file_hash);
+
+            // exists() 作为冗余 PUT 的软短路：失败/返回 false 都会退化为一次 PUT，
+            // 语义等同；真正的并发安全由内容寻址 + find_or_create_blob 保证。
+            let already_stored = driver.exists(&storage_path).await.unwrap_or(false);
+            if already_stored {
+                crate::utils::cleanup_temp_file(&assembled_path).await;
+            } else {
+                let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+                    crate::errors::AsterError::storage_driver_error("stream upload not supported")
+                })?;
+                stream_driver
+                    .put_file(&storage_path, &assembled_path)
+                    .await?;
+            }
+
+            Some((file_hash, storage_path))
+        } else {
+            None
+        };
+
         let create_result = async {
             let txn = crate::db::transaction::begin(&state.db).await?;
 
-            let blob = if let Some(hasher) = hasher {
-                let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
-                let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-                let blob = file_repo::find_or_create_blob(
-                    &txn,
-                    &file_hash,
-                    size,
-                    policy.id,
-                    &storage_path,
-                )
-                .await?;
-                // dedup 插入成功时，assembled 文件要真正进存储；
-                // 如果 blob 已存在，说明别处已经持有同内容对象，临时 assembled 文件即可清理。
-                if blob.inserted {
-                    driver.put_file(&storage_path, &assembled_path).await?;
-                } else {
-                    crate::utils::cleanup_temp_file(&assembled_path).await;
-                }
+            let blob = if let Some((file_hash, storage_path)) = dedup_context.as_ref() {
+                let blob =
+                    file_repo::find_or_create_blob(&txn, file_hash, size, policy.id, storage_path)
+                        .await?;
                 blob.model
             } else if let Some(preuploaded_blob) = preuploaded_blob.as_ref() {
                 workspace_storage_service::persist_preuploaded_blob(&txn, preuploaded_blob).await?
-            } else if policy.driver_type == DriverType::S3 {
-                let blob = workspace_storage_service::create_s3_nondedup_blob(
-                    &txn, size, policy.id, upload_id,
-                )
-                .await?;
-                driver.put_file(&blob.storage_path, &assembled_path).await?;
-                blob
             } else {
-                let blob =
-                    workspace_storage_service::create_nondedup_blob(&txn, size, policy.id).await?;
-                driver.put_file(&blob.storage_path, &assembled_path).await?;
-                blob
+                // hasher.is_none() ⇔ preuploaded_blob.is_some()，不存在第三种情况。
+                return Err(AsterError::upload_assembly_failed(
+                    "unreachable: no blob source for assembled upload",
+                ));
             };
 
             let created =
@@ -231,6 +239,8 @@ async fn complete_upload_impl(
                     )
                     .await;
                 }
+                // dedup 失败不主动删 storage 对象：另一路并发上传可能正在引用同内容的 blob，
+                // 删除会造成 ref=1 的活 blob 丢数据；留给 orphan-blob GC 处理。
                 Err(error)
             }
         }
@@ -352,7 +362,7 @@ async fn complete_s3_multipart_upload_session(
     let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let multipart = state.driver_registry.get_multipart_driver(&policy)?;
-    let driver_ref = driver.as_ref() as &dyn crate::storage::StorageDriver;
+    let driver_ref: &dyn crate::storage::StorageDriver = driver.as_ref();
     let upload_id = session.id.clone();
 
     tracing::debug!(

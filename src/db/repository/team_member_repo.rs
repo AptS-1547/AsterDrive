@@ -1,3 +1,5 @@
+//! 仓储模块：`team_member_repo`。
+
 use std::collections::HashMap;
 
 use crate::db::repository::search_query::{

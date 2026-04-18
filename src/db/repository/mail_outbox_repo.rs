@@ -1,3 +1,5 @@
+//! 仓储模块：`mail_outbox_repo`。
+
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveEnum, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait,

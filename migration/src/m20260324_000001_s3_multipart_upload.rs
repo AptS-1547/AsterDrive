@@ -1,3 +1,5 @@
+//! 数据库迁移：`s3_multipart_upload`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

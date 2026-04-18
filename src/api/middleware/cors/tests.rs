@@ -1,3 +1,5 @@
+//! CORS 中间件测试。
+
 use super::constants::{ALLOWED_HEADERS, ALLOWED_METHODS};
 use super::{
     RuntimeCors, apply_origin_headers, ensure_vary, is_cors_exempt_path, request_is_same_origin,

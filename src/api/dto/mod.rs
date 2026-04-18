@@ -28,6 +28,7 @@ pub mod share_public;
 pub mod shares;
 pub mod teams;
 pub mod trash;
+pub(crate) mod validation;
 pub mod webdav;
 pub mod wopi;
 
@@ -56,5 +57,6 @@ pub use teams::{
     PatchTeamReq,
 };
 pub use trash::TrashItemPath;
+pub(crate) use validation::validate_request;
 pub use webdav::{CreateWebdavAccountReq, TestConnectionReq, WebdavSettingsInfo};
 pub use wopi::WopiAccessQuery;

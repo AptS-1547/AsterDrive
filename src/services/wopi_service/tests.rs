@@ -1,3 +1,5 @@
+//! WOPI 服务测试。
+
 use std::collections::BTreeMap;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};

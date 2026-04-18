@@ -1,3 +1,5 @@
+//! 认证服务子模块：`registration`。
+
 use chrono::Utc;
 
 use crate::config::auth_runtime::{RuntimeAuthPolicy, RuntimeContactVerificationPolicy};

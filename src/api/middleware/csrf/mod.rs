@@ -1,3 +1,5 @@
+//! CSRF 中间件模块入口。
+
 mod constants;
 mod source;
 mod token;

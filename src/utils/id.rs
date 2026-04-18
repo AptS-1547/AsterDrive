@@ -1,3 +1,5 @@
+//! 工具子模块：`id`。
+
 use uuid::Uuid;
 
 /// 生成 UUID v4 字符串（用于 share token 等）

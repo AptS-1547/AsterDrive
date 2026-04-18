@@ -1,3 +1,5 @@
+//! 团队服务子模块：`archive`。
+
 use chrono::Utc;
 use sea_orm::ConnectionTrait;
 

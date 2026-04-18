@@ -1,3 +1,5 @@
+//! `file_repo` 仓储子模块：`mutation`。
+
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, sea_query::Expr,

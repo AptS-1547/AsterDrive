@@ -1,3 +1,5 @@
+//! 认证 API 路由：`profile`。
+
 use super::{
     ActionMessageResp, RequestEmailChangeReq, UpdateAvatarSourceReq, UpdatePreferencesReq,
     UpdateProfileReq, apply_auth_mail_response_floor,

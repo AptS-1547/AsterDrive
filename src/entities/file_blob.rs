@@ -1,3 +1,5 @@
+//! SeaORM 实体定义：`file_blob`。
+
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 

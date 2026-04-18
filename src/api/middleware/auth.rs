@@ -1,3 +1,5 @@
+//! API 中间件：`auth`。
+
 use actix_web::{
     Error, HttpMessage,
     dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready},
@@ -55,7 +57,7 @@ where
         Box::pin(async move {
             let state = req
                 .app_data::<web::Data<AppState>>()
-                .expect("AppState not found");
+                .ok_or_else(|| AsterError::internal_error("AppState not found"))?;
 
             // 1. Cookie 优先
             // 2. Authorization: Bearer fallback

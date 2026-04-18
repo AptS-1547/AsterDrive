@@ -1,3 +1,5 @@
+//! 服务模块：`webdav_account_service`。
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, DbErr, Set, SqlErr};
 use serde::Serialize;

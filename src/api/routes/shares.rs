@@ -1,3 +1,5 @@
+//! API 路由：`shares`。
+
 pub use crate::api::dto::shares::*;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
@@ -5,6 +7,7 @@ use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
+use crate::api::routes::team_scope;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -29,6 +32,15 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/batch-delete", web::post().to(batch_delete_shares))
         .route("/{id}", web::patch().to(update_share))
         .route("/{id}", web::delete().to(delete_share))
+}
+
+pub fn team_routes() -> actix_web::Scope {
+    web::scope("/{team_id}/shares")
+        .route("", web::post().to(team_create_share))
+        .route("", web::get().to(team_list_shares))
+        .route("/batch-delete", web::post().to(team_batch_delete_shares))
+        .route("/{id}", web::patch().to(team_update_share))
+        .route("/{id}", web::delete().to(team_delete_share))
 }
 
 #[api_docs_macros::path(
@@ -183,6 +195,171 @@ pub async fn batch_delete_shares(
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
+        &body,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/teams/{team_id}/shares",
+    tag = "teams",
+    operation_id = "create_team_share",
+    params(("team_id" = i64, Path, description = "Team ID")),
+    request_body = CreateShareReq,
+    responses(
+        (status = 201, description = "Team share created", body = inline(ApiResponse<share_service::ShareInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_create_share(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+    body: web::Json<CreateShareReq>,
+) -> Result<HttpResponse> {
+    let team_id = *path;
+    let body = body.into_inner();
+    create_share_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        &body,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/teams/{team_id}/shares",
+    tag = "teams",
+    operation_id = "list_team_shares",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        LimitOffsetQuery
+    ),
+    responses(
+        (status = 200, description = "Team shares", body = inline(ApiResponse<OffsetPage<share_service::MyShareInfo>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_list_shares(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    query: web::Query<LimitOffsetQuery>,
+) -> Result<HttpResponse> {
+    list_shares_response(&state, team_scope(*path, claims.user_id), &query).await
+}
+
+#[api_docs_macros::path(
+    patch,
+    path = "/api/v1/teams/{team_id}/shares/{id}",
+    tag = "teams",
+    operation_id = "update_team_share",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "Share ID")
+    ),
+    request_body = UpdateShareReq,
+    responses(
+        (status = 200, description = "Team share updated", body = inline(ApiResponse<share_service::ShareInfo>)),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Share not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_update_share(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<(i64, i64)>,
+    body: web::Json<UpdateShareReq>,
+) -> Result<HttpResponse> {
+    let (team_id, share_id) = path.into_inner();
+    let body = body.into_inner();
+    update_share_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        share_id,
+        &body,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    delete,
+    path = "/api/v1/teams/{team_id}/shares/{id}",
+    tag = "teams",
+    operation_id = "delete_team_share",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "Share ID")
+    ),
+    responses(
+        (status = 200, description = "Team share deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Share not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_delete_share(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<(i64, i64)>,
+) -> Result<HttpResponse> {
+    let (team_id, share_id) = path.into_inner();
+    delete_share_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        share_id,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/teams/{team_id}/shares/batch-delete",
+    tag = "teams",
+    operation_id = "batch_delete_team_shares",
+    params(("team_id" = i64, Path, description = "Team ID")),
+    request_body = BatchDeleteSharesReq,
+    responses(
+        (status = 200, description = "Batch delete result", body = inline(ApiResponse<batch_service::BatchResult>)),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_batch_delete_shares(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+    body: web::Json<BatchDeleteSharesReq>,
+) -> Result<HttpResponse> {
+    let team_id = *path;
+    let body = body.into_inner();
+    batch_delete_shares_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
         &body,
     )
     .await

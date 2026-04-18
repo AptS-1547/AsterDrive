@@ -1,3 +1,5 @@
+//! CLI 子模块：`convert`。
+
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, FixedOffset};

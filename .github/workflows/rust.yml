@@ -93,3 +93,43 @@ jobs:
 
       - name: Clippy
         run: cargo clippy -- -D warnings
+
+  integration-backends:
+    name: Integration tests (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [postgres, mysql]
+    env:
+      ASTER_TEST_DATABASE_BACKEND: ${{ matrix.backend }}
+      # 复用 testcontainers 容器，测试间共享 Postgres/MySQL 实例
+      TESTCONTAINERS_REUSE_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: integration-${{ matrix.backend }}
+          shared-key: integration
+
+      - name: Build frontend
+        working-directory: frontend-panel
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      # testcontainers 使用的 Docker 在 ubuntu-latest 上预装
+      - name: Verify Docker availability
+        run: docker version
+
+      # 只跑集成测试（tests/ 下的），单元测试已在 build job 中覆盖
+      - name: Run integration tests against ${{ matrix.backend }}
+        run: cargo test --tests --no-fail-fast --verbose

@@ -1,3 +1,5 @@
+//! WebDAV 子模块：`path_resolver`。
+
 use sea_orm::DatabaseConnection;
 
 use crate::db::repository::{file_repo, folder_repo};

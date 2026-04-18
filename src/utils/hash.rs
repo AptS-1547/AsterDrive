@@ -1,3 +1,5 @@
+//! 工具子模块：`hash`。
+
 use crate::errors::{AsterError, MapAsterErr, Result};
 use argon2::{
     Algorithm, Argon2, Params, Version,

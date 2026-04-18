@@ -1,3 +1,5 @@
+//! 工具模块导出。
+
 pub mod hash;
 pub mod id;
 pub mod numbers;

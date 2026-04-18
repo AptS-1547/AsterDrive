@@ -1,8 +1,12 @@
+//! API 路由：`folders`。
+
 pub use crate::api::dto::folders::*;
+use crate::api::dto::validate_request;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
+use crate::api::routes::{files, team_scope};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -29,6 +33,20 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{id}/copy", web::post().to(copy_folder))
         .route("/{id}", web::delete().to(delete_folder))
         .route("/{id}", web::patch().to(patch_folder))
+}
+
+pub fn team_routes() -> actix_web::Scope {
+    web::scope("/{team_id}")
+        .route("/folders", web::get().to(team_list_root))
+        .route("/folders", web::post().to(team_create_folder))
+        .route("/folders/{id}", web::get().to(team_list_folder))
+        .route("/folders/{id}/info", web::get().to(team_get_folder_info))
+        .route("/folders/{id}", web::patch().to(team_patch_folder))
+        .route("/folders/{id}", web::delete().to(team_delete_folder))
+        .route("/folders/{id}/lock", web::post().to(team_set_lock))
+        .route("/folders/{id}/copy", web::post().to(team_copy_folder))
+        .route("/folders/{id}/ancestors", web::get().to(team_get_ancestors))
+        .service(files::team_routes())
 }
 
 #[api_docs_macros::path(
@@ -309,6 +327,290 @@ pub async fn copy_folder(
     .await
 }
 
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/teams/{team_id}/folders",
+    tag = "teams",
+    operation_id = "list_team_root",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        FolderListQuery
+    ),
+    responses(
+        (status = 200, description = "Team root folder contents", body = inline(ApiResponse<folder_service::FolderContents>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_list_root(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    query: web::Query<FolderListQuery>,
+) -> Result<HttpResponse> {
+    list_folder_response(&state, team_scope(*path, claims.user_id), None, &query).await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/teams/{team_id}/folders",
+    tag = "teams",
+    operation_id = "create_team_folder",
+    params(("team_id" = i64, Path, description = "Team ID")),
+    request_body = CreateFolderReq,
+    responses(
+        (status = 201, description = "Team folder created", body = inline(ApiResponse<FolderInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_create_folder(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    req: HttpRequest,
+    body: web::Json<CreateFolderReq>,
+) -> Result<HttpResponse> {
+    create_folder_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(*path, claims.user_id),
+        &body,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/teams/{team_id}/folders/{id}",
+    tag = "teams",
+    operation_id = "list_team_folder",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "Folder ID"),
+        FolderListQuery
+    ),
+    responses(
+        (status = 200, description = "Team folder contents", body = inline(ApiResponse<folder_service::FolderContents>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_list_folder(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<(i64, i64)>,
+    query: web::Query<FolderListQuery>,
+) -> Result<HttpResponse> {
+    let (team_id, folder_id) = path.into_inner();
+    list_folder_response(
+        &state,
+        team_scope(team_id, claims.user_id),
+        Some(folder_id),
+        &query,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/teams/{team_id}/folders/{id}/info",
+    tag = "teams",
+    operation_id = "get_team_folder_info",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "Folder ID")
+    ),
+    responses(
+        (status = 200, description = "Team folder info", body = inline(ApiResponse<FolderInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_get_folder_info(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<(i64, i64)>,
+) -> Result<HttpResponse> {
+    let (team_id, folder_id) = path.into_inner();
+    get_folder_info_response(&state, team_scope(team_id, claims.user_id), folder_id).await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/teams/{team_id}/folders/{id}/ancestors",
+    tag = "teams",
+    operation_id = "get_team_folder_ancestors",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "Folder ID")
+    ),
+    responses(
+        (status = 200, description = "Team folder ancestors", body = inline(ApiResponse<Vec<folder_service::FolderAncestorItem>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_get_ancestors(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<(i64, i64)>,
+) -> Result<HttpResponse> {
+    let (team_id, folder_id) = path.into_inner();
+    get_ancestors_response(&state, team_scope(team_id, claims.user_id), folder_id).await
+}
+
+#[api_docs_macros::path(
+    delete,
+    path = "/api/v1/teams/{team_id}/folders/{id}",
+    tag = "teams",
+    operation_id = "delete_team_folder",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "Folder ID")
+    ),
+    responses(
+        (status = 200, description = "Team folder deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_delete_folder(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<(i64, i64)>,
+) -> Result<HttpResponse> {
+    let (team_id, folder_id) = path.into_inner();
+    delete_folder_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        folder_id,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    patch,
+    path = "/api/v1/teams/{team_id}/folders/{id}",
+    tag = "teams",
+    operation_id = "patch_team_folder",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "Folder ID")
+    ),
+    request_body = PatchFolderReq,
+    responses(
+        (status = 200, description = "Team folder updated", body = inline(ApiResponse<FolderInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_patch_folder(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<(i64, i64)>,
+    body: web::Json<PatchFolderReq>,
+) -> Result<HttpResponse> {
+    let (team_id, folder_id) = path.into_inner();
+    patch_folder_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        folder_id,
+        &body,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/teams/{team_id}/folders/{id}/copy",
+    tag = "teams",
+    operation_id = "copy_team_folder",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "Source folder ID")
+    ),
+    request_body = CopyFolderReq,
+    responses(
+        (status = 201, description = "Team folder copied", body = inline(ApiResponse<FolderInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_copy_folder(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<(i64, i64)>,
+    body: web::Json<CopyFolderReq>,
+) -> Result<HttpResponse> {
+    let (team_id, folder_id) = path.into_inner();
+    copy_folder_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        folder_id,
+        &body,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/teams/{team_id}/folders/{id}/lock",
+    tag = "teams",
+    operation_id = "set_team_folder_lock",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "Folder ID")
+    ),
+    request_body = SetLockReq,
+    responses(
+        (status = 200, description = "Lock state updated", body = inline(ApiResponse<FolderInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_set_lock(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<(i64, i64)>,
+    body: web::Json<SetLockReq>,
+) -> Result<HttpResponse> {
+    let (team_id, folder_id) = path.into_inner();
+    set_lock_response(
+        &state,
+        team_scope(team_id, claims.user_id),
+        folder_id,
+        body.locked,
+    )
+    .await
+}
+
 pub(crate) async fn create_folder_response(
     state: &AppState,
     claims: &Claims,
@@ -316,6 +618,7 @@ pub(crate) async fn create_folder_response(
     scope: WorkspaceStorageScope,
     body: &CreateFolderReq,
 ) -> Result<HttpResponse> {
+    validate_request(body)?;
     let ctx = AuditContext::from_request(req, claims);
     let folder =
         folder_service::create_in_scope_with_audit(state, scope, &body.name, body.parent_id, &ctx)
@@ -382,6 +685,7 @@ pub(crate) async fn patch_folder_response(
     folder_id: i64,
     body: &PatchFolderReq,
 ) -> Result<HttpResponse> {
+    validate_request(body)?;
     let ctx = AuditContext::from_request(req, claims);
     let folder = folder_service::update_in_scope_with_audit(
         state,

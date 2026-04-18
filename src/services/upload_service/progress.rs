@@ -1,3 +1,5 @@
+//! 上传服务子模块：`progress`。
+
 use std::collections::HashMap;
 
 use crate::api::constants::HOUR_SECS;

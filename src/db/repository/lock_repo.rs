@@ -1,3 +1,5 @@
+//! 仓储模块：`lock_repo`。
+
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,

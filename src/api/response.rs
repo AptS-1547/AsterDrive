@@ -1,3 +1,5 @@
+//! 统一 API 响应封装。
+
 use actix_web::HttpResponse;
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]

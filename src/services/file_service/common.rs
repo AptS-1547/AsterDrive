@@ -1,3 +1,5 @@
+//! 文件服务子模块：`common`。
+
 use crate::entities::file;
 use crate::errors::Result;
 use crate::services::workspace_storage_service;

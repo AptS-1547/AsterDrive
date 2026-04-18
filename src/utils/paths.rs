@@ -1,3 +1,5 @@
+//! 工具子模块：`paths`。
+
 use std::path::{Component, Path, PathBuf};
 
 pub const DEFAULT_DATA_DIR: &str = "data";

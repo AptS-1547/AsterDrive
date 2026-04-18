@@ -1,3 +1,5 @@
+//! API 路由：`share_public`。
+
 use crate::api::dto::share_public::DirectLinkQuery;
 pub use crate::api::dto::share_public::VerifyPasswordReq;
 use crate::api::middleware::rate_limit;

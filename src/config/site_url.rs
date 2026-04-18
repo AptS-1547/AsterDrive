@@ -1,3 +1,5 @@
+//! 配置子模块：`site_url`。
+
 use crate::config::RuntimeConfig;
 use crate::config::cors;
 use crate::errors::Result;

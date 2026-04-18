@@ -1,3 +1,5 @@
+//! 认证 API 路由：`public`。
+
 use super::{
     ActionMessageResp, CheckResp, ContactVerificationConfirmQuery,
     ContactVerificationRedirectStatus, PasswordResetConfirmReq, PasswordResetRequestReq,

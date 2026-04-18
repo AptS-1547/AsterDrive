@@ -1,3 +1,5 @@
+//! `file_repo` 仓储聚合入口。
+
 mod blob;
 mod common;
 mod mutation;

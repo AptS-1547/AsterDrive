@@ -1,3 +1,5 @@
+//! 文件服务聚合入口。
+
 mod common;
 mod content;
 mod deletion;

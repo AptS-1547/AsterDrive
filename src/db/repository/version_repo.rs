@@ -1,3 +1,5 @@
+//! 仓储模块：`version_repo`。
+
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,

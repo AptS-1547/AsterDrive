@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_search_name_indexes`。
+
 use sea_orm::{ConnectionTrait, DbBackend};
 use sea_orm_migration::prelude::*;
 

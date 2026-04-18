@@ -1,3 +1,5 @@
+//! 集成测试：`edit`。
+
 #[macro_use]
 mod common;
 

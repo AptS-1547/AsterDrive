@@ -1,3 +1,5 @@
+//! 回收站服务子模块：`restore`。
+
 use sea_orm::{ActiveModelTrait, Set};
 
 use crate::db::repository::{file_repo, folder_repo};

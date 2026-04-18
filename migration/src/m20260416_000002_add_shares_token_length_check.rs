@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_shares_token_length_check`。
+
 use sea_orm::{ConnectionTrait, DatabaseBackend, DbErr, Statement};
 use sea_orm_migration::prelude::*;
 

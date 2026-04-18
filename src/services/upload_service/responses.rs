@@ -1,3 +1,5 @@
+//! 上传服务子模块：`responses`。
+
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;

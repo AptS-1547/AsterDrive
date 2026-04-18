@@ -1,3 +1,5 @@
+//! 批量操作服务子模块：`shared`。
+
 use std::collections::{HashMap, HashSet};
 
 use crate::db::repository::{file_repo, folder_repo};

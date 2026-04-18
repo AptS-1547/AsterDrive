@@ -1,3 +1,5 @@
+//! 管理员 API 路由：`common`。
+
 use serde::{Deserialize, de::Error as DeError};
 
 pub(crate) fn deserialize_non_null_policy_group_id<'de, D>(

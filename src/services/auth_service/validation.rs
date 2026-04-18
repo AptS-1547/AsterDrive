@@ -1,3 +1,5 @@
+//! 认证服务子模块：`validation`。
+
 use crate::errors::{AsterError, Result};
 
 pub(super) fn validate_username(username: &str) -> Result<()> {

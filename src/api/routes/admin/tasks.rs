@@ -1,3 +1,5 @@
+//! 管理员 API 路由：`tasks`。
+
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;

@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_background_task_steps`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

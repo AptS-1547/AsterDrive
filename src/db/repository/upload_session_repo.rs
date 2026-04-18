@@ -1,3 +1,5 @@
+//! 仓储模块：`upload_session_repo`。
+
 use crate::entities::upload_session::{self, Entity as UploadSession};
 use crate::errors::{AsterError, Result};
 use crate::types::UploadSessionStatus;

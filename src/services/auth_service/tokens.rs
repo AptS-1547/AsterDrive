@@ -1,3 +1,5 @@
+//! 认证服务子模块：`tokens`。
+
 use chrono::Utc;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 
@@ -6,6 +8,7 @@ use crate::entities::user;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::types::TokenType;
+use crate::utils::numbers::{i64_to_u64, u64_to_usize};
 
 use super::session::get_auth_snapshot;
 use super::{AuthSnapshot, Claims};
@@ -138,7 +141,11 @@ fn create_token(
     ttl_secs: u64,
     secret: &str,
 ) -> Result<String> {
-    let exp = (Utc::now().timestamp() as u64 + ttl_secs) as usize;
+    let now_secs = i64_to_u64(Utc::now().timestamp(), "jwt issued_at unix timestamp")?;
+    let exp_secs = now_secs.checked_add(ttl_secs).ok_or_else(|| {
+        AsterError::internal_error(format!("jwt exp overflow: {now_secs} + {ttl_secs}"))
+    })?;
+    let exp = u64_to_usize(exp_secs, "jwt exp")?;
     let claims = Claims {
         sub: user_id.to_string(),
         user_id,
@@ -155,17 +162,21 @@ fn create_token(
 }
 
 pub fn verify_token(token: &str, secret: &str) -> Result<Claims> {
-    let data = decode::<Claims>(
+    let data = match decode::<Claims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
         &Validation::default(),
-    )
-    .map_err(|e| match e.kind() {
-        jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
-            AsterError::auth_token_expired("token expired")
+    ) {
+        Ok(data) => data,
+        Err(error) => {
+            return Err(match error.kind() {
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+                    AsterError::auth_token_expired("token expired")
+                }
+                _ => AsterError::auth_token_invalid("invalid token"),
+            });
         }
-        _ => AsterError::auth_token_invalid("invalid token"),
-    })?;
+    };
     Ok(data.claims)
 }
 

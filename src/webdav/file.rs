@@ -1,3 +1,5 @@
+//! WebDAV 子模块：`file`。
+
 use std::io::SeekFrom;
 use std::sync::Arc;
 
@@ -9,6 +11,7 @@ use crate::errors::Result as AsterResult;
 use crate::runtime::AppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::storage::StorageDriver;
+use crate::utils::numbers::{i64_to_u64, u64_to_i64, usize_to_u64};
 use crate::webdav::dav::{DavFile, DavMetaData, FsError, FsFuture};
 use crate::webdav::metadata::AsterDavMeta;
 
@@ -146,14 +149,20 @@ impl AsterDavFile {
                     .driver_registry
                     .get_driver(&policy)
                     .map_err(|_| FsError::GeneralFailure)?;
+                let _stream_driver = driver.as_stream_upload().ok_or(FsError::GeneralFailure)?;
                 let prepared_upload =
                     workspace_storage_service::prepare_non_dedup_blob_upload(&policy, size_hint);
                 let storage_path = prepared_upload.storage_path().to_string();
                 let (writer, reader) = tokio::io::duplex(RELAY_DIRECT_BUFFER_SIZE);
-                let upload_driver = driver.clone();
+                let driver_for_task = driver.clone();
+                let storage_path_clone = storage_path.clone();
+                let size_clone = size_hint;
                 let upload_task = tokio::spawn(async move {
-                    upload_driver
-                        .put_reader(&storage_path, Box::new(reader), size_hint)
+                    let stream_driver = driver_for_task
+                        .as_stream_upload()
+                        .expect("stream driver should be available");
+                    stream_driver
+                        .put_reader(&storage_path_clone, Box::new(reader), size_clone)
                         .await
                 });
 
@@ -227,6 +236,23 @@ impl AsterDavFile {
     }
 }
 
+fn add_written_bytes(written: &mut u64, chunk_len: usize) -> Result<u64, FsError> {
+    let chunk_len = usize_to_u64(chunk_len);
+    let next_written = written
+        .checked_add(chunk_len)
+        .ok_or(FsError::GeneralFailure)?;
+    *written = next_written;
+    Ok(next_written)
+}
+
+fn declared_size_u64(value: i64) -> Result<u64, FsError> {
+    i64_to_u64(value, "webdav declared_size").map_err(|_| FsError::GeneralFailure)
+}
+
+fn written_size_i64(value: u64) -> Result<i64, FsError> {
+    u64_to_i64(value, "webdav written bytes").map_err(|_| FsError::GeneralFailure)
+}
+
 impl Drop for AsterDavFile {
     fn drop(&mut self) {
         let temp_path = match &self.mode {
@@ -297,7 +323,7 @@ impl DavFile for AsterDavFile {
                     file.write_all(&buf)
                         .await
                         .map_err(|_| FsError::GeneralFailure)?;
-                    *written += buf.len() as u64;
+                    add_written_bytes(written, buf.len())?;
                     Ok(())
                 }
                 FileMode::WriteDirect {
@@ -306,7 +332,10 @@ impl DavFile for AsterDavFile {
                     declared_size,
                     ..
                 } => {
-                    if written.saturating_add(buf.len() as u64) > *declared_size as u64 {
+                    let next_written = written
+                        .checked_add(usize_to_u64(buf.len()))
+                        .ok_or(FsError::GeneralFailure)?;
+                    if next_written > declared_size_u64(*declared_size)? {
                         return Err(FsError::GeneralFailure);
                     }
                     writer
@@ -315,7 +344,7 @@ impl DavFile for AsterDavFile {
                         .write_all(&buf)
                         .await
                         .map_err(|_| FsError::GeneralFailure)?;
-                    *written += buf.len() as u64;
+                    *written = next_written;
                     Ok(())
                 }
             }
@@ -339,7 +368,7 @@ impl DavFile for AsterDavFile {
                         file.write_all(chunk)
                             .await
                             .map_err(|_| FsError::GeneralFailure)?;
-                        *written += chunk.len() as u64;
+                        add_written_bytes(written, chunk.len())?;
                         let len = chunk.len();
                         buf.advance(len);
                     }
@@ -353,7 +382,10 @@ impl DavFile for AsterDavFile {
                 } => {
                     while buf.has_remaining() {
                         let chunk = buf.chunk();
-                        if written.saturating_add(chunk.len() as u64) > *declared_size as u64 {
+                        let next_written = written
+                            .checked_add(usize_to_u64(chunk.len()))
+                            .ok_or(FsError::GeneralFailure)?;
+                        if next_written > declared_size_u64(*declared_size)? {
                             return Err(FsError::GeneralFailure);
                         }
                         writer
@@ -362,7 +394,7 @@ impl DavFile for AsterDavFile {
                             .write_all(chunk)
                             .await
                             .map_err(|_| FsError::GeneralFailure)?;
-                        *written += chunk.len() as u64;
+                        *written = next_written;
                         let len = chunk.len();
                         buf.advance(len);
                     }
@@ -409,12 +441,13 @@ impl DavFile for AsterDavFile {
                         return Ok(());
                     }
 
+                    let written_size = written_size_i64(*written)?;
                     let precomputed_hash = hasher
                         .take()
                         .map(|hasher| crate::utils::hash::sha256_digest_to_hex(&hasher.finalize()));
                     let resolved_policy_hint = resolved_policy
                         .clone()
-                        .filter(|_| declared_size == &Some(*written as i64));
+                        .filter(|_| declared_size == &Some(written_size));
 
                     workspace_storage_service::store_from_temp_with_hints(
                         state,
@@ -422,7 +455,7 @@ impl DavFile for AsterDavFile {
                         *folder_id,
                         filename,
                         temp_path,
-                        *written as i64,
+                        written_size,
                         *existing_file_id,
                         true, // WebDAV: skip lock check, handler 已验证 lock token
                         resolved_policy_hint,
@@ -476,7 +509,7 @@ impl DavFile for AsterDavFile {
                         return Err(map_store_error(error));
                     }
 
-                    if *written != *declared_size as u64 {
+                    if *written != declared_size_u64(*declared_size)? {
                         if let Some(prepared_upload) = prepared_upload.take() {
                             workspace_storage_service::cleanup_preuploaded_blob_upload(
                                 driver.as_ref(),
@@ -532,7 +565,7 @@ mod tests {
     use crate::runtime::AppState;
     use crate::services::mail_service;
     use crate::storage::driver::BlobMetadata;
-    use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver};
+    use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver, StreamUploadDriver};
     use crate::types::{DriverType, UserRole, UserStatus};
     use crate::webdav::dav::DavFile;
     use async_trait::async_trait;
@@ -543,7 +576,6 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
     use std::path::Path;
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
     use tokio::io::{AsyncRead, AsyncReadExt};
 
     #[derive(Clone, Default)]
@@ -600,7 +632,7 @@ mod tests {
                 .lock()
                 .expect("mock direct S3 driver lock should succeed")
                 .get(path)
-                .map(|bytes| bytes.len() as u64)
+                .map(|bytes| u64::try_from(bytes.len()).expect("mock object size should fit u64"))
                 .unwrap_or(0);
             Ok(BlobMetadata {
                 size,
@@ -608,6 +640,13 @@ mod tests {
             })
         }
 
+        fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
+            Some(self)
+        }
+    }
+
+    #[async_trait]
+    impl StreamUploadDriver for MockDirectS3Driver {
         async fn put_file(
             &self,
             storage_path: &str,
@@ -642,15 +681,6 @@ mod tests {
                 .expect("mock direct S3 driver lock should succeed")
                 .insert(storage_path.to_string(), data);
             Ok(storage_path.to_string())
-        }
-
-        async fn presigned_url(
-            &self,
-            _path: &str,
-            _expires: Duration,
-            _options: crate::storage::driver::PresignedDownloadOptions,
-        ) -> crate::errors::Result<Option<String>> {
-            Ok(None)
         }
     }
 
@@ -804,7 +834,7 @@ mod tests {
             None,
             "direct-s3.txt".to_string(),
             None,
-            Some(payload.len() as u64),
+            Some(u64::try_from(payload.len()).expect("payload length should fit u64")),
         )
         .await
         .expect("S3 direct WebDAV file should initialize");
@@ -827,7 +857,10 @@ mod tests {
             .await
             .expect("stored file lookup should succeed")
             .expect("S3 direct WebDAV flush should create a file");
-        assert_eq!(stored.size, payload.len() as i64);
+        assert_eq!(
+            stored.size,
+            i64::try_from(payload.len()).expect("payload length should fit i64")
+        );
 
         let objects = driver
             .objects

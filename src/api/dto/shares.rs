@@ -1,3 +1,5 @@
+//! `shares` API DTO 定义。
+
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;

@@ -1,3 +1,5 @@
+//! 归档任务子模块：`compress`。
+
 use std::path::Path;
 
 use crate::entities::background_task;

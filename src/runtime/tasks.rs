@@ -1,3 +1,5 @@
+//! 运行时子模块：`tasks`。
+
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::time::Duration;

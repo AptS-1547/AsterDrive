@@ -1,3 +1,5 @@
+//! WOPI 服务子模块：`discovery`。
+
 use std::sync::LazyLock;
 use std::time::Duration as StdDuration;
 

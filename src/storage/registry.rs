@@ -1,3 +1,5 @@
+//! 存储子模块：`registry`。
+
 use super::driver::StorageDriver;
 use super::drivers::local::LocalDriver;
 use super::drivers::s3::S3Driver;

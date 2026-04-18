@@ -1,3 +1,5 @@
+//! 集成测试：`thumbnail`。
+
 #[macro_use]
 mod common;
 

@@ -1,3 +1,5 @@
+//! 文件夹服务子模块：`models`。
+
 use serde::Serialize;
 use std::collections::HashSet;
 #[cfg(all(debug_assertions, feature = "openapi"))]

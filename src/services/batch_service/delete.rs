@@ -1,3 +1,5 @@
+//! 批量操作服务子模块：`delete`。
+
 use std::collections::HashSet;
 
 use chrono::Utc;

@@ -1,3 +1,5 @@
+//! 分享服务子模块：`models`。
+
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]

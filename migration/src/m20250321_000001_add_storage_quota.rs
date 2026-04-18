@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_storage_quota`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

@@ -1,3 +1,5 @@
+//! 服务模块：`mail_template`。
+
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;

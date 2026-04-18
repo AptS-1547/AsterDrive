@@ -1,3 +1,5 @@
+//! 集成测试：`errors`。
+
 use actix_web::{ResponseError, body::to_bytes, http::StatusCode};
 use aster_drive::errors::AsterError;
 use serde_json::Value;

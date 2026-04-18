@@ -1,3 +1,5 @@
+//! 服务模块：`stream_ticket_service`。
+
 use chrono::{DateTime, Duration, Utc};
 use moka::future::Cache;
 use serde::{Deserialize, Serialize};

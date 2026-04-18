@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_contact_verification_single_active_index`。
+
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::DatabaseBackend;
 

@@ -1,3 +1,5 @@
+//! 配置子模块：`cors`。
+
 use std::collections::BTreeSet;
 
 use http::Uri;

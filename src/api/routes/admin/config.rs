@@ -1,3 +1,5 @@
+//! 管理员 API 路由：`config`。
+
 use crate::api::dto::admin::{ExecuteConfigActionReq, ExecuteConfigActionResp, SetConfigReq};
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]

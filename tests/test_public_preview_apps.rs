@@ -1,3 +1,5 @@
+//! 集成测试：`public_preview_apps`。
+
 #[macro_use]
 mod common;
 

@@ -1,3 +1,5 @@
+//! 归档解包任务子模块入口。
+
 mod import;
 mod staging;
 

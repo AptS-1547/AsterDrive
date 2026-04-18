@@ -1,3 +1,5 @@
+//! 集成测试：`wopi`。
+
 #[macro_use]
 mod common;
 

@@ -1,3 +1,5 @@
+//! 认证 API 路由：`session`。
+
 use super::{AuthTokenResp, ChangePasswordReq, storage_event_frame};
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::request_auth::{access_cookie_token, bearer_token};

@@ -1,3 +1,5 @@
+//! 数据库迁移：`resource_locks`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

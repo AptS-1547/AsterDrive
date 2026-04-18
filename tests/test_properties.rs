@@ -1,3 +1,5 @@
+//! 集成测试：`properties`。
+
 #[macro_use]
 mod common;
 

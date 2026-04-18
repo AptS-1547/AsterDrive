@@ -1,3 +1,5 @@
+//! 集成测试公共 helper。
+
 use aster_drive::runtime::AppState;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};

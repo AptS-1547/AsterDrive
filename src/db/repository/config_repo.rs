@@ -1,3 +1,5 @@
+//! 仓储模块：`config_repo`。
+
 use crate::config::definitions::{ALL_CONFIGS, ConfigDef};
 use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::system_config::{self, Entity as SystemConfig};

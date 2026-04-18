@@ -1,3 +1,5 @@
+//! 服务模块：`mail_outbox_service`。
+
 use std::sync::Arc;
 
 use chrono::{Duration, Utc};

@@ -1,3 +1,5 @@
+//! 仓储模块：`search_repo`。
+
 use crate::db::repository::search_query::{
     escape_like_query, lower_like_condition, mysql_boolean_mode_query, sqlite_fts_match_condition,
     sqlite_match_query,

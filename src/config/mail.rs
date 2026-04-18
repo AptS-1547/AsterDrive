@@ -1,3 +1,5 @@
+//! 配置子模块：`mail`。
+
 use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, Result};
 use crate::types::MailTemplateCode;

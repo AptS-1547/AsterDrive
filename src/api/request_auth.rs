@@ -1,3 +1,5 @@
+//! API 请求鉴权 helper。
+
 use actix_web::{HttpRequest, http::header};
 
 pub(crate) const ACCESS_COOKIE: &str = "aster_access";

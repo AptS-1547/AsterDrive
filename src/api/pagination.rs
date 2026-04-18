@@ -1,3 +1,5 @@
+//! API 分页参数与响应封装。
+
 use crate::entities::file;
 use crate::errors::Result;
 use serde::{Deserialize, Serialize};

@@ -1,3 +1,5 @@
+//! 配置子模块：`runtime_config`。
+
 use std::collections::HashMap;
 
 use parking_lot::RwLock;

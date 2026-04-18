@@ -1,3 +1,5 @@
+//! 统一错误类型与映射。
+
 use actix_web::http::StatusCode;
 use std::any::Any;
 

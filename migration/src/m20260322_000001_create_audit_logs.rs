@@ -1,3 +1,5 @@
+//! 数据库迁移：`create_audit_logs`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

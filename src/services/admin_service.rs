@@ -1,3 +1,5 @@
+//! 服务模块：`admin_service`。
+
 use chrono::{DateTime, Duration, LocalResult, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};

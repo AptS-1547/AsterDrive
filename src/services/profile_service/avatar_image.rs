@@ -1,3 +1,5 @@
+//! 用户资料服务子模块：`avatar_image`。
+
 use std::io::Cursor;
 
 use actix_multipart::Multipart;

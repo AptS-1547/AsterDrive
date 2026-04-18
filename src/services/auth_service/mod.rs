@@ -1,3 +1,5 @@
+//! 认证服务聚合入口。
+
 mod contact_verification;
 mod password;
 mod registration;

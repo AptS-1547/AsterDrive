@@ -1,3 +1,5 @@
+//! SeaORM 实体定义：`storage_policy_group_item`。
+
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]

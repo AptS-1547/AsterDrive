@@ -1,3 +1,5 @@
+//! 仓储模块：`pagination_repo`。
+
 use sea_orm::{ConnectionTrait, EntityTrait, PaginatorTrait, QuerySelect, Select};
 
 use crate::errors::{AsterError, Result};

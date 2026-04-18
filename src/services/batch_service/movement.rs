@@ -1,3 +1,5 @@
+//! 批量操作服务子模块：`movement`。
+
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;

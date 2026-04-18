@@ -1,3 +1,5 @@
+//! WebDAV 子模块：`metadata`。
+
 use std::time::SystemTime;
 
 use crate::entities::{file, file_blob, folder};
@@ -6,10 +8,9 @@ use crate::webdav::dav::{DavMetaData, FsResult};
 /// 将 chrono DateTimeUtc 转换为 SystemTime
 fn to_system_time(dt: chrono::DateTime<chrono::Utc>) -> SystemTime {
     let secs = dt.timestamp();
-    if secs >= 0 {
-        SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs as u64)
-    } else {
-        SystemTime::UNIX_EPOCH
+    match u64::try_from(secs) {
+        Ok(secs) => SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs),
+        Err(_) => SystemTime::UNIX_EPOCH,
     }
 }
 
@@ -46,7 +47,7 @@ impl AsterDavMeta {
     pub fn from_file(file: &file::Model, blob: &file_blob::Model) -> Self {
         Self {
             is_dir: false,
-            len: blob.size as u64,
+            len: u64::try_from(blob.size).unwrap_or_default(),
             modified: to_system_time(file.updated_at),
             created: to_system_time(file.created_at),
             etag: Some(blob.hash.clone()),

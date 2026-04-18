@@ -1,3 +1,5 @@
+//! 回收站服务子模块：`cleanup`。
+
 use std::collections::{HashMap, HashSet};
 
 use chrono::{Duration, Utc};

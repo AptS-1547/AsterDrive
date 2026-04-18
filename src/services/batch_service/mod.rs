@@ -1,3 +1,5 @@
+//! 批量操作服务聚合入口。
+
 mod copy;
 mod delete;
 mod movement;

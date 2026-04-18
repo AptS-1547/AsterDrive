@@ -1,3 +1,5 @@
+//! CLI 子模块：`database_migration`。
+
 mod apply;
 mod checkpoint;
 mod helpers;

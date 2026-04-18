@@ -1,3 +1,5 @@
+//! 仓储模块：`policy_repo`。
+
 use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::storage_policy::{self, Entity as StoragePolicy};
 use crate::errors::{AsterError, Result};

@@ -1,3 +1,5 @@
+//! 缓存实现：`redis_cache`。
+
 use super::CacheBackend;
 use async_trait::async_trait;
 use redis::AsyncCommands;

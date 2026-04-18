@@ -1,3 +1,5 @@
+//! 仓储模块：`upload_session_part_repo`。
+
 use chrono::Utc;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,

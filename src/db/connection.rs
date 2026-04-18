@@ -1,3 +1,5 @@
+//! 数据库子模块：`connection`。
+
 use crate::config::DatabaseConfig;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, SqlxSqliteConnector};

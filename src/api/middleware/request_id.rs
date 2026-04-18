@@ -1,3 +1,5 @@
+//! API 中间件：`request_id`。
+
 use actix_web::{
     Error, HttpMessage,
     dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready},

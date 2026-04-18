@@ -1,3 +1,5 @@
+//! 文件 API 路由聚合入口。
+
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::config::RateLimitConfig;
@@ -7,10 +9,6 @@ use actix_web::web;
 
 pub mod access;
 pub mod mutations;
-pub mod team_access;
-pub mod team_mutations;
-pub mod team_upload;
-pub mod team_versions;
 pub mod upload;
 pub mod versions;
 
@@ -31,29 +29,18 @@ pub use self::versions::{delete_version, list_versions, restore_version};
 pub use crate::api::dto::files::{OpenWopiRequest, VersionPath};
 
 pub(crate) use self::access::{
-    direct_link_response, download_response, get_file_response, get_thumbnail_response,
-    open_wopi_response, preview_link_response, thumbnail_response,
+    team_download, team_get_direct_link, team_get_file, team_get_preview_link, team_get_thumbnail,
+    team_open_wopi, thumbnail_response,
 };
 pub(crate) use self::mutations::{
-    copy_file_response, create_empty_response, delete_file_response, extract_archive_response,
-    patch_file_response, set_lock_response, update_content_response,
-};
-pub(crate) use self::team_access::{
-    team_download, team_get_direct_link, team_get_file, team_get_preview_link, team_get_thumbnail,
-    team_open_wopi,
-};
-pub(crate) use self::team_mutations::{
     team_copy_file, team_create_empty, team_delete_file, team_extract_archive, team_patch_file,
     team_set_lock, team_update_content,
 };
-pub(crate) use self::team_upload::{
+pub(crate) use self::upload::{
     team_cancel_upload, team_complete_upload, team_get_upload_progress, team_init_chunked_upload,
     team_presign_parts, team_upload, team_upload_chunk,
 };
-pub(crate) use self::team_versions::{
-    team_delete_version, team_list_versions, team_restore_version,
-};
-pub(crate) use self::upload::upload_response;
+pub(crate) use self::versions::{team_delete_version, team_list_versions, team_restore_version};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api);

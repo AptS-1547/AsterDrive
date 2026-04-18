@@ -1,3 +1,5 @@
+//! OpenAPI 文档装配。
+
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -130,70 +132,70 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::teams::patch_member,
         crate::api::routes::teams::delete_member,
 
-        // team_shares：团队空间下的分享创建、更新和批量移除。
-        crate::api::routes::team_shares::create_share,
-        crate::api::routes::team_shares::list_shares,
-        crate::api::routes::team_shares::update_share,
-        crate::api::routes::team_shares::delete_share,
-        crate::api::routes::team_shares::batch_delete_shares,
+        // shares：团队空间下的分享创建、更新和批量移除。
+        crate::api::routes::shares::team_create_share,
+        crate::api::routes::shares::team_list_shares,
+        crate::api::routes::shares::team_update_share,
+        crate::api::routes::shares::team_delete_share,
+        crate::api::routes::shares::team_batch_delete_shares,
 
-        // team_tasks：团队空间后台任务的查询和重试。
-        crate::api::routes::team_tasks::list_tasks,
-        crate::api::routes::team_tasks::get_task,
-        crate::api::routes::team_tasks::retry_task,
+        // tasks：团队空间后台任务的查询和重试。
+        crate::api::routes::tasks::team_list_tasks,
+        crate::api::routes::tasks::team_get_task,
+        crate::api::routes::tasks::team_retry_task,
 
-        // team_batch：团队空间内的批量删除、移动、复制与归档下载。
-        crate::api::routes::team_batch::batch_delete,
-        crate::api::routes::team_batch::batch_move,
-        crate::api::routes::team_batch::batch_copy,
-        crate::api::routes::team_batch::archive_compress,
-        crate::api::routes::team_batch::archive_download,
-        crate::api::routes::team_batch::archive_download_stream,
+        // batch：团队空间内的批量删除、移动、复制与归档下载。
+        crate::api::routes::batch::team_batch_delete,
+        crate::api::routes::batch::team_batch_move,
+        crate::api::routes::batch::team_batch_copy,
+        crate::api::routes::batch::team_archive_compress,
+        crate::api::routes::batch::team_archive_download,
+        crate::api::routes::batch::team_archive_download_stream,
 
-        // team_search：团队空间内的文件与文件夹搜索。
-        crate::api::routes::team_search::search,
+        // search：团队空间内的文件与文件夹搜索。
+        crate::api::routes::search::team_search,
 
-        // team_space：团队目录树的浏览、创建、重命名、复制、锁定与删除。
-        crate::api::routes::team_space::list_root,
-        crate::api::routes::team_space::create_folder,
-        crate::api::routes::team_space::list_folder,
-        crate::api::routes::team_space::get_folder_info,
-        crate::api::routes::team_space::get_ancestors,
-        crate::api::routes::team_space::patch_folder,
-        crate::api::routes::team_space::delete_folder,
-        crate::api::routes::team_space::set_folder_lock,
-        crate::api::routes::team_space::copy_folder,
+        // folders：团队目录树的浏览、创建、重命名、复制、锁定与删除。
+        crate::api::routes::folders::team_list_root,
+        crate::api::routes::folders::team_create_folder,
+        crate::api::routes::folders::team_list_folder,
+        crate::api::routes::folders::team_get_folder_info,
+        crate::api::routes::folders::team_get_ancestors,
+        crate::api::routes::folders::team_patch_folder,
+        crate::api::routes::folders::team_delete_folder,
+        crate::api::routes::folders::team_set_lock,
+        crate::api::routes::folders::team_copy_folder,
 
-        // files::team_*：团队文件的上传、下载、预览、版本和变更操作。
-        crate::api::routes::files::team_upload::team_upload,
-        crate::api::routes::files::team_upload::team_init_chunked_upload,
-        crate::api::routes::files::team_upload::team_upload_chunk,
-        crate::api::routes::files::team_upload::team_complete_upload,
-        crate::api::routes::files::team_upload::team_presign_parts,
-        crate::api::routes::files::team_upload::team_get_upload_progress,
-        crate::api::routes::files::team_upload::team_cancel_upload,
-        crate::api::routes::files::team_mutations::team_create_empty,
-        crate::api::routes::files::team_access::team_get_file,
-        crate::api::routes::files::team_access::team_get_direct_link,
-        crate::api::routes::files::team_access::team_get_preview_link,
-        crate::api::routes::files::team_access::team_open_wopi,
-        crate::api::routes::files::team_access::team_get_thumbnail,
-        crate::api::routes::files::team_mutations::team_update_content,
-        crate::api::routes::files::team_mutations::team_extract_archive,
-        crate::api::routes::files::team_mutations::team_set_lock,
-        crate::api::routes::files::team_mutations::team_patch_file,
-        crate::api::routes::files::team_mutations::team_copy_file,
-        crate::api::routes::files::team_versions::team_list_versions,
-        crate::api::routes::files::team_versions::team_restore_version,
-        crate::api::routes::files::team_versions::team_delete_version,
-        crate::api::routes::files::team_access::team_download,
-        crate::api::routes::files::team_mutations::team_delete_file,
+        // files：团队文件的上传、下载、预览、版本和变更操作。
+        crate::api::routes::files::upload::team_upload,
+        crate::api::routes::files::upload::team_init_chunked_upload,
+        crate::api::routes::files::upload::team_upload_chunk,
+        crate::api::routes::files::upload::team_complete_upload,
+        crate::api::routes::files::upload::team_presign_parts,
+        crate::api::routes::files::upload::team_get_upload_progress,
+        crate::api::routes::files::upload::team_cancel_upload,
+        crate::api::routes::files::mutations::team_create_empty,
+        crate::api::routes::files::access::team_get_file,
+        crate::api::routes::files::access::team_get_direct_link,
+        crate::api::routes::files::access::team_get_preview_link,
+        crate::api::routes::files::access::team_open_wopi,
+        crate::api::routes::files::access::team_get_thumbnail,
+        crate::api::routes::files::mutations::team_update_content,
+        crate::api::routes::files::mutations::team_extract_archive,
+        crate::api::routes::files::mutations::team_set_lock,
+        crate::api::routes::files::mutations::team_patch_file,
+        crate::api::routes::files::mutations::team_copy_file,
+        crate::api::routes::files::versions::team_list_versions,
+        crate::api::routes::files::versions::team_restore_version,
+        crate::api::routes::files::versions::team_delete_version,
+        crate::api::routes::files::access::team_download,
+        crate::api::routes::files::mutations::team_delete_file,
 
-        // team_trash：团队回收站的浏览、恢复和永久清理操作。
-        crate::api::routes::team_trash::list_trash,
-        crate::api::routes::team_trash::restore,
-        crate::api::routes::team_trash::purge_one,
-        crate::api::routes::team_trash::purge_all,
+        // trash：团队回收站的浏览、恢复和永久清理操作。
+        crate::api::routes::trash::team_list_trash,
+        crate::api::routes::trash::team_restore,
+        crate::api::routes::trash::team_purge_one,
+        crate::api::routes::trash::team_purge_all,
 
         // webdav_accounts：用户 WebDAV 账户的创建、启停、配置查看与连通性测试。
         crate::api::routes::webdav_accounts::list_accounts,

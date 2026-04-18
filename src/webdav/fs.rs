@@ -1,3 +1,5 @@
+//! WebDAV 子模块：`fs`。
+
 use std::pin::Pin;
 
 use futures::stream;
@@ -8,6 +10,7 @@ use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
 use crate::runtime::AppState;
 use crate::services::{file_service, folder_service, webdav_service};
 use crate::types::{EntityType, NullablePatch};
+use crate::utils::numbers::i64_to_u64;
 use crate::webdav::dav::{
     DavDirEntry, DavFile, DavFileSystem, DavMetaData, DavPath, DavProp, FsError, FsFuture,
     FsStream, OpenOptions, ReadDirMeta,
@@ -409,9 +412,13 @@ impl DavFileSystem for AsterDavFs {
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
-            let used = user.storage_used as u64;
+            let used = i64_to_u64(user.storage_used, "webdav storage_used")
+                .map_err(|_| FsError::GeneralFailure)?;
             let total = if user.storage_quota > 0 {
-                Some(user.storage_quota as u64)
+                Some(
+                    i64_to_u64(user.storage_quota, "webdav storage_quota")
+                        .map_err(|_| FsError::GeneralFailure)?,
+                )
             } else {
                 None // 无限
             };

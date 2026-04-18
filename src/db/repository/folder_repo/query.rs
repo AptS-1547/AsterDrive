@@ -1,3 +1,5 @@
+//! `folder_repo` 仓储子模块：`query`。
+
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect,

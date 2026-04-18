@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_sqlite_search_fts`。
+
 use crate::search_acceleration::{
     SqliteFtsConfig, execute_sqlite_statements, sqlite_fts_down_statements,
     sqlite_fts_up_statements,

@@ -1,3 +1,5 @@
+//! WOPI 服务子模块：`locks`。
+
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, Set};
 

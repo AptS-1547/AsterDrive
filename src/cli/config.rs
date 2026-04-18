@@ -1,3 +1,5 @@
+//! CLI 子模块：`config`。
+
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 

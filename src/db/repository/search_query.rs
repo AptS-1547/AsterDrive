@@ -1,3 +1,5 @@
+//! 仓储模块：`search_query`。
+
 use sea_orm::ExprTrait;
 use sea_orm::sea_query::{
     Alias, Expr, Func, IntoColumnRef, Query, SimpleExpr, extension::sqlite::SqliteExpr,

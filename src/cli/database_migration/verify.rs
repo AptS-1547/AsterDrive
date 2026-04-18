@@ -1,3 +1,5 @@
+//! CLI 子模块：`verify`。
+
 use std::collections::BTreeSet;
 
 use sea_orm::{ConnectionTrait, DbBackend, Statement};

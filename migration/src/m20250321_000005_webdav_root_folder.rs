@@ -1,3 +1,5 @@
+//! 数据库迁移：`webdav_root_folder`。
+
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

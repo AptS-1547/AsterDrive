@@ -1,3 +1,5 @@
+//! AsterDrive 后端 crate 入口与模块导出。
+
 pub mod alloc;
 pub mod api;
 pub mod cache;

@@ -1,3 +1,5 @@
+//! 配置子模块：`loader`。
+
 use super::schema::Config;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::utils::paths::{
@@ -240,6 +242,46 @@ upload_temp_dir = "data/.uploads"
         let cfg = load_from_dir(&dir, Some("sqlite://data/asterdrive.db?mode=rwc"), false).unwrap();
 
         assert_eq!(cfg.database.url, DEFAULT_SQLITE_DATABASE_URL);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_rejects_zero_rate_limit_values() {
+        let dir = make_temp_dir("invalid-rate-limit-zero");
+        write(
+            &dir.join(DEFAULT_CONFIG_PATH),
+            br#"[rate_limit]
+enabled = true
+
+[rate_limit.auth]
+seconds_per_request = 0
+burst_size = 5
+"#,
+        );
+
+        let err = load_from_dir(&dir, None, false).unwrap_err();
+        assert!(err.to_string().contains("invalid value: integer `0`"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_rejects_zero_rate_limit_burst_size() {
+        let dir = make_temp_dir("invalid-rate-limit-burst-zero");
+        write(
+            &dir.join(DEFAULT_CONFIG_PATH),
+            br#"[rate_limit]
+enabled = true
+
+[rate_limit.auth]
+seconds_per_request = 1
+burst_size = 0
+"#,
+        );
+
+        let err = load_from_dir(&dir, None, false).unwrap_err();
+        assert!(err.to_string().contains("invalid value: integer `0`"));
 
         let _ = std::fs::remove_dir_all(dir);
     }

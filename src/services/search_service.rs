@@ -1,3 +1,5 @@
+//! 服务模块：`search_service`。
+
 use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

@@ -1,3 +1,5 @@
+//! 仓储模块：`webdav_account_repo`。
+
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
 };

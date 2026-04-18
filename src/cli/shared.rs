@@ -1,3 +1,5 @@
+//! CLI 子模块：`shared`。
+
 use std::io::{self, IsTerminal};
 
 use crate::db;

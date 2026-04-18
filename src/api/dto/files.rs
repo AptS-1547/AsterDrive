@@ -3,13 +3,15 @@
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
+use validator::Validate;
 
 // ── Mutations ────────────────────────────────────────────────────────────────
 
 /// Create an empty file.
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CreateEmptyRequest {
+    #[validate(custom(function = "crate::api::dto::validation::validate_name"))]
     pub name: String,
     pub folder_id: Option<i64>,
 }
@@ -23,9 +25,10 @@ pub struct ExtractArchiveRequest {
 }
 
 /// Patch (partial update) a file.
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PatchFileReq {
+    #[validate(custom(function = "crate::api::dto::validation::validate_name"))]
     pub name: Option<String>,
     #[serde(default)]
     #[cfg_attr(
@@ -63,10 +66,12 @@ pub struct FileQuery {
 }
 
 /// Initialize a chunked upload session.
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct InitUploadReq {
+    #[validate(custom(function = "crate::api::dto::validation::validate_name"))]
     pub filename: String,
+    #[validate(range(min = 1, message = "total_size must be positive"))]
     pub total_size: i64,
     pub folder_id: Option<i64>,
     pub relative_path: Option<String>,

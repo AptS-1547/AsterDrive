@@ -1,3 +1,5 @@
+//! 数据库迁移：`add_files_live_name_unique_index`。
+
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::DatabaseBackend;
 

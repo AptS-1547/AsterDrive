@@ -1,3 +1,5 @@
+//! CLI 子模块：`checkpoint`。
+
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 
 use crate::errors::{AsterError, MapAsterErr, Result};

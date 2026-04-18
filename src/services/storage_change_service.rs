@@ -1,3 +1,5 @@
+//! 服务模块：`storage_change_service`。
+
 use std::collections::{BTreeSet, HashSet};
 
 use chrono::{DateTime, Utc};

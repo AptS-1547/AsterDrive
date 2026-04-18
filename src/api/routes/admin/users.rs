@@ -1,3 +1,5 @@
+//! 管理员 API 路由：`users`。
+
 use crate::api::dto::admin::{
     AdminUserListQuery, CreateUserReq, PatchUserReq, ResetUserPasswordReq,
 };

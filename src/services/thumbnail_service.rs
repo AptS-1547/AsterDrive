@@ -1,3 +1,5 @@
+//! 服务模块：`thumbnail_service`。
+
 use std::io::Cursor;
 
 use image::ImageFormat;

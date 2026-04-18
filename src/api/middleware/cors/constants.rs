@@ -1,3 +1,5 @@
+//! CORS 中间件子模块：`constants`。
+
 pub(super) const ALLOWED_METHODS: &[&str] = &[
     "GET",
     "POST",

@@ -1,3 +1,5 @@
+//! CLI 子模块：`apply`。
+
 mod convert;
 mod copy;
 

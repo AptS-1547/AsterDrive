@@ -1,3 +1,5 @@
+//! 存储策略服务子模块：`policies`。
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 

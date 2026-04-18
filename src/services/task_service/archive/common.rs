@@ -1,3 +1,5 @@
+//! 归档任务子模块：`common`。
+
 use std::io::{Read, Write};
 
 use chrono::Utc;

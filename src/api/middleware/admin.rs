@@ -1,3 +1,5 @@
+//! API 中间件：`admin`。
+
 use actix_web::{
     Error, HttpMessage,
     dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready},

@@ -1,3 +1,5 @@
+//! 数据库迁移：`fix_mysql_utc_datetime_columns`。
+
 use sea_orm::{ConnectionTrait, DbBackend, DbErr, Statement};
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::DatabaseBackend;

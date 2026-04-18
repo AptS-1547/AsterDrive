@@ -1,3 +1,5 @@
+//! 运行时子模块：`shutdown`。
+
 use super::tasks::BackgroundTasks;
 use sea_orm::DatabaseConnection;
 use tokio::signal::unix::{SignalKind, signal};

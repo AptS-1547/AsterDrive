@@ -1,3 +1,5 @@
+//! 集成测试：`services`。
+
 #[macro_use]
 mod common;
 

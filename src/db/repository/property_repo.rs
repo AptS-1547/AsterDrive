@@ -1,3 +1,5 @@
+//! 仓储模块：`property_repo`。
+
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set, TryInsertResult,
 };

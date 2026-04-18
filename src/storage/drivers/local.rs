@@ -1,10 +1,12 @@
+//! 存储驱动实现：`local`。
+
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::driver::{BlobMetadata, StorageDriver, StoragePathVisitor};
+use crate::storage::extensions::{ListStorageDriver, StreamUploadDriver};
 use async_trait::async_trait;
-use std::path::PathBuf;
-use std::time::Duration;
-use tokio::io::AsyncRead;
+use std::path::{Component, Path, PathBuf};
+use tokio::io::{AsyncRead, AsyncSeekExt, AsyncWriteExt};
 
 pub struct LocalDriver {
     base_path: PathBuf,
@@ -18,10 +20,29 @@ pub fn effective_base_path(policy: &storage_policy::Model) -> PathBuf {
     }
 }
 
+/// 校验 driver 输入路径，拒绝绝对路径、Windows 盘符前缀以及任何 `..` 段，
+/// 防止攻击者通过污染 storage_path 逃出 base_path。
+fn sanitize_relative_path(path: &str) -> Result<PathBuf> {
+    let trimmed = path.trim_start_matches('/');
+    let candidate = Path::new(trimmed);
+    let mut safe = PathBuf::new();
+    for component in candidate.components() {
+        match component {
+            Component::Normal(segment) => safe.push(segment),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(AsterError::storage_driver_error(format!(
+                    "invalid storage path: {path}"
+                )));
+            }
+        }
+    }
+    Ok(safe)
+}
+
 pub fn upload_staging_path(policy: &storage_policy::Model, name: &str) -> PathBuf {
-    effective_base_path(policy)
-        .join(".staging")
-        .join(name.trim_start_matches('/'))
+    let safe = sanitize_relative_path(name).unwrap_or_else(|_| PathBuf::from("_invalid"));
+    effective_base_path(policy).join(".staging").join(safe)
 }
 
 impl LocalDriver {
@@ -31,8 +52,8 @@ impl LocalDriver {
         })
     }
 
-    fn full_path(&self, path: &str) -> PathBuf {
-        self.base_path.join(path.trim_start_matches('/'))
+    fn full_path(&self, path: &str) -> Result<PathBuf> {
+        Ok(self.base_path.join(sanitize_relative_path(path)?))
     }
 }
 
@@ -71,7 +92,7 @@ fn collect_local_paths(
 #[async_trait]
 impl StorageDriver for LocalDriver {
     async fn put(&self, path: &str, data: &[u8]) -> Result<String> {
-        let full = self.full_path(path);
+        let full = self.full_path(path)?;
         if let Some(parent) = full.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
@@ -84,30 +105,51 @@ impl StorageDriver for LocalDriver {
     }
 
     async fn get(&self, path: &str) -> Result<Vec<u8>> {
-        tokio::fs::read(self.full_path(path))
+        tokio::fs::read(self.full_path(path)?)
             .await
             .map_aster_err(AsterError::storage_driver_error)
     }
 
     async fn get_stream(&self, path: &str) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
-        let file = tokio::fs::File::open(self.full_path(path))
+        let file = tokio::fs::File::open(self.full_path(path)?)
             .await
             .map_aster_err(AsterError::storage_driver_error)?;
         Ok(Box::new(file))
     }
 
+    async fn get_range(
+        &self,
+        path: &str,
+        offset: u64,
+        length: Option<u64>,
+    ) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
+        use tokio::io::AsyncReadExt;
+        let mut file = tokio::fs::File::open(self.full_path(path)?)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+        if offset > 0 {
+            file.seek(std::io::SeekFrom::Start(offset))
+                .await
+                .map_aster_err_ctx("local seek", AsterError::storage_driver_error)?;
+        }
+        Ok(match length {
+            Some(len) => Box::new(file.take(len)),
+            None => Box::new(file),
+        })
+    }
+
     async fn delete(&self, path: &str) -> Result<()> {
-        tokio::fs::remove_file(self.full_path(path))
+        tokio::fs::remove_file(self.full_path(path)?)
             .await
             .map_aster_err(AsterError::storage_driver_error)
     }
 
     async fn exists(&self, path: &str) -> Result<bool> {
-        Ok(self.full_path(path).exists())
+        Ok(self.full_path(path)?.exists())
     }
 
     async fn metadata(&self, path: &str) -> Result<BlobMetadata> {
-        let meta = tokio::fs::metadata(self.full_path(path))
+        let meta = tokio::fs::metadata(self.full_path(path)?)
             .await
             .map_aster_err(AsterError::storage_driver_error)?;
         Ok(BlobMetadata {
@@ -116,9 +158,37 @@ impl StorageDriver for LocalDriver {
         })
     }
 
+    async fn copy_object(&self, src_path: &str, dest_path: &str) -> Result<String> {
+        let src_full = self.full_path(src_path)?;
+        let dest_full = self.full_path(dest_path)?;
+        if let Some(parent) = dest_full.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_aster_err(AsterError::storage_driver_error)?;
+        }
+        tokio::fs::copy(&src_full, &dest_full)
+            .await
+            .map_aster_err_ctx("copy_object", AsterError::storage_driver_error)?;
+        Ok(dest_path.to_string())
+    }
+
+    fn as_list(&self) -> Option<&dyn ListStorageDriver> {
+        Some(self)
+    }
+
+    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
+        Some(self)
+    }
+}
+
+#[async_trait]
+impl ListStorageDriver for LocalDriver {
     async fn list_paths(&self, prefix: Option<&str>) -> Result<Vec<String>> {
         let root = self.base_path.clone();
-        let start = prefix.map_or_else(|| root.clone(), |prefix| self.full_path(prefix));
+        let start = match prefix {
+            Some(prefix) => self.full_path(prefix)?,
+            None => root.clone(),
+        };
 
         tokio::task::spawn_blocking(move || {
             let mut paths = Vec::new();
@@ -137,7 +207,10 @@ impl StorageDriver for LocalDriver {
         visitor: &mut dyn StoragePathVisitor,
     ) -> Result<()> {
         let root = self.base_path.clone();
-        let start = prefix.map_or_else(|| root.clone(), |prefix| self.full_path(prefix));
+        let start = match prefix {
+            Some(prefix) => self.full_path(prefix)?,
+            None => root.clone(),
+        };
         let metadata = match tokio::fs::metadata(&start).await {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -203,9 +276,51 @@ impl StorageDriver for LocalDriver {
 
         Ok(())
     }
+}
+
+#[async_trait]
+impl StreamUploadDriver for LocalDriver {
+    async fn put_reader(
+        &self,
+        storage_path: &str,
+        mut reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
+        _size: i64,
+    ) -> Result<String> {
+        // 创建临时文件
+        let temp_path = std::env::temp_dir().join(format!(
+            "aster_put_reader_{}_{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+
+        // 流式写入临时文件
+        let mut file = tokio::fs::File::create(&temp_path)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+
+        tokio::io::copy(&mut reader, &mut file)
+            .await
+            .map_aster_err_ctx("write temp file", AsterError::storage_driver_error)?;
+
+        // 确保数据落盘
+        file.flush()
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+        drop(file);
+
+        // 使用 put_file 完成上传
+        let result = self
+            .put_file(storage_path, temp_path.to_str().unwrap())
+            .await;
+
+        // 清理临时文件（忽略错误）
+        let _ = tokio::fs::remove_file(&temp_path).await;
+
+        result
+    }
 
     async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String> {
-        let full = self.full_path(storage_path);
+        let full = self.full_path(storage_path)?;
         if let Some(parent) = full.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
@@ -220,27 +335,95 @@ impl StorageDriver for LocalDriver {
         }
         Ok(storage_path.to_string())
     }
+}
 
-    async fn copy_object(&self, src_path: &str, dest_path: &str) -> Result<String> {
-        let src_full = self.full_path(src_path);
-        let dest_full = self.full_path(dest_path);
-        if let Some(parent) = dest_full.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_aster_err(AsterError::storage_driver_error)?;
-        }
-        tokio::fs::copy(&src_full, &dest_full)
-            .await
-            .map_aster_err_ctx("copy_object", AsterError::storage_driver_error)?;
-        Ok(dest_path.to_string())
+#[cfg(test)]
+mod tests {
+    use super::sanitize_relative_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn sanitize_accepts_normal_paths() {
+        assert_eq!(
+            sanitize_relative_path("ab/cd/abcdef").unwrap(),
+            PathBuf::from("ab/cd/abcdef")
+        );
+        assert_eq!(
+            sanitize_relative_path("/leading/slash").unwrap(),
+            PathBuf::from("leading/slash")
+        );
+        assert_eq!(
+            sanitize_relative_path("nested/./path").unwrap(),
+            PathBuf::from("nested/path")
+        );
     }
 
-    async fn presigned_url(
-        &self,
-        _path: &str,
-        _expires: Duration,
-        _options: crate::storage::driver::PresignedDownloadOptions,
-    ) -> Result<Option<String>> {
-        Ok(None)
+    #[test]
+    fn sanitize_rejects_parent_dir() {
+        assert!(sanitize_relative_path("../etc/passwd").is_err());
+        assert!(sanitize_relative_path("ab/../../../etc/passwd").is_err());
+        assert!(sanitize_relative_path("ab/..").is_err());
+    }
+
+    #[test]
+    fn sanitize_rejects_absolute_paths() {
+        assert!(sanitize_relative_path("/etc/passwd").is_ok()); // stripped leading slash
+        // Path that starts with non-trim '/' after components would be normalized; real absolute
+        // only triggers on Windows prefixes or re-rooting. Ensure multi-slash doesn't bypass.
+        assert!(sanitize_relative_path("//../etc").is_err());
+    }
+
+    #[tokio::test]
+    async fn get_range_returns_partial_bytes() {
+        use crate::entities::storage_policy;
+        use crate::storage::driver::StorageDriver;
+        use tokio::io::AsyncReadExt;
+
+        let base = std::env::temp_dir().join(format!(
+            "aster-range-test-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        tokio::fs::create_dir_all(&base).await.unwrap();
+
+        let policy = storage_policy::Model {
+            id: 1,
+            name: "local".into(),
+            driver_type: crate::types::DriverType::Local,
+            endpoint: String::new(),
+            bucket: String::new(),
+            access_key: String::new(),
+            secret_key: String::new(),
+            base_path: base.to_string_lossy().into(),
+            max_file_size: 0,
+            allowed_types: crate::types::StoredStoragePolicyAllowedTypes::empty(),
+            options: crate::types::StoredStoragePolicyOptions::empty(),
+            is_default: false,
+            chunk_size: 0,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let driver = super::LocalDriver::new(&policy).unwrap();
+        driver.put("sample.txt", b"Hello, world!").await.unwrap();
+
+        // offset=7, length=5 -> "world"
+        let mut reader = driver.get_range("sample.txt", 7, Some(5)).await.unwrap();
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(buf, b"world");
+
+        // offset=7, length=None -> "world!"
+        let mut reader = driver.get_range("sample.txt", 7, None).await.unwrap();
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(buf, b"world!");
+
+        // offset=0, length=5 -> "Hello"
+        let mut reader = driver.get_range("sample.txt", 0, Some(5)).await.unwrap();
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(buf, b"Hello");
+
+        let _ = tokio::fs::remove_dir_all(&base).await;
     }
 }

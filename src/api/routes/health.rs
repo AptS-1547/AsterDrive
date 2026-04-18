@@ -1,3 +1,5 @@
+//! API 路由：`health`。
+
 use crate::api::response::{ApiResponse, HealthResponse, MemoryStatsResponse};
 use crate::runtime::AppState;
 use actix_web::{HttpResponse, web};

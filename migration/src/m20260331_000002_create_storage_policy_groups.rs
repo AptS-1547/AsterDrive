@@ -1,3 +1,5 @@
+//! 数据库迁移：`create_storage_policy_groups`。
+
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::DatabaseBackend;
 

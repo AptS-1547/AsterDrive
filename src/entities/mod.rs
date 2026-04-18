@@ -1,3 +1,5 @@
+//! SeaORM 实体模块导出。
+
 pub mod audit_log;
 pub mod background_task;
 pub mod contact_verification_token;

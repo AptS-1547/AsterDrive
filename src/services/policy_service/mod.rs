@@ -1,3 +1,5 @@
+//! 存储策略服务聚合入口。
+
 mod groups;
 mod models;
 mod policies;

@@ -1,3 +1,5 @@
+//! `folder_repo` 仓储子模块：`trash`。
+
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,

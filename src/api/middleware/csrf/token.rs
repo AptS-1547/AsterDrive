@@ -1,3 +1,5 @@
+//! CSRF 中间件子模块：`token`。
+
 use actix_web::{HttpRequest, dev::ServiceRequest, http::header};
 use rand::RngExt;
 

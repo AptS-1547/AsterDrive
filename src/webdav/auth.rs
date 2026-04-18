@@ -1,3 +1,5 @@
+//! WebDAV 子模块：`auth`。
+
 use base64::Engine;
 
 use crate::db::repository::{user_repo, webdav_account_repo};

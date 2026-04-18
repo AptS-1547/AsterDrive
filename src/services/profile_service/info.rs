@@ -1,3 +1,5 @@
+//! 用户资料服务子模块：`info`。
+
 use std::collections::HashMap;
 
 use md5::{Digest, Md5};
