@@ -299,7 +299,7 @@ async fn probe_storage_driver(
     driver: &dyn crate::storage::driver::StorageDriver,
     write_error_context: &'static str,
 ) -> Result<()> {
-    let test_path = format!("_aster_connection_test/{}", uuid::Uuid::new_v4());
+    let test_path = format!("_aster_connection_test-{}", uuid::Uuid::new_v4());
     driver
         .put(&test_path, b"ok")
         .await

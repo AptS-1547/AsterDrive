@@ -1,20 +1,24 @@
 # 部署手册
 
-AsterDrive 的部署重点很简单：
+这一篇讲怎么把 AsterDrive 真正部署起来，覆盖 Docker、systemd 和直接运行二进制三种场景。
+
+如果你只是想试用一下、不打算长期跑，[快速开始](./getting-started) 的一条 `docker run` 就够了。这一篇是给你**真要上线**用的——比快速开始多了反向代理、HTTPS、数据持久化、跨数据库这些事。
+
+AsterDrive 的部署目标很简单：
 
 - 把服务稳定跑起来
 - 把数据放在可靠的位置
 - 让浏览器上传、分享、WebDAV 和在线预览 / 编辑在你的网络环境里正常工作
 
-网页、公开分享页、管理后台和 WebDAV 都由同一个 AsterDrive 服务提供，不需要另外部署一套前端站点。
+网页、公开分享页、管理后台和 WebDAV 都由同一个 AsterDrive 服务提供，**不需要另外部署一套前端站点**——这是设计上的取舍：少一个服务，少一处出错。
 
 ## 先选部署方式
 
-| 方式 | 适合谁 |
-| --- | --- |
-| Docker | NAS、家用服务器、小团队、已经有容器环境 |
-| systemd | 云主机、物理机、想长期稳定运行 |
-| 直接运行二进制 | 本机试用、临时验证 |
+| 方式            | 适合谁                                  |
+| --------------- | --------------------------------------- |
+| Docker          | NAS、家用服务器、小团队、已经有容器环境 |
+| systemd         | 云主机、物理机、想长期稳定运行          |
+| 直接运行二进制  | 本机试用、临时验证                      |
 
 第一次部署，优先选 Docker。  
 长期运行在 Linux 服务器上，优先选 systemd。
@@ -35,6 +39,14 @@ AsterDrive 的部署重点很简单：
 - `data/.uploads`
 
 这两个目录通常不需要备份，但要保证本地磁盘有足够空间。
+
+::: details 为什么 config.toml 也要备份
+`config.toml` 里有 `jwt_secret`——这是签登录 token 的密钥。
+
+如果你不备份它，重启后密钥重新生成，**所有用户的现有登录都会立刻失效**——他们需要重新登录。这不是数据丢失，但用户体验会很糟。
+
+正式部署务必把 `config.toml` 一起备份。
+:::
 
 ### 访问方式
 
@@ -79,7 +91,7 @@ bootstrap_insecure_cookies = true
 如果你要让 Finder、Windows 资源管理器、rclone 或同步工具接入，部署时就要一起考虑：
 
 - WebDAV 路径
-- 反向代理
+- 反向代理（要放行 `PROPFIND` / `MKCOL` / `MOVE` / `COPY` / `LOCK` / `UNLOCK` 这些方法，nginx 默认只放行 GET/POST/HEAD）
 - 上传大小限制
 
 ### 在线预览 / WOPI
@@ -147,9 +159,23 @@ systemd 适合长期运行的 Linux 服务器。
 ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true ./aster_drive
 ```
 
+## 数据库选哪个
+
+我们默认用 SQLite，理由前面 [快速开始](./getting-started) 讲过——零运维、单文件备份、试用门槛低。
+
+但 **SQLite 不是万能的**。下面三种情况建议直接上 PostgreSQL：
+
+- 多人长期协作，并发写入高
+- 计划部署多个 AsterDrive 实例共享同一份数据
+- 数据量预计会到几百 GB 或上千万文件
+
+切换很简单：用 `aster_drive database-migrate` 把 SQLite 数据搬到 PostgreSQL，配置改一下连接串即可。详见 [运维 CLI](/deployment/ops-cli)。
+
+我们对 PostgreSQL 和 MySQL 一视同仁——大部分功能在三个后端上行为一致。少数差异（比如 MySQL 的某些 ALTER 锁表）会在 [升级与版本迁移](/deployment/upgrade) 里明确标注。
+
 ## 需要离线检查或迁移时
 
-现在同一个 `aster_drive` 二进制里还带了运维子命令，适合这些场景：
+同一个 `aster_drive` 二进制里还带了运维子命令，适合这些场景：
 
 - 新部署后先跑一轮离线检查
 - 后台暂时进不去，直接查看或修改系统设置
@@ -203,3 +229,5 @@ http://服务器地址:3000
 - 想在命令行里做部署检查、离线配置或跨库迁移：看 [运维 CLI](/deployment/ops-cli)
 - 想确认默认目录、默认策略和后台任务是否按预期创建：看 [首次启动检查](/deployment/runtime-behavior)
 - 想改数据库、WebDAV、日志或系统设置：看 [配置说明](/config/)
+- 想做完整备份和恢复：看 [备份与恢复](/deployment/backup)
+- 升级到新版本：看 [升级与版本迁移](/deployment/upgrade)

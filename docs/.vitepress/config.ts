@@ -88,7 +88,8 @@ export default defineConfig({
             { text: '文件编辑', link: '/guide/editing' },
             { text: '上传与大文件', link: '/guide/upload-modes' },
             { text: '管理后台', link: '/guide/admin-console' },
-            { text: '错误码处理', link: '/guide/errors' }
+            { text: '错误码处理', link: '/guide/errors' },
+            { text: '关于 AsterDrive', link: '/guide/about' }
           ]
         }
       ],

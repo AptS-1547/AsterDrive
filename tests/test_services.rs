@@ -2732,7 +2732,7 @@ async fn test_team_archive_cleanup_processes_multiple_file_and_folder_batches() 
     let state = common::setup().await;
     let owner = aster_drive::services::auth_service::register(
         &state,
-        "batchcleanup-owner",
+        "batchowner",
         "batchcleanup-owner@example.com",
         "password123",
     )
