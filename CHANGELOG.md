@@ -5,6 +5,152 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.22] - 2026-04-19
+
+### Release Highlights
+
+- **WebDAV 自研协议层** — 移除 `dav-server` 依赖，自研协议分发层，支持流式读写消除临时文件开销，统一 Basic Auth 简化客户端兼容
+- **后台任务系统升级** — 引入并发控制与租约（heartbeat）机制，缩略图生成迁移到任务系统统一调度，支持多实例安全协作
+- **WOPI Microsoft 365 proof-key 验签** — 完整实现 RSA proof-key 双密钥校验机制，拒绝未来时间戳与重放攻击
+- **存储驱动架构重构** — 通过 trait 扩展（`ListStorageDriver` / `PresignedStorageDriver` / `StreamUploadDriver`）分离驱动能力
+- **运行时临时目录隔离** — 短命临时文件统一隔离至 `temp_dir/_runtime`，启动清理仅作用于该子目录
+- **可信代理与限流加固** — 限流中间件新增 `trusted_proxies` CIDR 配置；`/auth` 拆分匿名/认证两个限流桶
+- **测试基础设施大扩展** — 新增 `test_security_fixes` / `test_tasks` / `test_wopi` / `test_local_driver_security` / `test_health` 等测试文件
+
+### Added
+
+- **WebDAV 自研协议层与流式 I/O**
+  - 移除 `dav-server` crate 依赖，新增 `webdav/dav.rs` / `webdav/mod.rs` 自研协议分发层（PROPFIND/PROPPATCH/MKCOL/COPY/MOVE/LOCK/UNLOCK 全实现）
+  - 上传/下载改为完全流式，消除写入前的临时文件落盘开销
+  - LOCK 请求对不存在的路径返回 404 而非 423，符合 RFC 4918
+  - 移除 Bearer JWT 认证模式，统一使用 Basic Auth（兼容 Windows / macOS Finder / Cyberduck 等更多客户端）
+- **后台任务并发控制与租约机制**
+  - 新增 `background_task_heartbeat` 字段与租约接管机制（迁移 `m20260417_000001`），支持多实例任务系统
+  - 新增 `task_service/runtime.rs`，引入并发上限、worker 池调度
+  - 缩略图生成从 channel 队列迁移至 `task_service/thumbnail.rs` 后台任务系统统一管理
+  - 缩略图元数据持久化到 `file_blob` 表（迁移 `m20260417_000002`），避免重复生成
+- **WOPI proof-key 验签**
+  - 新增 `wopi_service/proof.rs`，实现 RSA proof-key + old-proof-key 双密钥验签
+  - `wopi_service/discovery` 拆分为 actions/apps/cache/parser/security/types/url 七个子模块
+  - 拒绝未来时间戳，增加重放窗口校验
+- **在线解压安全限制**
+  - 新增 `archive_extract_max_staging_bytes` 系统配置（默认 2 GiB），限制单次解压临时磁盘占用
+  - 解压前预校验源压缩包大小及解压后总大小之和
+  - 按存储策略校验每个 entry 的文件大小权限
+  - 使用声明大小校验实际写入字节数，防止 ZIP entry 大小篡改
+  - 失败时自动清理 staging 临时目录
+- **安全与文件名规范化**
+  - 新增 `security_headers` 安全响应头中间件，注入 CSP / `X-Frame-Options` / `Referrer-Policy`
+  - 文件名 Unicode NFC 规范化，拒绝 Windows 保留名（CON/PRN/AUX/NUL/COM*/LPT*）
+  - 引入 `validator` crate，为 admin/teams/users/policies/batch/shares/properties/webdav/wopi 等所有 DTO 添加字段级校验，路由入口统一调用 `validate_request()`
+  - 分享 cookie 签名从手写 SHA256 拼接改为 HMAC-SHA256，消除潜在侧信道
+  - S3 presigned URL TTL 上限钳制（最大 1 小时），防止超长凭证泄露
+- **可信代理与限流加固**
+  - 限流中间件新增 `trusted_proxies` CIDR 列表，按白名单从 `X-Forwarded-For` 提取真实 IP
+  - `/auth` 路由拆分为 `auth` 与 `api` 两个限流桶，避免匿名暴力请求耗尽已认证用户配额
+  - 速率限制配置增加零值校验
+- **下载与邮件可靠性**
+  - 新增 `AbortAwareStream` + `on_abort` hook，客户端断连时回滚 `download_count`，消除虚增和提前触碰 `max_downloads`
+  - `share_repo` 新增 `decrement_download_count_by` 批量回滚方法（防计数下溢）
+  - 新增 `ShareDownloadRollbackQueue` 异步回滚队列与系统配置 `share_download_rollback_queue_capacity`
+  - 邮件 `mark_sent` 在 SMTP 成功后增加退避重试（最多 5 次，总预算约 7.6s），压缩"DB 抖动→重复发信"窗口
+- **流式上传支持**
+  - 新增流式上传路径，突破 actix-web 默认 10MB payload 限制
+- **MIT License 声明** — `Cargo.toml` 显式声明 `license = "MIT"`
+- **文档**
+  - 新增 `docs/deployment/troubleshooting.md` 故障排查（启动、上传下载、分享、WebDAV、Office/WOPI、后台任务、升级异常）
+  - 新增 `docs/deployment/upgrade.md` 升级与版本迁移（Docker / systemd 流程，MySQL 大表注意事项，回滚步骤）
+  - 新增 `docs/guide/errors.md` 错误码处理手册
+  - 新增 `docs/guide/about.md` 项目定位与设计原则
+  - 新增 `developer-docs/module-designs.md` 核心模块设计文档
+- **测试**
+  - 新增 `tests/test_security_fixes.rs`（287 行）覆盖 CSRF、HMAC、proxy IP、proof-key 等修复
+  - 新增 `tests/test_tasks.rs`（979 行）覆盖任务调度、租约、并发控制、归档压缩/解压
+  - 新增 `tests/test_wopi.rs`（345 行）覆盖 proof-key 验签、锁定、会话生命周期
+  - 新增 `tests/test_local_driver_security.rs`、`tests/test_health.rs`、`tests/test_directory_upload.rs`、`tests/test_edit.rs`、`tests/test_batch.rs`、`tests/test_files.rs` 等
+  - CI 集成测试支持 Postgres / MySQL 后端
+
+### Changed
+
+- **存储驱动架构**
+  - 引入 trait 扩展机制：`StorageDriver` 拆分为基础 trait + `ListStorageDriver` / `PresignedStorageDriver` / `StreamUploadDriver` 三个能力 trait
+  - 重构目录布局：`storage/local.rs` → `storage/drivers/local.rs`，`storage/s3.rs` → `storage/drivers/s3.rs`，新增 `storage/extensions.rs`
+- **API 路由与 DTO 重组**
+  - 新增 `api/dto` 模块统一管理所有请求/响应结构（admin/auth/batch/files/folders/properties/shares/teams/trash/validation/webdav/wopi）
+  - 个人 / 团队空间路由合并：删除 `team_batch.rs` / `team_search.rs` / `team_shares.rs` / `team_space.rs` / `team_tasks.rs` / `team_trash.rs`，逻辑迁移至统一的 `batch` / `search` / `shares` / `folders` / `tasks` / `trash` 模块
+  - `auth.rs` 拆分为 `auth/cookies` / `auth/profile` / `auth/public` / `auth/session`，每个端点独立绑定限流中间件和 `JwtAuth`
+- **安全中间件重构**
+  - CSRF 中间件按 constants / source / token / tests 拆分子模块
+  - CORS 中间件按 constants / mod / tests 拆分；新增 `RuntimeCors` 支持动态策略与 WebDAV/WOPI 协议头
+  - 提取 `request_auth` 模块统一 token 提取逻辑（cookie / bearer）
+- **运行时临时目录隔离**
+  - 新增 `runtime_temp_dir` / `runtime_temp_file_path` 函数
+  - 启动时仅清理 `_runtime` 目录，保留 `tasks` 等后台任务产物
+  - 避免误删共享临时目录（如 `/tmp`）中的其他内容
+  - WebDAV、文件上传、WOPI 等模块统一切换至新临时路径
+- **大模块拆分**
+  - `download` 服务拆分为 `build` / `response` / `streaming` / `tests` / `types`
+  - `upload_service/init` 拆分为 `context` / `s3` 子模块；`complete` 拆分出 `chunked` 子模块
+  - `workspace_storage_core` 拆分为 `blob` / `file_record` / `finalize` / `path` / `policy` / `quota`
+  - `workspace_storage_service/store` 拆分出 `from_temp` 子模块
+  - `cli/doctor` 拆分为 `execute` / `storage_scan` 子模块
+  - 前端 `useUploadAreaManager` 从 1210 行单 hook 拆分为 `uploadAreaManagerShared/View`、`UploadRunners`（simple/resumable）、`UploadTaskActions`、`useUploadAreaRestore`、`useUploadAreaUploads` 等独立模块
+  - `TeamManageDialog`（1168 行）拆分为 `TeamManageShell` / `TeamManageSections` / `types`
+  - `FileBrowserPage` 拆分出 `FileBrowserDialogs` / `useFileBrowserArchiveActions` / `useFileBrowserContextValue` / `useFileBrowserDragAndDrop` / `useFileBrowserPageState`
+- **代码质量与防御性增强**
+  - 启用 `clippy::cast_possible_truncation` / `cast_sign_loss` / `unwrap_used` lint，覆盖主 crate / migration / api-docs-macros
+  - 全局以 `utils::numbers` 安全转换函数替换 `as` 数值转换
+  - 多服务超参数函数引入参数结构体（`StoreFromTempParams` / `StoreFromTempHints` / `CreateFileWithBlobInput` / `FolderListParams` / `CopyNameTemplate` 等），消除 `clippy::too_many_arguments`
+  - `get_ancestors_in_scope` 改用单次 SQL 递归查询替代逐层循环
+  - 后台周期任务每轮迭代附加 `bg_task` span，正确跨 await 传播 trace 上下文
+- **数据库**
+  - 分页查询排序规则统一调整为创建时间倒序
+  - SQLite 改用 `SqlxSqliteConnector` 替代 `Database::connect`，修复 Windows 反斜杠路径无法连接的问题
+  - 改进 SQLite URL 检测逻辑（`starts_with` 替代 `contains`）
+  - 新增 `db/transaction.rs` 统一 `begin/commit` 事务接口
+- **i18n 命名空间统一**
+  - `username` / `email` / `password` / `refresh` 等通用键迁移至 `core` 命名空间，删除 `admin` / `auth` 中的重复定义
+  - `share_expired` / `share_not_found` 错误消息从 `share` 迁移至 `errors` 命名空间
+  - `formatDate` 支持可选 i18n 参数，提供英文相对时间默认回退（just now / Xm ago / Xh ago / Xd ago）
+- **前端**
+  - 多处 `ConfirmDialog` 重构为 `useConfirmDialog` hook，消除冗余 open 状态
+  - `useStorageChangeEvents` 新增指数退避重连（上限 30s，熔断阈值 8 次）及 `onopen` 重置计数
+  - `uploadPersistence` 写入失败时优雅降级：quota 超限先裁半再重试，仍失败则清空 key 防崩溃
+  - 新增 `FilePreviewBody` / `FilePreviewPanel` / `FilePreviewMethodChooser` / `AnimatedCollapsible`（支持 `prefers-reduced-motion`）
+
+### Fixed
+
+- **WebDAV LOCK 404** — 对不存在的路径返回 404 而非 423，符合 RFC 4918
+- **SQLite Windows 路径** — 反斜杠路径无法连接的问题（改用 `SqlxSqliteConnector`），新增 Windows 风格路径集成测试
+- **WOPI 时间戳验证** — 拒绝未来时间戳，防止重放攻击
+- **存储策略失效顺序** — `policy delete` / `update` 改为先 `invalidate driver` 再 `reload snapshot`，消除静默错路由窗口
+- **下载计数虚增** — 客户端中途断连时通过 `AbortAwareStream` 回滚 `download_count`，避免提前触发 `max_downloads`
+- **邮件重复发送** — `mark_sent` 失败退避重试，压缩 DB 抖动导致的重复发信窗口
+- **后台任务关闭延迟** — `shutdown` 改用 `join_all + timeout` 替代 50ms 轮询
+- **限流配置零值** — 速率限制配置 `0` 时的退化行为修正
+- **PDF 预览跨域** — 改用 Blob 对象而非 blob URL 传递给 react-pdf，避免缓存问题
+- **CORS 配置冲突** — 前端校验禁止通配符来源与凭据同时启用
+- **路径越界静默** — 路径解析逃出 `base_dir` 时打印 warn 日志，避免配置错误静默生效
+- **`RUST_LOG` 静默覆盖** — 检测到环境变量时追加警告，提示 `config.toml` 的 level 已被覆盖
+- **多处 `unwrap` 与不安全 `as` 转换** — `build.rs`、数据库迁移、进度条、重试、任务调度、WebDAV `DavPath::root()` / `StatusCode::MULTI_STATUS` 等
+- **页面布局** — `SettingsPage` / `ShareViewPage` / `TasksPage` 等页面 flex 布局缺少 `flex-col` 的问题
+
+### Breaking Changes
+
+- **WebDAV 鉴权** — 移除 Bearer JWT 鉴权模式，WebDAV 客户端必须使用 Basic Auth（推荐使用 WebDAV 专用账号）
+- **数据库迁移（必须执行）**
+  - `m20260417_000001_add_background_task_heartbeat`：后台任务表新增 heartbeat 字段，支持多实例租约
+  - `m20260417_000002_add_file_blob_thumbnail_metadata`：file_blob 表新增缩略图元数据列
+- **存储驱动 trait 拆分** — 第三方实现的存储驱动需根据能力额外实现 `ListStorageDriver` / `PresignedStorageDriver` / `StreamUploadDriver` trait
+- **临时目录布局** — 服务启动后短命临时文件位于 `temp_dir/_runtime`；自定义清理脚本如假设 `temp_dir` 直接被清空需相应调整
+- **路由模块合并** — `team_batch` / `team_search` / `team_shares` / `team_space` / `team_tasks` / `team_trash` 等独立路由模块已删除并合入统一模块（对外 HTTP 路径不变，仅影响二次开发）
+
+---
+
+**统计数据**：
+- 608 files changed, 41,139 insertions(+), 16,484 deletions(-)
+- 33 commits
+
 ## [v0.0.1-alpha.21] - 2026-04-17
 
 ### Release Highlights
@@ -1823,7 +1969,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.21...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.22...HEAD
+[v0.0.1-alpha.22]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.21...v0.0.1-alpha.22
 [v0.0.1-alpha.21]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.20...v0.0.1-alpha.21
 [v0.0.1-alpha.20]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.19...v0.0.1-alpha.20
 [v0.0.1-alpha.19]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.18...v0.0.1-alpha.19
