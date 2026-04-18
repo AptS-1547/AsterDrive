@@ -13,6 +13,7 @@ use crate::services::{
     file_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
+use crate::utils::numbers::{u64_to_usize, usize_to_u64};
 
 const BASE62: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const DIRECT_LINK_SIG_LEN: usize = 6;
@@ -130,7 +131,9 @@ fn signature_for_file(file: &file::Model, secret: &str) -> Result<String> {
     let mut hasher = Sha256::new();
     hasher.update(format!("direct_link:{secret}:{scope_part}:{}", file.id).as_bytes());
     let digest = hasher.finalize();
-    let signature_value = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) as u64;
+    let signature_value = u64::from(u32::from_be_bytes([
+        digest[0], digest[1], digest[2], digest[3],
+    ]));
 
     encode_base62_fixed(signature_value, DIRECT_LINK_SIG_LEN)
 }
@@ -142,16 +145,18 @@ fn encode_base62(mut value: u64) -> String {
 
     let mut encoded = Vec::new();
     while value > 0 {
-        encoded.push(BASE62[(value % 62) as usize] as char);
+        let digit_index = u64_to_usize(value % 62, "base62 digit index").unwrap_or(0);
+        encoded.push(char::from(BASE62[digit_index]));
         value /= 62;
     }
     encoded.iter().rev().collect()
 }
 
 fn encode_base62_fixed(mut value: u64, width: usize) -> Result<String> {
-    let mut encoded = vec![BASE62[0] as char; width];
+    let mut encoded = vec![char::from(BASE62[0]); width];
     for index in (0..width).rev() {
-        encoded[index] = BASE62[(value % 62) as usize] as char;
+        let digit_index = u64_to_usize(value % 62, "base62 digit index")?;
+        encoded[index] = char::from(BASE62[digit_index]);
         value /= 62;
     }
 
@@ -171,7 +176,11 @@ fn decode_base62(value: &str) -> Option<u64> {
 
     let mut decoded = 0u64;
     for byte in value.bytes() {
-        let digit = BASE62.iter().position(|candidate| *candidate == byte)? as u64;
+        let digit = usize_to_u64(
+            BASE62.iter().position(|candidate| *candidate == byte)?,
+            "base62 digit index",
+        )
+        .ok()?;
         decoded = decoded.checked_mul(62)?.checked_add(digit)?;
     }
     Some(decoded)

@@ -2,38 +2,14 @@
 
 use crate::errors::{AsterError, MapAsterErr, Result};
 use argon2::{
-    Algorithm, Argon2, Params, Version,
+    Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-static FAST_PASSWORD_HASH_FOR_TESTS: AtomicBool = AtomicBool::new(false);
-
-const FAST_TEST_ARGON2_MEMORY_KIB: u32 = 1024;
-const FAST_TEST_ARGON2_TIME_COST: u32 = 1;
-const FAST_TEST_ARGON2_LANES: u32 = 1;
-
-#[doc(hidden)]
-pub fn enable_fast_password_hash_for_test() {
-    FAST_PASSWORD_HASH_FOR_TESTS.store(true, Ordering::Relaxed);
-}
 
 fn password_hasher() -> Result<Argon2<'static>> {
-    if !FAST_PASSWORD_HASH_FOR_TESTS.load(Ordering::Relaxed) {
-        return Ok(Argon2::default());
-    }
-
-    let params = Params::new(
-        FAST_TEST_ARGON2_MEMORY_KIB,
-        FAST_TEST_ARGON2_TIME_COST,
-        FAST_TEST_ARGON2_LANES,
-        None,
-    )
-    .map_aster_err(AsterError::internal_error)?;
-
-    Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
+    Ok(Argon2::default())
 }
 
 /// Argon2 密码哈希

@@ -41,6 +41,13 @@ impl DavPath {
         Ok(Self { raw, decoded })
     }
 
+    pub fn root() -> Self {
+        Self {
+            raw: "/".to_string(),
+            decoded: b"/".to_vec(),
+        }
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.decoded
     }

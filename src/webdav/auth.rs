@@ -98,8 +98,6 @@ mod tests {
     use std::sync::Arc;
 
     async fn build_auth_test_state() -> AppState {
-        hash::enable_fast_password_hash_for_test();
-
         let db = crate::db::connect(&DatabaseConfig {
             url: "sqlite::memory:".to_string(),
             pool_size: 1,

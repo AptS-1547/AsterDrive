@@ -6,6 +6,7 @@ use sea_orm::sea_query::{Alias, Query};
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, TransactionTrait, Value};
 
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::utils::numbers::{i64_to_usize, usize_to_i64};
 
 use super::super::checkpoint::update_checkpoint;
 use super::super::helpers::{now_ms, quote_ident, quote_literal, scalar_i64};
@@ -27,7 +28,10 @@ pub(super) async fn copy_tables_with_resume(
     let batch_size = copy_batch_size()?;
     let fail_after_batches = fail_after_batches()?;
     let source_backend = source.get_database_backend();
-    let start_table_index = checkpoint.current_table_index.max(0) as usize;
+    let start_table_index = i64_to_usize(
+        checkpoint.current_table_index.max(0),
+        "migration checkpoint current_table_index",
+    )?;
     let mut committed_batches = 0_i64;
 
     for table_index in start_table_index..plans.len() {
@@ -47,7 +51,7 @@ pub(super) async fn copy_tables_with_resume(
         checkpoint.stage = "data_copy".to_string();
         checkpoint.status = "running".to_string();
         checkpoint.current_table = Some(plan.name.clone());
-        checkpoint.current_table_index = table_index as i64;
+        checkpoint.current_table_index = usize_to_i64(table_index, "migration table index")?;
         checkpoint.updated_at_ms = now_ms();
         checkpoint.heartbeat_at_ms = checkpoint.updated_at_ms;
         update_checkpoint(target, checkpoint).await?;
@@ -71,11 +75,12 @@ pub(super) async fn copy_tables_with_resume(
                 ))
             })?;
 
-            offset += rows.len() as i64;
+            let row_count = usize_to_i64(rows.len(), "source batch row count")?;
+            offset += row_count;
             checkpoint.current_table = Some(plan.name.clone());
-            checkpoint.current_table_index = table_index as i64;
+            checkpoint.current_table_index = usize_to_i64(table_index, "migration table index")?;
             checkpoint.current_table_offset = offset;
-            checkpoint.copied_rows += rows.len() as i64;
+            checkpoint.copied_rows += row_count;
             checkpoint.updated_at_ms = now_ms();
             checkpoint.heartbeat_at_ms = checkpoint.updated_at_ms;
             update_checkpoint(&txn, checkpoint).await?;
@@ -103,7 +108,8 @@ pub(super) async fn copy_tables_with_resume(
         }
 
         checkpoint.current_table = None;
-        checkpoint.current_table_index = (table_index + 1) as i64;
+        checkpoint.current_table_index =
+            usize_to_i64(table_index.saturating_add(1), "next migration table index")?;
         checkpoint.current_table_offset = 0;
         checkpoint.updated_at_ms = now_ms();
         checkpoint.heartbeat_at_ms = checkpoint.updated_at_ms;

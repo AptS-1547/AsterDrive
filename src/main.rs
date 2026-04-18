@@ -1,4 +1,9 @@
 //! AsterDrive 服务端与 CLI 启动入口。
+#![deny(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::unwrap_used
+)]
 
 use actix_web::{App, HttpServer, web};
 #[cfg(feature = "cli")]

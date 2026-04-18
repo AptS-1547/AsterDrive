@@ -1,4 +1,9 @@
 //! AsterDrive 后端 crate 入口与模块导出。
+#![deny(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::unwrap_used
+)]
 
 pub mod alloc;
 pub mod api;

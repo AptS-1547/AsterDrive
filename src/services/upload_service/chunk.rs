@@ -23,22 +23,7 @@ async fn increment_session_received_count<C: sea_orm::ConnectionTrait>(
     db: &C,
     upload_id: &str,
 ) -> Result<()> {
-    use crate::entities::upload_session::{Column, Entity as UploadSession};
-    use sea_orm::{ColumnTrait, EntityTrait, ExprTrait, QueryFilter, sea_query::Expr};
-
-    let result = UploadSession::update_many()
-        .col_expr(
-            Column::ReceivedCount,
-            Expr::col(Column::ReceivedCount).add(1),
-        )
-        .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
-        .filter(Column::Id.eq(upload_id))
-        .filter(Column::Status.eq(UploadSessionStatus::Uploading))
-        .exec(db)
-        .await
-        .map_aster_err(AsterError::database_operation)?;
-
-    if result.rows_affected == 1 {
+    if upload_session_repo::increment_received_count_if_uploading(db, upload_id).await? {
         return Ok(());
     }
 

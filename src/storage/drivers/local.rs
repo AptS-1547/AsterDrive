@@ -5,6 +5,7 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::driver::{BlobMetadata, StorageDriver, StoragePathVisitor};
 use crate::storage::extensions::{ListStorageDriver, StreamUploadDriver};
 use async_trait::async_trait;
+use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 use tokio::io::{AsyncRead, AsyncSeekExt, AsyncWriteExt};
 
@@ -18,6 +19,102 @@ pub fn effective_base_path(policy: &storage_policy::Model) -> PathBuf {
     } else {
         PathBuf::from(&policy.base_path)
     }
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => match normalized.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    normalized.pop();
+                }
+                Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
+                _ => normalized.push(component.as_os_str()),
+            },
+            Component::RootDir | Component::Prefix(_) | Component::Normal(_) => {
+                normalized.push(component.as_os_str());
+            }
+        }
+    }
+
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
+}
+
+fn absolute_path(path: &Path) -> Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_aster_err_ctx(
+                "resolve local storage current_dir",
+                AsterError::storage_driver_error,
+            )?
+            .join(path)
+    };
+    Ok(normalize_path(&absolute))
+}
+
+fn resolve_existing_path(path: &Path) -> Result<PathBuf> {
+    let mut probe = absolute_path(path)?;
+    let mut missing_suffix = Vec::<OsString>::new();
+
+    loop {
+        match std::fs::symlink_metadata(&probe) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let Some(name) = probe.file_name() else {
+                    return Err(AsterError::storage_driver_error(format!(
+                        "local path has no existing ancestor: {}",
+                        path.display()
+                    )));
+                };
+                missing_suffix.push(name.to_os_string());
+                let Some(parent) = probe.parent() else {
+                    return Err(AsterError::storage_driver_error(format!(
+                        "local path has no parent: {}",
+                        path.display()
+                    )));
+                };
+                probe = parent.to_path_buf();
+            }
+            Err(error) => {
+                return Err(AsterError::storage_driver_error(format!(
+                    "inspect local path {}: {error}",
+                    probe.display()
+                )));
+            }
+        }
+    }
+
+    let mut resolved = std::fs::canonicalize(&probe)
+        .map_aster_err_ctx("canonicalize local path", AsterError::storage_driver_error)?;
+    for segment in missing_suffix.into_iter().rev() {
+        resolved.push(segment);
+    }
+    Ok(resolved)
+}
+
+fn resolve_path_within_root(root: &Path, relative: &Path, requested_path: &str) -> Result<PathBuf> {
+    let candidate = root.join(relative);
+    let resolved = resolve_existing_path(&candidate)?;
+    if resolved.starts_with(root) {
+        Ok(resolved)
+    } else {
+        Err(AsterError::storage_driver_error(format!(
+            "resolved storage path escapes base path: {requested_path}"
+        )))
+    }
+}
+
+pub fn resolved_base_path(policy: &storage_policy::Model) -> Result<PathBuf> {
+    resolve_existing_path(&effective_base_path(policy))
 }
 
 /// 校验 driver 输入路径，拒绝绝对路径、Windows 盘符前缀以及任何 `..` 段，
@@ -40,20 +137,21 @@ fn sanitize_relative_path(path: &str) -> Result<PathBuf> {
     Ok(safe)
 }
 
-pub fn upload_staging_path(policy: &storage_policy::Model, name: &str) -> PathBuf {
+pub fn upload_staging_path(policy: &storage_policy::Model, name: &str) -> Result<PathBuf> {
+    let root = resolved_base_path(policy)?;
     let safe = sanitize_relative_path(name).unwrap_or_else(|_| PathBuf::from("_invalid"));
-    effective_base_path(policy).join(".staging").join(safe)
+    resolve_path_within_root(&root, &Path::new(".staging").join(safe), name)
 }
 
 impl LocalDriver {
     pub fn new(policy: &storage_policy::Model) -> Result<Self> {
         Ok(Self {
-            base_path: effective_base_path(policy),
+            base_path: resolved_base_path(policy)?,
         })
     }
 
     fn full_path(&self, path: &str) -> Result<PathBuf> {
-        Ok(self.base_path.join(sanitize_relative_path(path)?))
+        resolve_path_within_root(&self.base_path, &sanitize_relative_path(path)?, path)
     }
 }
 
@@ -309,9 +407,10 @@ impl StreamUploadDriver for LocalDriver {
         drop(file);
 
         // 使用 put_file 完成上传
-        let result = self
-            .put_file(storage_path, temp_path.to_str().unwrap())
-            .await;
+        let temp_path_str = temp_path.to_str().ok_or_else(|| {
+            AsterError::storage_driver_error("temp upload path is not valid UTF-8")
+        })?;
+        let result = self.put_file(storage_path, temp_path_str).await;
 
         // 清理临时文件（忽略错误）
         let _ = tokio::fs::remove_file(&temp_path).await;
@@ -340,7 +439,27 @@ impl StreamUploadDriver for LocalDriver {
 #[cfg(test)]
 mod tests {
     use super::sanitize_relative_path;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
+
+    fn build_policy(base: &Path) -> crate::entities::storage_policy::Model {
+        crate::entities::storage_policy::Model {
+            id: 1,
+            name: "local".into(),
+            driver_type: crate::types::DriverType::Local,
+            endpoint: String::new(),
+            bucket: String::new(),
+            access_key: String::new(),
+            secret_key: String::new(),
+            base_path: base.to_string_lossy().into(),
+            max_file_size: 0,
+            allowed_types: crate::types::StoredStoragePolicyAllowedTypes::empty(),
+            options: crate::types::StoredStoragePolicyOptions::empty(),
+            is_default: false,
+            chunk_size: 0,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
 
     #[test]
     fn sanitize_accepts_normal_paths() {
@@ -375,7 +494,6 @@ mod tests {
 
     #[tokio::test]
     async fn get_range_returns_partial_bytes() {
-        use crate::entities::storage_policy;
         use crate::storage::driver::StorageDriver;
         use tokio::io::AsyncReadExt;
 
@@ -386,23 +504,7 @@ mod tests {
         ));
         tokio::fs::create_dir_all(&base).await.unwrap();
 
-        let policy = storage_policy::Model {
-            id: 1,
-            name: "local".into(),
-            driver_type: crate::types::DriverType::Local,
-            endpoint: String::new(),
-            bucket: String::new(),
-            access_key: String::new(),
-            secret_key: String::new(),
-            base_path: base.to_string_lossy().into(),
-            max_file_size: 0,
-            allowed_types: crate::types::StoredStoragePolicyAllowedTypes::empty(),
-            options: crate::types::StoredStoragePolicyOptions::empty(),
-            is_default: false,
-            chunk_size: 0,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        };
+        let policy = build_policy(&base);
         let driver = super::LocalDriver::new(&policy).unwrap();
         driver.put("sample.txt", b"Hello, world!").await.unwrap();
 
@@ -425,5 +527,53 @@ mod tests {
         assert_eq!(buf, b"Hello");
 
         let _ = tokio::fs::remove_dir_all(&base).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn put_rejects_symlink_escape_inside_storage_root() {
+        use crate::storage::driver::StorageDriver;
+
+        let temp_root = std::env::temp_dir().join(format!(
+            "aster-local-symlink-test-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let base = temp_root.join("storage");
+        let outside = temp_root.join("outside");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, base.join("escape")).unwrap();
+
+        let policy = build_policy(&base);
+        let driver = super::LocalDriver::new(&policy).unwrap();
+        let result = driver.put("escape/pwned.txt", b"nope").await;
+
+        assert!(result.is_err());
+        assert!(!outside.join("pwned.txt").exists());
+
+        let _ = tokio::fs::remove_dir_all(&temp_root).await;
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staging_path_rejects_symlink_escape() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "aster-local-staging-symlink-test-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let base = temp_root.join("storage");
+        let outside = temp_root.join("outside");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, base.join(".staging")).unwrap();
+
+        let policy = build_policy(&base);
+        let result = super::upload_staging_path(&policy, "token.upload");
+
+        assert!(result.is_err());
+
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 }

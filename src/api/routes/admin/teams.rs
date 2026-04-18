@@ -1,6 +1,7 @@
 //! 管理员 API 路由：`teams`。
 
 use crate::api::dto::admin::{AdminCreateTeamReq, AdminPatchTeamReq, AdminTeamListQuery};
+use crate::api::dto::validate_request;
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
@@ -62,6 +63,7 @@ pub async fn create_team(
     req: HttpRequest,
     body: web::Json<AdminCreateTeamReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let team = team_service::create_admin_team_with_audit(
         &state,
@@ -121,6 +123,7 @@ pub async fn update_team(
     path: web::Path<i64>,
     body: web::Json<AdminPatchTeamReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let team = team_service::update_admin_team_with_audit(
         &state,
@@ -283,6 +286,7 @@ pub async fn add_team_member(
     path: web::Path<i64>,
     body: web::Json<AddTeamMemberReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let member = team_service::add_admin_member_with_audit(
         &state,

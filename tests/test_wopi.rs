@@ -2055,3 +2055,17 @@ async fn test_team_file_wopi_open_rejects_non_member() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
 }
+
+#[actix_web::test]
+async fn test_wopi_rejects_blank_access_token_query() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/wopi/files/1?access_token=")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "value cannot be empty");
+}

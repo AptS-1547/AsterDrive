@@ -2,16 +2,18 @@
 
 use std::env;
 use std::fs;
+use std::io;
 use std::path::Path;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=frontend-panel/dist");
 
     // 构建时间
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
     println!("cargo:rustc-env=ASTER_BUILD_TIME={now}");
 
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR")
+        .map_err(|error| io::Error::other(format!("missing CARGO_MANIFEST_DIR: {error}")))?;
     let dist_path = Path::new(&manifest_dir).join("frontend-panel/dist");
 
     if !dist_path.exists() {
@@ -19,12 +21,14 @@ fn main() {
         eprintln!("Please build the frontend first:");
         eprintln!("  cd frontend-panel && bun install && bun run build");
 
-        create_fallback_files(&dist_path);
+        create_fallback_files(&dist_path)?;
     }
+
+    Ok(())
 }
 
-fn create_fallback_files(dist_path: &Path) {
-    fs::create_dir_all(dist_path).expect("Failed to create dist directory");
+fn create_fallback_files(dist_path: &Path) -> io::Result<()> {
+    fs::create_dir_all(dist_path)?;
 
     let fallback_html = r#"<!DOCTYPE html>
 <html lang="en">
@@ -68,10 +72,10 @@ fn create_fallback_files(dist_path: &Path) {
 </body>
 </html>"#;
 
-    fs::write(dist_path.join("index.html"), fallback_html)
-        .expect("Failed to write fallback index.html");
+    fs::write(dist_path.join("index.html"), fallback_html)?;
 
-    fs::write(dist_path.join("favicon.ico"), []).expect("Failed to write fallback favicon");
+    fs::write(dist_path.join("favicon.ico"), [])?;
 
-    fs::create_dir_all(dist_path.join("assets")).expect("Failed to create assets directory");
+    fs::create_dir_all(dist_path.join("assets"))?;
+    Ok(())
 }

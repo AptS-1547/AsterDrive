@@ -1,6 +1,7 @@
 //! 管理员 API 路由：`policies`。
 
 use crate::api::dto::admin as dto;
+use crate::api::dto::validate_request;
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
@@ -169,6 +170,7 @@ pub async fn create_policy(
     state: web::Data<AppState>,
     body: web::Json<CreatePolicyReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let policy = policy_service::create(&state, body.into_inner().into()).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(policy)))
 }
@@ -212,6 +214,7 @@ pub async fn update_policy(
     path: web::Path<i64>,
     body: web::Json<PatchPolicyReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let policy = policy_service::update(&state, *path, body.into_inner().into()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
@@ -273,6 +276,7 @@ pub async fn test_policy_connection(
     security(("bearer" = [])),
 )]
 pub async fn test_policy_params(body: web::Json<TestPolicyParamsReq>) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     policy_service::test_connection_params(body.into_inner().into()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
@@ -320,6 +324,7 @@ pub async fn create_policy_group(
     req: HttpRequest,
     body: web::Json<CreatePolicyGroupReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let group = policy_service::create_group(&state, body.into_inner().into()).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
@@ -384,6 +389,7 @@ pub async fn update_policy_group(
     path: web::Path<i64>,
     body: web::Json<PatchPolicyGroupReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let group = policy_service::update_group(&state, *path, body.into_inner().into()).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
@@ -467,6 +473,7 @@ pub async fn migrate_policy_group_users(
     path: web::Path<i64>,
     body: web::Json<MigratePolicyGroupUsersReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let source_group = policy_service::get_group(&state, *path).await?;
     let target_group = policy_service::get_group(&state, body.target_group_id).await?;
     let result = policy_service::migrate_group_users(&state, *path, body.target_group_id).await?;

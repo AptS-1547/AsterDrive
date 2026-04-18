@@ -11,6 +11,7 @@ use crate::runtime::AppState;
 use crate::services::mail_service;
 use crate::types::{UserRole, UserStatus, VerificationChannel, VerificationPurpose};
 use crate::utils::hash;
+use crate::utils::numbers::u64_to_i64;
 
 use super::validation::{normalize_email, normalize_username, validate_password};
 use super::{ACTIVE_VERIFICATION_REQUEST_MESSAGE, INITIAL_SESSION_VERSION};
@@ -248,7 +249,7 @@ pub(super) async fn issue_contact_verification_token<C: ConnectionTrait>(
         purpose: Set(purpose),
         target: Set(target.to_string()),
         token_hash: Set(token_hash),
-        expires_at: Set(now + Duration::seconds(ttl_secs as i64)),
+        expires_at: Set(now + Duration::seconds(u64_to_i64(ttl_secs, "contact verification ttl")?)),
         consumed_at: Set(None),
         created_at: Set(now),
         ..Default::default()
@@ -300,7 +301,11 @@ pub(super) async fn resend_allowed<C: ConnectionTrait>(
         return Ok(true);
     };
 
-    let allowed_at = latest.created_at + Duration::seconds(policy.resend_cooldown_secs as i64);
+    let allowed_at = latest.created_at
+        + Duration::seconds(u64_to_i64(
+            policy.resend_cooldown_secs,
+            "contact verification resend cooldown",
+        )?);
     Ok(allowed_at <= Utc::now())
 }
 
@@ -321,8 +326,11 @@ pub(super) async fn password_reset_request_allowed<C: ConnectionTrait>(
         return Ok(true);
     };
 
-    let allowed_at =
-        latest.created_at + Duration::seconds(policy.password_reset_request_cooldown_secs as i64);
+    let allowed_at = latest.created_at
+        + Duration::seconds(u64_to_i64(
+            policy.password_reset_request_cooldown_secs,
+            "password reset request cooldown",
+        )?);
     Ok(allowed_at <= Utc::now())
 }
 

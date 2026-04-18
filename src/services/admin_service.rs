@@ -14,6 +14,7 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::audit_service;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, UserStatus};
+use crate::utils::numbers::u32_to_usize;
 
 type DateTimeUtc = DateTime<Utc>;
 
@@ -228,11 +229,12 @@ async fn build_daily_reports(
     days: u32,
     timezone: Tz,
 ) -> Result<Vec<AdminOverviewDailyReport>> {
-    let mut reports = Vec::with_capacity(days as usize);
-    let mut report_indexes = HashMap::with_capacity(days as usize);
+    let capacity = u32_to_usize(days, "admin overview days")?;
+    let mut reports = Vec::with_capacity(capacity);
+    let mut report_indexes = HashMap::with_capacity(capacity);
 
     for offset in 0..days {
-        let date = today - Duration::days(offset as i64);
+        let date = today - Duration::days(i64::from(offset));
         report_indexes.insert(date, reports.len());
 
         reports.push(AdminOverviewDailyReport {
@@ -246,7 +248,7 @@ async fn build_daily_reports(
         });
     }
 
-    let oldest_date = today - Duration::days(days.saturating_sub(1) as i64);
+    let oldest_date = today - Duration::days(i64::from(days.saturating_sub(1)));
     let start = start_of_local_day(oldest_date, timezone)?;
     let end = start_of_local_day(today + Duration::days(1), timezone)?;
 

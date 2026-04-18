@@ -1060,3 +1060,26 @@ async fn test_batch_empty_request() {
     let body: Value = test::read_body_json(resp).await;
     assert_ne!(body["code"], 0);
 }
+
+#[actix_web::test]
+async fn test_batch_move_rejects_non_positive_target_folder_id() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/move")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "file_ids": [file_id],
+            "folder_ids": [],
+            "target_folder_id": 0
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "target_folder_id must be greater than 0");
+}

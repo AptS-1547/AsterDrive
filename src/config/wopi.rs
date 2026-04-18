@@ -101,11 +101,16 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         assert_eq!(
             access_token_ttl_secs(&runtime_config),
-            DEFAULT_WOPI_ACCESS_TOKEN_TTL_SECS as i64
+            crate::utils::numbers::u64_to_i64(
+                DEFAULT_WOPI_ACCESS_TOKEN_TTL_SECS,
+                WOPI_ACCESS_TOKEN_TTL_SECS_KEY,
+            )
+            .unwrap()
         );
         assert_eq!(
             lock_ttl_secs(&runtime_config),
-            DEFAULT_WOPI_LOCK_TTL_SECS as i64
+            crate::utils::numbers::u64_to_i64(DEFAULT_WOPI_LOCK_TTL_SECS, WOPI_LOCK_TTL_SECS_KEY,)
+                .unwrap()
         );
         assert_eq!(
             discovery_cache_ttl_secs(&runtime_config),
@@ -118,11 +123,16 @@ mod tests {
 
         assert_eq!(
             access_token_ttl_secs(&runtime_config),
-            DEFAULT_WOPI_ACCESS_TOKEN_TTL_SECS as i64
+            crate::utils::numbers::u64_to_i64(
+                DEFAULT_WOPI_ACCESS_TOKEN_TTL_SECS,
+                WOPI_ACCESS_TOKEN_TTL_SECS_KEY,
+            )
+            .unwrap()
         );
         assert_eq!(
             lock_ttl_secs(&runtime_config),
-            DEFAULT_WOPI_LOCK_TTL_SECS as i64
+            crate::utils::numbers::u64_to_i64(DEFAULT_WOPI_LOCK_TTL_SECS, WOPI_LOCK_TTL_SECS_KEY,)
+                .unwrap()
         );
         assert_eq!(
             discovery_cache_ttl_secs(&runtime_config),

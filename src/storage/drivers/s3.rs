@@ -95,7 +95,17 @@ where
         match Pin::new(&mut self.stream).poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(Ok(chunk))) => {
-                let chunk_len = numbers::usize_to_u64(chunk.len());
+                let chunk_len =
+                    match numbers::usize_to_u64(chunk.len(), "s3 upload stream chunk size") {
+                        Ok(value) => value,
+                        Err(error) => {
+                            self.finished = true;
+                            return Poll::Ready(Some(Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                error.to_string(),
+                            ))));
+                        }
+                    };
                 if chunk_len > self.remaining {
                     self.finished = true;
                     return Poll::Ready(Some(Err(std::io::Error::new(

@@ -1,6 +1,7 @@
 //! 运行时子模块：`logging`。
 
 use crate::config::LoggingConfig;
+use crate::utils::numbers::u32_to_usize;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling;
 
@@ -24,11 +25,13 @@ pub fn init_logging(config: &LoggingConfig) -> LoggingInitResult {
                 .file_name()
                 .unwrap_or(std::ffi::OsStr::new("aster_drive.log"));
             let filename_str = filename.to_str().unwrap_or("aster_drive.log");
+            let max_log_files =
+                u32_to_usize(config.max_backups, "logging.max_backups").unwrap_or(usize::MAX);
             match rolling::Builder::new()
                 .rotation(rolling::Rotation::DAILY)
                 .filename_prefix(filename_str.trim_end_matches(".log"))
                 .filename_suffix("log")
-                .max_log_files(config.max_backups as usize)
+                .max_log_files(max_log_files)
                 .build(dir)
             {
                 Ok(appender) => (Box::new(appender), None),

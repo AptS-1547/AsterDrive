@@ -2,6 +2,7 @@
 
 use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, Result};
+use crate::utils::numbers::{u64_to_i64, u64_to_usize, usize_to_u64};
 
 pub use crate::config::definitions::{
     AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY, BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY,
@@ -71,10 +72,15 @@ pub fn background_task_dispatch_interval_secs(runtime_config: &RuntimeConfig) ->
 }
 
 pub fn background_task_max_concurrency(runtime_config: &RuntimeConfig) -> usize {
+    let default_value = usize_to_u64(
+        DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY,
+        BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+    )
+    .unwrap_or(u64::MAX);
     usize::try_from(read_positive_u64(
         runtime_config,
         BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
-        DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY as u64,
+        default_value,
     ))
     .unwrap_or_else(|_| {
         tracing::warn!(
@@ -130,6 +136,11 @@ pub fn task_list_max_limit(runtime_config: &RuntimeConfig) -> u64 {
 }
 
 pub fn avatar_max_upload_size_bytes(runtime_config: &RuntimeConfig) -> usize {
+    let default_value = u64_to_usize(
+        DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES,
+        AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
+    )
+    .unwrap_or(usize::MAX);
     usize::try_from(read_positive_u64(
         runtime_config,
         AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
@@ -140,22 +151,30 @@ pub fn avatar_max_upload_size_bytes(runtime_config: &RuntimeConfig) -> usize {
             key = AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
             "avatar upload size config exceeds usize; using default"
         );
-        DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES as usize
+        default_value
     })
 }
 
 pub fn thumbnail_max_source_bytes(runtime_config: &RuntimeConfig) -> i64 {
-    i64::try_from(read_positive_u64(
-        runtime_config,
-        THUMBNAIL_MAX_SOURCE_BYTES_KEY,
+    let default_value = u64_to_i64(
         DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES,
-    ))
+        THUMBNAIL_MAX_SOURCE_BYTES_KEY,
+    )
+    .unwrap_or(i64::MAX);
+    u64_to_i64(
+        read_positive_u64(
+            runtime_config,
+            THUMBNAIL_MAX_SOURCE_BYTES_KEY,
+            DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES,
+        ),
+        THUMBNAIL_MAX_SOURCE_BYTES_KEY,
+    )
     .unwrap_or_else(|_| {
         tracing::warn!(
             key = THUMBNAIL_MAX_SOURCE_BYTES_KEY,
             "thumbnail source size config exceeds i64; using default"
         );
-        DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES as i64
+        default_value
     })
 }
 
@@ -378,7 +397,11 @@ mod tests {
         runtime_config.apply(config_model(AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY, "invalid"));
         assert_eq!(
             avatar_max_upload_size_bytes(&runtime_config),
-            DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES as usize
+            crate::utils::numbers::u64_to_usize(
+                DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES,
+                AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
+            )
+            .unwrap()
         );
     }
 }

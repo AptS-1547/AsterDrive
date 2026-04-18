@@ -1,7 +1,7 @@
 //! 服务模块：`user_service`。
 
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
+use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -435,10 +435,7 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     lock_repo::delete_all_by_owner(db, target_user_id).await?;
 
     // 8. 删除用户记录
-    user::Entity::delete_by_id(target_user_id)
-        .exec(db)
-        .await
-        .map_aster_err(AsterError::database_operation)?;
+    user_repo::delete(db, target_user_id).await?;
 
     state
         .policy_snapshot

@@ -181,6 +181,17 @@ pub async fn create<C: ConnectionTrait>(db: &C, model: user::ActiveModel) -> Res
     model.insert(db).await.map_err(AsterError::from)
 }
 
+pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    let result = User::delete_by_id(id)
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    if result.rows_affected == 0 {
+        return Err(AsterError::record_not_found(format!("user #{id}")));
+    }
+    Ok(())
+}
+
 /// 检查用户配额是否足够。quota=0 表示不限。
 ///
 /// 注意：这只是 fast-fail 预检，并发场景下两个请求可能同时通过此检查后超额。

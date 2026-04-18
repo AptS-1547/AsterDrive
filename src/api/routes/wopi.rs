@@ -17,6 +17,7 @@
 //! 这些路径还和 `session::build_public_wopi_src()`、PUT_RELATIVE 返回 URL 直接耦合，
 //! 不能只改路由而不改 launch / response 生成逻辑。
 
+use crate::api::dto::validate_request;
 use crate::api::dto::wopi::WopiAccessQuery;
 use crate::runtime::AppState;
 use crate::services::{file_service, wopi_service};
@@ -47,6 +48,9 @@ pub async fn check_file_info(
     path: web::Path<i64>,
     query: web::Query<WopiAccessQuery>,
 ) -> HttpResponse {
+    if let Err(error) = validate_request(&*query) {
+        return protocol_error_response(error);
+    }
     match wopi_service::check_file_info(
         &state,
         *path,
@@ -66,6 +70,9 @@ pub async fn get_file_contents(
     path: web::Path<i64>,
     query: web::Query<WopiAccessQuery>,
 ) -> HttpResponse {
+    if let Err(error) = validate_request(&*query) {
+        return protocol_error_response(error);
+    }
     let if_none_match = req
         .headers()
         .get("If-None-Match")
@@ -105,6 +112,9 @@ pub async fn put_file_contents(
     query: web::Query<WopiAccessQuery>,
     body: web::Bytes,
 ) -> HttpResponse {
+    if let Err(error) = validate_request(&*query) {
+        return protocol_error_response(error);
+    }
     let override_value = header_value(&req, "X-WOPI-Override");
     if !override_value.eq_ignore_ascii_case("PUT") {
         return HttpResponse::NotImplemented().finish();
@@ -135,6 +145,9 @@ pub async fn file_operation(
     query: web::Query<WopiAccessQuery>,
     body: web::Bytes,
 ) -> HttpResponse {
+    if let Err(error) = validate_request(&*query) {
+        return protocol_error_response(error);
+    }
     let override_value = header_value(&req, "X-WOPI-Override");
     let requested_lock = optional_header_value(&req, "X-WOPI-Lock").unwrap_or_default();
     let old_lock = optional_header_value(&req, "X-WOPI-OldLock").unwrap_or_default();

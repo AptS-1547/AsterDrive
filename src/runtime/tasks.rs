@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use super::AppState;
+use crate::utils::numbers::u128_to_u64;
 
 const BACKGROUND_TASK_SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
 const MAINTENANCE_CLEANUP_JITTER_CAP: Duration = Duration::from_secs(30);
@@ -181,12 +182,23 @@ fn periodic_sleep_duration(base_interval: Duration, jitter_cap: Option<Duration>
         return base_interval;
     }
 
-    let jitter_ms = rand::rng().random_range(0..=max_jitter_ms.min(u128::from(u64::MAX)) as u64);
+    let jitter_ms = rand::rng().random_range(
+        0..=u128_to_u64(
+            max_jitter_ms.min(u128::from(u64::MAX)),
+            "background task jitter",
+        )
+        .unwrap_or(u64::MAX),
+    );
     base_interval.saturating_add(Duration::from_millis(jitter_ms))
 }
 
 fn effective_jitter_cap(base_interval: Duration, jitter_cap: Duration) -> Duration {
-    let bounded_ms = (base_interval.as_millis().min(u128::from(u64::MAX)) as u64) / 10;
+    let bounded_ms = u128_to_u64(
+        base_interval.as_millis().min(u128::from(u64::MAX)),
+        "base interval millis",
+    )
+    .unwrap_or(u64::MAX)
+        / 10;
     jitter_cap.min(Duration::from_millis(bounded_ms))
 }
 

@@ -6,6 +6,7 @@ mod copy;
 use migration::{Migrator, MigratorTrait};
 
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::utils::numbers::usize_to_i64;
 
 use self::copy::{copy_tables_with_resume, load_target_type_hints, reset_sequences};
 use super::checkpoint::{
@@ -77,7 +78,8 @@ pub(super) async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<Appl
     checkpoint.checkpoint.stage = "verification".to_string();
     checkpoint.checkpoint.status = "running".to_string();
     checkpoint.checkpoint.current_table = None;
-    checkpoint.checkpoint.current_table_index = ctx.source_plans.len() as i64;
+    checkpoint.checkpoint.current_table_index =
+        usize_to_i64(ctx.source_plans.len(), "source plan count")?;
     checkpoint.checkpoint.current_table_offset = 0;
     checkpoint.checkpoint.updated_at_ms = now_ms();
     checkpoint.checkpoint.heartbeat_at_ms = checkpoint.checkpoint.updated_at_ms;
@@ -116,7 +118,8 @@ pub(super) async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<Appl
         "verification".to_string()
     };
     checkpoint.checkpoint.current_table = None;
-    checkpoint.checkpoint.current_table_index = ctx.source_plans.len() as i64;
+    checkpoint.checkpoint.current_table_index =
+        usize_to_i64(ctx.source_plans.len(), "source plan count")?;
     checkpoint.checkpoint.current_table_offset = 0;
     checkpoint.checkpoint.copied_rows = total_source_rows(ctx.source_plans);
     checkpoint.checkpoint.last_error = None;

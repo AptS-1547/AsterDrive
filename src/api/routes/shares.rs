@@ -1,6 +1,7 @@
 //! API 路由：`shares`。
 
 pub use crate::api::dto::shares::*;
+use crate::api::dto::validate_request;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::LimitOffsetQuery;
@@ -372,6 +373,7 @@ pub(crate) async fn create_share_response(
     scope: WorkspaceStorageScope,
     body: &CreateShareReq,
 ) -> Result<HttpResponse> {
+    validate_request(body)?;
     let ctx = AuditContext::from_request(req, claims);
     let share = share_service::create_share_in_scope_with_audit(
         state,
@@ -409,6 +411,7 @@ pub(crate) async fn update_share_response(
     share_id: i64,
     body: &UpdateShareReq,
 ) -> Result<HttpResponse> {
+    validate_request(body)?;
     let ctx = AuditContext::from_request(req, claims);
     let share = share_service::update_share_in_scope_with_audit(
         state,
@@ -442,6 +445,7 @@ pub(crate) async fn batch_delete_shares_response(
     scope: WorkspaceStorageScope,
     body: &BatchDeleteSharesReq,
 ) -> Result<HttpResponse> {
+    validate_request(body)?;
     let ctx = AuditContext::from_request(req, claims);
     let result =
         share_service::batch_delete_shares_in_scope_with_audit(state, scope, &body.share_ids, &ctx)

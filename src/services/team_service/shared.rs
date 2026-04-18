@@ -32,7 +32,7 @@ fn map_team_member_create_db_err(err: DbErr) -> AsterError {
     }
 }
 
-fn validate_team_name(name: &str) -> Result<String> {
+pub(crate) fn validate_team_name(name: &str) -> Result<String> {
     let normalized = name.trim();
     if normalized.is_empty() {
         return Err(AsterError::validation_error("team name cannot be empty"));

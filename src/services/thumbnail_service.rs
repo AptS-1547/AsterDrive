@@ -304,23 +304,27 @@ mod tests {
 
     #[test]
     fn accepts_thumbnail_source_within_size_limit() {
+        let max_source_bytes = crate::utils::numbers::u64_to_i64(
+            DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES,
+            "thumbnail max source bytes",
+        )
+        .unwrap();
         assert!(
-            ensure_source_size_supported(
-                &blob_with_size(DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES as i64),
-                DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES as i64,
-            )
-            .is_ok()
+            ensure_source_size_supported(&blob_with_size(max_source_bytes), max_source_bytes,)
+                .is_ok()
         );
     }
 
     #[test]
     fn rejects_thumbnail_source_above_size_limit() {
+        let max_source_bytes = crate::utils::numbers::u64_to_i64(
+            DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES,
+            "thumbnail max source bytes",
+        )
+        .unwrap();
         assert!(
-            ensure_source_size_supported(
-                &blob_with_size(DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES as i64 + 1),
-                DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES as i64,
-            )
-            .is_err()
+            ensure_source_size_supported(&blob_with_size(max_source_bytes + 1), max_source_bytes,)
+                .is_err()
         );
     }
 

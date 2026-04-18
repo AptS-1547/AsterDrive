@@ -8,6 +8,7 @@ use crate::db::repository::{file_repo, folder_repo, share_repo};
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::utils::numbers::usize_to_u64;
 
 use super::{
     FileCursor, FolderContents, build_file_list_items, build_folder_list_items,
@@ -58,7 +59,8 @@ async fn build_folder_contents(
     } = listing;
     // 列表接口除了返回文件/目录本身，还要顺手标注“是否已有活跃分享”。
     // 这里一次性批量查 share 状态，避免前端列表页出现 N+1。
-    let next_file_cursor = if files.len() as u64 == params.file_limit && params.file_limit > 0 {
+    let file_count = usize_to_u64(files.len(), "folder listing file count")?;
+    let next_file_cursor = if file_count == params.file_limit && params.file_limit > 0 {
         files.last().map(|f| FileCursor {
             value: crate::api::pagination::SortBy::cursor_value(f, params.sort_by),
             id: f.id,

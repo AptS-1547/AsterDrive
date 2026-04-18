@@ -4,8 +4,8 @@ use crate::entities::upload_session::{self, Entity as UploadSession};
 use crate::errors::{AsterError, Result};
 use crate::types::UploadSessionStatus;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
+    QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: &str) -> Result<upload_session::Model> {
@@ -36,6 +36,52 @@ pub async fn delete<C: ConnectionTrait>(db: &C, id: &str) -> Result<()> {
         .await
         .map_err(AsterError::from)?;
     Ok(())
+}
+
+pub async fn increment_received_count_if_uploading<C: ConnectionTrait>(
+    db: &C,
+    id: &str,
+) -> Result<bool> {
+    let result = UploadSession::update_many()
+        .col_expr(
+            upload_session::Column::ReceivedCount,
+            Expr::col(upload_session::Column::ReceivedCount).add(1),
+        )
+        .col_expr(
+            upload_session::Column::UpdatedAt,
+            Expr::value(chrono::Utc::now()),
+        )
+        .filter(upload_session::Column::Id.eq(id))
+        .filter(upload_session::Column::Status.eq(UploadSessionStatus::Uploading))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+pub async fn complete_if_assembling<C: ConnectionTrait>(
+    db: &C,
+    id: &str,
+    file_id: i64,
+) -> Result<bool> {
+    use sea_orm::ActiveEnum;
+
+    let result = UploadSession::update_many()
+        .col_expr(
+            upload_session::Column::Status,
+            Expr::value(UploadSessionStatus::Completed.to_value()),
+        )
+        .col_expr(upload_session::Column::FileId, Expr::value(Some(file_id)))
+        .col_expr(
+            upload_session::Column::UpdatedAt,
+            Expr::value(chrono::Utc::now()),
+        )
+        .filter(upload_session::Column::Id.eq(id))
+        .filter(upload_session::Column::Status.eq(UploadSessionStatus::Assembling))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
 }
 
 /// 原子状态转换：只有当前状态匹配 expected 时才更新为 new_status。

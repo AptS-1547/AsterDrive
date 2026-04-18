@@ -19,6 +19,7 @@ use crate::entities::{
 };
 use crate::errors::{AsterError, Result};
 use crate::types::{TeamMemberRole, UserStatus};
+use crate::utils::numbers::i64_to_u64;
 
 const SQLITE_USERS_FTS_TABLE: &str = "users_search_fts";
 
@@ -306,7 +307,7 @@ pub async fn count_by_team<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<u
         .map_err(AsterError::from)?
         .unwrap_or(0);
 
-    Ok(count as u64)
+    i64_to_u64(count, "team member count")
 }
 
 pub async fn count_by_team_ids<C: ConnectionTrait>(
@@ -332,10 +333,12 @@ pub async fn count_by_team_ids<C: ConnectionTrait>(
         .await
         .map_err(AsterError::from)?;
 
-    Ok(counts
+    counts
         .into_iter()
-        .map(|(team_id, member_count)| (team_id, member_count as u64))
-        .collect())
+        .map(|(team_id, member_count)| {
+            Ok((team_id, i64_to_u64(member_count, "team member count")?))
+        })
+        .collect()
 }
 
 pub async fn count_by_team_and_role<C: ConnectionTrait>(
@@ -358,7 +361,7 @@ pub async fn count_by_team_and_role<C: ConnectionTrait>(
         .map_err(AsterError::from)?
         .unwrap_or(0);
 
-    Ok(count as u64)
+    i64_to_u64(count, "team member count")
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ use sea_orm::{
 
 use crate::entities::folder::{self, Entity as Folder};
 use crate::errors::{AsterError, Result};
+use crate::utils::numbers::usize_to_i64;
 
 use super::query::{find_by_id, find_by_name_in_parent};
 
@@ -328,26 +329,32 @@ async fn find_ancestor_models_in_scope<C: ConnectionTrait>(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
-fn requested_segments_subquery(segments: &[String]) -> sea_orm::sea_query::SelectStatement {
-    Query::select()
+fn requested_segments_subquery(segments: &[String]) -> Result<sea_orm::sea_query::SelectStatement> {
+    Ok(Query::select()
         .column(Asterisk)
         .from_values(
             segments
                 .iter()
                 .enumerate()
-                .map(|(idx, segment)| ((idx + 1) as i64, segment.clone())),
+                .map(|(idx, segment)| {
+                    Ok((
+                        usize_to_i64(idx.saturating_add(1), "requested path segment index")?,
+                        segment.clone(),
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?,
             RequestedValues::Table,
         )
-        .to_owned()
+        .to_owned())
 }
 
 fn build_resolve_path_chain_query(
     user_id: i64,
     root_parent_id: Option<i64>,
     segments: &[String],
-) -> sea_orm::sea_query::WithQuery {
-    let base_requested = requested_segments_subquery(segments);
-    let recursive_requested = requested_segments_subquery(segments);
+) -> Result<sea_orm::sea_query::WithQuery> {
+    let base_requested = requested_segments_subquery(segments)?;
+    let recursive_requested = requested_segments_subquery(segments)?;
 
     let mut base_select = Query::select();
     base_select
@@ -468,7 +475,7 @@ fn build_resolve_path_chain_query(
         .cte(folder_chain_cte)
         .to_owned();
 
-    with_clause.query(final_select)
+    Ok(with_clause.query(final_select))
 }
 
 async fn resolve_path_chain_iteratively<C: ConnectionTrait>(
@@ -526,7 +533,7 @@ pub async fn resolve_path_chain<C: ConnectionTrait>(
                     user_id,
                     root_parent_id,
                     segments,
-                )),
+                )?),
         )
         .into_model::<ResolvedPathFolderRow>()
         .all(db)

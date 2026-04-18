@@ -1,6 +1,9 @@
 //! API 路由：`properties`。
 
-use crate::api::dto::properties::{EntityPath, PropPath, SetPropReq};
+use crate::api::dto::{
+    properties::{EntityPath, PropPath, SetPropReq},
+    validate_request,
+};
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::response::ApiResponse;
@@ -49,6 +52,8 @@ pub async fn list_props(
     claims: web::ReqData<Claims>,
     path: web::Path<EntityPath>,
 ) -> Result<HttpResponse> {
+    let path = path.into_inner();
+    validate_request(&path)?;
     let props =
         property_service::list(&state, path.entity_type, path.entity_id, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(props)))
@@ -78,6 +83,10 @@ pub async fn set_prop(
     path: web::Path<EntityPath>,
     body: web::Json<SetPropReq>,
 ) -> Result<HttpResponse> {
+    let path = path.into_inner();
+    let body = body.into_inner();
+    validate_request(&path)?;
+    validate_request(&body)?;
     let prop = property_service::set(
         &state,
         path.entity_type,
@@ -115,6 +124,8 @@ pub async fn delete_prop(
     claims: web::ReqData<Claims>,
     path: web::Path<PropPath>,
 ) -> Result<HttpResponse> {
+    let path = path.into_inner();
+    validate_request(&path)?;
     property_service::delete(
         &state,
         path.entity_type,

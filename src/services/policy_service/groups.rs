@@ -8,6 +8,7 @@ use crate::db::repository::{policy_group_repo, policy_repo, team_repo, user_repo
 use crate::entities::{storage_policy_group, storage_policy_group_item, user};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
+use crate::utils::numbers::usize_to_u64;
 
 use super::models::{
     CreateStoragePolicyGroupInput, PolicyGroupUserMigrationResult, StoragePolicyGroupInfo,
@@ -341,7 +342,7 @@ pub async fn migrate_group_users(
     }
 
     let txn = crate::db::transaction::begin(&state.db).await?;
-    let migrated_assignments = source_users.len() as u64;
+    let migrated_assignments = usize_to_u64(source_users.len(), "migrated policy assignments")?;
     for source_user in source_users {
         let mut active: user::ActiveModel = source_user.into();
         active.policy_group_id = Set(Some(target_group_id));

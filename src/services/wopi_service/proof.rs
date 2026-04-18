@@ -210,15 +210,18 @@ mod tests {
         let mut payload = Vec::new();
 
         let access_token = access_token.as_bytes();
-        payload.extend_from_slice(&(access_token.len() as u32).to_be_bytes());
+        let access_token_len = u32::try_from(access_token.len()).unwrap_or(u32::MAX);
+        payload.extend_from_slice(&access_token_len.to_be_bytes());
         payload.extend_from_slice(access_token);
 
         let request_url = upper_request_url.as_bytes();
-        payload.extend_from_slice(&(request_url.len() as u32).to_be_bytes());
+        let request_url_len = u32::try_from(request_url.len()).unwrap_or(u32::MAX);
+        payload.extend_from_slice(&request_url_len.to_be_bytes());
         payload.extend_from_slice(request_url);
 
         let timestamp = timestamp.to_be_bytes();
-        payload.extend_from_slice(&(timestamp.len() as u32).to_be_bytes());
+        let timestamp_len = u32::try_from(timestamp.len()).unwrap_or(u32::MAX);
+        payload.extend_from_slice(&timestamp_len.to_be_bytes());
         payload.extend_from_slice(&timestamp);
 
         payload

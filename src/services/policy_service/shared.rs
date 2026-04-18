@@ -1,11 +1,11 @@
 //! 存储策略服务子模块：`shared`。
 
 use chrono::Utc;
-use sea_orm::{DbBackend, EntityTrait, QuerySelect, Set};
+use sea_orm::Set;
 
 use crate::db::repository::{policy_group_repo, policy_repo};
-use crate::entities::{storage_policy, storage_policy_group, storage_policy_group_item};
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::entities::{storage_policy_group, storage_policy_group_item};
+use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::storage::drivers::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::types::{
@@ -186,28 +186,7 @@ pub(super) async fn replace_group_items<C: sea_orm::ConnectionTrait>(
 pub(super) async fn lock_default_group_assignment<C: sea_orm::ConnectionTrait>(
     db: &C,
 ) -> Result<()> {
-    match db.get_database_backend() {
-        DbBackend::Postgres | DbBackend::MySql => {
-            let row = storage_policy::Entity::find_by_id(SYSTEM_STORAGE_POLICY_ID)
-                .lock_exclusive()
-                .one(db)
-                .await
-                .map_aster_err(AsterError::database_operation)?;
-            if row.is_none() {
-                return Err(AsterError::storage_policy_not_found(format!(
-                    "policy #{}",
-                    SYSTEM_STORAGE_POLICY_ID
-                )));
-            }
-        }
-        DbBackend::Sqlite => {
-            policy_repo::find_by_id(db, SYSTEM_STORAGE_POLICY_ID).await?;
-        }
-        _ => {
-            policy_repo::find_by_id(db, SYSTEM_STORAGE_POLICY_ID).await?;
-        }
-    }
-
+    policy_repo::lock_by_id(db, SYSTEM_STORAGE_POLICY_ID).await?;
     Ok(())
 }
 

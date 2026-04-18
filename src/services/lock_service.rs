@@ -15,6 +15,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::folder_service;
 use crate::types::{EntityType, StoredLockOwnerInfo};
+use crate::utils::numbers::usize_to_u64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -215,7 +216,7 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
         return Ok(0);
     }
 
-    let count = expired.len() as u64;
+    let count = usize_to_u64(expired.len(), "expired lock count")?;
 
     // 批量重置 is_locked
     for lock in &expired {

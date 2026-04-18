@@ -4,8 +4,8 @@ use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::storage_policy::{self, Entity as StoragePolicy};
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, Set, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, ExprTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set, sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<storage_policy::Model> {
@@ -14,6 +14,19 @@ pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<storage_p
         .await
         .map_err(AsterError::from)?
         .ok_or_else(|| AsterError::storage_policy_not_found(format!("policy #{id}")))
+}
+
+pub async fn lock_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<storage_policy::Model> {
+    match db.get_database_backend() {
+        DbBackend::Postgres | DbBackend::MySql => StoragePolicy::find_by_id(id)
+            .lock_exclusive()
+            .one(db)
+            .await
+            .map_err(AsterError::from)?
+            .ok_or_else(|| AsterError::storage_policy_not_found(format!("policy #{id}"))),
+        DbBackend::Sqlite => find_by_id(db, id).await,
+        _ => find_by_id(db, id).await,
+    }
 }
 
 pub async fn find_default<C: ConnectionTrait>(db: &C) -> Result<Option<storage_policy::Model>> {
@@ -84,5 +97,18 @@ pub async fn set_only_default<C: ConnectionTrait>(db: &C, id: i64) -> Result<()>
         .exec(db)
         .await
         .map_err(AsterError::from)?;
+    Ok(())
+}
+
+pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    let result = StoragePolicy::delete_by_id(id)
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    if result.rows_affected == 0 {
+        return Err(AsterError::storage_policy_not_found(format!(
+            "policy #{id}"
+        )));
+    }
     Ok(())
 }

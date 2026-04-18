@@ -1943,3 +1943,23 @@ async fn test_non_admin_cannot_reset_user_password() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 }
+
+#[actix_web::test]
+async fn test_admin_update_user_rejects_negative_storage_quota() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/admin/users/1")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "storage_quota": -1
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "storage_quota must be non-negative");
+}

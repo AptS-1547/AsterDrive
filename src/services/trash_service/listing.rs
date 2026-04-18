@@ -4,6 +4,7 @@ use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::utils::numbers::usize_to_u64;
 
 use super::common::{build_trash_file_item, build_trash_folder_item, build_trash_path_cache};
 use super::models::{TrashContents, TrashFileCursor};
@@ -65,7 +66,8 @@ async fn list_trash_in_scope(
 
     let folder_paths = build_trash_path_cache(&state.db, &raw_folders, &raw_files).await?;
 
-    let next_file_cursor = if file_limit > 0 && raw_files.len() as u64 == file_limit {
+    let raw_file_count = usize_to_u64(raw_files.len(), "trash file count")?;
+    let next_file_cursor = if file_limit > 0 && raw_file_count == file_limit {
         raw_files.last().and_then(|file| {
             file.deleted_at.map(|deleted_at| TrashFileCursor {
                 deleted_at,

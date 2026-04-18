@@ -3,7 +3,7 @@ use sea_orm::ConnectionTrait;
 
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, file_blob, upload_session};
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::storage_change_service;
 use crate::services::workspace_scope_service::WorkspaceStorageScope;
@@ -78,24 +78,7 @@ async fn mark_upload_session_completed<C: ConnectionTrait>(
     session_id: &str,
     file_id: i64,
 ) -> Result<()> {
-    use crate::entities::upload_session::{Column, Entity as UploadSession};
-    use sea_orm::{ActiveEnum, ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
-
-    let now = Utc::now();
-    let result = UploadSession::update_many()
-        .col_expr(
-            Column::Status,
-            Expr::value(crate::types::UploadSessionStatus::Completed.to_value()),
-        )
-        .col_expr(Column::FileId, Expr::value(Some(file_id)))
-        .col_expr(Column::UpdatedAt, Expr::value(now))
-        .filter(Column::Id.eq(session_id))
-        .filter(Column::Status.eq(crate::types::UploadSessionStatus::Assembling))
-        .exec(db)
-        .await
-        .map_aster_err(AsterError::database_operation)?;
-
-    if result.rows_affected == 1 {
+    if upload_session_repo::complete_if_assembling(db, session_id, file_id).await? {
         return Ok(());
     }
 

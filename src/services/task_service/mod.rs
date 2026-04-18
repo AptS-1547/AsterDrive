@@ -26,6 +26,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskResult};
+use crate::utils::numbers::{i64_to_i32, i64_to_u64};
 
 pub(crate) use archive::{
     create_archive_compress_task_in_scope, create_archive_extract_task_in_scope,
@@ -250,7 +251,10 @@ async fn build_task_info(_state: &AppState, task: background_task::Model) -> Res
             0
         }
     } else {
-        ((task.progress_current.saturating_mul(100)) / task.progress_total).clamp(0, 100) as i32
+        i64_to_i32(
+            ((task.progress_current.saturating_mul(100)) / task.progress_total).clamp(0, 100),
+            "task progress percent",
+        )?
     };
     let kind = task.kind;
     let payload = parse_task_payload_info(&task)?;
@@ -562,7 +566,11 @@ pub(super) fn is_task_lease_renewal_timed_out(error: &AsterError) -> bool {
 }
 
 fn task_lease_renewal_timeout() -> StdDuration {
-    let stale_secs = TASK_PROCESSING_STALE_SECS.max(1) as u64;
+    let stale_secs = i64_to_u64(
+        TASK_PROCESSING_STALE_SECS.max(1),
+        "task processing stale seconds",
+    )
+    .unwrap_or(u64::MAX);
     let heartbeat_secs = TASK_HEARTBEAT_INTERVAL_SECS.max(1);
     StdDuration::from_secs(stale_secs.saturating_sub(heartbeat_secs).max(1))
 }

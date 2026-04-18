@@ -9,6 +9,7 @@ use crate::runtime::AppState;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::services::upload_service::shared::mark_session_failed_with_expiration;
 use crate::types::UploadSessionStatus;
+use crate::utils::numbers::usize_to_u32;
 use crate::utils::paths;
 
 const CANCELED_MULTIPART_SESSION_GRACE_SECS: i64 = 15;
@@ -94,7 +95,7 @@ pub async fn cancel_upload_for_team(
 /// 清理过期的上传 session（后台任务调用）
 pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
     let expired = upload_session_repo::find_expired(&state.db).await?;
-    let count = expired.len() as u32;
+    let count = usize_to_u32(expired.len(), "expired upload session count")?;
     for session in expired {
         if let Some(ref temp_key) = session.s3_temp_key
             && let Some(policy) = state.policy_snapshot.get_policy(session.policy_id)

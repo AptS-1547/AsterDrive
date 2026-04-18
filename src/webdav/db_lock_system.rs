@@ -385,7 +385,7 @@ fn empty_dav_lock(path: &DavPath) -> DavLock {
 }
 
 fn model_to_dav_lock(lock: &resource_lock::Model) -> DavLock {
-    let dav_path = DavPath::new(&lock.path).unwrap_or_else(|_| DavPath::new("/").unwrap());
+    let dav_path = DavPath::new(&lock.path).unwrap_or_else(|_| DavPath::root());
 
     DavLock {
         token: lock.token.clone(),

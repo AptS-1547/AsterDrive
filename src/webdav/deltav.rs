@@ -120,7 +120,7 @@ pub async fn handle_report(
         return error_response(500, "Failed to serialize XML");
     }
 
-    HttpResponse::build(StatusCode::from_u16(207).unwrap())
+    HttpResponse::build(StatusCode::MULTI_STATUS)
         .content_type("application/xml; charset=utf-8")
         .body(xml_buf)
 }
@@ -209,5 +209,6 @@ fn build_version_response(
 }
 
 fn error_response(status: u16, msg: &str) -> HttpResponse {
-    HttpResponse::build(StatusCode::from_u16(status).unwrap()).body(msg.to_string())
+    let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    HttpResponse::build(status).body(msg.to_string())
 }

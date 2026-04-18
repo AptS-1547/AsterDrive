@@ -37,9 +37,7 @@ pub const TEST_FUTURE_SHARE_EXPIRY_RFC3339: &str = "2099-12-31T23:59:59Z";
 
 fn init_test_process_state() {
     static INIT: OnceLock<()> = OnceLock::new();
-    INIT.get_or_init(|| {
-        aster_drive::utils::hash::enable_fast_password_hash_for_test();
-    });
+    INIT.get_or_init(|| {});
 }
 
 pub async fn set_foreign_key_checks(

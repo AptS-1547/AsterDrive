@@ -2,7 +2,7 @@
 
 use crate::errors::{AsterError, Result};
 
-pub(super) fn validate_username(username: &str) -> Result<()> {
+pub(crate) fn validate_username(username: &str) -> Result<()> {
     let len = username.len();
     if len < 4 {
         return Err(AsterError::validation_error(
@@ -25,7 +25,7 @@ pub(super) fn validate_username(username: &str) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn validate_email(email: &str) -> Result<()> {
+pub(crate) fn validate_email(email: &str) -> Result<()> {
     if email.len() > 254 {
         return Err(AsterError::validation_error("email is too long"));
     }
@@ -39,7 +39,7 @@ pub(super) fn validate_email(email: &str) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn validate_password(password: &str) -> Result<()> {
+pub(crate) fn validate_password(password: &str) -> Result<()> {
     if password.len() < 8 {
         return Err(AsterError::validation_error(
             "password must be at least 8 characters",

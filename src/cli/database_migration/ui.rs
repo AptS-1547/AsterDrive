@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 
 use crate::errors::AsterError;
+use crate::utils::numbers::{u64_to_usize, u128_to_u64, usize_to_u64};
 
 use super::{DatabaseMigrationReport, MigrationMode, PROGRESS_ENV, TablePlan};
 
@@ -356,12 +357,19 @@ fn progress_bar(current: i64, total: i64, width: usize, palette: &TerminalPalett
         return String::new();
     }
 
-    let ratio = if total <= 0 {
-        0.0
+    let filled = if total <= 0 {
+        0
     } else {
-        (current as f64 / total as f64).clamp(0.0, 1.0)
+        let total_u64 = u64::try_from(total).unwrap_or(0);
+        let current_u64 = u64::try_from(current.clamp(0, total)).unwrap_or(0);
+        let width_u64 = usize_to_u64(width, "progress bar width").unwrap_or(u64::MAX);
+        let scaled = u128::from(current_u64)
+            .saturating_mul(u128::from(width_u64))
+            .saturating_add(u128::from(total_u64 / 2))
+            / u128::from(total_u64);
+        let filled_u64 = u128_to_u64(scaled, "progress bar filled width").unwrap_or(width_u64);
+        u64_to_usize(filled_u64.min(width_u64), "progress bar filled width").unwrap_or(width)
     };
-    let filled = ((ratio * width as f64).round() as usize).min(width);
     let filled_bar = "#".repeat(filled);
     let empty_bar = "-".repeat(width - filled);
     format!("{}{}", palette.good(&filled_bar), palette.dim(&empty_bar))

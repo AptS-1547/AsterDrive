@@ -1,5 +1,6 @@
 //! API 路由：`webdav_accounts`。
 
+use crate::api::dto::validate_request;
 use crate::api::dto::webdav::{CreateWebdavAccountReq, TestConnectionReq, WebdavSettingsInfo};
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
@@ -98,6 +99,7 @@ pub async fn create_account(
     claims: web::ReqData<Claims>,
     body: web::Json<CreateWebdavAccountReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let result = webdav_account_service::create(
         &state,
         claims.user_id,
@@ -169,6 +171,7 @@ pub async fn test_connection(
     state: web::Data<AppState>,
     body: web::Json<TestConnectionReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     webdav_account_service::test_credentials(&state, &body.username, &body.password).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

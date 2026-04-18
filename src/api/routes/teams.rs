@@ -1,6 +1,7 @@
 //! API 路由：`teams`。
 
 pub use crate::api::dto::teams::*;
+use crate::api::dto::validate_request;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::LimitOffsetQuery;
@@ -92,6 +93,7 @@ pub async fn create_team(
     req: HttpRequest,
     body: web::Json<CreateTeamReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let team = team_service::create_team_with_audit(
         &state,
@@ -151,6 +153,7 @@ pub async fn patch_team(
     path: web::Path<i64>,
     body: web::Json<PatchTeamReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let team = team_service::update_team_with_audit(
         &state,
@@ -317,6 +320,7 @@ pub async fn add_member(
     path: web::Path<i64>,
     body: web::Json<AddTeamMemberReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let member = team_service::add_member_with_audit(
         &state,

@@ -27,6 +27,7 @@ pub use tokens::{
     authenticate_access_token, authenticate_refresh_token, issue_tokens_for_session,
     issue_tokens_for_user, refresh_token, verify_token,
 };
+pub(crate) use validation::{validate_email, validate_password, validate_username};
 
 pub const AUTH_SNAPSHOT_TTL: u64 = 30; // 秒
 const INITIAL_SESSION_VERSION: i64 = 1;

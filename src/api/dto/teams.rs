@@ -3,6 +3,7 @@
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
+use validator::{Validate, ValidationError};
 
 // ── Team CRUD ───────────────────────────────────────────────────────────────
 
@@ -17,15 +18,17 @@ pub struct ListTeamsQuery {
 }
 
 /// Create a new team.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CreateTeamReq {
+    #[validate(custom(function = "crate::api::dto::validation::validate_team_name"))]
     pub name: String,
     pub description: Option<String>,
 }
 
 /// Patch (partial update) a team.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
+#[validate(schema(function = "validate_patch_team"))]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PatchTeamReq {
     pub name: Option<String>,
@@ -35,9 +38,11 @@ pub struct PatchTeamReq {
 // ── Team membership ──────────────────────────────────────────────────────────
 
 /// Add a user to a team.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
+#[validate(schema(function = "validate_add_team_member"))]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AddTeamMemberReq {
+    #[validate(range(min = 1, message = "user_id must be greater than 0"))]
     pub user_id: Option<i64>,
     pub identifier: Option<String>,
     pub role: Option<crate::types::TeamMemberRole>,
@@ -60,4 +65,29 @@ pub struct ListTeamMembersQuery {
     pub keyword: Option<String>,
     pub role: Option<crate::types::TeamMemberRole>,
     pub status: Option<crate::types::UserStatus>,
+}
+
+fn validate_patch_team(value: &PatchTeamReq) -> std::result::Result<(), ValidationError> {
+    if let Some(name) = value.name.as_deref() {
+        crate::api::dto::validation::validate_team_name(name)?;
+    }
+    Ok(())
+}
+
+fn validate_add_team_member(value: &AddTeamMemberReq) -> std::result::Result<(), ValidationError> {
+    let identifier = value
+        .identifier
+        .as_deref()
+        .map(str::trim)
+        .filter(|identifier| !identifier.is_empty());
+
+    match (value.user_id, identifier) {
+        (Some(_), Some(_)) => Err(crate::api::dto::validation::message_validation_error(
+            "specify either user_id or identifier, not both",
+        )),
+        (None, None) => Err(crate::api::dto::validation::message_validation_error(
+            "user_id or identifier is required",
+        )),
+        _ => Ok(()),
+    }
 }

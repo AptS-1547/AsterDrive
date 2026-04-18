@@ -3,6 +3,7 @@
 use crate::api::dto::admin::{
     AdminUserListQuery, CreateUserReq, PatchUserReq, ResetUserPasswordReq,
 };
+use crate::api::dto::validate_request;
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
@@ -36,6 +37,7 @@ pub async fn create_user(
     req: HttpRequest,
     body: web::Json<CreateUserReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let user = user_service::create(&state, &body.username, &body.email, &body.password).await?;
     audit_service::log(
@@ -166,6 +168,7 @@ pub async fn update_user(
     body: web::Json<PatchUserReq>,
 ) -> Result<HttpResponse> {
     let target_id = *path;
+    validate_request(&*body)?;
     let body = body.into_inner();
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let user = user_service::update(
@@ -220,6 +223,7 @@ pub async fn reset_user_password(
     path: web::Path<i64>,
     body: web::Json<ResetUserPasswordReq>,
 ) -> Result<HttpResponse> {
+    validate_request(&*body)?;
     let user = auth_service::set_password(&state, *path, &body.password).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(

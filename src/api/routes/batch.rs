@@ -1,6 +1,7 @@
 //! API 路由：`batch`。
 
 pub use crate::api::dto::batch::*;
+use crate::api::dto::validate_request;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::response::ApiResponse;
@@ -416,6 +417,7 @@ pub(crate) async fn batch_delete_response(
     scope: WorkspaceStorageScope,
     body: &BatchDeleteReq,
 ) -> Result<HttpResponse> {
+    validate_request(body)?;
     let ctx = AuditContext::from_request(req, claims);
     let result = batch_service::batch_delete_in_scope_with_audit(
         state,
@@ -435,6 +437,7 @@ pub(crate) async fn batch_move_response(
     scope: WorkspaceStorageScope,
     body: &BatchMoveReq,
 ) -> Result<HttpResponse> {
+    validate_request(body)?;
     let ctx = AuditContext::from_request(req, claims);
     let result = batch_service::batch_move_in_scope_with_audit(
         state,
@@ -455,6 +458,7 @@ pub(crate) async fn batch_copy_response(
     scope: WorkspaceStorageScope,
     body: &BatchCopyReq,
 ) -> Result<HttpResponse> {
+    validate_request(body)?;
     let ctx = AuditContext::from_request(req, claims);
     let result = batch_service::batch_copy_in_scope_with_audit(
         state,
@@ -473,7 +477,7 @@ pub(crate) async fn archive_download_ticket_response(
     scope: WorkspaceStorageScope,
     body: &ArchiveDownloadReq,
 ) -> Result<HttpResponse> {
-    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
+    validate_request(body)?;
     let ticket = stream_ticket_service::create_archive_download_ticket_in_scope(
         state,
         scope,
@@ -493,7 +497,7 @@ pub(crate) async fn archive_compress_response(
     scope: WorkspaceStorageScope,
     body: &ArchiveCompressReq,
 ) -> Result<HttpResponse> {
-    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
+    validate_request(body)?;
     let task = task_service::create_archive_compress_task_in_scope(
         state,
         scope,

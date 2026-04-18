@@ -15,6 +15,7 @@ use sea_orm::DatabaseConnection;
 use serde::Serialize;
 
 use crate::errors::{AsterError, Result};
+use crate::utils::numbers::{i64_to_usize, usize_to_i64};
 
 use self::ui::ProgressReporter;
 use apply::execute_apply_mode;
@@ -197,7 +198,11 @@ impl ResumeReport {
             status: Some(checkpoint.status.clone()),
             stage: Some(checkpoint.stage.clone()),
             current_table: checkpoint.current_table.clone(),
-            current_table_index: Some(checkpoint.current_table_index as usize),
+            current_table_index: i64_to_usize(
+                checkpoint.current_table_index.max(0),
+                "migration checkpoint current_table_index",
+            )
+            .ok(),
             current_table_offset: Some(checkpoint.current_table_offset),
             copied_rows: Some(checkpoint.copied_rows),
             total_rows: Some(checkpoint.total_rows),
@@ -512,7 +517,8 @@ pub async fn execute_database_migration(
             final_checkpoint.result_json = Some(result_json);
             final_checkpoint.last_error = None;
             final_checkpoint.current_table = None;
-            final_checkpoint.current_table_index = source_plans.len() as i64;
+            final_checkpoint.current_table_index =
+                usize_to_i64(source_plans.len(), "source plan count")?;
             final_checkpoint.current_table_offset = 0;
             final_checkpoint.copied_rows =
                 table_reports.iter().map(|report| report.copied_rows).sum();

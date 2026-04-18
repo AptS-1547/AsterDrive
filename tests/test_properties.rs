@@ -75,3 +75,41 @@ async fn test_entity_properties() {
     let resp = test::call_service(&app, req).await;
     assert!(resp.status() == 403 || resp.status() == 423);
 }
+
+#[actix_web::test]
+async fn test_properties_reject_long_namespace_in_body_and_path() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+    let long_namespace = "n".repeat(257);
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/properties/file/{file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "namespace": long_namespace,
+            "name": "color",
+            "value": "red"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "namespace too long (max 256)");
+
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1/properties/file/{file_id}/{}/color",
+            "n".repeat(257)
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "namespace too long (max 256)");
+}

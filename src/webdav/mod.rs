@@ -1417,7 +1417,7 @@ fn allow_header_value() -> &'static str {
 }
 
 fn multi_status() -> StatusCode {
-    StatusCode::from_u16(207).unwrap()
+    StatusCode::MULTI_STATUS
 }
 
 fn unauthorized_response() -> HttpResponse {

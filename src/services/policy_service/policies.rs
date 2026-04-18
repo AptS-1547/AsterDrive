@@ -1,7 +1,7 @@
 //! 存储策略服务子模块：`policies`。
 
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, Set};
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{policy_group_repo, policy_repo};
@@ -128,10 +128,7 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
         tracing::info!("cleared policy_id on {cleared} folders before deleting policy #{id}");
     }
 
-    storage_policy::Entity::delete_by_id(id)
-        .exec(&state.db)
-        .await
-        .map_aster_err(AsterError::database_operation)?;
+    policy_repo::delete(&state.db, id).await?;
 
     // 与 update 一致：先 invalidate driver 再 reload snapshot，
     // 避免"策略行已删除但 driver 仍在缓存里"的窗口。

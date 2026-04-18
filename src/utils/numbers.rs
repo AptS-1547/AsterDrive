@@ -3,17 +3,7 @@
 use crate::errors::{AsterError, MapAsterErr, Result};
 
 pub fn bytes_to_usize(bytes: i64, value_name: &str) -> Result<usize> {
-    if bytes < 0 {
-        return Err(AsterError::internal_error(format!(
-            "{value_name} cannot be negative: {bytes}"
-        )));
-    }
-
-    usize::try_from(bytes).map_aster_err_with(|| {
-        AsterError::internal_error(format!(
-            "{value_name} exceeds platform usize range: {bytes}"
-        ))
-    })
+    i64_to_usize(bytes, value_name)
 }
 
 pub fn i32_to_usize(value: i32, value_name: &str) -> Result<usize> {
@@ -22,9 +12,37 @@ pub fn i32_to_usize(value: i32, value_name: &str) -> Result<usize> {
     })
 }
 
+pub fn i64_to_i32(value: i64, value_name: &str) -> Result<i32> {
+    i32::try_from(value).map_aster_err_with(|| {
+        AsterError::internal_error(format!("{value_name} is outside i32 range: {value}"))
+    })
+}
+
+pub fn i64_to_usize(value: i64, value_name: &str) -> Result<usize> {
+    usize::try_from(value).map_aster_err_with(|| {
+        AsterError::internal_error(format!(
+            "{value_name} exceeds platform usize range or is negative: {value}"
+        ))
+    })
+}
+
 pub fn i64_to_u64(value: i64, value_name: &str) -> Result<u64> {
     u64::try_from(value).map_aster_err_with(|| {
         AsterError::internal_error(format!("{value_name} cannot be negative: {value}"))
+    })
+}
+
+pub fn u128_to_u64(value: u128, value_name: &str) -> Result<u64> {
+    u64::try_from(value).map_aster_err_with(|| {
+        AsterError::internal_error(format!("{value_name} exceeds u64 range: {value}"))
+    })
+}
+
+pub fn u32_to_usize(value: u32, value_name: &str) -> Result<usize> {
+    usize::try_from(value).map_aster_err_with(|| {
+        AsterError::internal_error(format!(
+            "{value_name} exceeds platform usize range: {value}"
+        ))
     })
 }
 
@@ -56,11 +74,16 @@ pub fn usize_to_i64(value: usize, value_name: &str) -> Result<i64> {
     })
 }
 
-/// 把 `usize` 安全转 `u64`（所有 Rust 平台上都是 infallible，
-/// 但 helper 存在以便未来切换到 `wasm32`/`avr` 等异构目标时有统一入口）。
-#[inline]
-pub fn usize_to_u64(value: usize) -> u64 {
-    value as u64
+pub fn usize_to_u32(value: usize, value_name: &str) -> Result<u32> {
+    u32::try_from(value).map_aster_err_with(|| {
+        AsterError::internal_error(format!("{value_name} exceeds u32 range: {value}"))
+    })
+}
+
+pub fn usize_to_u64(value: usize, value_name: &str) -> Result<u64> {
+    u64::try_from(value).map_aster_err_with(|| {
+        AsterError::internal_error(format!("{value_name} exceeds u64 range: {value}"))
+    })
 }
 
 pub fn calc_total_chunks(total_size: i64, chunk_size: i64, context: &str) -> Result<i32> {
@@ -119,7 +142,10 @@ mod tests {
 
     #[test]
     fn usize_to_i32_rejects_overflow() {
-        let err = usize_to_i32(i32::MAX as usize + 1, "uploaded_part_count").unwrap_err();
+        let overflow = usize::try_from(i32::MAX)
+            .unwrap_or(usize::MAX)
+            .saturating_add(1);
+        let err = usize_to_i32(overflow, "uploaded_part_count").unwrap_err();
         assert_eq!(err.code(), "E004");
     }
 
@@ -129,20 +155,25 @@ mod tests {
     }
 
     #[test]
-    fn usize_to_u64_is_infallible_on_common_targets() {
-        assert_eq!(usize_to_u64(0), 0);
-        assert_eq!(usize_to_u64(usize::MAX), usize::MAX as u64);
+    fn usize_to_u64_accepts_common_values() {
+        assert_eq!(usize_to_u64(0, "test").unwrap(), 0);
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(usize_to_u64(usize::MAX, "test").unwrap(), u64::MAX);
     }
 
     #[test]
     fn u64_to_i64_accepts_within_i64_range() {
         assert_eq!(u64_to_i64(0, "test").unwrap(), 0);
-        assert_eq!(u64_to_i64(i64::MAX as u64, "test").unwrap(), i64::MAX);
+        let max_i64_as_u64 = u64::try_from(i64::MAX).unwrap_or(u64::MAX);
+        assert_eq!(u64_to_i64(max_i64_as_u64, "test").unwrap(), i64::MAX);
     }
 
     #[test]
     fn u64_to_i64_rejects_overflow() {
-        let err = u64_to_i64((i64::MAX as u64) + 1, "test").unwrap_err();
+        let overflow = u64::try_from(i64::MAX)
+            .unwrap_or(u64::MAX)
+            .saturating_add(1);
+        let err = u64_to_i64(overflow, "test").unwrap_err();
         assert_eq!(err.code(), "E004");
     }
 

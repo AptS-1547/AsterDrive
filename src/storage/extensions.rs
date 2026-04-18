@@ -109,9 +109,10 @@ pub mod fallback {
         // 使用驱动的 put_file 能力上传（如果驱动实现了 StreamUploadDriver）
         // 否则退化为 put + read file
         let result = if let Some(stream_driver) = driver.as_stream_upload() {
-            stream_driver
-                .put_file(storage_path, temp_path.to_str().unwrap())
-                .await
+            let temp_path_str = temp_path.to_str().ok_or_else(|| {
+                AsterError::storage_driver_error("temp upload path is not valid UTF-8")
+            })?;
+            stream_driver.put_file(storage_path, temp_path_str).await
         } else {
             // 终极 fallback：读文件到内存再 put
             let data = tokio::fs::read(&temp_path)

@@ -4,6 +4,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
+use validator::Validate;
 
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
@@ -20,11 +21,12 @@ pub enum ShareStatus {
     Deleted,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ShareTarget {
     #[serde(rename = "type")]
     pub r#type: EntityType,
+    #[validate(range(min = 1, message = "share target id must be greater than 0"))]
     pub id: i64,
 }
 

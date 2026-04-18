@@ -152,7 +152,11 @@ pub(crate) async fn update_content_in_scope(
         let should_dedup = workspace_storage_service::local_content_dedup_enabled(&resolved_policy);
         let staging_token = format!("{}.upload", uuid::Uuid::new_v4());
         let staging_path =
-            crate::storage::drivers::local::upload_staging_path(&resolved_policy, &staging_token);
+            crate::storage::drivers::local::upload_staging_path(&resolved_policy, &staging_token)
+                .map_aster_err_ctx(
+                "resolve local staging path",
+                AsterError::storage_driver_error,
+            )?;
         if let Some(parent) = staging_path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await

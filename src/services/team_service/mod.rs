@@ -33,6 +33,7 @@ pub use models::{
     AddTeamMemberInput, AdminCreateTeamInput, AdminTeamInfo, AdminUpdateTeamInput, CreateTeamInput,
     TeamInfo, TeamMemberInfo, TeamMemberListFilters, TeamMemberPage, UpdateTeamInput,
 };
+pub(crate) use shared::validate_team_name;
 pub use team::{
     archive_team, create_team, get_team, list_teams, list_user_team_ids, restore_team, update_team,
 };

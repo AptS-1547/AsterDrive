@@ -10,6 +10,7 @@ use crate::services::{
     storage_change_service, thumbnail_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
+use crate::utils::numbers::usize_to_u32;
 
 use super::get_info_in_scope;
 
@@ -244,7 +245,7 @@ pub(crate) async fn batch_purge_in_scope(
 
     let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
     let blob_ids: Vec<i64> = files.iter().map(|f| f.blob_id).collect();
-    let count = files.len() as u32;
+    let count = usize_to_u32(files.len(), "purged file count")?;
 
     // ── 单次事务：版本 → 属性 → 文件 → blob → 配额 ──
     let txn = crate::db::transaction::begin(&state.db).await?;
@@ -307,7 +308,7 @@ pub(crate) async fn batch_purge_in_scope(
     crate::db::transaction::commit(txn).await?;
 
     // ── 事务后：并行物理清理，清理成功后再删 blob 元数据 ──
-    stream::iter(blobs_to_cleanup.into_iter())
+    stream::iter(blobs_to_cleanup)
         .for_each_concurrent(BLOB_CLEANUP_CONCURRENCY, |blob| async move {
             if !cleanup_unreferenced_blob(state, &blob).await {
                 tracing::warn!(

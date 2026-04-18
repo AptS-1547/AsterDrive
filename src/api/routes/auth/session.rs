@@ -9,6 +9,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::auth_service::Claims;
 use crate::services::{audit_service, auth_service, team_service, user_service};
+use crate::utils::numbers::{u64_to_i64, usize_to_i64};
 use actix_web::{HttpRequest, HttpResponse, web};
 use bytes::Bytes;
 
@@ -118,22 +119,20 @@ pub async fn login(
 
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();
+    let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
+    let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
     Ok(HttpResponse::Ok()
         .cookie(build_access_cookie(
             &result.access_token,
-            auth_policy.access_token_ttl_secs as i64,
+            access_ttl,
             secure,
         ))
         .cookie(build_refresh_cookie(
             &result.refresh_token,
-            auth_policy.refresh_token_ttl_secs as i64,
+            refresh_ttl,
             secure,
         ))
-        .cookie(build_csrf_cookie(
-            &csrf_token,
-            auth_policy.refresh_token_ttl_secs as i64,
-            secure,
-        ))
+        .cookie(build_csrf_cookie(&csrf_token, refresh_ttl, secure))
         .json(ApiResponse::ok(AuthTokenResp {
             expires_in: auth_policy.access_token_ttl_secs,
         })))
@@ -166,17 +165,11 @@ pub async fn refresh(state: web::Data<AppState>, req: HttpRequest) -> Result<Htt
 
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();
+    let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
+    let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
     Ok(HttpResponse::Ok()
-        .cookie(build_access_cookie(
-            &access,
-            auth_policy.access_token_ttl_secs as i64,
-            secure,
-        ))
-        .cookie(build_csrf_cookie(
-            &csrf_token,
-            auth_policy.refresh_token_ttl_secs as i64,
-            secure,
-        ))
+        .cookie(build_access_cookie(&access, access_ttl, secure))
+        .cookie(build_csrf_cookie(&csrf_token, refresh_ttl, secure))
         .json(ApiResponse::ok(AuthTokenResp {
             expires_in: auth_policy.access_token_ttl_secs,
         })))
@@ -263,7 +256,8 @@ pub async fn logout(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
     security(("bearer" = [])),
 )]
 pub async fn me(state: web::Data<AppState>, claims: web::ReqData<Claims>) -> Result<HttpResponse> {
-    let resp = user_service::get_me(&state, claims.user_id, claims.exp as i64).await?;
+    let resp =
+        user_service::get_me(&state, claims.user_id, usize_to_i64(claims.exp, "jwt exp")?).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
@@ -311,22 +305,12 @@ pub async fn put_password(
 
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();
+    let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
+    let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
     Ok(HttpResponse::Ok()
-        .cookie(build_access_cookie(
-            &access_token,
-            auth_policy.access_token_ttl_secs as i64,
-            secure,
-        ))
-        .cookie(build_refresh_cookie(
-            &refresh_token,
-            auth_policy.refresh_token_ttl_secs as i64,
-            secure,
-        ))
-        .cookie(build_csrf_cookie(
-            &csrf_token,
-            auth_policy.refresh_token_ttl_secs as i64,
-            secure,
-        ))
+        .cookie(build_access_cookie(&access_token, access_ttl, secure))
+        .cookie(build_refresh_cookie(&refresh_token, refresh_ttl, secure))
+        .cookie(build_csrf_cookie(&csrf_token, refresh_ttl, secure))
         .json(ApiResponse::ok(AuthTokenResp {
             expires_in: auth_policy.access_token_ttl_secs,
         })))

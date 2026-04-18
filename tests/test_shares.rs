@@ -1506,3 +1506,25 @@ async fn test_share_folder_subfolder_navigation() {
         resp.status()
     );
 }
+
+#[actix_web::test]
+async fn test_create_share_rejects_negative_max_downloads() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target": file_target(file_id),
+            "max_downloads": -1
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "max_downloads cannot be negative");
+}

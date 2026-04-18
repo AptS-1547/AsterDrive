@@ -108,7 +108,8 @@ impl AsterDavFile {
             if policy.driver_type == crate::types::DriverType::Local {
                 let staging_token = format!("{}.upload", crate::utils::id::new_uuid());
                 let staging_path =
-                    crate::storage::drivers::local::upload_staging_path(&policy, &staging_token);
+                    crate::storage::drivers::local::upload_staging_path(&policy, &staging_token)
+                        .map_err(|_| FsError::GeneralFailure)?;
                 if let Some(parent) = staging_path.parent() {
                     tokio::fs::create_dir_all(parent)
                         .await
@@ -237,7 +238,8 @@ impl AsterDavFile {
 }
 
 fn add_written_bytes(written: &mut u64, chunk_len: usize) -> Result<u64, FsError> {
-    let chunk_len = usize_to_u64(chunk_len);
+    let chunk_len =
+        usize_to_u64(chunk_len, "webdav written chunk").map_err(|_| FsError::GeneralFailure)?;
     let next_written = written
         .checked_add(chunk_len)
         .ok_or(FsError::GeneralFailure)?;
@@ -332,8 +334,10 @@ impl DavFile for AsterDavFile {
                     declared_size,
                     ..
                 } => {
+                    let chunk_len = usize_to_u64(buf.len(), "webdav direct write chunk")
+                        .map_err(|_| FsError::GeneralFailure)?;
                     let next_written = written
-                        .checked_add(usize_to_u64(buf.len()))
+                        .checked_add(chunk_len)
                         .ok_or(FsError::GeneralFailure)?;
                     if next_written > declared_size_u64(*declared_size)? {
                         return Err(FsError::GeneralFailure);
@@ -382,8 +386,10 @@ impl DavFile for AsterDavFile {
                 } => {
                     while buf.has_remaining() {
                         let chunk = buf.chunk();
+                        let chunk_len = usize_to_u64(chunk.len(), "webdav direct write chunk")
+                            .map_err(|_| FsError::GeneralFailure)?;
                         let next_written = written
-                            .checked_add(usize_to_u64(chunk.len()))
+                            .checked_add(chunk_len)
                             .ok_or(FsError::GeneralFailure)?;
                         if next_written > declared_size_u64(*declared_size)? {
                             return Err(FsError::GeneralFailure);

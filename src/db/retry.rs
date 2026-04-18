@@ -4,6 +4,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::errors::{AsterError, Result};
+use crate::utils::numbers::u128_to_u64;
 
 #[derive(Clone, Debug)]
 pub struct RetryConfig {
@@ -40,7 +41,8 @@ where
                 tracing::warn!(
                     attempt = attempt + 1,
                     max = config.max_retries,
-                    delay_ms = delay.as_millis() as u64,
+                    delay_ms = u128_to_u64(delay.as_millis(), "retry delay milliseconds")
+                        .unwrap_or(u64::MAX),
                     error = %e,
                     "retrying operation"
                 );
@@ -66,7 +68,7 @@ fn calculate_delay(config: &RetryConfig, attempt: u32) -> Duration {
     let base = config.base_delay_ms.saturating_mul(multiplier);
     // Add jitter: 50%-150% of the exponential delay, then enforce the configured cap.
     let mut rng = rand::rng();
-    let jitter = rng.random_range(50..=150) as u64;
+    let jitter = rng.random_range(50_u64..=150_u64);
     let jittered = base.saturating_mul(jitter) / 100;
     Duration::from_millis(jittered.min(config.max_delay_ms))
 }
@@ -111,7 +113,11 @@ mod tests {
 
         for (attempt, min_ms, max_ms) in expected_bounds {
             for _ in 0..64 {
-                let delay_ms = calculate_delay(&config, attempt).as_millis() as u64;
+                let delay_ms = u128_to_u64(
+                    calculate_delay(&config, attempt).as_millis(),
+                    "retry delay milliseconds",
+                )
+                .unwrap();
                 assert!(
                     (min_ms..=max_ms).contains(&delay_ms),
                     "attempt {attempt} produced {delay_ms}ms outside [{min_ms}, {max_ms}]"

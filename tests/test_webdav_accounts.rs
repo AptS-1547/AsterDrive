@@ -375,3 +375,24 @@ async fn test_webdav_account_test_connection() {
     let resp = test::call_service(&app, req).await;
     assert!(resp.status() == 401 || resp.status() == 400);
 }
+
+#[actix_web::test]
+async fn test_webdav_account_rejects_blank_username() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/webdav-accounts")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "username": "   ",
+            "password": "pass123456"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "value cannot be empty");
+}
