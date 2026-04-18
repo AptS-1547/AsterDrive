@@ -60,6 +60,8 @@ vi.mock("@/stores/previewAppStore", () => {
 });
 
 const translationMap: Record<string, string> = {
+	cors_wildcard_credentials_validation_error:
+		"cors_wildcard_credentials_validation_error",
 	custom_config_key_duplicate: "custom_config_key_duplicate",
 	custom_config_key_required: "custom_config_key_required",
 	settings_saved: "settings_saved",
@@ -123,6 +125,25 @@ function createBaseConfigs() {
 			key: PREVIEW_APPS_CONFIG_KEY,
 			value: createValidPreviewAppsConfig(),
 			value_type: "multiline",
+		}),
+	];
+}
+
+function createCorsConfigs(overrides?: {
+	allowCredentials?: string;
+	allowedOrigins?: string;
+}): SystemConfig[] {
+	return [
+		createConfig({
+			category: "network",
+			key: "cors_allowed_origins",
+			value: overrides?.allowedOrigins ?? "*",
+		}),
+		createConfig({
+			category: "network",
+			key: "cors_allow_credentials",
+			value: overrides?.allowCredentials ?? "false",
+			value_type: "boolean",
 		}),
 	];
 }
@@ -251,6 +272,108 @@ describe("useAdminSettingsData", () => {
 		expect(result.current.previewAppsValidationIssues).toEqual([
 			{ key: "preview_apps_error_parse" },
 		]);
+	});
+
+	it("blocks saving when staged CORS values enable credentials with a wildcard origin", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: createCorsConfigs(),
+		});
+
+		const { result } = renderUseAdminSettingsData();
+
+		await waitFor(() => expect(result.current.loading).toBe(false));
+
+		act(() => {
+			result.current.updateDraftValue("cors_allow_credentials", "true");
+		});
+
+		expect(result.current.hasValidationError).toBe(true);
+		expect(
+			result.current.configValidationErrors.get("cors_allowed_origins"),
+		).toBe("cors_wildcard_credentials_validation_error");
+		expect(
+			result.current.configValidationErrors.get("cors_allow_credentials"),
+		).toBe("cors_wildcard_credentials_validation_error");
+		expect(result.current.validationMessage).toBe(
+			"cors_wildcard_credentials_validation_error",
+		);
+
+		await act(async () => {
+			await result.current.handleSaveAll();
+		});
+
+		expect(mockState.setConfig).not.toHaveBeenCalled();
+	});
+
+	it("blocks saving when staged CORS values switch an existing credentialed policy back to a wildcard origin", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: createCorsConfigs({
+				allowCredentials: "true",
+				allowedOrigins: "https://panel.example.com",
+			}),
+		});
+
+		const { result } = renderUseAdminSettingsData();
+
+		await waitFor(() => expect(result.current.loading).toBe(false));
+
+		act(() => {
+			result.current.updateDraftValue("cors_allowed_origins", "*");
+		});
+
+		expect(result.current.hasValidationError).toBe(true);
+		expect(
+			result.current.configValidationErrors.get("cors_allowed_origins"),
+		).toBe("cors_wildcard_credentials_validation_error");
+		expect(
+			result.current.configValidationErrors.get("cors_allow_credentials"),
+		).toBe("cors_wildcard_credentials_validation_error");
+
+		await act(async () => {
+			await result.current.handleSaveAll();
+		});
+
+		expect(mockState.setConfig).not.toHaveBeenCalled();
+	});
+
+	it("clears the staged CORS validation once the wildcard is replaced with an explicit origin and then saves both changes", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: createCorsConfigs(),
+		});
+
+		const { result } = renderUseAdminSettingsData();
+
+		await waitFor(() => expect(result.current.loading).toBe(false));
+
+		act(() => {
+			result.current.updateDraftValue("cors_allow_credentials", "true");
+		});
+
+		expect(result.current.hasValidationError).toBe(true);
+
+		act(() => {
+			result.current.updateDraftValue(
+				"cors_allowed_origins",
+				"https://panel.example.com",
+			);
+		});
+
+		expect(result.current.hasValidationError).toBe(false);
+		expect(result.current.configValidationErrors.size).toBe(0);
+
+		await act(async () => {
+			await result.current.handleSaveAll();
+		});
+
+		expect(mockState.setConfig).toHaveBeenCalledWith(
+			"cors_allowed_origins",
+			"https://panel.example.com",
+		);
+		expect(mockState.setConfig).toHaveBeenCalledWith(
+			"cors_allow_credentials",
+			"true",
+		);
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
 	});
 
 	it("saves changes, syncs public site url, and invalidates preview apps when preview config changes", async () => {

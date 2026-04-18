@@ -17,7 +17,7 @@ use actix_web::{HttpResponse, web};
     params(LimitOffsetQuery, audit_service::AuditLogFilterQuery),
     responses(
         (status = 200, description = "Audit log entries", body = inline(ApiResponse<OffsetPage<audit_service::AuditLogEntry>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),

@@ -52,7 +52,7 @@ pub fn team_routes() -> actix_web::Scope {
     request_body = CreateShareReq,
     responses(
         (status = 201, description = "Share created", body = inline(ApiResponse<crate::services::share_service::ShareInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -83,7 +83,7 @@ pub async fn create_share(
     params(LimitOffsetQuery),
     responses(
         (status = 200, description = "My shares", body = inline(ApiResponse<OffsetPage<crate::services::share_service::MyShareInfo>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -112,7 +112,7 @@ pub async fn list_shares(
     responses(
         (status = 200, description = "Share updated", body = inline(ApiResponse<crate::services::share_service::ShareInfo>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Share not found"),
     ),
     security(("bearer" = [])),
@@ -146,7 +146,7 @@ pub async fn update_share(
     params(("id" = i64, Path, description = "Share ID")),
     responses(
         (status = 200, description = "Share deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Share not found"),
     ),
     security(("bearer" = [])),
@@ -178,7 +178,7 @@ pub async fn delete_share(
     responses(
         (status = 200, description = "Batch delete result", body = inline(ApiResponse<batch_service::BatchResult>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -210,7 +210,7 @@ pub async fn batch_delete_shares(
     request_body = CreateShareReq,
     responses(
         (status = 201, description = "Team share created", body = inline(ApiResponse<share_service::ShareInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -245,7 +245,7 @@ pub(crate) async fn team_create_share(
     ),
     responses(
         (status = 200, description = "Team shares", body = inline(ApiResponse<OffsetPage<share_service::MyShareInfo>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -272,7 +272,7 @@ pub(crate) async fn team_list_shares(
     responses(
         (status = 200, description = "Team share updated", body = inline(ApiResponse<share_service::ShareInfo>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Share not found"),
     ),
@@ -309,7 +309,7 @@ pub(crate) async fn team_update_share(
     ),
     responses(
         (status = 200, description = "Team share deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Share not found"),
     ),
@@ -342,7 +342,7 @@ pub(crate) async fn team_delete_share(
     responses(
         (status = 200, description = "Batch delete result", body = inline(ApiResponse<batch_service::BatchResult>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),

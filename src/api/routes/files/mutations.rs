@@ -24,7 +24,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
     responses(
         (status = 201, description = "Empty file created", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 400, description = "Invalid name"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -53,7 +53,7 @@ pub async fn create_empty(
     responses(
         (status = 200, description = "Archive extract task created", body = inline(ApiResponse<crate::services::task_service::TaskInfo>)),
         (status = 400, description = "Unsupported archive format"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
     ),
     security(("bearer" = [])),
@@ -83,7 +83,7 @@ pub async fn extract_archive(
     params(("id" = i64, Path, description = "File ID")),
     responses(
         (status = 200, description = "File deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
     ),
     security(("bearer" = [])),
@@ -115,7 +115,7 @@ pub async fn delete_file(
     request_body = PatchFileReq,
     responses(
         (status = 200, description = "File updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
     ),
     security(("bearer" = [])),
@@ -149,7 +149,7 @@ pub async fn patch_file(
     request_body(content = Vec<u8>, content_type = "application/octet-stream"),
     responses(
         (status = 200, description = "Content updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
         (status = 412, description = "Precondition failed (ETag mismatch)"),
         (status = 423, description = "File is locked by another user"),
@@ -185,7 +185,7 @@ pub async fn update_content(
     request_body = SetLockReq,
     responses(
         (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
     ),
     security(("bearer" = [])),
@@ -216,7 +216,7 @@ pub async fn set_lock(
     request_body = CopyFileReq,
     responses(
         (status = 201, description = "File copied", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
     ),
     security(("bearer" = [])),
@@ -250,7 +250,7 @@ pub async fn copy_file(
     request_body = CreateEmptyRequest,
     responses(
         (status = 201, description = "Empty team file created", body = inline(ApiResponse<FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -276,7 +276,7 @@ pub(crate) async fn team_create_empty(
     request_body(content = Vec<u8>, content_type = "application/octet-stream"),
     responses(
         (status = 200, description = "Content updated", body = inline(ApiResponse<FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
         (status = 412, description = "Precondition failed (ETag mismatch)"),
@@ -316,7 +316,7 @@ pub(crate) async fn team_update_content(
     responses(
         (status = 200, description = "Team archive extract task created", body = inline(ApiResponse<crate::services::task_service::TaskInfo>)),
         (status = 400, description = "Unsupported archive format"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
     ),
@@ -344,7 +344,7 @@ pub(crate) async fn team_extract_archive(
     request_body = SetLockReq,
     responses(
         (status = 200, description = "Lock state updated", body = inline(ApiResponse<FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
     ),
@@ -378,7 +378,7 @@ pub(crate) async fn team_set_lock(
     request_body = PatchFileReq,
     responses(
         (status = 200, description = "Team file updated", body = inline(ApiResponse<FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
     ),
@@ -415,7 +415,7 @@ pub(crate) async fn team_patch_file(
     request_body = CopyFileReq,
     responses(
         (status = 201, description = "Team file copied", body = inline(ApiResponse<FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
     ),
@@ -451,7 +451,7 @@ pub(crate) async fn team_copy_file(
     ),
     responses(
         (status = 200, description = "Team file deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
     ),

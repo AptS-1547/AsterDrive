@@ -86,7 +86,7 @@ function SearchResultRow({
 	onHover: (index: number) => void;
 	onSelect: (entry: SearchEntry) => void;
 }) {
-	const { t } = useTranslation(["files", "search"]);
+	const { t, i18n } = useTranslation(["files", "search"]);
 
 	return (
 		<button
@@ -138,7 +138,7 @@ function SearchResultRow({
 						</>
 					) : null}
 					<span className="h-1 w-1 rounded-full bg-border" />
-					<span>{formatDate(entry.item.updated_at)}</span>
+					<span>{formatDate(entry.item.updated_at, i18n)}</span>
 				</div>
 			</div>
 			<div className="flex shrink-0 items-center gap-2 text-muted-foreground">

@@ -17,7 +17,7 @@ use actix_web::{HttpResponse, web};
     params(LimitOffsetQuery),
     responses(
         (status = 200, description = "All shares", body = inline(ApiResponse<OffsetPage<share_service::ShareInfo>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -39,7 +39,7 @@ pub async fn list_all_shares(
     params(("id" = i64, Path, description = "Share ID")),
     responses(
         (status = 200, description = "Share deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Share not found"),
     ),

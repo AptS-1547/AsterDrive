@@ -3,6 +3,7 @@
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
+    TryInsertResult,
 };
 
 use crate::db::repository::pagination_repo::fetch_offset_page;
@@ -15,6 +16,44 @@ pub async fn create<C: ConnectionTrait>(
     model: resource_lock::ActiveModel,
 ) -> Result<resource_lock::Model> {
     model.insert(db).await.map_err(AsterError::from)
+}
+
+pub async fn create_if_unlocked<C: ConnectionTrait>(
+    db: &C,
+    model: resource_lock::ActiveModel,
+    entity_type: EntityType,
+    entity_id: i64,
+) -> Result<Option<resource_lock::Model>> {
+    let inserted = match ResourceLock::insert(model)
+        .on_conflict_do_nothing_on([
+            resource_lock::Column::EntityType,
+            resource_lock::Column::EntityId,
+        ])
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?
+    {
+        TryInsertResult::Inserted(_) => true,
+        TryInsertResult::Conflicted => false,
+        TryInsertResult::Empty => {
+            return Err(AsterError::internal_error(
+                "resource lock insert produced empty result",
+            ));
+        }
+    };
+
+    if !inserted {
+        return Ok(None);
+    }
+
+    find_by_entity(db, entity_type, entity_id)
+        .await?
+        .map(Some)
+        .ok_or_else(|| {
+            AsterError::internal_error(format!(
+                "resource lock insert could not reload entity lock for {entity_type:?}#{entity_id}"
+            ))
+        })
 }
 
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<resource_lock::Model>> {
@@ -202,4 +241,40 @@ pub async fn delete_all_by_owner<C: ConnectionTrait>(db: &C, owner_id: i64) -> R
         .await
         .map_err(AsterError::from)?;
     Ok(res.rows_affected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use sea_orm::{DbBackend, QueryTrait};
+
+    #[test]
+    fn postgres_create_if_unlocked_sql_uses_entity_conflict_target() {
+        let sql = ResourceLock::insert(resource_lock::ActiveModel {
+            token: Set("urn:uuid:test".to_string()),
+            entity_type: Set(EntityType::File),
+            entity_id: Set(7),
+            path: Set("/docs/report.txt".to_string()),
+            owner_id: Set(Some(9)),
+            owner_info: Set(None),
+            timeout_at: Set(None),
+            shared: Set(false),
+            deep: Set(false),
+            created_at: Set(Utc::now()),
+            ..Default::default()
+        })
+        .on_conflict_do_nothing_on([
+            resource_lock::Column::EntityType,
+            resource_lock::Column::EntityId,
+        ])
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(
+            sql.contains(r#"ON CONFLICT ("entity_type", "entity_id") DO NOTHING"#),
+            "{sql}"
+        );
+        assert!(!sql.contains(" WHERE "), "{sql}");
+    }
 }

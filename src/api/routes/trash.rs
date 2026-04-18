@@ -42,7 +42,7 @@ pub fn team_routes() -> actix_web::Scope {
     params(TrashListQuery),
     responses(
         (status = 200, description = "Trash contents", body = inline(ApiResponse<trash_service::TrashContents>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -74,8 +74,8 @@ pub async fn list_trash(
     ),
     responses(
         (status = 200, description = "Restored"),
-        (status = 401, description = "Unauthorized"),
-        (status = 404, description = "Not found"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -104,8 +104,8 @@ pub async fn restore(
     ),
     responses(
         (status = 200, description = "Permanently deleted"),
-        (status = 401, description = "Unauthorized"),
-        (status = 404, description = "Not found"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -128,7 +128,7 @@ pub async fn purge_one(
     operation_id = "purge_all_trash",
     responses(
         (status = 200, description = "Trash emptied", body = inline(ApiResponse<crate::api::response::PurgedCountResponse>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -151,7 +151,7 @@ pub async fn purge_all(
     ),
     responses(
         (status = 200, description = "Team trash contents", body = inline(ApiResponse<trash_service::TrashContents>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -188,9 +188,9 @@ pub(crate) async fn team_list_trash(
     ),
     responses(
         (status = 200, description = "Restored"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -223,9 +223,9 @@ pub(crate) async fn team_restore(
     ),
     responses(
         (status = 200, description = "Permanently deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -254,7 +254,7 @@ pub(crate) async fn team_purge_one(
     params(("team_id" = i64, Path, description = "Team ID")),
     responses(
         (status = 200, description = "Trash emptied", body = inline(ApiResponse<PurgedCountResponse>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),

@@ -4,6 +4,7 @@ mod convert;
 mod copy;
 
 use migration::{Migrator, MigratorTrait};
+use sea_orm::DatabaseConnection;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::utils::numbers::usize_to_i64;
@@ -16,7 +17,7 @@ use super::checkpoint::{
 use super::helpers::{join_strings, now_ms};
 use super::schema::{pending_migrations, refresh_target_rows, total_source_rows};
 use super::verify::{verification_message, verification_ready, verify_target};
-use super::{ApplyExecution, ApplyModeContext};
+use super::{ApplyExecution, ApplyModeContext, MigrationCheckpoint};
 
 pub(super) async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<ApplyExecution> {
     ctx.progress
@@ -50,8 +51,12 @@ pub(super) async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<Appl
         match load_target_type_hints(ctx.target_db, target_backend, ctx.source_plans).await {
             Ok(value) => value,
             Err(error) => {
-                let _ =
-                    mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
+                mark_checkpoint_failed_best_effort(
+                    ctx.target_db,
+                    &mut checkpoint.checkpoint,
+                    &error,
+                )
+                .await;
                 return Err(error);
             }
         };
@@ -66,12 +71,12 @@ pub(super) async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<Appl
     )
     .await
     {
-        let _ = mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
+        mark_checkpoint_failed_best_effort(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
         return Err(error);
     }
 
     if let Err(error) = reset_sequences(ctx.target_db, ctx.source_plans).await {
-        let _ = mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
+        mark_checkpoint_failed_best_effort(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
         return Err(error);
     }
 
@@ -84,7 +89,7 @@ pub(super) async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<Appl
     checkpoint.checkpoint.updated_at_ms = now_ms();
     checkpoint.checkpoint.heartbeat_at_ms = checkpoint.checkpoint.updated_at_ms;
     if let Err(error) = update_checkpoint(ctx.target_db, &checkpoint.checkpoint).await {
-        let _ = mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
+        mark_checkpoint_failed_best_effort(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
         return Err(error);
     }
 
@@ -93,14 +98,15 @@ pub(super) async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<Appl
     let verification = match verify_target(ctx.target_db, ctx.source_plans).await {
         Ok(value) => value,
         Err(error) => {
-            let _ = mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
+            mark_checkpoint_failed_best_effort(ctx.target_db, &mut checkpoint.checkpoint, &error)
+                .await;
             return Err(error);
         }
     };
     let ready_to_cutover = verification_ready(&verification);
 
     if let Err(error) = refresh_target_rows(ctx.target_db, ctx.table_reports).await {
-        let _ = mark_checkpoint_failed(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
+        mark_checkpoint_failed_best_effort(ctx.target_db, &mut checkpoint.checkpoint, &error).await;
         return Err(error);
     }
     for report in &mut *ctx.table_reports {
@@ -175,4 +181,19 @@ pub(super) async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<Appl
         checkpoint: checkpoint.checkpoint,
         resumed,
     })
+}
+
+async fn mark_checkpoint_failed_best_effort(
+    target_db: &DatabaseConnection,
+    checkpoint: &mut MigrationCheckpoint,
+    error: &AsterError,
+) {
+    if let Err(checkpoint_error) = mark_checkpoint_failed(target_db, checkpoint, error).await {
+        tracing::warn!(
+            migration_key = checkpoint.migration_key,
+            original_error = %error,
+            checkpoint_error = %checkpoint_error,
+            "failed to persist migration checkpoint failure state"
+        );
+    }
 }

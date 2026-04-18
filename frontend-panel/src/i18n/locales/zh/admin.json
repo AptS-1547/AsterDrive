@@ -264,6 +264,7 @@
 	"preview_apps_editor_title": "结构化注册表编辑器",
 	"preview_apps_editor_hint": "底层还是写回同一个 JSON 配置，但这里会按应用列表直接编辑启用状态、后缀绑定和提供方配置，不用你手改 JSON。",
 	"preview_apps_validation_error": "预览应用注册表还有错误，修完才能保存。",
+	"cors_wildcard_credentials_validation_error": "允许来源不能是 \"*\"，否则就不能开启跨域凭据。先改成明确来源列表，或者关闭跨域凭据再保存。",
 	"preview_apps_recover": "重新初始化草稿",
 	"preview_apps_version_label": "版本 {{version}}",
 	"preview_apps_app_count": "{{count}} 个应用",

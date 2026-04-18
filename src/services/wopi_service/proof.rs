@@ -121,9 +121,15 @@ fn parse_wopi_timestamp(timestamp: Option<&str>) -> Result<i64> {
 
 fn ensure_wopi_timestamp_is_fresh(timestamp: i64, now: DateTime<Utc>) -> Result<()> {
     let min_allowed = dotnet_ticks(now - Duration::minutes(MAX_PROOF_AGE_MINUTES));
+    let max_allowed = dotnet_ticks(now + Duration::minutes(MAX_PROOF_AGE_MINUTES));
     if timestamp < min_allowed {
         return Err(AsterError::internal_error(
             "WOPI proof timestamp is older than the allowed replay window",
+        ));
+    }
+    if timestamp > max_allowed {
+        return Err(AsterError::internal_error(
+            "WOPI proof timestamp is newer than the allowed replay window",
         ));
     }
     Ok(())
@@ -330,6 +336,34 @@ mod tests {
         assert!(
             err.message()
                 .contains("older than the allowed replay window")
+        );
+    }
+
+    #[test]
+    fn validate_wopi_proof_rejects_future_timestamp() {
+        let (current, _old, proof_keys) = build_test_keys();
+        let now = Utc::now();
+        let timestamp = dotnet_ticks(now + Duration::minutes(21));
+        let payload = build_reference_payload(
+            "wopi_token",
+            "https://drive.example.com/api/v1/wopi/files/7?access_token=wopi_token",
+            timestamp,
+        );
+
+        let err = validate_wopi_proof(
+            &proof_keys,
+            "wopi_token",
+            "https://drive.example.com/api/v1/wopi/files/7?access_token=wopi_token",
+            Some(&sign(&current, &payload)),
+            None,
+            Some(&timestamp.to_string()),
+            now,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.message()
+                .contains("newer than the allowed replay window")
         );
     }
 

@@ -140,6 +140,7 @@ export default function AdminSettingsPage({
 		activeTemplateVariableGroupCode,
 		appendCustomDraftRow,
 		changedCount,
+		configValidationErrors,
 		deletedCustomConfigs,
 		displayUnits,
 		discardChanges,
@@ -163,7 +164,6 @@ export default function AdminSettingsPage({
 		newCustomRows,
 		openTemplateVariablesDialog,
 		openTestEmailDialog,
-		previewAppsValidationIssues,
 		removeNewCustomRow,
 		restoreDeletedCustom,
 		saving,
@@ -180,6 +180,7 @@ export default function AdminSettingsPage({
 		toggleTemplateGroup,
 		updateDraftValue,
 		updateNewCustomRow,
+		validationMessage,
 		visibleCustomConfigs,
 	} = useAdminSettingsData({
 		currentUserEmail,
@@ -408,6 +409,7 @@ export default function AdminSettingsPage({
 				activeTab={activeTab}
 				addCustomDraftRow={addCustomDraftRow}
 				category={category}
+				configValidationErrors={configValidationErrors}
 				deletedCustomConfigs={deletedCustomConfigs}
 				displayUnits={displayUnits}
 				editorTheme={editorTheme}
@@ -530,11 +532,7 @@ export default function AdminSettingsPage({
 				hasValidationError={hasValidationError}
 				changedCount={changedCount}
 				saving={saving}
-				validationMessage={
-					previewAppsValidationIssues.length > 0
-						? t("preview_apps_validation_error")
-						: t("custom_config_validation_error")
-				}
+				validationMessage={validationMessage}
 				onDiscardChanges={discardChanges}
 				onSaveAll={() => void handleSaveAll()}
 			/>

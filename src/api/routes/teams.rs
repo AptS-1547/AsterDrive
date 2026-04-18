@@ -59,7 +59,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     params(ListTeamsQuery),
     responses(
         (status = 200, description = "Teams visible to the signed-in user", body = inline(ApiResponse<Vec<team_service::TeamInfo>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -82,7 +82,7 @@ pub async fn list_teams(
     responses(
         (status = 201, description = "Team created", body = inline(ApiResponse<team_service::TeamInfo>)),
         (status = 400, description = "Validation error"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "System admin required"),
     ),
     security(("bearer" = [])),
@@ -116,9 +116,9 @@ pub async fn create_team(
     params(("id" = i64, Path, description = "Team ID")),
     responses(
         (status = 200, description = "Team details", body = inline(ApiResponse<team_service::TeamInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -140,9 +140,9 @@ pub async fn get_team(
     request_body = PatchTeamReq,
     responses(
         (status = 200, description = "Team updated", body = inline(ApiResponse<team_service::TeamInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -177,9 +177,9 @@ pub async fn patch_team(
     params(("id" = i64, Path, description = "Team ID")),
     responses(
         (status = 200, description = "Team archived"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -202,9 +202,9 @@ pub async fn delete_team(
     params(("id" = i64, Path, description = "Team ID")),
     responses(
         (status = 200, description = "Team restored", body = inline(ApiResponse<team_service::TeamInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -231,9 +231,9 @@ pub async fn restore_team(
     ),
     responses(
         (status = 200, description = "Team audit log entries", body = inline(ApiResponse<crate::api::pagination::OffsetPage<audit_service::TeamAuditEntryInfo>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -269,9 +269,9 @@ pub async fn list_audit_logs(
     ),
     responses(
         (status = 200, description = "Team members", body = inline(ApiResponse<team_service::TeamMemberPage>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -307,9 +307,9 @@ pub async fn list_members(
     request_body = AddTeamMemberReq,
     responses(
         (status = 201, description = "Member added", body = inline(ApiResponse<team_service::TeamMemberInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -349,9 +349,9 @@ pub async fn add_member(
     request_body = PatchTeamMemberReq,
     responses(
         (status = 200, description = "Member updated", body = inline(ApiResponse<team_service::TeamMemberInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -387,9 +387,9 @@ pub async fn patch_member(
     ),
     responses(
         (status = 200, description = "Member removed"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Not found"),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]

@@ -38,7 +38,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     operation_id = "get_webdav_settings",
     responses(
         (status = 200, description = "Current WebDAV settings for the signed-in user", body = inline(ApiResponse<WebdavSettingsInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -63,7 +63,7 @@ pub async fn get_settings(state: web::Data<AppState>) -> Result<HttpResponse> {
     params(LimitOffsetQuery),
     responses(
         (status = 200, description = "WebDAV accounts", body = inline(ApiResponse<OffsetPage<webdav_account_service::WebdavAccountInfo>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -90,7 +90,7 @@ pub async fn list_accounts(
     request_body = CreateWebdavAccountReq,
     responses(
         (status = 201, description = "Account created (password shown once)", body = inline(ApiResponse<webdav_account_service::WebdavAccountCreated>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -119,8 +119,8 @@ pub async fn create_account(
     params(("id" = i64, Path, description = "Account ID")),
     responses(
         (status = 200, description = "Account deleted"),
-        (status = 401, description = "Unauthorized"),
-        (status = 404, description = "Not found"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]
@@ -141,8 +141,8 @@ pub async fn delete_account(
     params(("id" = i64, Path, description = "Account ID")),
     responses(
         (status = 200, description = "Account toggled", body = inline(ApiResponse<webdav_account_service::WebdavAccount>)),
-        (status = 401, description = "Unauthorized"),
-        (status = 404, description = "Not found"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 404, description = crate::api::constants::OPENAPI_NOT_FOUND),
     ),
     security(("bearer" = [])),
 )]

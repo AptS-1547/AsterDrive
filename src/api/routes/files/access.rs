@@ -22,7 +22,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
     params(("id" = i64, Path, description = "File ID")),
     responses(
         (status = 200, description = "File info", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
     ),
     security(("bearer" = [])),
@@ -50,7 +50,7 @@ pub async fn get_file(
     params(("id" = i64, Path, description = "File ID")),
     responses(
         (status = 200, description = "Direct link token", body = inline(ApiResponse<crate::services::direct_link_service::DirectLinkTokenInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
     ),
     security(("bearer" = [])),
@@ -78,7 +78,7 @@ pub async fn get_direct_link(
     params(("id" = i64, Path, description = "File ID")),
     responses(
         (status = 200, description = "Preview link", body = inline(ApiResponse<crate::services::preview_link_service::PreviewLinkInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
     ),
     security(("bearer" = [])),
@@ -107,7 +107,7 @@ pub async fn get_preview_link(
     request_body = OpenWopiRequest,
     responses(
         (status = 200, description = "WOPI launch session", body = inline(ApiResponse<wopi_service::WopiLaunchSession>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
     ),
     security(("bearer" = [])),
@@ -137,7 +137,7 @@ pub async fn open_wopi(
     params(("id" = i64, Path, description = "File ID")),
     responses(
         (status = 200, description = "File content"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
     ),
     security(("bearer" = [])),
@@ -171,7 +171,7 @@ pub async fn download(
         (status = 304, description = "Thumbnail not modified"),
         (status = 202, description = "Thumbnail generation in progress"),
         (status = 400, description = "Thumbnail not supported for this file type"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "File not found"),
         (status = 500, description = "Thumbnail generation failed"),
     ),
@@ -205,7 +205,7 @@ pub async fn get_thumbnail(
     ),
     responses(
         (status = 200, description = "Team file info", body = inline(ApiResponse<FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
     ),
@@ -231,7 +231,7 @@ pub(crate) async fn team_get_file(
     ),
     responses(
         (status = 200, description = "Team file direct link token", body = inline(ApiResponse<crate::services::direct_link_service::DirectLinkTokenInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
     ),
@@ -257,7 +257,7 @@ pub(crate) async fn team_get_direct_link(
     ),
     responses(
         (status = 200, description = "Team file preview link", body = inline(ApiResponse<crate::services::preview_link_service::PreviewLinkInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
     ),
@@ -284,7 +284,7 @@ pub(crate) async fn team_get_preview_link(
     request_body = OpenWopiRequest,
     responses(
         (status = 200, description = "Team WOPI launch session", body = inline(ApiResponse<wopi_service::WopiLaunchSession>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
     ),
@@ -320,7 +320,7 @@ pub(crate) async fn team_open_wopi(
         (status = 304, description = "Thumbnail not modified"),
         (status = 202, description = "Thumbnail generation in progress"),
         (status = 400, description = "Thumbnail not supported for this file type"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
         (status = 500, description = "Thumbnail generation failed"),
@@ -348,7 +348,7 @@ pub(crate) async fn team_get_thumbnail(
     ),
     responses(
         (status = 200, description = "Team file content"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
     ),

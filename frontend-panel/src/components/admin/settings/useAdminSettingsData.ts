@@ -31,6 +31,8 @@ import type {
 } from "@/types/api";
 
 const PUBLIC_SITE_URL_KEY = "public_site_url";
+const CORS_ALLOWED_ORIGINS_KEY = "cors_allowed_origins";
+const CORS_ALLOW_CREDENTIALS_KEY = "cors_allow_credentials";
 
 type TranslationFn = (key: string, options?: Record<string, unknown>) => string;
 
@@ -393,14 +395,49 @@ export function useAdminSettingsData({
 		);
 	}, [configs, draftValues]);
 
+	const configValidationErrors = useMemo(() => {
+		const errors = new Map<string, string>();
+		const configsByKey = new Map(
+			configs.map((config) => [config.key, config] as const),
+		);
+		const allowedOrigins = (
+			draftValues[CORS_ALLOWED_ORIGINS_KEY] ??
+			configsByKey.get(CORS_ALLOWED_ORIGINS_KEY)?.value ??
+			""
+		).trim();
+		const allowCredentials =
+			(
+				draftValues[CORS_ALLOW_CREDENTIALS_KEY] ??
+				configsByKey.get(CORS_ALLOW_CREDENTIALS_KEY)?.value ??
+				""
+			).trim() === "true";
+
+		if (allowCredentials && allowedOrigins === "*") {
+			const message = t("cors_wildcard_credentials_validation_error");
+			errors.set(CORS_ALLOWED_ORIGINS_KEY, message);
+			errors.set(CORS_ALLOW_CREDENTIALS_KEY, message);
+		}
+
+		return errors;
+	}, [configs, draftValues, t]);
+
 	const changedCount =
 		changedExistingConfigs.length +
 		deletedCustomConfigs.length +
 		activeNewCustomRows.length;
 	const hasValidationError =
-		newCustomRowErrors.size > 0 || previewAppsValidationIssues.length > 0;
+		newCustomRowErrors.size > 0 ||
+		previewAppsValidationIssues.length > 0 ||
+		configValidationErrors.size > 0;
 	const hasUnsavedChanges = changedCount > 0;
 	const hasAnyConfig = configs.length > 0;
+	const validationMessage =
+		configValidationErrors.values().next().value ??
+		(previewAppsValidationIssues.length > 0
+			? t("preview_apps_validation_error")
+			: newCustomRowErrors.size > 0
+				? t("custom_config_validation_error")
+				: undefined);
 
 	const getDraftValue = useCallback(
 		(config: SystemConfig) => draftValues[config.key] ?? config.value,
@@ -555,6 +592,7 @@ export function useAdminSettingsData({
 		activeTemplateVariableGroupCode,
 		appendCustomDraftRow,
 		changedCount,
+		configValidationErrors,
 		configs,
 		deletedCustomConfigs,
 		displayUnits,
@@ -597,6 +635,7 @@ export function useAdminSettingsData({
 		toggleTemplateGroup,
 		updateDraftValue,
 		updateNewCustomRow,
+		validationMessage,
 		visibleCustomConfigs,
 	};
 }

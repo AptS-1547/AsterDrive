@@ -32,6 +32,8 @@ const mockState = vi.hoisted(() => ({
 }));
 
 const translationMap: Record<string, string> = {
+	cors_wildcard_credentials_validation_error:
+		"cors_wildcard_credentials_validation_error",
 	settings_item_auth_access_token_ttl_secs_desc:
 		"Controls how long newly issued access tokens stay valid.",
 	settings_item_auth_access_token_ttl_secs_label: "Access token lifetime",
@@ -874,6 +876,116 @@ describe("AdminSettingsPage", () => {
 			);
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
+	});
+
+	it("shows a CORS validation warning and blocks saving before any request is sent", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "network",
+					key: "cors_allowed_origins",
+					value: "*",
+					value_type: "string",
+				}),
+				createConfig({
+					category: "network",
+					key: "cors_allow_credentials",
+					value: "false",
+					value_type: "boolean",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "network",
+				key: "cors_allowed_origins",
+				value_type: "string",
+			}),
+			createSchemaItem({
+				category: "network",
+				key: "cors_allow_credentials",
+				value_type: "boolean",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="network" />);
+
+		const credentialsSwitch = await screen.findByLabelText(
+			"switch:cors_allow_credentials:false",
+		);
+		fireEvent.click(credentialsSwitch);
+
+		expect(
+			await screen.findAllByText("cors_wildcard_credentials_validation_error"),
+		).toHaveLength(3);
+		expect(mockState.setConfig).not.toHaveBeenCalled();
+		expect(screen.getByRole("button", { name: "save_changes" })).toBeDisabled();
+	});
+
+	it("allows saving again after the CORS draft is repaired with an explicit origin list", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "network",
+					key: "cors_allowed_origins",
+					value: "*",
+					value_type: "string",
+				}),
+				createConfig({
+					category: "network",
+					key: "cors_allow_credentials",
+					value: "false",
+					value_type: "boolean",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "network",
+				key: "cors_allowed_origins",
+				value_type: "string",
+			}),
+			createSchemaItem({
+				category: "network",
+				key: "cors_allow_credentials",
+				value_type: "boolean",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="network" />);
+
+		fireEvent.click(
+			await screen.findByLabelText("switch:cors_allow_credentials:false"),
+		);
+		expect(
+			await screen.findAllByText("cors_wildcard_credentials_validation_error"),
+		).toHaveLength(3);
+
+		fireEvent.change(screen.getByDisplayValue("*"), {
+			target: { value: "https://panel.example.com" },
+		});
+
+		await waitFor(() => {
+			expect(
+				screen.queryByText("cors_wildcard_credentials_validation_error"),
+			).not.toBeInTheDocument();
+		});
+
+		const saveButton = screen.getByRole("button", { name: "save_changes" });
+		expect(saveButton).not.toBeDisabled();
+
+		fireEvent.click(saveButton);
+
+		await waitFor(() => {
+			expect(mockState.setConfig).toHaveBeenCalledWith(
+				"cors_allow_credentials",
+				"true",
+			);
+		});
+		expect(mockState.setConfig).toHaveBeenCalledWith(
+			"cors_allowed_origins",
+			"https://panel.example.com",
+		);
 	});
 
 	it("renders a friendly time unit selector while keeping raw values on save", async () => {

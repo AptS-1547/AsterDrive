@@ -101,47 +101,63 @@ pub async fn lock(
     owner_info: Option<ResourceLockOwnerInfo>,
     timeout: Option<Duration>,
 ) -> Result<resource_lock::Model> {
-    let db = &state.db;
-
-    // 检查是否已锁
-    if let Some(existing) = lock_repo::find_by_entity(db, entity_type, entity_id).await? {
-        // 过期锁自动清理
-        if let Some(timeout_at) = existing.timeout_at {
-            if timeout_at < Utc::now() {
-                do_unlock_by_entity(state, entity_type, entity_id).await?;
-            } else {
-                return Err(AsterError::resource_locked("resource is already locked"));
-            }
-        } else {
-            return Err(AsterError::resource_locked("resource is already locked"));
-        }
-    }
-
     let now = Utc::now();
     let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
     let timeout_at = timeout.map(|d| now + d);
-    let path = resolve_entity_path(db, entity_type, entity_id).await?;
+    let serialized_owner_info = serialize_resource_lock_owner_info(owner_info.as_ref())?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
 
-    let model = resource_lock::ActiveModel {
-        token: Set(token),
-        entity_type: Set(entity_type),
-        entity_id: Set(entity_id),
-        path: Set(path),
-        owner_id: Set(owner_id),
-        owner_info: Set(serialize_resource_lock_owner_info(owner_info.as_ref())?),
-        timeout_at: Set(timeout_at),
-        shared: Set(false),
-        deep: Set(false),
-        created_at: Set(now),
-        ..Default::default()
-    };
+    let result = async {
+        if let Some(existing) = lock_repo::find_by_entity(&txn, entity_type, entity_id).await? {
+            match existing.timeout_at {
+                Some(timeout_at) if timeout_at < now => {
+                    lock_repo::delete_by_id(&txn, existing.id).await?;
+                }
+                _ => return Err(AsterError::resource_locked("resource is already locked")),
+            }
+        }
 
-    let lock = lock_repo::create(db, model).await?;
+        let path = resolve_entity_path(&txn, entity_type, entity_id).await?;
+        let model = resource_lock::ActiveModel {
+            token: Set(token),
+            entity_type: Set(entity_type),
+            entity_id: Set(entity_id),
+            path: Set(path),
+            owner_id: Set(owner_id),
+            owner_info: Set(serialized_owner_info),
+            timeout_at: Set(timeout_at),
+            shared: Set(false),
+            deep: Set(false),
+            created_at: Set(now),
+            ..Default::default()
+        };
 
-    // 同步 is_locked boolean 缓存
-    set_entity_locked(db, entity_type, entity_id, true).await?;
+        let lock = lock_repo::create_if_unlocked(&txn, model, entity_type, entity_id)
+            .await?
+            .ok_or_else(|| AsterError::resource_locked("resource is already locked"))?;
+        set_entity_locked(&txn, entity_type, entity_id, true).await?;
+        Ok(lock)
+    }
+    .await;
 
-    Ok(lock)
+    match result {
+        Ok(lock) => {
+            crate::db::transaction::commit(txn).await?;
+            Ok(lock)
+        }
+        Err(error) => {
+            if let Err(rollback_error) = crate::db::transaction::rollback(txn).await {
+                tracing::error!(
+                    entity_type = ?entity_type,
+                    entity_id,
+                    original_error = %error,
+                    rollback_error = %rollback_error,
+                    "failed to rollback lock acquisition transaction"
+                );
+            }
+            Err(error)
+        }
+    }
 }
 
 /// 解锁资源（用户主动解锁）
@@ -173,7 +189,7 @@ pub async fn unlock_by_token(state: &AppState, token: &str) -> Result<()> {
         .ok_or_else(|| AsterError::record_not_found("lock not found"))?;
 
     lock_repo::delete_by_token(db, token).await?;
-    set_entity_locked(db, lock.entity_type, lock.entity_id, false).await?;
+    clear_entity_locked_if_unlocked(db, lock.entity_type, lock.entity_id).await?;
     Ok(())
 }
 
@@ -202,7 +218,7 @@ pub async fn force_unlock(state: &AppState, lock_id: i64) -> Result<()> {
         .ok_or_else(|| AsterError::record_not_found("lock not found"))?;
 
     lock_repo::delete_by_id(db, lock_id).await?;
-    set_entity_locked(db, lock.entity_type, lock.entity_id, false).await?;
+    clear_entity_locked_if_unlocked(db, lock.entity_type, lock.entity_id).await?;
     Ok(())
 }
 
@@ -218,15 +234,16 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
 
     let count = usize_to_u64(expired.len(), "expired lock count")?;
 
-    // 批量重置 is_locked
+    // 批量删除
+    lock_repo::delete_expired(db).await?;
+
+    // 只在确无替代锁时清理 is_locked，避免和并发续锁/重锁打架。
     for lock in &expired {
-        if let Err(e) = set_entity_locked(db, lock.entity_type, lock.entity_id, false).await {
+        if let Err(e) = clear_entity_locked_if_unlocked(db, lock.entity_type, lock.entity_id).await
+        {
             tracing::warn!(lock_id = lock.id, "failed to unlock expired lock: {e}");
         }
     }
-
-    // 批量删除
-    lock_repo::delete_expired(db).await?;
 
     Ok(count)
 }
@@ -297,7 +314,21 @@ async fn do_unlock_by_entity(
     entity_id: i64,
 ) -> Result<()> {
     lock_repo::delete_by_entity(&state.db, entity_type, entity_id).await?;
-    set_entity_locked(&state.db, entity_type, entity_id, false).await?;
+    clear_entity_locked_if_unlocked(&state.db, entity_type, entity_id).await?;
+    Ok(())
+}
+
+async fn clear_entity_locked_if_unlocked(
+    db: &impl ConnectionTrait,
+    entity_type: EntityType,
+    entity_id: i64,
+) -> Result<()> {
+    if lock_repo::find_by_entity(db, entity_type, entity_id)
+        .await?
+        .is_none()
+    {
+        set_entity_locked(db, entity_type, entity_id, false).await?;
+    }
     Ok(())
 }
 
@@ -356,8 +387,8 @@ async fn check_entity_ownership(
 }
 
 /// 从 entity 反查 WebDAV 路径
-pub async fn resolve_entity_path(
-    db: &sea_orm::DatabaseConnection,
+pub async fn resolve_entity_path<C: ConnectionTrait>(
+    db: &C,
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<String> {
@@ -409,6 +440,19 @@ pub async fn resolve_entity_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    use crate::cache;
+    use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
+    use crate::entities::{file, file_blob, storage_policy, user};
+    use crate::services::mail_service;
+    use crate::storage::{DriverRegistry, PolicySnapshot};
+    use crate::types::{
+        DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions, UserRole,
+        UserStatus,
+    };
+    use migration::{Migrator, MigratorTrait};
+    use sea_orm::{ActiveModelTrait, Set};
 
     fn sample_lock(owner_info: Option<StoredLockOwnerInfo>) -> resource_lock::Model {
         resource_lock::Model {
@@ -424,6 +468,126 @@ mod tests {
             deep: false,
             created_at: Utc::now(),
         }
+    }
+
+    async fn build_lock_test_state() -> (AppState, user::Model, file::Model) {
+        let temp_root =
+            std::env::temp_dir().join(format!("asterdrive-lock-service-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_root).expect("lock service temp root should exist");
+
+        let db = crate::db::connect(&DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .expect("lock service test DB should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("lock service migrations should succeed");
+
+        let now = Utc::now();
+        let policy = storage_policy::ActiveModel {
+            name: Set("Lock Test Policy".to_string()),
+            driver_type: Set(DriverType::Local),
+            endpoint: Set(String::new()),
+            bucket: Set(String::new()),
+            access_key: Set(String::new()),
+            secret_key: Set(String::new()),
+            base_path: Set(temp_root.join("uploads").to_string_lossy().into_owned()),
+            max_file_size: Set(0),
+            allowed_types: Set(StoredStoragePolicyAllowedTypes::empty()),
+            options: Set(StoredStoragePolicyOptions::empty()),
+            is_default: Set(true),
+            chunk_size: Set(0),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("lock test policy should insert");
+
+        let user = user::ActiveModel {
+            username: Set(format!("lock-user-{}", uuid::Uuid::new_v4())),
+            email: Set(format!("lock-{}@example.com", uuid::Uuid::new_v4())),
+            password_hash: Set("not-used".to_string()),
+            role: Set(UserRole::User),
+            status: Set(UserStatus::Active),
+            session_version: Set(0),
+            email_verified_at: Set(Some(now)),
+            pending_email: Set(None),
+            storage_used: Set(0),
+            storage_quota: Set(0),
+            policy_group_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            config: Set(None),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("lock test user should insert");
+
+        let blob = file_blob::ActiveModel {
+            hash: Set(format!("lock-blob-{}", uuid::Uuid::new_v4())),
+            size: Set(1),
+            policy_id: Set(policy.id),
+            storage_path: Set(format!("files/{}", uuid::Uuid::new_v4())),
+            thumbnail_path: Set(None),
+            thumbnail_version: Set(None),
+            ref_count: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("lock test blob should insert");
+
+        let file = file::ActiveModel {
+            name: Set("lock-target.txt".to_string()),
+            folder_id: Set(None),
+            team_id: Set(None),
+            blob_id: Set(blob.id),
+            size: Set(1),
+            user_id: Set(user.id),
+            mime_type: Set("text/plain".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+            is_locked: Set(false),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("lock test file should insert");
+
+        let runtime_config = Arc::new(RuntimeConfig::new());
+        let cache = cache::create_cache(&CacheConfig {
+            enabled: false,
+            ..Default::default()
+        })
+        .await;
+        let mut config = Config::default();
+        config.server.temp_dir = temp_root.join(".tmp").to_string_lossy().into_owned();
+        config.server.upload_temp_dir = temp_root.join(".uploads").to_string_lossy().into_owned();
+        let (storage_change_tx, _) = tokio::sync::broadcast::channel(
+            crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
+        );
+
+        let state = AppState {
+            db,
+            driver_registry: Arc::new(DriverRegistry::new()),
+            runtime_config: runtime_config.clone(),
+            policy_snapshot: Arc::new(PolicySnapshot::new()),
+            config: Arc::new(config),
+            cache,
+            mail_sender: mail_service::runtime_sender(runtime_config),
+            storage_change_tx,
+        };
+
+        (state, user, file)
     }
 
     #[test]
@@ -470,6 +634,116 @@ mod tests {
             Some(ResourceLockOwnerInfo::Text(TextLockOwnerInfo {
                 value: "user@example.com".to_string(),
             }))
+        );
+    }
+
+    #[tokio::test]
+    async fn lock_replaces_expired_lock_and_keeps_single_row() {
+        let (state, user, file) = build_lock_test_state().await;
+        let now = Utc::now();
+        lock_repo::create(
+            &state.db,
+            resource_lock::ActiveModel {
+                token: Set("expired-lock".to_string()),
+                entity_type: Set(EntityType::File),
+                entity_id: Set(file.id),
+                path: Set("/lock-target.txt".to_string()),
+                owner_id: Set(Some(user.id)),
+                owner_info: Set(None),
+                timeout_at: Set(Some(now - Duration::seconds(5))),
+                shared: Set(false),
+                deep: Set(false),
+                created_at: Set(now - Duration::seconds(30)),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("expired lock should insert");
+
+        let replacement = lock(
+            &state,
+            EntityType::File,
+            file.id,
+            Some(user.id),
+            None,
+            Some(Duration::seconds(30)),
+        )
+        .await
+        .expect("expired lock should be replaced");
+
+        let locks = lock_repo::find_all(&state.db)
+            .await
+            .expect("locks should load");
+        assert_eq!(locks.len(), 1, "only the replacement lock should remain");
+        assert_eq!(locks[0].id, replacement.id);
+        assert_ne!(locks[0].token, "expired-lock");
+
+        let reloaded_file = file_repo::find_by_id(&state.db, file.id)
+            .await
+            .expect("file should reload");
+        assert!(
+            reloaded_file.is_locked,
+            "replacement lock should sync is_locked"
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_entity_locked_if_unlocked_keeps_flag_when_replacement_lock_exists() {
+        let (state, user, file) = build_lock_test_state().await;
+        set_entity_locked(&state.db, EntityType::File, file.id, true)
+            .await
+            .expect("file should be marked locked");
+
+        let now = Utc::now();
+        lock_repo::create(
+            &state.db,
+            resource_lock::ActiveModel {
+                token: Set("active-lock".to_string()),
+                entity_type: Set(EntityType::File),
+                entity_id: Set(file.id),
+                path: Set("/lock-target.txt".to_string()),
+                owner_id: Set(Some(user.id)),
+                owner_info: Set(None),
+                timeout_at: Set(Some(now + Duration::seconds(30))),
+                shared: Set(false),
+                deep: Set(false),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("active lock should insert");
+
+        clear_entity_locked_if_unlocked(&state.db, EntityType::File, file.id)
+            .await
+            .expect("helper should succeed");
+
+        let reloaded_file = file_repo::find_by_id(&state.db, file.id)
+            .await
+            .expect("file should reload");
+        assert!(
+            reloaded_file.is_locked,
+            "existing replacement lock must keep is_locked cache set"
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_entity_locked_if_unlocked_clears_flag_when_no_lock_remains() {
+        let (state, _, file) = build_lock_test_state().await;
+        set_entity_locked(&state.db, EntityType::File, file.id, true)
+            .await
+            .expect("file should be marked locked");
+
+        clear_entity_locked_if_unlocked(&state.db, EntityType::File, file.id)
+            .await
+            .expect("helper should succeed");
+
+        let reloaded_file = file_repo::find_by_id(&state.db, file.id)
+            .await
+            .expect("file should reload");
+        assert!(
+            !reloaded_file.is_locked,
+            "is_locked should be cleared once no lock row remains"
         );
     }
 }

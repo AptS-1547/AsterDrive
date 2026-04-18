@@ -132,6 +132,22 @@ pub async fn find_by_team<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn list_temp_keys_by_policy<C: ConnectionTrait>(
+    db: &C,
+    policy_id: i64,
+) -> Result<Vec<String>> {
+    let keys = UploadSession::find()
+        .select_only()
+        .column(upload_session::Column::S3TempKey)
+        .filter(upload_session::Column::PolicyId.eq(policy_id))
+        .filter(upload_session::Column::S3TempKey.is_not_null())
+        .into_tuple::<Option<String>>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(keys.into_iter().flatten().collect())
+}
+
 /// 批量删除用户的所有上传会话
 pub async fn delete_all_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<u64> {
     let res = UploadSession::delete_many()

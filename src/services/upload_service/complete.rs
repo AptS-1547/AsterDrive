@@ -8,9 +8,11 @@
 //!
 //! 目标都是在最后统一落到 `workspace_storage_service` 的文件创建语义上。
 
+mod chunked;
+
 use chrono::Utc;
 
-use crate::db::repository::{file_repo, upload_session_part_repo, upload_session_repo};
+use crate::db::repository::upload_session_part_repo;
 use crate::entities::{file, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -24,8 +26,17 @@ use crate::services::{
 };
 use crate::storage::driver::StorageDriver;
 use crate::types::UploadSessionStatus;
-use crate::utils::numbers::{u64_to_i64, usize_to_i64};
-use crate::utils::paths;
+use crate::utils::numbers::u64_to_i64;
+
+use self::chunked::complete_chunked_upload;
+
+enum CompletionPlan {
+    ReturnCompleted,
+    CompletePresigned,
+    CompletePresignedMultipart { parts: Vec<(i32, String)> },
+    CompleteRelayMultipart,
+    AssembleChunks,
+}
 
 /// 完成分片上传：组装 → 按策略决定是否计算 hash / 去重 → 写入最终存储
 async fn complete_upload_impl(
@@ -33,10 +44,8 @@ async fn complete_upload_impl(
     session: upload_session::Model,
     parts: Option<Vec<(i32, String)>>,
 ) -> Result<file::Model> {
-    let db = &state.db;
-    let upload_id = session.id.as_str();
     tracing::debug!(
-        upload_id,
+        upload_id = %session.id,
         status = ?session.status,
         received_count = session.received_count,
         total_chunks = session.total_chunks,
@@ -44,8 +53,23 @@ async fn complete_upload_impl(
         "completing upload session"
     );
 
+    match determine_completion_plan(&session, parts)? {
+        CompletionPlan::ReturnCompleted => find_file_by_session(&state.db, &session).await,
+        CompletionPlan::CompletePresigned => complete_presigned_upload(state, session).await,
+        CompletionPlan::CompletePresignedMultipart { parts } => {
+            complete_s3_multipart(state, session, parts).await
+        }
+        CompletionPlan::CompleteRelayMultipart => complete_s3_relay_multipart(state, session).await,
+        CompletionPlan::AssembleChunks => complete_chunked_upload(state, session).await,
+    }
+}
+
+fn determine_completion_plan(
+    session: &upload_session::Model,
+    parts: Option<Vec<(i32, String)>>,
+) -> Result<CompletionPlan> {
     if session.status == UploadSessionStatus::Completed {
-        return find_file_by_session(db, &session).await;
+        return Ok(CompletionPlan::ReturnCompleted);
     }
 
     if session.status == UploadSessionStatus::Assembling {
@@ -65,16 +89,17 @@ async fn complete_upload_impl(
             let parts = parts.ok_or_else(|| {
                 AsterError::validation_error("parts required for multipart upload completion")
             })?;
-            return complete_s3_multipart(state, session, parts).await;
+            return Ok(CompletionPlan::CompletePresignedMultipart { parts });
         }
+
         // presigned 单文件没有分片清单，只需要校验 temp object 真实存在且大小匹配。
-        return complete_presigned_upload(state, session).await;
+        return Ok(CompletionPlan::CompletePresigned);
     }
 
     if session.status == UploadSessionStatus::Uploading && session.s3_multipart_id.is_some() {
         // relay multipart 的 completed parts 由服务端在 chunk 阶段自行收集，
         // complete 时无需客户端再次回传。
-        return complete_s3_relay_multipart(state, session).await;
+        return Ok(CompletionPlan::CompleteRelayMultipart);
     }
 
     if session.received_count != session.total_chunks {
@@ -84,189 +109,7 @@ async fn complete_upload_impl(
         )));
     }
 
-    let transitioned = upload_session_repo::try_transition_status(
-        db,
-        upload_id,
-        UploadSessionStatus::Uploading,
-        UploadSessionStatus::Assembling,
-    )
-    .await?;
-    if !transitioned {
-        return Err(AsterError::upload_assembly_failed(format!(
-            "session status is '{:?}', expected 'uploading'",
-            session.status
-        )));
-    }
-
-    let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-    let should_dedup = workspace_storage_service::local_content_dedup_enabled(&policy);
-
-    let result = async {
-        use sha2::{Digest, Sha256};
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        const ASSEMBLY_BUFFER_SIZE: usize = 64 * 1024;
-
-        let assembled_path =
-            paths::upload_assembled_path(&state.config.server.upload_temp_dir, upload_id);
-        let mut out_file = tokio::fs::File::create(&assembled_path)
-            .await
-            .map_aster_err_ctx("create assembled file", AsterError::upload_assembly_failed)?;
-        let mut hasher = should_dedup.then(Sha256::new);
-        let mut size: i64 = 0;
-        let mut buffer = vec![0u8; ASSEMBLY_BUFFER_SIZE];
-
-        // 本地 chunk 模式：先按顺序把所有 chunk 拼成 assembled 文件。
-        // 如果 local 策略启用了 dedup，会在拼装过程中顺便流式计算 hash，
-        // 避免第二遍再把 assembled 文件完整读一遍。
-        for i in 0..session.total_chunks {
-            let chunk_path =
-                paths::upload_chunk_path(&state.config.server.upload_temp_dir, upload_id, i);
-            let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_aster_err_ctx(
-                &format!("open chunk {i}"),
-                AsterError::upload_assembly_failed,
-            )?;
-
-            loop {
-                let n = chunk_file.read(&mut buffer).await.map_aster_err_ctx(
-                    &format!("read chunk {i}"),
-                    AsterError::upload_assembly_failed,
-                )?;
-                if n == 0 {
-                    break;
-                }
-
-                let data = &buffer[..n];
-                if let Some(hasher) = hasher.as_mut() {
-                    hasher.update(data);
-                }
-                let chunk_len = usize_to_i64(n, "assembled chunk length")?;
-                size = size.checked_add(chunk_len).ok_or_else(|| {
-                    AsterError::upload_assembly_failed("assembled upload size exceeds i64 range")
-                })?;
-                out_file
-                    .write_all(data)
-                    .await
-                    .map_aster_err_ctx("write assembled", AsterError::upload_assembly_failed)?;
-            }
-        }
-        out_file
-            .flush()
-            .await
-            .map_aster_err_ctx("flush assembled", AsterError::upload_assembly_failed)?;
-        drop(out_file);
-
-        let now = Utc::now();
-        let preuploaded_blob = if hasher.is_none() {
-            // 不做 dedup 的情况下，先为 blob 预分配最终 key，再把 assembled 文件传上去。
-            Some(workspace_storage_service::prepare_non_dedup_blob_upload(
-                &policy, size,
-            ))
-        } else {
-            None
-        };
-
-        if let Some(preuploaded_blob) = preuploaded_blob.as_ref() {
-            workspace_storage_service::upload_temp_file_to_prepared_blob(
-                driver.as_ref(),
-                preuploaded_blob,
-                &assembled_path,
-            )
-            .await?;
-        }
-
-        // 事务外预先把 assembled 文件推到内容寻址路径。
-        // 这样事务里只剩纯 DB 操作，不会出现“commit 失败但对象已落盘”需要补偿的情况；
-        // 失败只会留下孤儿 storage 对象，由 blob GC 自然回收。
-        let dedup_context = if let Some(hasher) = hasher {
-            let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
-            let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-
-            // exists() 作为冗余 PUT 的软短路：失败/返回 false 都会退化为一次 PUT，
-            // 语义等同；真正的并发安全由内容寻址 + find_or_create_blob 保证。
-            let already_stored = driver.exists(&storage_path).await.unwrap_or(false);
-            if already_stored {
-                crate::utils::cleanup_temp_file(&assembled_path).await;
-            } else {
-                let stream_driver = driver.as_stream_upload().ok_or_else(|| {
-                    crate::errors::AsterError::storage_driver_error("stream upload not supported")
-                })?;
-                stream_driver
-                    .put_file(&storage_path, &assembled_path)
-                    .await?;
-            }
-
-            Some((file_hash, storage_path))
-        } else {
-            None
-        };
-
-        let create_result = async {
-            let txn = crate::db::transaction::begin(&state.db).await?;
-
-            let blob = if let Some((file_hash, storage_path)) = dedup_context.as_ref() {
-                let blob =
-                    file_repo::find_or_create_blob(&txn, file_hash, size, policy.id, storage_path)
-                        .await?;
-                blob.model
-            } else if let Some(preuploaded_blob) = preuploaded_blob.as_ref() {
-                workspace_storage_service::persist_preuploaded_blob(&txn, preuploaded_blob).await?
-            } else {
-                // hasher.is_none() ⇔ preuploaded_blob.is_some()，不存在第三种情况。
-                return Err(AsterError::upload_assembly_failed(
-                    "unreachable: no blob source for assembled upload",
-                ));
-            };
-
-            let created =
-                workspace_storage_service::finalize_upload_session_blob(&txn, &session, &blob, now)
-                    .await?;
-
-            crate::db::transaction::commit(txn).await?;
-            Ok::<file::Model, AsterError>(created)
-        }
-        .await;
-
-        match create_result {
-            Ok(created) => Ok(created),
-            Err(error) => {
-                if let Some(preuploaded_blob) = preuploaded_blob.as_ref() {
-                    workspace_storage_service::cleanup_preuploaded_blob_upload(
-                        driver.as_ref(),
-                        preuploaded_blob,
-                        "chunked upload DB error after storing assembled blob",
-                    )
-                    .await;
-                }
-                // dedup 失败不主动删 storage 对象：另一路并发上传可能正在引用同内容的 blob，
-                // 删除会造成 ref=1 的活 blob 丢数据；留给 orphan-blob GC 处理。
-                Err(error)
-            }
-        }
-    }
-    .await;
-
-    match result {
-        Ok(created) => {
-            let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
-            crate::utils::cleanup_temp_dir(&temp_dir).await;
-            tracing::debug!(
-                upload_id,
-                file_id = created.id,
-                blob_id = created.blob_id,
-                size = created.size,
-                "completed upload session"
-            );
-            Ok(created)
-        }
-        Err(error) => {
-            // session 一旦进入 failed，就不允许客户端继续 retry 当前 upload_id，
-            // 必须重新 init 一个新的会话，避免半成品状态被反复叠加。
-            mark_session_failed(db, upload_id).await;
-            Err(error)
-        }
-    }
+    Ok(CompletionPlan::AssembleChunks)
 }
 
 pub async fn complete_upload(
@@ -364,7 +207,7 @@ async fn complete_s3_multipart_upload_session(
     let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let multipart = state.driver_registry.get_multipart_driver(&policy)?;
-    let driver_ref: &dyn crate::storage::StorageDriver = driver.as_ref();
+    let driver_ref: &dyn StorageDriver = driver.as_ref();
     let upload_id = session.id.clone();
 
     tracing::debug!(

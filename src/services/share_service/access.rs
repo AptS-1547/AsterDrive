@@ -92,7 +92,7 @@ pub async fn get_share_avatar_bytes(state: &AppState, token: &str, size: u32) ->
 
 pub async fn verify_password(state: &AppState, token: &str, password: &str) -> Result<()> {
     let share = load_valid_share(state, token).await?;
-    tracing::debug!(share_id = share.id, "verifying share password");
+    tracing::debug!("verifying share password");
 
     let pw_hash = share
         .password
@@ -103,7 +103,7 @@ pub async fn verify_password(state: &AppState, token: &str, password: &str) -> R
         return Err(AsterError::auth_invalid_credentials("wrong share password"));
     }
 
-    tracing::debug!(share_id = share.id, "verified share password");
+    tracing::debug!("verified share password");
     Ok(())
 }
 

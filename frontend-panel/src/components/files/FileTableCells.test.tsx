@@ -8,6 +8,16 @@ import {
 	UpdatedAtCell,
 } from "@/components/files/FileTableCells";
 
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({
+		i18n: {
+			language: "zh",
+			resolvedLanguage: "zh",
+			t: (key: string) => key,
+		},
+	}),
+}));
+
 vi.mock("@/components/files/FileItemStatusIndicators", () => ({
 	FileItemStatusIndicators: ({
 		isShared,

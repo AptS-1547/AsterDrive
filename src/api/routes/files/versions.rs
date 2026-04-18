@@ -15,7 +15,7 @@ use actix_web::{HttpResponse, web};
     params(("id" = i64, Path, description = "File ID")),
     responses(
         (status = 200, description = "File versions", body = inline(ApiResponse<Vec<crate::services::workspace_models::FileVersion>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -39,7 +39,7 @@ pub async fn list_versions(
     ),
     responses(
         (status = 200, description = "Version restored", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Version not found"),
     ),
     security(("bearer" = [])),
@@ -65,7 +65,7 @@ pub async fn restore_version(
     ),
     responses(
         (status = 200, description = "Version deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Version not found"),
     ),
     security(("bearer" = [])),
@@ -90,7 +90,7 @@ pub async fn delete_version(
     ),
     responses(
         (status = 200, description = "File versions", body = inline(ApiResponse<Vec<crate::services::workspace_models::FileVersion>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -118,7 +118,7 @@ pub(crate) async fn team_list_versions(
     ),
     responses(
         (status = 200, description = "Version restored", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Version not found"),
     ),
@@ -153,7 +153,7 @@ pub(crate) async fn team_restore_version(
     ),
     responses(
         (status = 200, description = "Version deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Version not found"),
     ),

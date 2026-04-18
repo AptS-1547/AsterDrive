@@ -12,13 +12,12 @@ use sea_orm::{
 };
 use serde::Serialize;
 
-use crate::db::repository::{team_repo, user_repo};
+use crate::db::repository::{team_repo, upload_session_repo, user_repo};
 use crate::entities::{
     file::{self, Entity as File},
     file_blob::{self, Entity as FileBlob},
     file_version::{self, Entity as FileVersion},
     folder::{self, Entity as Folder},
-    upload_session,
 };
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::thumbnail_service;
@@ -615,17 +614,10 @@ async fn load_temp_paths_for_policy<C: ConnectionTrait>(
     db: &C,
     policy_id: i64,
 ) -> Result<HashSet<String>> {
-    let paths = upload_session::Entity::find()
-        .select_only()
-        .column(upload_session::Column::S3TempKey)
-        .filter(upload_session::Column::PolicyId.eq(policy_id))
-        .filter(upload_session::Column::S3TempKey.is_not_null())
-        .into_tuple::<Option<String>>()
-        .all(db)
-        .await
-        .map_aster_err(AsterError::database_operation)?;
-
-    Ok(paths.into_iter().flatten().collect())
+    Ok(upload_session_repo::list_temp_keys_by_policy(db, policy_id)
+        .await?
+        .into_iter()
+        .collect())
 }
 
 pub async fn audit_storage_objects<C: ConnectionTrait>(

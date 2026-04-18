@@ -29,7 +29,7 @@ pub(crate) struct UploadResponseParams<'a> {
     request_body(content = String, content_type = "multipart/form-data", description = "File to upload"),
     responses(
         (status = 201, description = "File uploaded", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -65,7 +65,7 @@ pub async fn upload(
     request_body = InitUploadReq,
     responses(
         (status = 201, description = "Upload session created", body = inline(ApiResponse<upload_service::InitUploadResponse>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -99,7 +99,7 @@ pub async fn init_chunked_upload(
     request_body(content = Vec<u8>, content_type = "application/octet-stream"),
     responses(
         (status = 200, description = "Chunk uploaded", body = inline(ApiResponse<upload_service::ChunkUploadResponse>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Session not found"),
     ),
     security(("bearer" = [])),
@@ -130,7 +130,7 @@ pub async fn upload_chunk(
     request_body(content = CompleteUploadReq, description = "Multipart completion data (optional, only for presigned_multipart mode)", content_type = "application/json"),
     responses(
         (status = 201, description = "File created", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Session not found"),
     ),
     security(("bearer" = [])),
@@ -162,7 +162,7 @@ pub async fn complete_upload(
     params(("upload_id" = String, Path, description = "Upload session ID")),
     responses(
         (status = 200, description = "Upload progress", body = ApiResponse<upload_service::UploadProgressResponse>),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Session not found"),
     ),
     security(("bearer" = [])),
@@ -184,7 +184,7 @@ pub async fn get_upload_progress(
     params(("upload_id" = String, Path, description = "Upload session ID")),
     responses(
         (status = 200, description = "Upload cancelled"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Session not found"),
     ),
     security(("bearer" = [])),
@@ -207,7 +207,7 @@ pub async fn cancel_upload(
     request_body = PresignPartsReq,
     responses(
         (status = 200, description = "Presigned URLs for each part", body = inline(ApiResponse<std::collections::HashMap<i32, String>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Session not found"),
     ),
     security(("bearer" = [])),
@@ -240,7 +240,7 @@ pub async fn presign_parts(
     request_body(content = String, content_type = "multipart/form-data", description = "File to upload"),
     responses(
         (status = 201, description = "Team file uploaded", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -277,7 +277,7 @@ pub(crate) async fn team_upload(
     request_body = InitUploadReq,
     responses(
         (status = 201, description = "Team upload session created", body = inline(ApiResponse<upload_service::InitUploadResponse>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -315,7 +315,7 @@ pub(crate) async fn team_init_chunked_upload(
     request_body(content = Vec<u8>, content_type = "application/octet-stream"),
     responses(
         (status = 200, description = "Chunk uploaded", body = inline(ApiResponse<upload_service::ChunkUploadResponse>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Session not found"),
     ),
@@ -352,7 +352,7 @@ pub(crate) async fn team_upload_chunk(
     request_body(content = CompleteUploadReq, description = "Multipart completion data (optional, only for presigned_multipart mode)", content_type = "application/json"),
     responses(
         (status = 201, description = "Team file created", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Session not found"),
     ),
@@ -395,7 +395,7 @@ pub(crate) async fn team_complete_upload(
     ),
     responses(
         (status = 200, description = "Upload progress", body = inline(ApiResponse<upload_service::UploadProgressResponse>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Session not found"),
     ),
@@ -423,7 +423,7 @@ pub(crate) async fn team_get_upload_progress(
     ),
     responses(
         (status = 200, description = "Upload cancelled"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Session not found"),
     ),
@@ -451,7 +451,7 @@ pub(crate) async fn team_cancel_upload(
     request_body = PresignPartsReq,
     responses(
         (status = 200, description = "Presigned URLs", body = inline(ApiResponse<std::collections::HashMap<i32, String>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Session not found"),
     ),

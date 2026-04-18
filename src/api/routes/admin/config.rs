@@ -18,7 +18,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
     params(LimitOffsetQuery),
     responses(
         (status = 200, description = "List config entries", body = inline(ApiResponse<OffsetPage<config_service::SystemConfig>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -39,7 +39,7 @@ pub async fn list_config(
     operation_id = "config_schema",
     responses(
         (status = 200, description = "Config schema", body = ApiResponse<Vec<config_service::ConfigSchemaItem>>),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -56,7 +56,7 @@ pub async fn config_schema() -> Result<HttpResponse> {
     operation_id = "config_template_variables",
     responses(
         (status = 200, description = "Template variables", body = ApiResponse<Vec<config_service::TemplateVariableGroup>>),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -74,7 +74,7 @@ pub async fn config_template_variables() -> Result<HttpResponse> {
     params(("key" = String, Path, description = "Config key")),
     responses(
         (status = 200, description = "Config entry", body = inline(ApiResponse<config_service::SystemConfig>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Config key not found"),
     ),
@@ -97,7 +97,8 @@ pub async fn get_config(
     request_body = SetConfigReq,
     responses(
         (status = 200, description = "Config value set", body = inline(ApiResponse<config_service::SystemConfig>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -123,7 +124,7 @@ pub async fn set_config(
     params(("key" = String, Path, description = "Config key")),
     responses(
         (status = 200, description = "Config entry deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Config key not found"),
     ),
@@ -147,7 +148,7 @@ pub async fn delete_config(
     responses(
         (status = 200, description = "Config action executed", body = inline(ApiResponse<ExecuteConfigActionResp>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Config action target not found"),
         (status = 503, description = "Mail service unavailable"),

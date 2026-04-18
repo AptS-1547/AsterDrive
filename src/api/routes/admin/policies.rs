@@ -139,7 +139,7 @@ impl From<PatchPolicyGroupReq> for policy_service::UpdateStoragePolicyGroupInput
     params(LimitOffsetQuery),
     responses(
         (status = 200, description = "List storage policies", body = inline(ApiResponse<OffsetPage<policy_service::StoragePolicy>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -161,7 +161,7 @@ pub async fn list_policies(
     request_body = CreatePolicyReq,
     responses(
         (status = 201, description = "Policy created", body = inline(ApiResponse<policy_service::StoragePolicy>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -183,7 +183,7 @@ pub async fn create_policy(
     params(("id" = i64, Path, description = "Policy ID")),
     responses(
         (status = 200, description = "Policy details", body = inline(ApiResponse<policy_service::StoragePolicy>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy not found"),
     ),
@@ -203,7 +203,7 @@ pub async fn get_policy(state: web::Data<AppState>, path: web::Path<i64>) -> Res
     request_body = PatchPolicyReq,
     responses(
         (status = 200, description = "Policy updated", body = inline(ApiResponse<policy_service::StoragePolicy>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy not found"),
     ),
@@ -227,7 +227,7 @@ pub async fn update_policy(
     params(("id" = i64, Path, description = "Policy ID")),
     responses(
         (status = 200, description = "Policy deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy not found"),
     ),
@@ -249,7 +249,7 @@ pub async fn delete_policy(
     params(("id" = i64, Path, description = "Policy ID")),
     responses(
         (status = 200, description = "Connection successful"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 500, description = "Connection failed"),
     ),
     security(("bearer" = [])),
@@ -270,7 +270,7 @@ pub async fn test_policy_connection(
     request_body = TestPolicyParamsReq,
     responses(
         (status = 200, description = "Connection successful"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 500, description = "Connection failed"),
     ),
     security(("bearer" = [])),
@@ -289,7 +289,7 @@ pub async fn test_policy_params(body: web::Json<TestPolicyParamsReq>) -> Result<
     params(LimitOffsetQuery),
     responses(
         (status = 200, description = "List storage policy groups", body = inline(ApiResponse<OffsetPage<crate::services::policy_service::StoragePolicyGroupInfo>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -313,7 +313,7 @@ pub async fn list_policy_groups(
     responses(
         (status = 201, description = "Policy group created", body = inline(ApiResponse<crate::services::policy_service::StoragePolicyGroupInfo>)),
         (status = 400, description = "Bad Request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -352,7 +352,7 @@ pub async fn create_policy_group(
     params(("id" = i64, Path, description = "Policy group ID")),
     responses(
         (status = 200, description = "Policy group details", body = inline(ApiResponse<crate::services::policy_service::StoragePolicyGroupInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy group not found"),
     ),
@@ -376,7 +376,7 @@ pub async fn get_policy_group(
     responses(
         (status = 200, description = "Policy group updated", body = inline(ApiResponse<crate::services::policy_service::StoragePolicyGroupInfo>)),
         (status = 400, description = "Bad Request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy group not found"),
     ),
@@ -418,7 +418,7 @@ pub async fn update_policy_group(
     responses(
         (status = 200, description = "Policy group removed"),
         (status = 400, description = "Bad Request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy group not found"),
     ),
@@ -460,7 +460,7 @@ pub async fn delete_policy_group(
     responses(
         (status = 200, description = "Policy group users migrated", body = inline(ApiResponse<crate::services::policy_service::PolicyGroupUserMigrationResult>)),
         (status = 400, description = "Bad Request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy group not found"),
     ),

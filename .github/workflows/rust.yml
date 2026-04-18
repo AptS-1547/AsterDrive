@@ -92,7 +92,7 @@ jobs:
           path: coverage/rust
 
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy -- -D warnings -D clippy::cast_possible_truncation
 
   integration-backends:
     name: Integration tests (${{ matrix.backend }})

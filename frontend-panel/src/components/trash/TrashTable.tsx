@@ -38,7 +38,7 @@ export function TrashTable({
 	onRestore,
 	onPurge,
 }: TrashTableProps) {
-	const { t } = useTranslation(["core", "files", "admin"]);
+	const { t, i18n } = useTranslation(["core", "files", "admin"]);
 
 	return (
 		<Table>
@@ -113,7 +113,7 @@ export function TrashTable({
 								{originalPath}
 							</TableCell>
 							<TableCell title={formatDateAbsolute(item.deleted_at)}>
-								{formatDate(item.deleted_at)}
+								{formatDate(item.deleted_at, i18n)}
 							</TableCell>
 							<TableCell>
 								{item.entity_type === "file" ? formatBytes(item.size) : "—"}

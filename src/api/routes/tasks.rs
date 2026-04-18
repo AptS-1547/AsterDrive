@@ -43,7 +43,7 @@ pub fn team_routes() -> actix_web::Scope {
     params(LimitOffsetQuery),
     responses(
         (status = 200, description = "Background tasks", body = inline(ApiResponse<OffsetPage<task_service::TaskInfo>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -70,7 +70,7 @@ pub async fn list_tasks(
     params(("id" = i64, Path, description = "Task ID")),
     responses(
         (status = 200, description = "Task details", body = inline(ApiResponse<task_service::TaskInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Task not found"),
     ),
     security(("bearer" = [])),
@@ -99,7 +99,7 @@ pub async fn get_task(
     responses(
         (status = 200, description = "Task reset for retry", body = inline(ApiResponse<task_service::TaskInfo>)),
         (status = 400, description = "Task is not retryable"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Task not found"),
     ),
     security(("bearer" = [])),
@@ -130,7 +130,7 @@ pub async fn retry_task(
     ),
     responses(
         (status = 200, description = "Team tasks", body = inline(ApiResponse<OffsetPage<task_service::TaskInfo>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -155,7 +155,7 @@ pub(crate) async fn team_list_tasks(
     ),
     responses(
         (status = 200, description = "Team task details", body = inline(ApiResponse<task_service::TaskInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Task not found"),
     ),
@@ -182,7 +182,7 @@ pub(crate) async fn team_get_task(
     responses(
         (status = 200, description = "Team task reset for retry", body = inline(ApiResponse<task_service::TaskInfo>)),
         (status = 400, description = "Task is not retryable"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Task not found"),
     ),

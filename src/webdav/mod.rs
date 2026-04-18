@@ -358,7 +358,12 @@ async fn handle_delete(
     };
     match result {
         Ok(()) => {
-            let _ = lock_system.delete(&path).await;
+            if lock_system.delete(&path).await.is_err() {
+                tracing::warn!(
+                    path = %decoded_path_string(&path),
+                    "failed to delete WebDAV locks after resource deletion"
+                );
+            }
             HttpResponse::NoContent().finish()
         }
         Err(err) => fs_error_response(err),
@@ -413,7 +418,12 @@ async fn handle_copy_move(
     match result {
         Ok(()) => {
             if is_move {
-                let _ = lock_system.delete(&source).await;
+                if lock_system.delete(&source).await.is_err() {
+                    tracing::warn!(
+                        path = %source_relative,
+                        "failed to delete WebDAV locks after move"
+                    );
+                }
             }
             if destination_exists {
                 HttpResponse::NoContent().finish()
@@ -1827,8 +1837,12 @@ mod tests {
                 .unwrap_or_default();
             let (mut writer, reader) = tokio::io::duplex(payload.len().max(1));
             tokio::spawn(async move {
-                let _ = writer.write_all(&payload).await;
-                let _ = writer.shutdown().await;
+                if let Err(error) = writer.write_all(&payload).await {
+                    tracing::trace!("mock direct upload stream write failed: {error}");
+                }
+                if let Err(error) = writer.shutdown().await {
+                    tracing::trace!("mock direct upload stream shutdown failed: {error}");
+                }
             });
             Ok(Box::new(reader))
         }

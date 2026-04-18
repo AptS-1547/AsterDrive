@@ -2,6 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use sea_orm::ConnectionTrait;
+
 use crate::db::repository::folder_repo;
 use crate::entities::folder;
 use crate::errors::{AsterError, Result};
@@ -10,8 +12,8 @@ use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
 use super::{FolderAncestorItem, ensure_folder_model_in_scope};
 
-pub(super) async fn load_folder_chain_map(
-    db: &sea_orm::DatabaseConnection,
+pub(super) async fn load_folder_chain_map<C: ConnectionTrait>(
+    db: &C,
     folder_ids: &[i64],
 ) -> Result<HashMap<i64, folder::Model>> {
     let mut loaded = HashMap::new();
@@ -49,8 +51,8 @@ pub(super) async fn load_folder_chain_map(
     Ok(loaded)
 }
 
-pub async fn build_folder_paths(
-    db: &sea_orm::DatabaseConnection,
+pub async fn build_folder_paths<C: ConnectionTrait>(
+    db: &C,
     folder_ids: &[i64],
 ) -> Result<HashMap<i64, String>> {
     let chain_map = load_folder_chain_map(db, folder_ids).await?;

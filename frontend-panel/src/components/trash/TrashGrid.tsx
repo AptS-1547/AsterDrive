@@ -27,7 +27,7 @@ export function TrashGrid({
 	onRestore,
 	onPurge,
 }: TrashGridProps) {
-	const { t } = useTranslation(["core", "files", "admin"]);
+	const { t, i18n } = useTranslation(["core", "files", "admin"]);
 
 	return (
 		<div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -99,7 +99,7 @@ export function TrashGrid({
 										className="font-medium text-foreground"
 										title={formatDateAbsolute(item.deleted_at)}
 									>
-										{formatDate(item.deleted_at)}
+										{formatDate(item.deleted_at, i18n)}
 									</p>
 								</div>
 								<div className="space-y-1">

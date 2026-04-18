@@ -85,5 +85,9 @@
 	"open_sidebar": "Open sidebar",
 	"close_sidebar": "Close sidebar",
 	"open_admin_sidebar": "Open admin sidebar",
-	"close_admin_sidebar": "Close admin sidebar"
+	"close_admin_sidebar": "Close admin sidebar",
+	"date_relative_just_now": "just now",
+	"date_relative_minutes_ago": "{{count}}m ago",
+	"date_relative_hours_ago": "{{count}}h ago",
+	"date_relative_days_ago": "{{count}}d ago"
 }

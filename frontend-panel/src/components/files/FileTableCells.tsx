@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { FileItemStatusIndicators } from "@/components/files/FileItemStatusIndicators";
 import { FileThumbnail } from "@/components/files/FileThumbnail";
 import { Icon } from "@/components/ui/icon";
@@ -64,9 +65,11 @@ export function FolderSizeCell() {
 }
 
 export function UpdatedAtCell({ updatedAt }: { updatedAt: string }) {
+	const { i18n } = useTranslation("core");
+
 	return (
 		<TableCell className="text-muted-foreground">
-			{formatDate(updatedAt)}
+			{formatDate(updatedAt, i18n)}
 		</TableCell>
 	);
 }

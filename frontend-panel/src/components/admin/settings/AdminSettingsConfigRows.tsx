@@ -100,12 +100,14 @@ function ScaledNumberInputControl({
 	config,
 	draftValue,
 	fullWidth,
+	hasError,
 	unitLabelKey,
 	units,
 }: {
 	config: SystemConfig;
 	draftValue: string;
 	fullWidth?: boolean;
+	hasError?: boolean;
 	unitLabelKey: string;
 	units: ReadonlyArray<{
 		labelKey: string;
@@ -139,6 +141,7 @@ function ScaledNumberInputControl({
 				step="1"
 				className="w-full sm:max-w-48"
 				value={formatDisplayValue(draftValue, selectedUnit)}
+				aria-invalid={hasError ? true : undefined}
 				onChange={(event) => {
 					const nextDisplayValue = event.target.value.trim();
 					if (!nextDisplayValue) {
@@ -198,10 +201,12 @@ function ConfigInputControl({
 	config,
 	draftValue,
 	fullWidth,
+	hasError,
 }: {
 	config: SystemConfig;
 	draftValue: string;
 	fullWidth?: boolean;
+	hasError?: boolean;
 }) {
 	const {
 		editorTheme,
@@ -230,6 +235,7 @@ function ConfigInputControl({
 						}
 						inputMode={isNumberType(valueType) ? "decimal" : "text"}
 						value={draftValue}
+						aria-invalid={hasError ? true : undefined}
 						onChange={(event) =>
 							updateDraftValue(config.key, event.target.value)
 						}
@@ -274,6 +280,7 @@ function ConfigInputControl({
 				config={config}
 				draftValue={draftValue}
 				fullWidth={fullWidth}
+				hasError={hasError}
 				unitLabelKey="settings_time_unit_label"
 				units={TIME_DISPLAY_UNITS[timeConfigBaseUnit]}
 			/>
@@ -286,6 +293,7 @@ function ConfigInputControl({
 				config={config}
 				draftValue={draftValue}
 				fullWidth={fullWidth}
+				hasError={hasError}
 				unitLabelKey="settings_size_unit_label"
 				units={SIZE_DISPLAY_UNITS}
 			/>
@@ -300,6 +308,7 @@ function ConfigInputControl({
 			inputMode={isNumberType(valueType) ? "decimal" : "text"}
 			className={fullWidth ? "w-full max-w-2xl" : "max-w-2xl"}
 			value={draftValue}
+			aria-invalid={hasError ? true : undefined}
 			onChange={(event) => updateDraftValue(config.key, event.target.value)}
 			placeholder={t("config_value")}
 		/>
@@ -307,10 +316,11 @@ function ConfigInputControl({
 }
 
 export function SystemConfigRow({ config }: { config: SystemConfig }) {
-	const { getDraftValue, t, updateDraftValue } =
+	const { configValidationErrors, getDraftValue, t, updateDraftValue } =
 		useAdminSettingsCategoryContent();
 	const draftValue = getDraftValue(config);
 	const valueType = getConfigValueType(config);
+	const error = configValidationErrors.get(config.key);
 
 	return (
 		<div className="space-y-3">
@@ -319,6 +329,7 @@ export function SystemConfigRow({ config }: { config: SystemConfig }) {
 				<div className="flex items-center gap-3 text-sm">
 					<Switch
 						id={config.key}
+						aria-invalid={error ? true : undefined}
 						checked={draftValue === "true"}
 						onCheckedChange={(checked) =>
 							updateDraftValue(config.key, checked ? "true" : "false")
@@ -331,8 +342,13 @@ export function SystemConfigRow({ config }: { config: SystemConfig }) {
 					</span>
 				</div>
 			) : (
-				<ConfigInputControl config={config} draftValue={draftValue} />
+				<ConfigInputControl
+					config={config}
+					draftValue={draftValue}
+					hasError={Boolean(error)}
+				/>
 			)}
+			{error ? <p className="text-sm text-destructive">{error}</p> : null}
 		</div>
 	);
 }

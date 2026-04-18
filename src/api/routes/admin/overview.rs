@@ -14,7 +14,7 @@ use actix_web::{HttpResponse, web};
     params(admin_service::AdminOverviewQuery),
     responses(
         (status = 200, description = "Admin overview", body = inline(ApiResponse<crate::services::admin_service::AdminOverview>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),

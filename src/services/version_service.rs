@@ -371,16 +371,12 @@ async fn cleanup_blob_if_unused(state: &AppState, blob_id: i64) -> Result<()> {
     let db = &state.db;
     let blob = file_repo::find_blob_by_id(db, blob_id).await?;
 
-    if blob.ref_count <= 1 {
-        file_repo::decrement_blob_ref_count(db, blob.id).await?;
-        if !crate::services::file_service::cleanup_unreferenced_blob(state, &blob).await {
-            tracing::warn!(
-                blob_id = blob.id,
-                "blob cleanup incomplete after version cleanup; blob row retained for retry"
-            );
-        }
-    } else {
-        file_repo::decrement_blob_ref_count(db, blob.id).await?;
+    file_repo::decrement_blob_ref_count(db, blob.id).await?;
+    if !crate::services::file_service::ensure_blob_cleanup_if_unreferenced(state, blob.id).await {
+        tracing::warn!(
+            blob_id = blob.id,
+            "blob cleanup incomplete after version cleanup; blob row retained for retry"
+        );
     }
 
     Ok(())

@@ -57,7 +57,7 @@ pub fn team_routes() -> actix_web::Scope {
     request_body = CreateFolderReq,
     responses(
         (status = 201, description = "Folder created", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -87,7 +87,7 @@ pub async fn create_folder(
     params(FolderListQuery),
     responses(
         (status = 200, description = "Root folder contents", body = inline(ApiResponse<folder_service::FolderContents>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -115,7 +115,7 @@ pub async fn list_root(
     params(("id" = i64, Path, description = "Folder ID"), FolderListQuery),
     responses(
         (status = 200, description = "Folder contents", body = inline(ApiResponse<folder_service::FolderContents>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Folder not found"),
     ),
     security(("bearer" = [])),
@@ -145,7 +145,7 @@ pub async fn list_folder(
     params(("id" = i64, Path, description = "Folder ID")),
     responses(
         (status = 200, description = "Folder info", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Folder not found"),
     ),
     security(("bearer" = [])),
@@ -173,7 +173,7 @@ pub async fn get_folder_info(
     params(("id" = i64, Path, description = "Folder ID")),
     responses(
         (status = 200, description = "Folder ancestors", body = inline(ApiResponse<Vec<folder_service::FolderAncestorItem>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Folder not found"),
     ),
     security(("bearer" = [])),
@@ -201,7 +201,7 @@ pub async fn get_ancestors(
     params(("id" = i64, Path, description = "Folder ID")),
     responses(
         (status = 200, description = "Folder deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Folder not found"),
     ),
     security(("bearer" = [])),
@@ -233,7 +233,7 @@ pub async fn delete_folder(
     request_body = PatchFolderReq,
     responses(
         (status = 200, description = "Folder updated", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Folder not found"),
     ),
     security(("bearer" = [])),
@@ -269,7 +269,7 @@ pub async fn patch_folder(
     request_body = SetLockReq,
     responses(
         (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Folder not found"),
     ),
     security(("bearer" = [])),
@@ -302,7 +302,7 @@ pub async fn set_lock(
     request_body = CopyFolderReq,
     responses(
         (status = 201, description = "Folder copied", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Folder not found"),
     ),
     security(("bearer" = [])),
@@ -338,7 +338,7 @@ pub async fn copy_folder(
     ),
     responses(
         (status = 200, description = "Team root folder contents", body = inline(ApiResponse<folder_service::FolderContents>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -361,7 +361,7 @@ pub(crate) async fn team_list_root(
     request_body = CreateFolderReq,
     responses(
         (status = 201, description = "Team folder created", body = inline(ApiResponse<FolderInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -395,7 +395,7 @@ pub(crate) async fn team_create_folder(
     ),
     responses(
         (status = 200, description = "Team folder contents", body = inline(ApiResponse<folder_service::FolderContents>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
     ),
@@ -428,7 +428,7 @@ pub(crate) async fn team_list_folder(
     ),
     responses(
         (status = 200, description = "Team folder info", body = inline(ApiResponse<FolderInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
     ),
@@ -454,7 +454,7 @@ pub(crate) async fn team_get_folder_info(
     ),
     responses(
         (status = 200, description = "Team folder ancestors", body = inline(ApiResponse<Vec<folder_service::FolderAncestorItem>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
     ),
@@ -480,7 +480,7 @@ pub(crate) async fn team_get_ancestors(
     ),
     responses(
         (status = 200, description = "Team folder deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
     ),
@@ -515,7 +515,7 @@ pub(crate) async fn team_delete_folder(
     request_body = PatchFolderReq,
     responses(
         (status = 200, description = "Team folder updated", body = inline(ApiResponse<FolderInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
     ),
@@ -552,7 +552,7 @@ pub(crate) async fn team_patch_folder(
     request_body = CopyFolderReq,
     responses(
         (status = 201, description = "Team folder copied", body = inline(ApiResponse<FolderInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
     ),
@@ -589,7 +589,7 @@ pub(crate) async fn team_copy_folder(
     request_body = SetLockReq,
     responses(
         (status = 200, description = "Lock state updated", body = inline(ApiResponse<FolderInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
     ),

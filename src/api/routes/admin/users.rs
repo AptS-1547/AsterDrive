@@ -25,7 +25,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
     request_body = CreateUserReq,
     responses(
         (status = 201, description = "User created", body = inline(ApiResponse<crate::services::user_service::UserInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 400, description = "Validation error"),
     ),
@@ -68,7 +68,7 @@ pub async fn create_user(
     params(LimitOffsetQuery, AdminUserListQuery),
     responses(
         (status = 200, description = "List users", body = inline(ApiResponse<OffsetPage<crate::services::user_service::UserInfo>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -98,7 +98,7 @@ pub async fn list_users(
     params(("id" = i64, Path, description = "User ID")),
     responses(
         (status = 200, description = "User details", body = inline(ApiResponse<crate::services::user_service::UserInfo>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "User not found"),
     ),
@@ -117,7 +117,7 @@ pub async fn get_user(state: web::Data<AppState>, path: web::Path<i64>) -> Resul
     params(("id" = i64, Path, description = "User ID")),
     responses(
         (status = 200, description = "User sessions revoked"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "User not found"),
     ),
@@ -154,7 +154,7 @@ pub async fn revoke_user_sessions(
     responses(
         (status = 200, description = "User updated", body = inline(ApiResponse<crate::services::user_service::UserInfo>)),
         (status = 400, description = "Bad request, for example when policy_group_id cannot be null"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "User not found"),
     ),
@@ -210,7 +210,7 @@ pub async fn update_user(
     responses(
         (status = 200, description = "User password reset"),
         (status = 400, description = "Validation error"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "User not found"),
     ),
@@ -248,7 +248,7 @@ pub async fn reset_user_password(
     responses(
         (status = 200, description = "User and all data permanently deleted"),
         (status = 400, description = "Cannot delete admin user"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Admin required"),
         (status = 404, description = "User not found"),
     ),
@@ -273,7 +273,7 @@ pub async fn force_delete_user(
     ),
     responses(
         (status = 200, description = "Avatar image (WebP)"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Avatar not found"),
     ),

@@ -26,7 +26,10 @@ pub use content::{
     update_content, upload,
 };
 pub use deletion::{batch_purge, delete, purge};
-pub(crate) use deletion::{batch_purge_in_scope, cleanup_unreferenced_blob, delete_in_scope};
+pub(crate) use deletion::{
+    batch_purge_in_scope, cleanup_unreferenced_blob, delete_in_scope,
+    ensure_blob_cleanup_if_unreferenced,
+};
 pub use download::{DownloadOutcome, StreamedFile, download, download_raw};
 pub(crate) use download::{
     build_download_outcome_with_disposition, build_stream_outcome_with_disposition,

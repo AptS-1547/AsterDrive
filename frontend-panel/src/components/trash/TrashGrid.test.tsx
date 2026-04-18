@@ -6,6 +6,11 @@ import type { TrashItem } from "@/types/api-helpers";
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string) => key,
+		i18n: {
+			language: "zh",
+			resolvedLanguage: "zh",
+			t: (key: string) => key,
+		},
 	}),
 }));
 

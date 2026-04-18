@@ -264,6 +264,7 @@
 	"preview_apps_editor_title": "Structured registry editor",
 	"preview_apps_editor_hint": "This editor still writes back to the same JSON config, but it lets you edit apps, extension bindings, and provider settings directly instead of hand-writing JSON.",
 	"preview_apps_validation_error": "Fix the preview app registry errors before saving.",
+	"cors_wildcard_credentials_validation_error": "You cannot keep allowed origins as \"*\" while cross-origin credentials are enabled. Switch to an explicit origin list or turn credentials off before saving.",
 	"preview_apps_recover": "Reinitialize draft",
 	"preview_apps_version_label": "Version {{version}}",
 	"preview_apps_app_count": "{{count}} app(s)",

@@ -39,7 +39,7 @@ pub fn team_routes() -> actix_web::Scope {
     params(SearchParams),
     responses(
         (status = 200, description = "Search results", body = inline(ApiResponse<SearchResults>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -70,7 +70,7 @@ pub async fn search(
     ),
     responses(
         (status = 200, description = "Team workspace search results", body = inline(ApiResponse<SearchResults>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),

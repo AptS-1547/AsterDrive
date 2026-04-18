@@ -42,7 +42,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     ),
     responses(
         (status = 200, description = "Properties list", body = inline(ApiResponse<Vec<property_service::EntityProperty>>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 404, description = "Entity not found"),
     ),
     security(("bearer" = [])),
@@ -71,7 +71,7 @@ pub async fn list_props(
     request_body = SetPropReq,
     responses(
         (status = 200, description = "Property set", body = inline(ApiResponse<property_service::EntityProperty>)),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "DAV: namespace is read-only"),
         (status = 404, description = "Entity not found"),
     ),
@@ -113,7 +113,7 @@ pub async fn set_prop(
     ),
     responses(
         (status = 200, description = "Property deleted"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "DAV: namespace is read-only"),
         (status = 404, description = "Entity not found"),
     ),

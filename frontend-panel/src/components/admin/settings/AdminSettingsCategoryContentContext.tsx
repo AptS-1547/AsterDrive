@@ -14,6 +14,7 @@ export interface AdminSettingsCategoryContentProps {
 	activeTab: string;
 	addCustomDraftRow: () => void;
 	category: string;
+	configValidationErrors: Map<string, string>;
 	deletedCustomConfigs: SystemConfig[];
 	displayUnits: Partial<
 		Record<string, TimeDisplayUnitValue | SizeDisplayUnitValue>

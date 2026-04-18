@@ -56,7 +56,7 @@ pub fn team_routes() -> actix_web::Scope {
     responses(
         (status = 200, description = "Batch delete result", body = inline(ApiResponse<batch_service::BatchResult>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -88,7 +88,7 @@ pub async fn batch_delete(
     responses(
         (status = 200, description = "Batch move result", body = inline(ApiResponse<batch_service::BatchResult>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -120,7 +120,7 @@ pub async fn batch_move(
     responses(
         (status = 200, description = "Batch copy result", body = inline(ApiResponse<batch_service::BatchResult>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -152,7 +152,7 @@ pub async fn batch_copy(
     responses(
         (status = 200, description = "Archive download ticket", body = inline(ApiResponse<stream_ticket_service::StreamTicketInfo>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -181,7 +181,7 @@ pub async fn archive_download(
     responses(
         (status = 200, description = "Archive compress task created", body = inline(ApiResponse<task_service::TaskInfo>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -210,7 +210,7 @@ pub async fn archive_compress(
     responses(
         (status = 200, description = "Archive stream download"),
         (status = 400, description = "Invalid ticket"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
     security(("bearer" = [])),
 )]
@@ -240,7 +240,7 @@ pub async fn archive_download_stream(
     responses(
         (status = 200, description = "Team batch delete result", body = inline(ApiResponse<batch_service::BatchResult>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -274,7 +274,7 @@ pub(crate) async fn team_batch_delete(
     responses(
         (status = 200, description = "Team batch move result", body = inline(ApiResponse<batch_service::BatchResult>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -308,7 +308,7 @@ pub(crate) async fn team_batch_move(
     responses(
         (status = 200, description = "Team batch copy result", body = inline(ApiResponse<batch_service::BatchResult>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -342,7 +342,7 @@ pub(crate) async fn team_batch_copy(
     responses(
         (status = 200, description = "Team archive download ticket", body = inline(ApiResponse<stream_ticket_service::StreamTicketInfo>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -368,7 +368,7 @@ pub(crate) async fn team_archive_download(
     responses(
         (status = 200, description = "Team archive compress task created", body = inline(ApiResponse<task_service::TaskInfo>)),
         (status = 400, description = "Invalid request"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
@@ -396,7 +396,7 @@ pub(crate) async fn team_archive_compress(
     responses(
         (status = 200, description = "Team archive stream download"),
         (status = 400, description = "Invalid ticket"),
-        (status = 401, description = "Unauthorized"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
     security(("bearer" = [])),
