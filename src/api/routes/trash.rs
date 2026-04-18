@@ -1,3 +1,4 @@
+use crate::api::dto::TrashItemPath;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::TrashListQuery;
@@ -10,9 +11,6 @@ use crate::types::EntityType;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api);
@@ -24,13 +22,6 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("", web::delete().to(purge_all))
         .route("/{entity_type}/{id}/restore", web::post().to(restore))
         .route("/{entity_type}/{id}", web::delete().to(purge_one))
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct TrashItemPath {
-    pub entity_type: EntityType,
-    pub id: i64,
 }
 
 #[api_docs_macros::path(

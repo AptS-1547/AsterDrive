@@ -1,3 +1,4 @@
+pub use crate::api::dto::teams::*;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::LimitOffsetQuery;
@@ -13,9 +14,6 @@ use crate::types::TeamMemberRole;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::{IntoParams, ToSchema};
 
 pub use crate::api::routes::team_requests::{
     AddTeamMemberReq, ListTeamMembersQuery, PatchTeamMemberReq,
@@ -50,29 +48,6 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .service(team_trash::routes())
         .service(team_tasks::routes())
         .service(team_space::routes(rl))
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(
-    all(debug_assertions, feature = "openapi"),
-    derive(IntoParams, ToSchema)
-)]
-pub struct ListTeamsQuery {
-    pub archived: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CreateTeamReq {
-    pub name: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PatchTeamReq {
-    pub name: Option<String>,
-    pub description: Option<String>,
 }
 
 #[api_docs_macros::path(

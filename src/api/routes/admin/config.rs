@@ -1,37 +1,12 @@
+use crate::api::dto::admin::{ExecuteConfigActionReq, ExecuteConfigActionResp, SetConfigReq};
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{audit_service, auth_service::Claims, config_service};
+use crate::services::{audit_service, config_service};
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct SetConfigReq {
-    pub value: String,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct ExecuteConfigActionReq {
-    pub action: config_service::ConfigActionType,
-    pub discovery_url: Option<String>,
-    pub target_email: Option<String>,
-    pub value: Option<String>,
-}
-
-#[derive(serde::Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct ExecuteConfigActionResp {
-    pub message: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<String>,
-}
 
 #[api_docs_macros::path(
     get,
@@ -127,7 +102,7 @@ pub async fn get_config(
 )]
 pub async fn set_config(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
+    claims: web::ReqData<crate::services::auth_service::Claims>,
     req: HttpRequest,
     path: web::Path<String>,
     body: web::Json<SetConfigReq>,
@@ -179,7 +154,7 @@ pub async fn delete_config(
 )]
 pub async fn execute_config_action(
     state: web::Data<AppState>,
-    claims: web::ReqData<Claims>,
+    claims: web::ReqData<crate::services::auth_service::Claims>,
     req: HttpRequest,
     path: web::Path<String>,
     body: web::Json<ExecuteConfigActionReq>,

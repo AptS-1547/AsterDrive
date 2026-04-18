@@ -1,3 +1,4 @@
+pub use crate::api::dto::batch::*;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::response::ApiResponse;
@@ -11,9 +12,6 @@ use crate::services::{
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.write);
@@ -30,58 +28,6 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
             "/archive-download/{token}",
             web::get().to(archive_download_stream),
         )
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct BatchDeleteReq {
-    #[serde(default)]
-    pub file_ids: Vec<i64>,
-    #[serde(default)]
-    pub folder_ids: Vec<i64>,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct BatchMoveReq {
-    #[serde(default)]
-    pub file_ids: Vec<i64>,
-    #[serde(default)]
-    pub folder_ids: Vec<i64>,
-    /// 目标文件夹 ID（null = 根目录）
-    pub target_folder_id: Option<i64>,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct BatchCopyReq {
-    #[serde(default)]
-    pub file_ids: Vec<i64>,
-    #[serde(default)]
-    pub folder_ids: Vec<i64>,
-    /// 目标文件夹 ID（null = 根目录）
-    pub target_folder_id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct ArchiveDownloadReq {
-    #[serde(default)]
-    pub file_ids: Vec<i64>,
-    #[serde(default)]
-    pub folder_ids: Vec<i64>,
-    pub archive_name: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct ArchiveCompressReq {
-    #[serde(default)]
-    pub file_ids: Vec<i64>,
-    #[serde(default)]
-    pub folder_ids: Vec<i64>,
-    pub archive_name: Option<String>,
-    pub target_folder_id: Option<i64>,
 }
 
 #[api_docs_macros::path(

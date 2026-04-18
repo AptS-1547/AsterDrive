@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { StoragePolicyDialog } from "@/components/admin/StoragePolicyDialog";
+import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
+import { PolicyDialogs } from "@/components/admin/admin-policies-page/PolicyDialogs";
 import {
 	buildCreatePolicyPayload,
 	buildPolicyTestPayload,
@@ -16,20 +17,12 @@ import {
 	type PolicyFormData,
 } from "@/components/admin/storagePolicyDialogShared";
 import { AdminTableList } from "@/components/common/AdminTableList";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import {
 	TableCell,
 	TableHead,
@@ -544,109 +537,36 @@ export default function AdminPoliciesPage() {
 					)}
 				/>
 
-				{total > 0 ? (
-					<div className="flex items-center justify-between gap-3 px-4 pb-4 text-sm text-muted-foreground md:px-6">
-						<div className="flex items-center gap-3">
-							<span>
-								{t("entries_page", {
-									total,
-									current: currentPage,
-									pages: totalPages,
-								})}
-							</span>
-							<Select
-								items={pageSizeOptions}
-								value={String(pageSize)}
-								onValueChange={handlePageSizeChange}
-							>
-								<SelectTrigger width="page-size">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{pageSizeOptions.map((option) => (
-										<SelectItem key={option.value} value={option.value}>
-											{option.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-						<TooltipProvider>
-							<div className="flex items-center gap-2">
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={prevPageDisabled}
-												onClick={() =>
-													setOffset(Math.max(0, offset - pageSize))
-												}
-											/>
-										}
-									>
-										<Icon name="CaretLeft" className="h-4 w-4" />
-									</TooltipTrigger>
-									{prevPageDisabled ? (
-										<TooltipContent>
-											{t("pagination_prev_disabled")}
-										</TooltipContent>
-									) : null}
-								</Tooltip>
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={nextPageDisabled}
-												onClick={() => setOffset(offset + pageSize)}
-											/>
-										}
-									>
-										<Icon name="CaretRight" className="h-4 w-4" />
-									</TooltipTrigger>
-									{nextPageDisabled ? (
-										<TooltipContent>
-											{t("pagination_next_disabled")}
-										</TooltipContent>
-									) : null}
-								</Tooltip>
-							</div>
-						</TooltipProvider>
-					</div>
-				) : null}
-
-				<ConfirmDialog
-					{...dialogProps}
-					title={`${t("delete_policy")} "${deletePolicyName}"?`}
-					description={t("delete_policy_desc")}
-					confirmLabel={t("core:delete")}
-					variant="destructive"
+				<AdminOffsetPagination
+					total={total}
+					currentPage={currentPage}
+					totalPages={totalPages}
+					pageSize={String(pageSize)}
+					pageSizeOptions={pageSizeOptions}
+					onPageSizeChange={handlePageSizeChange}
+					prevDisabled={prevPageDisabled}
+					nextDisabled={nextPageDisabled}
+					onPrevious={() => setOffset(Math.max(0, offset - pageSize))}
+					onNext={() => setOffset(offset + pageSize)}
 				/>
 
-				<ConfirmDialog
-					open={saveConfirmOpen}
-					onOpenChange={setSaveConfirmOpen}
-					title={t("connection_test_failed")}
-					description={t("policy_test_failed_confirm_desc")}
-					confirmLabel={t("save_anyway")}
-					onConfirm={() => {
-						setSaveConfirmOpen(false);
-						void submitPolicy(true);
-					}}
-				/>
-
-				<StoragePolicyDialog
-					open={dialogOpen}
-					mode={editingId === null ? "create" : "edit"}
+				<PolicyDialogs
+					deleteDialogProps={dialogProps}
+					deletePolicyName={deletePolicyName}
+					dialogOpen={dialogOpen}
+					editMode={editingId !== null}
 					form={form}
 					submitting={submitting}
 					createStep={createStep}
 					createStepTouched={createStepTouched}
 					endpointValidationMessage={endpointValidationMessage}
-					onOpenChange={handleDialogOpenChange}
+					saveConfirmOpen={saveConfirmOpen}
+					onSaveConfirmOpenChange={setSaveConfirmOpen}
+					onSaveAnyway={() => {
+						setSaveConfirmOpen(false);
+						void submitPolicy(true);
+					}}
+					onDialogOpenChange={handleDialogOpenChange}
 					onSubmit={handleSubmit}
 					onRunConnectionTest={() => runConnectionTest()}
 					onFieldChange={setField}

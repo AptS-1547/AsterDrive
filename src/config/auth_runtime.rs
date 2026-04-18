@@ -1,18 +1,13 @@
 use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, Result};
 
-pub const AUTH_COOKIE_SECURE_KEY: &str = "auth_cookie_secure";
-pub const AUTH_ALLOW_USER_REGISTRATION_KEY: &str = "auth_allow_user_registration";
-pub const AUTH_REGISTER_ACTIVATION_ENABLED_KEY: &str = "auth_register_activation_enabled";
-pub const AUTH_ACCESS_TOKEN_TTL_SECS_KEY: &str = "auth_access_token_ttl_secs";
-pub const AUTH_REFRESH_TOKEN_TTL_SECS_KEY: &str = "auth_refresh_token_ttl_secs";
-pub const AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY: &str = "auth_register_activation_ttl_secs";
-pub const AUTH_CONTACT_CHANGE_TTL_SECS_KEY: &str = "auth_contact_change_ttl_secs";
-pub const AUTH_PASSWORD_RESET_TTL_SECS_KEY: &str = "auth_password_reset_ttl_secs";
-pub const AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY: &str =
-    "auth_contact_verification_resend_cooldown_secs";
-pub const AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY: &str =
-    "auth_password_reset_request_cooldown_secs";
+pub use crate::config::definitions::{
+    AUTH_ACCESS_TOKEN_TTL_SECS_KEY, AUTH_ALLOW_USER_REGISTRATION_KEY,
+    AUTH_CONTACT_CHANGE_TTL_SECS_KEY, AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY,
+    AUTH_COOKIE_SECURE_KEY, AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY,
+    AUTH_PASSWORD_RESET_TTL_SECS_KEY, AUTH_REFRESH_TOKEN_TTL_SECS_KEY,
+    AUTH_REGISTER_ACTIVATION_ENABLED_KEY, AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY,
+};
 
 pub const DEFAULT_AUTH_COOKIE_SECURE: bool = true;
 pub const DEFAULT_AUTH_ALLOW_USER_REGISTRATION: bool = true;

@@ -3,7 +3,7 @@ use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 
 use crate::cache::CacheExt;
 use crate::db::repository::user_repo;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 
 use super::{AUTH_SNAPSHOT_TTL, AuthSnapshot, UserAuditInfo, user_audit_info};
@@ -40,7 +40,10 @@ pub async fn revoke_user_sessions(state: &AppState, user_id: i64) -> Result<User
     let mut active = user.into_active_model();
     active.session_version = Set(next_session_version);
     active.updated_at = Set(Utc::now());
-    let updated = active.update(&state.db).await.map_err(AsterError::from)?;
+    let updated = active
+        .update(&state.db)
+        .await
+        .map_aster_err(AsterError::database_operation)?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
     tracing::debug!(
         user_id = updated.id,

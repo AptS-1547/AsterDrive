@@ -1,3 +1,4 @@
+pub use crate::api::dto::shares::*;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::LimitOffsetQuery;
@@ -16,9 +17,6 @@ use crate::services::{
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api);
@@ -31,34 +29,6 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/batch-delete", web::post().to(batch_delete_shares))
         .route("/{id}", web::patch().to(update_share))
         .route("/{id}", web::delete().to(delete_share))
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CreateShareReq {
-    pub target: crate::services::share_service::ShareTarget,
-    pub password: Option<String>,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
-    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[serde(default)]
-    pub max_downloads: i64,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct UpdateShareReq {
-    /// `None` = keep existing password, `Some(\"\")` = remove password, non-empty = replace password
-    pub password: Option<String>,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
-    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub max_downloads: i64,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct BatchDeleteSharesReq {
-    #[serde(default)]
-    pub share_ids: Vec<i64>,
 }
 
 #[api_docs_macros::path(

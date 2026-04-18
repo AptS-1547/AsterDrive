@@ -1,4 +1,4 @@
-use super::common::deserialize_non_null_policy_group_id;
+use crate::api::dto::admin::{AdminCreateTeamReq, AdminPatchTeamReq, AdminTeamListQuery};
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
@@ -10,38 +10,6 @@ use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{audit_service, auth_service::Claims, team_service};
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::{IntoParams, ToSchema};
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(
-    all(debug_assertions, feature = "openapi"),
-    derive(IntoParams, ToSchema)
-)]
-pub struct AdminTeamListQuery {
-    pub keyword: Option<String>,
-    pub archived: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct AdminCreateTeamReq {
-    pub name: String,
-    pub description: Option<String>,
-    pub admin_user_id: Option<i64>,
-    pub admin_identifier: Option<String>,
-    pub policy_group_id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct AdminPatchTeamReq {
-    pub name: Option<String>,
-    pub description: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_non_null_policy_group_id")]
-    pub policy_group_id: Option<i64>,
-}
 
 #[api_docs_macros::path(
     get,
@@ -119,7 +87,7 @@ pub async fn create_team(
         (status = 200, description = "Team details", body = inline(ApiResponse<crate::services::team_service::AdminTeamInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Team not found"),
+        (status = 404, description = "Not found"),
     ),
     security(("bearer" = [])),
 )]
@@ -140,7 +108,7 @@ pub async fn get_team(state: web::Data<AppState>, path: web::Path<i64>) -> Resul
         (status = 400, description = "Validation error"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Team not found"),
+        (status = 404, description = "Not found"),
     ),
     security(("bearer" = [])),
 )]
@@ -176,7 +144,7 @@ pub async fn update_team(
         (status = 200, description = "Team archived"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Team not found"),
+        (status = 404, description = "Not found"),
     ),
     security(("bearer" = [])),
 )]
@@ -201,7 +169,7 @@ pub async fn delete_team(
         (status = 200, description = "Team restored", body = inline(ApiResponse<crate::services::team_service::AdminTeamInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
-        (status = 404, description = "Team not found"),
+        (status = 404, description = "Not found"),
     ),
     security(("bearer" = [])),
 )]

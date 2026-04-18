@@ -8,6 +8,12 @@ import {
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
+import {
+	CreateTeamDialog,
+	type CreateTeamFormState,
+	type TeamPolicyGroupOption,
+} from "@/components/admin/admin-teams-page/CreateTeamDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -16,25 +22,9 @@ import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import {
 	Table,
 	TableBody,
@@ -43,12 +33,6 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -79,19 +63,6 @@ const TEAM_MANAGED_QUERY_KEYS = [
 	"offset",
 	"pageSize",
 ] as const;
-
-interface CreateTeamFormState {
-	name: string;
-	description: string;
-	adminIdentifier: string;
-	policyGroupId: string;
-}
-
-interface PolicyGroupOption {
-	disabled?: boolean;
-	label: string;
-	value: string;
-}
 
 const EMPTY_CREATE_FORM: CreateTeamFormState = {
 	name: "",
@@ -178,8 +149,8 @@ function getDefaultPolicyGroupId(policyGroups: StoragePolicyGroup[]) {
 function buildPolicyGroupOptions(
 	policyGroups: StoragePolicyGroup[],
 	selectedPolicyGroupId: number | null,
-): PolicyGroupOption[] {
-	const options: PolicyGroupOption[] = policyGroups
+): TeamPolicyGroupOption[] {
+	const options: TeamPolicyGroupOption[] = policyGroups
 		.filter((group) => group.is_enabled && group.items.length > 0)
 		.map((group) => ({
 			label: group.name,
@@ -670,195 +641,32 @@ export default function AdminTeamsPage() {
 					</AdminSurface>
 				)}
 
-				{total > 0 ? (
-					<div className="flex items-center justify-between gap-3 px-4 pb-4 text-sm text-muted-foreground md:px-6">
-						<div className="flex items-center gap-3">
-							<span>
-								{t("entries_page", {
-									total,
-									current: currentPage,
-									pages: totalPages,
-								})}
-							</span>
-							<Select
-								items={pageSizeOptions}
-								value={String(pageSize)}
-								onValueChange={handlePageSizeChange}
-							>
-								<SelectTrigger width="page-size">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{pageSizeOptions.map((option) => (
-										<SelectItem key={option.value} value={option.value}>
-											{option.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-						<TooltipProvider>
-							<div className="flex items-center gap-2">
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={prevPageDisabled}
-												onClick={() =>
-													setOffset(Math.max(0, offset - pageSize))
-												}
-											/>
-										}
-									>
-										<Icon name="CaretLeft" className="h-4 w-4" />
-									</TooltipTrigger>
-									{prevPageDisabled ? (
-										<TooltipContent>
-											{t("pagination_prev_disabled")}
-										</TooltipContent>
-									) : null}
-								</Tooltip>
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={nextPageDisabled}
-												onClick={() => setOffset(offset + pageSize)}
-											/>
-										}
-									>
-										<Icon name="CaretRight" className="h-4 w-4" />
-									</TooltipTrigger>
-									{nextPageDisabled ? (
-										<TooltipContent>
-											{t("pagination_next_disabled")}
-										</TooltipContent>
-									) : null}
-								</Tooltip>
-							</div>
-						</TooltipProvider>
-					</div>
-				) : null}
+				<AdminOffsetPagination
+					total={total}
+					currentPage={currentPage}
+					totalPages={totalPages}
+					pageSize={String(pageSize)}
+					pageSizeOptions={pageSizeOptions}
+					onPageSizeChange={handlePageSizeChange}
+					prevDisabled={prevPageDisabled}
+					nextDisabled={nextPageDisabled}
+					onPrevious={() => setOffset(Math.max(0, offset - pageSize))}
+					onNext={() => setOffset(offset + pageSize)}
+				/>
 			</AdminPageShell>
-
-			<Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-				<DialogContent keepMounted>
-					<form onSubmit={(event) => void handleCreate(event)}>
-						<DialogHeader>
-							<DialogTitle>{t("new_team")}</DialogTitle>
-							<DialogDescription>{t("create_team_desc")}</DialogDescription>
-						</DialogHeader>
-						<div className="space-y-4 py-2">
-							<div className="space-y-2">
-								<Label htmlFor="admin-team-name">{t("core:name")}</Label>
-								<Input
-									id="admin-team-name"
-									value={createForm.name}
-									maxLength={128}
-									disabled={submitting}
-									onChange={(event) =>
-										setCreateForm((prev) => ({
-											...prev,
-											name: event.target.value,
-										}))
-									}
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor="admin-team-admin">
-									{t("team_admin_identifier")}
-								</Label>
-								<Input
-									id="admin-team-admin"
-									value={createForm.adminIdentifier}
-									disabled={submitting}
-									placeholder={t("team_admin_placeholder")}
-									onChange={(event) =>
-										setCreateForm((prev) => ({
-											...prev,
-											adminIdentifier: event.target.value,
-										}))
-									}
-								/>
-								<p className="text-xs text-muted-foreground">
-									{t("team_admin_identifier_desc")}
-								</p>
-							</div>
-							<div className="space-y-2">
-								<Label>{t("team_policy_group")}</Label>
-								<Select
-									items={createPolicyGroupOptions}
-									value={createForm.policyGroupId}
-									onValueChange={(value) =>
-										setCreateForm((prev) => ({
-											...prev,
-											policyGroupId: value ?? "",
-										}))
-									}
-								>
-									<SelectTrigger disabled={submitting || policyGroupsLoading}>
-										<SelectValue placeholder={t("select_policy_group")} />
-									</SelectTrigger>
-									<SelectContent>
-										{createPolicyGroupOptions.map((option) => (
-											<SelectItem
-												key={option.value}
-												value={option.value}
-												disabled={option.disabled}
-											>
-												{option.label}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-								<p className="text-xs text-muted-foreground">
-									{t("team_policy_group_desc")}
-								</p>
-								{createPolicyGroupUnavailable ? (
-									<p className="text-xs text-destructive">
-										{t("policy_group_no_assignable_groups")}
-									</p>
-								) : null}
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor="admin-team-description">
-									{t("description")}
-								</Label>
-								<textarea
-									id="admin-team-description"
-									value={createForm.description}
-									disabled={submitting}
-									rows={4}
-									className="min-h-24 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-									onChange={(event) =>
-										setCreateForm((prev) => ({
-											...prev,
-											description: event.target.value,
-										}))
-									}
-								/>
-							</div>
-						</div>
-						<DialogFooter>
-							<Button
-								type="submit"
-								disabled={
-									submitting ||
-									!createForm.name.trim() ||
-									!createForm.adminIdentifier.trim() ||
-									!createForm.policyGroupId
-								}
-							>
-								{t("create_team")}
-							</Button>
-						</DialogFooter>
-					</form>
-				</DialogContent>
-			</Dialog>
+			<CreateTeamDialog
+				open={createDialogOpen}
+				form={createForm}
+				submitting={submitting}
+				policyGroupsLoading={policyGroupsLoading}
+				policyGroupOptions={createPolicyGroupOptions}
+				policyGroupUnavailable={createPolicyGroupUnavailable}
+				onOpenChange={setCreateDialogOpen}
+				onSubmit={(event) => void handleCreate(event)}
+				onFieldChange={(key, value) =>
+					setCreateForm((prev) => ({ ...prev, [key]: value }))
+				}
+			/>
 		</AdminLayout>
 	);
 }

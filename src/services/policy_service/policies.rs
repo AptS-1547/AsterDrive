@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, EntityTrait, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{policy_group_repo, policy_repo};
@@ -54,7 +54,7 @@ pub async fn create(state: &AppState, input: CreateStoragePolicyInput) -> Result
     let allowed_types = allowed_types.unwrap_or_default();
     let options = options.unwrap_or_default();
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let now = Utc::now();
     let model = storage_policy::ActiveModel {
         name: Set(name),
@@ -80,7 +80,7 @@ pub async fn create(state: &AppState, input: CreateStoragePolicyInput) -> Result
         let default_group_id = ensure_singleton_group_for_policy(&txn, result.id).await?;
         policy_group_repo::set_only_default_group(&txn, default_group_id).await?;
     }
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     state.policy_snapshot.reload(&state.db).await?;
     policy_repo::find_by_id(&state.db, result.id)
         .await
@@ -129,7 +129,7 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
     storage_policy::Entity::delete_by_id(id)
         .exec(&state.db)
         .await
-        .map_err(AsterError::from)?;
+        .map_aster_err(AsterError::database_operation)?;
 
     state.policy_snapshot.reload(&state.db).await?;
     state.driver_registry.invalidate(id);
@@ -154,7 +154,7 @@ pub async fn update(
         allowed_types,
         options,
     } = input;
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let existing = policy_repo::find_by_id(&txn, id).await?;
     let existing_endpoint = existing.endpoint.clone();
     let existing_bucket = existing.bucket.clone();
@@ -212,7 +212,10 @@ pub async fn update(
         active.options = Set(serialize_options(&v)?);
     }
     active.updated_at = Set(Utc::now());
-    let result = active.update(&txn).await.map_err(AsterError::from)?;
+    let result = active
+        .update(&txn)
+        .await
+        .map_aster_err(AsterError::database_operation)?;
 
     if is_default == Some(true) {
         lock_default_group_assignment(&txn).await?;
@@ -221,7 +224,7 @@ pub async fn update(
         policy_group_repo::set_only_default_group(&txn, default_group_id).await?;
     }
 
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
 
     state.policy_snapshot.reload(&state.db).await?;
     state.driver_registry.invalidate(id);

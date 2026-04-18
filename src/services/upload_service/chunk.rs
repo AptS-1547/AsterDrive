@@ -5,7 +5,6 @@
 //! - 服务端 relay 到 S3 multipart，并把 ETag 记入 upload_session_parts
 
 use chrono::Utc;
-use sea_orm::TransactionTrait;
 
 use crate::db::repository::{upload_session_part_repo, upload_session_repo};
 use crate::entities::upload_session;
@@ -37,7 +36,7 @@ async fn increment_session_received_count<C: sea_orm::ConnectionTrait>(
         .filter(Column::Status.eq(UploadSessionStatus::Uploading))
         .exec(db)
         .await
-        .map_err(AsterError::from)?;
+        .map_aster_err(AsterError::database_operation)?;
 
     if result.rows_affected == 1 {
         return Ok(());
@@ -137,14 +136,14 @@ async fn upload_chunk_impl(
             }
         };
 
-        let txn = db.begin().await.map_err(AsterError::from)?;
+        let txn = crate::db::transaction::begin(db).await?;
         let finalize_result = async {
             // S3 上传成功以后，必须把 part 元数据和 received_count 放在同一事务里提交；
             // 否则 complete 阶段会看到“不完整的 part 清单”。
             upload_session_part_repo::upsert_part(&txn, upload_id, s3_part_number, &etag, data_len)
                 .await?;
             increment_session_received_count(&txn, upload_id).await?;
-            txn.commit().await.map_err(AsterError::from)?;
+            crate::db::transaction::commit(txn).await?;
             Ok::<(), AsterError>(())
         }
         .await;

@@ -1,4 +1,5 @@
 use actix_web::http::StatusCode;
+use std::any::Any;
 
 /// 计数宏：计算传入标识符的数量（放在 define_errors! 之前，因为后者在展开时会调用此宏）
 macro_rules! count {
@@ -269,6 +270,28 @@ pub fn display_error(err: impl std::fmt::Display) -> String {
     err.to_string()
 }
 
+fn map_display_error<E: std::fmt::Display + 'static>(
+    err: E,
+    ctx: Option<&str>,
+    f: impl FnOnce(String) -> AsterError,
+) -> AsterError {
+    if let Some(db_err) = (&err as &dyn Any).downcast_ref::<sea_orm::DbErr>()
+        && let sea_orm::DbErr::RecordNotFound(message) = db_err
+    {
+        let message = match ctx {
+            Some(ctx) => format!("{ctx}: {message}"),
+            None => message.clone(),
+        };
+        return AsterError::record_not_found(message);
+    }
+
+    let message = match ctx {
+        Some(ctx) => format!("{ctx}: {err}"),
+        None => err.to_string(),
+    };
+    f(message)
+}
+
 /// Extension trait to reduce common `map_err` boilerplate.
 pub trait MapAsterErr<T> {
     /// Map any `Display` error to an `AsterError` variant via its constructor.
@@ -293,13 +316,13 @@ pub trait MapAsterErr<T> {
     fn map_aster_err_with(self, f: impl FnOnce() -> AsterError) -> Result<T>;
 }
 
-impl<T, E: std::fmt::Display> MapAsterErr<T> for std::result::Result<T, E> {
+impl<T, E: std::fmt::Display + 'static> MapAsterErr<T> for std::result::Result<T, E> {
     fn map_aster_err(self, f: impl FnOnce(String) -> AsterError) -> Result<T> {
-        self.map_err(|e| f(e.to_string()))
+        self.map_err(|e| map_display_error(e, None, f))
     }
 
     fn map_aster_err_ctx(self, ctx: &str, f: impl FnOnce(String) -> AsterError) -> Result<T> {
-        self.map_err(|e| f(format!("{ctx}: {e}")))
+        self.map_err(|e| map_display_error(e, Some(ctx), f))
     }
 
     fn map_aster_err_with(self, f: impl FnOnce() -> AsterError) -> Result<T> {
@@ -374,5 +397,25 @@ mod tests {
 
         assert_eq!(err.code(), "E005");
         assert_eq!(err.message(), "invalid token");
+    }
+
+    #[test]
+    fn map_aster_err_preserves_db_record_not_found() {
+        let err = Err::<(), sea_orm::DbErr>(sea_orm::DbErr::RecordNotFound("user#42".to_string()))
+            .map_aster_err(AsterError::database_operation)
+            .unwrap_err();
+
+        assert_eq!(err.code(), "E006");
+        assert_eq!(err.message(), "user#42");
+    }
+
+    #[test]
+    fn map_aster_err_ctx_preserves_db_record_not_found_context() {
+        let err = Err::<(), sea_orm::DbErr>(sea_orm::DbErr::RecordNotFound("user#42".to_string()))
+            .map_aster_err_ctx("load user", AsterError::database_operation)
+            .unwrap_err();
+
+        assert_eq!(err.code(), "E006");
+        assert_eq!(err.message(), "load user: user#42");
     }
 }

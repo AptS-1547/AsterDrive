@@ -1,3 +1,4 @@
+pub use crate::api::dto::files::*;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -8,25 +9,7 @@ use crate::services::{
     workspace_models::FileInfo,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
-use crate::types::NullablePatch;
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CreateEmptyRequest {
-    pub name: String,
-    pub folder_id: Option<i64>,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct ExtractArchiveRequest {
-    pub target_folder_id: Option<i64>,
-    pub output_folder_name: Option<String>,
-}
 
 #[api_docs_macros::path(
     post,
@@ -119,15 +102,6 @@ pub async fn delete_file(
     .await
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PatchFileReq {
-    pub name: Option<String>,
-    #[serde(default)]
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<i64>))]
-    pub folder_id: NullablePatch<i64>,
-}
-
 #[api_docs_macros::path(
     patch,
     path = "/api/v1/files/{id}",
@@ -198,12 +172,6 @@ pub async fn update_content(
     .await
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct SetLockReq {
-    pub locked: bool,
-}
-
 #[api_docs_macros::path(
     post,
     path = "/api/v1/files/{id}/lock",
@@ -233,13 +201,6 @@ pub async fn set_lock(
         body.locked,
     )
     .await
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CopyFileReq {
-    /// 目标文件夹 ID（null = 根目录）
-    pub folder_id: Option<i64>,
 }
 
 #[api_docs_macros::path(

@@ -2,8 +2,102 @@
 //!
 //! 启动时 `ensure_defaults()` 遍历此数组，
 //! 对每项执行 INSERT ... ON CONFLICT DO NOTHING。
+//!
+//! 所有 `system_config` 键字符串在此处以 `pub const` 形式声明，
+//! 子模块通过 `pub use crate::config::definitions::*_KEY` 重导出，
+//! 不再各自定义本地 `const`，确保单一数据源。
 
 use crate::types::SystemConfigValueType;
+
+// ── Auth keys ────────────────────────────────────────────────────────────────
+pub const AUTH_COOKIE_SECURE_KEY: &str = "auth_cookie_secure";
+pub const AUTH_ACCESS_TOKEN_TTL_SECS_KEY: &str = "auth_access_token_ttl_secs";
+pub const AUTH_REFRESH_TOKEN_TTL_SECS_KEY: &str = "auth_refresh_token_ttl_secs";
+pub const AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY: &str = "auth_register_activation_ttl_secs";
+pub const AUTH_CONTACT_CHANGE_TTL_SECS_KEY: &str = "auth_contact_change_ttl_secs";
+pub const AUTH_PASSWORD_RESET_TTL_SECS_KEY: &str = "auth_password_reset_ttl_secs";
+pub const AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY: &str =
+    "auth_contact_verification_resend_cooldown_secs";
+pub const AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY: &str =
+    "auth_password_reset_request_cooldown_secs";
+pub const AUTH_ALLOW_USER_REGISTRATION_KEY: &str = "auth_allow_user_registration";
+pub const AUTH_REGISTER_ACTIVATION_ENABLED_KEY: &str = "auth_register_activation_enabled";
+
+// ── CORS keys ────────────────────────────────────────────────────────────────
+pub const CORS_ENABLED_KEY: &str = "cors_enabled";
+pub const CORS_ALLOWED_ORIGINS_KEY: &str = "cors_allowed_origins";
+pub const CORS_ALLOW_CREDENTIALS_KEY: &str = "cors_allow_credentials";
+pub const CORS_MAX_AGE_SECS_KEY: &str = "cors_max_age_secs";
+
+// ── Operations keys ──────────────────────────────────────────────────────────
+pub const MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY: &str = "mail_outbox_dispatch_interval_secs";
+pub const BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY: &str =
+    "background_task_dispatch_interval_secs";
+pub const BACKGROUND_TASK_MAX_CONCURRENCY_KEY: &str = "background_task_max_concurrency";
+pub const BACKGROUND_TASK_MAX_ATTEMPTS_KEY: &str = "background_task_max_attempts";
+pub const MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY: &str = "maintenance_cleanup_interval_secs";
+pub const BLOB_RECONCILE_INTERVAL_SECS_KEY: &str = "blob_reconcile_interval_secs";
+pub const TEAM_MEMBER_LIST_MAX_LIMIT_KEY: &str = "team_member_list_max_limit";
+pub const TASK_LIST_MAX_LIMIT_KEY: &str = "task_list_max_limit";
+pub const AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY: &str = "avatar_max_upload_size_bytes";
+pub const THUMBNAIL_MAX_SOURCE_BYTES_KEY: &str = "thumbnail_max_source_bytes";
+
+// ── Storage keys ─────────────────────────────────────────────────────────────
+pub const MAX_VERSIONS_PER_FILE_KEY: &str = "max_versions_per_file";
+pub const TRASH_RETENTION_DAYS_KEY: &str = "trash_retention_days";
+pub const TEAM_ARCHIVE_RETENTION_DAYS_KEY: &str = "team_archive_retention_days";
+pub const TASK_RETENTION_HOURS_KEY: &str = "task_retention_hours";
+pub const DEFAULT_STORAGE_QUOTA_KEY: &str = "default_storage_quota";
+
+// ── Mail keys ────────────────────────────────────────────────────────────────
+pub const MAIL_SMTP_HOST_KEY: &str = "mail_smtp_host";
+pub const MAIL_SMTP_PORT_KEY: &str = "mail_smtp_port";
+pub const MAIL_SMTP_USERNAME_KEY: &str = "mail_smtp_username";
+pub const MAIL_SMTP_PASSWORD_KEY: &str = "mail_smtp_password";
+pub const MAIL_FROM_ADDRESS_KEY: &str = "mail_from_address";
+pub const MAIL_FROM_NAME_KEY: &str = "mail_from_name";
+pub const MAIL_SECURITY_KEY: &str = "mail_security";
+pub const MAIL_TEMPLATE_REGISTER_ACTIVATION_SUBJECT_KEY: &str =
+    "mail_template_register_activation_subject";
+pub const MAIL_TEMPLATE_REGISTER_ACTIVATION_HTML_KEY: &str =
+    "mail_template_register_activation_html";
+pub const MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_SUBJECT_KEY: &str =
+    "mail_template_contact_change_confirmation_subject";
+pub const MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_HTML_KEY: &str =
+    "mail_template_contact_change_confirmation_html";
+pub const MAIL_TEMPLATE_PASSWORD_RESET_SUBJECT_KEY: &str = "mail_template_password_reset_subject";
+pub const MAIL_TEMPLATE_PASSWORD_RESET_HTML_KEY: &str = "mail_template_password_reset_html";
+pub const MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_SUBJECT_KEY: &str =
+    "mail_template_password_reset_notice_subject";
+pub const MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_HTML_KEY: &str =
+    "mail_template_password_reset_notice_html";
+pub const MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_SUBJECT_KEY: &str =
+    "mail_template_contact_change_notice_subject";
+pub const MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_HTML_KEY: &str =
+    "mail_template_contact_change_notice_html";
+
+// ── General / branding keys ──────────────────────────────────────────────────
+pub const PUBLIC_SITE_URL_KEY: &str = "public_site_url";
+pub const BRANDING_TITLE_KEY: &str = "branding_title";
+pub const BRANDING_DESCRIPTION_KEY: &str = "branding_description";
+pub const BRANDING_FAVICON_URL_KEY: &str = "branding_favicon_url";
+pub const BRANDING_WORDMARK_DARK_URL_KEY: &str = "branding_wordmark_dark_url";
+pub const BRANDING_WORDMARK_LIGHT_URL_KEY: &str = "branding_wordmark_light_url";
+
+// ── WOPI keys ────────────────────────────────────────────────────────────────
+pub const WOPI_ACCESS_TOKEN_TTL_SECS_KEY: &str = "wopi_access_token_ttl_secs";
+pub const WOPI_LOCK_TTL_SECS_KEY: &str = "wopi_lock_ttl_secs";
+pub const WOPI_DISCOVERY_CACHE_TTL_SECS_KEY: &str = "wopi_discovery_cache_ttl_secs";
+
+// ── Avatar keys ──────────────────────────────────────────────────────────────
+pub const AVATAR_DIR_KEY: &str = "avatar_dir";
+
+// ── Audit keys ───────────────────────────────────────────────────────────────
+pub const AUDIT_LOG_ENABLED_KEY: &str = "audit_log_enabled";
+pub const AUDIT_LOG_RETENTION_DAYS_KEY: &str = "audit_log_retention_days";
+
+// ── WebDAV keys ──────────────────────────────────────────────────────────────
+pub const WEBDAV_ENABLED_KEY: &str = "webdav_enabled";
 
 /// 单条配置定义
 pub struct ConfigDef {
@@ -31,7 +125,7 @@ pub struct ConfigDef {
 pub static ALL_CONFIGS: &[ConfigDef] = &[
     // ── Auth ────────────────────────────────────────────────
     ConfigDef {
-        key: "auth_cookie_secure",
+        key: AUTH_COOKIE_SECURE_KEY,
         label_i18n_key: "settings_item_auth_cookie_secure_label",
         description_i18n_key: "settings_item_auth_cookie_secure_desc",
         value_type: SystemConfigValueType::Boolean,
@@ -42,7 +136,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Whether auth and share verification cookies require HTTPS",
     },
     ConfigDef {
-        key: "auth_access_token_ttl_secs",
+        key: AUTH_ACCESS_TOKEN_TTL_SECS_KEY,
         label_i18n_key: "settings_item_auth_access_token_ttl_secs_label",
         description_i18n_key: "settings_item_auth_access_token_ttl_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -53,7 +147,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Access token lifetime in seconds",
     },
     ConfigDef {
-        key: "auth_refresh_token_ttl_secs",
+        key: AUTH_REFRESH_TOKEN_TTL_SECS_KEY,
         label_i18n_key: "settings_item_auth_refresh_token_ttl_secs_label",
         description_i18n_key: "settings_item_auth_refresh_token_ttl_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -64,7 +158,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Refresh token lifetime in seconds",
     },
     ConfigDef {
-        key: "auth_register_activation_ttl_secs",
+        key: AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY,
         label_i18n_key: "settings_item_auth_register_activation_ttl_secs_label",
         description_i18n_key: "settings_item_auth_register_activation_ttl_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -75,7 +169,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Registration activation link lifetime in seconds",
     },
     ConfigDef {
-        key: "auth_contact_change_ttl_secs",
+        key: AUTH_CONTACT_CHANGE_TTL_SECS_KEY,
         label_i18n_key: "settings_item_auth_contact_change_ttl_secs_label",
         description_i18n_key: "settings_item_auth_contact_change_ttl_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -86,7 +180,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Contact change confirmation link lifetime in seconds",
     },
     ConfigDef {
-        key: "auth_password_reset_ttl_secs",
+        key: AUTH_PASSWORD_RESET_TTL_SECS_KEY,
         label_i18n_key: "settings_item_auth_password_reset_ttl_secs_label",
         description_i18n_key: "settings_item_auth_password_reset_ttl_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -97,7 +191,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Password reset link lifetime in seconds",
     },
     ConfigDef {
-        key: "auth_contact_verification_resend_cooldown_secs",
+        key: AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY,
         label_i18n_key: "settings_item_auth_contact_verification_resend_cooldown_secs_label",
         description_i18n_key: "settings_item_auth_contact_verification_resend_cooldown_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -108,7 +202,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Minimum cooldown between verification email resends in seconds",
     },
     ConfigDef {
-        key: "auth_password_reset_request_cooldown_secs",
+        key: AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY,
         label_i18n_key: "settings_item_auth_password_reset_request_cooldown_secs_label",
         description_i18n_key: "settings_item_auth_password_reset_request_cooldown_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -120,7 +214,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     // ── WebDAV ──────────────────────────────────────────────
     ConfigDef {
-        key: "webdav_enabled",
+        key: WEBDAV_ENABLED_KEY,
         label_i18n_key: "settings_item_webdav_enabled_label",
         description_i18n_key: "settings_item_webdav_enabled_desc",
         value_type: SystemConfigValueType::Boolean,
@@ -132,7 +226,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     // ── Network ─────────────────────────────────────────────
     ConfigDef {
-        key: "cors_enabled",
+        key: CORS_ENABLED_KEY,
         label_i18n_key: "settings_item_cors_enabled_label",
         description_i18n_key: "settings_item_cors_enabled_desc",
         value_type: SystemConfigValueType::Boolean,
@@ -143,7 +237,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Enable CORS handling for cross-origin browser requests. When disabled, the server skips all CORS headers and enforcement",
     },
     ConfigDef {
-        key: "cors_allowed_origins",
+        key: CORS_ALLOWED_ORIGINS_KEY,
         label_i18n_key: "settings_item_cors_allowed_origins_label",
         description_i18n_key: "settings_item_cors_allowed_origins_desc",
         value_type: SystemConfigValueType::String,
@@ -154,7 +248,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Comma-separated CORS origin whitelist. Empty = skip CORS headers and let the browser block cross-origin access, '*' = allow any origin",
     },
     ConfigDef {
-        key: "cors_allow_credentials",
+        key: CORS_ALLOW_CREDENTIALS_KEY,
         label_i18n_key: "settings_item_cors_allow_credentials_label",
         description_i18n_key: "settings_item_cors_allow_credentials_desc",
         value_type: SystemConfigValueType::Boolean,
@@ -165,7 +259,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Whether CORS responses include Access-Control-Allow-Credentials",
     },
     ConfigDef {
-        key: "cors_max_age_secs",
+        key: CORS_MAX_AGE_SECS_KEY,
         label_i18n_key: "settings_item_cors_max_age_secs_label",
         description_i18n_key: "settings_item_cors_max_age_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -177,7 +271,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     // ── Operations ──────────────────────────────────────────
     ConfigDef {
-        key: "mail_outbox_dispatch_interval_secs",
+        key: MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY,
         label_i18n_key: "settings_item_mail_outbox_dispatch_interval_secs_label",
         description_i18n_key: "settings_item_mail_outbox_dispatch_interval_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -190,7 +284,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Seconds between mail outbox dispatch polls",
     },
     ConfigDef {
-        key: "background_task_dispatch_interval_secs",
+        key: BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY,
         label_i18n_key: "settings_item_background_task_dispatch_interval_secs_label",
         description_i18n_key: "settings_item_background_task_dispatch_interval_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -203,7 +297,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Seconds between background task dispatch polls",
     },
     ConfigDef {
-        key: "background_task_max_concurrency",
+        key: BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
         label_i18n_key: "settings_item_background_task_max_concurrency_label",
         description_i18n_key: "settings_item_background_task_max_concurrency_desc",
         value_type: SystemConfigValueType::Number,
@@ -216,7 +310,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Maximum number of background tasks the server may execute at the same time",
     },
     ConfigDef {
-        key: "background_task_max_attempts",
+        key: BACKGROUND_TASK_MAX_ATTEMPTS_KEY,
         label_i18n_key: "settings_item_background_task_max_attempts_label",
         description_i18n_key: "settings_item_background_task_max_attempts_desc",
         value_type: SystemConfigValueType::Number,
@@ -227,7 +321,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Maximum number of attempts for workspace background tasks before they permanently fail",
     },
     ConfigDef {
-        key: "maintenance_cleanup_interval_secs",
+        key: MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY,
         label_i18n_key: "settings_item_maintenance_cleanup_interval_secs_label",
         description_i18n_key: "settings_item_maintenance_cleanup_interval_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -240,7 +334,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Seconds between periodic maintenance cleanup runs",
     },
     ConfigDef {
-        key: "blob_reconcile_interval_secs",
+        key: BLOB_RECONCILE_INTERVAL_SECS_KEY,
         label_i18n_key: "settings_item_blob_reconcile_interval_secs_label",
         description_i18n_key: "settings_item_blob_reconcile_interval_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -251,7 +345,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Seconds between full blob reconciliation runs",
     },
     ConfigDef {
-        key: "team_member_list_max_limit",
+        key: TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
         label_i18n_key: "settings_item_team_member_list_max_limit_label",
         description_i18n_key: "settings_item_team_member_list_max_limit_desc",
         value_type: SystemConfigValueType::Number,
@@ -262,7 +356,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Maximum page size accepted by team member listing endpoints",
     },
     ConfigDef {
-        key: "task_list_max_limit",
+        key: TASK_LIST_MAX_LIMIT_KEY,
         label_i18n_key: "settings_item_task_list_max_limit_label",
         description_i18n_key: "settings_item_task_list_max_limit_desc",
         value_type: SystemConfigValueType::Number,
@@ -274,7 +368,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     // ── Storage ─────────────────────────────────────────────
     ConfigDef {
-        key: "max_versions_per_file",
+        key: MAX_VERSIONS_PER_FILE_KEY,
         label_i18n_key: "settings_item_max_versions_per_file_label",
         description_i18n_key: "settings_item_max_versions_per_file_desc",
         value_type: SystemConfigValueType::Number,
@@ -285,7 +379,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Maximum number of historical versions kept per file",
     },
     ConfigDef {
-        key: "trash_retention_days",
+        key: TRASH_RETENTION_DAYS_KEY,
         label_i18n_key: "settings_item_trash_retention_days_label",
         description_i18n_key: "settings_item_trash_retention_days_desc",
         value_type: SystemConfigValueType::Number,
@@ -296,7 +390,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Days before soft-deleted items are permanently purged",
     },
     ConfigDef {
-        key: "team_archive_retention_days",
+        key: TEAM_ARCHIVE_RETENTION_DAYS_KEY,
         label_i18n_key: "settings_item_team_archive_retention_days_label",
         description_i18n_key: "settings_item_team_archive_retention_days_desc",
         value_type: SystemConfigValueType::Number,
@@ -307,7 +401,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Days before archived teams are permanently deleted",
     },
     ConfigDef {
-        key: "task_retention_hours",
+        key: TASK_RETENTION_HOURS_KEY,
         label_i18n_key: "settings_item_task_retention_hours_label",
         description_i18n_key: "settings_item_task_retention_hours_desc",
         value_type: SystemConfigValueType::Number,
@@ -318,7 +412,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Hours before temporary background task artifacts expire; task records remain as history",
     },
     ConfigDef {
-        key: "default_storage_quota",
+        key: DEFAULT_STORAGE_QUOTA_KEY,
         label_i18n_key: "settings_item_default_storage_quota_label",
         description_i18n_key: "settings_item_default_storage_quota_desc",
         value_type: SystemConfigValueType::Number,
@@ -329,7 +423,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Default storage quota for new users in bytes (0 = unlimited)",
     },
     ConfigDef {
-        key: "thumbnail_max_source_bytes",
+        key: THUMBNAIL_MAX_SOURCE_BYTES_KEY,
         label_i18n_key: "settings_item_thumbnail_max_source_bytes_label",
         description_i18n_key: "settings_item_thumbnail_max_source_bytes_desc",
         value_type: SystemConfigValueType::Number,
@@ -341,7 +435,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     // ── User ───────────────────────────────────────────────
     ConfigDef {
-        key: "auth_allow_user_registration",
+        key: AUTH_ALLOW_USER_REGISTRATION_KEY,
         label_i18n_key: "settings_item_auth_allow_user_registration_label",
         description_i18n_key: "settings_item_auth_allow_user_registration_desc",
         value_type: SystemConfigValueType::Boolean,
@@ -352,7 +446,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Whether new users can self-register from the public auth flow",
     },
     ConfigDef {
-        key: "auth_register_activation_enabled",
+        key: AUTH_REGISTER_ACTIVATION_ENABLED_KEY,
         label_i18n_key: "settings_item_auth_register_activation_enabled_label",
         description_i18n_key: "settings_item_auth_register_activation_enabled_desc",
         value_type: SystemConfigValueType::Boolean,
@@ -363,7 +457,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Whether newly registered users must activate their account by email before signing in",
     },
     ConfigDef {
-        key: "avatar_dir",
+        key: AVATAR_DIR_KEY,
         label_i18n_key: "settings_item_avatar_dir_label",
         description_i18n_key: "settings_item_avatar_dir_desc",
         value_type: SystemConfigValueType::String,
@@ -374,7 +468,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Local directory used for uploaded avatar files (relative paths resolve under ./data)",
     },
     ConfigDef {
-        key: "avatar_max_upload_size_bytes",
+        key: AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
         label_i18n_key: "settings_item_avatar_max_upload_size_bytes_label",
         description_i18n_key: "settings_item_avatar_max_upload_size_bytes_desc",
         value_type: SystemConfigValueType::Number,
@@ -397,7 +491,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     // ── Audit ─────────────────────────────────────────────
     ConfigDef {
-        key: "audit_log_enabled",
+        key: AUDIT_LOG_ENABLED_KEY,
         label_i18n_key: "settings_item_audit_log_enabled_label",
         description_i18n_key: "settings_item_audit_log_enabled_desc",
         value_type: SystemConfigValueType::Boolean,
@@ -408,7 +502,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Enable or disable audit logging",
     },
     ConfigDef {
-        key: "audit_log_retention_days",
+        key: AUDIT_LOG_RETENTION_DAYS_KEY,
         label_i18n_key: "settings_item_audit_log_retention_days_label",
         description_i18n_key: "settings_item_audit_log_retention_days_desc",
         value_type: SystemConfigValueType::Number,
@@ -420,7 +514,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     // ── Mail ──────────────────────────────────────────────
     ConfigDef {
-        key: "mail_smtp_host",
+        key: MAIL_SMTP_HOST_KEY,
         label_i18n_key: "settings_item_mail_smtp_host_label",
         description_i18n_key: "settings_item_mail_smtp_host_desc",
         value_type: SystemConfigValueType::String,
@@ -431,7 +525,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "SMTP server hostname used for transactional email delivery",
     },
     ConfigDef {
-        key: "mail_smtp_port",
+        key: MAIL_SMTP_PORT_KEY,
         label_i18n_key: "settings_item_mail_smtp_port_label",
         description_i18n_key: "settings_item_mail_smtp_port_desc",
         value_type: SystemConfigValueType::Number,
@@ -442,7 +536,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "SMTP server port used for transactional email delivery",
     },
     ConfigDef {
-        key: "mail_smtp_username",
+        key: MAIL_SMTP_USERNAME_KEY,
         label_i18n_key: "settings_item_mail_smtp_username_label",
         description_i18n_key: "settings_item_mail_smtp_username_desc",
         value_type: SystemConfigValueType::String,
@@ -453,7 +547,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "SMTP username for authenticated mail delivery",
     },
     ConfigDef {
-        key: "mail_smtp_password",
+        key: MAIL_SMTP_PASSWORD_KEY,
         label_i18n_key: "settings_item_mail_smtp_password_label",
         description_i18n_key: "settings_item_mail_smtp_password_desc",
         value_type: SystemConfigValueType::String,
@@ -464,7 +558,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "SMTP password for authenticated mail delivery",
     },
     ConfigDef {
-        key: "mail_from_address",
+        key: MAIL_FROM_ADDRESS_KEY,
         label_i18n_key: "settings_item_mail_from_address_label",
         description_i18n_key: "settings_item_mail_from_address_desc",
         value_type: SystemConfigValueType::String,
@@ -475,7 +569,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "From address used for account activation and contact verification email",
     },
     ConfigDef {
-        key: "mail_from_name",
+        key: MAIL_FROM_NAME_KEY,
         label_i18n_key: "settings_item_mail_from_name_label",
         description_i18n_key: "settings_item_mail_from_name_desc",
         value_type: SystemConfigValueType::String,
@@ -486,7 +580,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Display name used for account activation and contact verification email",
     },
     ConfigDef {
-        key: "mail_security",
+        key: MAIL_SECURITY_KEY,
         label_i18n_key: "settings_item_mail_security_label",
         description_i18n_key: "settings_item_mail_security_desc",
         value_type: SystemConfigValueType::Boolean,
@@ -497,7 +591,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Whether SMTP uses encryption. Port 465 uses implicit SSL/TLS; other ports use STARTTLS when enabled",
     },
     ConfigDef {
-        key: "mail_template_register_activation_subject",
+        key: MAIL_TEMPLATE_REGISTER_ACTIVATION_SUBJECT_KEY,
         label_i18n_key: "settings_item_mail_template_register_activation_subject_label",
         description_i18n_key: "settings_item_mail_template_register_activation_subject_desc",
         value_type: SystemConfigValueType::String,
@@ -513,7 +607,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Subject template for registration activation emails",
     },
     ConfigDef {
-        key: "mail_template_register_activation_html",
+        key: MAIL_TEMPLATE_REGISTER_ACTIVATION_HTML_KEY,
         label_i18n_key: "settings_item_mail_template_register_activation_html_label",
         description_i18n_key: "settings_item_mail_template_register_activation_html_desc",
         value_type: SystemConfigValueType::Multiline,
@@ -529,7 +623,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "HTML template for registration activation emails. Prefer a complete HTML document for best client compatibility",
     },
     ConfigDef {
-        key: "mail_template_contact_change_confirmation_subject",
+        key: MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_SUBJECT_KEY,
         label_i18n_key: "settings_item_mail_template_contact_change_confirmation_subject_label",
         description_i18n_key: "settings_item_mail_template_contact_change_confirmation_subject_desc",
         value_type: SystemConfigValueType::String,
@@ -545,7 +639,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Subject template for email change confirmation emails",
     },
     ConfigDef {
-        key: "mail_template_contact_change_confirmation_html",
+        key: MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_HTML_KEY,
         label_i18n_key: "settings_item_mail_template_contact_change_confirmation_html_label",
         description_i18n_key: "settings_item_mail_template_contact_change_confirmation_html_desc",
         value_type: SystemConfigValueType::Multiline,
@@ -561,7 +655,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "HTML template for email change confirmation emails. Prefer a complete HTML document for best client compatibility",
     },
     ConfigDef {
-        key: "mail_template_password_reset_subject",
+        key: MAIL_TEMPLATE_PASSWORD_RESET_SUBJECT_KEY,
         label_i18n_key: "settings_item_mail_template_password_reset_subject_label",
         description_i18n_key: "settings_item_mail_template_password_reset_subject_desc",
         value_type: SystemConfigValueType::String,
@@ -577,7 +671,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Subject template for password reset emails",
     },
     ConfigDef {
-        key: "mail_template_password_reset_html",
+        key: MAIL_TEMPLATE_PASSWORD_RESET_HTML_KEY,
         label_i18n_key: "settings_item_mail_template_password_reset_html_label",
         description_i18n_key: "settings_item_mail_template_password_reset_html_desc",
         value_type: SystemConfigValueType::Multiline,
@@ -593,7 +687,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "HTML template for password reset emails. Prefer a complete HTML document for best client compatibility",
     },
     ConfigDef {
-        key: "mail_template_password_reset_notice_subject",
+        key: MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_SUBJECT_KEY,
         label_i18n_key: "settings_item_mail_template_password_reset_notice_subject_label",
         description_i18n_key: "settings_item_mail_template_password_reset_notice_subject_desc",
         value_type: SystemConfigValueType::String,
@@ -609,7 +703,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Subject template for password reset confirmation emails",
     },
     ConfigDef {
-        key: "mail_template_password_reset_notice_html",
+        key: MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_HTML_KEY,
         label_i18n_key: "settings_item_mail_template_password_reset_notice_html_label",
         description_i18n_key: "settings_item_mail_template_password_reset_notice_html_desc",
         value_type: SystemConfigValueType::Multiline,
@@ -625,7 +719,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "HTML template for password reset confirmation emails. Prefer a complete HTML document for best client compatibility",
     },
     ConfigDef {
-        key: "mail_template_contact_change_notice_subject",
+        key: MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_SUBJECT_KEY,
         label_i18n_key: "settings_item_mail_template_contact_change_notice_subject_label",
         description_i18n_key: "settings_item_mail_template_contact_change_notice_subject_desc",
         value_type: SystemConfigValueType::String,
@@ -641,7 +735,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Subject template for previous-address email change notices",
     },
     ConfigDef {
-        key: "mail_template_contact_change_notice_html",
+        key: MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_HTML_KEY,
         label_i18n_key: "settings_item_mail_template_contact_change_notice_html_label",
         description_i18n_key: "settings_item_mail_template_contact_change_notice_html_desc",
         value_type: SystemConfigValueType::Multiline,
@@ -658,7 +752,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     // ── General ─────────────────────────────────────────────
     ConfigDef {
-        key: "public_site_url",
+        key: PUBLIC_SITE_URL_KEY,
         label_i18n_key: "settings_item_public_site_url_label",
         description_i18n_key: "settings_item_public_site_url_desc",
         value_type: SystemConfigValueType::String,
@@ -669,7 +763,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Public HTTP(S) site origin used when generating share, preview, and callback URLs",
     },
     ConfigDef {
-        key: "branding_title",
+        key: BRANDING_TITLE_KEY,
         label_i18n_key: "settings_item_branding_title_label",
         description_i18n_key: "settings_item_branding_title_desc",
         value_type: SystemConfigValueType::String,
@@ -680,7 +774,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Public browser title used by anonymous and authenticated pages",
     },
     ConfigDef {
-        key: "branding_description",
+        key: BRANDING_DESCRIPTION_KEY,
         label_i18n_key: "settings_item_branding_description_label",
         description_i18n_key: "settings_item_branding_description_desc",
         value_type: SystemConfigValueType::String,
@@ -691,7 +785,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Public HTML description metadata exposed to anonymous pages",
     },
     ConfigDef {
-        key: "branding_favicon_url",
+        key: BRANDING_FAVICON_URL_KEY,
         label_i18n_key: "settings_item_branding_favicon_url_label",
         description_i18n_key: "settings_item_branding_favicon_url_desc",
         value_type: SystemConfigValueType::String,
@@ -702,7 +796,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Public favicon URL applied at runtime for anonymous and authenticated pages",
     },
     ConfigDef {
-        key: "branding_wordmark_dark_url",
+        key: BRANDING_WORDMARK_DARK_URL_KEY,
         label_i18n_key: "settings_item_branding_wordmark_dark_url_label",
         description_i18n_key: "settings_item_branding_wordmark_dark_url_desc",
         value_type: SystemConfigValueType::String,
@@ -713,7 +807,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Public site logo URL used on light surfaces such as headers and forms",
     },
     ConfigDef {
-        key: "branding_wordmark_light_url",
+        key: BRANDING_WORDMARK_LIGHT_URL_KEY,
         label_i18n_key: "settings_item_branding_wordmark_light_url_label",
         description_i18n_key: "settings_item_branding_wordmark_light_url_desc",
         value_type: SystemConfigValueType::String,
@@ -724,7 +818,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Public site logo URL used on dark surfaces such as the login hero panel",
     },
     ConfigDef {
-        key: crate::config::wopi::WOPI_ACCESS_TOKEN_TTL_SECS_KEY,
+        key: WOPI_ACCESS_TOKEN_TTL_SECS_KEY,
         label_i18n_key: "settings_item_wopi_access_token_ttl_secs_label",
         description_i18n_key: "settings_item_wopi_access_token_ttl_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -735,7 +829,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Lifetime of WOPI access tokens in seconds",
     },
     ConfigDef {
-        key: crate::config::wopi::WOPI_LOCK_TTL_SECS_KEY,
+        key: WOPI_LOCK_TTL_SECS_KEY,
         label_i18n_key: "settings_item_wopi_lock_ttl_secs_label",
         description_i18n_key: "settings_item_wopi_lock_ttl_secs_desc",
         value_type: SystemConfigValueType::Number,
@@ -746,7 +840,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Lifetime of active WOPI locks in seconds before they expire automatically",
     },
     ConfigDef {
-        key: crate::config::wopi::WOPI_DISCOVERY_CACHE_TTL_SECS_KEY,
+        key: WOPI_DISCOVERY_CACHE_TTL_SECS_KEY,
         label_i18n_key: "settings_item_wopi_discovery_cache_ttl_secs_label",
         description_i18n_key: "settings_item_wopi_discovery_cache_ttl_secs_desc",
         value_type: SystemConfigValueType::Number,

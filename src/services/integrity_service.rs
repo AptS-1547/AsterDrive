@@ -20,7 +20,7 @@ use crate::entities::{
     folder::{self, Entity as Folder},
     upload_session,
 };
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::thumbnail_service;
 use crate::storage::{DriverRegistry, StoragePathVisitor};
 
@@ -188,7 +188,7 @@ async fn load_actual_storage_usage<C: ConnectionTrait>(
             .into_tuple::<(i64, i64, i64, Option<i64>)>()
             .all(db)
             .await
-            .map_err(AsterError::from)?;
+            .map_aster_err(AsterError::database_operation)?;
         if rows.is_empty() {
             break;
         }
@@ -222,7 +222,7 @@ async fn load_actual_storage_usage<C: ConnectionTrait>(
             .into_tuple::<(i64, i64, i64, Option<i64>)>()
             .all(db)
             .await
-            .map_err(AsterError::from)?;
+            .map_aster_err(AsterError::database_operation)?;
         if rows.is_empty() {
             break;
         }
@@ -324,7 +324,7 @@ async fn load_actual_blob_ref_counts<C: ConnectionTrait>(
         .into_tuple::<(i64, i64)>()
         .all(db)
         .await
-        .map_err(AsterError::from)?;
+        .map_aster_err(AsterError::database_operation)?;
 
     for (blob_id, ref_count) in file_refs {
         *actual.entry(blob_id).or_insert(0) += ref_count;
@@ -347,7 +347,7 @@ async fn load_actual_blob_ref_counts<C: ConnectionTrait>(
         .into_tuple::<(i64, i64)>()
         .all(db)
         .await
-        .map_err(AsterError::from)?;
+        .map_aster_err(AsterError::database_operation)?;
 
     for (blob_id, ref_count) in version_refs {
         *actual.entry(blob_id).or_insert(0) += ref_count;
@@ -374,7 +374,10 @@ pub async fn audit_blob_ref_counts<C: ConnectionTrait>(
             query = query.filter(file_blob::Column::PolicyId.eq(policy_id));
         }
 
-        let blobs = query.all(db).await.map_err(AsterError::from)?;
+        let blobs = query
+            .all(db)
+            .await
+            .map_aster_err(AsterError::database_operation)?;
         if blobs.is_empty() {
             break;
         }
@@ -415,7 +418,7 @@ pub async fn fix_blob_ref_count_drifts<C: ConnectionTrait>(
             .filter(file_blob::Column::Id.eq(drift.blob_id))
             .exec(db)
             .await
-            .map_err(AsterError::from)?;
+            .map_aster_err(AsterError::database_operation)?;
 
         if result.rows_affected == 0 {
             return Err(AsterError::record_not_found(format!(
@@ -451,7 +454,7 @@ pub async fn audit_folder_tree<C: ConnectionTrait>(db: &C) -> Result<Vec<FolderT
             .into_tuple::<(i64, Option<i64>, i64, Option<i64>)>()
             .all(db)
             .await
-            .map_err(AsterError::from)?;
+            .map_aster_err(AsterError::database_operation)?;
         if rows.is_empty() {
             break;
         }
@@ -585,7 +588,10 @@ async fn load_blob_expectations_for_policy<C: ConnectionTrait>(
             query = query.filter(file_blob::Column::Id.gt(last_blob_id_value));
         }
 
-        let blobs = query.all(db).await.map_err(AsterError::from)?;
+        let blobs = query
+            .all(db)
+            .await
+            .map_aster_err(AsterError::database_operation)?;
         if blobs.is_empty() {
             break;
         }
@@ -617,7 +623,7 @@ async fn load_temp_paths_for_policy<C: ConnectionTrait>(
         .into_tuple::<Option<String>>()
         .all(db)
         .await
-        .map_err(AsterError::from)?;
+        .map_aster_err(AsterError::database_operation)?;
 
     Ok(paths.into_iter().flatten().collect())
 }

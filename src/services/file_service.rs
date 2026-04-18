@@ -24,11 +24,11 @@ pub use content::{
 };
 pub use deletion::{batch_purge, delete, purge};
 pub(crate) use deletion::{batch_purge_in_scope, cleanup_unreferenced_blob, delete_in_scope};
+pub use download::{DownloadOutcome, StreamedFile, download, download_raw};
 pub(crate) use download::{
-    build_download_response_with_disposition, build_stream_response_with_disposition,
-    download_in_scope,
+    build_download_outcome_with_disposition, build_stream_outcome_with_disposition,
+    download_in_scope, outcome_to_response,
 };
-pub use download::{download, download_raw};
 pub use lock::set_lock;
 pub(crate) use lock::set_lock_in_scope;
 pub use metadata::{get_info, move_file, update};

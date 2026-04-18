@@ -187,7 +187,7 @@ async fn batch_duplicate_file_records_with_specs_in_scope(
 
     workspace_storage_service::update_storage_used(&txn, scope, total_size).await?;
 
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     Ok(created_files)
 }
 
@@ -225,7 +225,7 @@ pub(crate) async fn duplicate_file_record_in_scope(
 
     workspace_storage_service::update_storage_used(&txn, scope, blob_size).await?;
 
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
 
     Ok(new_file)
 }

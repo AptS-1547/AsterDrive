@@ -4,7 +4,7 @@ use sea_orm::{ActiveModelTrait, ConnectionTrait, DbErr, IntoActiveModel, Set, Sq
 use crate::config::auth_runtime::RuntimeContactVerificationPolicy;
 use crate::db::repository::{contact_verification_token_repo, user_repo};
 use crate::entities::{contact_verification_token, user};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::mail_service;
 use crate::types::{UserRole, UserStatus, VerificationChannel, VerificationPurpose};
@@ -323,7 +323,10 @@ pub(super) async fn update_password_in_connection<C: ConnectionTrait>(
     active.password_hash = Set(hash::hash_password(new_password)?);
     active.session_version = Set(next_session_version);
     active.updated_at = Set(Utc::now());
-    active.update(db).await.map_err(AsterError::from)
+    active
+        .update(db)
+        .await
+        .map_aster_err(AsterError::database_operation)
 }
 
 pub(super) async fn find_user_by_identifier<C: ConnectionTrait>(

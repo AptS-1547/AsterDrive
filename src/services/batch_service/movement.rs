@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
-use sea_orm::TransactionTrait;
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::{AsterError, Result};
@@ -182,10 +181,10 @@ pub(crate) async fn batch_move_in_scope(
             .flat_map(|folder| [folder.parent_id, target_folder_id])
             .collect();
 
-        let txn = state.db.begin().await.map_err(AsterError::from)?;
+        let txn = crate::db::transaction::begin(&state.db).await?;
         file_repo::move_many_to_folder(&txn, &file_ids_to_move, target_folder_id, now).await?;
         folder_repo::move_many_to_parent(&txn, &folder_ids_to_move, target_folder_id, now).await?;
-        txn.commit().await.map_err(AsterError::from)?;
+        crate::db::transaction::commit(txn).await?;
 
         if !file_ids_to_move.is_empty() {
             storage_change_service::publish(

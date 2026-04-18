@@ -48,7 +48,8 @@ async fn get_progress_impl(
                 if session.status == UploadSessionStatus::Presigned =>
             {
                 if let Some(temp_key) = session.s3_temp_key.as_deref() {
-                    state.driver_registry
+                    state
+                        .driver_registry
                         .get_multipart_driver(&policy)?
                         .list_uploaded_parts(temp_key, multipart_id)
                         .await?

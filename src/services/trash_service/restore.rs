@@ -1,8 +1,8 @@
-use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, Set};
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
-use crate::errors::{AsterError, Result};
+use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
     folder_service, storage_change_service, workspace_storage_service::WorkspaceStorageScope,
@@ -32,7 +32,7 @@ async fn restore_file_in_scope(
     }
 
     if restore_to_root {
-        let txn = state.db.begin().await.map_err(AsterError::from)?;
+        let txn = crate::db::transaction::begin(&state.db).await?;
         let file_name = file.name.clone();
         let mut active: file::ActiveModel = file.into();
         active.folder_id = Set(None);
@@ -41,7 +41,7 @@ async fn restore_file_in_scope(
             .update(&txn)
             .await
             .map_err(|err| file_repo::map_name_db_err(err, &file_name))?;
-        txn.commit().await.map_err(AsterError::from)?;
+        crate::db::transaction::commit(txn).await?;
     } else {
         file_repo::restore(&state.db, id).await?;
     }
@@ -86,7 +86,7 @@ async fn restore_folder_in_scope(
         }
     }
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let mut active: folder::ActiveModel = folder.into();
     let folder_name = active.name.clone().take().unwrap_or_default();
     if restore_to_root {
@@ -100,7 +100,7 @@ async fn restore_folder_in_scope(
     let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
     file_repo::restore_many(&txn, &file_ids).await?;
     folder_repo::restore_many(&txn, &child_folder_ids).await?;
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(

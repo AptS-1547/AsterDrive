@@ -1,4 +1,5 @@
 pub mod constants;
+pub mod dto;
 pub mod error_code;
 pub mod middleware;
 #[cfg(all(debug_assertions, feature = "openapi"))]

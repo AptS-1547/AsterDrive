@@ -1,3 +1,4 @@
+use crate::api::dto::properties::{EntityPath, PropPath, SetPropReq};
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::response::ApiResponse;
@@ -5,13 +6,11 @@ use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, property_service};
+#[cfg(all(feature = "openapi", debug_assertions))]
 use crate::types::EntityType;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::{IntoParams, ToSchema};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api);
@@ -25,30 +24,6 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
             "/{entity_type}/{entity_id}/{namespace}/{name}",
             web::delete().to(delete_prop),
         )
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
-pub struct EntityPath {
-    pub entity_type: EntityType,
-    pub entity_id: i64,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
-pub struct PropPath {
-    pub entity_type: EntityType,
-    pub entity_id: i64,
-    pub namespace: String,
-    pub name: String,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct SetPropReq {
-    pub namespace: String,
-    pub name: String,
-    pub value: Option<String>,
 }
 
 #[api_docs_macros::path(

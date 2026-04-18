@@ -1,21 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use chrono::Utc;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect,
-    Set, sea_query::Expr,
-};
 
-use crate::db::repository::{file_repo, upload_session_repo};
-use crate::entities::{
-    file::{self, Entity as File},
-    file_blob::{self, Entity as FileBlob},
-    file_version::{self, Entity as FileVersion},
-    upload_session::{self, Entity as UploadSession},
-};
+use crate::db::repository::{file_repo, upload_session_repo, version_repo};
+use crate::entities::upload_session;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::types::UploadSessionStatus;
 
 const COMPLETED_SESSION_BATCH_SIZE: u64 = 1_000;
 const BLOB_RECONCILE_BATCH_SIZE: u64 = 1_000;
@@ -42,16 +32,14 @@ pub async fn cleanup_expired_completed_upload_sessions(
     let mut stats = UploadSessionMaintenanceStats::default();
 
     loop {
-        let mut query = UploadSession::find()
-            .filter(upload_session::Column::ExpiresAt.lt(now))
-            .filter(upload_session::Column::Status.eq(UploadSessionStatus::Completed))
-            .order_by_asc(upload_session::Column::Id)
-            .limit(COMPLETED_SESSION_BATCH_SIZE);
-        if let Some(last_id_value) = last_id.as_ref() {
-            query = query.filter(upload_session::Column::Id.gt(last_id_value.clone()));
-        }
+        let sessions = upload_session_repo::find_expired_completed_paginated(
+            &state.db,
+            now,
+            last_id.as_deref(),
+            COMPLETED_SESSION_BATCH_SIZE,
+        )
+        .await?;
 
-        let sessions = query.all(&state.db).await.map_err(AsterError::from)?;
         if sessions.is_empty() {
             break;
         }
@@ -64,7 +52,9 @@ pub async fn cleanup_expired_completed_upload_sessions(
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
-        let tracked_blob_paths = load_tracked_blob_paths(state, &broken_temp_keys).await?;
+        let tracked_blob_paths =
+            file_repo::find_blob_storage_paths_by_storage_paths(&state.db, &broken_temp_keys)
+                .await?;
 
         for session in sessions {
             let broken_completed = session.file_id.is_none();
@@ -105,14 +95,10 @@ pub async fn reconcile_blob_state(state: &AppState) -> Result<BlobMaintenanceSta
     let mut stats = BlobMaintenanceStats::default();
 
     loop {
-        let mut query = FileBlob::find()
-            .order_by_asc(file_blob::Column::Id)
-            .limit(BLOB_RECONCILE_BATCH_SIZE);
-        if let Some(last_blob_id_value) = last_blob_id {
-            query = query.filter(file_blob::Column::Id.gt(last_blob_id_value));
-        }
+        let blobs =
+            file_repo::find_blobs_paginated(&state.db, last_blob_id, BLOB_RECONCILE_BATCH_SIZE)
+                .await?;
 
-        let blobs = query.all(&state.db).await.map_err(AsterError::from)?;
         if blobs.is_empty() {
             break;
         }
@@ -135,10 +121,7 @@ pub async fn reconcile_blob_state(state: &AppState) -> Result<BlobMaintenanceSta
                         .await?;
                     stats.ref_count_fixed += 1;
                 } else if blob.ref_count < 0 {
-                    let mut active: file_blob::ActiveModel = blob.clone().into();
-                    active.ref_count = Set(0);
-                    active.updated_at = Set(Utc::now());
-                    active.update(&state.db).await.map_err(AsterError::from)?;
+                    file_repo::reset_blob_ref_count_to_zero(&state.db, blob.id).await?;
                     stats.ref_count_fixed += 1;
                 }
                 if crate::services::file_service::cleanup_unreferenced_blob(state, &blob).await {
@@ -151,10 +134,7 @@ pub async fn reconcile_blob_state(state: &AppState) -> Result<BlobMaintenanceSta
                 continue;
             }
 
-            let mut active: file_blob::ActiveModel = blob.into();
-            active.ref_count = Set(actual_refs);
-            active.updated_at = Set(Utc::now());
-            active.update(&state.db).await.map_err(AsterError::from)?;
+            file_repo::set_blob_ref_count(&state.db, blob.id, actual_refs).await?;
             stats.ref_count_fixed += 1;
         }
     }
@@ -162,58 +142,17 @@ pub async fn reconcile_blob_state(state: &AppState) -> Result<BlobMaintenanceSta
     Ok(stats)
 }
 
-async fn load_actual_blob_ref_counts(state: &AppState) -> Result<HashMap<i64, i64>> {
-    let mut actual = HashMap::new();
+async fn load_actual_blob_ref_counts(
+    state: &AppState,
+) -> Result<std::collections::HashMap<i64, i64>> {
+    let mut actual = file_repo::count_blob_refs_from_files(&state.db).await?;
 
-    let file_refs = File::find()
-        .select_only()
-        .column(file::Column::BlobId)
-        .column_as(Expr::col(file::Column::Id).count(), "ref_count")
-        .group_by(file::Column::BlobId)
-        .into_tuple::<(i64, i64)>()
-        .all(&state.db)
-        .await
-        .map_err(AsterError::from)?;
-
-    for (blob_id, ref_count) in file_refs {
-        *actual.entry(blob_id).or_insert(0) += ref_count;
-    }
-
-    let version_refs = FileVersion::find()
-        .select_only()
-        .column(file_version::Column::BlobId)
-        .column_as(Expr::col(file_version::Column::Id).count(), "ref_count")
-        .group_by(file_version::Column::BlobId)
-        .into_tuple::<(i64, i64)>()
-        .all(&state.db)
-        .await
-        .map_err(AsterError::from)?;
-
+    let version_refs = version_repo::count_blob_refs_from_versions(&state.db).await?;
     for (blob_id, ref_count) in version_refs {
         *actual.entry(blob_id).or_insert(0) += ref_count;
     }
 
     Ok(actual)
-}
-
-async fn load_tracked_blob_paths(
-    state: &AppState,
-    candidate_paths: &[String],
-) -> Result<HashSet<String>> {
-    if candidate_paths.is_empty() {
-        return Ok(HashSet::new());
-    }
-
-    let paths = FileBlob::find()
-        .select_only()
-        .column(file_blob::Column::StoragePath)
-        .filter(file_blob::Column::StoragePath.is_in(candidate_paths.iter().cloned()))
-        .into_tuple::<String>()
-        .all(&state.db)
-        .await
-        .map_err(AsterError::from)?;
-
-    Ok(paths.into_iter().collect())
 }
 
 async fn cleanup_broken_completed_session_object(
@@ -262,7 +201,10 @@ async fn cleanup_broken_completed_session_object(
 
         let mut abort_error = None;
         for attempt in 1..=MULTIPART_ABORT_MAX_ATTEMPTS {
-            match multipart.abort_multipart_upload(temp_key, multipart_id).await {
+            match multipart
+                .abort_multipart_upload(temp_key, multipart_id)
+                .await
+            {
                 Ok(()) => {
                     abort_error = None;
                     break;

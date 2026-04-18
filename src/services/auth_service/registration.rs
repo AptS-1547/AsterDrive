@@ -1,5 +1,4 @@
 use chrono::Utc;
-use sea_orm::TransactionTrait;
 
 use crate::config::auth_runtime::{RuntimeAuthPolicy, RuntimeContactVerificationPolicy};
 use crate::db::repository::user_repo;
@@ -59,7 +58,7 @@ pub async fn register(
     }
 
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let email_verified_at = (!auth_policy.register_activation_enabled).then_some(Utc::now());
     let user = create_user_with_role(
         &txn,
@@ -89,7 +88,7 @@ pub async fn register(
         )
         .await?;
     }
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
 
     tracing::debug!(
         user_id = user.id,
@@ -128,7 +127,7 @@ pub async fn resend_register_activation(
     }
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let token = match issue_contact_verification_token(
         &txn,
         user.id,
@@ -149,7 +148,7 @@ pub async fn resend_register_activation(
         MailTemplatePayload::register_activation(&user.username, &token),
     )
     .await?;
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
 
     Ok(Some(user_audit_info(&user)))
 }

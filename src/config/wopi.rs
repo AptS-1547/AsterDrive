@@ -1,9 +1,9 @@
 use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, Result};
 
-pub const WOPI_ACCESS_TOKEN_TTL_SECS_KEY: &str = "wopi_access_token_ttl_secs";
-pub const WOPI_LOCK_TTL_SECS_KEY: &str = "wopi_lock_ttl_secs";
-pub const WOPI_DISCOVERY_CACHE_TTL_SECS_KEY: &str = "wopi_discovery_cache_ttl_secs";
+pub use crate::config::definitions::{
+    WOPI_ACCESS_TOKEN_TTL_SECS_KEY, WOPI_DISCOVERY_CACHE_TTL_SECS_KEY, WOPI_LOCK_TTL_SECS_KEY,
+};
 
 pub const DEFAULT_WOPI_ACCESS_TOKEN_TTL_SECS: u64 = 60 * 60;
 pub const DEFAULT_WOPI_LOCK_TTL_SECS: u64 = 30 * 60;

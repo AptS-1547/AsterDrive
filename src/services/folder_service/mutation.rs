@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, Set};
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::folder;
@@ -126,10 +126,10 @@ pub(crate) async fn delete_in_scope(
     let file_ids: Vec<i64> = files.into_iter().map(|f| f.id).collect();
     let now = Utc::now();
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     file_repo::soft_delete_many(&txn, &file_ids, now).await?;
     folder_repo::soft_delete_many(&txn, &folder_ids, now).await?;
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(

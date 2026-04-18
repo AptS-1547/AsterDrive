@@ -4,8 +4,6 @@
 //! 重点不是重新实现一套文件系统，而是复用已有的文件主链路，同时补上
 //! WOPI 专用的 lock、rename、PUT_RELATIVE 语义。
 
-use actix_web::http::header::{HeaderName, HeaderValue};
-
 use crate::db::repository::file_repo;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -28,6 +26,13 @@ use super::types::{
     WopiPutRelativeRequest, WopiPutRelativeResult, WopiRenameFileResponse, WopiRenameFileResult,
     WopiRequestSource,
 };
+
+/// WOPI GetFile 的服务层结果，包含文件流下载数据和协议专用的 item version header。
+/// 路由层负责把这些字段组装成 HttpResponse，同时附加 X-WOPI-ItemVersion 响应头。
+pub struct WopiGetFileResult {
+    pub outcome: file_service::DownloadOutcome,
+    pub item_version: String,
+}
 
 pub async fn check_file_info(
     state: &AppState,
@@ -68,7 +73,7 @@ pub async fn get_file_contents(
     if_none_match: Option<&str>,
     max_expected_size: Option<&str>,
     request_source: WopiRequestSource<'_>,
-) -> Result<actix_web::HttpResponse> {
+) -> Result<WopiGetFileResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
     let blob = file_repo::find_blob_by_id(&state.db, resolved.file.blob_id).await?;
     let max_expected_size = parse_wopi_max_expected_size(max_expected_size)?;
@@ -80,7 +85,8 @@ pub async fn get_file_contents(
         ));
     }
 
-    let mut response = file_service::build_stream_response_with_disposition(
+    let item_version = blob.hash.clone();
+    let outcome = file_service::build_stream_outcome_with_disposition(
         state,
         &resolved.file,
         &blob,
@@ -88,12 +94,10 @@ pub async fn get_file_contents(
         if_none_match,
     )
     .await?;
-    response.headers_mut().insert(
-        HeaderName::from_static("x-wopi-itemversion"),
-        HeaderValue::from_str(&blob.hash)
-            .map_err(|_| AsterError::internal_error("invalid WOPI item version header"))?,
-    );
-    Ok(response)
+    Ok(WopiGetFileResult {
+        outcome,
+        item_version,
+    })
 }
 
 pub async fn put_file_contents(
@@ -106,7 +110,7 @@ pub async fn put_file_contents(
 ) -> Result<WopiPutFileResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
     // PutFile 有一个容易漏掉的协议细节：对现有文件，客户端必须先持有 lock。
-    // 只有“未锁定且大小为 0 的新建文件”允许直接首写，这对应 editnew 的落盘流程。
+    // 只有"未锁定且大小为 0 的新建文件"允许直接首写，这对应 editnew 的落盘流程。
     if let Some(conflict) =
         ensure_wopi_putfile_lock_matches(state, &resolved.file, requested_lock).await?
     {
@@ -154,7 +158,7 @@ pub async fn put_relative_file(
 
     let target_file = match request.target_mode {
         PutRelativeTargetMode::Suggested(target_name) => {
-            // SuggestedTarget 永远表示“新建一个可用名称”，不会覆盖现有文件。
+            // SuggestedTarget 永远表示"新建一个可用名称"，不会覆盖现有文件。
             store_relative_target_from_bytes(
                 state,
                 scope,

@@ -1,4 +1,3 @@
-use actix_web::HttpResponse;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -44,7 +43,7 @@ pub(crate) async fn download_file(
     requested_name: &str,
     force_download: bool,
     if_none_match: Option<&str>,
-) -> Result<HttpResponse> {
+) -> Result<file_service::DownloadOutcome> {
     let (file_id, signature) = parse_token(token)?;
     let file = load_public_file(state, file_id).await?;
 
@@ -64,7 +63,7 @@ pub(crate) async fn download_file(
         file_service::DownloadDisposition::Inline
     };
 
-    file_service::build_stream_response_with_disposition(
+    file_service::build_stream_outcome_with_disposition(
         state,
         &file,
         &blob,

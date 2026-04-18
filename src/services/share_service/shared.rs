@@ -307,6 +307,65 @@ pub(super) fn resolve_share_resource(
     }
 }
 
+pub(super) fn resolve_share_status(share: &share::Model, resource_deleted: bool) -> ShareStatus {
+    if resource_deleted {
+        return ShareStatus::Deleted;
+    }
+    if share
+        .expires_at
+        .is_some_and(|expires_at| expires_at < Utc::now())
+    {
+        return ShareStatus::Expired;
+    }
+    if share.max_downloads > 0 && share.download_count >= share.max_downloads {
+        return ShareStatus::Exhausted;
+    }
+    ShareStatus::Active
+}
+
+pub(super) fn remaining_downloads(max_downloads: i64, download_count: i64) -> Option<i64> {
+    (max_downloads > 0).then_some((max_downloads - download_count).max(0))
+}
+
+pub(super) async fn resolve_share_name(
+    db: &DatabaseConnection,
+    share: &share::Model,
+) -> Result<(String, String, Option<String>, Option<i64>)> {
+    match share_target_for_share(share)? {
+        ShareTarget {
+            r#type: EntityType::File,
+            id: file_id,
+        } => {
+            let file = file_repo::find_by_id(db, file_id).await?;
+            ensure_share_matches_file(share, &file)?;
+            if file.deleted_at.is_some() {
+                return Err(AsterError::file_not_found(format!(
+                    "file #{file_id} is in trash"
+                )));
+            }
+            Ok((
+                file.name,
+                "file".to_string(),
+                Some(file.mime_type),
+                Some(file.size),
+            ))
+        }
+        ShareTarget {
+            r#type: EntityType::Folder,
+            id: folder_id,
+        } => {
+            let folder = folder_repo::find_by_id(db, folder_id).await?;
+            ensure_share_matches_folder(share, &folder)?;
+            if folder.deleted_at.is_some() {
+                return Err(AsterError::folder_not_found(format!(
+                    "folder #{folder_id} is in trash"
+                )));
+            }
+            Ok((folder.name, "folder".to_string(), None, None))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,6 +426,21 @@ mod tests {
         }
     }
 
+    fn mock_folder(id: i64, name: &str) -> crate::entities::folder::Model {
+        crate::entities::folder::Model {
+            id,
+            name: name.to_string(),
+            parent_id: None,
+            team_id: None,
+            user_id: 1,
+            policy_id: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            deleted_at: None,
+            is_locked: false,
+        }
+    }
+
     #[test]
     fn validate_max_downloads_negative_fails() {
         let err = validate_max_downloads(-1).unwrap_err();
@@ -419,63 +493,40 @@ mod tests {
     fn remaining_downloads_never_negative() {
         assert_eq!(remaining_downloads(5, 10), Some(0));
     }
-}
 
-pub(super) fn resolve_share_status(share: &share::Model, resource_deleted: bool) -> ShareStatus {
-    if resource_deleted {
-        return ShareStatus::Deleted;
-    }
-    if share
-        .expires_at
-        .is_some_and(|expires_at| expires_at < Utc::now())
-    {
-        return ShareStatus::Expired;
-    }
-    if share.max_downloads > 0 && share.download_count >= share.max_downloads {
-        return ShareStatus::Exhausted;
-    }
-    ShareStatus::Active
-}
+    #[test]
+    fn resolve_share_resource_returns_file_name_and_deleted_state() {
+        let share = mock_share_file(7);
+        let mut file = mock_file(7, "report.txt");
+        file.deleted_at = Some(chrono::Utc::now());
 
-pub(super) fn remaining_downloads(max_downloads: i64, download_count: i64) -> Option<i64> {
-    (max_downloads > 0).then_some((max_downloads - download_count).max(0))
-}
+        let file_map = HashMap::from([(file.id, file)]);
+        let folder_map = HashMap::new();
 
-pub(super) async fn resolve_share_name(
-    db: &DatabaseConnection,
-    share: &share::Model,
-) -> Result<(String, String, Option<String>, Option<i64>)> {
-    match share_target_for_share(share)? {
-        ShareTarget {
-            r#type: EntityType::File,
-            id: file_id,
-        } => {
-            let file = file_repo::find_by_id(db, file_id).await?;
-            ensure_share_matches_file(share, &file)?;
-            if file.deleted_at.is_some() {
-                return Err(AsterError::file_not_found(format!(
-                    "file #{file_id} is in trash"
-                )));
-            }
-            Ok((
-                file.name,
-                "file".to_string(),
-                Some(file.mime_type),
-                Some(file.size),
-            ))
-        }
-        ShareTarget {
-            r#type: EntityType::Folder,
-            id: folder_id,
-        } => {
-            let folder = folder_repo::find_by_id(db, folder_id).await?;
-            ensure_share_matches_folder(share, &folder)?;
-            if folder.deleted_at.is_some() {
-                return Err(AsterError::folder_not_found(format!(
-                    "folder #{folder_id} is in trash"
-                )));
-            }
-            Ok((folder.name, "folder".to_string(), None, None))
-        }
+        let (id, name, kind, deleted) =
+            resolve_share_resource(&share, &file_map, &folder_map).unwrap();
+
+        assert_eq!(id, 7);
+        assert_eq!(name, "report.txt");
+        assert_eq!(kind, EntityType::File);
+        assert!(deleted);
+    }
+
+    #[test]
+    fn resolve_share_resource_returns_folder_name_and_deleted_state() {
+        let share = mock_share_folder(9);
+        let mut folder = mock_folder(9, "designs");
+        folder.deleted_at = Some(chrono::Utc::now());
+
+        let file_map = HashMap::new();
+        let folder_map = HashMap::from([(folder.id, folder)]);
+
+        let (id, name, kind, deleted) =
+            resolve_share_resource(&share, &file_map, &folder_map).unwrap();
+
+        assert_eq!(id, 9);
+        assert_eq!(name, "designs");
+        assert_eq!(kind, EntityType::Folder);
+        assert!(deleted);
     }
 }

@@ -4,11 +4,9 @@
 //! - 服务端自己流式读取并回给客户端
 //! - 对满足条件的 S3 附件下载返回 presigned redirect
 //!
-//! route / scope 层只决定“是否允许下载”，真正的传输策略在这里统一收口。
+//! route / scope 层只决定"是否允许下载"，真正的传输策略在这里统一收口。
 
 use std::time::Duration;
-
-use actix_web::{HttpResponse, http::header};
 
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob};
@@ -25,12 +23,74 @@ use super::{
 
 const PRESIGNED_DOWNLOAD_TTL_SECS: u64 = 5 * 60;
 
+/// 服务层文件流下载数据。路由层负责把这些字段组装成 HttpResponse。
+pub struct StreamedFile {
+    pub content_type: String,
+    pub content_length: i64,
+    pub content_disposition: String,
+    pub etag: String,
+    pub cache_control: &'static str,
+    /// 仅 inline 且需要沙盒隔离时不为 None。
+    pub csp: Option<&'static str>,
+    pub body: tokio_util::io::ReaderStream<Box<dyn tokio::io::AsyncRead + Unpin + Send>>,
+}
+
+/// 服务层下载结果。路由层根据变体组装 HttpResponse，服务层不接触 actix_web::HttpResponse。
+pub enum DownloadOutcome {
+    /// 200 流式响应。
+    Stream(StreamedFile),
+    /// 304 Not Modified：客户端缓存命中。
+    NotModified {
+        etag: String,
+        cache_control: &'static str,
+        csp: Option<&'static str>,
+    },
+    /// 302 presigned redirect（仅 S3 附件下载）。
+    PresignedRedirect { url: String },
+}
+
+impl std::fmt::Debug for StreamedFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StreamedFile")
+            .field("content_type", &self.content_type)
+            .field("content_length", &self.content_length)
+            .field("content_disposition", &self.content_disposition)
+            .field("etag", &self.etag)
+            .field("cache_control", &self.cache_control)
+            .field("csp", &self.csp)
+            .field("body", &"<stream>")
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for DownloadOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stream(stream) => f.debug_tuple("Stream").field(stream).finish(),
+            Self::NotModified {
+                etag,
+                cache_control,
+                csp,
+            } => f
+                .debug_struct("NotModified")
+                .field("etag", etag)
+                .field("cache_control", cache_control)
+                .field("csp", csp)
+                .finish(),
+            Self::PresignedRedirect { url } => f
+                .debug_struct("PresignedRedirect")
+                .field("url", url)
+                .finish(),
+        }
+    }
+}
+
 pub(crate) async fn download_in_scope(
     state: &AppState,
     scope: WorkspaceStorageScope,
     id: i64,
     if_none_match: Option<&str>,
-) -> Result<HttpResponse> {
+) -> Result<DownloadOutcome> {
     tracing::debug!(
         scope = ?scope,
         file_id = id,
@@ -39,7 +99,7 @@ pub(crate) async fn download_in_scope(
     );
     let file = get_info_in_scope(state, scope, id).await?;
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
-    build_download_response(state, &file, &blob, if_none_match).await
+    build_download_outcome(state, &file, &blob, if_none_match).await
 }
 
 /// 下载文件（流式，不全量缓冲）
@@ -48,7 +108,7 @@ pub async fn download(
     id: i64,
     user_id: i64,
     if_none_match: Option<&str>,
-) -> Result<HttpResponse> {
+) -> Result<DownloadOutcome> {
     download_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -63,7 +123,7 @@ pub async fn download_raw(
     state: &AppState,
     id: i64,
     if_none_match: Option<&str>,
-) -> Result<HttpResponse> {
+) -> Result<DownloadOutcome> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
     ensure_personal_file_scope(&f)?;
@@ -74,19 +134,19 @@ async fn download_raw_unchecked_with_file(
     state: &AppState,
     f: file::Model,
     if_none_match: Option<&str>,
-) -> Result<HttpResponse> {
+) -> Result<DownloadOutcome> {
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
-    build_stream_response(state, &f, &blob, if_none_match).await
+    build_stream_outcome(state, &f, &blob, if_none_match).await
 }
 
-/// 构建流式下载响应
-pub(crate) async fn build_stream_response(
+/// 构建流式下载结果（Attachment disposition）
+pub async fn build_stream_outcome(
     state: &AppState,
     f: &file::Model,
     blob: &file_blob::Model,
     if_none_match: Option<&str>,
-) -> Result<HttpResponse> {
-    build_stream_response_with_disposition(
+) -> Result<DownloadOutcome> {
+    build_stream_outcome_with_disposition(
         state,
         f,
         blob,
@@ -96,13 +156,13 @@ pub(crate) async fn build_stream_response(
     .await
 }
 
-pub(crate) async fn build_download_response(
+pub async fn build_download_outcome(
     state: &AppState,
     f: &file::Model,
     blob: &file_blob::Model,
     if_none_match: Option<&str>,
-) -> Result<HttpResponse> {
-    build_download_response_with_disposition(
+) -> Result<DownloadOutcome> {
+    build_download_outcome_with_disposition(
         state,
         f,
         blob,
@@ -112,19 +172,19 @@ pub(crate) async fn build_download_response(
     .await
 }
 
-pub(crate) async fn build_download_response_with_disposition(
+pub async fn build_download_outcome_with_disposition(
     state: &AppState,
     f: &file::Model,
     blob: &file_blob::Model,
     disposition: DownloadDisposition,
     if_none_match: Option<&str>,
-) -> Result<HttpResponse> {
+) -> Result<DownloadOutcome> {
     if let Some(if_none_match) = if_none_match
         && if_none_match_matches(if_none_match, &blob.hash)
     {
-        // 命中 If-None-Match 时仍走统一 response builder，
+        // 命中 If-None-Match 时仍走统一 outcome builder，
         // 这样 304 和 200 会共享相同的缓存头 / sandbox 头策略。
-        return build_stream_response_with_disposition(
+        return build_stream_outcome_with_disposition(
             state,
             f,
             blob,
@@ -141,20 +201,20 @@ pub(crate) async fn build_download_response_with_disposition(
         && options.effective_s3_download_strategy() == S3DownloadStrategy::Presigned;
 
     if should_presign {
-        // 只有“附件下载 + S3 + 策略允许”才走 presigned redirect。
+        // 只有"附件下载 + S3 + 策略允许"才走 presigned redirect。
         // inline 预览仍由服务端统一加 CSP 和缓存头，避免把浏览器安全策略交给外部存储。
-        return build_presigned_redirect_response(state, &policy, f, blob).await;
+        return build_presigned_redirect_outcome(state, &policy, f, blob).await;
     }
 
-    build_stream_response_with_disposition(state, f, blob, disposition, None).await
+    build_stream_outcome_with_disposition(state, f, blob, disposition, None).await
 }
 
-async fn build_presigned_redirect_response(
+async fn build_presigned_redirect_outcome(
     state: &AppState,
     policy: &crate::entities::storage_policy::Model,
     f: &file::Model,
     blob: &file_blob::Model,
-) -> Result<HttpResponse> {
+) -> Result<DownloadOutcome> {
     let driver = state.driver_registry.get_driver(policy)?;
     let url = driver
         .presigned_url(
@@ -181,19 +241,16 @@ async fn build_presigned_redirect_response(
         "redirecting file download to presigned S3 URL"
     );
 
-    Ok(HttpResponse::Found()
-        .insert_header((header::LOCATION, url))
-        .insert_header((header::CACHE_CONTROL, "no-store"))
-        .finish())
+    Ok(DownloadOutcome::PresignedRedirect { url })
 }
 
-pub(crate) async fn build_stream_response_with_disposition(
+pub async fn build_stream_outcome_with_disposition(
     state: &AppState,
     f: &file::Model,
     blob: &file_blob::Model,
     disposition: DownloadDisposition,
     if_none_match: Option<&str>,
-) -> Result<HttpResponse> {
+) -> Result<DownloadOutcome> {
     let requires_sandbox =
         disposition == DownloadDisposition::Inline && requires_inline_sandbox(&f.mime_type);
 
@@ -216,14 +273,15 @@ pub(crate) async fn build_stream_response_with_disposition(
             disposition = ?disposition,
             "serving cached file response with 304"
         );
-        let mut response = HttpResponse::NotModified();
-        response.insert_header(("ETag", etag));
-        response.insert_header(("Cache-Control", "private, max-age=0, must-revalidate"));
-        if requires_sandbox {
-            response.insert_header(("Content-Security-Policy", inline_sandbox_csp()));
-            response.insert_header(("X-Content-Type-Options", "nosniff"));
-        }
-        return Ok(response.finish());
+        return Ok(DownloadOutcome::NotModified {
+            etag,
+            cache_control: "private, max-age=0, must-revalidate",
+            csp: if requires_sandbox {
+                Some(inline_sandbox_csp())
+            } else {
+                None
+            },
+        });
     }
 
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
@@ -243,25 +301,71 @@ pub(crate) async fn build_stream_response_with_disposition(
         "building streaming file response"
     );
 
-    let mut response = HttpResponse::Ok();
-    response.content_type(f.mime_type.clone());
-    response.insert_header(("Content-Length", blob.size.to_string()));
-    response.insert_header(("Content-Disposition", disposition.header_value(&f.name)));
-    response.insert_header(("ETag", etag));
-    response.insert_header(("Cache-Control", "private, max-age=0, must-revalidate"));
-    if requires_sandbox {
-        response.insert_header(("Content-Security-Policy", inline_sandbox_csp()));
-        response.insert_header(("X-Content-Type-Options", "nosniff"));
+    Ok(DownloadOutcome::Stream(StreamedFile {
+        content_type: f.mime_type.clone(),
+        content_length: blob.size,
+        content_disposition: disposition.header_value(&f.name),
+        etag,
+        cache_control: "private, max-age=0, must-revalidate",
+        csp: if requires_sandbox {
+            Some(inline_sandbox_csp())
+        } else {
+            None
+        },
+        body: reader_stream,
+    }))
+}
+
+// ── 向后兼容的 HttpResponse 包装，仅在路由/中间件层使用 ───────────────────────
+//
+// 这些函数在 api 层调用，把 DownloadOutcome 组装成 actix_web::HttpResponse。
+// 服务层（download.rs）本身不调用它们；它们存放在此处是为了避免跨文件重复。
+
+pub fn outcome_to_response(outcome: DownloadOutcome) -> actix_web::HttpResponse {
+    use actix_web::HttpResponse;
+    use actix_web::http::header;
+
+    match outcome {
+        DownloadOutcome::NotModified {
+            etag,
+            cache_control,
+            csp,
+        } => {
+            let mut r = HttpResponse::NotModified();
+            r.insert_header(("ETag", etag));
+            r.insert_header(("Cache-Control", cache_control));
+            if let Some(csp_value) = csp {
+                r.insert_header(("Content-Security-Policy", csp_value));
+                r.insert_header(("X-Content-Type-Options", "nosniff"));
+            }
+            r.finish()
+        }
+        DownloadOutcome::PresignedRedirect { url } => HttpResponse::Found()
+            .insert_header((header::LOCATION, url))
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .finish(),
+        DownloadOutcome::Stream(s) => {
+            let mut r = HttpResponse::Ok();
+            r.content_type(s.content_type);
+            r.insert_header(("Content-Length", s.content_length.to_string()));
+            r.insert_header(("Content-Disposition", s.content_disposition));
+            r.insert_header(("ETag", s.etag));
+            r.insert_header(("Cache-Control", s.cache_control));
+            if let Some(csp_value) = s.csp {
+                r.insert_header(("Content-Security-Policy", csp_value));
+                r.insert_header(("X-Content-Type-Options", "nosniff"));
+            }
+            // 跳过全局 Compress 中间件，避免压缩编码器为了攒出更大的压缩块而额外缓存，
+            // 让大文件下载从"稳定流式"退化成高内存占用。
+            r.insert_header(("Content-Encoding", "identity"));
+            r.streaming(s.body)
+        }
     }
-    // 跳过全局 Compress 中间件，避免压缩编码器为了攒出更大的压缩块而额外缓存，
-    // 让大文件下载从“稳定流式”退化成高内存占用。
-    response.insert_header(("Content-Encoding", "identity"));
-    Ok(response.streaming(reader_stream))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DownloadDisposition, build_stream_response_with_disposition};
+    use super::{DownloadDisposition, build_stream_outcome_with_disposition, outcome_to_response};
     use crate::cache;
     use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
     use crate::db::repository::file_repo;
@@ -519,7 +623,7 @@ mod tests {
         let get_stream_calls = driver.get_stream_calls.clone();
         let (state, file, blob, _) = build_download_test_state(driver, payload.len() as i64).await;
 
-        let response = build_stream_response_with_disposition(
+        let outcome = build_stream_outcome_with_disposition(
             &state,
             &file,
             &blob,
@@ -527,8 +631,9 @@ mod tests {
             None,
         )
         .await
-        .expect("stream download response should build");
+        .expect("stream download outcome should build");
 
+        let response = outcome_to_response(outcome);
         let body = body::to_bytes(response.into_body())
             .await
             .expect("stream response body should read");

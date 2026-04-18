@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
+import { CreateUserDialog } from "@/components/admin/admin-users-page/CreateUserDialog";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -18,17 +20,8 @@ import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -724,81 +717,20 @@ export default function AdminUsersPage() {
 					</AdminSurface>
 				)}
 
-				{total > 0 ? (
-					<div className="flex items-center justify-between gap-3 px-4 pb-4 text-sm text-muted-foreground md:px-6">
-						<div className="flex items-center gap-3">
-							<span>
-								{t("entries_page", {
-									total,
-									current: currentPage,
-									pages: totalPages,
-								})}
-							</span>
-							<Select
-								items={pageSizeOptions}
-								value={String(pageSize)}
-								onValueChange={handlePageSizeChange}
-							>
-								<SelectTrigger width="page-size">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{pageSizeOptions.map((option) => (
-										<SelectItem key={option.value} value={option.value}>
-											{option.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-						<TooltipProvider>
-							<div className="flex items-center gap-2">
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={prevPageDisabled}
-												onClick={() =>
-													setOffset(Math.max(0, offset - pageSize))
-												}
-											/>
-										}
-									>
-										<Icon name="CaretLeft" className="h-4 w-4" />
-									</TooltipTrigger>
-									{prevPageDisabled ? (
-										<TooltipContent>
-											{t("pagination_prev_disabled")}
-										</TooltipContent>
-									) : null}
-								</Tooltip>
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={nextPageDisabled}
-												onClick={() => setOffset(offset + pageSize)}
-											/>
-										}
-									>
-										<Icon name="CaretRight" className="h-4 w-4" />
-									</TooltipTrigger>
-									{nextPageDisabled ? (
-										<TooltipContent>
-											{t("pagination_next_disabled")}
-										</TooltipContent>
-									) : null}
-								</Tooltip>
-							</div>
-						</TooltipProvider>
-					</div>
-				) : null}
+				<AdminOffsetPagination
+					total={total}
+					currentPage={currentPage}
+					totalPages={totalPages}
+					pageSize={String(pageSize)}
+					pageSizeOptions={pageSizeOptions}
+					onPageSizeChange={handlePageSizeChange}
+					prevDisabled={prevPageDisabled}
+					nextDisabled={nextPageDisabled}
+					onPrevious={() => setOffset(Math.max(0, offset - pageSize))}
+					onNext={() => setOffset(offset + pageSize)}
+				/>
 			</AdminPageShell>
-			<Dialog
+			<CreateUserDialog
 				open={createDialogOpen}
 				onOpenChange={(open) => {
 					setCreateDialogOpen(open);
@@ -806,103 +738,13 @@ export default function AdminUsersPage() {
 						resetCreateForm();
 					}
 				}}
-			>
-				<DialogContent keepMounted className="sm:max-w-md">
-					<form
-						onSubmit={handleCreateUser}
-						autoComplete="off"
-						className="space-y-4"
-					>
-						<DialogHeader>
-							<DialogTitle>{t("create_user")}</DialogTitle>
-							<DialogDescription>{t("create_user_desc")}</DialogDescription>
-						</DialogHeader>
-						<div className="space-y-2">
-							<Label htmlFor="create-user-username">{t("username")}</Label>
-							<Input
-								id="create-user-username"
-								name="admin-create-user-username"
-								value={createForm.username}
-								onChange={(e) => {
-									const value = e.target.value;
-									handleCreateFormChange("username", value);
-									validateCreateField("username", value.trim());
-								}}
-								autoComplete="off"
-								required
-								className={ADMIN_CONTROL_HEIGHT_CLASS}
-								aria-invalid={!!createErrors.username}
-							/>
-							{createErrors.username ? (
-								<p className="text-xs text-destructive">
-									{createErrors.username}
-								</p>
-							) : null}
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="create-user-email">{t("email")}</Label>
-							<Input
-								id="create-user-email"
-								name="admin-create-user-email"
-								value={createForm.email}
-								onChange={(e) => {
-									const value = e.target.value;
-									handleCreateFormChange("email", value);
-									validateCreateField("email", value.trim());
-								}}
-								autoComplete="off"
-								required
-								className={ADMIN_CONTROL_HEIGHT_CLASS}
-								aria-invalid={!!createErrors.email}
-							/>
-							{createErrors.email ? (
-								<p className="text-xs text-destructive">{createErrors.email}</p>
-							) : null}
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="create-user-password">{t("password")}</Label>
-							<Input
-								id="create-user-password"
-								name="admin-create-user-password"
-								type="password"
-								value={createForm.password}
-								onChange={(e) => {
-									const value = e.target.value;
-									handleCreateFormChange("password", value);
-									validateCreateField("password", value);
-								}}
-								autoComplete="new-password"
-								required
-								className={ADMIN_CONTROL_HEIGHT_CLASS}
-								aria-invalid={!!createErrors.password}
-							/>
-							{createErrors.password ? (
-								<p className="text-xs text-destructive">
-									{createErrors.password}
-								</p>
-							) : null}
-						</div>
-						<DialogFooter>
-							<Button
-								type="button"
-								variant="outline"
-								onClick={() => setCreateDialogOpen(false)}
-								disabled={creating}
-							>
-								{t("core:cancel")}
-							</Button>
-							<Button type="submit" disabled={creating}>
-								{creating ? (
-									<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
-								) : (
-									<Icon name="Plus" className="mr-1 h-4 w-4" />
-								)}
-								{t("core:create")}
-							</Button>
-						</DialogFooter>
-					</form>
-				</DialogContent>
-			</Dialog>
+				form={createForm}
+				createErrors={createErrors}
+				creating={creating}
+				onFieldChange={handleCreateFormChange}
+				onFieldValidate={validateCreateField}
+				onSubmit={handleCreateUser}
+			/>
 			<UserDetailDialog
 				user={selectedUser}
 				open={detailDialogUserId !== null}

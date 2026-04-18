@@ -1,5 +1,4 @@
 use futures::{StreamExt, stream};
-use sea_orm::TransactionTrait;
 
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob};
@@ -246,7 +245,7 @@ pub(crate) async fn batch_purge_in_scope(
     let count = files.len() as u32;
 
     // ── 单次事务：版本 → 属性 → 文件 → blob → 配额 ──
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
 
     // 1. 批量删除版本记录，收集版本 blob IDs
     let version_blob_ids =
@@ -303,7 +302,7 @@ pub(crate) async fn batch_purge_in_scope(
     // 5. 配额一次性更新
     workspace_storage_service::update_storage_used(&txn, scope, -total_freed_bytes).await?;
 
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
 
     // ── 事务后：并行物理清理，清理成功后再删 blob 元数据 ──
     stream::iter(blobs_to_cleanup.into_iter())

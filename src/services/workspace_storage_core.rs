@@ -5,11 +5,11 @@
 //! 最终落账。这样不同入口才能共享同一套文件一致性规则。
 
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ConnectionTrait, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, Set};
 
 use crate::db::repository::{file_repo, folder_repo, team_repo, upload_session_repo, user_repo};
 use crate::entities::{file, file_blob, folder, team, upload_session};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
     storage_change_service,
@@ -124,7 +124,7 @@ pub(crate) async fn mark_upload_session_completed<C: ConnectionTrait>(
         .filter(Column::Status.eq(crate::types::UploadSessionStatus::Assembling))
         .exec(db)
         .await
-        .map_err(AsterError::from)?;
+        .map_aster_err(AsterError::database_operation)?;
 
     if result.rows_affected == 1 {
         return Ok(());
@@ -323,7 +323,7 @@ pub(crate) async fn ensure_upload_parent_path(
         return Ok(parsed.base_folder_id);
     }
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let mut current_parent = parsed.base_folder_id;
 
     // 整条父路径在一个事务里补齐，避免目录上传时只创建出半截层级。
@@ -332,7 +332,7 @@ pub(crate) async fn ensure_upload_parent_path(
         current_parent = Some(folder.id);
     }
 
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     Ok(current_parent)
 }
 
@@ -532,14 +532,14 @@ pub(crate) async fn finalize_upload_session_file(
     now: chrono::DateTime<Utc>,
 ) -> Result<file::Model> {
     let scope = scope_from_session(session);
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     check_quota(&txn, scope, size).await?;
 
     let blob =
         file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
     let created = finalize_upload_session_blob(&txn, session, &blob.model, now).await?;
 
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(

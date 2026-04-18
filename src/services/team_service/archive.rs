@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{ConnectionTrait, TransactionTrait};
+use sea_orm::ConnectionTrait;
 
 use crate::db::repository::{
     file_repo, folder_repo, lock_repo, property_repo, share_repo, team_repo, upload_session_repo,
@@ -40,16 +40,15 @@ async fn cleanup_team_upload_sessions(
             && let Ok(driver) = state.driver_registry.get_driver(&policy)
         {
             if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
-                if let Some(multipart) = driver.as_multipart() {
-                    if let Err(err) = multipart
+                if let Some(multipart) = driver.as_multipart()
+                    && let Err(err) = multipart
                         .abort_multipart_upload(temp_key, multipart_id)
                         .await
-                    {
-                        tracing::warn!(
-                            upload_id = %session.id,
-                            "failed to abort team multipart upload during cleanup: {err}"
-                        );
-                    }
+                {
+                    tracing::warn!(
+                        upload_id = %session.id,
+                        "failed to abort team multipart upload during cleanup: {err}"
+                    );
                 }
             } else if let Err(err) = driver.delete(temp_key).await {
                 tracing::warn!(
@@ -111,7 +110,7 @@ async fn force_delete_archived_team(state: &AppState, team: team::Model) -> Resu
     )
     .await?;
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     team_repo::lock_archived_by_id(&txn, team_id).await?;
     upload_session_repo::delete_all_by_team(&txn, team_id).await?;
     clear_team_locks(&txn, team_id).await?;
@@ -122,7 +121,7 @@ async fn force_delete_archived_team(state: &AppState, team: team::Model) -> Resu
     property_repo::delete_all_for_entities(&txn, EntityType::Folder, &folder_ids).await?;
     folder_repo::delete_many(&txn, &folder_ids).await?;
     team_repo::delete(&txn, team_id).await?;
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
 
     Ok(())
 }

@@ -13,50 +13,71 @@ use utoipa::{Modify, OpenApi};
     ),
     modifiers(&SecurityAddon),
     paths(
-        crate::api::routes::auth::check,
-        crate::api::routes::auth::setup,
-        crate::api::routes::auth::login,
-        crate::api::routes::auth::register,
-        crate::api::routes::auth::resend_register_activation,
-        crate::api::routes::auth::confirm_contact_verification,
-        crate::api::routes::auth::request_password_reset,
-        crate::api::routes::auth::confirm_password_reset,
-        crate::api::routes::auth::refresh,
-        crate::api::routes::auth::logout,
-        crate::api::routes::auth::me,
-        crate::api::routes::auth::put_password,
-        crate::api::routes::auth::request_email_change,
-        crate::api::routes::auth::resend_email_change,
-        crate::api::routes::auth::patch_preferences,
-        crate::api::routes::auth::patch_profile,
-        crate::api::routes::auth::upload_avatar,
-        crate::api::routes::auth::put_avatar_source,
-        crate::api::routes::auth::get_self_avatar,
+        // auth::public：无需登录即可访问的安装检查、初始化、注册验证与密码找回接口。
+        crate::api::routes::auth::public::check,
+        crate::api::routes::auth::public::setup,
+        crate::api::routes::auth::public::register,
+        crate::api::routes::auth::public::resend_register_activation,
+        crate::api::routes::auth::public::confirm_contact_verification,
+        crate::api::routes::auth::public::request_password_reset,
+        crate::api::routes::auth::public::confirm_password_reset,
+
+        // auth::session：负责登录态建立、续期、退出以及当前会话信息查询。
+        crate::api::routes::auth::session::login,
+        crate::api::routes::auth::session::refresh,
+        crate::api::routes::auth::session::logout,
+        crate::api::routes::auth::session::me,
+        crate::api::routes::auth::session::put_password,
+
+        // auth::profile：已登录用户的资料、头像和偏好设置维护接口。
+        crate::api::routes::auth::profile::request_email_change,
+        crate::api::routes::auth::profile::resend_email_change,
+        crate::api::routes::auth::profile::patch_preferences,
+        crate::api::routes::auth::profile::patch_profile,
+        crate::api::routes::auth::profile::upload_avatar,
+        crate::api::routes::auth::profile::put_avatar_source,
+        crate::api::routes::auth::profile::get_self_avatar,
+
+        // health：用于存活探针和就绪探针，给网关和运维检查服务状态。
         crate::api::routes::health::health,
         crate::api::routes::health::ready,
+
+        // public：登录前也能读取的公开站点配置，例如品牌信息和预览应用列表。
+        crate::api::routes::public::get_branding,
+        crate::api::routes::public::get_preview_apps,
+
+        // files::upload：个人空间文件上传生命周期，包括直传、分片和进度控制。
         crate::api::routes::files::upload::upload,
-        crate::api::routes::files::mutations::create_empty,
-        crate::api::routes::files::access::get_file,
-        crate::api::routes::files::access::get_direct_link,
-        crate::api::routes::files::access::get_preview_link,
-        crate::api::routes::files::access::open_wopi,
-        crate::api::routes::files::access::download,
-        crate::api::routes::files::access::get_thumbnail,
-        crate::api::routes::files::mutations::delete_file,
-        crate::api::routes::files::mutations::patch_file,
         crate::api::routes::files::upload::init_chunked_upload,
         crate::api::routes::files::upload::upload_chunk,
         crate::api::routes::files::upload::complete_upload,
         crate::api::routes::files::upload::presign_parts,
         crate::api::routes::files::upload::get_upload_progress,
         crate::api::routes::files::upload::cancel_upload,
+
+        // files::access：个人空间中文件读取、下载、缩略图、直链和 WOPI 打开入口。
+        crate::api::routes::files::access::get_file,
+        crate::api::routes::files::access::get_direct_link,
+        crate::api::routes::files::access::get_preview_link,
+        crate::api::routes::files::access::open_wopi,
+        crate::api::routes::files::access::download,
+        crate::api::routes::files::access::get_thumbnail,
+
+        // files::mutations：个人文件的创建、重命名、内容更新、解压、复制和删除操作。
+        crate::api::routes::files::mutations::create_empty,
+        crate::api::routes::files::mutations::delete_file,
+        crate::api::routes::files::mutations::patch_file,
         crate::api::routes::files::mutations::update_content,
         crate::api::routes::files::mutations::extract_archive,
         crate::api::routes::files::mutations::set_lock,
         crate::api::routes::files::mutations::copy_file,
+
+        // files::versions：个人文件历史版本的查询、恢复与删除。
         crate::api::routes::files::versions::list_versions,
         crate::api::routes::files::versions::restore_version,
         crate::api::routes::files::versions::delete_version,
+
+        // folders：个人目录树的浏览、创建、重命名、复制、锁定与删除操作。
         crate::api::routes::folders::list_root,
         crate::api::routes::folders::create_folder,
         crate::api::routes::folders::list_folder,
@@ -66,7 +87,131 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::folders::patch_folder,
         crate::api::routes::folders::set_lock,
         crate::api::routes::folders::copy_folder,
+
+        // search：个人空间内的文件与文件夹检索接口。
+        crate::api::routes::search::search,
+
+        // batch：个人空间内的批量删除、移动、复制和归档下载操作。
+        crate::api::routes::batch::batch_delete,
+        crate::api::routes::batch::batch_move,
+        crate::api::routes::batch::batch_copy,
+        crate::api::routes::batch::archive_compress,
+        crate::api::routes::batch::archive_download,
+        crate::api::routes::batch::archive_download_stream,
+
+        // shares：登录用户创建和维护个人文件/文件夹分享的接口。
+        crate::api::routes::shares::create_share,
+        crate::api::routes::shares::list_shares,
+        crate::api::routes::shares::update_share,
+        crate::api::routes::shares::delete_share,
+        crate::api::routes::shares::batch_delete_shares,
+
+        // tasks：用户可见的后台任务查询与重试入口。
+        crate::api::routes::tasks::list_tasks,
+        crate::api::routes::tasks::get_task,
+        crate::api::routes::tasks::retry_task,
+
+        // trash：个人回收站内容浏览、恢复和清空操作。
+        crate::api::routes::trash::list_trash,
+        crate::api::routes::trash::restore,
+        crate::api::routes::trash::purge_one,
+        crate::api::routes::trash::purge_all,
+
+        // teams：团队本身的创建、设置变更、成员管理与审计日志查询。
+        crate::api::routes::teams::list_teams,
+        crate::api::routes::teams::create_team,
+        crate::api::routes::teams::get_team,
+        crate::api::routes::teams::patch_team,
+        crate::api::routes::teams::delete_team,
+        crate::api::routes::teams::restore_team,
+        crate::api::routes::teams::list_audit_logs,
+        crate::api::routes::teams::list_members,
+        crate::api::routes::teams::add_member,
+        crate::api::routes::teams::patch_member,
+        crate::api::routes::teams::delete_member,
+
+        // team_shares：团队空间下的分享创建、更新和批量移除。
+        crate::api::routes::team_shares::create_share,
+        crate::api::routes::team_shares::list_shares,
+        crate::api::routes::team_shares::update_share,
+        crate::api::routes::team_shares::delete_share,
+        crate::api::routes::team_shares::batch_delete_shares,
+
+        // team_tasks：团队空间后台任务的查询和重试。
+        crate::api::routes::team_tasks::list_tasks,
+        crate::api::routes::team_tasks::get_task,
+        crate::api::routes::team_tasks::retry_task,
+
+        // team_batch：团队空间内的批量删除、移动、复制与归档下载。
+        crate::api::routes::team_batch::batch_delete,
+        crate::api::routes::team_batch::batch_move,
+        crate::api::routes::team_batch::batch_copy,
+        crate::api::routes::team_batch::archive_compress,
+        crate::api::routes::team_batch::archive_download,
+        crate::api::routes::team_batch::archive_download_stream,
+
+        // team_search：团队空间内的文件与文件夹搜索。
+        crate::api::routes::team_search::search,
+
+        // team_space：团队目录树的浏览、创建、重命名、复制、锁定与删除。
+        crate::api::routes::team_space::list_root,
+        crate::api::routes::team_space::create_folder,
+        crate::api::routes::team_space::list_folder,
+        crate::api::routes::team_space::get_folder_info,
+        crate::api::routes::team_space::get_ancestors,
+        crate::api::routes::team_space::patch_folder,
+        crate::api::routes::team_space::delete_folder,
+        crate::api::routes::team_space::set_folder_lock,
+        crate::api::routes::team_space::copy_folder,
+
+        // files::team_*：团队文件的上传、下载、预览、版本和变更操作。
+        crate::api::routes::files::team_upload::team_upload,
+        crate::api::routes::files::team_upload::team_init_chunked_upload,
+        crate::api::routes::files::team_upload::team_upload_chunk,
+        crate::api::routes::files::team_upload::team_complete_upload,
+        crate::api::routes::files::team_upload::team_presign_parts,
+        crate::api::routes::files::team_upload::team_get_upload_progress,
+        crate::api::routes::files::team_upload::team_cancel_upload,
+        crate::api::routes::files::team_mutations::team_create_empty,
+        crate::api::routes::files::team_access::team_get_file,
+        crate::api::routes::files::team_access::team_get_direct_link,
+        crate::api::routes::files::team_access::team_get_preview_link,
+        crate::api::routes::files::team_access::team_open_wopi,
+        crate::api::routes::files::team_access::team_get_thumbnail,
+        crate::api::routes::files::team_mutations::team_update_content,
+        crate::api::routes::files::team_mutations::team_extract_archive,
+        crate::api::routes::files::team_mutations::team_set_lock,
+        crate::api::routes::files::team_mutations::team_patch_file,
+        crate::api::routes::files::team_mutations::team_copy_file,
+        crate::api::routes::files::team_versions::team_list_versions,
+        crate::api::routes::files::team_versions::team_restore_version,
+        crate::api::routes::files::team_versions::team_delete_version,
+        crate::api::routes::files::team_access::team_download,
+        crate::api::routes::files::team_mutations::team_delete_file,
+
+        // team_trash：团队回收站的浏览、恢复和永久清理操作。
+        crate::api::routes::team_trash::list_trash,
+        crate::api::routes::team_trash::restore,
+        crate::api::routes::team_trash::purge_one,
+        crate::api::routes::team_trash::purge_all,
+
+        // webdav_accounts：用户 WebDAV 账户的创建、启停、配置查看与连通性测试。
+        crate::api::routes::webdav_accounts::list_accounts,
+        crate::api::routes::webdav_accounts::get_settings,
+        crate::api::routes::webdav_accounts::create_account,
+        crate::api::routes::webdav_accounts::delete_account,
+        crate::api::routes::webdav_accounts::toggle_account,
+        crate::api::routes::webdav_accounts::test_connection,
+
+        // properties：实体级自定义属性的读取、写入与删除。
+        crate::api::routes::properties::list_props,
+        crate::api::routes::properties::set_prop,
+        crate::api::routes::properties::delete_prop,
+
+        // admin::overview：后台首页总览数据。
         crate::api::routes::admin::overview::get_overview,
+
+        // admin::policies：存储策略、策略组及其验证相关接口。
         crate::api::routes::admin::policies::list_policies,
         crate::api::routes::admin::policies::create_policy,
         crate::api::routes::admin::policies::get_policy,
@@ -80,6 +225,8 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::admin::policies::update_policy_group,
         crate::api::routes::admin::policies::delete_policy_group,
         crate::api::routes::admin::policies::migrate_policy_group_users,
+
+        // admin::users：后台用户列表、资料维护、会话回收和强制删除。
         crate::api::routes::admin::users::list_users,
         crate::api::routes::admin::users::create_user,
         crate::api::routes::admin::users::get_user,
@@ -87,6 +234,9 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::admin::users::reset_user_password,
         crate::api::routes::admin::users::revoke_user_sessions,
         crate::api::routes::admin::users::get_user_avatar,
+        crate::api::routes::admin::users::force_delete_user,
+
+        // admin::teams：后台视角的团队管理、成员维护和审计日志查询。
         crate::api::routes::admin::teams::list_teams,
         crate::api::routes::admin::teams::create_team,
         crate::api::routes::admin::teams::get_team,
@@ -98,120 +248,32 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::admin::teams::add_team_member,
         crate::api::routes::admin::teams::patch_team_member,
         crate::api::routes::admin::teams::delete_team_member,
+
+        // admin::config：系统配置、模板变量和可执行配置动作的管理接口。
         crate::api::routes::admin::config::list_config,
         crate::api::routes::admin::config::get_config,
         crate::api::routes::admin::config::set_config,
         crate::api::routes::admin::config::delete_config,
         crate::api::routes::admin::config::execute_config_action,
+        crate::api::routes::admin::config::config_schema,
+        crate::api::routes::admin::config::config_template_variables,
+
+        // admin::shares：后台对全站分享的审查和强制删除能力。
         crate::api::routes::admin::shares::list_all_shares,
         crate::api::routes::admin::shares::admin_delete_share,
+
+        // admin::tasks：后台任务列表查询。
         crate::api::routes::admin::tasks::list_tasks,
+
+        // admin::locks：后台锁列表、强制解锁和过期锁清理。
         crate::api::routes::admin::locks::list_locks,
         crate::api::routes::admin::locks::force_unlock,
         crate::api::routes::admin::locks::cleanup_expired_locks,
+
+        // admin::audit_logs：全站审计日志查询。
         crate::api::routes::admin::audit_logs::list_audit_logs,
-        crate::api::routes::admin::config::config_schema,
-        crate::api::routes::admin::config::config_template_variables,
-        crate::api::routes::admin::users::force_delete_user,
-        // search
-        crate::api::routes::search::search,
-        // batch
-        crate::api::routes::batch::batch_delete,
-        crate::api::routes::batch::batch_move,
-        crate::api::routes::batch::batch_copy,
-        crate::api::routes::batch::archive_compress,
-        crate::api::routes::batch::archive_download,
-        crate::api::routes::batch::archive_download_stream,
-        // shares (authenticated)
-        crate::api::routes::shares::create_share,
-        crate::api::routes::shares::list_shares,
-        crate::api::routes::shares::update_share,
-        crate::api::routes::shares::delete_share,
-        crate::api::routes::shares::batch_delete_shares,
-        // background tasks
-        crate::api::routes::tasks::list_tasks,
-        crate::api::routes::tasks::get_task,
-        crate::api::routes::tasks::retry_task,
-        // trash
-        crate::api::routes::trash::list_trash,
-        crate::api::routes::trash::restore,
-        crate::api::routes::trash::purge_one,
-        crate::api::routes::trash::purge_all,
-        // teams
-        crate::api::routes::teams::list_teams,
-        crate::api::routes::teams::create_team,
-        crate::api::routes::teams::get_team,
-        crate::api::routes::teams::patch_team,
-        crate::api::routes::teams::delete_team,
-        crate::api::routes::teams::restore_team,
-        crate::api::routes::teams::list_audit_logs,
-        crate::api::routes::teams::list_members,
-        crate::api::routes::teams::add_member,
-        crate::api::routes::teams::patch_member,
-        crate::api::routes::teams::delete_member,
-        crate::api::routes::team_shares::create_share,
-        crate::api::routes::team_shares::list_shares,
-        crate::api::routes::team_shares::update_share,
-        crate::api::routes::team_shares::delete_share,
-        crate::api::routes::team_shares::batch_delete_shares,
-        crate::api::routes::team_tasks::list_tasks,
-        crate::api::routes::team_tasks::get_task,
-        crate::api::routes::team_tasks::retry_task,
-        crate::api::routes::team_batch::batch_delete,
-        crate::api::routes::team_batch::batch_move,
-        crate::api::routes::team_batch::batch_copy,
-        crate::api::routes::team_batch::archive_compress,
-        crate::api::routes::team_batch::archive_download,
-        crate::api::routes::team_batch::archive_download_stream,
-        crate::api::routes::team_search::search,
-        crate::api::routes::team_space::list_root,
-        crate::api::routes::team_space::create_folder,
-        crate::api::routes::team_space::list_folder,
-        crate::api::routes::team_space::get_folder_info,
-        crate::api::routes::team_space::get_ancestors,
-        crate::api::routes::team_space::patch_folder,
-        crate::api::routes::team_space::delete_folder,
-        crate::api::routes::team_space::set_folder_lock,
-        crate::api::routes::team_space::copy_folder,
-        crate::api::routes::files::team_upload,
-        crate::api::routes::files::team_init_chunked_upload,
-        crate::api::routes::files::team_upload_chunk,
-        crate::api::routes::files::team_complete_upload,
-        crate::api::routes::files::team_presign_parts,
-        crate::api::routes::files::team_get_upload_progress,
-        crate::api::routes::files::team_cancel_upload,
-        crate::api::routes::files::team_create_empty,
-        crate::api::routes::files::team_get_file,
-        crate::api::routes::files::team_get_direct_link,
-        crate::api::routes::files::team_get_preview_link,
-        crate::api::routes::files::team_open_wopi,
-        crate::api::routes::files::team_get_thumbnail,
-        crate::api::routes::files::team_update_content,
-        crate::api::routes::files::team_extract_archive,
-        crate::api::routes::files::team_set_lock,
-        crate::api::routes::files::team_patch_file,
-        crate::api::routes::files::team_copy_file,
-        crate::api::routes::files::team_list_versions,
-        crate::api::routes::files::team_restore_version,
-        crate::api::routes::files::team_delete_version,
-        crate::api::routes::files::team_download,
-        crate::api::routes::files::team_delete_file,
-        crate::api::routes::team_trash::list_trash,
-        crate::api::routes::team_trash::restore,
-        crate::api::routes::team_trash::purge_one,
-        crate::api::routes::team_trash::purge_all,
-        // webdav accounts
-        crate::api::routes::webdav_accounts::list_accounts,
-        crate::api::routes::webdav_accounts::get_settings,
-        crate::api::routes::webdav_accounts::create_account,
-        crate::api::routes::webdav_accounts::delete_account,
-        crate::api::routes::webdav_accounts::toggle_account,
-        crate::api::routes::webdav_accounts::test_connection,
-        // properties
-        crate::api::routes::properties::list_props,
-        crate::api::routes::properties::set_prop,
-        crate::api::routes::properties::delete_prop,
-        // shares (public)
+
+        // share_public：匿名访问公开分享时使用的浏览、下载、鉴权和缩略图接口。
         crate::api::routes::share_public::get_share_info,
         crate::api::routes::share_public::verify_password,
         crate::api::routes::share_public::create_preview_link,
@@ -223,13 +285,13 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::share_public::shared_avatar,
         crate::api::routes::share_public::shared_thumbnail,
         crate::api::routes::share_public::shared_folder_file_thumbnail,
-        // public config
-        crate::api::routes::public::get_branding,
-        crate::api::routes::public::get_preview_apps,
+
+        // wopi：给 Office/WOPI 集成方回调使用的文件元数据读取接口。
         crate::api::routes::wopi::check_file_info,
     ),
     components(
         schemas(
+            // api::error_code / api::pagination / api::response：统一错误码、分页结构和通用响应模型。
             crate::api::error_code::ErrorCode,
             crate::api::pagination::SortBy,
             crate::api::pagination::SortOrder,
@@ -246,19 +308,17 @@ use utoipa::{Modify, OpenApi};
             crate::api::pagination::OffsetPage<crate::services::config_service::SystemConfig>,
             crate::api::pagination::OffsetPage<crate::services::lock_service::ResourceLock>,
             crate::api::pagination::OffsetPage<crate::services::webdav_account_service::WebdavAccountInfo>,
+            crate::api::response::HealthResponse,
+            crate::api::response::MemoryStatsResponse,
+            crate::api::response::PurgedCountResponse,
+            crate::api::response::RemovedCountResponse,
+
+            // services::admin_service / services::audit_service / services::task_service：后台概览、审计与后台任务细节模型。
             crate::services::audit_service::AuditLogEntry,
+            crate::services::audit_service::TeamAuditEntryInfo,
             crate::services::admin_service::AdminOverview,
             crate::services::admin_service::AdminOverviewStats,
             crate::services::admin_service::AdminOverviewDailyReport,
-            crate::services::audit_service::TeamAuditEntryInfo,
-            crate::services::folder_service::FolderContents,
-            crate::services::folder_service::FolderAncestorItem,
-            crate::services::direct_link_service::DirectLinkTokenInfo,
-            crate::services::preview_link_service::PreviewLinkInfo,
-            crate::services::stream_ticket_service::StreamTicketInfo,
-            crate::services::preview_app_service::PreviewAppProvider,
-            crate::services::preview_app_service::PreviewOpenMode,
-            crate::services::wopi_service::WopiLaunchSession,
             crate::services::task_service::ArchiveCompressTaskPayload,
             crate::services::task_service::ArchiveExtractTaskPayload,
             crate::services::task_service::ArchiveCompressTaskResult,
@@ -268,32 +328,31 @@ use utoipa::{Modify, OpenApi};
             crate::services::task_service::TaskInfo,
             crate::services::task_service::TaskStepInfo,
             crate::services::task_service::TaskStepStatus,
-            crate::services::team_service::AdminTeamInfo,
-            crate::services::team_service::TeamMemberPage,
-            crate::api::response::HealthResponse,
-            crate::api::response::MemoryStatsResponse,
-            crate::api::response::PurgedCountResponse,
-            crate::api::response::RemovedCountResponse,
-            crate::entities::file::Model,
-            crate::entities::folder::Model,
-            crate::entities::storage_policy_group::Model,
-            crate::entities::storage_policy_group_item::Model,
-            crate::entities::team::Model,
-            crate::entities::team_member::Model,
             crate::types::BackgroundTaskKind,
             crate::types::BackgroundTaskStatus,
             crate::types::AuditAction,
-            crate::types::UserRole,
-            crate::types::UserStatus,
-            crate::types::TeamMemberRole,
-            crate::types::AvatarSource,
-            crate::types::DriverType,
-            crate::types::S3DownloadStrategy,
-            crate::types::S3UploadStrategy,
-            crate::types::StoragePolicyOptions,
-            crate::types::SystemConfigSource,
-            crate::types::SystemConfigValueType,
-            crate::types::VerificationPurpose,
+
+            // services::folder_service / entities::{file,folder,file_version}：个人空间文件树、文件实体和版本信息模型。
+            crate::services::folder_service::FolderContents,
+            crate::services::folder_service::FolderAncestorItem,
+            crate::entities::file::Model,
+            crate::entities::folder::Model,
+            crate::entities::file_version::Model,
+            crate::api::routes::files::FileQuery,
+            crate::api::routes::files::PatchFileReq,
+            crate::api::routes::files::OpenWopiRequest,
+            crate::api::routes::folders::CreateFolderReq,
+            crate::api::routes::folders::PatchFolderReq,
+            crate::api::routes::folders::SetLockReq,
+            crate::api::routes::files::SetLockReq,
+            crate::api::routes::files::CopyFileReq,
+            crate::api::routes::folders::CopyFolderReq,
+            crate::services::direct_link_service::DirectLinkTokenInfo,
+            crate::services::preview_link_service::PreviewLinkInfo,
+            crate::services::stream_ticket_service::StreamTicketInfo,
+            crate::services::wopi_service::WopiLaunchSession,
+
+            // api::routes::auth / services::{user_service,profile_service} / types：认证、用户资料与偏好设置模型。
             crate::api::routes::auth::CheckResp,
             crate::api::routes::auth::SetupReq,
             crate::api::routes::auth::RegisterReq,
@@ -306,6 +365,10 @@ use utoipa::{Modify, OpenApi};
             crate::services::user_service::UserCore,
             crate::services::user_service::UserInfo,
             crate::services::user_service::MeResponse,
+            crate::types::UserRole,
+            crate::types::UserStatus,
+            crate::types::AvatarSource,
+            crate::types::VerificationPurpose,
             crate::types::ThemeMode,
             crate::types::ColorPreset,
             crate::types::PrefViewMode,
@@ -319,17 +382,10 @@ use utoipa::{Modify, OpenApi};
             crate::api::routes::auth::RequestEmailChangeReq,
             crate::api::routes::auth::UpdateProfileReq,
             crate::api::routes::auth::UpdateAvatarSourceReq,
-            crate::api::routes::files::FileQuery,
-            crate::api::routes::files::PatchFileReq,
-            crate::api::routes::files::OpenWopiRequest,
-            crate::api::routes::batch::ArchiveDownloadReq,
-            crate::api::routes::folders::CreateFolderReq,
-            crate::api::routes::folders::PatchFolderReq,
-            crate::api::routes::folders::SetLockReq,
-            crate::api::routes::files::SetLockReq,
-            crate::api::routes::files::CopyFileReq,
-            crate::api::routes::folders::CopyFolderReq,
-            crate::entities::file_version::Model,
+
+            // api::routes::admin / services::{config_service,policy_service,preview_app_service} / entities::storage_policy_group：后台配置与存储策略模型。
+            crate::entities::storage_policy_group::Model,
+            crate::entities::storage_policy_group_item::Model,
             crate::api::routes::admin::CreatePolicyReq,
             crate::api::routes::admin::PatchPolicyReq,
             crate::api::routes::admin::PolicyGroupItemReq,
@@ -352,6 +408,8 @@ use utoipa::{Modify, OpenApi};
             crate::services::config_service::TemplateVariableGroup,
             crate::services::config_service::ConfigActionType,
             crate::services::config_service::PublicBranding,
+            crate::services::preview_app_service::PreviewAppProvider,
+            crate::services::preview_app_service::PreviewOpenMode,
             crate::services::preview_app_service::PublicPreviewAppConfig,
             crate::services::preview_app_service::PublicPreviewAppDefinition,
             crate::services::preview_app_service::PublicPreviewAppsConfig,
@@ -360,6 +418,14 @@ use utoipa::{Modify, OpenApi};
             crate::services::policy_service::StoragePolicyGroupInfo,
             crate::services::policy_service::StoragePolicyGroupItemInput,
             crate::services::policy_service::PolicyGroupUserMigrationResult,
+            crate::types::DriverType,
+            crate::types::S3DownloadStrategy,
+            crate::types::S3UploadStrategy,
+            crate::types::StoragePolicyOptions,
+            crate::types::SystemConfigSource,
+            crate::types::SystemConfigValueType,
+
+            // api::routes::shares / api::routes::share_public / services::{share_service,lock_service}：分享、公开访问和锁持有者模型。
             crate::services::share_service::ShareInfo,
             crate::services::share_service::ShareTarget,
             crate::services::share_service::MyShareInfo,
@@ -370,10 +436,13 @@ use utoipa::{Modify, OpenApi};
             crate::services::lock_service::WebdavLockOwnerInfo,
             crate::services::lock_service::TextLockOwnerInfo,
             crate::services::lock_service::ResourceLockOwnerInfo,
+            crate::services::lock_service::ResourceLock,
             crate::api::routes::shares::CreateShareReq,
             crate::api::routes::shares::UpdateShareReq,
             crate::api::routes::shares::BatchDeleteSharesReq,
             crate::api::routes::share_public::VerifyPasswordReq,
+
+            // api::routes::files / services::{upload_service,webdav_account_service} / entities::upload_session：上传流程与 WebDAV 账户模型。
             crate::api::routes::files::InitUploadReq,
             crate::api::routes::files::CompleteUploadReq,
             crate::api::routes::files::CompletedPartReq,
@@ -385,28 +454,40 @@ use utoipa::{Modify, OpenApi};
             crate::services::webdav_account_service::WebdavAccount,
             crate::services::webdav_account_service::WebdavAccountCreated,
             crate::services::webdav_account_service::WebdavAccountInfo,
-            crate::api::routes::webdav_accounts::WebdavSettingsInfo,
-            crate::api::routes::webdav_accounts::CreateWebdavAccountReq,
+            crate::api::dto::WebdavSettingsInfo,
+            crate::api::dto::CreateWebdavAccountReq,
+            crate::api::dto::TestConnectionReq,
+
+            // services::trash_service / api::routes::trash：回收站浏览、还原与清理模型。
             crate::services::trash_service::TrashContents,
             crate::services::trash_service::TrashFileItem,
             crate::services::trash_service::TrashFolderItem,
-            crate::api::routes::trash::TrashItemPath,
+            crate::api::dto::TrashItemPath,
+
+            // services::team_service / api::routes::teams / entities::{team,team_member}：团队、成员与团队分页模型。
+            crate::entities::team::Model,
+            crate::entities::team_member::Model,
+            crate::services::team_service::AdminTeamInfo,
             crate::services::team_service::TeamInfo,
             crate::services::team_service::TeamMemberInfo,
+            crate::services::team_service::TeamMemberPage,
             crate::api::routes::teams::CreateTeamReq,
             crate::api::routes::teams::PatchTeamReq,
             crate::api::routes::teams::AddTeamMemberReq,
             crate::api::routes::teams::PatchTeamMemberReq,
-            crate::api::routes::webdav_accounts::TestConnectionReq,
+            crate::types::TeamMemberRole,
+
+            // services::property_service / api::routes::properties：实体属性的读写模型。
             crate::services::property_service::EntityProperty,
-            crate::services::lock_service::ResourceLock,
-            crate::api::routes::properties::SetPropReq,
-            // audit log
-            // search
+            crate::api::dto::SetPropReq,
+
+            // db::repository::search_repo / services::search_service：搜索条件、结果项和聚合返回模型。
             crate::db::repository::search_repo::FileSearchItem,
             crate::services::search_service::SearchParams,
             crate::services::search_service::SearchResults,
-            // batch
+
+            // api::routes::batch / services::batch_service：批量操作和归档下载请求/结果模型。
+            crate::api::routes::batch::ArchiveDownloadReq,
             crate::api::routes::batch::BatchDeleteReq,
             crate::api::routes::batch::BatchMoveReq,
             crate::api::routes::batch::BatchCopyReq,

@@ -106,7 +106,7 @@ pub async fn download_file(
     token: &str,
     requested_name: &str,
     if_none_match: Option<&str>,
-) -> Result<actix_web::HttpResponse> {
+) -> Result<file_service::DownloadOutcome> {
     let resolved = resolve_token(state, token).await?;
     let (payload, file) = match &resolved {
         ResolvedPreviewTarget::File { payload, file } => (payload, file),
@@ -119,7 +119,7 @@ pub async fn download_file(
     if let Some(if_none_match) = if_none_match
         && file_service::if_none_match_matches(if_none_match, &blob.hash)
     {
-        return file_service::build_stream_response_with_disposition(
+        return file_service::build_stream_outcome_with_disposition(
             state,
             file,
             &blob,
@@ -130,7 +130,7 @@ pub async fn download_file(
     }
 
     let reserved = reserve_usage(state, token, payload).await?;
-    match file_service::build_stream_response_with_disposition(
+    match file_service::build_stream_outcome_with_disposition(
         state,
         file,
         &blob,
@@ -139,7 +139,7 @@ pub async fn download_file(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(outcome) => Ok(outcome),
         Err(error) => {
             rollback_usage(state, &reserved).await;
             Err(error)

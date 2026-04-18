@@ -1,17 +1,13 @@
 use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, Result};
 
-pub const MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY: &str = "mail_outbox_dispatch_interval_secs";
-pub const BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY: &str =
-    "background_task_dispatch_interval_secs";
-pub const BACKGROUND_TASK_MAX_CONCURRENCY_KEY: &str = "background_task_max_concurrency";
-pub const BACKGROUND_TASK_MAX_ATTEMPTS_KEY: &str = "background_task_max_attempts";
-pub const MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY: &str = "maintenance_cleanup_interval_secs";
-pub const BLOB_RECONCILE_INTERVAL_SECS_KEY: &str = "blob_reconcile_interval_secs";
-pub const TEAM_MEMBER_LIST_MAX_LIMIT_KEY: &str = "team_member_list_max_limit";
-pub const TASK_LIST_MAX_LIMIT_KEY: &str = "task_list_max_limit";
-pub const AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY: &str = "avatar_max_upload_size_bytes";
-pub const THUMBNAIL_MAX_SOURCE_BYTES_KEY: &str = "thumbnail_max_source_bytes";
+pub use crate::config::definitions::{
+    AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY, BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY,
+    BACKGROUND_TASK_MAX_ATTEMPTS_KEY, BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+    BLOB_RECONCILE_INTERVAL_SECS_KEY, MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY,
+    MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY, TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
+    THUMBNAIL_MAX_SOURCE_BYTES_KEY,
+};
 
 pub const DEFAULT_MAIL_OUTBOX_DISPATCH_INTERVAL_SECS: u64 = 5;
 pub const DEFAULT_BACKGROUND_TASK_DISPATCH_INTERVAL_SECS: u64 = 5;

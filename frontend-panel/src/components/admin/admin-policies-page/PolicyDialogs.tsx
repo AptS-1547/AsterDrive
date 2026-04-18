@@ -1,0 +1,100 @@
+import { useTranslation } from "react-i18next";
+import { StoragePolicyDialog } from "@/components/admin/StoragePolicyDialog";
+import type { PolicyFormData } from "@/components/admin/storagePolicyDialogShared";
+import type { ConfirmDialogProps } from "@/components/common/ConfirmDialog";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import type { DriverType } from "@/types/api";
+
+interface PolicyDialogsProps {
+	createStep: number;
+	createStepTouched: boolean;
+	deleteDialogProps: Pick<
+		ConfirmDialogProps,
+		"onConfirm" | "onOpenChange" | "open"
+	>;
+	deletePolicyName: string;
+	dialogOpen: boolean;
+	editMode: boolean;
+	endpointValidationMessage: string | null;
+	form: PolicyFormData;
+	onCreateBack: () => void;
+	onCreateNext: () => void;
+	onCreateStepChange: (step: number) => void;
+	onDialogOpenChange: (open: boolean) => void;
+	onDriverTypeChange: (driverType: DriverType) => void;
+	onFieldChange: <K extends keyof PolicyFormData>(
+		key: K,
+		value: PolicyFormData[K],
+	) => void;
+	onRunConnectionTest: () => Promise<boolean>;
+	onSaveAnyway: () => void;
+	onSaveConfirmOpenChange: (open: boolean) => void;
+	onSubmit: () => void;
+	onSyncNormalizedS3Form: () => void;
+	saveConfirmOpen: boolean;
+	submitting: boolean;
+}
+
+export function PolicyDialogs({
+	createStep,
+	createStepTouched,
+	deleteDialogProps,
+	deletePolicyName,
+	dialogOpen,
+	editMode,
+	endpointValidationMessage,
+	form,
+	onCreateBack,
+	onCreateNext,
+	onCreateStepChange,
+	onDialogOpenChange,
+	onDriverTypeChange,
+	onFieldChange,
+	onRunConnectionTest,
+	onSaveAnyway,
+	onSaveConfirmOpenChange,
+	onSubmit,
+	onSyncNormalizedS3Form,
+	saveConfirmOpen,
+	submitting,
+}: PolicyDialogsProps) {
+	const { t } = useTranslation("admin");
+
+	return (
+		<>
+			<ConfirmDialog
+				{...deleteDialogProps}
+				title={`${t("delete_policy")} "${deletePolicyName}"?`}
+				description={t("delete_policy_desc")}
+				confirmLabel={t("core:delete")}
+				variant="destructive"
+			/>
+			<ConfirmDialog
+				open={saveConfirmOpen}
+				onOpenChange={onSaveConfirmOpenChange}
+				title={t("connection_test_failed")}
+				description={t("policy_test_failed_confirm_desc")}
+				confirmLabel={t("save_anyway")}
+				onConfirm={onSaveAnyway}
+			/>
+			<StoragePolicyDialog
+				open={dialogOpen}
+				mode={editMode ? "edit" : "create"}
+				form={form}
+				submitting={submitting}
+				createStep={createStep}
+				createStepTouched={createStepTouched}
+				endpointValidationMessage={endpointValidationMessage}
+				onOpenChange={onDialogOpenChange}
+				onSubmit={onSubmit}
+				onRunConnectionTest={onRunConnectionTest}
+				onFieldChange={onFieldChange}
+				onDriverTypeChange={onDriverTypeChange}
+				onCreateBack={onCreateBack}
+				onCreateStepChange={onCreateStepChange}
+				onCreateNext={onCreateNext}
+				onSyncNormalizedS3Form={onSyncNormalizedS3Form}
+			/>
+		</>
+	);
+}

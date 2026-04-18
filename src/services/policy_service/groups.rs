@@ -1,10 +1,10 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, Set, TransactionSession, TransactionTrait};
+use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{policy_group_repo, policy_repo, team_repo, user_repo};
 use crate::entities::{storage_policy_group, storage_policy_group_item, user};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 
 use super::models::{
@@ -25,7 +25,7 @@ where
         None => return Ok(()),
     };
 
-    let txn = db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(db).await?;
     let result = async {
         let default_group = match policy_group_repo::find_default_group(&txn).await? {
             Some(group) => {
@@ -96,7 +96,10 @@ where
             let mut active: user::ActiveModel = user_model.into();
             active.policy_group_id = Set(Some(default_group.id));
             active.updated_at = Set(Utc::now());
-            active.update(&txn).await.map_err(AsterError::from)?;
+            active
+                .update(&txn)
+                .await
+                .map_aster_err(AsterError::database_operation)?;
         }
 
         Ok(())
@@ -104,7 +107,7 @@ where
     .await;
 
     match result {
-        Ok(()) => txn.commit().await.map_err(AsterError::from),
+        Ok(()) => crate::db::transaction::commit(txn).await,
         Err(err) => Err(err),
     }
 }
@@ -154,7 +157,7 @@ pub async fn create_group(
 
     validate_group_items(&state.db, &items).await?;
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let now = Utc::now();
     let group = policy_group_repo::create_group(
         &txn,
@@ -174,7 +177,7 @@ pub async fn create_group(
         lock_default_group_assignment(&txn).await?;
         policy_group_repo::set_only_default_group(&txn, group.id).await?;
     }
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     state.policy_snapshot.reload(&state.db).await?;
     let group = policy_group_repo::find_group_by_id(&state.db, group.id).await?;
     Ok(build_group_info(state, &group))
@@ -192,7 +195,7 @@ pub async fn update_group(
         is_default,
         items,
     } = input;
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let existing = policy_group_repo::find_group_by_id(&txn, id).await?;
     let next_is_enabled = is_enabled.unwrap_or(existing.is_enabled);
     let next_is_default = is_default.unwrap_or(existing.is_default);
@@ -267,7 +270,7 @@ pub async fn update_group(
         policy_group_repo::set_only_default_group(&txn, group.id).await?;
     }
 
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     state.policy_snapshot.reload(&state.db).await?;
     let group = policy_group_repo::find_group_by_id(&state.db, group.id).await?;
     Ok(build_group_info(state, &group))
@@ -337,16 +340,19 @@ pub async fn migrate_group_users(
         });
     }
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let migrated_assignments = source_users.len() as u64;
     for source_user in source_users {
         let mut active: user::ActiveModel = source_user.into();
         active.policy_group_id = Set(Some(target_group_id));
         active.updated_at = Set(Utc::now());
-        active.update(&txn).await.map_err(AsterError::from)?;
+        active
+            .update(&txn)
+            .await
+            .map_aster_err(AsterError::database_operation)?;
     }
 
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     state.policy_snapshot.reload(&state.db).await?;
 
     Ok(PolicyGroupUserMigrationResult {

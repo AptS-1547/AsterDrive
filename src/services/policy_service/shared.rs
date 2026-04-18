@@ -3,7 +3,7 @@ use sea_orm::{DbBackend, EntityTrait, QuerySelect, Set};
 
 use crate::db::repository::{policy_group_repo, policy_repo};
 use crate::entities::{storage_policy, storage_policy_group, storage_policy_group_item};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::storage::drivers::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::types::{
@@ -190,7 +190,7 @@ pub(super) async fn lock_default_group_assignment<C: sea_orm::ConnectionTrait>(
                 .lock_exclusive()
                 .one(db)
                 .await
-                .map_err(AsterError::from)?;
+                .map_aster_err(AsterError::database_operation)?;
             if row.is_none() {
                 return Err(AsterError::storage_policy_not_found(format!(
                     "policy #{}",

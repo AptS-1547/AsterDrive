@@ -1,3 +1,5 @@
+use crate::api::dto::share_public::DirectLinkQuery;
+pub use crate::api::dto::share_public::VerifyPasswordReq;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
@@ -6,13 +8,12 @@ use crate::config::RateLimitConfig;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{direct_link_service, preview_link_service, profile_service, share_service};
+use crate::services::{
+    direct_link_service, file_service, preview_link_service, profile_service, share_service,
+};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
 
 const SHARE_COOKIE_PREFIX: &str = "aster_share_";
 
@@ -43,13 +44,9 @@ fn share_cookie_value(req: &actix_web::HttpRequest, token: &str) -> Option<Strin
         .map(|cookie| cookie.value().to_string())
 }
 
-#[derive(Deserialize, Default)]
-pub struct DirectLinkQuery {
-    pub download: Option<String>,
-}
-
+/// Extension methods for `DirectLinkQuery`.
 impl DirectLinkQuery {
-    fn force_download(&self) -> bool {
+    pub(crate) fn force_download(&self) -> bool {
         self.download
             .as_deref()
             .map(|value| matches!(value, "1" | "true" | "yes" | "on"))
@@ -122,12 +119,6 @@ pub async fn get_share_info(
 ) -> Result<HttpResponse> {
     let info = share_service::get_share_info(&state, &path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(info)))
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct VerifyPasswordReq {
-    pub password: String,
 }
 
 #[api_docs_macros::path(
@@ -206,14 +197,15 @@ pub async fn download_shared(
     let cookie_value = share_cookie_value(&req, path.as_str());
     share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
 
-    share_service::download_shared_file(
+    let outcome = share_service::download_shared_file(
         &state,
         &path,
         req.headers()
             .get("If-None-Match")
             .and_then(|v| v.to_str().ok()),
     )
-    .await
+    .await?;
+    Ok(file_service::outcome_to_response(outcome))
 }
 
 pub async fn download_direct(
@@ -223,7 +215,7 @@ pub async fn download_direct(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, filename) = path.into_inner();
-    direct_link_service::download_file(
+    let outcome = direct_link_service::download_file(
         &state,
         &token,
         &filename,
@@ -232,7 +224,8 @@ pub async fn download_direct(
             .get("If-None-Match")
             .and_then(|v| v.to_str().ok()),
     )
-    .await
+    .await?;
+    Ok(file_service::outcome_to_response(outcome))
 }
 
 pub async fn download_preview(
@@ -241,7 +234,7 @@ pub async fn download_preview(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, filename) = path.into_inner();
-    preview_link_service::download_file(
+    let outcome = preview_link_service::download_file(
         &state,
         &token,
         &filename,
@@ -249,7 +242,8 @@ pub async fn download_preview(
             .get("If-None-Match")
             .and_then(|v| v.to_str().ok()),
     )
-    .await
+    .await?;
+    Ok(file_service::outcome_to_response(outcome))
 }
 
 #[api_docs_macros::path(
@@ -276,7 +270,7 @@ pub async fn download_shared_folder_file(
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
-    share_service::download_shared_folder_file(
+    let outcome = share_service::download_shared_folder_file(
         &state,
         &token,
         file_id,
@@ -284,7 +278,8 @@ pub async fn download_shared_folder_file(
             .get("If-None-Match")
             .and_then(|v| v.to_str().ok()),
     )
-    .await
+    .await?;
+    Ok(file_service::outcome_to_response(outcome))
 }
 
 #[api_docs_macros::path(

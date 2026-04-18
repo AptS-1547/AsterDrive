@@ -166,6 +166,15 @@ pub async fn count_all<C: ConnectionTrait>(db: &C) -> Result<u64> {
     User::find().count(db).await.map_err(AsterError::from)
 }
 
+/// 按状态统计用户数
+pub async fn count_by_status<C: ConnectionTrait>(db: &C, status: UserStatus) -> Result<u64> {
+    User::find()
+        .filter(user::Column::Status.eq(status))
+        .count(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn create<C: ConnectionTrait>(db: &C, model: user::ActiveModel) -> Result<user::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }

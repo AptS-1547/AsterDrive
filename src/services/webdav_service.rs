@@ -2,11 +2,10 @@ use std::future::Future;
 use std::pin::Pin;
 
 use chrono::Utc;
-use sea_orm::TransactionTrait;
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::folder;
-use crate::errors::{AsterError, Result};
+use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
     file_service, folder_service, storage_change_service, workspace_models::FileInfo,
@@ -55,10 +54,10 @@ pub async fn recursive_soft_delete(state: &AppState, user_id: i64, folder_id: i6
     let file_ids: Vec<i64> = files.into_iter().map(|f| f.id).collect();
     let now = Utc::now();
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     file_repo::soft_delete_many(&txn, &file_ids, now).await?;
     folder_repo::soft_delete_many(&txn, &folder_ids, now).await?;
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(

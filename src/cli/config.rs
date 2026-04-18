@@ -9,7 +9,6 @@ use crate::services::config_service::SystemConfig;
 use crate::types::{SystemConfigSource, SystemConfigValueType};
 use chrono::Utc;
 use clap::{Args, Subcommand};
-use sea_orm::TransactionTrait;
 use serde::{Deserialize, Serialize};
 
 use super::shared::{
@@ -208,7 +207,7 @@ pub async fn execute_config_command(
         }
         ConfigCommand::Import(args) => {
             let entries = read_import_items(&args.input_file)?;
-            let txn = db.begin().await.map_err(AsterError::from)?;
+            let txn = crate::db::transaction::begin(&db).await?;
             let current_lookup = build_value_lookup(&config_repo::find_all(&txn).await?);
             let normalized = normalize_entries(current_lookup, &entries)?;
             let mut saved = Vec::with_capacity(normalized.len());
@@ -217,7 +216,7 @@ pub async fn execute_config_command(
                     config_repo::upsert_with_actor(&txn, &item.key, &item.value, None).await?;
                 saved.push(system_config_to_view(model));
             }
-            txn.commit().await.map_err(AsterError::from)?;
+            crate::db::transaction::commit(txn).await?;
             Ok(ConfigCommandReport::list(ConfigCommandKind::Import, saved))
         }
     }

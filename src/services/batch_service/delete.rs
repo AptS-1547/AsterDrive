@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use chrono::Utc;
-use sea_orm::TransactionTrait;
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::{AsterError, Result};
@@ -114,10 +113,10 @@ pub(crate) async fn batch_delete_in_scope(
         let now = Utc::now();
         let file_ids_to_delete: Vec<i64> = file_ids_to_delete.into_iter().collect();
 
-        let txn = state.db.begin().await.map_err(AsterError::from)?;
+        let txn = crate::db::transaction::begin(&state.db).await?;
         file_repo::soft_delete_many(&txn, &file_ids_to_delete, now).await?;
         folder_repo::soft_delete_many(&txn, &folder_ids_to_delete, now).await?;
-        txn.commit().await.map_err(AsterError::from)?;
+        crate::db::transaction::commit(txn).await?;
 
         if !direct_file_ids_deleted.is_empty() {
             storage_change_service::publish(

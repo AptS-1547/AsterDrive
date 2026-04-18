@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
-use sea_orm::{ConnectionTrait, DbErr, IntoActiveModel, Set, SqlErr, TransactionTrait};
+use sea_orm::{ConnectionTrait, DbErr, IntoActiveModel, Set, SqlErr};
 
 use crate::config::operations;
 use crate::db::repository::{policy_group_repo, team_member_repo, team_repo, user_repo};
@@ -398,7 +398,7 @@ pub(super) async fn create_team_record(
     let storage_quota = default_team_storage_quota(state);
     let now = Utc::now();
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let created_team = team_repo::create(
         &txn,
         team::ActiveModel {
@@ -427,7 +427,7 @@ pub(super) async fn create_team_record(
         },
     )
     .await?;
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
 
     Ok(created_team)
 }

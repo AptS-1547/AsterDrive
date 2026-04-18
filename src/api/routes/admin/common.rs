@@ -1,6 +1,6 @@
 use serde::{Deserialize, de::Error as DeError};
 
-pub(super) fn deserialize_non_null_policy_group_id<'de, D>(
+pub(crate) fn deserialize_non_null_policy_group_id<'de, D>(
     deserializer: D,
 ) -> std::result::Result<Option<i64>, D::Error>
 where

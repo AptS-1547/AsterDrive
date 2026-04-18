@@ -5,10 +5,9 @@ use http::Uri;
 use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, MapAsterErr, Result};
 
-pub const CORS_ALLOWED_ORIGINS_KEY: &str = "cors_allowed_origins";
-pub const CORS_ALLOW_CREDENTIALS_KEY: &str = "cors_allow_credentials";
-pub const CORS_MAX_AGE_SECS_KEY: &str = "cors_max_age_secs";
-pub const CORS_ENABLED_KEY: &str = "cors_enabled";
+pub use crate::config::definitions::{
+    CORS_ALLOW_CREDENTIALS_KEY, CORS_ALLOWED_ORIGINS_KEY, CORS_ENABLED_KEY, CORS_MAX_AGE_SECS_KEY,
+};
 
 pub const DEFAULT_CORS_ENABLED: bool = false;
 pub const DEFAULT_CORS_ALLOW_CREDENTIALS: bool = false;

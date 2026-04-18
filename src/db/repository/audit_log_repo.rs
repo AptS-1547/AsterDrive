@@ -70,3 +70,21 @@ pub async fn delete_before<C: ConnectionTrait>(db: &C, before: DateTime<Utc>) ->
         .map_err(AsterError::from)?;
     Ok(res.rows_affected)
 }
+
+/// 查询指定时间范围内的日志 action 和 created_at（用于管理后台每日统计）
+pub async fn find_actions_in_range<C: ConnectionTrait>(
+    db: &C,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<Vec<(String, DateTime<Utc>)>> {
+    AuditLog::find()
+        .select_only()
+        .column(audit_log::Column::Action)
+        .column(audit_log::Column::CreatedAt)
+        .filter(audit_log::Column::CreatedAt.gte(start))
+        .filter(audit_log::Column::CreatedAt.lt(end))
+        .into_tuple::<(String, DateTime<Utc>)>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}

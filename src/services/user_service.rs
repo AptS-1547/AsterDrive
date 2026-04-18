@@ -323,7 +323,10 @@ pub async fn update(
         active.session_version = Set(current_session_version.saturating_add(1));
     }
     active.updated_at = Set(Utc::now());
-    let updated = active.update(&state.db).await.map_err(AsterError::from)?;
+    let updated = active
+        .update(&state.db)
+        .await
+        .map_aster_err(AsterError::database_operation)?;
     if policy_group_changed {
         if let Some(policy_group_id) = updated.policy_group_id {
             state
@@ -433,7 +436,7 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     user::Entity::delete_by_id(target_user_id)
         .exec(db)
         .await
-        .map_err(AsterError::from)?;
+        .map_aster_err(AsterError::database_operation)?;
 
     state
         .policy_snapshot

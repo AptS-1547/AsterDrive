@@ -221,6 +221,20 @@ impl StorageDriver for LocalDriver {
         Ok(storage_path.to_string())
     }
 
+    async fn copy_object(&self, src_path: &str, dest_path: &str) -> Result<String> {
+        let src_full = self.full_path(src_path);
+        let dest_full = self.full_path(dest_path);
+        if let Some(parent) = dest_full.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_aster_err(AsterError::storage_driver_error)?;
+        }
+        tokio::fs::copy(&src_full, &dest_full)
+            .await
+            .map_aster_err_ctx("copy_object", AsterError::storage_driver_error)?;
+        Ok(dest_path.to_string())
+    }
+
     async fn presigned_url(
         &self,
         _path: &str,

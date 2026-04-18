@@ -4,7 +4,7 @@
 mod common;
 
 use aster_drive::storage::driver::{PresignedDownloadOptions, StorageDriver};
-use aster_drive::storage::s3::S3Driver;
+use aster_drive::storage::drivers::s3::S3Driver;
 use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
 /// 创建 S3 测试用的 storage_policy model

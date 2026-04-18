@@ -2,7 +2,7 @@ use crate::config::RuntimeConfig;
 use crate::config::cors;
 use crate::errors::Result;
 
-pub const PUBLIC_SITE_URL_KEY: &str = "public_site_url";
+pub use crate::config::definitions::PUBLIC_SITE_URL_KEY;
 
 pub fn normalize_public_site_url_config_value(value: &str) -> Result<String> {
     let trimmed = value.trim();

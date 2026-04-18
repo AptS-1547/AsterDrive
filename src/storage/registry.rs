@@ -13,6 +13,8 @@ use std::sync::Arc;
 enum DriverEntry {
     Local(Arc<LocalDriver>),
     S3(Arc<S3Driver>),
+    #[cfg(test)]
+    Mock(Arc<dyn StorageDriver>),
 }
 
 impl DriverEntry {
@@ -20,6 +22,8 @@ impl DriverEntry {
         match self {
             DriverEntry::Local(d) => d.clone(),
             DriverEntry::S3(d) => d.clone(),
+            #[cfg(test)]
+            DriverEntry::Mock(d) => d.clone(),
         }
     }
 
@@ -27,6 +31,8 @@ impl DriverEntry {
         match self {
             DriverEntry::Local(_) => None,
             DriverEntry::S3(d) => Some(d.clone()),
+            #[cfg(test)]
+            DriverEntry::Mock(_) => None,
         }
     }
 }
@@ -72,14 +78,7 @@ impl DriverRegistry {
 
     #[cfg(test)]
     pub fn insert_for_test(&self, policy_id: i64, driver: Arc<dyn StorageDriver>) {
-        // 测试驱动统一包装为 Local（测试不会调用 multipart）
-        use super::drivers::local::LocalDriver as _LocalDriver;
-        // 无法直接 downcast Arc<dyn StorageDriver>，插入一个占位 Local 并覆盖 DashMap 原始值
-        // 通过 insert_raw_for_test 提供更精确的测试支持
-        let _ = (policy_id, driver); // 测试中此方法实际走 insert_local_for_test
-        // 已有调用方通过 driver_registry.insert_for_test 插入 mock driver；
-        // 暂时保留接口签名，实现退化为 no-op 并在调用点给出说明。
-        // 真正 mock multipart 的测试应使用 insert_s3_for_test。
+        self.drivers.insert(policy_id, DriverEntry::Mock(driver));
     }
 
     #[cfg(test)]

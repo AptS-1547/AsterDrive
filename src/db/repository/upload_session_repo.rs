@@ -1,7 +1,10 @@
 use crate::entities::upload_session::{self, Entity as UploadSession};
 use crate::errors::{AsterError, Result};
 use crate::types::UploadSessionStatus;
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect,
+};
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: &str) -> Result<upload_session::Model> {
     UploadSession::find_by_id(id.to_string())
@@ -98,4 +101,22 @@ pub async fn delete_all_by_team<C: ConnectionTrait>(db: &C, team_id: i64) -> Res
         .await
         .map_err(AsterError::from)?;
     Ok(res.rows_affected)
+}
+
+/// 批量查询已完成且已过期的 upload session（cursor 分页，id 升序）
+pub async fn find_expired_completed_paginated<C: ConnectionTrait>(
+    db: &C,
+    now: chrono::DateTime<chrono::Utc>,
+    after_id: Option<&str>,
+    limit: u64,
+) -> Result<Vec<upload_session::Model>> {
+    let mut query = UploadSession::find()
+        .filter(upload_session::Column::ExpiresAt.lt(now))
+        .filter(upload_session::Column::Status.eq(UploadSessionStatus::Completed))
+        .order_by_asc(upload_session::Column::Id)
+        .limit(limit);
+    if let Some(last_id) = after_id {
+        query = query.filter(upload_session::Column::Id.gt(last_id.to_string()));
+    }
+    query.all(db).await.map_err(AsterError::from)
 }

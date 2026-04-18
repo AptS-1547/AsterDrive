@@ -1,7 +1,6 @@
 use actix_multipart::Multipart;
 use chrono::Utc;
 use futures::StreamExt;
-use sea_orm::TransactionTrait;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
@@ -234,7 +233,7 @@ async fn upload_s3_relay_direct(
             }
 
             let now = Utc::now();
-            let txn = state.db.begin().await.map_err(AsterError::from)?;
+            let txn = crate::db::transaction::begin(&state.db).await?;
             let create_result = async {
                 check_quota(&txn, scope, declared_size).await?;
                 let blob =
@@ -243,7 +242,7 @@ async fn upload_s3_relay_direct(
                     create_new_file_from_blob(&txn, scope, folder_id, &filename, &blob, now)
                         .await?;
                 update_storage_used(&txn, scope, declared_size).await?;
-                txn.commit().await.map_err(AsterError::from)?;
+                crate::db::transaction::commit(txn).await?;
                 Ok::<file::Model, AsterError>(created)
             }
             .await;

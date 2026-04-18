@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, MapAsterErr, Result};
 
-pub const AVATAR_DIR_KEY: &str = "avatar_dir";
+pub use crate::config::definitions::AVATAR_DIR_KEY;
 pub const DEFAULT_AVATAR_DIR: &str = "avatar";
 const DEFAULT_DATA_DIR: &str = "data";
 

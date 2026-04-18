@@ -5,8 +5,8 @@ use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::share::{self, Entity as Share};
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, QuerySelect, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 #[derive(Clone, Copy)]
@@ -30,6 +30,11 @@ pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<share::Mo
         .await
         .map_err(AsterError::from)?
         .ok_or_else(|| AsterError::share_not_found(format!("share #{id}")))
+}
+
+/// 统计所有分享总数
+pub async fn count_all<C: ConnectionTrait>(db: &C) -> Result<u64> {
+    Share::find().count(db).await.map_err(AsterError::from)
 }
 
 pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<share::Model>> {

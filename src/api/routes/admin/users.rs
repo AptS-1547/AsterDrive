@@ -1,4 +1,6 @@
-use super::common::deserialize_non_null_policy_group_id;
+use crate::api::dto::admin::{
+    AdminUserListQuery, CreateUserReq, PatchUserReq, ResetUserPasswordReq,
+};
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
@@ -10,51 +12,7 @@ use crate::services::{
     auth_service::{self, Claims},
     profile_service, user_service,
 };
-use crate::types::{UserRole, UserStatus};
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::{IntoParams, ToSchema};
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
-pub struct AdminUserListQuery {
-    pub keyword: Option<String>,
-    pub role: Option<UserRole>,
-    pub status: Option<UserStatus>,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CreateUserReq {
-    pub username: String,
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PatchUserReq {
-    pub email_verified: Option<bool>,
-    pub role: Option<UserRole>,
-    pub status: Option<UserStatus>,
-    pub storage_quota: Option<i64>,
-    /// Omitted means "leave unchanged". Explicit `null` is rejected because this
-    /// endpoint only supports assigning a policy group, not unassigning one. To
-    /// change the assignment, provide a valid policy group ID.
-    #[serde(default, deserialize_with = "deserialize_non_null_policy_group_id")]
-    #[cfg_attr(
-        all(debug_assertions, feature = "openapi"),
-        schema(value_type = Option<i64>, nullable = false)
-    )]
-    pub policy_group_id: Option<i64>,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct ResetUserPasswordReq {
-    pub password: String,
-}
 
 #[api_docs_macros::path(
     post,

@@ -1,21 +1,12 @@
 use chrono::{DateTime, Duration, LocalResult, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
-use sea_orm::{
-    ColumnTrait, DbBackend, EntityTrait, ExprTrait, PaginatorTrait, QueryFilter, QuerySelect,
-    sea_query::Expr,
-};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
-use crate::db::repository::background_task_repo;
-use crate::entities::{
-    audit_log::{self, Entity as AuditLog},
-    file::{self, Entity as File},
-    file_blob::Entity as FileBlob,
-    share::Entity as Share,
-    user::{self, Entity as User},
+use crate::db::repository::{
+    audit_log_repo, background_task_repo, file_repo, share_repo, user_repo,
 };
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -133,24 +124,15 @@ pub async fn get_overview(
     let timezone = parse_timezone(timezone_name)?;
     let today = generated_at.with_timezone(&timezone).date_naive();
 
-    let total_users = User::find().count(&state.db).await?;
-    let active_users = User::find()
-        .filter(user::Column::Status.eq(UserStatus::Active))
-        .count(&state.db)
-        .await?;
-    let disabled_users = User::find()
-        .filter(user::Column::Status.eq(UserStatus::Disabled))
-        .count(&state.db)
-        .await?;
+    let total_users = user_repo::count_all(&state.db).await?;
+    let active_users = user_repo::count_by_status(&state.db, UserStatus::Active).await?;
+    let disabled_users = user_repo::count_by_status(&state.db, UserStatus::Disabled).await?;
 
-    let total_files = File::find()
-        .filter(file::Column::DeletedAt.is_null())
-        .count(&state.db)
-        .await?;
-    let total_file_bytes = sum_live_file_bytes(state).await?;
-    let total_blobs = FileBlob::find().count(&state.db).await?;
-    let total_blob_bytes = sum_blob_bytes(state).await?;
-    let total_shares = Share::find().count(&state.db).await?;
+    let total_files = file_repo::count_live_files(&state.db).await?;
+    let total_file_bytes = file_repo::sum_live_file_bytes(&state.db).await?;
+    let total_blobs = file_repo::count_all_blobs(&state.db).await?;
+    let total_blob_bytes = file_repo::sum_blob_bytes(&state.db).await?;
+    let total_shares = share_repo::count_all(&state.db).await?;
 
     let daily_reports = build_daily_reports(state, today, days, timezone).await?;
     let today_report = daily_reports
@@ -266,15 +248,7 @@ async fn build_daily_reports(
     let start = start_of_local_day(oldest_date, timezone)?;
     let end = start_of_local_day(today + Duration::days(1), timezone)?;
 
-    let events = AuditLog::find()
-        .select_only()
-        .column(audit_log::Column::Action)
-        .column(audit_log::Column::CreatedAt)
-        .filter(audit_log::Column::CreatedAt.gte(start))
-        .filter(audit_log::Column::CreatedAt.lt(end))
-        .into_tuple::<(String, DateTimeUtc)>()
-        .all(&state.db)
-        .await?;
+    let events = audit_log_repo::find_actions_in_range(&state.db, start, end).await?;
 
     for (action, created_at) in events {
         let date = created_at.with_timezone(&timezone).date_naive();
@@ -301,51 +275,6 @@ fn record_audit_action(report: &mut AdminOverviewDailyReport, action: &str) {
     }
 }
 
-async fn sum_live_file_bytes(state: &AppState) -> Result<i64> {
-    Ok(File::find()
-        .select_only()
-        .column_as(
-            sum_as_i64_expr(state.db.get_database_backend(), file::Column::Size),
-            "sum",
-        )
-        .filter(file::Column::DeletedAt.is_null())
-        .into_tuple::<Option<i64>>()
-        .one(&state.db)
-        .await?
-        .flatten()
-        .unwrap_or(0))
-}
-
-async fn sum_blob_bytes(state: &AppState) -> Result<i64> {
-    Ok(FileBlob::find()
-        .select_only()
-        .column_as(
-            sum_as_i64_expr(
-                state.db.get_database_backend(),
-                crate::entities::file_blob::Column::Size,
-            ),
-            "sum",
-        )
-        .into_tuple::<Option<i64>>()
-        .one(&state.db)
-        .await?
-        .flatten()
-        .unwrap_or(0))
-}
-
-fn sum_as_i64_expr(
-    backend: DbBackend,
-    column: impl sea_orm::sea_query::IntoColumnRef + Copy,
-) -> sea_orm::sea_query::SimpleExpr {
-    let type_name = match backend {
-        DbBackend::Postgres => "bigint",
-        DbBackend::MySql => "signed",
-        _ => "integer",
-    };
-
-    Expr::col(column).sum().cast_as(type_name)
-}
-
 fn parse_timezone(timezone_name: &str) -> Result<Tz> {
     timezone_name.parse::<Tz>().map_aster_err_with(|| {
         AsterError::validation_error(format!("invalid timezone '{timezone_name}'"))
@@ -369,11 +298,7 @@ fn start_of_local_day(date: NaiveDate, timezone: Tz) -> Result<DateTimeUtc> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AdminOverviewDailyReport, record_audit_action, sum_as_i64_expr};
-    use sea_orm::{
-        DbBackend,
-        sea_query::{PostgresQueryBuilder, Query},
-    };
+    use super::{AdminOverviewDailyReport, record_audit_action};
 
     fn empty_report() -> AdminOverviewDailyReport {
         AdminOverviewDailyReport {
@@ -411,18 +336,5 @@ mod tests {
         assert_eq!(report.share_creations, 1);
         assert_eq!(report.deletions, 3);
         assert_eq!(report.total_events, 9);
-    }
-
-    #[test]
-    fn postgres_sum_expr_casts_to_bigint() {
-        let sql = Query::select()
-            .expr(sum_as_i64_expr(
-                DbBackend::Postgres,
-                super::file::Column::Size,
-            ))
-            .from(super::File)
-            .to_string(PostgresQueryBuilder);
-
-        assert!(sql.contains(r#"CAST(SUM("size") AS bigint)"#), "{sql}");
     }
 }

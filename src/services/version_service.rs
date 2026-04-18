@@ -1,9 +1,9 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, Set};
 
 use crate::db::repository::{file_repo, version_repo};
 use crate::entities::file_version;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
     storage_change_service,
@@ -67,7 +67,7 @@ async fn restore_version_inner(
         );
     }
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
 
     let previous_blob_id = current_blob.id;
     let target_blob_id = version.blob_id;
@@ -76,7 +76,10 @@ async fn restore_version_inner(
     active.blob_id = Set(target_blob_id);
     active.size = Set(version.size);
     active.updated_at = Set(now);
-    let updated = active.update(&txn).await.map_err(AsterError::from)?;
+    let updated = active
+        .update(&txn)
+        .await
+        .map_aster_err(AsterError::database_operation)?;
 
     let truncated_versions =
         version_repo::find_by_file_id_from_version(&txn, updated.id, version.version).await?;
@@ -105,7 +108,7 @@ async fn restore_version_inner(
         workspace_storage_service::update_storage_used(&txn, scope, -reclaimed_bytes).await?;
     }
 
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
@@ -143,13 +146,13 @@ async fn delete_version_inner(
     scope: WorkspaceStorageScope,
     version: file_version::Model,
 ) -> Result<()> {
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     version_repo::delete_by_id(&txn, version.id).await?;
     version_repo::decrement_versions_after(&txn, version.file_id, version.version).await?;
     if version.size != 0 {
         workspace_storage_service::update_storage_used(&txn, scope, -version.size).await?;
     }
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     cleanup_blob_if_unused(state, version.blob_id).await?;
     Ok(())
 }
@@ -316,13 +319,13 @@ pub async fn cleanup_excess(state: &AppState, file_id: i64) -> Result<()> {
         }
         let oldest = version_repo::find_oldest_by_file_id(db, file_id).await?;
         if let Some(oldest) = oldest {
-            let txn = state.db.begin().await.map_err(AsterError::from)?;
+            let txn = crate::db::transaction::begin(&state.db).await?;
             version_repo::delete_by_id(&txn, oldest.id).await?;
             version_repo::decrement_versions_after(&txn, file_id, oldest.version).await?;
             if oldest.size != 0 {
                 workspace_storage_service::update_storage_used(&txn, scope, -oldest.size).await?;
             }
-            txn.commit().await.map_err(AsterError::from)?;
+            crate::db::transaction::commit(txn).await?;
             cleanup_blob_if_unused(state, oldest.blob_id).await?;
         } else {
             break;
@@ -347,12 +350,12 @@ pub async fn purge_all_versions(state: &AppState, file_id: i64) -> Result<()> {
         )?;
     }
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let blob_ids = version_repo::delete_all_by_file_id(&txn, file_id).await?;
     if reclaimed_bytes != 0 {
         workspace_storage_service::update_storage_used(&txn, scope, -reclaimed_bytes).await?;
     }
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
 
     for blob_id in blob_ids {
         cleanup_blob_if_unused(state, blob_id).await?;

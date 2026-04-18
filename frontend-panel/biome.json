@@ -23,6 +23,28 @@
 			"recommended": true
 		}
 	},
+	"overrides": [
+		{
+			"includes": [
+				"src/pages/admin/AdminUsersPage.tsx",
+				"src/pages/admin/AdminTeamsPage.tsx",
+				"src/pages/admin/AdminPoliciesPage.tsx"
+			],
+			"linter": {
+				"rules": {
+					"nursery": {
+						"noExcessiveLinesPerFile": {
+							"level": "warn",
+							"options": {
+								"maxLines": 300,
+								"skipBlankLines": true
+							}
+						}
+					}
+				}
+			}
+		}
+	],
 	"css": {
 		"parser": {
 			"tailwindDirectives": true

@@ -9,7 +9,6 @@
 //! 目标都是在最后统一落到 `workspace_storage_service` 的文件创建语义上。
 
 use chrono::Utc;
-use sea_orm::TransactionTrait;
 
 use crate::db::repository::{file_repo, upload_session_part_repo, upload_session_repo};
 use crate::entities::{file, upload_session};
@@ -175,7 +174,7 @@ async fn complete_upload_impl(
         }
 
         let create_result = async {
-            let txn = state.db.begin().await.map_err(AsterError::from)?;
+            let txn = crate::db::transaction::begin(&state.db).await?;
 
             let blob = if let Some(hasher) = hasher {
                 let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
@@ -216,7 +215,7 @@ async fn complete_upload_impl(
                 workspace_storage_service::finalize_upload_session_blob(&txn, &session, &blob, now)
                     .await?;
 
-            txn.commit().await.map_err(AsterError::from)?;
+            crate::db::transaction::commit(txn).await?;
             Ok::<file::Model, AsterError>(created)
         }
         .await;

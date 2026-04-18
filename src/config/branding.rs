@@ -1,11 +1,10 @@
 use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, Result};
 
-pub const BRANDING_TITLE_KEY: &str = "branding_title";
-pub const BRANDING_DESCRIPTION_KEY: &str = "branding_description";
-pub const BRANDING_FAVICON_URL_KEY: &str = "branding_favicon_url";
-pub const BRANDING_WORDMARK_DARK_URL_KEY: &str = "branding_wordmark_dark_url";
-pub const BRANDING_WORDMARK_LIGHT_URL_KEY: &str = "branding_wordmark_light_url";
+pub use crate::config::definitions::{
+    BRANDING_DESCRIPTION_KEY, BRANDING_FAVICON_URL_KEY, BRANDING_TITLE_KEY,
+    BRANDING_WORDMARK_DARK_URL_KEY, BRANDING_WORDMARK_LIGHT_URL_KEY,
+};
 
 pub const DEFAULT_BRANDING_TITLE: &str = "AsterDrive";
 pub const DEFAULT_BRANDING_DESCRIPTION: &str = "Self-hosted cloud storage";

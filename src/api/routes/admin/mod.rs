@@ -4,8 +4,16 @@ use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::web;
 
+// DTO re-exports from unified dto/ module
+pub use crate::api::dto::admin::{
+    AdminCreateTeamReq, AdminListQuery, AdminPatchTeamReq, AdminTeamListQuery, AdminUserListQuery,
+    CreatePolicyGroupReq, CreatePolicyReq, CreateUserReq, ExecuteConfigActionReq,
+    ExecuteConfigActionResp, MigratePolicyGroupUsersReq, PatchPolicyGroupReq, PatchPolicyReq,
+    PatchUserReq, PolicyGroupItemReq, ResetUserPasswordReq, SetConfigReq, TestPolicyParamsReq,
+};
+
 pub(crate) mod audit_logs;
-mod common;
+pub(crate) mod common;
 pub(crate) mod config;
 pub(crate) mod locks;
 pub(crate) mod overview;
@@ -17,29 +25,24 @@ pub(crate) mod users;
 
 pub use audit_logs::list_audit_logs;
 pub use config::{
-    ExecuteConfigActionReq, ExecuteConfigActionResp, SetConfigReq, config_schema,
-    config_template_variables, delete_config, execute_config_action, get_config, list_config,
-    set_config,
+    config_schema, config_template_variables, delete_config, execute_config_action, get_config,
+    list_config, set_config,
 };
 pub use locks::{cleanup_expired_locks, force_unlock, list_locks};
 pub use overview::get_overview;
 pub use policies::{
-    CreatePolicyGroupReq, CreatePolicyReq, MigratePolicyGroupUsersReq, PatchPolicyGroupReq,
-    PatchPolicyReq, PolicyGroupItemReq, TestPolicyParamsReq, create_policy, create_policy_group,
-    delete_policy, delete_policy_group, get_policy, get_policy_group, list_policies,
-    list_policy_groups, migrate_policy_group_users, test_policy_connection, test_policy_params,
-    update_policy, update_policy_group,
+    create_policy, create_policy_group, delete_policy, delete_policy_group, get_policy,
+    get_policy_group, list_policies, list_policy_groups, migrate_policy_group_users,
+    test_policy_connection, test_policy_params, update_policy, update_policy_group,
 };
 pub use shares::{admin_delete_share, list_all_shares};
 pub use tasks::list_tasks;
 pub use teams::{
-    AdminCreateTeamReq, AdminPatchTeamReq, AdminTeamListQuery, add_team_member, create_team,
-    delete_team, delete_team_member, get_team, list_team_audit_logs, list_team_members, list_teams,
-    patch_team_member, restore_team, update_team,
+    add_team_member, create_team, delete_team, delete_team_member, get_team, list_team_audit_logs,
+    list_team_members, list_teams, patch_team_member, restore_team, update_team,
 };
 pub use users::{
-    AdminUserListQuery, CreateUserReq, PatchUserReq, ResetUserPasswordReq, create_user,
-    force_delete_user, get_user, get_user_avatar, list_users, reset_user_password,
+    create_user, force_delete_user, get_user, get_user_avatar, list_users, reset_user_password,
     revoke_user_sessions, update_user,
 };
 

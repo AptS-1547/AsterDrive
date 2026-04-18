@@ -1,6 +1,6 @@
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect,
+    ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 use crate::api::pagination::{SortBy, SortOrder};
@@ -8,6 +8,43 @@ use crate::entities::file::{self, Entity as File};
 use crate::errors::{AsterError, MapAsterErr, Result};
 
 use super::common::{FileScope, active_scope_condition, apply_folder_condition, scope_condition};
+
+fn sum_as_i64_expr(
+    backend: DbBackend,
+    column: impl sea_orm::sea_query::IntoColumnRef + Copy,
+) -> sea_orm::sea_query::SimpleExpr {
+    let type_name = match backend {
+        DbBackend::Postgres => "bigint",
+        DbBackend::MySql => "signed",
+        _ => "integer",
+    };
+    Expr::col(column).sum().cast_as(type_name)
+}
+
+/// 统计未删除文件总数
+pub async fn count_live_files<C: ConnectionTrait>(db: &C) -> Result<u64> {
+    File::find()
+        .filter(file::Column::DeletedAt.is_null())
+        .count(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+/// 统计未删除文件总字节数
+pub async fn sum_live_file_bytes<C: ConnectionTrait>(db: &C) -> Result<i64> {
+    Ok(File::find()
+        .select_only()
+        .column_as(
+            sum_as_i64_expr(db.get_database_backend(), file::Column::Size),
+            "sum",
+        )
+        .filter(file::Column::DeletedAt.is_null())
+        .into_tuple::<Option<i64>>()
+        .one(db)
+        .await?
+        .flatten()
+        .unwrap_or(0))
+}
 
 async fn find_by_folders_in_scope<C: ConnectionTrait>(
     db: &C,

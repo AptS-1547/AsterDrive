@@ -1,3 +1,4 @@
+use crate::api::dto::webdav::{CreateWebdavAccountReq, TestConnectionReq, WebdavSettingsInfo};
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::LimitOffsetQuery;
@@ -12,9 +13,6 @@ use crate::services::{auth_service::Claims, webdav_account_service};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api);
@@ -28,13 +26,6 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{id}/toggle", web::post().to(toggle_account))
         .route("/settings", web::get().to(get_settings))
         .route("/test", web::post().to(test_connection))
-}
-
-#[derive(serde::Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct WebdavSettingsInfo {
-    pub prefix: String,
-    pub endpoint: String,
 }
 
 #[api_docs_macros::path(
@@ -59,21 +50,6 @@ pub async fn get_settings(state: web::Data<AppState>) -> Result<HttpResponse> {
         prefix: state.config.webdav.prefix.clone(),
         endpoint: site_url::public_app_url_or_path(&state.runtime_config, &endpoint_path),
     })))
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct TestConnectionReq {
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CreateWebdavAccountReq {
-    pub username: String,
-    pub password: Option<String>,
-    pub root_folder_id: Option<i64>,
 }
 
 #[api_docs_macros::path(

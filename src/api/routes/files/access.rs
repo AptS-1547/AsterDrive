@@ -1,3 +1,4 @@
+use crate::api::dto::files::OpenWopiRequest;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -9,9 +10,6 @@ use crate::services::{
     workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
 
 #[api_docs_macros::path(
     get,
@@ -95,12 +93,6 @@ pub async fn get_preview_link(
         *path,
     )
     .await
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct OpenWopiRequest {
-    pub app_key: String,
 }
 
 #[api_docs_macros::path(
@@ -248,7 +240,7 @@ pub(crate) async fn download_response(
         .headers()
         .get("If-None-Match")
         .and_then(|value| value.to_str().ok());
-    let response = file_service::download_in_scope(state, scope, file_id, if_none_match).await?;
+    let outcome = file_service::download_in_scope(state, scope, file_id, if_none_match).await?;
     let ctx = AuditContext::from_request(req, claims);
     audit_service::log(
         state,
@@ -260,7 +252,7 @@ pub(crate) async fn download_response(
         None,
     )
     .await;
-    Ok(response)
+    Ok(file_service::outcome_to_response(outcome))
 }
 
 pub(crate) async fn get_thumbnail_response(

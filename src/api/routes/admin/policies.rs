@@ -1,3 +1,4 @@
+use crate::api::dto::admin as dto;
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
@@ -5,28 +6,16 @@ use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{audit_service, auth_service::Claims, policy_service};
-use crate::types::{DriverType, StoragePolicyOptions};
+use crate::types::DriverType;
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
 
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CreatePolicyReq {
-    pub name: String,
-    pub driver_type: DriverType,
-    pub endpoint: Option<String>,
-    pub bucket: Option<String>,
-    pub access_key: Option<String>,
-    pub secret_key: Option<String>,
-    pub base_path: Option<String>,
-    pub max_file_size: Option<i64>,
-    pub chunk_size: Option<i64>,
-    pub is_default: Option<bool>,
-    pub allowed_types: Option<Vec<String>>,
-    pub options: Option<StoragePolicyOptions>,
-}
+// Re-export DTOs for backwards compatibility with admin/mod.rs re-exports
+pub use dto::{
+    CreatePolicyGroupReq, CreatePolicyReq, MigratePolicyGroupUsersReq, PatchPolicyGroupReq,
+    PatchPolicyReq, PolicyGroupItemReq, TestPolicyParamsReq,
+};
+
+// ── Conversion helpers (must stay here because they use policy_service types) ──────────
 
 fn build_policy_connection_input(
     driver_type: DriverType,
@@ -67,22 +56,6 @@ impl From<CreatePolicyReq> for policy_service::CreateStoragePolicyInput {
     }
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PatchPolicyReq {
-    pub name: Option<String>,
-    pub endpoint: Option<String>,
-    pub bucket: Option<String>,
-    pub access_key: Option<String>,
-    pub secret_key: Option<String>,
-    pub base_path: Option<String>,
-    pub max_file_size: Option<i64>,
-    pub chunk_size: Option<i64>,
-    pub is_default: Option<bool>,
-    pub allowed_types: Option<Vec<String>>,
-    pub options: Option<StoragePolicyOptions>,
-}
-
 impl From<PatchPolicyReq> for policy_service::UpdateStoragePolicyInput {
     fn from(value: PatchPolicyReq) -> Self {
         Self {
@@ -101,17 +74,6 @@ impl From<PatchPolicyReq> for policy_service::UpdateStoragePolicyInput {
     }
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct TestPolicyParamsReq {
-    pub driver_type: DriverType,
-    pub endpoint: Option<String>,
-    pub bucket: Option<String>,
-    pub access_key: Option<String>,
-    pub secret_key: Option<String>,
-    pub base_path: Option<String>,
-}
-
 impl From<TestPolicyParamsReq> for policy_service::StoragePolicyConnectionInput {
     fn from(value: TestPolicyParamsReq) -> Self {
         build_policy_connection_input(
@@ -123,49 +85,6 @@ impl From<TestPolicyParamsReq> for policy_service::StoragePolicyConnectionInput 
             value.base_path,
         )
     }
-}
-
-#[derive(Clone, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PolicyGroupItemReq {
-    pub policy_id: i64,
-    pub priority: i32,
-    #[serde(default)]
-    pub min_file_size: i64,
-    #[serde(default)]
-    pub max_file_size: i64,
-}
-
-#[derive(Clone, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CreatePolicyGroupReq {
-    pub name: String,
-    pub description: Option<String>,
-    #[serde(default = "default_true")]
-    pub is_enabled: bool,
-    #[serde(default)]
-    pub is_default: bool,
-    pub items: Vec<PolicyGroupItemReq>,
-}
-
-#[derive(Clone, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PatchPolicyGroupReq {
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub is_enabled: Option<bool>,
-    pub is_default: Option<bool>,
-    pub items: Option<Vec<PolicyGroupItemReq>>,
-}
-
-#[derive(Clone, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct MigratePolicyGroupUsersReq {
-    pub target_group_id: i64,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn map_group_items(

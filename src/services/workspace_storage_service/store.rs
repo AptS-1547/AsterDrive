@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, Set};
 use sha2::{Digest, Sha256};
 
 use crate::db::repository::file_repo;
@@ -222,7 +222,7 @@ async fn store_from_temp_internal(
     }
 
     let create_result = async {
-        let txn = state.db.begin().await.map_err(AsterError::from)?;
+        let txn = crate::db::transaction::begin(&state.db).await?;
         if storage_delta > 0 {
             check_quota(&txn, scope, storage_delta).await?;
         }
@@ -255,7 +255,10 @@ async fn store_from_temp_internal(
             active.size = Set(blob.size);
             active.mime_type = Set(mime);
             active.updated_at = Set(now);
-            let updated = active.update(&txn).await.map_err(AsterError::from)?;
+            let updated = active
+                .update(&txn)
+                .await
+                .map_aster_err(AsterError::database_operation)?;
 
             let next_ver =
                 crate::db::repository::version_repo::next_version(&txn, existing_id).await?;
@@ -292,7 +295,7 @@ async fn store_from_temp_internal(
             created
         };
 
-        txn.commit().await.map_err(AsterError::from)?;
+        crate::db::transaction::commit(txn).await?;
         Ok::<file::Model, AsterError>(result)
     }
     .await;
@@ -371,7 +374,7 @@ pub(crate) async fn create_empty(
     let should_dedup = local_content_dedup_enabled(&policy);
     let now = Utc::now();
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
     let blob = if should_dedup {
         let storage_path = crate::utils::storage_path_from_hash(EMPTY_SHA256);
         let blob = file_repo::find_or_create_blob(
@@ -398,7 +401,7 @@ pub(crate) async fn create_empty(
     };
 
     let created = create_new_file_from_blob(&txn, scope, folder_id, filename, &blob, now).await?;
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
@@ -495,7 +498,7 @@ pub(crate) async fn store_preuploaded_nondedup(
         .to_string();
 
     let create_result = async {
-        let txn = state.db.begin().await.map_err(AsterError::from)?;
+        let txn = crate::db::transaction::begin(&state.db).await?;
         if storage_delta > 0 {
             check_quota(&txn, scope, storage_delta).await?;
         }
@@ -509,7 +512,10 @@ pub(crate) async fn store_preuploaded_nondedup(
             active.size = Set(blob.size);
             active.mime_type = Set(mime);
             active.updated_at = Set(now);
-            let updated = active.update(&txn).await.map_err(AsterError::from)?;
+            let updated = active
+                .update(&txn)
+                .await
+                .map_aster_err(AsterError::database_operation)?;
 
             let next_ver =
                 crate::db::repository::version_repo::next_version(&txn, existing_id).await?;
@@ -539,7 +545,7 @@ pub(crate) async fn store_preuploaded_nondedup(
             created
         };
 
-        txn.commit().await.map_err(AsterError::from)?;
+        crate::db::transaction::commit(txn).await?;
         Ok::<file::Model, AsterError>(result)
     }
     .await;

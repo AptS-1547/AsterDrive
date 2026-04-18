@@ -17,10 +17,10 @@
 //! 这些路径还和 `session::build_public_wopi_src()`、PUT_RELATIVE 返回 URL 直接耦合，
 //! 不能只改路由而不改 launch / response 生成逻辑。
 
+use crate::api::dto::wopi::WopiAccessQuery;
 use crate::runtime::AppState;
-use crate::services::wopi_service;
+use crate::services::{file_service, wopi_service};
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
     web::scope("/wopi")
@@ -28,11 +28,6 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
         .route("/files/{id}", web::post().to(file_operation))
         .route("/files/{id}/contents", web::get().to(get_file_contents))
         .route("/files/{id}/contents", web::post().to(put_file_contents))
-}
-
-#[derive(Deserialize)]
-pub struct WopiAccessQuery {
-    pub access_token: String,
 }
 
 #[api_docs_macros::path(
@@ -86,7 +81,19 @@ pub async fn get_file_contents(
     )
     .await
     {
-        Ok(response) => response,
+        Ok(result) => {
+            let mut response = file_service::outcome_to_response(result.outcome);
+            // X-WOPI-ItemVersion は 304 / 302 でも添付する（WOPI 仕様要求）
+            if let Ok(version_value) =
+                actix_web::http::header::HeaderValue::from_str(&result.item_version)
+            {
+                response.headers_mut().insert(
+                    actix_web::http::header::HeaderName::from_static("x-wopi-itemversion"),
+                    version_value,
+                );
+            }
+            response
+        }
         Err(error) => protocol_error_response(error),
     }
 }

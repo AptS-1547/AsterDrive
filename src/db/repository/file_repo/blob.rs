@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, PaginatorTrait,
-    QueryFilter, Set, TryInsertResult, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TryInsertResult, sea_query::Expr,
 };
 
 use crate::entities::file_blob::{self, Entity as FileBlob};
@@ -343,6 +343,81 @@ pub async fn delete_blob_if_cleanup_claimed<C: ConnectionTrait>(db: &C, id: i64)
     Ok(result.rows_affected == 1)
 }
 
+/// 将 blob 的 ref_count 强制重置为 0（用于 reconcile 修正负值）
+pub async fn reset_blob_ref_count_to_zero<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
+    FileBlob::update_many()
+        .col_expr(file_blob::Column::RefCount, Expr::value(0i32))
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 将 blob 的 ref_count 设置为指定值（用于 reconcile 修正偏差）
+pub async fn set_blob_ref_count<C: ConnectionTrait>(db: &C, id: i64, ref_count: i32) -> Result<()> {
+    FileBlob::update_many()
+        .col_expr(file_blob::Column::RefCount, Expr::value(ref_count))
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 批量扫描 blobs（cursor 分页，id 升序），用于 reconcile 任务
+pub async fn find_blobs_paginated<C: ConnectionTrait>(
+    db: &C,
+    after_id: Option<i64>,
+    limit: u64,
+) -> Result<Vec<file_blob::Model>> {
+    let mut query = FileBlob::find()
+        .order_by_asc(file_blob::Column::Id)
+        .limit(limit);
+    if let Some(last_id) = after_id {
+        query = query.filter(file_blob::Column::Id.gt(last_id));
+    }
+    query.all(db).await.map_err(AsterError::from)
+}
+
+/// 统计所有文件（未删除）引用每个 blob 的次数，返回 blob_id → count
+pub async fn count_blob_refs_from_files<C: ConnectionTrait>(
+    db: &C,
+) -> Result<std::collections::HashMap<i64, i64>> {
+    use crate::entities::file::{self, Entity as File};
+    let rows = File::find()
+        .select_only()
+        .column(file::Column::BlobId)
+        .column_as(Expr::col(file::Column::Id).count(), "ref_count")
+        .group_by(file::Column::BlobId)
+        .into_tuple::<(i64, i64)>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(rows.into_iter().collect())
+}
+
+/// 查询存储路径在给定候选集中的所有 blob 路径（用于孤儿检测）
+pub async fn find_blob_storage_paths_by_storage_paths<C: ConnectionTrait>(
+    db: &C,
+    candidate_paths: &[String],
+) -> Result<std::collections::HashSet<String>> {
+    if candidate_paths.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    let paths = FileBlob::find()
+        .select_only()
+        .column(file_blob::Column::StoragePath)
+        .filter(file_blob::Column::StoragePath.is_in(candidate_paths.iter().cloned()))
+        .into_tuple::<String>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(paths.into_iter().collect())
+}
+
 pub async fn set_thumbnail_metadata<C: ConnectionTrait>(
     db: &C,
     id: i64,
@@ -382,6 +457,31 @@ pub async fn clear_thumbnail_metadata<C: ConnectionTrait>(db: &C, id: i64) -> Re
         .await
         .map_err(AsterError::from)?;
     Ok(result.rows_affected == 1)
+}
+
+/// 统计 blob 总数
+pub async fn count_all_blobs<C: ConnectionTrait>(db: &C) -> Result<u64> {
+    FileBlob::find().count(db).await.map_err(AsterError::from)
+}
+
+/// 统计所有 blob 的总字节数
+pub async fn sum_blob_bytes<C: ConnectionTrait>(db: &C) -> Result<i64> {
+    let type_name = match db.get_database_backend() {
+        DbBackend::Postgres => "bigint",
+        DbBackend::MySql => "signed",
+        _ => "integer",
+    };
+    Ok(FileBlob::find()
+        .select_only()
+        .column_as(
+            Expr::col(file_blob::Column::Size).sum().cast_as(type_name),
+            "sum",
+        )
+        .into_tuple::<Option<i64>>()
+        .one(db)
+        .await?
+        .flatten()
+        .unwrap_or(0))
 }
 
 #[cfg(test)]

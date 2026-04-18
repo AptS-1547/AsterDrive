@@ -1,6 +1,6 @@
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, sea_query::Expr,
+    QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 use crate::entities::file_version::{self, Entity as FileVersion};
@@ -156,6 +156,22 @@ pub async fn delete_all_by_file_ids<C: ConnectionTrait>(
         .map_err(AsterError::from)?;
 
     Ok(blob_ids)
+}
+
+/// 统计所有版本记录引用每个 blob 的次数，返回 blob_id → count
+pub async fn count_blob_refs_from_versions<C: ConnectionTrait>(
+    db: &C,
+) -> Result<std::collections::HashMap<i64, i64>> {
+    let rows = FileVersion::find()
+        .select_only()
+        .column(file_version::Column::BlobId)
+        .column_as(Expr::col(file_version::Column::Id).count(), "ref_count")
+        .group_by(file_version::Column::BlobId)
+        .into_tuple::<(i64, i64)>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(rows.into_iter().collect())
 }
 
 /// 获取下一个版本号

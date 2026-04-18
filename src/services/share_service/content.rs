@@ -13,7 +13,7 @@ pub async fn download_shared_file(
     state: &AppState,
     token: &str,
     if_none_match: Option<&str>,
-) -> Result<actix_web::HttpResponse> {
+) -> Result<file_service::DownloadOutcome> {
     let share = load_valid_share(state, token).await?;
     let file = load_share_file_resource(state, &share).await?;
     download_share_resource_with_disposition(
@@ -31,7 +31,7 @@ pub async fn download_shared_folder_file(
     token: &str,
     file_id: i64,
     if_none_match: Option<&str>,
-) -> Result<actix_web::HttpResponse> {
+) -> Result<file_service::DownloadOutcome> {
     let (share, file) = load_shared_folder_file_target(state, token, file_id).await?;
     download_share_resource_with_disposition(
         state,
@@ -209,7 +209,7 @@ async fn download_share_resource_with_disposition(
     file: &crate::entities::file::Model,
     disposition: file_service::DownloadDisposition,
     if_none_match: Option<&str>,
-) -> Result<actix_web::HttpResponse> {
+) -> Result<file_service::DownloadOutcome> {
     tracing::debug!(
         share_id = share.id,
         file_id = file.id,
@@ -227,7 +227,7 @@ async fn download_share_resource_with_disposition(
             file_id = file.id,
             "shared file download satisfied by ETag"
         );
-        return file_service::build_download_response_with_disposition(
+        return file_service::build_download_outcome_with_disposition(
             state,
             file,
             &blob,
@@ -251,7 +251,7 @@ async fn download_share_resource_with_disposition(
         }
     }
 
-    match file_service::build_download_response_with_disposition(
+    match file_service::build_download_outcome_with_disposition(
         state,
         file,
         &blob,
@@ -260,13 +260,13 @@ async fn download_share_resource_with_disposition(
     )
     .await
     {
-        Ok(response) => {
+        Ok(outcome) => {
             tracing::debug!(
                 share_id = share.id,
                 file_id = file.id,
                 "completed shared file download"
             );
-            Ok(response)
+            Ok(outcome)
         }
         Err(error) => {
             match share_repo::decrement_download_count(&state.db, share.id).await {

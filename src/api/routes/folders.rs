@@ -1,3 +1,4 @@
+pub use crate::api::dto::folders::*;
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::FolderListQuery;
@@ -9,13 +10,9 @@ use crate::services::{
     audit_service::AuditContext, auth_service::Claims, folder_service,
     workspace_models::FolderInfo, workspace_storage_service::WorkspaceStorageScope,
 };
-use crate::types::NullablePatch;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::ToSchema;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api);
@@ -32,13 +29,6 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{id}/copy", web::post().to(copy_folder))
         .route("/{id}", web::delete().to(delete_folder))
         .route("/{id}", web::patch().to(patch_folder))
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CreateFolderReq {
-    pub name: String,
-    pub parent_id: Option<i64>,
 }
 
 #[api_docs_macros::path(
@@ -216,18 +206,6 @@ pub async fn delete_folder(
     .await
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PatchFolderReq {
-    pub name: Option<String>,
-    #[serde(default)]
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<i64>))]
-    pub parent_id: NullablePatch<i64>,
-    #[serde(default)]
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<i64>))]
-    pub policy_id: NullablePatch<i64>,
-}
-
 #[api_docs_macros::path(
     patch,
     path = "/api/v1/folders/{id}",
@@ -264,12 +242,6 @@ pub async fn patch_folder(
 
 // ── Lock ────────────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct SetLockReq {
-    pub locked: bool,
-}
-
 #[api_docs_macros::path(
     post,
     path = "/api/v1/folders/{id}/lock",
@@ -302,13 +274,6 @@ pub async fn set_lock(
 }
 
 // ── Copy ───────────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CopyFolderReq {
-    /// 目标父文件夹 ID（null = 根目录）
-    pub parent_id: Option<i64>,
-}
 
 #[api_docs_macros::path(
     post,

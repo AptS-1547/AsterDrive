@@ -2,32 +2,16 @@ use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, Result};
 use crate::types::MailTemplateCode;
 
-pub const MAIL_SMTP_HOST_KEY: &str = "mail_smtp_host";
-pub const MAIL_SMTP_PORT_KEY: &str = "mail_smtp_port";
-pub const MAIL_SMTP_USERNAME_KEY: &str = "mail_smtp_username";
-pub const MAIL_SMTP_PASSWORD_KEY: &str = "mail_smtp_password";
-pub const MAIL_FROM_ADDRESS_KEY: &str = "mail_from_address";
-pub const MAIL_FROM_NAME_KEY: &str = "mail_from_name";
-pub const MAIL_SECURITY_KEY: &str = "mail_security";
-
-pub const MAIL_TEMPLATE_REGISTER_ACTIVATION_SUBJECT_KEY: &str =
-    "mail_template_register_activation_subject";
-pub const MAIL_TEMPLATE_REGISTER_ACTIVATION_HTML_KEY: &str =
-    "mail_template_register_activation_html";
-pub const MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_SUBJECT_KEY: &str =
-    "mail_template_contact_change_confirmation_subject";
-pub const MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_HTML_KEY: &str =
-    "mail_template_contact_change_confirmation_html";
-pub const MAIL_TEMPLATE_PASSWORD_RESET_SUBJECT_KEY: &str = "mail_template_password_reset_subject";
-pub const MAIL_TEMPLATE_PASSWORD_RESET_HTML_KEY: &str = "mail_template_password_reset_html";
-pub const MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_SUBJECT_KEY: &str =
-    "mail_template_password_reset_notice_subject";
-pub const MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_HTML_KEY: &str =
-    "mail_template_password_reset_notice_html";
-pub const MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_SUBJECT_KEY: &str =
-    "mail_template_contact_change_notice_subject";
-pub const MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_HTML_KEY: &str =
-    "mail_template_contact_change_notice_html";
+pub use crate::config::definitions::{
+    MAIL_FROM_ADDRESS_KEY, MAIL_FROM_NAME_KEY, MAIL_SECURITY_KEY, MAIL_SMTP_HOST_KEY,
+    MAIL_SMTP_PASSWORD_KEY, MAIL_SMTP_PORT_KEY, MAIL_SMTP_USERNAME_KEY,
+    MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_HTML_KEY,
+    MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_SUBJECT_KEY,
+    MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_HTML_KEY, MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_SUBJECT_KEY,
+    MAIL_TEMPLATE_PASSWORD_RESET_HTML_KEY, MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_HTML_KEY,
+    MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_SUBJECT_KEY, MAIL_TEMPLATE_PASSWORD_RESET_SUBJECT_KEY,
+    MAIL_TEMPLATE_REGISTER_ACTIVATION_HTML_KEY, MAIL_TEMPLATE_REGISTER_ACTIVATION_SUBJECT_KEY,
+};
 
 pub const DEFAULT_MAIL_SMTP_PORT: u16 = 587;
 pub const DEFAULT_MAIL_SECURITY: bool = true;

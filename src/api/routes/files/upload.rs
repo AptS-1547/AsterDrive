@@ -1,3 +1,4 @@
+pub use crate::api::dto::files::*;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -6,18 +7,6 @@ use crate::services::{
     workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
-use serde::Deserialize;
-#[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::{IntoParams, ToSchema};
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct FileQuery {
-    pub folder_id: Option<i64>,
-    pub relative_path: Option<String>,
-    pub declared_size: Option<i64>,
-}
 
 #[api_docs_macros::path(
     post,
@@ -52,26 +41,6 @@ pub async fn upload(
         &mut payload,
     )
     .await
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct InitUploadReq {
-    pub filename: String,
-    pub total_size: i64,
-    pub folder_id: Option<i64>,
-    pub relative_path: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct ChunkPath {
-    pub upload_id: String,
-    pub chunk_number: i32,
-}
-
-#[derive(Deserialize)]
-pub struct UploadIdPath {
-    pub upload_id: String,
 }
 
 #[api_docs_macros::path(
@@ -135,19 +104,6 @@ pub async fn upload_chunk(
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CompleteUploadReq {
-    pub parts: Option<Vec<CompletedPartReq>>,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct CompletedPartReq {
-    pub part_number: i32,
-    pub etag: String,
 }
 
 #[api_docs_macros::path(
@@ -225,12 +181,6 @@ pub async fn cancel_upload(
 ) -> Result<HttpResponse> {
     upload_service::cancel_upload(&state, &path.upload_id, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PresignPartsReq {
-    pub part_numbers: Vec<i32>,
 }
 
 #[api_docs_macros::path(

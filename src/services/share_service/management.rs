@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use sea_orm::{DatabaseConnection, Set, TransactionTrait};
+use sea_orm::{DatabaseConnection, Set};
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{file_repo, folder_repo, share_repo};
@@ -55,7 +55,7 @@ pub(crate) async fn create_share_in_scope(
         _ => None,
     };
 
-    let txn = db.begin().await.map_err(AsterError::from)?;
+    let txn = crate::db::transaction::begin(db).await?;
     lock_share_resource_in_scope(&txn, scope, file_id, folder_id).await?;
 
     // share 对同一资源只允许保留一条活跃记录。
@@ -96,7 +96,7 @@ pub(crate) async fn create_share_in_scope(
         ..Default::default()
     };
     let created = share_repo::create(&txn, model).await?;
-    txn.commit().await.map_err(AsterError::from)?;
+    crate::db::transaction::commit(txn).await?;
     tracing::debug!(
         scope = ?scope,
         share_id = created.id,
@@ -274,9 +274,9 @@ pub(crate) async fn batch_delete_shares_in_scope(
     }
 
     if !ids_to_delete.is_empty() {
-        let txn = state.db.begin().await.map_err(AsterError::from)?;
+        let txn = crate::db::transaction::begin(&state.db).await?;
         share_repo::delete_many(&txn, &ids_to_delete).await?;
-        txn.commit().await.map_err(AsterError::from)?;
+        crate::db::transaction::commit(txn).await?;
     }
 
     tracing::debug!(

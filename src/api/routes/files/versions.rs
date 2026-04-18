@@ -1,15 +1,9 @@
+use crate::api::dto::files::VersionPath;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, version_service};
 use actix_web::{HttpResponse, web};
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-pub struct VersionPath {
-    pub id: i64,
-    pub version_id: i64,
-}
 
 #[api_docs_macros::path(
     get,

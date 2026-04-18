@@ -4,7 +4,7 @@ use sea_orm::{ActiveModelTrait, Set};
 use crate::config::wopi;
 use crate::db::repository::lock_repo;
 use crate::entities::{file, resource_lock};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::lock_service;
 use crate::types::EntityType;
@@ -307,7 +307,10 @@ async fn refresh_lock_model(state: &AppState, lock: resource_lock::Model) -> Res
     active.timeout_at = Set(Some(
         Utc::now() + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config)),
     ));
-    active.update(&state.db).await.map_err(AsterError::from)?;
+    active
+        .update(&state.db)
+        .await
+        .map_aster_err(AsterError::database_operation)?;
     Ok(())
 }
 
@@ -329,7 +332,10 @@ async fn replace_wopi_lock_model(
     active.timeout_at = Set(Some(
         Utc::now() + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config)),
     ));
-    active.update(&state.db).await.map_err(AsterError::from)?;
+    active
+        .update(&state.db)
+        .await
+        .map_aster_err(AsterError::database_operation)?;
     Ok(())
 }
 

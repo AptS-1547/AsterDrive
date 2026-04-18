@@ -705,10 +705,7 @@ async fn ensure_unlocked(
 }
 
 fn request_path(req: &HttpRequest, prefix: &str) -> Result<(DavPath, String), HttpResponse> {
-    let relative = normalize_relative_path(req.path().strip_prefix(prefix).unwrap_or(req.path()));
-    let path = DavPath::new(&relative)
-        .map_err(|_| HttpResponse::BadRequest().body("Invalid request path"))?;
-    Ok((path, relative))
+    decode_relative_path(req.path().strip_prefix(prefix).unwrap_or(req.path()))
 }
 
 fn destination_relative_path(req: &HttpRequest, prefix: &str) -> Result<String, HttpResponse> {
@@ -728,7 +725,15 @@ fn destination_relative_path(req: &HttpRequest, prefix: &str) -> Result<String, 
     let relative = path.strip_prefix(prefix).ok_or_else(|| {
         HttpResponse::BadRequest().body("Destination must stay under WebDAV prefix")
     })?;
-    Ok(normalize_relative_path(relative))
+    decode_relative_path(relative).map(|(_, relative)| relative)
+}
+
+fn decode_relative_path(relative: &str) -> Result<(DavPath, String), HttpResponse> {
+    let normalized = normalize_relative_path(relative);
+    let path = DavPath::new(&normalized)
+        .map_err(|_| HttpResponse::BadRequest().body("Invalid request path"))?;
+    let decoded = decoded_path_string(&path);
+    Ok((path, decoded))
 }
 
 fn normalize_relative_path(path: &str) -> String {
