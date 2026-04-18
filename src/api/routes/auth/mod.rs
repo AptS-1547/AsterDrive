@@ -1,6 +1,7 @@
 //! 认证 API 路由聚合入口。
 
 pub use crate::api::dto::auth::*;
+use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::request_auth::access_token;
 use crate::config::RateLimitConfig;
@@ -39,52 +40,118 @@ pub mod session;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let auth_limiter = rate_limit::build_governor(&rl.auth, &rl.trusted_proxies);
-    // 已认证端点（/auth/me、/auth/preferences 等）用 api tier，
-    // 避免匿名大量请求 /login 耗尽同一个桶并把真实用户锁在 /me 之外。
     let api_limiter = rate_limit::build_governor(&rl.api, &rl.trusted_proxies);
 
-    // 公开路由 + 认证路由分别注册到 /auth 路径下
     web::scope("/auth")
         .service(
-            web::scope("")
+            web::resource("/check")
                 .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
-                .route("/check", web::post().to(check))
-                .route("/register", web::post().to(register))
-                .route(
-                    "/register/resend",
-                    web::post().to(resend_register_activation),
-                )
-                .route("/setup", web::post().to(setup))
-                .route(
-                    "/contact-verification/confirm",
-                    web::get().to(confirm_contact_verification),
-                )
-                .route(
-                    "/password/reset/request",
-                    web::post().to(request_password_reset),
-                )
-                .route(
-                    "/password/reset/confirm",
-                    web::post().to(confirm_password_reset),
-                )
-                .route("/login", web::post().to(login))
-                .route("/refresh", web::post().to(refresh))
-                .route("/logout", web::post().to(logout)),
+                .route(web::post().to(check)),
         )
         .service(
-            web::scope("")
-                .wrap(crate::api::middleware::auth::JwtAuth)
+            web::resource("/register")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(register)),
+        )
+        .service(
+            web::resource("/register/resend")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(resend_register_activation)),
+        )
+        .service(
+            web::resource("/setup")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(setup)),
+        )
+        .service(
+            web::resource("/contact-verification/confirm")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::get().to(confirm_contact_verification)),
+        )
+        .service(
+            web::resource("/password/reset/request")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(request_password_reset)),
+        )
+        .service(
+            web::resource("/password/reset/confirm")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(confirm_password_reset)),
+        )
+        .service(
+            web::resource("/login")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(login)),
+        )
+        .service(
+            web::resource("/refresh")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(refresh)),
+        )
+        .service(
+            web::resource("/logout")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(logout)),
+        )
+        .service(
+            web::resource("/me")
+                .wrap(JwtAuth)
                 .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
-                .route("/me", web::get().to(me))
-                .route("/password", web::put().to(put_password))
-                .route("/email/change", web::post().to(request_email_change))
-                .route("/email/change/resend", web::post().to(resend_email_change))
-                .route("/preferences", web::patch().to(patch_preferences))
-                .route("/profile", web::patch().to(patch_profile))
-                .route("/profile/avatar/upload", web::post().to(upload_avatar))
-                .route("/profile/avatar/source", web::put().to(put_avatar_source))
-                .route("/events/storage", web::get().to(get_storage_events))
-                .route("/profile/avatar/{size}", web::get().to(get_self_avatar)),
+                .route(web::get().to(me)),
+        )
+        .service(
+            web::resource("/password")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::put().to(put_password)),
+        )
+        .service(
+            web::resource("/email/change")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::post().to(request_email_change)),
+        )
+        .service(
+            web::resource("/email/change/resend")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::post().to(resend_email_change)),
+        )
+        .service(
+            web::resource("/preferences")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::patch().to(patch_preferences)),
+        )
+        .service(
+            web::resource("/profile")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::patch().to(patch_profile)),
+        )
+        .service(
+            web::resource("/profile/avatar/upload")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::post().to(upload_avatar)),
+        )
+        .service(
+            web::resource("/profile/avatar/source")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::put().to(put_avatar_source)),
+        )
+        .service(
+            web::resource("/events/storage")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::get().to(get_storage_events)),
+        )
+        .service(
+            web::resource("/profile/avatar/{size}")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::get().to(get_self_avatar)),
         )
 }
 

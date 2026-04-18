@@ -2,16 +2,44 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set, sea_query::Expr,
 };
 
 use crate::entities::file::{self, Entity as File};
 use crate::errors::{AsterError, Result};
 
-use super::common::map_bulk_name_db_err;
+use super::common::{map_bulk_name_db_err, map_name_db_err};
 
 pub async fn create<C: ConnectionTrait>(db: &C, model: file::ActiveModel) -> Result<file::Model> {
     model.insert(db).await.map_err(AsterError::from)
+}
+
+pub async fn create_with_blob<C: ConnectionTrait>(
+    db: &C,
+    name: &str,
+    folder_id: Option<i64>,
+    team_id: Option<i64>,
+    blob_id: i64,
+    size: i64,
+    user_id: i64,
+    mime_type: &str,
+    now: chrono::DateTime<Utc>,
+) -> Result<file::Model> {
+    File::insert(file::ActiveModel {
+        name: Set(name.to_string()),
+        folder_id: Set(folder_id),
+        team_id: Set(team_id),
+        blob_id: Set(blob_id),
+        size: Set(size),
+        user_id: Set(user_id),
+        mime_type: Set(mime_type.to_string()),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    })
+    .exec_with_returning(db)
+    .await
+    .map_err(|err| map_name_db_err(err, name))
 }
 
 /// 批量插入文件记录（不返回创建的 Model，批量复制用）

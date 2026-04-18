@@ -49,11 +49,9 @@ impl BackgroundTasks {
 
         // 等所有 worker 自然退出，给 grace 时间让跑了一半的迭代完成。
         // 用 join_all + timeout 代替 50ms 轮询，减少不必要的 wakeup。
-        let join_all = futures::future::join_all(
-            handles
-                .iter_mut()
-                .map(|h| async move { let _ = h.await; }),
-        );
+        let join_all = futures::future::join_all(handles.iter_mut().map(|h| async move {
+            let _ = h.await;
+        }));
         if tokio::time::timeout(BACKGROUND_TASK_SHUTDOWN_GRACE, join_all)
             .await
             .is_err()

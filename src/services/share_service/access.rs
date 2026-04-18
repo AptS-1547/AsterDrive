@@ -107,24 +107,39 @@ pub async fn verify_password(state: &AppState, token: &str, password: &str) -> R
     Ok(())
 }
 
-pub fn sign_share_cookie(token: &str, secret: &str) -> String {
-    use sha2::{Digest, Sha256};
+/// 用 HMAC-SHA256 对分享 token 签名作为密码验证 cookie。
+///
+/// 之前是 `SHA256("share_verified:" + secret + ":" + token)` 的手写拼接，虽然把
+/// secret 放在前缀缓解了 length-extension，但这是自己 roll 的 KDF 结构。
+/// 换用 `hmac` crate 的 HMAC-SHA256 后语义干净：
+/// - 抗 length-extension（HMAC 内置 ipad/opad 双轮）
+/// - 验证用 `Mac::verify_slice` 的恒等时间比较，避免侧信道
+fn share_cookie_mac(token: &str, secret: &str) -> hmac::Hmac<sha2_10::Sha256> {
+    use hmac::{Hmac, Mac};
+    let mut mac = <Hmac<sha2_10::Sha256> as Mac>::new_from_slice(secret.as_bytes())
+        .expect("HMAC accepts any key length");
+    mac.update(b"share_verified:");
+    mac.update(token.as_bytes());
+    mac
+}
 
-    let mut hasher = Sha256::new();
-    hasher.update(format!("share_verified:{secret}:{token}").as_bytes());
-    crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
+pub fn sign_share_cookie(token: &str, secret: &str) -> String {
+    use hmac::Mac;
+    let bytes = share_cookie_mac(token, secret).finalize().into_bytes();
+    hex::encode(bytes)
 }
 
 pub fn verify_share_cookie(token: &str, cookie_value: &str, secret: &str) -> bool {
-    let expected = sign_share_cookie(token, secret);
-    if expected.len() != cookie_value.len() {
+    use hmac::Mac;
+    // hex 解码失败（长度不对、非法字符）一律视为不匹配，
+    // 解码成功后用 HMAC 自带的恒等时间 verify_slice 比较。
+    let mut decoded = [0u8; 32];
+    if hex::decode_to_slice(cookie_value, &mut decoded).is_err() {
         return false;
     }
-    expected
-        .bytes()
-        .zip(cookie_value.bytes())
-        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
-        == 0
+    share_cookie_mac(token, secret)
+        .verify_slice(&decoded)
+        .is_ok()
 }
 
 pub async fn check_share_password_cookie(
@@ -196,6 +211,28 @@ mod tests {
         let token = "token";
         // wrong length
         assert!(!verify_share_cookie(token, "short", SECRET));
+    }
+
+    #[test]
+    fn verify_share_cookie_rejects_non_hex_input() {
+        let token = "token";
+        // 长度对（64 字符）但含非 hex 字符
+        let bad = "z".repeat(64);
+        assert!(!verify_share_cookie(token, &bad, SECRET));
+    }
+
+    #[test]
+    fn sign_share_cookie_output_is_64_hex_chars() {
+        let cookie = sign_share_cookie("anytoken", SECRET);
+        assert_eq!(
+            cookie.len(),
+            64,
+            "HMAC-SHA256 hex output is always 64 chars"
+        );
+        assert!(
+            cookie.chars().all(|c| c.is_ascii_hexdigit()),
+            "expected pure hex, got '{cookie}'"
+        );
     }
 
     #[test]

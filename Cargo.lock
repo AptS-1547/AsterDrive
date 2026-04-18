@@ -614,6 +614,8 @@ dependencies = [
  "fs2",
  "futures",
  "governor",
+ "hex",
+ "hmac",
  "http 1.4.0",
  "http-body 1.0.1",
  "image",

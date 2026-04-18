@@ -1,0 +1,253 @@
+use std::time::Duration;
+
+use crate::db::repository::file_repo;
+use crate::entities::{file, file_blob};
+use crate::errors::{AsterError, Result};
+use crate::runtime::AppState;
+use crate::services::file_service::{
+    DownloadDisposition, ensure_personal_file_scope, get_info_in_scope, if_none_match_matches,
+    inline_sandbox_csp, requires_inline_sandbox,
+};
+use crate::services::workspace_storage_service::WorkspaceStorageScope;
+use crate::storage::driver::PresignedDownloadOptions;
+use crate::types::{DriverType, S3DownloadStrategy, parse_storage_policy_options};
+
+use super::types::{DownloadOutcome, StreamedFile};
+
+const PRESIGNED_DOWNLOAD_TTL_SECS: u64 = 5 * 60;
+
+pub(crate) async fn download_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    id: i64,
+    if_none_match: Option<&str>,
+) -> Result<DownloadOutcome> {
+    tracing::debug!(
+        scope = ?scope,
+        file_id = id,
+        has_if_none_match = if_none_match.is_some(),
+        "starting file download"
+    );
+    let file = get_info_in_scope(state, scope, id).await?;
+    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+    build_download_outcome(state, &file, &blob, if_none_match).await
+}
+
+/// 下载文件（流式，不全量缓冲）
+pub async fn download(
+    state: &AppState,
+    id: i64,
+    user_id: i64,
+    if_none_match: Option<&str>,
+) -> Result<DownloadOutcome> {
+    download_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        id,
+        if_none_match,
+    )
+    .await
+}
+
+/// 下载文件（无用户校验，用于分享链接，流式）
+pub async fn download_raw(
+    state: &AppState,
+    id: i64,
+    if_none_match: Option<&str>,
+) -> Result<DownloadOutcome> {
+    let db = &state.db;
+    let file = file_repo::find_by_id(db, id).await?;
+    ensure_personal_file_scope(&file)?;
+    download_raw_unchecked_with_file(state, file, if_none_match).await
+}
+
+async fn download_raw_unchecked_with_file(
+    state: &AppState,
+    file: file::Model,
+    if_none_match: Option<&str>,
+) -> Result<DownloadOutcome> {
+    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+    build_stream_outcome(state, &file, &blob, if_none_match).await
+}
+
+/// 构建流式下载结果（Attachment disposition）
+pub async fn build_stream_outcome(
+    state: &AppState,
+    file: &file::Model,
+    blob: &file_blob::Model,
+    if_none_match: Option<&str>,
+) -> Result<DownloadOutcome> {
+    build_stream_outcome_with_disposition(
+        state,
+        file,
+        blob,
+        DownloadDisposition::Attachment,
+        if_none_match,
+    )
+    .await
+}
+
+async fn build_download_outcome(
+    state: &AppState,
+    file: &file::Model,
+    blob: &file_blob::Model,
+    if_none_match: Option<&str>,
+) -> Result<DownloadOutcome> {
+    build_download_outcome_with_disposition(
+        state,
+        file,
+        blob,
+        DownloadDisposition::Attachment,
+        if_none_match,
+    )
+    .await
+}
+
+pub async fn build_download_outcome_with_disposition(
+    state: &AppState,
+    file: &file::Model,
+    blob: &file_blob::Model,
+    disposition: DownloadDisposition,
+    if_none_match: Option<&str>,
+) -> Result<DownloadOutcome> {
+    if let Some(if_none_match) = if_none_match
+        && if_none_match_matches(if_none_match, &blob.hash)
+    {
+        // 命中 If-None-Match 时仍走统一 outcome builder，
+        // 这样 304 和 200 会共享相同的缓存头 / sandbox 头策略。
+        return build_stream_outcome_with_disposition(
+            state,
+            file,
+            blob,
+            disposition,
+            Some(if_none_match),
+        )
+        .await;
+    }
+
+    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let options = parse_storage_policy_options(policy.options.as_ref());
+    let should_presign = policy.driver_type == DriverType::S3
+        && disposition == DownloadDisposition::Attachment
+        && options.effective_s3_download_strategy() == S3DownloadStrategy::Presigned;
+
+    if should_presign {
+        // 只有"附件下载 + S3 + 策略允许"才走 presigned redirect。
+        // inline 预览仍由服务端统一加 CSP 和缓存头，避免把浏览器安全策略交给外部存储。
+        return build_presigned_redirect_outcome(state, &policy, file, blob).await;
+    }
+
+    build_stream_outcome_with_disposition(state, file, blob, disposition, None).await
+}
+
+async fn build_presigned_redirect_outcome(
+    state: &AppState,
+    policy: &crate::entities::storage_policy::Model,
+    file: &file::Model,
+    blob: &file_blob::Model,
+) -> Result<DownloadOutcome> {
+    let driver = state.driver_registry.get_driver(policy)?;
+    let presigned = driver.as_presigned().ok_or_else(|| {
+        AsterError::storage_driver_error("presigned download not supported by driver")
+    })?;
+
+    let url = presigned
+        .presigned_url(
+            &blob.storage_path,
+            Duration::from_secs(PRESIGNED_DOWNLOAD_TTL_SECS),
+            PresignedDownloadOptions {
+                response_cache_control: Some("private, max-age=0, must-revalidate".to_string()),
+                response_content_disposition: Some(
+                    DownloadDisposition::Attachment.header_value(&file.name),
+                ),
+                response_content_type: Some(file.mime_type.clone()),
+            },
+        )
+        .await?
+        .ok_or_else(|| {
+            AsterError::storage_driver_error("presigned download not supported by driver")
+        })?;
+
+    tracing::debug!(
+        file_id = file.id,
+        blob_id = blob.id,
+        policy_id = blob.policy_id,
+        ttl_secs = PRESIGNED_DOWNLOAD_TTL_SECS,
+        "redirecting file download to presigned S3 URL"
+    );
+
+    Ok(DownloadOutcome::PresignedRedirect { url })
+}
+
+pub async fn build_stream_outcome_with_disposition(
+    state: &AppState,
+    file: &file::Model,
+    blob: &file_blob::Model,
+    disposition: DownloadDisposition,
+    if_none_match: Option<&str>,
+) -> Result<DownloadOutcome> {
+    let requires_sandbox =
+        disposition == DownloadDisposition::Inline && requires_inline_sandbox(&file.mime_type);
+
+    if requires_sandbox {
+        tracing::debug!(
+            file_id = file.id,
+            blob_id = blob.id,
+            mime_type = %file.mime_type,
+            "adding CSP sandbox for inline script-capable file"
+        );
+    }
+
+    let etag = format!("\"{}\"", blob.hash);
+    if let Some(if_none_match) = if_none_match
+        && if_none_match_matches(if_none_match, &blob.hash)
+    {
+        tracing::debug!(
+            file_id = file.id,
+            blob_id = blob.id,
+            disposition = ?disposition,
+            "serving cached file response with 304"
+        );
+        return Ok(DownloadOutcome::NotModified {
+            etag,
+            cache_control: "private, max-age=0, must-revalidate",
+            csp: if requires_sandbox {
+                Some(inline_sandbox_csp())
+            } else {
+                None
+            },
+        });
+    }
+
+    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+    // 主下载链路必须保持流式读取；不要改回 driver.get() 的全量缓冲实现。
+    let stream = driver.get_stream(&blob.storage_path).await?;
+
+    // 64KB buffer — 比默认 4KB 减少系统调用和分配开销
+    let reader_stream = tokio_util::io::ReaderStream::with_capacity(stream, 64 * 1024);
+
+    tracing::debug!(
+        file_id = file.id,
+        blob_id = blob.id,
+        policy_id = blob.policy_id,
+        size = blob.size,
+        disposition = ?disposition,
+        "building streaming file response"
+    );
+
+    Ok(DownloadOutcome::Stream(StreamedFile {
+        content_type: file.mime_type.clone(),
+        content_length: blob.size,
+        content_disposition: disposition.header_value(&file.name),
+        etag,
+        cache_control: "private, max-age=0, must-revalidate",
+        csp: if requires_sandbox {
+            Some(inline_sandbox_csp())
+        } else {
+            None
+        },
+        body: reader_stream,
+        on_abort: None,
+    }))
+}
