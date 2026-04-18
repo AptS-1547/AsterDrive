@@ -113,6 +113,7 @@ uuid = { version = "1", features = ["v4"] }
 validator = { version = "0.20", features = ["derive"] }
 xmltree = "0.12"
 zip = { version = "8", default-features = false, features = ["deflate"] }
+ipnet = "2.12.0"
 
 [dev-dependencies]
 aws-smithy-http-client = { version = "1.1.12", features = ["test-util"] }

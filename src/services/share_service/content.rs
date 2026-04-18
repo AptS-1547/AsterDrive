@@ -262,7 +262,24 @@ async fn download_share_resource_with_disposition(
     )
     .await
     {
-        Ok(outcome) => {
+        Ok(mut outcome) => {
+            // 如果是流式响应，挂一个 abort hook：客户端中途断连导致 body 未读到 EOF 就 drop 时，
+            // 回滚刚才的 increment，避免 `download_count` 虚增、提前触碰 `max_downloads`。
+            // NotModified/PresignedRedirect 一次性响应不需要挂 hook。
+            if let file_service::DownloadOutcome::Stream(ref mut s) = outcome {
+                let db = state.db.clone();
+                let share_id = share.id;
+                s.on_abort = Some(Box::new(move || {
+                    tokio::spawn(async move {
+                        if let Err(e) = share_repo::decrement_download_count(&db, share_id).await {
+                            tracing::warn!(
+                                share_id,
+                                "failed to roll back download count on client abort: {e}"
+                            );
+                        }
+                    });
+                }));
+            }
             tracing::debug!(
                 share_id = share.id,
                 file_id = file.id,

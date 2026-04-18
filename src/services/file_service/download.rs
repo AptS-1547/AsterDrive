@@ -33,6 +33,41 @@ pub struct StreamedFile {
     /// 仅 inline 且需要沙盒隔离时不为 None。
     pub csp: Option<&'static str>,
     pub body: tokio_util::io::ReaderStream<Box<dyn tokio::io::AsyncRead + Unpin + Send>>,
+    /// 流未走到 EOF 就被 drop 时触发的 hook（客户端中途断连、actix 丢弃 response 等）。
+    /// 分享下载用它在断连时回滚 `download_count`，避免"发起一次就计一次、哪怕没发完"的
+    /// 虚增和提前触碰 `max_downloads`。
+    pub on_abort: Option<Box<dyn FnOnce() + Send + 'static>>,
+}
+
+/// 把一个普通 `Stream` 包一层，在"非正常 drop"（未读到 EOF）时触发 hook。
+/// 配合 `StreamedFile.on_abort` 让 service 层能在客户端断连时做清理。
+struct AbortAwareStream<S> {
+    inner: S,
+    hook: Option<Box<dyn FnOnce() + Send + 'static>>,
+}
+
+impl<S: futures::Stream + Unpin> futures::Stream for AbortAwareStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let res = std::pin::Pin::new(&mut self.inner).poll_next(cx);
+        if let std::task::Poll::Ready(None) = &res {
+            // 走到 EOF，解除 abort hook
+            self.hook = None;
+        }
+        res
+    }
+}
+
+impl<S> Drop for AbortAwareStream<S> {
+    fn drop(&mut self) {
+        if let Some(hook) = self.hook.take() {
+            hook();
+        }
+    }
 }
 
 /// 服务层下载结果。路由层根据变体组装 HttpResponse，服务层不接触 actix_web::HttpResponse。
@@ -317,6 +352,7 @@ pub async fn build_stream_outcome_with_disposition(
             None
         },
         body: reader_stream,
+        on_abort: None,
     }))
 }
 
@@ -362,7 +398,13 @@ pub fn outcome_to_response(outcome: DownloadOutcome) -> actix_web::HttpResponse 
             // 跳过全局 Compress 中间件，避免压缩编码器为了攒出更大的压缩块而额外缓存，
             // 让大文件下载从"稳定流式"退化成高内存占用。
             r.insert_header(("Content-Encoding", "identity"));
-            r.streaming(s.body)
+            match s.on_abort {
+                Some(hook) => r.streaming(AbortAwareStream {
+                    inner: s.body,
+                    hook: Some(hook),
+                }),
+                None => r.streaming(s.body),
+            }
         }
     }
 }
@@ -389,6 +431,54 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
     use tokio::io::{AsyncRead, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn abort_aware_stream_disarms_hook_on_clean_eof() {
+        use futures::StreamExt;
+        let flag = Arc::new(AtomicUsize::new(0));
+        let flag_clone = flag.clone();
+        let items: Vec<std::io::Result<bytes::Bytes>> =
+            vec![Ok(bytes::Bytes::from_static(b"hello"))];
+        let inner = futures::stream::iter(items);
+        let mut stream = super::AbortAwareStream {
+            inner,
+            hook: Some(Box::new(move || {
+                flag_clone.fetch_add(1, Ordering::SeqCst);
+            })),
+        };
+        // drain to EOF
+        while stream.next().await.is_some() {}
+        drop(stream);
+        assert_eq!(
+            flag.load(Ordering::SeqCst),
+            0,
+            "clean EOF must not fire hook"
+        );
+    }
+
+    #[tokio::test]
+    async fn abort_aware_stream_fires_hook_on_drop_without_eof() {
+        let flag = Arc::new(AtomicUsize::new(0));
+        let flag_clone = flag.clone();
+        // stream with items we never consume fully before drop
+        let items: Vec<std::io::Result<bytes::Bytes>> = vec![
+            Ok(bytes::Bytes::from_static(b"part1")),
+            Ok(bytes::Bytes::from_static(b"part2")),
+        ];
+        let inner = futures::stream::iter(items);
+        let stream = super::AbortAwareStream {
+            inner,
+            hook: Some(Box::new(move || {
+                flag_clone.fetch_add(1, Ordering::SeqCst);
+            })),
+        };
+        drop(stream); // abort before any poll
+        assert_eq!(
+            flag.load(Ordering::SeqCst),
+            1,
+            "drop without EOF must fire hook exactly once"
+        );
+    }
 
     #[derive(Clone)]
     struct CountingStreamDriver {

@@ -43,7 +43,7 @@ pub(crate) use self::upload::{
 pub(crate) use self::versions::{team_delete_version, team_list_versions, team_restore_version};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
-    let limiter = rate_limit::build_governor(&rl.api);
+    let limiter = rate_limit::build_governor(&rl.api, &rl.trusted_proxies);
 
     web::scope("/files")
         .wrap(JwtAuth)

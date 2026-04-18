@@ -546,4 +546,40 @@ mod tests {
         );
         assert!(!sql.contains(" WHERE "), "{sql}");
     }
+
+    // 第二轮审查有 agent 怀疑 `RefCount.gte(0)` 是无效过滤（误以为 ref_count 不能为负）。
+    // 实际上 `claim_blob_cleanup` 会把 ref_count 置为 -1 作为 "待清理" 标记，
+    // `gte(0)` 正是为了把这类已被 cleanup worker 认领的行从 dedup 命中集中排除。
+    // 这个测试通过检查生成的 SQL 是否包含 `ref_count >= 0` 条件来锁定这一不变量。
+    #[test]
+    fn find_active_blob_by_hash_sql_excludes_cleanup_claimed_rows() {
+        let sql = FileBlob::find()
+            .filter(file_blob::Column::Hash.eq("h"))
+            .filter(file_blob::Column::PolicyId.eq(1))
+            .filter(file_blob::Column::RefCount.gte(0))
+            .build(DbBackend::Postgres)
+            .to_string();
+        assert!(
+            sql.contains(r#""ref_count" >= 0"#),
+            "expected ref_count >= 0 filter in '{sql}'"
+        );
+    }
+
+    #[test]
+    fn increment_blob_ref_count_sql_uses_cas_against_cleanup_claim() {
+        use sea_orm::{EntityTrait, QueryTrait};
+        let sql = FileBlob::update_many()
+            .col_expr(
+                file_blob::Column::RefCount,
+                Expr::col(file_blob::Column::RefCount).add(1i32),
+            )
+            .filter(file_blob::Column::Id.eq(1))
+            .filter(file_blob::Column::RefCount.gte(0))
+            .build(DbBackend::Postgres)
+            .to_string();
+        assert!(
+            sql.contains(r#""ref_count" >= 0"#),
+            "ref_count CAS must reject cleanup-claimed (-1) rows; sql='{sql}'"
+        );
+    }
 }

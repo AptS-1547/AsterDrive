@@ -20,7 +20,7 @@ pub use crate::api::routes::team_requests::{
 };
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
-    let limiter = rate_limit::build_governor(&rl.api);
+    let limiter = rate_limit::build_governor(&rl.api, &rl.trusted_proxies);
 
     web::scope("/teams")
         .wrap(JwtAuth)

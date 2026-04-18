@@ -38,37 +38,43 @@ pub mod public;
 pub mod session;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
-    let limiter = rate_limit::build_governor(&rl.auth);
+    let auth_limiter = rate_limit::build_governor(&rl.auth, &rl.trusted_proxies);
+    // 已认证端点（/auth/me、/auth/preferences 等）用 api tier，
+    // 避免匿名大量请求 /login 耗尽同一个桶并把真实用户锁在 /me 之外。
+    let api_limiter = rate_limit::build_governor(&rl.api, &rl.trusted_proxies);
 
     // 公开路由 + 认证路由分别注册到 /auth 路径下
     web::scope("/auth")
-        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
-        .route("/check", web::post().to(check))
-        .route("/register", web::post().to(register))
-        .route(
-            "/register/resend",
-            web::post().to(resend_register_activation),
+        .service(
+            web::scope("")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route("/check", web::post().to(check))
+                .route("/register", web::post().to(register))
+                .route(
+                    "/register/resend",
+                    web::post().to(resend_register_activation),
+                )
+                .route("/setup", web::post().to(setup))
+                .route(
+                    "/contact-verification/confirm",
+                    web::get().to(confirm_contact_verification),
+                )
+                .route(
+                    "/password/reset/request",
+                    web::post().to(request_password_reset),
+                )
+                .route(
+                    "/password/reset/confirm",
+                    web::post().to(confirm_password_reset),
+                )
+                .route("/login", web::post().to(login))
+                .route("/refresh", web::post().to(refresh))
+                .route("/logout", web::post().to(logout)),
         )
-        .route("/setup", web::post().to(setup))
-        .route(
-            "/contact-verification/confirm",
-            web::get().to(confirm_contact_verification),
-        )
-        .route(
-            "/password/reset/request",
-            web::post().to(request_password_reset),
-        )
-        .route(
-            "/password/reset/confirm",
-            web::post().to(confirm_password_reset),
-        )
-        .route("/login", web::post().to(login))
-        .route("/refresh", web::post().to(refresh))
-        .route("/logout", web::post().to(logout))
-        // 需要认证的端点使用嵌套 scope，注意路径前缀不能重复
         .service(
             web::scope("")
                 .wrap(crate::api::middleware::auth::JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
                 .route("/me", web::get().to(me))
                 .route("/password", web::put().to(put_password))
                 .route("/email/change", web::post().to(request_email_change))

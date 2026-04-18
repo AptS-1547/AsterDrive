@@ -133,8 +133,10 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
         .await
         .map_aster_err(AsterError::database_operation)?;
 
-    state.policy_snapshot.reload(&state.db).await?;
+    // 与 update 一致：先 invalidate driver 再 reload snapshot，
+    // 避免"策略行已删除但 driver 仍在缓存里"的窗口。
     state.driver_registry.invalidate(id);
+    state.policy_snapshot.reload(&state.db).await?;
     Ok(())
 }
 
@@ -228,8 +230,11 @@ pub async fn update(
 
     crate::db::transaction::commit(txn).await?;
 
-    state.policy_snapshot.reload(&state.db).await?;
+    // 失效顺序很关键：必须先 invalidate driver 再 reload snapshot。
+    // 如果反过来，中间窗口里读请求可能拿到"新 policy model + 旧 driver cache"，
+    // 把写操作发到老的 endpoint/bucket/credential 上——无日志、无报错的静默错路由。
     state.driver_registry.invalidate(id);
+    state.policy_snapshot.reload(&state.db).await?;
 
     policy_repo::find_by_id(&state.db, result.id)
         .await

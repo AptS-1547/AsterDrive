@@ -50,25 +50,6 @@ fn assert_share_token_length_violation(db: &sea_orm::DatabaseConnection, err: &s
     }
 }
 
-async fn set_foreign_key_checks(
-    db: &sea_orm::DatabaseConnection,
-    enabled: bool,
-) -> Result<(), sea_orm::DbErr> {
-    use sea_orm::ConnectionTrait;
-
-    let sql = match (db.get_database_backend(), enabled) {
-        (sea_orm::DbBackend::Sqlite, true) => "PRAGMA foreign_keys=ON;",
-        (sea_orm::DbBackend::Sqlite, false) => "PRAGMA foreign_keys=OFF;",
-        (sea_orm::DbBackend::Postgres, true) => "SET session_replication_role = origin;",
-        (sea_orm::DbBackend::Postgres, false) => "SET session_replication_role = replica;",
-        (sea_orm::DbBackend::MySql, true) => "SET FOREIGN_KEY_CHECKS = 1;",
-        (sea_orm::DbBackend::MySql, false) => "SET FOREIGN_KEY_CHECKS = 0;",
-        _ => return Ok(()),
-    };
-
-    db.execute_unprepared(sql).await.map(|_| ())
-}
-
 fn write_service_fixture(name: &str, contents: &str) -> String {
     let dir = format!("/tmp/asterdrive-services-test-{}", uuid::Uuid::new_v4());
     std::fs::create_dir_all(&dir).unwrap();
@@ -1905,7 +1886,9 @@ async fn test_team_service_degrades_missing_creator_rows() {
     .await
     .unwrap();
 
-    set_foreign_key_checks(&state.db, false).await.unwrap();
+    common::set_foreign_key_checks(&state.db, false)
+        .await
+        .unwrap();
     let mut broken_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
         .await
         .unwrap()
@@ -1914,7 +1897,9 @@ async fn test_team_service_degrades_missing_creator_rows() {
     aster_drive::db::repository::team_repo::update(&state.db, broken_team)
         .await
         .unwrap();
-    set_foreign_key_checks(&state.db, true).await.unwrap();
+    common::set_foreign_key_checks(&state.db, true)
+        .await
+        .unwrap();
 
     let loaded = aster_drive::services::team_service::get_team(&state, team.id, owner.id)
         .await

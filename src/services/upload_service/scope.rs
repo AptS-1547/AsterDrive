@@ -41,6 +41,14 @@ pub(super) async fn load_upload_session(
     upload_id: &str,
 ) -> Result<upload_session::Model> {
     let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
+    // 上传 session 始终绑定发起人：complete/cancel 只能由原作者操作。
+    // 多写入者会打破分片顺序校验、blob 去重、配额扣减等单写入语义——
+    // 即使团队成员之间也不共享 session。团队 scope 额外再校验成员身份，
+    // 防止跨团队劫持。
+    //
+    // 发起人掉线后的残留资源（chunk 临时文件 / S3 temp 对象 / session DB 行）
+    // 由 `cleanup_expired`（expires_at 到期，默认 24h）兜底。注意 storage_used
+    // 配额并不会在 init 时预占——只在 complete 时写入，所以这里不会泄漏配额。
     crate::utils::verify_owner(session.user_id, scope.actor_user_id(), "upload session")?;
     if let Some(team_id) = scope.team_id() {
         workspace_storage_service::require_team_access(state, team_id, scope.actor_user_id())

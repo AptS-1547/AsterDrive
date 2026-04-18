@@ -40,26 +40,33 @@ impl BackgroundTasks {
     pub async fn shutdown(self) {
         let BackgroundTasks {
             shutdown_token,
-            handles,
+            mut handles,
         } = self;
+        // 发送停止信号：各 worker 在当前 sleep 或下一次 select! 时退出。
+        // 注意：正在执行中的迭代（task_fn）会跑到自然结束，不会在迭代中途被截断。
+        // 这是期望行为：保持 DB 事务完整性，避免 lease 半写。
         shutdown_token.cancel();
 
-        let deadline = tokio::time::Instant::now() + BACKGROUND_TASK_SHUTDOWN_GRACE;
-        while !handles.is_empty()
-            && tokio::time::Instant::now() < deadline
-            && handles.iter().any(|handle| !handle.is_finished())
+        // 等所有 worker 自然退出，给 grace 时间让跑了一半的迭代完成。
+        // 用 join_all + timeout 代替 50ms 轮询，减少不必要的 wakeup。
+        let join_all = futures::future::join_all(
+            handles
+                .iter_mut()
+                .map(|h| async move { let _ = h.await; }),
+        );
+        if tokio::time::timeout(BACKGROUND_TASK_SHUTDOWN_GRACE, join_all)
+            .await
+            .is_err()
         {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-
-        let mut aborted = 0;
-        for handle in &handles {
-            if !handle.is_finished() {
-                handle.abort();
-                aborted += 1;
+            // grace 期内未能结束的 worker 才强制 abort。
+            // 正常情况下 task_fn 的最长单次执行不会超 grace 时间。
+            let mut aborted = 0;
+            for handle in &handles {
+                if !handle.is_finished() {
+                    handle.abort();
+                    aborted += 1;
+                }
             }
-        }
-        if aborted > 0 {
             tracing::warn!(
                 aborted,
                 grace_secs = BACKGROUND_TASK_SHUTDOWN_GRACE.as_secs(),

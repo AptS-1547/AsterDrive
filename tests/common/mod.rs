@@ -42,6 +42,25 @@ fn init_test_process_state() {
     });
 }
 
+pub async fn set_foreign_key_checks(
+    db: &sea_orm::DatabaseConnection,
+    enabled: bool,
+) -> Result<(), sea_orm::DbErr> {
+    use sea_orm::ConnectionTrait;
+
+    let sql = match (db.get_database_backend(), enabled) {
+        (sea_orm::DbBackend::Sqlite, true) => "PRAGMA foreign_keys=ON;",
+        (sea_orm::DbBackend::Sqlite, false) => "PRAGMA foreign_keys=OFF;",
+        (sea_orm::DbBackend::Postgres, true) => "SET session_replication_role = origin;",
+        (sea_orm::DbBackend::Postgres, false) => "SET session_replication_role = replica;",
+        (sea_orm::DbBackend::MySql, true) => "SET FOREIGN_KEY_CHECKS = 1;",
+        (sea_orm::DbBackend::MySql, false) => "SET FOREIGN_KEY_CHECKS = 0;",
+        _ => return Ok(()),
+    };
+
+    db.execute_unprepared(sql).await.map(|_| ())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestDatabaseBackend {
     Sqlite,
@@ -905,7 +924,7 @@ async fn clone_mysql_schema_from_template(db: &sea_orm::DatabaseConnection) {
         .get_or_init(build_mysql_schema_template)
         .await;
 
-    db.execute_unprepared("SET FOREIGN_KEY_CHECKS = 0;")
+    set_foreign_key_checks(db, false)
         .await
         .expect("mysql schema clone should disable foreign key checks");
 
@@ -922,7 +941,7 @@ async fn clone_mysql_schema_from_template(db: &sea_orm::DatabaseConnection) {
     .await
     .expect("mysql schema clone should copy seaql_migrations rows");
 
-    db.execute_unprepared("SET FOREIGN_KEY_CHECKS = 1;")
+    set_foreign_key_checks(db, true)
         .await
         .expect("mysql schema clone should restore foreign key checks");
 }

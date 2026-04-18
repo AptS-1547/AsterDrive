@@ -23,6 +23,11 @@ const MAIL_OUTBOX_MAX_ATTEMPTS: i32 = 6;
 const MAIL_OUTBOX_MAX_ERROR_LEN: usize = 1024;
 const MAIL_OUTBOX_DRAIN_MAX_ROUNDS: usize = 32;
 
+/// SMTP 已成功交付但 `mark_sent` DB 写失败时的重试退避（毫秒）。
+/// 总预算约 7.6s，远小于 `MAIL_OUTBOX_PROCESSING_STALE_SECS`，
+/// 给 DB 抖动留缓冲，降低"SMTP 成功 + row 残留 Processing → 另一个 worker 再发"的双发窗口。
+const MARK_SENT_RETRY_DELAYS_MS: &[u64] = &[0, 100, 500, 2_000, 5_000];
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct DispatchStats {
     pub claimed: usize,
@@ -97,8 +102,33 @@ pub async fn dispatch_due_with(
 
         match deliver_one(runtime_config, mail_sender, &claimed_row).await {
             Ok(()) => {
-                if mail_outbox_repo::mark_sent(db, claimed_row.id, Utc::now()).await? {
-                    stats.sent += 1;
+                // SMTP 成功。mark_sent 必须尽一切努力落库——否则 row 会以 Processing 状态
+                // 在 `MAIL_OUTBOX_PROCESSING_STALE_SECS` 后被另一个 worker 再次 claim，
+                // 导致**收件人收到重复邮件**。退避重试把"瞬时 DB 抖动 → 双发"的概率
+                // 降到最低；如果最终仍失败，日志标红让 ops 能追踪到。
+                match mark_sent_with_retry(db, claimed_row.id).await {
+                    Ok(true) => {
+                        stats.sent += 1;
+                    }
+                    Ok(false) => {
+                        tracing::warn!(
+                            mail_outbox_id = claimed_row.id,
+                            template_code = %claimed_row.template_code.as_str(),
+                            to = %claimed_row.to_address,
+                            "mark_sent affected 0 rows after successful delivery; state will be rechecked"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            mail_outbox_id = claimed_row.id,
+                            template_code = %claimed_row.template_code.as_str(),
+                            to = %claimed_row.to_address,
+                            stale_secs = MAIL_OUTBOX_PROCESSING_STALE_SECS,
+                            error = %e,
+                            "CRITICAL: SMTP delivery succeeded but mark_sent failed after all retries; \
+                             row remains Processing and may be re-claimed, causing duplicate delivery"
+                        );
+                    }
                 }
             }
             Err(error) => {
@@ -204,6 +234,35 @@ fn retry_delay_secs(attempt_count: i32) -> i64 {
         5 => 900,
         _ => 1800,
     }
+}
+
+/// SMTP 成功后持久化"已发送"状态；DB 失败时退避重试以压缩双发窗口。
+///
+/// 返回 `Ok(true)` = 标记成功（首行命中）；`Ok(false)` = 没有行被更新（可能已是 Sent）；
+/// `Err(...)` = 最终仍失败，调用方应当打印 critical 日志。
+async fn mark_sent_with_retry(db: &DatabaseConnection, id: i64) -> Result<bool> {
+    let mut last_err: Option<crate::errors::AsterError> = None;
+    for (i, delay_ms) in MARK_SENT_RETRY_DELAYS_MS.iter().enumerate() {
+        if *delay_ms > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(*delay_ms)).await;
+        }
+        match mail_outbox_repo::mark_sent(db, id, Utc::now()).await {
+            Ok(updated) => return Ok(updated),
+            Err(err) => {
+                tracing::warn!(
+                    mail_outbox_id = id,
+                    attempt = i + 1,
+                    "mark_sent failed, will retry: {err}"
+                );
+                last_err = Some(err);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| {
+        crate::errors::AsterError::internal_error(
+            "mark_sent retries exhausted without error context",
+        )
+    }))
 }
 
 fn truncate_error(error: &str) -> String {

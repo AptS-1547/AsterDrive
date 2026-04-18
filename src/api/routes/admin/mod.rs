@@ -49,7 +49,7 @@ pub use users::{
 };
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
-    let limiter = rate_limit::build_governor(&rl.write);
+    let limiter = rate_limit::build_governor(&rl.write, &rl.trusted_proxies);
 
     web::scope("/admin")
         .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))

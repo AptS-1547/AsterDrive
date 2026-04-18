@@ -617,6 +617,7 @@ dependencies = [
  "http 1.4.0",
  "http-body 1.0.1",
  "image",
+ "ipnet",
  "jsonwebtoken",
  "lettre",
  "md-5 0.11.0",

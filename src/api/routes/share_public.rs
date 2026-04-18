@@ -57,8 +57,8 @@ impl DirectLinkQuery {
 }
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
-    let limiter = rate_limit::build_governor(&rl.public);
-    let verify_limiter = rate_limit::build_governor(&rl.auth);
+    let limiter = rate_limit::build_governor(&rl.public, &rl.trusted_proxies);
+    let verify_limiter = rate_limit::build_governor(&rl.auth, &rl.trusted_proxies);
 
     web::scope("/s")
         .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
@@ -92,7 +92,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
 }
 
 pub fn direct_routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
-    let limiter = rate_limit::build_governor(&rl.public);
+    let limiter = rate_limit::build_governor(&rl.public, &rl.trusted_proxies);
 
     (
         web::resource("/d/{token}/{filename}")

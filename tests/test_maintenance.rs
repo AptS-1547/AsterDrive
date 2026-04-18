@@ -752,6 +752,9 @@ async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
         .unwrap();
 
     let now = Utc::now();
+    common::set_foreign_key_checks(&state.db, false)
+        .await
+        .unwrap();
     let dangling_folder = folder_repo::create(
         &state.db,
         folder::ActiveModel {
@@ -767,6 +770,9 @@ async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
     )
     .await
     .unwrap();
+    common::set_foreign_key_checks(&state.db, true)
+        .await
+        .unwrap();
 
     let cycle_a = folder_repo::create(
         &state.db,

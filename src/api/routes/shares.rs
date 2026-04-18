@@ -22,7 +22,7 @@ use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
-    let limiter = rate_limit::build_governor(&rl.api);
+    let limiter = rate_limit::build_governor(&rl.api, &rl.trusted_proxies);
 
     web::scope("/shares")
         .wrap(JwtAuth)
