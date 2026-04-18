@@ -237,6 +237,8 @@
 	"settings_item_task_retention_hours_desc": "后台任务的临时产物在过期前最多保留多久；任务记录本身会继续留作留档。",
 	"settings_item_default_storage_quota_label": "新用户默认存储配额",
 	"settings_item_default_storage_quota_desc": "新创建用户默认拿到的存储配额。填写 0 表示不限制。",
+	"settings_item_archive_extract_max_staging_bytes_label": "在线解压 staging 大小上限",
+	"settings_item_archive_extract_max_staging_bytes_desc": "ZIP 在线解压时，临时占用的最大磁盘字节数上限，按“下载到本地的源压缩包 + 解压到 staging 的文件”一起计算，超过后会在导入前直接失败。",
 	"settings_item_thumbnail_max_source_bytes_label": "缩略图源文件大小上限",
 	"settings_item_thumbnail_max_source_bytes_desc": "超过这个大小的原始文件会直接跳过缩略图生成，用来避免过大的源文件拖慢或压垮缩略图任务。",
 	"settings_item_avatar_dir_label": "头像目录",

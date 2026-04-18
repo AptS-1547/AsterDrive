@@ -48,6 +48,7 @@ pub const TRASH_RETENTION_DAYS_KEY: &str = "trash_retention_days";
 pub const TEAM_ARCHIVE_RETENTION_DAYS_KEY: &str = "team_archive_retention_days";
 pub const TASK_RETENTION_HOURS_KEY: &str = "task_retention_hours";
 pub const DEFAULT_STORAGE_QUOTA_KEY: &str = "default_storage_quota";
+pub const ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY: &str = "archive_extract_max_staging_bytes";
 
 // ── Mail keys ────────────────────────────────────────────────────────────────
 pub const MAIL_SMTP_HOST_KEY: &str = "mail_smtp_host";
@@ -421,6 +422,19 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "storage",
         description: "Default storage quota for new users in bytes (0 = unlimited)",
+    },
+    ConfigDef {
+        key: ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
+        label_i18n_key: "settings_item_archive_extract_max_staging_bytes_label",
+        description_i18n_key: "settings_item_archive_extract_max_staging_bytes_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage",
+        description: "Maximum total temporary bytes allowed for archive extract staging, including the downloaded source archive and extracted files",
     },
     ConfigDef {
         key: THUMBNAIL_MAX_SOURCE_BYTES_KEY,

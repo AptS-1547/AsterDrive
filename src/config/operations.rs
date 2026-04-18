@@ -5,11 +5,11 @@ use crate::errors::{AsterError, Result};
 use crate::utils::numbers::{u64_to_i64, u64_to_usize, usize_to_u64};
 
 pub use crate::config::definitions::{
-    AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY, BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY,
-    BACKGROUND_TASK_MAX_ATTEMPTS_KEY, BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
-    BLOB_RECONCILE_INTERVAL_SECS_KEY, MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY,
-    MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY, TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
-    THUMBNAIL_MAX_SOURCE_BYTES_KEY,
+    ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY, AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
+    BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY, BACKGROUND_TASK_MAX_ATTEMPTS_KEY,
+    BACKGROUND_TASK_MAX_CONCURRENCY_KEY, BLOB_RECONCILE_INTERVAL_SECS_KEY,
+    MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY, MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY,
+    TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY, THUMBNAIL_MAX_SOURCE_BYTES_KEY,
 };
 
 pub const DEFAULT_MAIL_OUTBOX_DISPATCH_INTERVAL_SECS: u64 = 5;
@@ -22,6 +22,7 @@ pub const DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT: u64 = 100;
 pub const DEFAULT_TASK_LIST_MAX_LIMIT: u64 = 100;
 pub const DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
+pub const DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 pub const MAX_LIST_PAGE_LIMIT: u64 = 1000;
 
@@ -178,6 +179,29 @@ pub fn thumbnail_max_source_bytes(runtime_config: &RuntimeConfig) -> i64 {
     })
 }
 
+pub fn archive_extract_max_staging_bytes(runtime_config: &RuntimeConfig) -> i64 {
+    let default_value = u64_to_i64(
+        DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES,
+        ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
+    )
+    .unwrap_or(i64::MAX);
+    u64_to_i64(
+        read_positive_u64(
+            runtime_config,
+            ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
+            DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES,
+        ),
+        ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
+    )
+    .unwrap_or_else(|_| {
+        tracing::warn!(
+            key = ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
+            "archive extract staging size config exceeds i64; using default"
+        );
+        default_value
+    })
+}
+
 fn normalize_positive_u64_config_value(key: &str, value: &str) -> Result<String> {
     let parsed = parse_positive_u64(value)
         .ok_or_else(|| AsterError::validation_error(format!("{key} must be a positive integer")))?;
@@ -254,12 +278,14 @@ fn read_bounded_u64(
 #[cfg(test)]
 mod tests {
     use super::{
-        AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY, BACKGROUND_TASK_MAX_ATTEMPTS_KEY,
-        BACKGROUND_TASK_MAX_CONCURRENCY_KEY, BLOB_RECONCILE_INTERVAL_SECS_KEY,
+        ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY, AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
+        BACKGROUND_TASK_MAX_ATTEMPTS_KEY, BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+        BLOB_RECONCILE_INTERVAL_SECS_KEY, DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES,
         DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES, DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS,
         DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY, DEFAULT_BLOB_RECONCILE_INTERVAL_SECS,
         DEFAULT_TASK_LIST_MAX_LIMIT, DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT, TASK_LIST_MAX_LIMIT_KEY,
-        TEAM_MEMBER_LIST_MAX_LIMIT_KEY, avatar_max_upload_size_bytes, background_task_max_attempts,
+        TEAM_MEMBER_LIST_MAX_LIMIT_KEY, archive_extract_max_staging_bytes,
+        avatar_max_upload_size_bytes, background_task_max_attempts,
         background_task_max_concurrency, blob_reconcile_interval_secs,
         normalize_attempts_config_value, normalize_bytes_config_value,
         normalize_concurrency_config_value, normalize_interval_config_value,
@@ -363,6 +389,28 @@ mod tests {
     }
 
     #[test]
+    fn archive_extract_staging_reader_uses_runtime_value_and_default() {
+        let runtime_config = RuntimeConfig::new();
+        assert_eq!(
+            archive_extract_max_staging_bytes(&runtime_config),
+            crate::utils::numbers::u64_to_i64(
+                DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES,
+                ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
+            )
+            .unwrap()
+        );
+
+        runtime_config.apply(config_model(
+            ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
+            "1048576",
+        ));
+        assert_eq!(
+            archive_extract_max_staging_bytes(&runtime_config),
+            1_048_576
+        );
+    }
+
+    #[test]
     fn normalize_helpers_reject_invalid_values() {
         assert_eq!(
             normalize_interval_config_value("test_interval", " 60 ").unwrap(),
@@ -400,6 +448,23 @@ mod tests {
             crate::utils::numbers::u64_to_usize(
                 DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES,
                 AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn archive_extract_staging_reader_falls_back_for_invalid_values() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(
+            ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
+            "invalid",
+        ));
+        assert_eq!(
+            archive_extract_max_staging_bytes(&runtime_config),
+            crate::utils::numbers::u64_to_i64(
+                DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES,
+                ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
             )
             .unwrap()
         );

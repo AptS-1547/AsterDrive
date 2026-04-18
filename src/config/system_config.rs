@@ -137,6 +137,7 @@ where
             operations::normalize_list_max_limit_config_value(key, value)
         }
         operations::AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY
+        | operations::ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY
         | operations::THUMBNAIL_MAX_SOURCE_BYTES_KEY => {
             operations::normalize_bytes_config_value(key, value)
         }

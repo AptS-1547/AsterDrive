@@ -237,6 +237,8 @@
 	"settings_item_task_retention_hours_desc": "How long temporary background task artifacts remain available before expiry; task records themselves are retained as history.",
 	"settings_item_default_storage_quota_label": "Default quota for new users",
 	"settings_item_default_storage_quota_desc": "The default storage quota assigned to newly created users. Use 0 for unlimited.",
+	"settings_item_archive_extract_max_staging_bytes_label": "Archive extract staging cap",
+	"settings_item_archive_extract_max_staging_bytes_desc": "The largest temporary disk footprint allowed while extracting a ZIP archive, counted as downloaded source archive bytes plus extracted staging bytes before import.",
 	"settings_item_thumbnail_max_source_bytes_label": "Thumbnail source-size cap",
 	"settings_item_thumbnail_max_source_bytes_desc": "The largest source file size still allowed to enter thumbnail generation. Larger files are skipped so oversized originals do not overload thumbnail jobs.",
 	"settings_item_avatar_dir_label": "Avatar directory",

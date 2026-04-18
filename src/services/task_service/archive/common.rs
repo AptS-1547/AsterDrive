@@ -215,6 +215,25 @@ pub(super) fn copy_reader_to_writer_with_lease<R: Read, W: Write>(
     reader: &mut R,
     writer: &mut W,
 ) -> Result<u64> {
+    copy_reader_to_writer_internal(lease_guard, reader, writer, None)
+}
+
+pub(super) fn copy_reader_to_writer_with_lease_and_expected_size<R: Read, W: Write>(
+    lease_guard: Option<&TaskLeaseGuard>,
+    reader: &mut R,
+    writer: &mut W,
+    expected_bytes: u64,
+    context: &str,
+) -> Result<u64> {
+    copy_reader_to_writer_internal(lease_guard, reader, writer, Some((expected_bytes, context)))
+}
+
+fn copy_reader_to_writer_internal<R: Read, W: Write>(
+    lease_guard: Option<&TaskLeaseGuard>,
+    reader: &mut R,
+    writer: &mut W,
+    expected: Option<(u64, &str)>,
+) -> Result<u64> {
     let mut copied = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
 
@@ -227,15 +246,30 @@ pub(super) fn copy_reader_to_writer_with_lease<R: Read, W: Write>(
         if read == 0 {
             break;
         }
+        let read_u64 = crate::utils::numbers::usize_to_u64(read, "archive stream chunk size")?;
+        let next_copied = copied
+            .checked_add(read_u64)
+            .ok_or_else(|| AsterError::internal_error("archive stream byte counter overflow"))?;
+        if let Some((expected_bytes, context)) = expected
+            && next_copied > expected_bytes
+        {
+            return Err(AsterError::validation_error(format!(
+                "{context} expands beyond declared size: declared {expected_bytes} bytes"
+            )));
+        }
         writer.write_all(&buffer[..read]).map_aster_err_ctx(
             "write archive stream chunk",
             AsterError::storage_driver_error,
         )?;
-        copied = copied
-            .checked_add(u64::try_from(read).map_err(|_| {
-                AsterError::internal_error("archive stream chunk size exceeds u64 range")
-            })?)
-            .ok_or_else(|| AsterError::internal_error("archive stream byte counter overflow"))?;
+        copied = next_copied;
+    }
+
+    if let Some((expected_bytes, context)) = expected
+        && copied != expected_bytes
+    {
+        return Err(AsterError::validation_error(format!(
+            "{context} size mismatch: declared {expected_bytes} bytes, extracted {copied} bytes"
+        )));
     }
 
     Ok(copied)
@@ -250,7 +284,7 @@ fn ensure_task_lease_active(lease_guard: Option<&TaskLeaseGuard>) -> Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
+    use std::io::{Cursor, Read};
     use std::thread;
     use std::time::Duration;
 
@@ -258,7 +292,9 @@ mod tests {
         TaskLease, TaskLeaseGuard, is_task_lease_renewal_timed_out,
     };
 
-    use super::copy_reader_to_writer_with_lease;
+    use super::{
+        copy_reader_to_writer_with_lease, copy_reader_to_writer_with_lease_and_expected_size,
+    };
 
     struct SlowSingleChunkReader {
         chunk: Vec<u8>,
@@ -295,5 +331,43 @@ mod tests {
 
         assert!(is_task_lease_renewal_timed_out(&error));
         assert_eq!(writer, b"chunk");
+    }
+
+    #[test]
+    fn copy_reader_to_writer_with_expected_size_rejects_oversized_stream() {
+        let mut reader = Cursor::new(b"abcdef".to_vec());
+        let mut writer = Vec::new();
+
+        let error = copy_reader_to_writer_with_lease_and_expected_size(
+            None,
+            &mut reader,
+            &mut writer,
+            4,
+            "archive entry 'payload.bin'",
+        )
+        .expect_err("oversized stream should be rejected");
+
+        assert_eq!(error.code(), "E005");
+        assert!(error.message().contains("expands beyond declared size"));
+        assert!(writer.is_empty());
+    }
+
+    #[test]
+    fn copy_reader_to_writer_with_expected_size_rejects_truncated_stream() {
+        let mut reader = Cursor::new(b"abc".to_vec());
+        let mut writer = Vec::new();
+
+        let error = copy_reader_to_writer_with_lease_and_expected_size(
+            None,
+            &mut reader,
+            &mut writer,
+            4,
+            "archive entry 'payload.bin'",
+        )
+        .expect_err("truncated stream should be rejected");
+
+        assert_eq!(error.code(), "E005");
+        assert!(error.message().contains("size mismatch"));
+        assert_eq!(writer, b"abc");
     }
 }

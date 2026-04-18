@@ -10,12 +10,14 @@ use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::task_service::TaskStepInfo;
+use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::storage::PolicySnapshot;
 
 use super::super::super::TaskLeaseGuard;
 use super::super::super::steps::{
     TASK_STEP_EXTRACT_ARCHIVE, set_task_step_active, set_task_step_succeeded,
 };
-use super::super::common::copy_reader_to_writer_with_lease;
+use super::super::common::copy_reader_to_writer_with_lease_and_expected_size;
 
 #[derive(Debug)]
 pub(super) struct StagedArchiveStats {
@@ -23,6 +25,44 @@ pub(super) struct StagedArchiveStats {
     pub(super) total_progress: i64,
     pub(super) file_count: i64,
     pub(super) directory_count: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum ArchiveExtractPolicyResolver {
+    Personal { user_id: i64 },
+    Team { policy_group_id: i64 },
+}
+
+impl ArchiveExtractPolicyResolver {
+    fn ensure_entry_size_allowed(
+        self,
+        policy_snapshot: &PolicySnapshot,
+        entry_size: i64,
+    ) -> Result<()> {
+        let policy = match self {
+            Self::Personal { user_id } => {
+                policy_snapshot.resolve_user_policy_for_size(user_id, entry_size)?
+            }
+            Self::Team { policy_group_id } => {
+                policy_snapshot.resolve_policy_in_group(policy_group_id, entry_size)?
+            }
+        };
+        if policy.max_file_size > 0 && entry_size > policy.max_file_size {
+            return Err(AsterError::file_too_large(format!(
+                "archive entry size {} exceeds limit {}",
+                entry_size, policy.max_file_size
+            )));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ArchiveExtractStageOptions {
+    pub(super) scope: WorkspaceStorageScope,
+    pub(super) policy_resolver: ArchiveExtractPolicyResolver,
+    pub(super) source_archive_size: i64,
+    pub(super) max_staging_bytes: i64,
 }
 
 pub(super) async fn download_file_to_temp(
@@ -51,30 +91,67 @@ pub(super) async fn download_file_to_temp(
 pub(super) fn stage_zip_archive_for_extract(
     handle: &tokio::runtime::Handle,
     db: &sea_orm::DatabaseConnection,
+    policy_snapshot: &PolicySnapshot,
     lease_guard: &TaskLeaseGuard,
     archive_path: &str,
     stage_root: &str,
+    options: ArchiveExtractStageOptions,
     steps: &mut [TaskStepInfo],
 ) -> Result<StagedArchiveStats> {
     let file = std::fs::File::open(archive_path)
         .map_aster_err_ctx("open source archive", AsterError::storage_driver_error)?;
     let mut archive = zip::ZipArchive::new(file)
         .map_aster_err_with(|| AsterError::validation_error("invalid zip archive"))?;
+    set_task_step_active(
+        steps,
+        TASK_STEP_EXTRACT_ARCHIVE,
+        Some("Reading archive"),
+        None,
+    )?;
+    handle.block_on(async {
+        super::super::super::update_task_progress_db(
+            db,
+            lease_guard,
+            0,
+            0,
+            Some("Reading archive"),
+            steps,
+        )
+        .await
+    })?;
     let mut total_bytes = 0_i64;
     for index in 0..archive.len() {
+        lease_guard.ensure_active()?;
         let entry = archive
             .by_index(index)
             .map_aster_err_with(|| AsterError::validation_error("invalid zip archive entry"))?;
         if entry.is_dir() {
             continue;
         }
-        total_bytes =
-            total_bytes
-                .checked_add(i64::try_from(entry.size()).map_err(|_| {
-                    AsterError::internal_error("archive entry size exceeds i64 range")
-                })?)
-                .ok_or_else(|| AsterError::internal_error("archive extract size overflow"))?;
+        let entry_size = crate::utils::numbers::u64_to_i64(entry.size(), "archive entry size")?;
+        options
+            .policy_resolver
+            .ensure_entry_size_allowed(policy_snapshot, entry_size)?;
+        total_bytes = total_bytes
+            .checked_add(entry_size)
+            .ok_or_else(|| AsterError::internal_error("archive extract size overflow"))?;
     }
+    let total_staging_bytes = options
+        .source_archive_size
+        .checked_add(total_bytes)
+        .ok_or_else(|| AsterError::internal_error("archive extract staging size overflow"))?;
+    if total_staging_bytes > options.max_staging_bytes {
+        return Err(AsterError::validation_error(format!(
+            "archive extract staging requires {} bytes (source {} + extracted {}), exceeds server limit {}",
+            total_staging_bytes,
+            options.source_archive_size,
+            total_bytes,
+            options.max_staging_bytes
+        )));
+    }
+    handle.block_on(async {
+        workspace_storage_service::check_quota(db, options.scope, total_bytes).await
+    })?;
     let total_progress = total_bytes
         .checked_mul(2)
         .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
@@ -105,6 +182,7 @@ pub(super) fn stage_zip_archive_for_extract(
         let mut entry = archive
             .by_index(index)
             .map_aster_err_with(|| AsterError::validation_error("invalid zip archive entry"))?;
+        let declared_size = crate::utils::numbers::u64_to_i64(entry.size(), "archive entry size")?;
         let enclosed_path = entry.enclosed_name().ok_or_else(|| {
             AsterError::validation_error(format!(
                 "archive entry '{}' contains unsafe path",
@@ -134,11 +212,19 @@ pub(super) fn stage_zip_archive_for_extract(
 
         let mut output = std::fs::File::create(&target_path)
             .map_aster_err_ctx("create extracted file", AsterError::storage_driver_error)?;
-        let copied = copy_reader_to_writer_with_lease(Some(lease_guard), &mut entry, &mut output)?;
+        let entry_context = format!("archive entry '{}'", relative_path.display());
+        let copied = copy_reader_to_writer_with_lease_and_expected_size(
+            Some(lease_guard),
+            &mut entry,
+            &mut output,
+            crate::utils::numbers::i64_to_u64(declared_size, "archive entry size")?,
+            &entry_context,
+        )?;
         processed_bytes = processed_bytes
-            .checked_add(i64::try_from(copied).map_aster_err_with(|| {
-                AsterError::internal_error("extracted bytes exceed i64 range")
-            })?)
+            .checked_add(crate::utils::numbers::u64_to_i64(
+                copied,
+                "extracted bytes",
+            )?)
             .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
         file_count += 1;
 

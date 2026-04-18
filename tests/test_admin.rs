@@ -108,6 +108,7 @@ async fn test_admin_scope_allows_admin_users() {
     assert!(keys.contains(&"team_member_list_max_limit"));
     assert!(keys.contains(&"task_list_max_limit"));
     assert!(keys.contains(&"avatar_max_upload_size_bytes"));
+    assert!(keys.contains(&"archive_extract_max_staging_bytes"));
     assert!(keys.contains(&"thumbnail_max_source_bytes"));
     assert!(keys.contains(&"branding_title"));
     assert!(keys.contains(&"branding_description"));
