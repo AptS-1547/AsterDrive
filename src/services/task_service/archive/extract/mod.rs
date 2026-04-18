@@ -33,8 +33,8 @@ use super::super::{
 use super::common::{build_folder_display_path, create_unique_folder_in_scope};
 use import::materialize_archive_extract_stage;
 use staging::{
-    ArchiveExtractPolicyResolver, ArchiveExtractStageOptions, download_file_to_temp,
-    stage_zip_archive_for_extract,
+    ArchiveExtractPolicyResolver, ArchiveExtractStageOptions, StageZipArchiveForExtractParams,
+    download_file_to_temp, stage_zip_archive_for_extract,
 };
 
 pub(crate) async fn create_archive_extract_task_in_scope(
@@ -150,13 +150,15 @@ pub(super) async fn process_archive_extract_task(
         let (staged, mut steps) = tokio::task::spawn_blocking(move || {
             let mut steps = steps_for_worker;
             let staged = stage_zip_archive_for_extract(
-                &handle,
-                &db,
-                policy_snapshot.as_ref(),
-                &lease_guard_for_worker,
-                &source_archive_path_string,
-                &stage_root_string,
-                stage_options,
+                StageZipArchiveForExtractParams {
+                    handle: &handle,
+                    db: &db,
+                    policy_snapshot: policy_snapshot.as_ref(),
+                    lease_guard: &lease_guard_for_worker,
+                    archive_path: &source_archive_path_string,
+                    stage_root: &stage_root_string,
+                    options: stage_options,
+                },
                 &mut steps,
             )?;
             Ok::<_, AsterError>((staged, steps))
@@ -242,13 +244,14 @@ pub(super) async fn process_archive_extract_task(
     match result {
         Ok(()) => Ok(()),
         Err(error) => {
-            if !is_task_lease_lost(&error) && !is_task_lease_renewal_timed_out(&error) {
-                if let Err(cleanup_error) = cleanup_task_temp_dir_for_task(state, task.id).await {
-                    tracing::warn!(
-                        task_id = task.id,
-                        "failed to cleanup archive extract temp dir after error: {cleanup_error}"
-                    );
-                }
+            if !is_task_lease_lost(&error)
+                && !is_task_lease_renewal_timed_out(&error)
+                && let Err(cleanup_error) = cleanup_task_temp_dir_for_task(state, task.id).await
+            {
+                tracing::warn!(
+                    task_id = task.id,
+                    "failed to cleanup archive extract temp dir after error: {cleanup_error}"
+                );
             }
             Err(error)
         }

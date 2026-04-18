@@ -79,44 +79,41 @@ impl BackgroundTasks {
 /// Each iteration sleeps using the latest runtime-configured interval before
 /// the next run. Panics are caught inside the loop so one failed iteration
 /// does not kill the whole periodic worker.
-fn spawn_periodic<F, I, Fut>(
+async fn spawn_periodic<F, I, Fut>(
     name: &'static str,
     interval_fn: I,
     jitter_cap: Option<Duration>,
     shutdown_token: CancellationToken,
     state: web::Data<AppState>,
     task_fn: F,
-) -> impl Future<Output = ()> + Send + 'static
-where
+) where
     I: Fn(&AppState) -> Duration + Send + Sync + 'static,
     F: Fn(web::Data<AppState>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = crate::services::task_service::RuntimeTaskRunOutcome> + Send + 'static,
 {
-    async move {
-        // 每轮迭代独立 span，并发清理任务在 trace 里可按 task.name 区分。
-        // 必须用 `Instrument::instrument` 而非 `Span::enter`：后者返回的 guard
-        // 跨 await 会被 drop（tracing 文档警告），span 只对同步段生效，
-        // 而我们的 task_fn 全是 async 跨 await 的。
+    // 每轮迭代独立 span，并发清理任务在 trace 里可按 task.name 区分。
+    // 必须用 `Instrument::instrument` 而非 `Span::enter`：后者返回的 guard
+    // 跨 await 会被 drop（tracing 文档警告），span 只对同步段生效，
+    // 而我们的 task_fn 全是 async 跨 await 的。
+    run_periodic_iteration(name, &state, &task_fn)
+        .instrument(tracing::info_span!("bg_task", task.name = name))
+        .await;
+
+    loop {
+        let sleep_duration = periodic_sleep_duration(interval_fn(state.get_ref()), jitter_cap);
+        tokio::select! {
+            biased;
+            _ = shutdown_token.cancelled() => break,
+            _ = tokio::time::sleep(sleep_duration) => {}
+        }
+
+        if shutdown_token.is_cancelled() {
+            break;
+        }
+
         run_periodic_iteration(name, &state, &task_fn)
             .instrument(tracing::info_span!("bg_task", task.name = name))
             .await;
-
-        loop {
-            let sleep_duration = periodic_sleep_duration(interval_fn(state.get_ref()), jitter_cap);
-            tokio::select! {
-                biased;
-                _ = shutdown_token.cancelled() => break,
-                _ = tokio::time::sleep(sleep_duration) => {}
-            }
-
-            if shutdown_token.is_cancelled() {
-                break;
-            }
-
-            run_periodic_iteration(name, &state, &task_fn)
-                .instrument(tracing::info_span!("bg_task", task.name = name))
-                .await;
-        }
     }
 }
 

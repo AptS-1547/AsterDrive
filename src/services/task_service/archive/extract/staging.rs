@@ -65,6 +65,17 @@ pub(super) struct ArchiveExtractStageOptions {
     pub(super) max_staging_bytes: i64,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct StageZipArchiveForExtractParams<'a> {
+    pub(super) handle: &'a tokio::runtime::Handle,
+    pub(super) db: &'a sea_orm::DatabaseConnection,
+    pub(super) policy_snapshot: &'a PolicySnapshot,
+    pub(super) lease_guard: &'a TaskLeaseGuard,
+    pub(super) archive_path: &'a str,
+    pub(super) stage_root: &'a str,
+    pub(super) options: ArchiveExtractStageOptions,
+}
+
 pub(super) async fn download_file_to_temp(
     state: &AppState,
     source_file: &file::Model,
@@ -89,15 +100,18 @@ pub(super) async fn download_file_to_temp(
 }
 
 pub(super) fn stage_zip_archive_for_extract(
-    handle: &tokio::runtime::Handle,
-    db: &sea_orm::DatabaseConnection,
-    policy_snapshot: &PolicySnapshot,
-    lease_guard: &TaskLeaseGuard,
-    archive_path: &str,
-    stage_root: &str,
-    options: ArchiveExtractStageOptions,
+    params: StageZipArchiveForExtractParams<'_>,
     steps: &mut [TaskStepInfo],
 ) -> Result<StagedArchiveStats> {
+    let StageZipArchiveForExtractParams {
+        handle,
+        db,
+        policy_snapshot,
+        lease_guard,
+        archive_path,
+        stage_root,
+        options,
+    } = params;
     let file = std::fs::File::open(archive_path)
         .map_aster_err_ctx("open source archive", AsterError::storage_driver_error)?;
     let mut archive = zip::ZipArchive::new(file)

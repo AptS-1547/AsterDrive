@@ -1,9 +1,6 @@
 //! 数据库迁移 crate 入口。
-#![deny(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::unwrap_used
-)]
+#![deny(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 pub use sea_orm_migration::prelude::*;
 

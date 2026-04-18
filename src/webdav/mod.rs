@@ -417,13 +417,11 @@ async fn handle_copy_move(
 
     match result {
         Ok(()) => {
-            if is_move {
-                if lock_system.delete(&source).await.is_err() {
-                    tracing::warn!(
-                        path = %source_relative,
-                        "failed to delete WebDAV locks after move"
-                    );
-                }
+            if is_move && lock_system.delete(&source).await.is_err() {
+                tracing::warn!(
+                    path = %source_relative,
+                    "failed to delete WebDAV locks after move"
+                );
             }
             if destination_exists {
                 HttpResponse::NoContent().finish()

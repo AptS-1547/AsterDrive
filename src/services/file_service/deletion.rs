@@ -143,7 +143,7 @@ async fn cleanup_claimed_blob(state: &AppState, current_blob: &file_blob::Model)
         }
     }
 
-    if let Err(e) = thumbnail_service::delete_thumbnail(state, &current_blob).await {
+    if let Err(e) = thumbnail_service::delete_thumbnail(state, current_blob).await {
         tracing::warn!(
             blob_id = current_blob.id,
             "failed to delete thumbnail during blob cleanup: {e}"

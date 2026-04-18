@@ -52,6 +52,18 @@ struct PreparedStoreFromTemp {
     now: chrono::DateTime<Utc>,
 }
 
+struct WriteFileRecordFromTempParams<'a> {
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &'a str,
+    mime: &'a str,
+    blob: &'a file_blob::Model,
+    overwrite_ctx: Option<OverwriteContext>,
+    now: chrono::DateTime<Utc>,
+    storage_delta: i64,
+    new_file_mode: NewFileMode,
+}
+
 pub(super) async fn store_from_temp_internal(
     state: &AppState,
     params: StoreFromTempParams<'_>,
@@ -300,15 +312,17 @@ async fn persist_temp_store(
         .await?;
         let result = write_file_record_from_temp(
             &txn,
-            scope,
-            folder_id,
-            &filename,
-            &mime,
-            &blob,
-            overwrite_ctx,
-            now,
-            storage_delta,
-            new_file_mode,
+            WriteFileRecordFromTempParams {
+                scope,
+                folder_id,
+                filename: &filename,
+                mime: &mime,
+                blob: &blob,
+                overwrite_ctx,
+                now,
+                storage_delta,
+                new_file_mode,
+            },
         )
         .await?;
 
@@ -369,16 +383,19 @@ async fn persist_temp_blob<C: ConnectionTrait>(
 
 async fn write_file_record_from_temp<C: ConnectionTrait>(
     txn: &C,
-    scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
-    filename: &str,
-    mime: &str,
-    blob: &file_blob::Model,
-    overwrite_ctx: Option<OverwriteContext>,
-    now: chrono::DateTime<Utc>,
-    storage_delta: i64,
-    new_file_mode: NewFileMode,
+    params: WriteFileRecordFromTempParams<'_>,
 ) -> Result<file::Model> {
+    let WriteFileRecordFromTempParams {
+        scope,
+        folder_id,
+        filename,
+        mime,
+        blob,
+        overwrite_ctx,
+        now,
+        storage_delta,
+        new_file_mode,
+    } = params;
     let result = if let Some(OverwriteContext { old_file, old_blob }) = overwrite_ctx {
         let existing_id = old_file.id;
         let mut active: file::ActiveModel = old_file.into();
