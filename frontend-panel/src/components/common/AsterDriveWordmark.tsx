@@ -5,11 +5,6 @@ import { useThemeStore } from "@/stores/themeStore";
 
 type SurfaceTheme = "light" | "dark";
 
-function resolveDocumentTheme() {
-	if (typeof document === "undefined") return "light";
-	return document.documentElement.classList.contains("dark") ? "dark" : "light";
-}
-
 type AsterDriveWordmarkProps = Omit<ComponentProps<"img">, "src"> & {
 	surfaceTheme?: SurfaceTheme;
 };
@@ -24,11 +19,7 @@ export function AsterDriveWordmark({
 	const wordmarkDarkUrl = useBrandingStore((s) => s.branding.wordmarkDarkUrl);
 	const wordmarkLightUrl = useBrandingStore((s) => s.branding.wordmarkLightUrl);
 	const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
-	const effectiveTheme =
-		surfaceTheme ??
-		(resolvedTheme === "dark" || resolveDocumentTheme() === "dark"
-			? "dark"
-			: "light");
+	const effectiveTheme = surfaceTheme ?? resolvedTheme;
 
 	return (
 		<img

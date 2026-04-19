@@ -255,6 +255,7 @@ export function Sidebar({
 
 			{/* Sidebar - desktop inline, mobile overlay */}
 			<aside
+				data-theme-surface="chrome"
 				className={cn(
 					"border-r bg-background transition-transform duration-200 ease-out motion-reduce:transition-none",
 					USER_SIDEBAR_WIDTH_CLASS,

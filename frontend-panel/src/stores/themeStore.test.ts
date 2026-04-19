@@ -109,4 +109,17 @@ describe("useThemeStore", () => {
 		expect(localStorage.getItem("aster-color-preset")).toBe("orange");
 		expect(document.documentElement.getAttribute("data-theme")).toBe("orange");
 	});
+
+	it("derives the initial resolved theme from stored system preference", async () => {
+		localStorage.setItem("aster-theme-mode", "system");
+		const media = mockMatchMedia(true);
+		const { useThemeStore } = await loadThemeStore();
+
+		expect(useThemeStore.getState().resolvedTheme).toBe("dark");
+
+		media.setMatches(false);
+		useThemeStore.getState().init();
+
+		expect(document.documentElement.classList.contains("dark")).toBe(false);
+	});
 });

@@ -188,19 +188,41 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
+	html.theme-switching :where(*, *::before, *::after) {
+		transition-property: none;
+	}
+
+	html.theme-switching :where(body, [data-theme-surface], [data-slot="badge"]) {
+		transition-property:
+			background-color, border-color, color, box-shadow, outline-color;
+		transition-duration: 160ms;
+		transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+		will-change: background-color, border-color, color;
+	}
+
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation-duration: 180ms;
+		animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
 	::view-transition-old(root) {
-		animation: none;
+		animation-name: aster-view-transition-fade-out;
 	}
 
 	::view-transition-new(root) {
-		animation-duration: 120ms;
-		animation-timing-function: ease-out;
 		animation-name: aster-view-transition-fade-in;
 	}
 }
 
 @keyframes aster-view-transition-fade-in {
 	from {
+		opacity: 0;
+	}
+}
+
+@keyframes aster-view-transition-fade-out {
+	to {
 		opacity: 0;
 	}
 }

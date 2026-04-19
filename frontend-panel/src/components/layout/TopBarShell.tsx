@@ -30,7 +30,10 @@ export function TopBarShell({
 		: (sidebarToggleLabels?.open ?? "Open sidebar");
 
 	return (
-		<div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+		<div
+			data-theme-surface="chrome"
+			className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+		>
 			<div
 				className={`flex items-center gap-3 px-4 shrink-0 ${heightClassName}`}
 			>

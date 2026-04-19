@@ -17,11 +17,17 @@ const COLOR_PRESETS = {
 
 type ThemeMode = (typeof THEME_MODES)[keyof typeof THEME_MODES];
 type ColorPreset = (typeof COLOR_PRESETS)[keyof typeof COLOR_PRESETS];
+type ResolvedTheme = "light" | "dark";
+
+const FALLBACK_THEME_TRANSITION_CLASS = "theme-switching";
+const FALLBACK_THEME_TRANSITION_DURATION_MS = 220;
+
+let fallbackThemeTransitionTimer: ReturnType<typeof setTimeout> | null = null;
 
 interface ThemeState {
 	mode: ThemeMode;
 	colorPreset: ColorPreset;
-	resolvedTheme: "light" | "dark";
+	resolvedTheme: ResolvedTheme;
 	setMode: (mode: ThemeMode) => void;
 	setColorPreset: (preset: ColorPreset) => void;
 	init: () => void;
@@ -32,45 +38,101 @@ interface ThemeState {
 }
 
 function getStoredValue<T extends string>(key: string, fallback: T): T {
-	if (typeof window === "undefined") return fallback;
+	if (typeof localStorage === "undefined") return fallback;
 	return (localStorage.getItem(key) as T) ?? fallback;
 }
 
-function applyTheme(mode: ThemeMode, preset: ColorPreset): "light" | "dark" {
-	const html = document.documentElement;
-	const isDark =
-		mode === "dark" ||
-		(mode === "system" &&
-			window.matchMedia("(prefers-color-scheme: dark)").matches);
+function prefersDarkMode() {
+	if (typeof matchMedia !== "function") return false;
+	return matchMedia("(prefers-color-scheme: dark)").matches;
+}
 
-	if (isDark) {
+function resolveTheme(mode: ThemeMode): ResolvedTheme {
+	const isDark = mode === "dark" || (mode === "system" && prefersDarkMode());
+
+	return isDark ? "dark" : "light";
+}
+
+function commitTheme(resolvedTheme: ResolvedTheme, preset: ColorPreset) {
+	const html = document.documentElement;
+
+	if (resolvedTheme === "dark") {
 		html.classList.add("dark");
 	} else {
 		html.classList.remove("dark");
 	}
 	html.setAttribute("data-theme", preset);
+}
 
-	return isDark ? "dark" : "light";
+function prefersReducedMotion() {
+	if (typeof matchMedia !== "function") return false;
+	return matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function clearFallbackThemeTransition() {
+	document.documentElement.classList.remove(FALLBACK_THEME_TRANSITION_CLASS);
+	if (fallbackThemeTransitionTimer !== null) {
+		clearTimeout(fallbackThemeTransitionTimer);
+		fallbackThemeTransitionTimer = null;
+	}
+}
+
+function runThemeTransition(
+	updateCallback: () => void,
+	options: { animate?: boolean } = {},
+) {
+	if (
+		typeof document === "undefined" ||
+		!options.animate ||
+		prefersReducedMotion()
+	) {
+		updateCallback();
+		return;
+	}
+
+	const html = document.documentElement;
+	clearFallbackThemeTransition();
+	html.classList.add(FALLBACK_THEME_TRANSITION_CLASS);
+	updateCallback();
+	fallbackThemeTransitionTimer = setTimeout(() => {
+		clearFallbackThemeTransition();
+	}, FALLBACK_THEME_TRANSITION_DURATION_MS);
+}
+
+function applyTheme(
+	mode: ThemeMode,
+	preset: ColorPreset,
+	options: { animate?: boolean } = {},
+): ResolvedTheme {
+	const resolvedTheme = resolveTheme(mode);
+	runThemeTransition(() => {
+		commitTheme(resolvedTheme, preset);
+	}, options);
+	return resolvedTheme;
 }
 
 export type { ColorPreset, ThemeMode };
 export { COLOR_PRESETS, THEME_MODES };
 
+const initialMode = getStoredValue(STORAGE_KEYS.themeMode, "system");
+const initialColorPreset = getStoredValue(STORAGE_KEYS.colorPreset, "blue");
+const initialResolvedTheme = resolveTheme(initialMode);
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
-	mode: getStoredValue(STORAGE_KEYS.themeMode, "system"),
-	colorPreset: getStoredValue(STORAGE_KEYS.colorPreset, "blue"),
-	resolvedTheme: "light",
+	mode: initialMode,
+	colorPreset: initialColorPreset,
+	resolvedTheme: initialResolvedTheme,
 
 	setMode: (mode) => {
 		localStorage.setItem(STORAGE_KEYS.themeMode, mode);
-		const resolved = applyTheme(mode, get().colorPreset);
+		const resolved = applyTheme(mode, get().colorPreset, { animate: true });
 		set({ mode, resolvedTheme: resolved });
 		queuePreferenceSync({ theme_mode: mode });
 	},
 
 	setColorPreset: (preset) => {
 		localStorage.setItem(STORAGE_KEYS.colorPreset, preset);
-		applyTheme(get().mode, preset);
+		applyTheme(get().mode, preset, { animate: true });
 		set({ colorPreset: preset });
 		queuePreferenceSync({ color_preset: preset });
 	},
@@ -80,10 +142,12 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 		const resolved = applyTheme(mode, colorPreset);
 		set({ resolvedTheme: resolved });
 
-		const mq = window.matchMedia("(prefers-color-scheme: dark)");
+		if (typeof matchMedia !== "function") return;
+
+		const mq = matchMedia("(prefers-color-scheme: dark)");
 		const handler = () => {
 			if (get().mode === "system") {
-				const r = applyTheme("system", get().colorPreset);
+				const r = applyTheme("system", get().colorPreset, { animate: true });
 				set({ resolvedTheme: r });
 			}
 		};
