@@ -192,7 +192,7 @@ describe("GlobalSearchDialog", () => {
 			state: {
 				searchPreviewFile: file,
 			},
-			viewTransition: true,
+			viewTransition: false,
 		});
 	});
 
@@ -296,7 +296,7 @@ describe("GlobalSearchDialog", () => {
 
 		expect(onOpenChange).toHaveBeenCalledWith(false);
 		expect(mockState.navigate).toHaveBeenCalledWith("/folder/3?name=Reports", {
-			viewTransition: true,
+			viewTransition: false,
 		});
 	});
 
@@ -362,7 +362,7 @@ describe("GlobalSearchDialog", () => {
 			state: {
 				searchPreviewFile: file,
 			},
-			viewTransition: true,
+			viewTransition: false,
 		});
 	});
 
@@ -501,7 +501,7 @@ describe("GlobalSearchDialog", () => {
 				state: {
 					searchPreviewFile: file,
 				},
-				viewTransition: true,
+				viewTransition: false,
 			});
 		});
 	});

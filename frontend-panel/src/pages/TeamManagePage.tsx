@@ -84,7 +84,7 @@ export default function TeamManagePage() {
 						onArchivedReload={async () => undefined}
 						onOpenChange={(open) => {
 							if (!open) {
-								navigate("/settings/teams", { viewTransition: true });
+								navigate("/settings/teams", { viewTransition: false });
 							}
 						}}
 						onPageTabChange={(tab, options) => {

@@ -591,7 +591,7 @@ describe("TasksPage", () => {
 		fireEvent.click(screen.getByText("tasks:open_target_folder"));
 
 		expect(mockState.navigate).toHaveBeenCalledWith("/folder/42", {
-			viewTransition: true,
+			viewTransition: false,
 		});
 	});
 });

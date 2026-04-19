@@ -57,7 +57,7 @@ export function TeamsSettingsView() {
 			const restored = await teamService.restore(teamId);
 			await Promise.all([reloadTeams(user?.id ?? null), loadArchivedTeams()]);
 			navigate(`/settings/teams/${restored.id}/overview`, {
-				viewTransition: true,
+				viewTransition: false,
 			});
 			toast.success(t("settings:settings_team_restored"));
 		} catch (error) {
@@ -128,7 +128,7 @@ export function TeamsSettingsView() {
 										type="button"
 										onClick={() =>
 											navigate(`/settings/teams/${team.id}/overview`, {
-												viewTransition: true,
+												viewTransition: false,
 											})
 										}
 									>
@@ -139,7 +139,7 @@ export function TeamsSettingsView() {
 										variant="ghost"
 										onClick={() =>
 											navigate(`/teams/${team.id}`, {
-												viewTransition: true,
+												viewTransition: false,
 											})
 										}
 									>

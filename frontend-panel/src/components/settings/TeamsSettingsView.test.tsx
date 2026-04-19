@@ -128,7 +128,7 @@ describe("TeamsSettingsView", () => {
 		expect(mockState.navigate).toHaveBeenCalledWith(
 			"/settings/teams/11/overview",
 			{
-				viewTransition: true,
+				viewTransition: false,
 			},
 		);
 	});
@@ -153,7 +153,7 @@ describe("TeamsSettingsView", () => {
 		expect(mockState.navigate).toHaveBeenCalledWith(
 			"/settings/teams/23/overview",
 			{
-				viewTransition: true,
+				viewTransition: false,
 			},
 		);
 	});

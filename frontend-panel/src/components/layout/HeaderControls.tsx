@@ -66,7 +66,7 @@ export function HeaderControls({
 
 	const handleRouteNavigation = (
 		to: string,
-		{ viewTransition = true }: { viewTransition?: boolean } = {},
+		{ viewTransition = false }: { viewTransition?: boolean } = {},
 	) => {
 		navigate(to, { viewTransition });
 	};

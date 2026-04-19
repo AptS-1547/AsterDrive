@@ -397,7 +397,7 @@ export function GlobalSearchDialog({
 		if (entry.kind === "folder") {
 			onOpenChange(false);
 			navigate(workspaceFolderPath(workspace, entry.item.id, entry.item.name), {
-				viewTransition: true,
+				viewTransition: false,
 			});
 			return;
 		}
@@ -411,7 +411,7 @@ export function GlobalSearchDialog({
 			onOpenChange(false);
 			navigate(workspaceFolderPath(workspace, fileInfo.folder_id ?? null), {
 				state,
-				viewTransition: true,
+				viewTransition: false,
 			});
 		} catch (selectError) {
 			handleApiError(selectError);

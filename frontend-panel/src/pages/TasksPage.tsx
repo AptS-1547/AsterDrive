@@ -555,7 +555,7 @@ export default function TasksPage() {
 	const openTaskTargetFolder = useCallback(
 		(targetFolderId: number | null) => {
 			navigate(workspaceFolderPath(workspace, targetFolderId), {
-				viewTransition: true,
+				viewTransition: false,
 			});
 		},
 		[navigate, workspace],

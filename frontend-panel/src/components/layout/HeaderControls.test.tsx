@@ -315,7 +315,7 @@ describe("HeaderControls", () => {
 		expect(screen.queryByText("admin")).not.toBeInTheDocument();
 	});
 
-	it("preloads settings before navigating while keeping other route entries on view transitions", async () => {
+	it("preloads settings before navigating without browser view transitions", async () => {
 		render(<HeaderControls showHomeButton homeLabel="Home" showAdminEntry />);
 
 		fireEvent.click(
@@ -336,19 +336,19 @@ describe("HeaderControls", () => {
 
 		fireEvent.click(homeButtons[0]);
 		expect(mockState.navigate).toHaveBeenNthCalledWith(2, "/", {
-			viewTransition: true,
+			viewTransition: false,
 		});
 
 		fireEvent.click(homeButtons[1]);
 		expect(mockState.navigate).toHaveBeenNthCalledWith(3, "/", {
-			viewTransition: true,
+			viewTransition: false,
 		});
 
 		fireEvent.click(
 			screen.getByRole("button", { name: /translated:admin_panel/i }),
 		);
 		expect(mockState.navigate).toHaveBeenNthCalledWith(4, "/admin", {
-			viewTransition: true,
+			viewTransition: false,
 		});
 	});
 

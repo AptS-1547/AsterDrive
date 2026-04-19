@@ -772,7 +772,7 @@ export function TeamManageDialog({
 				onContentScroll={handleContentScroll}
 				onOpenChange={handleDialogOpenChange}
 				onOpenWorkspace={() =>
-					navigate(`/teams/${teamId}`, { viewTransition: true })
+					navigate(`/teams/${teamId}`, { viewTransition: false })
 				}
 				onPageBack={() => onOpenChange(false)}
 				onSidebarScroll={handleSidebarScroll}
