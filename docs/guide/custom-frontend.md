@@ -9,19 +9,19 @@ AsterDrive 的前端是可替换的：官方前端嵌进了二进制里，但你
 
 AsterDrive 所有前端路由（首页、`/assets/*`、`/static/*`、`/pdfjs/*`、`/favicon.svg`、PWA 文件、SPA fallback）都走同一个加载顺序：
 
-1. **先看当前工作目录下的 `./frontend-panel/dist/`** —— 有就用这个
+1. **先看当前工作目录下的 `./frontend-override/`** —— 有就用这个
 2. **找不到再回退到嵌入的官方前端**（编译进二进制）
 
-也就是说，你只需要把自己的前端产物放进 `./frontend-panel/dist/`，AsterDrive 就会**优先**从这里加载所有资源，不需要重新编译二进制。
+也就是说，你只需要把自己的前端产物放进 `./frontend-override/`，AsterDrive 就会**优先**从这里加载所有资源，不需要重新编译二进制。
 
 ::: warning 相对当前工作目录
-`./frontend-panel/dist/` 是**相对启动时的工作目录**解析的，不是相对二进制位置：
+`./frontend-override/` 是**相对启动时的工作目录**解析的，不是相对二进制位置：
 
-- 本地直接运行 —— 项目根目录下的 `frontend-panel/dist/`
-- systemd —— `WorkingDirectory/frontend-panel/dist/`
-- Docker —— 容器里的 `/frontend-panel/dist/`（默认工作目录是 `/`，需要手动挂载到这里）
+- 本地直接运行 —— 项目根目录下的 `frontend-override/`
+- systemd —— `WorkingDirectory/frontend-override/`
+- Docker —— 容器里的 `/frontend-override/`（默认工作目录是 `/`，需要手动挂载到这里）
 
-Docker 里最省事的做法是挂卷：`-v /path/to/my-dist:/frontend-panel/dist:ro`
+Docker 里最省事的做法是挂卷：`-v /path/to/my-dist:/frontend-override:ro`
 :::
 
 覆盖是**按文件级**的：你自己的 `dist/` 里有什么就用什么，没有的继续回退到官方嵌入版。所以你只替换 `index.html` + 部分 assets，其他继续用官方的，也行。
@@ -157,8 +157,8 @@ AsterDrive 对所有前端响应强制附加了一份基线 `Content-Security-Po
 
 ## 开发建议
 
-- **本地开发** —— 直接跑 vite dev server，反代 `/api` 到 AsterDrive；不需要动 `./frontend-panel/dist/`
-- **上线替换** —— 只替换 `./frontend-panel/dist/`，不要改二进制
+- **本地开发** —— 直接跑 vite dev server，反代 `/api` 到 AsterDrive；不需要动 `./frontend-override/`
+- **上线替换** —— 只替换 `./frontend-override/`，不要改二进制
 - **想和官方前端并存** —— 当前版本不支持 A/B 或多前端并存，只能二选一
 - **版本对齐** —— 二进制升级可能带新 API 或行为变更；你的自定义前端需要跟着测一轮
 
