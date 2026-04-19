@@ -251,6 +251,16 @@ describe("HeaderControls", () => {
 		expect(screen.getAllByRole("button", { name: /Home/i })).toHaveLength(2);
 	});
 
+	it("uses a stable class set for the account menu trigger", () => {
+		render(<HeaderControls showAdminEntry />);
+
+		const trigger = screen.getByRole("button", { name: "alice" });
+		expect(trigger.className).toContain("active:translate-y-0");
+		expect(trigger.className).toContain(
+			"transition-[background-color,border-color,color,box-shadow]",
+		);
+	});
+
 	it("prefers display_name when rendering the account trigger and menu card", () => {
 		mockState.auth.user.profile.display_name = "Alice Chen";
 
