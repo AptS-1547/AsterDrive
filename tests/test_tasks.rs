@@ -193,7 +193,7 @@ fn create_zip_bytes_with_tampered_declared_size(
 }
 
 async fn insert_processing_task(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     processing_started_at: chrono::DateTime<chrono::Utc>,
     last_heartbeat_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> i64 {
@@ -234,7 +234,7 @@ async fn insert_processing_task(
 }
 
 async fn insert_pending_dispatch_task(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     max_attempts: i32,
 ) -> background_task::Model {
     let now = Utc::now();

@@ -6,7 +6,7 @@ use sea_orm::Set;
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 use super::types::{
@@ -69,7 +69,7 @@ impl RuntimeTaskRunOutcome {
 }
 
 pub async fn record_runtime_task_run(
-    state: &AppState,
+    state: &PrimaryAppState,
     task_name: &str,
     started_at: DateTime<Utc>,
     finished_at: DateTime<Utc>,

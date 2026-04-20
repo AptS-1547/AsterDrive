@@ -5,7 +5,7 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::task_service;
 use actix_web::{HttpResponse, web};
 
@@ -23,7 +23,7 @@ use actix_web::{HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn list_tasks(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let page = task_service::list_tasks_paginated_for_admin(

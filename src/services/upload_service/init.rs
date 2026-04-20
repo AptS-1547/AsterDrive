@@ -12,7 +12,7 @@ mod s3;
 use chrono::{Duration, Utc};
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::scope::{personal_scope, team_scope};
 use crate::services::upload_service::shared::generate_upload_id;
@@ -26,7 +26,7 @@ use self::context::{
 };
 
 async fn init_upload_for_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     filename: &str,
     total_size: i64,
@@ -66,7 +66,7 @@ async fn init_upload_for_scope(
 }
 
 async fn init_chunked_upload_session(
-    state: &AppState,
+    state: &PrimaryAppState,
     ctx: &InitUploadContext,
 ) -> Result<InitUploadResponse> {
     // 本地 / 其他非 direct 场景：服务端维护分片目录与 upload session，
@@ -114,7 +114,7 @@ async fn init_chunked_upload_session(
     ))
 }
 
-async fn prepare_chunked_upload_temp_dir(state: &AppState, upload_id: &str) -> Result<()> {
+async fn prepare_chunked_upload_temp_dir(state: &PrimaryAppState, upload_id: &str) -> Result<()> {
     let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
     tokio::fs::create_dir_all(&temp_dir)
         .await
@@ -124,7 +124,7 @@ async fn prepare_chunked_upload_temp_dir(state: &AppState, upload_id: &str) -> R
 
 /// 上传协商：服务端根据存储策略决定上传模式
 pub async fn init_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     filename: &str,
     total_size: i64,
@@ -144,7 +144,7 @@ pub async fn init_upload(
 
 /// 团队空间上传协商：规则和个人空间一致，但路径归属与配额都落在团队 scope。
 pub async fn init_upload_for_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
     filename: &str,

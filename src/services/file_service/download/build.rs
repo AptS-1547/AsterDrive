@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::file_service::{
     DownloadDisposition, ensure_personal_file_scope, get_info_in_scope, if_none_match_matches,
     inline_sandbox_csp, requires_inline_sandbox,
@@ -17,7 +17,7 @@ use super::types::{DownloadOutcome, StreamedFile};
 const PRESIGNED_DOWNLOAD_TTL_SECS: u64 = 5 * 60;
 
 pub(crate) async fn download_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     id: i64,
     if_none_match: Option<&str>,
@@ -35,7 +35,7 @@ pub(crate) async fn download_in_scope(
 
 /// 下载文件（流式，不全量缓冲）
 pub async fn download(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     user_id: i64,
     if_none_match: Option<&str>,
@@ -51,7 +51,7 @@ pub async fn download(
 
 /// 下载文件（无用户校验，用于分享链接，流式）
 pub async fn download_raw(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     if_none_match: Option<&str>,
 ) -> Result<DownloadOutcome> {
@@ -62,7 +62,7 @@ pub async fn download_raw(
 }
 
 async fn download_raw_unchecked_with_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     file: file::Model,
     if_none_match: Option<&str>,
 ) -> Result<DownloadOutcome> {
@@ -72,7 +72,7 @@ async fn download_raw_unchecked_with_file(
 
 /// 构建流式下载结果（Attachment disposition）
 pub async fn build_stream_outcome(
-    state: &AppState,
+    state: &PrimaryAppState,
     file: &file::Model,
     blob: &file_blob::Model,
     if_none_match: Option<&str>,
@@ -88,7 +88,7 @@ pub async fn build_stream_outcome(
 }
 
 async fn build_download_outcome(
-    state: &AppState,
+    state: &PrimaryAppState,
     file: &file::Model,
     blob: &file_blob::Model,
     if_none_match: Option<&str>,
@@ -104,7 +104,7 @@ async fn build_download_outcome(
 }
 
 pub async fn build_download_outcome_with_disposition(
-    state: &AppState,
+    state: &PrimaryAppState,
     file: &file::Model,
     blob: &file_blob::Model,
     disposition: DownloadDisposition,
@@ -141,7 +141,7 @@ pub async fn build_download_outcome_with_disposition(
 }
 
 async fn build_presigned_redirect_outcome(
-    state: &AppState,
+    state: &PrimaryAppState,
     policy: &crate::entities::storage_policy::Model,
     file: &file::Model,
     blob: &file_blob::Model,
@@ -180,7 +180,7 @@ async fn build_presigned_redirect_outcome(
 }
 
 pub async fn build_stream_outcome_with_disposition(
-    state: &AppState,
+    state: &PrimaryAppState,
     file: &file::Model,
     blob: &file_blob::Model,
     disposition: DownloadDisposition,

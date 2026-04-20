@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::entities::background_task;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     batch_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -30,7 +30,7 @@ use super::selection::{
 };
 
 pub(crate) async fn create_archive_compress_task_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     params: CreateArchiveCompressTaskParams,
 ) -> Result<super::super::TaskInfo> {
@@ -70,7 +70,7 @@ pub(crate) async fn create_archive_compress_task_in_scope(
 }
 
 pub(super) async fn process_archive_compress_task(
-    state: &AppState,
+    state: &PrimaryAppState,
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {

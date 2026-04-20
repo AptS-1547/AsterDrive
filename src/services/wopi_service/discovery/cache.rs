@@ -6,7 +6,7 @@ use moka::future::Cache;
 
 use crate::config::wopi;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 
 use super::parser::parse_discovery_xml;
 use super::types::{CachedWopiDiscovery, WopiDiscovery};
@@ -21,7 +21,7 @@ static DISCOVERY_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .expect("wopi discovery client should initialize")
 });
 
-pub(super) async fn load_discovery(state: &AppState, discovery_url: &str) -> Result<WopiDiscovery> {
+pub(super) async fn load_discovery(state: &PrimaryAppState, discovery_url: &str) -> Result<WopiDiscovery> {
     let cached = DISCOVERY_CACHE.get(discovery_url).await;
     if let Some(cached) = cached.as_ref()
         && cached.cached_at + discovery_cache_ttl(&state.runtime_config) > Utc::now()

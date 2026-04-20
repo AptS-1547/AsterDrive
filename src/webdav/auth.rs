@@ -4,7 +4,7 @@ use base64::Engine;
 
 use crate::db::repository::{user_repo, webdav_account_repo};
 use crate::errors::{AsterError, MapAsterErr};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::utils::hash;
 
 /// WebDAV 认证结果
@@ -21,7 +21,7 @@ pub struct WebdavAuthResult {
 /// 1. `Authorization: Basic base64(username:password)` — 查 webdav_accounts 表
 pub async fn authenticate_webdav(
     headers: &actix_web::http::header::HeaderMap,
-    state: &AppState,
+    state: &PrimaryAppState,
 ) -> Result<WebdavAuthResult, AsterError> {
     let auth_header = headers
         .get(actix_web::http::header::AUTHORIZATION)
@@ -43,7 +43,7 @@ pub async fn authenticate_webdav(
 /// 返回 (user_id, root_folder_id)
 async fn authenticate_basic(
     encoded: &str,
-    state: &AppState,
+    state: &PrimaryAppState,
 ) -> Result<(i64, Option<i64>), AsterError> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded)
@@ -85,7 +85,7 @@ mod tests {
     use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
     use crate::entities::{user, webdav_account};
     use crate::errors::AsterError;
-    use crate::runtime::AppState;
+    use crate::runtime::PrimaryAppState;
     use crate::services::mail_service;
     use crate::storage::{DriverRegistry, PolicySnapshot};
     use crate::types::{UserRole, UserStatus};
@@ -97,7 +97,7 @@ mod tests {
     use sea_orm::{ActiveModelTrait, Set};
     use std::sync::Arc;
 
-    async fn build_auth_test_state() -> AppState {
+    async fn build_auth_test_state() -> PrimaryAppState {
         let db = crate::db::connect(&DatabaseConfig {
             url: "sqlite::memory:".to_string(),
             pool_size: 1,
@@ -124,7 +124,7 @@ mod tests {
                 crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
             );
 
-        AppState {
+        PrimaryAppState {
             db,
             driver_registry: Arc::new(DriverRegistry::new()),
             runtime_config: runtime_config.clone(),
@@ -137,7 +137,7 @@ mod tests {
         }
     }
 
-    async fn seed_webdav_account(state: &AppState) -> (String, String, i64, Option<i64>) {
+    async fn seed_webdav_account(state: &PrimaryAppState) -> (String, String, i64, Option<i64>) {
         let now = Utc::now();
         let user = user::ActiveModel {
             username: Set("webdav-auth-user".to_string()),

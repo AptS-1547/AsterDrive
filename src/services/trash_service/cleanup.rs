@@ -7,14 +7,14 @@ use chrono::{Duration, Utc};
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{file_service, workspace_storage_service::WorkspaceStorageScope};
 
 use super::DEFAULT_RETENTION_DAYS;
 use super::common::recursive_purge_folder_in_scope;
 
 /// 自动清理过期回收站条目（后台任务调用）
-pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
+pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u32> {
     let retention_days = state
         .runtime_config
         .get_i64("trash_retention_days")

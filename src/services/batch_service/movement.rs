@@ -6,7 +6,7 @@ use chrono::Utc;
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     storage_change_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -16,7 +16,7 @@ use super::shared::{load_folder_ancestor_ids_in_scope, load_target_folder_in_sco
 use super::{BatchResult, NormalizedSelection, load_normalized_selection_in_scope};
 
 pub(crate) async fn batch_move_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -219,7 +219,7 @@ pub(crate) async fn batch_move_in_scope(
 
 /// 批量移动（target_folder_id = None 表示移到根目录）
 pub async fn batch_move(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -237,7 +237,7 @@ pub async fn batch_move(
 
 /// 团队空间批量移动（target_folder_id = None 表示移到团队根目录）
 pub async fn batch_move_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
     file_ids: &[i64],

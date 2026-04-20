@@ -1,6 +1,6 @@
 //! 运行时子模块：`startup`。
 
-use super::{AppState, FollowerAppState};
+use super::{FollowerAppState, PrimaryAppState};
 use crate::config;
 use crate::config::auth_runtime::AUTH_COOKIE_SECURE_KEY;
 use crate::config::node_mode::NodeRuntimeMode;
@@ -11,8 +11,8 @@ use migration::{Migrator, MigratorTrait};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::sync::Arc;
 
-pub struct PreparedRuntime {
-    pub state: AppState,
+pub struct PreparedPrimaryRuntime {
+    pub state: PrimaryAppState,
     pub share_download_rollback_worker: crate::services::share_service::ShareDownloadRollbackWorker,
 }
 
@@ -31,7 +31,7 @@ struct CommonRuntimeParts {
 const OBSOLETE_NODE_RUNTIME_MODE_KEY: &str = "node_runtime_mode";
 
 /// 准备主节点运行时（配置和日志应在此之前初始化）
-pub async fn prepare_primary() -> Result<PreparedRuntime> {
+pub async fn prepare_primary() -> Result<PreparedPrimaryRuntime> {
     let common = prepare_common(NodeRuntimeMode::Primary).await?;
 
     let runtime_config = Arc::new(crate::config::RuntimeConfig::new());
@@ -55,8 +55,8 @@ pub async fn prepare_primary() -> Result<PreparedRuntime> {
         common.cfg.server.port
     );
 
-    Ok(PreparedRuntime {
-        state: AppState {
+    Ok(PreparedPrimaryRuntime {
+        state: PrimaryAppState {
             db: common.database,
             driver_registry: common.driver_registry,
             runtime_config,

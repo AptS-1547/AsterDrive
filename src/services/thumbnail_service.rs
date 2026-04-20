@@ -10,7 +10,7 @@ use crate::config::operations;
 use crate::db::repository::file_repo;
 use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::storage::StorageDriver;
 
 const THUMB_MAX_DIM: u32 = 200;
@@ -77,7 +77,7 @@ pub(crate) fn is_thumbnail_path(path: &str) -> bool {
 
 /// 尝试获取已有缩略图，如果不存在则返回 None。
 pub async fn load_thumbnail_if_exists(
-    state: &AppState,
+    state: &PrimaryAppState,
     blob: &file_blob::Model,
 ) -> Result<Option<Vec<u8>>> {
     ensure_source_size_supported(
@@ -117,7 +117,7 @@ pub async fn load_thumbnail_if_exists(
 }
 
 /// 获取或同步生成缩略图（仅用于公开分享等无法等待的场景）
-pub async fn get_or_generate(state: &AppState, blob: &file_blob::Model) -> Result<Vec<u8>> {
+pub async fn get_or_generate(state: &PrimaryAppState, blob: &file_blob::Model) -> Result<Vec<u8>> {
     if let Some(data) = load_thumbnail_if_exists(state, blob).await? {
         return Ok(data);
     }
@@ -158,7 +158,7 @@ pub async fn get_or_generate(state: &AppState, blob: &file_blob::Model) -> Resul
 /// 如果缩略图已存在，会直接复用并返回 `(path, true)`。
 /// 如果本次成功生成并持久化，会返回 `(path, false)`。
 pub async fn generate_and_store(
-    state: &AppState,
+    state: &PrimaryAppState,
     blob: &file_blob::Model,
 ) -> Result<(String, bool)> {
     ensure_source_size_supported(
@@ -188,7 +188,7 @@ pub async fn generate_and_store(
 }
 
 /// 删除缩略图（blob 物理删除时调用）
-pub async fn delete_thumbnail(state: &AppState, blob: &file_blob::Model) -> Result<()> {
+pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) -> Result<()> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
 
@@ -249,7 +249,7 @@ fn encode_webp(img: &image::DynamicImage) -> Result<Vec<u8>> {
 }
 
 fn thumbnail_driver(
-    state: &AppState,
+    state: &PrimaryAppState,
     blob: &file_blob::Model,
 ) -> Result<std::sync::Arc<dyn StorageDriver>> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;

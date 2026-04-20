@@ -9,7 +9,7 @@ mod tokens;
 mod validation;
 
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext, AuditRequestInfo};
 use sea_orm::{ActiveValue, Set};
 use serde::{Deserialize, Serialize};
@@ -187,7 +187,7 @@ pub fn is_email_verified(user: &user::Model) -> bool {
 // 审计包装收敛在聚合层，避免 registration/password/contact_verification 这些
 // 纯业务子模块依赖 route 级副作用。
 pub async fn setup_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     username: &str,
     email: &str,
     password: &str,
@@ -209,7 +209,7 @@ pub async fn setup_with_audit(
 }
 
 pub async fn register_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     username: &str,
     email: &str,
     password: &str,
@@ -231,7 +231,7 @@ pub async fn register_with_audit(
 }
 
 pub async fn resend_register_activation_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     identifier: &str,
     request_info: &AuditRequestInfo,
 ) -> Result<Option<UserAuditInfo>> {
@@ -253,7 +253,7 @@ pub async fn resend_register_activation_with_audit(
 }
 
 pub async fn confirm_contact_verification_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     request_info: &AuditRequestInfo,
 ) -> Result<ContactVerificationConfirmResult> {
@@ -280,7 +280,7 @@ pub async fn confirm_contact_verification_with_audit(
 }
 
 pub async fn request_password_reset_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     email: &str,
     request_info: &AuditRequestInfo,
 ) -> Result<PasswordResetRequestResult> {
@@ -302,7 +302,7 @@ pub async fn request_password_reset_with_audit(
 }
 
 pub async fn confirm_password_reset_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     new_password: &str,
     request_info: &AuditRequestInfo,
@@ -323,7 +323,7 @@ pub async fn confirm_password_reset_with_audit(
 }
 
 pub async fn login_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     identifier: &str,
     password: &str,
     request_info: &AuditRequestInfo,
@@ -351,7 +351,7 @@ pub async fn login_with_audit(
 }
 
 pub async fn log_logout_for_token(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     request_info: &AuditRequestInfo,
 ) -> bool {
@@ -374,7 +374,7 @@ pub async fn log_logout_for_token(
 }
 
 pub async fn change_password_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     current_password: &str,
     new_password: &str,
@@ -395,7 +395,7 @@ pub async fn change_password_with_audit(
 }
 
 pub async fn request_email_change_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     new_email: &str,
     audit_ctx: &AuditContext,
@@ -415,7 +415,7 @@ pub async fn request_email_change_with_audit(
 }
 
 pub async fn resend_email_change_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     audit_ctx: &AuditContext,
 ) -> Result<Option<UserAuditInfo>> {
@@ -436,7 +436,7 @@ pub async fn resend_email_change_with_audit(
 }
 
 pub async fn revoke_user_sessions_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     audit_ctx: &AuditContext,
 ) -> Result<UserAuditInfo> {
@@ -455,7 +455,7 @@ pub async fn revoke_user_sessions_with_audit(
 }
 
 pub async fn set_password_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     new_password: &str,
     audit_ctx: &AuditContext,

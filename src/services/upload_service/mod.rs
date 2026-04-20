@@ -14,7 +14,7 @@ mod scope;
 mod shared;
 
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_models::FileInfo;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
@@ -36,7 +36,7 @@ pub(crate) struct UploadInScopeParams<'a> {
 
 // 审计包装放在聚合层，避免 init/chunk/complete 这些核心流程混入 route 级副作用。
 pub(crate) async fn upload_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     payload: &mut actix_multipart::Multipart,
     params: UploadInScopeParams<'_>,
     audit_ctx: &AuditContext,

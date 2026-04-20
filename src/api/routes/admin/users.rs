@@ -9,7 +9,7 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service,
     auth_service::{self, Claims},
@@ -32,7 +32,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn create_user(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     body: web::Json<CreateUserReq>,
@@ -59,7 +59,7 @@ pub async fn create_user(
     security(("bearer" = [])),
 )]
 pub async fn list_users(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     page: web::Query<LimitOffsetQuery>,
     query: web::Query<AdminUserListQuery>,
 ) -> Result<HttpResponse> {
@@ -89,7 +89,7 @@ pub async fn list_users(
     ),
     security(("bearer" = [])),
 )]
-pub async fn get_user(state: web::Data<AppState>, path: web::Path<i64>) -> Result<HttpResponse> {
+pub async fn get_user(state: web::Data<PrimaryAppState>, path: web::Path<i64>) -> Result<HttpResponse> {
     let user = user_service::get(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
@@ -109,7 +109,7 @@ pub async fn get_user(state: web::Data<AppState>, path: web::Path<i64>) -> Resul
     security(("bearer" = [])),
 )]
 pub async fn revoke_user_sessions(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -136,7 +136,7 @@ pub async fn revoke_user_sessions(
     security(("bearer" = [])),
 )]
 pub async fn update_user(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -179,7 +179,7 @@ pub async fn update_user(
     security(("bearer" = [])),
 )]
 pub async fn reset_user_password(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -207,7 +207,7 @@ pub async fn reset_user_password(
     security(("bearer" = [])),
 )]
 pub async fn force_delete_user(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -235,7 +235,7 @@ pub async fn force_delete_user(
     security(("bearer" = [])),
 )]
 pub async fn get_user_avatar(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<(i64, u32)>,
 ) -> Result<HttpResponse> {
     let (user_id, size) = path.into_inner();

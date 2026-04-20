@@ -7,7 +7,7 @@ use crate::config::auth_runtime::RuntimeContactVerificationPolicy;
 use crate::db::repository::{contact_verification_token_repo, user_repo};
 use crate::entities::{contact_verification_token, user};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::mail_service;
 use crate::types::{UserRole, UserStatus, VerificationChannel, VerificationPurpose};
 use crate::utils::hash;
@@ -126,7 +126,7 @@ pub(super) struct CreateUserWithRoleInput<'a> {
 
 pub(super) async fn create_user_with_role<C: ConnectionTrait>(
     db: &C,
-    state: &AppState,
+    state: &PrimaryAppState,
     input: CreateUserWithRoleInput<'_>,
 ) -> Result<user::Model> {
     let CreateUserWithRoleInput {
@@ -203,7 +203,7 @@ pub(super) async fn create_user_with_role<C: ConnectionTrait>(
 }
 
 pub(super) async fn create_first_admin(
-    state: &AppState,
+    state: &PrimaryAppState,
     username: &str,
     email: &str,
     password: &str,
@@ -267,7 +267,7 @@ pub(super) async fn issue_contact_verification_token<C: ConnectionTrait>(
 }
 
 pub(super) async fn ensure_resend_allowed<C: ConnectionTrait>(
-    state: &AppState,
+    state: &PrimaryAppState,
     db: &C,
     user_id: i64,
     purpose: VerificationPurpose,
@@ -284,7 +284,7 @@ pub(super) async fn ensure_resend_allowed<C: ConnectionTrait>(
 }
 
 pub(super) async fn resend_allowed<C: ConnectionTrait>(
-    state: &AppState,
+    state: &PrimaryAppState,
     db: &C,
     user_id: i64,
     purpose: VerificationPurpose,
@@ -310,7 +310,7 @@ pub(super) async fn resend_allowed<C: ConnectionTrait>(
 }
 
 pub(super) async fn password_reset_request_allowed<C: ConnectionTrait>(
-    state: &AppState,
+    state: &PrimaryAppState,
     db: &C,
     user_id: i64,
 ) -> Result<bool> {

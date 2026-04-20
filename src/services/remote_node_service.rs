@@ -4,7 +4,7 @@ use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{managed_follower_repo, policy_repo};
 use crate::entities::managed_follower;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::storage::remote_protocol::{
     RemoteStorageCapabilities, RemoteStorageClient, normalize_remote_base_url,
 };
@@ -80,7 +80,7 @@ pub struct RemoteNodeHealthTestStats {
 }
 
 pub async fn list_paginated(
-    state: &AppState,
+    state: &PrimaryAppState,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<RemoteNodeInfo>> {
@@ -92,13 +92,13 @@ pub async fn list_paginated(
     .await
 }
 
-pub async fn get(state: &AppState, id: i64) -> Result<RemoteNodeInfo> {
+pub async fn get(state: &PrimaryAppState, id: i64) -> Result<RemoteNodeInfo> {
     managed_follower_repo::find_by_id(&state.db, id)
         .await
         .map(Into::into)
 }
 
-pub async fn create(state: &AppState, input: CreateRemoteNodeInput) -> Result<RemoteNodeInfo> {
+pub async fn create(state: &PrimaryAppState, input: CreateRemoteNodeInput) -> Result<RemoteNodeInfo> {
     let normalized = normalize_create_input(input)?;
     let (access_key, secret_key) = generate_managed_credentials();
     let now = Utc::now();
@@ -125,7 +125,7 @@ pub async fn create(state: &AppState, input: CreateRemoteNodeInput) -> Result<Re
 }
 
 pub async fn update(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     input: UpdateRemoteNodeInput,
 ) -> Result<RemoteNodeInfo> {
@@ -155,7 +155,7 @@ pub async fn update(
     Ok(updated.into())
 }
 
-pub async fn delete(state: &AppState, id: i64) -> Result<()> {
+pub async fn delete(state: &PrimaryAppState, id: i64) -> Result<()> {
     let policy_refs = policy_repo::count_by_remote_node_id(&state.db, id).await?;
     if policy_refs > 0 {
         return Err(AsterError::validation_error(format!(
@@ -167,7 +167,7 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
     Ok(())
 }
 
-pub async fn test_connection(state: &AppState, id: i64) -> Result<RemoteNodeInfo> {
+pub async fn test_connection(state: &PrimaryAppState, id: i64) -> Result<RemoteNodeInfo> {
     let node = managed_follower_repo::find_by_id(&state.db, id).await?;
     let updated = probe_and_persist_node(state, &node).await?;
     refresh_registry(state).await?;
@@ -182,7 +182,7 @@ pub async fn test_connection_params(
         .map_err(map_connection_test_error)
 }
 
-pub async fn run_health_tests(state: &AppState) -> Result<RemoteNodeHealthTestStats> {
+pub async fn run_health_tests(state: &PrimaryAppState) -> Result<RemoteNodeHealthTestStats> {
     let nodes = managed_follower_repo::find_all(&state.db).await?;
     let mut stats = RemoteNodeHealthTestStats::default();
 
@@ -222,7 +222,7 @@ async fn probe_connection(input: &TestRemoteNodeInput) -> Result<RemoteStorageCa
 }
 
 async fn probe_and_persist_node(
-    state: &AppState,
+    state: &PrimaryAppState,
     node: &managed_follower::Model,
 ) -> Result<managed_follower::Model> {
     let capabilities = probe_connection(&TestRemoteNodeInput {
@@ -313,7 +313,7 @@ fn normalize_namespace(value: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-async fn refresh_registry(state: &AppState) -> Result<()> {
+async fn refresh_registry(state: &PrimaryAppState) -> Result<()> {
     state
         .driver_registry
         .reload_managed_followers(&state.db)

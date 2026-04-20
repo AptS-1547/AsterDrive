@@ -11,7 +11,7 @@ use chrono::Utc;
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     batch_service, folder_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -34,7 +34,7 @@ pub(super) struct ResolvedArchiveDownload {
 }
 
 pub(crate) async fn stream_archive_download_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     params: CreateArchiveTaskParams,
 ) -> Result<HttpResponse> {
@@ -95,7 +95,7 @@ pub(crate) async fn stream_archive_download_in_scope(
 }
 
 pub(crate) async fn prepare_archive_download_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     params: &CreateArchiveTaskParams,
 ) -> Result<PreparedArchiveDownload> {
@@ -108,7 +108,7 @@ pub(crate) async fn prepare_archive_download_in_scope(
 }
 
 pub(super) async fn resolve_archive_download_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     params: &CreateArchiveTaskParams,
 ) -> Result<ResolvedArchiveDownload> {
@@ -131,7 +131,7 @@ pub(super) async fn resolve_archive_download_in_scope(
 }
 
 async fn ensure_archive_selection_request_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -190,7 +190,7 @@ pub(super) fn ensure_archive_selection_active(
 }
 
 pub(super) async fn collect_archive_entries_from_selection_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     selection: &batch_service::NormalizedSelection,
 ) -> Result<(Vec<ArchiveEntry>, i64)> {
@@ -272,7 +272,7 @@ pub(super) async fn collect_archive_entries_from_selection_in_scope(
 }
 
 pub(super) async fn resolve_archive_compress_target_folder_id(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     selection: &batch_service::NormalizedSelection,
     requested_target_folder_id: Option<i64>,

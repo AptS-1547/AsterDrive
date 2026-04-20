@@ -4,7 +4,7 @@ use crate::api::dto::files::OpenWopiRequest;
 use crate::api::response::ApiResponse;
 use crate::api::routes::team_scope;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::AuditContext, auth_service::Claims, direct_link_service, file_service,
     preview_link_service, thumbnail_service, wopi_service, workspace_models::FileInfo,
@@ -26,7 +26,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn get_file(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -54,7 +54,7 @@ pub async fn get_file(
     security(("bearer" = [])),
 )]
 pub async fn get_direct_link(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -82,7 +82,7 @@ pub async fn get_direct_link(
     security(("bearer" = [])),
 )]
 pub async fn get_preview_link(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -111,7 +111,7 @@ pub async fn get_preview_link(
     security(("bearer" = [])),
 )]
 pub async fn open_wopi(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     body: web::Json<OpenWopiRequest>,
@@ -141,7 +141,7 @@ pub async fn open_wopi(
     security(("bearer" = [])),
 )]
 pub async fn download(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -176,7 +176,7 @@ pub async fn download(
     security(("bearer" = [])),
 )]
 pub async fn get_thumbnail(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -210,7 +210,7 @@ pub async fn get_thumbnail(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_get_file(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
@@ -236,7 +236,7 @@ pub(crate) async fn team_get_file(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_get_direct_link(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
@@ -262,7 +262,7 @@ pub(crate) async fn team_get_direct_link(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_get_preview_link(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
@@ -289,7 +289,7 @@ pub(crate) async fn team_get_preview_link(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_open_wopi(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
     body: web::Json<OpenWopiRequest>,
@@ -326,7 +326,7 @@ pub(crate) async fn team_open_wopi(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_get_thumbnail(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -353,7 +353,7 @@ pub(crate) async fn team_get_thumbnail(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_download(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -370,7 +370,7 @@ pub(crate) async fn team_download(
 }
 
 pub(crate) async fn get_file_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<HttpResponse> {
@@ -379,7 +379,7 @@ pub(crate) async fn get_file_response(
 }
 
 pub(crate) async fn direct_link_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<HttpResponse> {
@@ -388,7 +388,7 @@ pub(crate) async fn direct_link_response(
 }
 
 pub(crate) async fn preview_link_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<HttpResponse> {
@@ -397,7 +397,7 @@ pub(crate) async fn preview_link_response(
 }
 
 pub(crate) async fn open_wopi_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     app_key: &str,
@@ -408,7 +408,7 @@ pub(crate) async fn open_wopi_response(
 }
 
 pub(crate) async fn download_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -426,7 +426,7 @@ pub(crate) async fn download_response(
 }
 
 pub(crate) async fn get_thumbnail_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,

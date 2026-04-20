@@ -16,11 +16,11 @@ fn new_test_upload_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-async fn reload_policy_snapshot(state: &aster_drive::runtime::AppState) {
+async fn reload_policy_snapshot(state: &aster_drive::runtime::PrimaryAppState) {
     state.policy_snapshot.reload(&state.db).await.unwrap();
 }
 
-async fn set_default_local_content_dedup(state: &aster_drive::runtime::AppState, enabled: bool) {
+async fn set_default_local_content_dedup(state: &aster_drive::runtime::PrimaryAppState, enabled: bool) {
     use aster_drive::db::repository::policy_repo;
     use sea_orm::{ActiveModelTrait, Set};
 
@@ -42,7 +42,7 @@ async fn set_default_local_content_dedup(state: &aster_drive::runtime::AppState,
 }
 
 async fn upload_same_content_direct_and_chunked(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     user_id: i64,
 ) -> (
     aster_drive::entities::file_blob::Model,
@@ -162,7 +162,7 @@ impl<'a> UploadSessionSpec<'a> {
 }
 
 async fn create_upload_session(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     user_id: i64,
     spec: UploadSessionSpec<'_>,
 ) {
@@ -311,7 +311,7 @@ fn snapshot_temp_roots(
 }
 
 async fn create_s3_default_policy(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     user_id: i64,
     name: &str,
     endpoint: &str,
@@ -400,7 +400,7 @@ fn build_multipart_payload(filename: &str, data: &[u8]) -> (String, Vec<u8>) {
 }
 
 async fn store_temp_file_in_personal_space(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     user_id: i64,
     filename: &str,
     data: &[u8],

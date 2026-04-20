@@ -6,7 +6,7 @@ use crate::api::middleware::rate_limit;
 use crate::api::request_auth::access_token;
 use crate::config::RateLimitConfig;
 use crate::config::site_url;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{auth_service, storage_change_service};
 use actix_governor::Governor;
 use actix_web::http::header;
@@ -207,7 +207,7 @@ impl ContactVerificationRedirectStatus {
     }
 }
 
-async fn request_has_active_access_session(state: &AppState, req: &HttpRequest) -> bool {
+async fn request_has_active_access_session(state: &PrimaryAppState, req: &HttpRequest) -> bool {
     let Some(token) = access_token(req) else {
         return false;
     };
@@ -218,7 +218,7 @@ async fn request_has_active_access_session(state: &AppState, req: &HttpRequest) 
 }
 
 fn contact_verification_redirect_url(
-    state: &AppState,
+    state: &PrimaryAppState,
     path: &str,
     status: ContactVerificationRedirectStatus,
     email: Option<&str>,
@@ -234,7 +234,7 @@ fn contact_verification_redirect_url(
 }
 
 fn contact_verification_redirect_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     path: &str,
     status: ContactVerificationRedirectStatus,
     email: Option<&str>,

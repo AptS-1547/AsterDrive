@@ -3,7 +3,7 @@
 use crate::db::repository::{file_repo, share_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{file_service, folder_service};
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
@@ -245,7 +245,7 @@ fn set_share_download_rollback_pending_metric(_pending: u64) {
 }
 
 pub async fn download_shared_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     if_none_match: Option<&str>,
 ) -> Result<file_service::DownloadOutcome> {
@@ -262,7 +262,7 @@ pub async fn download_shared_file(
 }
 
 pub async fn download_shared_folder_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     file_id: i64,
     if_none_match: Option<&str>,
@@ -279,7 +279,7 @@ pub async fn download_shared_folder_file(
 }
 
 pub async fn list_shared_folder(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     params: &folder_service::FolderListParams,
 ) -> Result<folder_service::FolderContents> {
@@ -308,7 +308,7 @@ pub async fn list_shared_folder(
 }
 
 pub async fn get_shared_thumbnail(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
 ) -> Result<file_service::ThumbnailResult> {
     let share = load_valid_share(state, token).await?;
@@ -334,7 +334,7 @@ pub async fn get_shared_thumbnail(
 }
 
 pub async fn get_shared_folder_file_thumbnail(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     file_id: i64,
 ) -> Result<file_service::ThumbnailResult> {
@@ -360,7 +360,7 @@ pub async fn get_shared_folder_file_thumbnail(
 }
 
 pub(crate) async fn load_preview_shared_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
 ) -> Result<(share::Model, crate::entities::file::Model)> {
     let share = load_valid_share(state, token).await?;
@@ -369,7 +369,7 @@ pub(crate) async fn load_preview_shared_file(
 }
 
 pub(crate) async fn load_preview_shared_folder_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     file_id: i64,
 ) -> Result<(share::Model, crate::entities::file::Model)> {
@@ -377,7 +377,7 @@ pub(crate) async fn load_preview_shared_folder_file(
 }
 
 pub async fn list_shared_subfolder(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     folder_id: i64,
     params: &folder_service::FolderListParams,
@@ -407,7 +407,7 @@ pub async fn list_shared_subfolder(
 }
 
 async fn download_share_resource_with_disposition(
-    state: &AppState,
+    state: &PrimaryAppState,
     share: &share::Model,
     file: &crate::entities::file::Model,
     disposition: file_service::DownloadDisposition,

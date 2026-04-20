@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 
 use super::{
     DEFAULT_TABLE_PREVIEW_DELIMITER, PREVIEW_APPS_CONFIG_KEY, PREVIEW_APPS_VERSION,
@@ -22,7 +22,7 @@ pub fn normalize_public_preview_apps_config_value(value: &str) -> Result<String>
     })
 }
 
-pub fn get_public_preview_apps(state: &AppState) -> PublicPreviewAppsConfig {
+pub fn get_public_preview_apps(state: &PrimaryAppState) -> PublicPreviewAppsConfig {
     let Some(raw) = state.runtime_config.get(PREVIEW_APPS_CONFIG_KEY) else {
         return default_public_preview_apps();
     };

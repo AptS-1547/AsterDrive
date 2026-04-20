@@ -2,7 +2,7 @@
 
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::admin_service;
 use actix_web::{HttpResponse, web};
 
@@ -20,7 +20,7 @@ use actix_web::{HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn get_overview(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     query: web::Query<admin_service::AdminOverviewQuery>,
 ) -> Result<HttpResponse> {
     let overview = admin_service::get_overview(

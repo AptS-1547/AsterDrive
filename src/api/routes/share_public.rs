@@ -9,7 +9,7 @@ use crate::api::routes::files;
 use crate::config::RateLimitConfig;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     direct_link_service, file_service, preview_link_service, profile_service, share_service,
 };
@@ -116,7 +116,7 @@ pub fn direct_routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFa
     ),
 )]
 pub async fn get_share_info(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
     let info = share_service::get_share_info(&state, &path).await?;
@@ -137,7 +137,7 @@ pub async fn get_share_info(
     ),
 )]
 pub async fn verify_password(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
     body: web::Json<VerifyPasswordReq>,
 ) -> Result<HttpResponse> {
@@ -167,7 +167,7 @@ pub async fn verify_password(
     ),
 )]
 pub async fn create_preview_link(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
@@ -192,7 +192,7 @@ pub async fn create_preview_link(
     ),
 )]
 pub async fn download_shared(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
@@ -211,7 +211,7 @@ pub async fn download_shared(
 }
 
 pub async fn download_direct(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<(String, String)>,
     query: web::Query<DirectLinkQuery>,
     req: actix_web::HttpRequest,
@@ -231,7 +231,7 @@ pub async fn download_direct(
 }
 
 pub async fn download_preview(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<(String, String)>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
@@ -264,7 +264,7 @@ pub async fn download_preview(
     )
 )]
 pub async fn download_shared_folder_file(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<(String, i64)>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
@@ -300,7 +300,7 @@ pub async fn download_shared_folder_file(
     )
 )]
 pub async fn create_folder_file_preview_link(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<(String, i64)>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
@@ -326,7 +326,7 @@ pub async fn create_folder_file_preview_link(
     ),
 )]
 pub async fn list_shared_content(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
     query: web::Query<FolderListQuery>,
     req: actix_web::HttpRequest,
@@ -356,7 +356,7 @@ pub async fn list_shared_content(
     )
 )]
 pub async fn list_shared_subfolder_content(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<(String, i64)>,
     query: web::Query<FolderListQuery>,
     req: actix_web::HttpRequest,
@@ -386,7 +386,7 @@ pub async fn list_shared_subfolder_content(
     )
 )]
 pub async fn shared_avatar(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<(String, u32)>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
@@ -414,7 +414,7 @@ pub async fn shared_avatar(
     ),
 )]
 pub async fn shared_thumbnail(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
@@ -453,7 +453,7 @@ pub async fn shared_thumbnail(
     )
 )]
 pub async fn shared_folder_file_thumbnail(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<(String, i64)>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {

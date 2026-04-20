@@ -10,7 +10,7 @@ mod thumbnail;
 mod transfer;
 
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_models::FileInfo;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
@@ -51,7 +51,7 @@ pub(crate) use transfer::{
 pub use transfer::{batch_duplicate_file_records, copy_file, duplicate_file_record};
 
 pub(crate) async fn delete_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     audit_ctx: &AuditContext,
@@ -71,7 +71,7 @@ pub(crate) async fn delete_in_scope_with_audit(
 }
 
 pub(crate) async fn update_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     name: Option<String>,
@@ -98,7 +98,7 @@ pub(crate) async fn update_in_scope_with_audit(
 }
 
 pub(crate) async fn update_content_stream_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     payload: &mut actix_web::web::Payload,
@@ -123,7 +123,7 @@ pub(crate) async fn update_content_stream_in_scope_with_audit(
 }
 
 pub(crate) async fn copy_file_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     target_folder_id: Option<i64>,
@@ -144,7 +144,7 @@ pub(crate) async fn copy_file_in_scope_with_audit(
 }
 
 pub(crate) async fn download_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     if_none_match: Option<&str>,

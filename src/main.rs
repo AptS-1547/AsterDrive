@@ -187,9 +187,9 @@ async fn main() -> std::io::Result<()> {
 }
 
 async fn run_primary_http_server(
-    prepared: aster_drive::runtime::startup::PreparedRuntime,
+    prepared: aster_drive::runtime::startup::PreparedPrimaryRuntime,
 ) -> std::io::Result<()> {
-    let aster_drive::runtime::startup::PreparedRuntime {
+    let aster_drive::runtime::startup::PreparedPrimaryRuntime {
         state,
         share_download_rollback_worker,
     } = prepared;

@@ -1,6 +1,6 @@
 //! 集成测试公共 helper。
 
-use aster_drive::runtime::AppState;
+use aster_drive::runtime::PrimaryAppState;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -823,12 +823,12 @@ pub async fn mysql_test_database_url() -> String {
     resolve_test_database_url_for(TestDatabaseBackend::MySql).await
 }
 
-/// 构建一个干净的测试 AppState。
+/// 构建一个干净的测试 PrimaryAppState。
 ///
 /// 默认使用内存 SQLite。若设置 `ASTER_TEST_DATABASE_BACKEND=postgres|mysql`，
 /// 会自动启动一个共享 testcontainers 容器，并为当前测试实例分配独立数据库。
 #[allow(dead_code)]
-pub async fn setup() -> AppState {
+pub async fn setup() -> PrimaryAppState {
     init_test_process_state();
     let database_url = resolve_test_database_url().await;
     setup_with_database_url(&database_url).await
@@ -945,8 +945,8 @@ async fn clone_mysql_schema_from_template(db: &sea_orm::DatabaseConnection) {
         .expect("mysql schema clone should restore foreign key checks");
 }
 
-/// 构建一个干净的测试 AppState（指定数据库 URL）
-pub async fn setup_with_database_url(database_url: &str) -> AppState {
+/// 构建一个干净的测试 PrimaryAppState（指定数据库 URL）
+pub async fn setup_with_database_url(database_url: &str) -> PrimaryAppState {
     init_test_process_state();
     let db_cfg = aster_drive::config::DatabaseConfig {
         url: database_url.to_string(),
@@ -1066,7 +1066,7 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
             ),
         );
 
-    AppState {
+    PrimaryAppState {
         db,
         driver_registry: std::sync::Arc::new(aster_drive::storage::DriverRegistry::new()),
         runtime_config,
@@ -1080,7 +1080,7 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
 }
 
 #[allow(dead_code)]
-pub async fn flush_mail_outbox(state: &AppState) {
+pub async fn flush_mail_outbox(state: &PrimaryAppState) {
     flush_mail_outbox_with(&state.db, &state.runtime_config, &state.mail_sender).await;
 }
 

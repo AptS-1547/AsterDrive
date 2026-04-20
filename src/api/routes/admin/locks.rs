@@ -5,7 +5,7 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::lock_service;
 use actix_web::{HttpResponse, web};
 
@@ -22,7 +22,7 @@ use actix_web::{HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn list_locks(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let locks =
@@ -44,7 +44,7 @@ pub async fn list_locks(
     security(("bearer" = [])),
 )]
 pub async fn force_unlock(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     lock_service::force_unlock(&state, *path).await?;
@@ -62,7 +62,7 @@ pub async fn force_unlock(
     ),
     security(("bearer" = [])),
 )]
-pub async fn cleanup_expired_locks(state: web::Data<AppState>) -> Result<HttpResponse> {
+pub async fn cleanup_expired_locks(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
     let count = lock_service::cleanup_expired(&state).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(RemovedCountResponse { removed: count })))
 }

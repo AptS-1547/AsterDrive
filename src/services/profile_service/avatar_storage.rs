@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::avatar;
 use crate::entities::user_profile;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::types::AvatarSource;
 
 use super::shared::{AVATAR_SIZE_LG, AVATAR_SIZE_SM, stored_avatar_prefix};
@@ -104,7 +104,7 @@ pub(super) async fn cleanup_local_avatar_prefix(prefix: &Path, root_dir: &Path) 
     cleanup_empty_avatar_dirs(prefix, root_dir).await;
 }
 
-pub(super) async fn delete_upload_objects(state: &AppState, profile: &user_profile::Model) {
+pub(super) async fn delete_upload_objects(state: &PrimaryAppState, profile: &user_profile::Model) {
     if profile.avatar_source != AvatarSource::Upload {
         return;
     }

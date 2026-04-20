@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::entities::folder;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::task_service::TaskStepInfo;
 use crate::services::{
     workspace_storage_service, workspace_storage_service::WorkspaceStorageScope,
@@ -22,7 +22,7 @@ struct StagedArchiveTree {
 }
 
 pub(super) async fn materialize_archive_extract_stage(
-    state: &AppState,
+    state: &PrimaryAppState,
     lease_guard: &TaskLeaseGuard,
     scope: WorkspaceStorageScope,
     stage_root: &Path,

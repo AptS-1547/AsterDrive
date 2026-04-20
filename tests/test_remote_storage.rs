@@ -62,7 +62,7 @@ async fn spawn_internal_storage_server(
 }
 
 async fn create_remote_policy(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     remote_node_id: i64,
     name: &str,
     base_path: &str,
@@ -102,7 +102,7 @@ async fn create_remote_policy(
 }
 
 async fn wait_for_remote_probe(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     node_id: i64,
 ) -> remote_node_service::RemoteNodeInfo {
     for attempt in 0..20 {
@@ -120,7 +120,7 @@ async fn wait_for_remote_probe(
 }
 
 async fn write_temp_upload_file(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     name: &str,
     data: &[u8],
 ) -> PathBuf {

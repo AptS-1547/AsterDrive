@@ -9,7 +9,7 @@ use crate::db::repository::{
 };
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
 
 use super::models::{
@@ -22,7 +22,7 @@ use super::shared::{
 };
 
 pub async fn list_paginated(
-    state: &AppState,
+    state: &PrimaryAppState,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<StoragePolicy>> {
@@ -33,11 +33,11 @@ pub async fn list_paginated(
     .await
 }
 
-pub async fn get(state: &AppState, id: i64) -> Result<StoragePolicy> {
+pub async fn get(state: &PrimaryAppState, id: i64) -> Result<StoragePolicy> {
     policy_repo::find_by_id(&state.db, id).await.map(Into::into)
 }
 
-pub async fn create(state: &AppState, input: CreateStoragePolicyInput) -> Result<StoragePolicy> {
+pub async fn create(state: &PrimaryAppState, input: CreateStoragePolicyInput) -> Result<StoragePolicy> {
     let CreateStoragePolicyInput {
         name,
         connection,
@@ -95,7 +95,7 @@ pub async fn create(state: &AppState, input: CreateStoragePolicyInput) -> Result
         .map(Into::into)
 }
 
-pub async fn delete(state: &AppState, id: i64) -> Result<()> {
+pub async fn delete(state: &PrimaryAppState, id: i64) -> Result<()> {
     let policy = policy_repo::find_by_id(&state.db, id).await?;
 
     if policy.id == SYSTEM_STORAGE_POLICY_ID {
@@ -152,7 +152,7 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
 }
 
 pub async fn update(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     input: UpdateStoragePolicyInput,
 ) -> Result<StoragePolicy> {
@@ -263,7 +263,7 @@ pub async fn update(
         .map(Into::into)
 }
 
-pub async fn test_default_connection(state: &AppState) -> Result<()> {
+pub async fn test_default_connection(state: &PrimaryAppState) -> Result<()> {
     let policy = state
         .policy_snapshot
         .system_default_policy()
@@ -274,7 +274,7 @@ pub async fn test_default_connection(state: &AppState) -> Result<()> {
     probe_storage_driver(driver.as_ref(), "default storage readiness probe failed").await
 }
 
-pub async fn test_connection(state: &AppState, id: i64) -> Result<()> {
+pub async fn test_connection(state: &PrimaryAppState, id: i64) -> Result<()> {
     let policy = policy_repo::find_by_id(&state.db, id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
     probe_storage_driver(driver.as_ref(), "write test failed")
@@ -283,7 +283,7 @@ pub async fn test_connection(state: &AppState, id: i64) -> Result<()> {
 }
 
 pub async fn test_connection_params(
-    state: &AppState,
+    state: &PrimaryAppState,
     input: StoragePolicyConnectionInput,
 ) -> Result<()> {
     use crate::storage::drivers::local::LocalDriver;

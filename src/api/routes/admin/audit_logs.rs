@@ -5,7 +5,7 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service;
 use actix_web::{HttpResponse, web};
 
@@ -23,7 +23,7 @@ use actix_web::{HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn list_audit_logs(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     page: web::Query<LimitOffsetQuery>,
     query: web::Query<audit_service::AuditLogFilterQuery>,
 ) -> Result<HttpResponse> {

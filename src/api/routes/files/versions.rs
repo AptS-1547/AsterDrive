@@ -3,7 +3,7 @@
 use crate::api::dto::files::VersionPath;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{auth_service::Claims, version_service};
 use actix_web::{HttpResponse, web};
 
@@ -20,7 +20,7 @@ use actix_web::{HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn list_versions(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -45,7 +45,7 @@ pub async fn list_versions(
     security(("bearer" = [])),
 )]
 pub async fn restore_version(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<VersionPath>,
 ) -> Result<HttpResponse> {
@@ -71,7 +71,7 @@ pub async fn restore_version(
     security(("bearer" = [])),
 )]
 pub async fn delete_version(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<VersionPath>,
 ) -> Result<HttpResponse> {
@@ -96,7 +96,7 @@ pub async fn delete_version(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_list_versions(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
@@ -125,7 +125,7 @@ pub(crate) async fn team_list_versions(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_restore_version(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64, i64)>,
 ) -> Result<HttpResponse> {
@@ -160,7 +160,7 @@ pub(crate) async fn team_restore_version(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_delete_version(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64, i64)>,
 ) -> Result<HttpResponse> {

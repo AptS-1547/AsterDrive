@@ -132,7 +132,7 @@ fn apply_test_wopi_registry(
     ));
 }
 
-fn configure_test_wopi_runtime(state: &aster_drive::runtime::AppState) {
+fn configure_test_wopi_runtime(state: &aster_drive::runtime::PrimaryAppState) {
     state.runtime_config.apply(common::system_config_model(
         PUBLIC_SITE_URL_KEY,
         "https://drive.example.com",

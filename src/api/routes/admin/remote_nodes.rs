@@ -7,7 +7,7 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{remote_enrollment_service, remote_node_service};
 use actix_web::{HttpResponse, web};
 
@@ -57,7 +57,7 @@ impl From<TestRemoteNodeParamsReq> for remote_node_service::TestRemoteNodeInput 
     security(("bearer" = [])),
 )]
 pub async fn list_remote_nodes(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let nodes =
@@ -80,7 +80,7 @@ pub async fn list_remote_nodes(
     security(("bearer" = [])),
 )]
 pub async fn create_remote_node(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     body: web::Json<CreateRemoteNodeReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
@@ -103,7 +103,7 @@ pub async fn create_remote_node(
     security(("bearer" = [])),
 )]
 pub async fn get_remote_node(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let node = remote_node_service::get(&state, *path).await?;
@@ -126,7 +126,7 @@ pub async fn get_remote_node(
     security(("bearer" = [])),
 )]
 pub async fn update_remote_node(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
     body: web::Json<PatchRemoteNodeReq>,
 ) -> Result<HttpResponse> {
@@ -150,7 +150,7 @@ pub async fn update_remote_node(
     security(("bearer" = [])),
 )]
 pub async fn delete_remote_node(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     remote_node_service::delete(&state, *path).await?;
@@ -173,7 +173,7 @@ pub async fn delete_remote_node(
     security(("bearer" = [])),
 )]
 pub async fn test_remote_node(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let node = remote_node_service::test_connection(&state, *path).await?;
@@ -218,7 +218,7 @@ pub async fn test_remote_node_params(
     security(("bearer" = [])),
 )]
 pub async fn create_remote_node_enrollment_token(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let command = remote_enrollment_service::create_enrollment_command(&state, *path).await?;

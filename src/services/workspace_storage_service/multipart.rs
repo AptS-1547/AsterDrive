@@ -8,7 +8,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::storage_change_service;
 use crate::types::{
     DriverType, S3UploadStrategy, effective_s3_multipart_chunk_size, parse_storage_policy_options,
@@ -49,7 +49,7 @@ struct DirectUploadParams<'a> {
 }
 
 async fn upload_local_direct(
-    state: &AppState,
+    state: &PrimaryAppState,
     payload: &mut Multipart,
     params: DirectUploadParams<'_>,
 ) -> Result<file::Model> {
@@ -156,7 +156,7 @@ async fn upload_local_direct(
 }
 
 async fn upload_s3_relay_direct(
-    state: &AppState,
+    state: &PrimaryAppState,
     payload: &mut Multipart,
     params: DirectUploadParams<'_>,
 ) -> Result<file::Model> {
@@ -297,7 +297,7 @@ async fn upload_s3_relay_direct(
 }
 
 pub(crate) async fn upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     payload: &mut Multipart,
     folder_id: Option<i64>,

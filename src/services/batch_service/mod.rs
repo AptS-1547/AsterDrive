@@ -10,7 +10,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 
@@ -66,7 +66,7 @@ impl BatchResult {
 }
 
 pub(crate) async fn batch_delete_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -93,7 +93,7 @@ pub(crate) async fn batch_delete_in_scope_with_audit(
 }
 
 pub(crate) async fn batch_move_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -123,7 +123,7 @@ pub(crate) async fn batch_move_in_scope_with_audit(
 }
 
 pub(crate) async fn batch_copy_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_ids: &[i64],
     folder_ids: &[i64],

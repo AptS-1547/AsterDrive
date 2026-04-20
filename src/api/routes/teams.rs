@@ -9,7 +9,7 @@ use crate::api::response::ApiResponse;
 use crate::api::routes::{batch, folders, search, shares, tasks, trash};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{audit_service, auth_service::Claims, team_service};
 use crate::types::TeamMemberRole;
 use actix_governor::Governor;
@@ -64,7 +64,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     security(("bearer" = [])),
 )]
 pub async fn list_teams(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     query: web::Query<ListTeamsQuery>,
 ) -> Result<HttpResponse> {
@@ -88,7 +88,7 @@ pub async fn list_teams(
     security(("bearer" = [])),
 )]
 pub async fn create_team(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     body: web::Json<CreateTeamReq>,
@@ -123,7 +123,7 @@ pub async fn create_team(
     security(("bearer" = [])),
 )]
 pub async fn get_team(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -147,7 +147,7 @@ pub async fn get_team(
     security(("bearer" = [])),
 )]
 pub async fn patch_team(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -184,7 +184,7 @@ pub async fn patch_team(
     security(("bearer" = [])),
 )]
 pub async fn delete_team(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -209,7 +209,7 @@ pub async fn delete_team(
     security(("bearer" = [])),
 )]
 pub async fn restore_team(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -238,7 +238,7 @@ pub async fn restore_team(
     security(("bearer" = [])),
 )]
 pub async fn list_audit_logs(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     page: web::Query<LimitOffsetQuery>,
@@ -276,7 +276,7 @@ pub async fn list_audit_logs(
     security(("bearer" = [])),
 )]
 pub async fn list_members(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     page: web::Query<LimitOffsetQuery>,
@@ -314,7 +314,7 @@ pub async fn list_members(
     security(("bearer" = [])),
 )]
 pub async fn add_member(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -356,7 +356,7 @@ pub async fn add_member(
     security(("bearer" = [])),
 )]
 pub async fn patch_member(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -394,7 +394,7 @@ pub async fn patch_member(
     security(("bearer" = [])),
 )]
 pub async fn delete_member(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,

@@ -9,7 +9,7 @@ use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::db::repository::{auth_session_repo, user_repo};
 use crate::entities::{auth_session, user};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::types::TokenType;
 use crate::utils::numbers::{i64_to_u64, u64_to_i64, u64_to_usize};
@@ -65,7 +65,7 @@ fn ensure_session_current(claims: &Claims, snapshot: AuthSnapshot) -> Result<()>
 }
 
 async fn authenticate_token(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     expected_type: TokenType,
 ) -> Result<(Claims, AuthSnapshot)> {
@@ -93,14 +93,14 @@ async fn authenticate_token(
 }
 
 pub async fn authenticate_access_token(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
 ) -> Result<(Claims, AuthSnapshot)> {
     authenticate_token(state, token, TokenType::Access).await
 }
 
 pub async fn authenticate_refresh_token(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
 ) -> Result<(Claims, AuthSnapshot)> {
     authenticate_token(state, token, TokenType::Refresh).await
@@ -170,7 +170,7 @@ async fn persist_auth_session<C: ConnectionTrait>(
 }
 
 fn issue_tokens_for_session_id(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     session_version: i64,
     session_id: Option<&str>,
@@ -186,7 +186,7 @@ fn issue_tokens_for_session_id(
 }
 
 pub async fn issue_tokens_for_session(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     session_version: i64,
     ip_address: Option<&str>,
@@ -198,7 +198,7 @@ pub async fn issue_tokens_for_session(
 }
 
 pub async fn issue_tokens_for_user(
-    state: &AppState,
+    state: &PrimaryAppState,
     user: &user::Model,
     ip_address: Option<&str>,
     user_agent: Option<&str>,
@@ -207,7 +207,7 @@ pub async fn issue_tokens_for_user(
 }
 
 pub async fn refresh_tokens(
-    state: &AppState,
+    state: &PrimaryAppState,
     refresh: &str,
     ip_address: Option<&str>,
     user_agent: Option<&str>,
@@ -366,7 +366,7 @@ pub async fn refresh_tokens(
     }
 }
 
-pub async fn revoke_refresh_token(state: &AppState, token: &str) -> Result<bool> {
+pub async fn revoke_refresh_token(state: &PrimaryAppState, token: &str) -> Result<bool> {
     let claims = match verify_token(token, &state.config.auth.jwt_secret) {
         Ok(claims) => claims,
         Err(AsterError::AuthTokenExpired(_) | AsterError::AuthTokenInvalid(_)) => return Ok(false),

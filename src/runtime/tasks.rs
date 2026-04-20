@@ -12,7 +12,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
-use super::AppState;
+use super::PrimaryAppState;
 use crate::services::share_service::ShareDownloadRollbackWorker;
 use crate::utils::numbers::u128_to_u64;
 
@@ -84,11 +84,11 @@ async fn spawn_periodic<F, I, Fut>(
     interval_fn: I,
     jitter_cap: Option<Duration>,
     shutdown_token: CancellationToken,
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     task_fn: F,
 ) where
-    I: Fn(&AppState) -> Duration + Send + Sync + 'static,
-    F: Fn(web::Data<AppState>) -> Fut + Send + Sync + 'static,
+    I: Fn(&PrimaryAppState) -> Duration + Send + Sync + 'static,
+    F: Fn(web::Data<PrimaryAppState>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = crate::services::task_service::RuntimeTaskRunOutcome> + Send + 'static,
 {
     // 每轮迭代独立 span，并发清理任务在 trace 里可按 task.name 区分。
@@ -119,10 +119,10 @@ async fn spawn_periodic<F, I, Fut>(
 
 async fn run_periodic_iteration<F, Fut>(
     name: &'static str,
-    state: &web::Data<AppState>,
+    state: &web::Data<PrimaryAppState>,
     task_fn: &F,
 ) where
-    F: Fn(web::Data<AppState>) -> Fut + Send + Sync + 'static,
+    F: Fn(web::Data<PrimaryAppState>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = crate::services::task_service::RuntimeTaskRunOutcome> + Send + 'static,
 {
     let started_at = Utc::now();
@@ -212,7 +212,7 @@ fn build_background_tasks_base() -> BackgroundTasks {
 
 /// Spawn all primary-only periodic background cleanup tasks.
 pub fn spawn_primary_background_tasks(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     share_download_rollback_worker: ShareDownloadRollbackWorker,
 ) -> BackgroundTasks {
     let mut tasks = build_background_tasks_base();
@@ -615,31 +615,31 @@ pub fn spawn_follower_background_tasks() -> BackgroundTasks {
     build_background_tasks_base()
 }
 
-fn mail_outbox_dispatch_interval(state: &AppState) -> Duration {
+fn mail_outbox_dispatch_interval(state: &PrimaryAppState) -> Duration {
     Duration::from_secs(
         crate::config::operations::mail_outbox_dispatch_interval_secs(&state.runtime_config),
     )
 }
 
-fn background_task_dispatch_interval(state: &AppState) -> Duration {
+fn background_task_dispatch_interval(state: &PrimaryAppState) -> Duration {
     Duration::from_secs(
         crate::config::operations::background_task_dispatch_interval_secs(&state.runtime_config),
     )
 }
 
-fn maintenance_cleanup_interval(state: &AppState) -> Duration {
+fn maintenance_cleanup_interval(state: &PrimaryAppState) -> Duration {
     Duration::from_secs(
         crate::config::operations::maintenance_cleanup_interval_secs(&state.runtime_config),
     )
 }
 
-fn blob_reconcile_interval(state: &AppState) -> Duration {
+fn blob_reconcile_interval(state: &PrimaryAppState) -> Duration {
     Duration::from_secs(crate::config::operations::blob_reconcile_interval_secs(
         &state.runtime_config,
     ))
 }
 
-fn remote_node_health_test_interval(state: &AppState) -> Duration {
+fn remote_node_health_test_interval(state: &PrimaryAppState) -> Duration {
     Duration::from_secs(
         crate::config::operations::remote_node_health_test_interval_secs(&state.runtime_config),
     )

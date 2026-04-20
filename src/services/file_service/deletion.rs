@@ -5,7 +5,7 @@ use futures::{StreamExt, stream};
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     storage_change_service, thumbnail_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -17,7 +17,7 @@ use super::get_info_in_scope;
 const BLOB_CLEANUP_CONCURRENCY: usize = 8;
 
 pub(crate) async fn delete_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<()> {
@@ -47,11 +47,11 @@ pub(crate) async fn delete_in_scope(
 }
 
 /// 删除文件（软删除 → 回收站）
-pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
+pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
     delete_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
 }
 
-pub(crate) async fn ensure_blob_cleanup_if_unreferenced(state: &AppState, blob_id: i64) -> bool {
+pub(crate) async fn ensure_blob_cleanup_if_unreferenced(state: &PrimaryAppState, blob_id: i64) -> bool {
     let current_blob = match file_repo::find_blob_by_id(&state.db, blob_id).await {
         Ok(current_blob) => current_blob,
         Err(e) if e.code() == "E006" => return true,
@@ -81,7 +81,7 @@ pub(crate) async fn ensure_blob_cleanup_if_unreferenced(state: &AppState, blob_i
     }
 }
 
-pub(crate) async fn cleanup_unreferenced_blob(state: &AppState, blob: &file_blob::Model) -> bool {
+pub(crate) async fn cleanup_unreferenced_blob(state: &PrimaryAppState, blob: &file_blob::Model) -> bool {
     let current_blob = match file_repo::find_blob_by_id(&state.db, blob.id).await {
         Ok(current_blob) => current_blob,
         Err(e) if e.code() == "E006" => return true,
@@ -124,8 +124,8 @@ pub(crate) async fn cleanup_unreferenced_blob(state: &AppState, blob: &file_blob
     cleanup_claimed_blob(state, &current_blob).await
 }
 
-async fn cleanup_claimed_blob(state: &AppState, current_blob: &file_blob::Model) -> bool {
-    async fn restore_cleanup_claim(state: &AppState, blob_id: i64, reason: &str) {
+async fn cleanup_claimed_blob(state: &PrimaryAppState, current_blob: &file_blob::Model) -> bool {
+    async fn restore_cleanup_claim(state: &PrimaryAppState, blob_id: i64, reason: &str) {
         match file_repo::restore_blob_cleanup_claim(&state.db, blob_id).await {
             Ok(true) => {}
             Ok(false) => {
@@ -236,7 +236,7 @@ async fn cleanup_claimed_blob(state: &AppState, current_blob: &file_blob::Model)
 }
 
 pub(crate) async fn purge_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<()> {
@@ -250,7 +250,7 @@ pub(crate) async fn purge_in_scope(
 }
 
 /// 永久删除文件，处理 blob ref_count、物理文件、缩略图和配额。
-pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
+pub async fn purge(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
     purge_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
 }
 
@@ -258,7 +258,7 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
 ///
 /// 比逐个调 `purge()` 快得多——N 个文件只需 ~10 次 DB 查询而非 ~12N 次。
 pub(crate) async fn batch_purge_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     files: Vec<file::Model>,
 ) -> Result<u32> {
@@ -359,7 +359,7 @@ pub(crate) async fn batch_purge_in_scope(
     Ok(count)
 }
 
-pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64) -> Result<u32> {
+pub async fn batch_purge(state: &PrimaryAppState, files: Vec<file::Model>, user_id: i64) -> Result<u32> {
     batch_purge_in_scope(state, WorkspaceStorageScope::Personal { user_id }, files).await
 }
 
@@ -455,7 +455,7 @@ mod tests {
     }
 
     async fn build_deletion_test_state() -> (
-        AppState,
+        PrimaryAppState,
         user::Model,
         storage_policy::Model,
         TrackingDeleteDriver,
@@ -547,7 +547,7 @@ mod tests {
                 db.clone(),
                 crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
             );
-        let state = AppState {
+        let state = PrimaryAppState {
             db,
             driver_registry,
             runtime_config: runtime_config.clone(),

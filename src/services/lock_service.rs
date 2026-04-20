@@ -12,7 +12,7 @@ use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{file_repo, folder_repo, lock_repo};
 use crate::entities::resource_lock;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::folder_service;
 use crate::types::{EntityType, StoredLockOwnerInfo};
 use crate::utils::numbers::usize_to_u64;
@@ -94,7 +94,7 @@ impl TryFrom<resource_lock::Model> for ResourceLock {
 
 /// 锁定资源（REST/WebDAV/Web Editor 统一入口）
 pub async fn lock(
-    state: &AppState,
+    state: &PrimaryAppState,
     entity_type: EntityType,
     entity_id: i64,
     owner_id: Option<i64>,
@@ -162,7 +162,7 @@ pub async fn lock(
 
 /// 解锁资源（用户主动解锁）
 pub async fn unlock(
-    state: &AppState,
+    state: &PrimaryAppState,
     entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
@@ -182,7 +182,7 @@ pub async fn unlock(
 }
 
 /// 按 token 解锁（WebDAV UNLOCK 用）
-pub async fn unlock_by_token(state: &AppState, token: &str) -> Result<()> {
+pub async fn unlock_by_token(state: &PrimaryAppState, token: &str) -> Result<()> {
     let db = &state.db;
     let lock = lock_repo::find_by_token(db, token)
         .await?
@@ -194,7 +194,7 @@ pub async fn unlock_by_token(state: &AppState, token: &str) -> Result<()> {
 }
 
 pub async fn list_paginated(
-    state: &AppState,
+    state: &PrimaryAppState,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<ResourceLock>> {
@@ -211,7 +211,7 @@ pub async fn list_paginated(
 }
 
 /// 强制解锁（admin 用）
-pub async fn force_unlock(state: &AppState, lock_id: i64) -> Result<()> {
+pub async fn force_unlock(state: &PrimaryAppState, lock_id: i64) -> Result<()> {
     let db = &state.db;
     let lock = lock_repo::find_by_id(db, lock_id)
         .await?
@@ -223,7 +223,7 @@ pub async fn force_unlock(state: &AppState, lock_id: i64) -> Result<()> {
 }
 
 /// 清理过期锁（后台任务用）
-pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
+pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
     let db = &state.db;
 
     // 先查出过期锁的 entity 信息（需要重置 is_locked）
@@ -309,7 +309,7 @@ fn parse_wopi_owner_payload(raw: &str) -> Option<WopiLockOwnerInfo> {
 }
 
 async fn do_unlock_by_entity(
-    state: &AppState,
+    state: &PrimaryAppState,
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<()> {
@@ -470,7 +470,7 @@ mod tests {
         }
     }
 
-    async fn build_lock_test_state() -> (AppState, user::Model, file::Model) {
+    async fn build_lock_test_state() -> (PrimaryAppState, user::Model, file::Model) {
         let temp_root =
             std::env::temp_dir().join(format!("asterdrive-lock-service-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_root).expect("lock service temp root should exist");
@@ -581,7 +581,7 @@ mod tests {
                 crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
             );
 
-        let state = AppState {
+        let state = PrimaryAppState {
             db,
             driver_registry: Arc::new(DriverRegistry::new()),
             runtime_config: runtime_config.clone(),

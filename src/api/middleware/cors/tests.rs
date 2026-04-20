@@ -9,7 +9,7 @@ use crate::cache;
 use crate::config::cors::{CorsAllowedOrigins, RuntimeCorsPolicy};
 use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
 use crate::entities::system_config;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use actix_web::{
     App, HttpResponse,
     http::header::{self, HeaderMap, HeaderValue},
@@ -48,7 +48,7 @@ fn test_policy(
     }
 }
 
-async fn test_state(configs: &[(&str, &str)]) -> AppState {
+async fn test_state(configs: &[(&str, &str)]) -> PrimaryAppState {
     let db = crate::db::connect(&DatabaseConfig {
         url: "sqlite::memory:".to_string(),
         pool_size: 1,
@@ -76,7 +76,7 @@ async fn test_state(configs: &[(&str, &str)]) -> AppState {
             crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
         );
 
-    AppState {
+    PrimaryAppState {
         db,
         driver_registry: Arc::new(crate::storage::DriverRegistry::new()),
         runtime_config: runtime_config.clone(),

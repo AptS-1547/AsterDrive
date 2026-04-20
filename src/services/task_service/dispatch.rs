@@ -14,7 +14,7 @@ use crate::config::operations;
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 use super::archive;
@@ -41,7 +41,7 @@ struct TaskDispatchOutcome {
     failed: usize,
 }
 
-pub async fn dispatch_due(state: &AppState) -> Result<DispatchStats> {
+pub async fn dispatch_due(state: &PrimaryAppState) -> Result<DispatchStats> {
     let now = Utc::now();
     let stale_before = now - Duration::seconds(TASK_PROCESSING_STALE_SECS);
     let concurrency = operations::background_task_max_concurrency(&state.runtime_config);
@@ -118,7 +118,7 @@ pub async fn dispatch_due(state: &AppState) -> Result<DispatchStats> {
 }
 
 async fn process_claimed_task(
-    state: &AppState,
+    state: &PrimaryAppState,
     task: background_task::Model,
     lease: TaskLease,
 ) -> Result<TaskDispatchOutcome> {
@@ -292,7 +292,7 @@ fn evaluate_heartbeat_result(lease_guard: &TaskLeaseGuard, result: Result<bool>)
 }
 
 async fn build_failed_task_steps_json(
-    state: &AppState,
+    state: &PrimaryAppState,
     task_id: i64,
     kind: BackgroundTaskKind,
     error_message: &str,
@@ -309,7 +309,7 @@ async fn build_failed_task_steps_json(
     serialize_task_steps(&steps).ok().map(Into::into)
 }
 
-pub async fn drain(state: &AppState) -> Result<DispatchStats> {
+pub async fn drain(state: &PrimaryAppState) -> Result<DispatchStats> {
     let mut total = DispatchStats::default();
 
     for _ in 0..TASK_DRAIN_MAX_ROUNDS {
@@ -327,7 +327,7 @@ pub async fn drain(state: &AppState) -> Result<DispatchStats> {
     Ok(total)
 }
 
-pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
+pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
     let now = Utc::now();
     let tasks_root = crate::utils::paths::temp_file_path(&state.config.server.temp_dir, "tasks");
     let mut entries = match tokio::fs::read_dir(&tasks_root).await {
@@ -414,7 +414,7 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
 }
 
 async fn process_task(
-    state: &AppState,
+    state: &PrimaryAppState,
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {

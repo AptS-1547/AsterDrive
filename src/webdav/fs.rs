@@ -7,7 +7,7 @@ use sea_orm::DatabaseConnection;
 use tokio::io::AsyncRead;
 
 use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{file_service, folder_service, webdav_service};
 use crate::types::{EntityType, NullablePatch};
 use crate::utils::numbers::i64_to_u64;
@@ -23,7 +23,7 @@ use crate::webdav::path_resolver::{self, ResolvedNode};
 /// AsterDrive WebDAV 文件系统，per-user 实例
 #[derive(Clone)]
 pub struct AsterDavFs {
-    state: AppState,
+    state: PrimaryAppState,
     user_id: i64,
     /// 限制访问范围：None = 用户全部文件，Some(id) = 只能访问该文件夹及子目录
     root_folder_id: Option<i64>,
@@ -39,7 +39,7 @@ impl std::fmt::Debug for AsterDavFs {
 }
 
 impl AsterDavFs {
-    pub fn new(state: AppState, user_id: i64, root_folder_id: Option<i64>) -> Self {
+    pub fn new(state: PrimaryAppState, user_id: i64, root_folder_id: Option<i64>) -> Self {
         Self {
             state,
             user_id,
@@ -47,7 +47,7 @@ impl AsterDavFs {
         }
     }
 
-    fn app_state(&self) -> AppState {
+    fn app_state(&self) -> PrimaryAppState {
         self.state.clone()
     }
 

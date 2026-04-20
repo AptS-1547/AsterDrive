@@ -3,7 +3,7 @@
 use crate::cache;
 use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
 use crate::entities::{file_blob, storage_policy, user};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::mail_service;
 use crate::storage::driver::{BlobMetadata, StoragePathVisitor};
 use crate::storage::{
@@ -160,7 +160,7 @@ fn snapshot_dir_tree(path: &Path) -> std::io::Result<BTreeSet<String>> {
     Ok(entries)
 }
 
-async fn build_test_state() -> (AppState, PathBuf, storage_policy::Model, user::Model) {
+async fn build_test_state() -> (PrimaryAppState, PathBuf, storage_policy::Model, user::Model) {
     let temp_root = std::env::temp_dir().join(format!(
         "asterdrive-workspace-storage-service-{}",
         uuid::Uuid::new_v4()
@@ -240,7 +240,7 @@ async fn build_test_state() -> (AppState, PathBuf, storage_policy::Model, user::
             crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
         );
 
-    let state = AppState {
+    let state = PrimaryAppState {
         db,
         driver_registry: Arc::new(DriverRegistry::new()),
         runtime_config: runtime_config.clone(),

@@ -9,7 +9,7 @@ use crate::api::middleware::rate_limit;
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{auth_service::Claims, property_service};
 #[cfg(all(feature = "openapi", debug_assertions))]
 use crate::types::EntityType;
@@ -48,7 +48,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     security(("bearer" = [])),
 )]
 pub async fn list_props(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<EntityPath>,
 ) -> Result<HttpResponse> {
@@ -78,7 +78,7 @@ pub async fn list_props(
     security(("bearer" = [])),
 )]
 pub async fn set_prop(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<EntityPath>,
     body: web::Json<SetPropReq>,
@@ -120,7 +120,7 @@ pub async fn set_prop(
     security(("bearer" = [])),
 )]
 pub async fn delete_prop(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<PropPath>,
 ) -> Result<HttpResponse> {

@@ -43,7 +43,7 @@ async fn recv_storage_event(
 }
 
 async fn seed_nested_file(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     user_id: i64,
     root_parent_id: Option<i64>,
 ) -> (

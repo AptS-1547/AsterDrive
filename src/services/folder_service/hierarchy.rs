@@ -7,7 +7,7 @@ use sea_orm::ConnectionTrait;
 use crate::db::repository::folder_repo;
 use crate::entities::folder;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
 use super::{FolderAncestorItem, ensure_folder_model_in_scope};
@@ -76,7 +76,7 @@ pub async fn build_folder_paths<C: ConnectionTrait>(
 }
 
 pub(crate) async fn get_ancestors_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<Vec<FolderAncestorItem>> {
@@ -103,7 +103,7 @@ pub(crate) async fn get_ancestors_in_scope(
 
 /// 获取文件夹的祖先链（从根下第一层到当前文件夹）
 pub async fn get_ancestors(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     folder_id: i64,
 ) -> Result<Vec<FolderAncestorItem>> {

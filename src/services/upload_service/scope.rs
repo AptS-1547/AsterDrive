@@ -3,7 +3,7 @@
 use crate::db::repository::upload_session_repo;
 use crate::entities::upload_session;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
 pub(super) fn personal_scope(user_id: i64) -> WorkspaceStorageScope {
@@ -36,7 +36,7 @@ fn ensure_team_upload_session_scope(session: &upload_session::Model, team_id: i6
 }
 
 pub(super) async fn load_upload_session(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     upload_id: &str,
 ) -> Result<upload_session::Model> {

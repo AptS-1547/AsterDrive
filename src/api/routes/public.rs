@@ -3,7 +3,7 @@
 use crate::api::dto::validate_request;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{config_service, remote_enrollment_service};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
@@ -48,7 +48,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
         (status = 200, description = "Public branding config", body = inline(ApiResponse<config_service::PublicBranding>)),
     ),
 )]
-pub async fn get_branding(state: web::Data<AppState>) -> Result<HttpResponse> {
+pub async fn get_branding(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
     let branding = config_service::get_public_branding(&state);
     Ok(HttpResponse::Ok().json(ApiResponse::ok(branding)))
 }
@@ -62,7 +62,7 @@ pub async fn get_branding(state: web::Data<AppState>) -> Result<HttpResponse> {
         (status = 200, description = "Public preview app config", body = inline(ApiResponse<crate::services::preview_app_service::PublicPreviewAppsConfig>)),
     ),
 )]
-pub async fn get_preview_apps(state: web::Data<AppState>) -> Result<HttpResponse> {
+pub async fn get_preview_apps(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
     let preview_apps = config_service::get_public_preview_apps(&state);
     Ok(HttpResponse::Ok().json(ApiResponse::ok(preview_apps)))
 }
@@ -78,7 +78,7 @@ pub async fn get_preview_apps(state: web::Data<AppState>) -> Result<HttpResponse
     ),
 )]
 pub async fn redeem_remote_enrollment(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     body: web::Json<RedeemRemoteEnrollmentReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
@@ -97,7 +97,7 @@ pub async fn redeem_remote_enrollment(
     ),
 )]
 pub async fn ack_remote_enrollment(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     body: web::Json<AckRemoteEnrollmentReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;

@@ -22,7 +22,7 @@ use std::rc::Rc;
 use self::constants::{ALLOWED_HEADERS, ALLOWED_METHODS, EXPOSE_HEADERS};
 use crate::config::cors::RuntimeCorsPolicy;
 use crate::errors::{AsterError, MapAsterErr};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 
 pub struct RuntimeCors;
 
@@ -64,8 +64,8 @@ where
 
         Box::pin(async move {
             let state = req
-                .app_data::<web::Data<AppState>>()
-                .ok_or_else(|| AsterError::internal_error("AppState not found"))?;
+                .app_data::<web::Data<PrimaryAppState>>()
+                .ok_or_else(|| AsterError::internal_error("PrimaryAppState not found"))?;
             let policy = RuntimeCorsPolicy::from_runtime_config(&state.runtime_config);
 
             // Static assets and public pages don't need CORS enforcement

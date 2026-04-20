@@ -23,7 +23,7 @@ use crate::config::operations;
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskResult};
 use crate::utils::numbers::{i64_to_i32, i64_to_u64};
@@ -149,7 +149,7 @@ impl TaskLeaseGuard {
 }
 
 pub(crate) async fn list_tasks_paginated_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     limit: u64,
     offset: u64,
@@ -175,7 +175,7 @@ pub(crate) async fn list_tasks_paginated_in_scope(
 }
 
 pub(crate) async fn list_tasks_paginated_for_admin(
-    state: &AppState,
+    state: &PrimaryAppState,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<TaskInfo>> {
@@ -191,7 +191,7 @@ pub(crate) async fn list_tasks_paginated_for_admin(
 }
 
 pub(crate) async fn get_task_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     task_id: i64,
 ) -> Result<TaskInfo> {
@@ -202,7 +202,7 @@ pub(crate) async fn get_task_in_scope(
 }
 
 pub(crate) async fn retry_task_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     task_id: i64,
 ) -> Result<TaskInfo> {
@@ -241,7 +241,7 @@ pub(crate) async fn retry_task_in_scope(
     get_task_in_scope(state, scope, task_id).await
 }
 
-async fn build_task_info(_state: &AppState, task: background_task::Model) -> Result<TaskInfo> {
+async fn build_task_info(_state: &PrimaryAppState, task: background_task::Model) -> Result<TaskInfo> {
     // 数据库存的是通用 JSON 负载和步骤快照；这里统一把它们解包成 API 可读结构，
     // 让列表页和详情页不必了解任务种类内部的存储格式。
     let progress_percent = if task.progress_total <= 0 {
@@ -290,7 +290,7 @@ async fn build_task_info(_state: &AppState, task: background_task::Model) -> Res
 }
 
 pub(super) async fn create_task_record<T: Serialize>(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     kind: BackgroundTaskKind,
     display_name: &str,
@@ -353,7 +353,7 @@ pub(super) fn task_scope(task: &background_task::Model) -> Result<WorkspaceStora
 }
 
 pub(super) async fn mark_task_progress(
-    state: &AppState,
+    state: &PrimaryAppState,
     lease_guard: &TaskLeaseGuard,
     current: i64,
     total: i64,
@@ -398,7 +398,7 @@ pub(super) async fn update_task_progress_db(
 }
 
 pub(super) async fn mark_task_succeeded(
-    state: &AppState,
+    state: &PrimaryAppState,
     lease_guard: &TaskLeaseGuard,
     result_json: Option<&StoredTaskResult>,
     current: i64,
@@ -433,7 +433,7 @@ pub(super) async fn mark_task_succeeded(
     }
 }
 
-pub(super) async fn prepare_task_temp_dir(state: &AppState, lease: TaskLease) -> Result<String> {
+pub(super) async fn prepare_task_temp_dir(state: &PrimaryAppState, lease: TaskLease) -> Result<String> {
     // 临时目录按 task_id/token 隔离：
     // temp/tasks/{task_id}/{processing_token}
     //
@@ -454,7 +454,7 @@ pub(super) async fn prepare_task_temp_dir(state: &AppState, lease: TaskLease) ->
 }
 
 pub(super) async fn cleanup_task_temp_dir_for_lease(
-    state: &AppState,
+    state: &PrimaryAppState,
     lease: TaskLease,
 ) -> Result<()> {
     crate::utils::cleanup_temp_dir(&crate::utils::paths::task_token_temp_dir(
@@ -466,7 +466,7 @@ pub(super) async fn cleanup_task_temp_dir_for_lease(
     Ok(())
 }
 
-pub(super) async fn cleanup_task_temp_dir_for_task(state: &AppState, task_id: i64) -> Result<()> {
+pub(super) async fn cleanup_task_temp_dir_for_task(state: &PrimaryAppState, task_id: i64) -> Result<()> {
     // 成功路径会删整个任务根目录，因为到这里说明已经没有活跃 lease 需要保留产物了。
     // 如果任务在失败/崩溃/重启中断时没走到这里，后续由 task-cleanup 周期任务兜底清理。
     crate::utils::cleanup_temp_dir(&crate::utils::paths::task_temp_dir(
@@ -498,7 +498,7 @@ fn ensure_task_in_scope(task: &background_task::Model, scope: WorkspaceStorageSc
 }
 
 pub(super) fn task_expiration_from(
-    state: &AppState,
+    state: &PrimaryAppState,
     now: chrono::DateTime<chrono::Utc>,
 ) -> chrono::DateTime<chrono::Utc> {
     now + Duration::hours(load_task_retention_hours(state))
@@ -510,7 +510,7 @@ pub(super) fn task_lease_expires_at(
     now + Duration::seconds(TASK_PROCESSING_STALE_SECS.max(1))
 }
 
-fn configured_task_max_attempts(state: &AppState, kind: BackgroundTaskKind) -> i32 {
+fn configured_task_max_attempts(state: &PrimaryAppState, kind: BackgroundTaskKind) -> i32 {
     match kind {
         BackgroundTaskKind::SystemRuntime | BackgroundTaskKind::ThumbnailGenerate => 1,
         BackgroundTaskKind::ArchiveCompress | BackgroundTaskKind::ArchiveExtract => {
@@ -519,7 +519,7 @@ fn configured_task_max_attempts(state: &AppState, kind: BackgroundTaskKind) -> i
     }
 }
 
-fn load_task_retention_hours(state: &AppState) -> i64 {
+fn load_task_retention_hours(state: &PrimaryAppState) -> i64 {
     let Some(raw) = state.runtime_config.get("task_retention_hours") else {
         return DEFAULT_TASK_RETENTION_HOURS;
     };

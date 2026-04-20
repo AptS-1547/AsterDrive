@@ -1,14 +1,14 @@
 use crate::db::repository::{team_repo, user_repo};
 use crate::entities::team;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::workspace_scope_service::{
     WorkspaceStorageScope, require_team_access, verify_folder_access,
 };
 use crate::types::{DriverType, parse_storage_policy_options};
 
 pub(crate) async fn load_storage_limits(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
 ) -> Result<(i64, i64)> {
     match scope {
@@ -40,7 +40,7 @@ fn resolve_team_policy_group_id(team: &team::Model) -> Result<i64> {
 }
 
 pub(crate) async fn resolve_policy_for_size(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: Option<i64>,
     file_size: i64,

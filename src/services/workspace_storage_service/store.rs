@@ -8,7 +8,7 @@ use sea_orm::{ActiveModelTrait, Set};
 use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::storage_change_service;
 
 use super::{
@@ -79,7 +79,7 @@ pub(crate) struct StorePreuploadedNondedupParams<'a> {
 }
 
 pub(crate) async fn store_from_temp(
-    state: &AppState,
+    state: &PrimaryAppState,
     params: StoreFromTempParams<'_>,
 ) -> Result<file::Model> {
     from_temp::store_from_temp_internal(
@@ -92,7 +92,7 @@ pub(crate) async fn store_from_temp(
 }
 
 pub(crate) async fn store_from_temp_with_hints(
-    state: &AppState,
+    state: &PrimaryAppState,
     params: StoreFromTempParams<'_>,
     hints: StoreFromTempHints<'_>,
 ) -> Result<file::Model> {
@@ -100,7 +100,7 @@ pub(crate) async fn store_from_temp_with_hints(
 }
 
 pub(crate) async fn store_from_temp_exact_name_with_hints(
-    state: &AppState,
+    state: &PrimaryAppState,
     params: StoreFromTempParams<'_>,
     hints: StoreFromTempHints<'_>,
 ) -> Result<file::Model> {
@@ -108,7 +108,7 @@ pub(crate) async fn store_from_temp_exact_name_with_hints(
 }
 
 pub(crate) async fn create_empty(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: Option<i64>,
     filename: &str,
@@ -189,7 +189,7 @@ pub(crate) async fn create_empty(
 }
 
 pub(crate) async fn store_preuploaded_nondedup(
-    state: &AppState,
+    state: &PrimaryAppState,
     params: StorePreuploadedNondedupParams<'_>,
 ) -> Result<file::Model> {
     let StorePreuploadedNondedupParams {

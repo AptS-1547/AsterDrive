@@ -11,7 +11,7 @@ use crate::api::response::ApiResponse;
 use crate::api::routes::team_scope;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::services::batch_service;
 use crate::services::{
@@ -57,7 +57,7 @@ pub fn team_routes() -> actix_web::Scope {
     security(("bearer" = [])),
 )]
 pub async fn create_share(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     body: web::Json<CreateShareReq>,
@@ -88,7 +88,7 @@ pub async fn create_share(
     security(("bearer" = [])),
 )]
 pub async fn list_shares(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
@@ -118,7 +118,7 @@ pub async fn list_shares(
     security(("bearer" = [])),
 )]
 pub async fn update_share(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -152,7 +152,7 @@ pub async fn update_share(
     security(("bearer" = [])),
 )]
 pub async fn delete_share(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -183,7 +183,7 @@ pub async fn delete_share(
     security(("bearer" = [])),
 )]
 pub async fn batch_delete_shares(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     body: web::Json<BatchDeleteSharesReq>,
@@ -216,7 +216,7 @@ pub async fn batch_delete_shares(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_create_share(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -251,7 +251,7 @@ pub(crate) async fn team_create_share(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_list_shares(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     query: web::Query<LimitOffsetQuery>,
@@ -279,7 +279,7 @@ pub(crate) async fn team_list_shares(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_update_share(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -316,7 +316,7 @@ pub(crate) async fn team_update_share(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_delete_share(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -348,7 +348,7 @@ pub(crate) async fn team_delete_share(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_batch_delete_shares(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -367,7 +367,7 @@ pub(crate) async fn team_batch_delete_shares(
 }
 
 pub(crate) async fn create_share_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -389,7 +389,7 @@ pub(crate) async fn create_share_response(
 }
 
 pub(crate) async fn list_shares_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     query: &LimitOffsetQuery,
 ) -> Result<HttpResponse> {
@@ -404,7 +404,7 @@ pub(crate) async fn list_shares_response(
 }
 
 pub(crate) async fn update_share_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -427,7 +427,7 @@ pub(crate) async fn update_share_response(
 }
 
 pub(crate) async fn delete_share_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -439,7 +439,7 @@ pub(crate) async fn delete_share_response(
 }
 
 pub(crate) async fn batch_delete_shares_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,

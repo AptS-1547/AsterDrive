@@ -2,7 +2,7 @@
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     file_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -14,7 +14,7 @@ use super::common::{
 };
 
 /// 永久删除单个文件
-pub async fn purge_file(state: &AppState, id: i64, user_id: i64) -> Result<()> {
+pub async fn purge_file(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
     let scope = WorkspaceStorageScope::Personal { user_id };
     tracing::debug!(scope = ?scope, file_id = id, "purging file from trash");
     let file = verify_file_in_trash_in_scope(state, scope, id).await?;
@@ -23,7 +23,7 @@ pub async fn purge_file(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     Ok(())
 }
 
-pub async fn purge_team_file(state: &AppState, team_id: i64, id: i64, user_id: i64) -> Result<()> {
+pub async fn purge_team_file(state: &PrimaryAppState, team_id: i64, id: i64, user_id: i64) -> Result<()> {
     let scope = WorkspaceStorageScope::Team {
         team_id,
         actor_user_id: user_id,
@@ -36,7 +36,7 @@ pub async fn purge_team_file(state: &AppState, team_id: i64, id: i64, user_id: i
 }
 
 /// 永久删除单个文件夹（递归）
-pub async fn purge_folder(state: &AppState, id: i64, user_id: i64) -> Result<()> {
+pub async fn purge_folder(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
     let scope = WorkspaceStorageScope::Personal { user_id };
     tracing::debug!(scope = ?scope, folder_id = id, "purging folder from trash");
     verify_folder_in_trash_in_scope(state, scope, id).await?;
@@ -46,7 +46,7 @@ pub async fn purge_folder(state: &AppState, id: i64, user_id: i64) -> Result<()>
 }
 
 pub async fn purge_team_folder(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     id: i64,
     user_id: i64,
@@ -62,7 +62,7 @@ pub async fn purge_team_folder(
     Ok(())
 }
 
-async fn purge_all_in_scope(state: &AppState, scope: WorkspaceStorageScope) -> Result<u32> {
+async fn purge_all_in_scope(state: &PrimaryAppState, scope: WorkspaceStorageScope) -> Result<u32> {
     tracing::debug!(scope = ?scope, "purging all trash contents");
     workspace_storage_service::require_scope_access(state, scope).await?;
     let mut count: u32 = 0;
@@ -147,11 +147,11 @@ async fn purge_all_in_scope(state: &AppState, scope: WorkspaceStorageScope) -> R
 ///
 /// 只处理顶层已删除项（文件夹内子项由递归批量清理），
 /// 避免同一文件被重复 purge。
-pub async fn purge_all(state: &AppState, user_id: i64) -> Result<u32> {
+pub async fn purge_all(state: &PrimaryAppState, user_id: i64) -> Result<u32> {
     purge_all_in_scope(state, WorkspaceStorageScope::Personal { user_id }).await
 }
 
-pub async fn purge_all_team(state: &AppState, team_id: i64, user_id: i64) -> Result<u32> {
+pub async fn purge_all_team(state: &PrimaryAppState, team_id: i64, user_id: i64) -> Result<u32> {
     purge_all_in_scope(
         state,
         WorkspaceStorageScope::Team {

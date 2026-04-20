@@ -6,7 +6,7 @@ use sea_orm::{ActiveModelTrait, Set};
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::folder;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     storage_change_service,
     workspace_models::FolderInfo,
@@ -17,7 +17,7 @@ use crate::types::NullablePatch;
 use super::{collect_folder_tree_in_scope, ensure_folder_model_in_scope};
 
 pub(crate) async fn create_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     name: &str,
     parent_id: Option<i64>,
@@ -95,7 +95,7 @@ pub(crate) async fn create_in_scope(
 }
 
 pub async fn create(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     name: &str,
     parent_id: Option<i64>,
@@ -111,7 +111,7 @@ pub async fn create(
 }
 
 pub(crate) async fn delete_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<()> {
@@ -154,12 +154,12 @@ pub(crate) async fn delete_in_scope(
 }
 
 /// 删除文件夹（软删除 → 回收站，递归标记子项）
-pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
+pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
     delete_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
 }
 
 pub(crate) async fn get_info_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
@@ -167,7 +167,7 @@ pub(crate) async fn get_info_in_scope(
 }
 
 pub(crate) async fn update_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     id: i64,
     name: Option<String>,
@@ -276,7 +276,7 @@ pub(crate) async fn update_in_scope(
 }
 
 pub async fn update(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     user_id: i64,
     name: Option<String>,
@@ -301,7 +301,7 @@ pub async fn update(
 /// “未传字段”和“显式传 null”，而本函数的 `target_parent_id: None`
 /// 明确表示“移到根目录”。
 pub async fn move_folder(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     user_id: i64,
     target_parent_id: Option<i64>,
@@ -322,7 +322,7 @@ pub async fn move_folder(
 }
 
 pub(crate) async fn set_lock_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
     locked: bool,
@@ -364,7 +364,7 @@ pub(crate) async fn set_lock_in_scope(
 
 /// 设置/解除文件夹锁，返回更新后的文件夹信息
 pub async fn set_lock(
-    state: &AppState,
+    state: &PrimaryAppState,
     folder_id: i64,
     user_id: i64,
     locked: bool,

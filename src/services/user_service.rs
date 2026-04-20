@@ -13,7 +13,7 @@ use crate::db::repository::{
 };
 use crate::entities::user;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::{self, AuditContext},
     auth_service, profile_service,
@@ -143,7 +143,7 @@ fn user_core(user: &user::Model) -> UserCore {
 }
 
 pub async fn to_user_info(
-    state: &AppState,
+    state: &PrimaryAppState,
     user: &user::Model,
     audience: profile_service::AvatarAudience,
 ) -> Result<UserInfo> {
@@ -166,7 +166,7 @@ pub async fn to_user_info(
 }
 
 pub async fn to_user_infos(
-    state: &AppState,
+    state: &PrimaryAppState,
     users: Vec<user::Model>,
     audience: profile_service::AvatarAudience,
 ) -> Result<Vec<UserInfo>> {
@@ -197,7 +197,7 @@ pub async fn to_user_infos(
 
 /// 获取当前用户完整信息（含偏好设置）
 pub async fn get_me(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     access_token_expires_at: i64,
 ) -> Result<MeResponse> {
@@ -228,13 +228,13 @@ pub async fn get_me(
     })
 }
 
-pub async fn get_self_info(state: &AppState, user_id: i64) -> Result<UserInfo> {
+pub async fn get_self_info(state: &PrimaryAppState, user_id: i64) -> Result<UserInfo> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     to_user_info(state, &user, profile_service::AvatarAudience::SelfUser).await
 }
 
 pub async fn list_paginated(
-    state: &AppState,
+    state: &PrimaryAppState,
     limit: u64,
     offset: u64,
     keyword: Option<&str>,
@@ -259,13 +259,13 @@ pub async fn list_paginated(
     ))
 }
 
-pub async fn get(state: &AppState, id: i64) -> Result<UserInfo> {
+pub async fn get(state: &PrimaryAppState, id: i64) -> Result<UserInfo> {
     let user = user_repo::find_by_id(&state.db, id).await?;
     to_user_info(state, &user, profile_service::AvatarAudience::AdminUser).await
 }
 
 pub async fn create(
-    state: &AppState,
+    state: &PrimaryAppState,
     username: &str,
     email: &str,
     password: &str,
@@ -275,7 +275,7 @@ pub async fn create(
 }
 
 pub async fn create_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     username: &str,
     email: &str,
     password: &str,
@@ -302,7 +302,7 @@ pub async fn create_with_audit(
     Ok(user)
 }
 
-pub async fn update(state: &AppState, input: UpdateUserInput) -> Result<UserInfo> {
+pub async fn update(state: &PrimaryAppState, input: UpdateUserInput) -> Result<UserInfo> {
     let UpdateUserInput {
         id,
         email_verified,
@@ -416,7 +416,7 @@ pub async fn update(state: &AppState, input: UpdateUserInput) -> Result<UserInfo
 }
 
 pub async fn update_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     input: UpdateUserInput,
     audit_ctx: &AuditContext,
 ) -> Result<UserInfo> {
@@ -452,7 +452,7 @@ pub async fn update_with_audit(
 /// 7. 清理上传 session 和临时文件
 /// 8. 清理资源锁
 /// 9. 删除用户记录
-pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<ForceDeleteSummary> {
+pub async fn force_delete(state: &PrimaryAppState, target_user_id: i64) -> Result<ForceDeleteSummary> {
     let db = &state.db;
     let user = user_repo::find_by_id(db, target_user_id).await?;
 
@@ -558,7 +558,7 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<Force
 }
 
 pub async fn force_delete_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     target_user_id: i64,
     audit_ctx: &AuditContext,
 ) -> Result<ForceDeleteSummary> {
@@ -591,7 +591,7 @@ pub fn parse_preferences(user: &user::Model) -> Option<UserPreferences> {
 }
 
 /// 读取用户的偏好设置（按 ID 查询后解析）。
-pub async fn get_preferences(state: &AppState, user_id: i64) -> Result<Option<UserPreferences>> {
+pub async fn get_preferences(state: &PrimaryAppState, user_id: i64) -> Result<Option<UserPreferences>> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     Ok(parse_preferences(&user))
 }
@@ -608,7 +608,7 @@ fn parse_user_config(user: &user::Model) -> Option<UserConfig> {
 }
 
 /// 将用户配置写回 DB。空配置保持现状，不主动清理历史值。
-async fn save_user_config(state: &AppState, user: user::Model, config: &UserConfig) -> Result<()> {
+async fn save_user_config(state: &PrimaryAppState, user: user::Model, config: &UserConfig) -> Result<()> {
     if config.is_empty() {
         return Ok(());
     }
@@ -624,7 +624,7 @@ async fn save_user_config(state: &AppState, user: user::Model, config: &UserConf
 
 /// 合并更新偏好设置（只更新非 None 字段），返回完整 UserPreferences。
 pub async fn update_preferences(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     patch: UpdatePreferencesReq,
 ) -> Result<UserPreferences> {

@@ -11,7 +11,7 @@ mod models;
 mod shared;
 
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::batch_service;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
@@ -44,7 +44,7 @@ pub(crate) use management::{
 // audit 包装放在入口层，而不是塞进 management 核心逻辑里。
 // 这样基础 share service 仍然可以在测试和其他内部流程里被纯粹复用。
 pub(crate) async fn create_share_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     target: ShareTarget,
     password: Option<String>,
@@ -68,7 +68,7 @@ pub(crate) async fn create_share_in_scope_with_audit(
 }
 
 pub(crate) async fn update_share_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     share_id: i64,
     password: Option<String>,
@@ -97,7 +97,7 @@ pub(crate) async fn update_share_in_scope_with_audit(
 }
 
 pub(crate) async fn delete_share_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     share_id: i64,
     audit_ctx: &AuditContext,
@@ -117,7 +117,7 @@ pub(crate) async fn delete_share_in_scope_with_audit(
 }
 
 pub(crate) async fn batch_delete_shares_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     share_ids: &[i64],
     audit_ctx: &AuditContext,

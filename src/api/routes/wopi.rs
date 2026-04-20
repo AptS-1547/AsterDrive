@@ -19,7 +19,7 @@
 
 use crate::api::dto::validate_request;
 use crate::api::dto::wopi::WopiAccessQuery;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{file_service, wopi_service};
 use actix_web::{HttpRequest, HttpResponse, web};
 
@@ -43,7 +43,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
     responses((status = 200, description = "WOPI CheckFileInfo response")),
 )]
 pub async fn check_file_info(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     path: web::Path<i64>,
     query: web::Query<WopiAccessQuery>,
@@ -65,7 +65,7 @@ pub async fn check_file_info(
 }
 
 pub async fn get_file_contents(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     path: web::Path<i64>,
     query: web::Query<WopiAccessQuery>,
@@ -106,7 +106,7 @@ pub async fn get_file_contents(
 }
 
 pub async fn put_file_contents(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     path: web::Path<i64>,
     query: web::Query<WopiAccessQuery>,
@@ -140,7 +140,7 @@ pub async fn put_file_contents(
 }
 
 pub async fn file_operation(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     path: web::Path<i64>,
     query: web::Query<WopiAccessQuery>,
@@ -340,7 +340,7 @@ fn optional_header_value<'a>(req: &'a HttpRequest, name: &str) -> Option<&'a str
 }
 
 fn request_source<'a>(
-    state: &AppState,
+    state: &PrimaryAppState,
     req: &'a HttpRequest,
 ) -> wopi_service::WopiRequestSource<'a> {
     wopi_service::WopiRequestSource {

@@ -17,7 +17,7 @@ use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct AppState {
+pub struct PrimaryAppState {
     pub db: DatabaseConnection,
     pub driver_registry: Arc<DriverRegistry>,
     pub runtime_config: Arc<RuntimeConfig>,
@@ -48,14 +48,14 @@ pub trait FollowerRuntimeState {
     fn cache(&self) -> &Arc<dyn CacheBackend>;
 }
 
-impl AppState {
+impl PrimaryAppState {
     pub fn follower_view(&self) -> FollowerAppState {
         FollowerAppState::from(self)
     }
 }
 
-impl From<&AppState> for FollowerAppState {
-    fn from(state: &AppState) -> Self {
+impl From<&PrimaryAppState> for FollowerAppState {
+    fn from(state: &PrimaryAppState) -> Self {
         Self {
             db: state.db.clone(),
             driver_registry: state.driver_registry.clone(),
@@ -66,7 +66,7 @@ impl From<&AppState> for FollowerAppState {
     }
 }
 
-impl FollowerRuntimeState for AppState {
+impl FollowerRuntimeState for PrimaryAppState {
     fn db(&self) -> &DatabaseConnection {
         &self.db
     }

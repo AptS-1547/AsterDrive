@@ -9,7 +9,7 @@ use crate::api::response::ApiResponse;
 use crate::api::routes::team_scope;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     auth_service::Claims, task_service, workspace_storage_service::WorkspaceStorageScope,
 };
@@ -48,7 +48,7 @@ pub fn team_routes() -> actix_web::Scope {
     security(("bearer" = [])),
 )]
 pub async fn list_tasks(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
@@ -76,7 +76,7 @@ pub async fn list_tasks(
     security(("bearer" = [])),
 )]
 pub async fn get_task(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -105,7 +105,7 @@ pub async fn get_task(
     security(("bearer" = [])),
 )]
 pub async fn retry_task(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -136,7 +136,7 @@ pub async fn retry_task(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_list_tasks(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     query: web::Query<LimitOffsetQuery>,
@@ -162,7 +162,7 @@ pub(crate) async fn team_list_tasks(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_get_task(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
@@ -189,7 +189,7 @@ pub(crate) async fn team_get_task(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_retry_task(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
@@ -198,7 +198,7 @@ pub(crate) async fn team_retry_task(
 }
 
 pub(crate) async fn list_tasks_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     query: &LimitOffsetQuery,
 ) -> Result<HttpResponse> {
@@ -213,7 +213,7 @@ pub(crate) async fn list_tasks_response(
 }
 
 pub(crate) async fn get_task_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     task_id: i64,
 ) -> Result<HttpResponse> {
@@ -222,7 +222,7 @@ pub(crate) async fn get_task_response(
 }
 
 pub(crate) async fn retry_task_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     task_id: i64,
 ) -> Result<HttpResponse> {

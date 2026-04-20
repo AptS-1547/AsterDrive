@@ -1,7 +1,7 @@
 //! 服务模块：`readiness_service`。
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::{AppState, FollowerRuntimeState};
+use crate::runtime::{PrimaryAppState, FollowerRuntimeState};
 use sea_orm::DatabaseConnection;
 
 pub async fn ping_database(db: &DatabaseConnection) -> Result<()> {
@@ -10,7 +10,7 @@ pub async fn ping_database(db: &DatabaseConnection) -> Result<()> {
         .map_aster_err(AsterError::database_operation)
 }
 
-pub async fn check_primary_ready(state: &AppState) -> Result<()> {
+pub async fn check_primary_ready(state: &PrimaryAppState) -> Result<()> {
     crate::services::policy_service::test_default_connection(state).await
 }
 

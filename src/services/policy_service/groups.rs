@@ -7,7 +7,7 @@ use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{policy_group_repo, policy_repo, team_repo, user_repo};
 use crate::entities::{storage_policy_group, storage_policy_group_item, user};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::utils::numbers::usize_to_u64;
 
 use super::models::{
@@ -114,7 +114,7 @@ where
 }
 
 pub async fn list_groups_paginated(
-    state: &AppState,
+    state: &PrimaryAppState,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<StoragePolicyGroupInfo>> {
@@ -134,13 +134,13 @@ pub async fn list_groups_paginated(
     })
 }
 
-pub async fn get_group(state: &AppState, id: i64) -> Result<StoragePolicyGroupInfo> {
+pub async fn get_group(state: &PrimaryAppState, id: i64) -> Result<StoragePolicyGroupInfo> {
     let group = policy_group_repo::find_group_by_id(&state.db, id).await?;
     Ok(build_group_info(state, &group))
 }
 
 pub async fn create_group(
-    state: &AppState,
+    state: &PrimaryAppState,
     input: CreateStoragePolicyGroupInput,
 ) -> Result<StoragePolicyGroupInfo> {
     let CreateStoragePolicyGroupInput {
@@ -185,7 +185,7 @@ pub async fn create_group(
 }
 
 pub async fn update_group(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     input: UpdateStoragePolicyGroupInput,
 ) -> Result<StoragePolicyGroupInfo> {
@@ -277,7 +277,7 @@ pub async fn update_group(
     Ok(build_group_info(state, &group))
 }
 
-pub async fn delete_group(state: &AppState, id: i64) -> Result<()> {
+pub async fn delete_group(state: &PrimaryAppState, id: i64) -> Result<()> {
     let group = policy_group_repo::find_group_by_id(&state.db, id).await?;
 
     if group.is_default {
@@ -305,7 +305,7 @@ pub async fn delete_group(state: &AppState, id: i64) -> Result<()> {
 }
 
 pub async fn migrate_group_users(
-    state: &AppState,
+    state: &PrimaryAppState,
     source_group_id: i64,
     target_group_id: i64,
 ) -> Result<PolicyGroupUserMigrationResult> {

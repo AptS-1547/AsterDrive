@@ -7,7 +7,7 @@ use crate::api::pagination::TrashListQuery;
 use crate::api::response::{ApiResponse, PurgedCountResponse};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{auth_service::Claims, trash_service};
 use crate::types::EntityType;
 use actix_governor::Governor;
@@ -47,7 +47,7 @@ pub fn team_routes() -> actix_web::Scope {
     security(("bearer" = [])),
 )]
 pub async fn list_trash(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     query: web::Query<TrashListQuery>,
 ) -> Result<HttpResponse> {
@@ -80,7 +80,7 @@ pub async fn list_trash(
     security(("bearer" = [])),
 )]
 pub async fn restore(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<TrashItemPath>,
 ) -> Result<HttpResponse> {
@@ -110,7 +110,7 @@ pub async fn restore(
     security(("bearer" = [])),
 )]
 pub async fn purge_one(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<TrashItemPath>,
 ) -> Result<HttpResponse> {
@@ -133,7 +133,7 @@ pub async fn purge_one(
     security(("bearer" = [])),
 )]
 pub async fn purge_all(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     let count = trash_service::purge_all(&state, claims.user_id).await?;
@@ -157,7 +157,7 @@ pub async fn purge_all(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_list_trash(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     query: web::Query<TrashListQuery>,
@@ -195,7 +195,7 @@ pub(crate) async fn team_list_trash(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_restore(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, EntityType, i64)>,
 ) -> Result<HttpResponse> {
@@ -230,7 +230,7 @@ pub(crate) async fn team_restore(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_purge_one(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, EntityType, i64)>,
 ) -> Result<HttpResponse> {
@@ -260,7 +260,7 @@ pub(crate) async fn team_purge_one(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_purge_all(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {

@@ -3,7 +3,7 @@
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::team_repo;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::types::TeamMemberRole;
 
 use super::shared::{
@@ -16,7 +16,7 @@ use super::{
 };
 
 pub async fn list_admin_teams(
-    state: &AppState,
+    state: &PrimaryAppState,
     limit: u64,
     offset: u64,
     keyword: Option<&str>,
@@ -50,13 +50,13 @@ pub async fn list_admin_teams(
     ))
 }
 
-pub async fn get_admin_team(state: &AppState, team_id: i64) -> Result<AdminTeamInfo> {
+pub async fn get_admin_team(state: &PrimaryAppState, team_id: i64) -> Result<AdminTeamInfo> {
     let team = team_repo::find_by_id(&state.db, team_id).await?;
     build_admin_team_info(state, &team).await
 }
 
 pub async fn create_admin_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     actor_user_id: i64,
     input: AdminCreateTeamInput,
 ) -> Result<AdminTeamInfo> {
@@ -89,7 +89,7 @@ pub async fn create_admin_team(
 }
 
 pub async fn update_admin_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     input: AdminUpdateTeamInput,
 ) -> Result<AdminTeamInfo> {
@@ -107,12 +107,12 @@ pub async fn update_admin_team(
     build_admin_team_info(state, &updated).await
 }
 
-pub async fn archive_admin_team(state: &AppState, team_id: i64) -> Result<()> {
+pub async fn archive_admin_team(state: &PrimaryAppState, team_id: i64) -> Result<()> {
     let team = team_repo::find_active_by_id(&state.db, team_id).await?;
     archive_team_record(state, team).await
 }
 
-pub async fn restore_admin_team(state: &AppState, team_id: i64) -> Result<AdminTeamInfo> {
+pub async fn restore_admin_team(state: &PrimaryAppState, team_id: i64) -> Result<AdminTeamInfo> {
     let team = team_repo::find_archived_by_id(&state.db, team_id).await?;
     let restored = restore_team_record(state, team).await?;
     build_admin_team_info(state, &restored).await

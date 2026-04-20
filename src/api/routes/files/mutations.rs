@@ -5,7 +5,7 @@ use crate::api::dto::validate_request;
 use crate::api::response::ApiResponse;
 use crate::api::routes::team_scope;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::AuditContext,
     auth_service::Claims,
@@ -29,7 +29,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn create_empty(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     body: web::Json<CreateEmptyRequest>,
 ) -> Result<HttpResponse> {
@@ -59,7 +59,7 @@ pub async fn create_empty(
     security(("bearer" = [])),
 )]
 pub async fn extract_archive(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     body: web::Json<ExtractArchiveRequest>,
@@ -89,7 +89,7 @@ pub async fn extract_archive(
     security(("bearer" = [])),
 )]
 pub async fn delete_file(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -121,7 +121,7 @@ pub async fn delete_file(
     security(("bearer" = [])),
 )]
 pub async fn patch_file(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -157,7 +157,7 @@ pub async fn patch_file(
     security(("bearer" = [])),
 )]
 pub async fn update_content(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     req: HttpRequest,
@@ -191,7 +191,7 @@ pub async fn update_content(
     security(("bearer" = [])),
 )]
 pub async fn set_lock(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     body: web::Json<SetLockReq>,
@@ -222,7 +222,7 @@ pub async fn set_lock(
     security(("bearer" = [])),
 )]
 pub async fn copy_file(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -256,7 +256,7 @@ pub async fn copy_file(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_create_empty(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     body: web::Json<CreateEmptyRequest>,
@@ -285,7 +285,7 @@ pub(crate) async fn team_create_empty(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_update_content(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
     req: HttpRequest,
@@ -323,7 +323,7 @@ pub(crate) async fn team_update_content(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_extract_archive(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
     body: web::Json<ExtractArchiveRequest>,
@@ -351,7 +351,7 @@ pub(crate) async fn team_extract_archive(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_set_lock(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
     body: web::Json<SetLockReq>,
@@ -385,7 +385,7 @@ pub(crate) async fn team_set_lock(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_patch_file(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -422,7 +422,7 @@ pub(crate) async fn team_patch_file(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_copy_file(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -458,7 +458,7 @@ pub(crate) async fn team_copy_file(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_delete_file(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -475,7 +475,7 @@ pub(crate) async fn team_delete_file(
 }
 
 pub(crate) async fn create_empty_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     body: &CreateEmptyRequest,
 ) -> Result<HttpResponse> {
@@ -486,7 +486,7 @@ pub(crate) async fn create_empty_response(
 }
 
 pub(crate) async fn extract_archive_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     body: &ExtractArchiveRequest,
@@ -505,7 +505,7 @@ pub(crate) async fn extract_archive_response(
 }
 
 pub(crate) async fn delete_file_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -517,7 +517,7 @@ pub(crate) async fn delete_file_response(
 }
 
 pub(crate) async fn patch_file_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -539,7 +539,7 @@ pub(crate) async fn patch_file_response(
 }
 
 pub(crate) async fn update_content_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -577,7 +577,7 @@ fn request_content_length(req: &HttpRequest) -> Option<i64> {
 }
 
 pub(crate) async fn set_lock_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     locked: bool,
@@ -587,7 +587,7 @@ pub(crate) async fn set_lock_response(
 }
 
 pub(crate) async fn copy_file_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,

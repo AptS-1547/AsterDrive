@@ -1,7 +1,7 @@
 //! API 路由：`frontend`。
 
 use crate::config::branding;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use actix_web::{HttpRequest, HttpResponse, web};
 use rust_embed::Embed;
 use std::path::PathBuf;
@@ -49,7 +49,7 @@ impl FrontendService {
     }
 
     /// 服务 index.html，替换配置占位符
-    async fn serve_index(state: &AppState) -> HttpResponse {
+    async fn serve_index(state: &PrimaryAppState) -> HttpResponse {
         let html = match Self::load_file("index.html").await {
             Some(data) => String::from_utf8_lossy(&data).into_owned(),
             None => include_str!(concat!(
@@ -81,7 +81,7 @@ impl FrontendService {
             .body(processed)
     }
 
-    pub async fn handle_index(state: web::Data<AppState>, _req: HttpRequest) -> HttpResponse {
+    pub async fn handle_index(state: web::Data<PrimaryAppState>, _req: HttpRequest) -> HttpResponse {
         Self::serve_index(state.get_ref()).await
     }
 
@@ -128,7 +128,7 @@ impl FrontendService {
     }
 
     pub async fn handle_spa_fallback(
-        state: web::Data<AppState>,
+        state: web::Data<PrimaryAppState>,
         _req: HttpRequest,
     ) -> HttpResponse {
         Self::serve_index(state.get_ref()).await

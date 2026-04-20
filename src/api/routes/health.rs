@@ -2,7 +2,7 @@
 
 use crate::api::error_code::ErrorCode;
 use crate::api::response::{ApiResponse, HealthResponse, MemoryStatsResponse};
-use crate::runtime::{AppState, FollowerAppState};
+use crate::runtime::{PrimaryAppState, FollowerAppState};
 use crate::services::readiness_service;
 use actix_web::{HttpResponse, web};
 
@@ -64,7 +64,7 @@ pub async fn health() -> HttpResponse {
         (status = 503, description = "Service unavailable"),
     ),
 )]
-pub async fn primary_ready(state: web::Data<AppState>) -> HttpResponse {
+pub async fn primary_ready(state: web::Data<PrimaryAppState>) -> HttpResponse {
     if let Err(error) = readiness_service::ping_database(&state.db).await {
         return ready_database_error(error);
     }
@@ -104,7 +104,7 @@ fn ready_storage_error(error: crate::errors::AsterError) -> HttpResponse {
 }
 
 #[cfg_attr(not(all(debug_assertions, feature = "openapi")), allow(dead_code))]
-pub async fn ready(state: web::Data<AppState>) -> HttpResponse {
+pub async fn ready(state: web::Data<PrimaryAppState>) -> HttpResponse {
     primary_ready(state).await
 }
 
@@ -168,7 +168,7 @@ mod tests {
     use crate::cache;
     use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
     use crate::entities::storage_policy;
-    use crate::runtime::AppState;
+    use crate::runtime::PrimaryAppState;
     use crate::services::mail_service;
     use crate::storage::driver::BlobMetadata;
     use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver};
@@ -245,7 +245,7 @@ mod tests {
         }
     }
 
-    async fn build_test_state(driver: Option<ProbeDriver>) -> AppState {
+    async fn build_test_state(driver: Option<ProbeDriver>) -> PrimaryAppState {
         let db = crate::db::connect(&DatabaseConfig {
             url: "sqlite::memory:".to_string(),
             ..Default::default()
@@ -303,7 +303,7 @@ mod tests {
                 crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
             );
 
-        AppState {
+        PrimaryAppState {
             db,
             driver_registry,
             runtime_config: runtime_config.clone(),

@@ -38,7 +38,7 @@ impl Drop for DirModeGuard {
 }
 
 async fn default_policy(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
 ) -> aster_drive::entities::storage_policy::Model {
     aster_drive::db::repository::policy_repo::find_default(&state.db)
         .await
@@ -91,7 +91,7 @@ impl<'a> UploadSessionSpec<'a> {
 }
 
 async fn create_upload_session(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     user_id: i64,
     spec: UploadSessionSpec<'_>,
 ) {
@@ -126,7 +126,7 @@ async fn create_upload_session(
 }
 
 async fn store_test_file(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     user_id: i64,
     filename: &str,
     bytes: &[u8],
@@ -173,7 +173,7 @@ fn current_thumb_path(blob_hash: &str) -> String {
 }
 
 async fn create_blob(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     hash: &str,
     storage_path: &str,
     bytes: &[u8],
@@ -204,7 +204,7 @@ async fn create_blob(
 }
 
 async fn create_wopi_session(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     actor_user_id: i64,
     file_id: i64,
     token: &str,

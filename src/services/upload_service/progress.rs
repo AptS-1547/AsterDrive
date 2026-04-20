@@ -6,7 +6,7 @@ use crate::api::constants::HOUR_SECS;
 use crate::db::repository::upload_session_part_repo;
 use crate::entities::upload_session;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::UploadProgressResponse;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::types::{
@@ -16,7 +16,7 @@ use crate::utils::paths;
 
 /// 查询上传进度
 async fn get_progress_impl(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
 ) -> Result<UploadProgressResponse> {
     tracing::debug!(
@@ -86,7 +86,7 @@ async fn get_progress_impl(
 }
 
 pub async fn get_progress(
-    state: &AppState,
+    state: &PrimaryAppState,
     upload_id: &str,
     user_id: i64,
 ) -> Result<UploadProgressResponse> {
@@ -95,7 +95,7 @@ pub async fn get_progress(
 }
 
 pub async fn get_progress_for_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     upload_id: &str,
     user_id: i64,
@@ -106,7 +106,7 @@ pub async fn get_progress_for_team(
 
 /// 为 S3 multipart presigned 上传批量生成 per-part presigned PUT URL
 async fn presign_parts_impl(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
     part_numbers: Vec<i32>,
 ) -> Result<HashMap<i32, String>> {
@@ -152,7 +152,7 @@ async fn presign_parts_impl(
 }
 
 pub async fn presign_parts(
-    state: &AppState,
+    state: &PrimaryAppState,
     upload_id: &str,
     user_id: i64,
     part_numbers: Vec<i32>,
@@ -162,7 +162,7 @@ pub async fn presign_parts(
 }
 
 pub async fn presign_parts_for_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     upload_id: &str,
     user_id: i64,
@@ -173,7 +173,7 @@ pub async fn presign_parts_for_team(
 }
 
 /// 扫描临时目录中实际存在的 chunk 文件，返回排序后的 chunk 编号列表
-async fn scan_received_chunks(state: &AppState, upload_id: &str) -> Vec<i32> {
+async fn scan_received_chunks(state: &PrimaryAppState, upload_id: &str) -> Vec<i32> {
     let dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
     let mut received = Vec::new();
     let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {

@@ -60,7 +60,7 @@ fn write_service_fixture(name: &str, contents: &str) -> String {
 }
 
 async fn store_service_file(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     user_id: i64,
     folder_id: Option<i64>,
     name: &str,
@@ -77,7 +77,7 @@ async fn store_service_file(
     .id
 }
 
-async fn user_storage_used(state: &aster_drive::runtime::AppState, user_id: i64) -> i64 {
+async fn user_storage_used(state: &aster_drive::runtime::PrimaryAppState, user_id: i64) -> i64 {
     aster_drive::db::repository::user_repo::find_by_id(&state.db, user_id)
         .await
         .unwrap()
@@ -85,7 +85,7 @@ async fn user_storage_used(state: &aster_drive::runtime::AppState, user_id: i64)
 }
 
 async fn wait_for_share_download_count(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     share_id: i64,
     expected: i64,
 ) {

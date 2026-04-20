@@ -10,7 +10,7 @@ use crate::config::{avatar, operations};
 use crate::db::repository::{user_profile_repo, user_repo};
 use crate::entities::user_profile;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::types::AvatarSource;
 
 use super::avatar_image::{process_avatar_image, read_avatar_upload};
@@ -35,7 +35,7 @@ async fn write_local_avatar(path: &std::path::Path, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub async fn cleanup_avatar_upload(state: &AppState, user_id: i64) -> Result<()> {
+pub async fn cleanup_avatar_upload(state: &PrimaryAppState, user_id: i64) -> Result<()> {
     let profile = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
     if let Some(profile) = profile.as_ref() {
         delete_upload_objects(state, profile).await;
@@ -44,7 +44,7 @@ pub async fn cleanup_avatar_upload(state: &AppState, user_id: i64) -> Result<()>
 }
 
 pub async fn upload_avatar(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     payload: &mut Multipart,
 ) -> Result<UserProfileInfo> {
@@ -119,7 +119,7 @@ pub async fn upload_avatar(
 }
 
 pub async fn set_avatar_source(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     source: AvatarSource,
 ) -> Result<UserProfileInfo> {
@@ -181,7 +181,7 @@ fn validate_avatar_size(size: u32) -> Result<u32> {
     }
 }
 
-pub async fn get_avatar_bytes(state: &AppState, user_id: i64, size: u32) -> Result<Vec<u8>> {
+pub async fn get_avatar_bytes(state: &PrimaryAppState, user_id: i64, size: u32) -> Result<Vec<u8>> {
     let size = validate_avatar_size(size)?;
     user_repo::find_by_id(&state.db, user_id).await?;
     let profile = user_profile_repo::find_by_user_id(&state.db, user_id)

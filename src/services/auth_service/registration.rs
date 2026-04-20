@@ -5,7 +5,7 @@ use chrono::Utc;
 use crate::config::auth_runtime::{RuntimeAuthPolicy, RuntimeContactVerificationPolicy};
 use crate::db::repository::user_repo;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{mail_outbox_service, mail_template::MailTemplatePayload};
 use crate::types::{UserRole, UserStatus, VerificationPurpose};
 
@@ -16,7 +16,7 @@ use super::shared::{
 use super::{AuthUserInfo, UserAuditInfo, is_email_verified, user_audit_info};
 
 pub async fn create_user_by_admin(
-    state: &AppState,
+    state: &PrimaryAppState,
     username: &str,
     email: &str,
     password: &str,
@@ -38,7 +38,7 @@ pub async fn create_user_by_admin(
 }
 
 pub async fn register(
-    state: &AppState,
+    state: &PrimaryAppState,
     username: &str,
     email: &str,
     password: &str,
@@ -106,7 +106,7 @@ pub async fn register(
 }
 
 pub async fn resend_register_activation(
-    state: &AppState,
+    state: &PrimaryAppState,
     identifier: &str,
 ) -> Result<Option<UserAuditInfo>> {
     let Some(user) = find_user_by_identifier(&state.db, identifier).await? else {
@@ -159,12 +159,12 @@ pub async fn resend_register_activation(
     Ok(Some(user_audit_info(&user)))
 }
 
-pub async fn check_auth_state(state: &AppState) -> Result<bool> {
+pub async fn check_auth_state(state: &PrimaryAppState) -> Result<bool> {
     Ok(user_repo::count_all(&state.db).await? > 0)
 }
 
 pub async fn setup(
-    state: &AppState,
+    state: &PrimaryAppState,
     username: &str,
     email: &str,
     password: &str,

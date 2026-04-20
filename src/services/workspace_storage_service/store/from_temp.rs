@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob, storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::storage_change_service;
 use crate::storage::driver::StorageDriver;
 
@@ -65,7 +65,7 @@ struct WriteFileRecordFromTempParams<'a> {
 }
 
 pub(super) async fn store_from_temp_internal(
-    state: &AppState,
+    state: &PrimaryAppState,
     params: StoreFromTempParams<'_>,
     hints: StoreFromTempHints<'_>,
     new_file_mode: NewFileMode,
@@ -110,7 +110,7 @@ pub(super) async fn store_from_temp_internal(
 }
 
 async fn prepare_store_from_temp(
-    state: &AppState,
+    state: &PrimaryAppState,
     params: StoreFromTempParams<'_>,
     hints: StoreFromTempHints<'_>,
 ) -> Result<PreparedStoreFromTemp> {
@@ -251,7 +251,7 @@ async fn compute_dedup_target(
 }
 
 async fn load_overwrite_context(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     existing_file_id: Option<i64>,
     skip_lock_check: bool,
@@ -274,7 +274,7 @@ async fn load_overwrite_context(
 }
 
 async fn persist_temp_store(
-    state: &AppState,
+    state: &PrimaryAppState,
     prepared: PreparedStoreFromTemp,
     new_file_mode: NewFileMode,
 ) -> Result<file::Model> {

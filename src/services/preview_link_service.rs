@@ -12,7 +12,7 @@ use crate::config::site_url;
 use crate::db::repository::file_repo;
 use crate::entities::{file, share};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     direct_link_service, file_service, share_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -69,7 +69,7 @@ enum ResolvedPreviewTarget {
 }
 
 pub(crate) async fn create_token_for_file_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<PreviewLinkInfo> {
@@ -79,7 +79,7 @@ pub(crate) async fn create_token_for_file_in_scope(
 }
 
 pub async fn create_token_for_shared_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     share_token: &str,
 ) -> Result<PreviewLinkInfo> {
     let (share, file) = share_service::load_preview_shared_file(state, share_token).await?;
@@ -90,7 +90,7 @@ pub async fn create_token_for_shared_file(
 }
 
 pub async fn create_token_for_shared_folder_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     share_token: &str,
     file_id: i64,
 ) -> Result<PreviewLinkInfo> {
@@ -104,7 +104,7 @@ pub async fn create_token_for_shared_folder_file(
 }
 
 pub async fn download_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     requested_name: &str,
     if_none_match: Option<&str>,
@@ -158,7 +158,7 @@ fn build_payload(subject: PreviewSubject) -> PreviewTokenPayload {
 }
 
 fn build_link_for_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     file: &file::Model,
     payload: &PreviewTokenPayload,
 ) -> Result<PreviewLinkInfo> {
@@ -171,7 +171,7 @@ fn build_link_for_file(
 }
 
 fn build_link_for_shared_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     share: &share::Model,
     file: &file::Model,
     payload: &PreviewTokenPayload,
@@ -220,7 +220,7 @@ fn encode_payload(payload: &PreviewTokenPayload) -> Result<String> {
     Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
 }
 
-async fn resolve_token(state: &AppState, token: &str) -> Result<ResolvedPreviewTarget> {
+async fn resolve_token(state: &PrimaryAppState, token: &str) -> Result<ResolvedPreviewTarget> {
     let (payload_segment, signature) = split_token(token)?;
     let payload = decode_payload(payload_segment)?;
     let expires_at = decode_expiry(payload.exp)?;
@@ -339,7 +339,7 @@ fn sign_shared_payload(
 }
 
 async fn reserve_usage(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     payload: &PreviewTokenPayload,
 ) -> Result<ReservedUse> {
@@ -373,7 +373,7 @@ async fn reserve_usage(
     })
 }
 
-async fn rollback_usage(state: &AppState, reserved: &ReservedUse) {
+async fn rollback_usage(state: &PrimaryAppState, reserved: &ReservedUse) {
     if reserved.previous_used == 0 {
         state.cache.delete(&reserved.cache_key).await;
         return;

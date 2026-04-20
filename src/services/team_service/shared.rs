@@ -14,7 +14,7 @@ use crate::config::operations;
 use crate::db::repository::{policy_group_repo, team_member_repo, team_repo, user_repo};
 use crate::entities::{team, team_member, user};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::types::TeamMemberRole;
 
 use super::{
@@ -49,7 +49,7 @@ fn normalize_description(description: Option<&str>) -> String {
     description.unwrap_or_default().trim().to_string()
 }
 
-fn default_team_storage_quota(state: &AppState) -> i64 {
+fn default_team_storage_quota(state: &PrimaryAppState) -> i64 {
     let raw = state.runtime_config.get("default_storage_quota");
     let Some(raw) = raw.as_deref() else {
         return 0;
@@ -77,7 +77,7 @@ pub(super) fn missing_creator_username(team: &team::Model) -> String {
     MISSING_CREATOR_USERNAME.to_string()
 }
 
-async fn load_creator_username(state: &AppState, team: &team::Model) -> Result<String> {
+async fn load_creator_username(state: &PrimaryAppState, team: &team::Model) -> Result<String> {
     match user_repo::find_by_id(&state.db, team.created_by).await {
         Ok(creator) => Ok(creator.username),
         Err(AsterError::RecordNotFound(_)) => Ok(missing_creator_username(team)),
@@ -86,7 +86,7 @@ async fn load_creator_username(state: &AppState, team: &team::Model) -> Result<S
 }
 
 pub(super) async fn build_team_info(
-    state: &AppState,
+    state: &PrimaryAppState,
     team: &team::Model,
     my_role: TeamMemberRole,
 ) -> Result<TeamInfo> {
@@ -125,7 +125,7 @@ pub(super) fn build_team_info_with_metadata(
 }
 
 pub(super) async fn build_admin_team_info(
-    state: &AppState,
+    state: &PrimaryAppState,
     team: &team::Model,
 ) -> Result<AdminTeamInfo> {
     let creator_username = load_creator_username(state, team).await?;
@@ -195,7 +195,7 @@ fn build_team_member_page(
 }
 
 pub(super) async fn load_team_member_page(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     filters: &TeamMemberListFilters,
     limit: u64,
@@ -235,7 +235,7 @@ pub(super) async fn load_team_member_page(
 }
 
 pub(super) async fn resolve_target_user(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: Option<i64>,
     identifier: Option<&str>,
 ) -> Result<user::Model> {
@@ -260,7 +260,7 @@ pub(super) async fn resolve_target_user(
 }
 
 pub(super) async fn require_team_membership(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
 ) -> Result<(team::Model, team_member::Model)> {
@@ -313,7 +313,7 @@ pub(super) async fn ensure_not_last_manager<C: ConnectionTrait>(
 }
 
 pub(super) async fn load_team_metadata(
-    state: &AppState,
+    state: &PrimaryAppState,
     teams: &[team::Model],
 ) -> Result<(HashMap<i64, String>, HashMap<i64, u64>)> {
     if teams.is_empty() {
@@ -346,7 +346,7 @@ pub(super) async fn load_team_metadata(
     ))
 }
 
-pub(super) async fn ensure_assignable_policy_group(state: &AppState, group_id: i64) -> Result<()> {
+pub(super) async fn ensure_assignable_policy_group(state: &PrimaryAppState, group_id: i64) -> Result<()> {
     let group = policy_group_repo::find_group_by_id(&state.db, group_id).await?;
     if !group.is_enabled {
         return Err(AsterError::validation_error(
@@ -365,7 +365,7 @@ pub(super) async fn ensure_assignable_policy_group(state: &AppState, group_id: i
 }
 
 pub(super) async fn resolve_required_policy_group_id(
-    state: &AppState,
+    state: &PrimaryAppState,
     policy_group_id: Option<i64>,
 ) -> Result<i64> {
     let group_id = match policy_group_id {
@@ -386,7 +386,7 @@ pub(super) async fn resolve_required_policy_group_id(
 }
 
 pub(super) async fn create_team_record(
-    state: &AppState,
+    state: &PrimaryAppState,
     created_by_user_id: i64,
     initial_member_user_id: i64,
     initial_member_role: TeamMemberRole,
@@ -433,7 +433,7 @@ pub(super) async fn create_team_record(
 }
 
 pub(super) async fn update_team_record(
-    state: &AppState,
+    state: &PrimaryAppState,
     team: team::Model,
     input: UpdateTeamInput,
     policy_group_id: Option<i64>,
@@ -454,7 +454,7 @@ pub(super) async fn update_team_record(
     team_repo::update(&state.db, active).await
 }
 
-pub(super) async fn archive_team_record(state: &AppState, team: team::Model) -> Result<()> {
+pub(super) async fn archive_team_record(state: &PrimaryAppState, team: team::Model) -> Result<()> {
     let mut active = team.into_active_model();
     let now = Utc::now();
     active.archived_at = Set(Some(now));
@@ -464,7 +464,7 @@ pub(super) async fn archive_team_record(state: &AppState, team: team::Model) -> 
 }
 
 pub(super) async fn restore_team_record(
-    state: &AppState,
+    state: &PrimaryAppState,
     team: team::Model,
 ) -> Result<team::Model> {
     let mut active = team.into_active_model();

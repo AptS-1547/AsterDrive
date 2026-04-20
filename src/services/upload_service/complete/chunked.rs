@@ -3,7 +3,7 @@ use chrono::Utc;
 use crate::db::repository::file_repo;
 use crate::entities::{file, storage_policy, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::shared::{
     mark_session_failed, transition_upload_session_to_assembling,
 };
@@ -28,7 +28,7 @@ enum AssembledBlobPlan {
 }
 
 pub(super) async fn complete_chunked_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
 ) -> Result<file::Model> {
     let db = &state.db;
@@ -69,7 +69,7 @@ pub(super) async fn complete_chunked_upload(
 }
 
 async fn finalize_chunked_upload_session(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: &upload_session::Model,
     policy: &storage_policy::Model,
     driver: &dyn StorageDriver,
@@ -93,7 +93,7 @@ async fn finalize_chunked_upload_session(
 }
 
 async fn assemble_local_chunks_to_temp_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: &upload_session::Model,
     should_dedup: bool,
 ) -> Result<AssembledTempFile> {
@@ -202,7 +202,7 @@ async fn stage_assembled_blob_upload(
 }
 
 async fn persist_assembled_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: &upload_session::Model,
     driver: &dyn StorageDriver,
     policy_id: i64,

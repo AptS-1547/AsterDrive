@@ -14,7 +14,7 @@ use tokio::time::timeout;
 use crate::config::RuntimeConfig;
 use crate::config::{mail, site_url};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::mail_template::RenderedMail;
 use crate::utils::id;
 
@@ -175,7 +175,7 @@ impl MailSender for RuntimeMailSender {
 }
 
 pub async fn send_rendered(
-    state: &AppState,
+    state: &PrimaryAppState,
     to: MailRecipient,
     rendered: RenderedMail,
 ) -> Result<()> {
@@ -212,7 +212,7 @@ pub async fn send_rendered_with(
 }
 
 pub async fn send_test_email(
-    state: &AppState,
+    state: &PrimaryAppState,
     email: &str,
     triggered_by: Option<&str>,
 ) -> Result<()> {

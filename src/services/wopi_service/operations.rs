@@ -6,7 +6,7 @@
 
 use crate::db::repository::file_repo;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{file_service, profile_service};
 use crate::types::NullablePatch;
 use bytes::BytesMut;
@@ -37,7 +37,7 @@ pub struct WopiGetFileResult {
 }
 
 pub async fn check_file_info(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
     access_token: &str,
     request_source: WopiRequestSource<'_>,
@@ -69,7 +69,7 @@ pub async fn check_file_info(
 }
 
 pub async fn get_file_contents(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
     access_token: &str,
     if_none_match: Option<&str>,
@@ -103,7 +103,7 @@ pub async fn get_file_contents(
 }
 
 pub async fn put_file_contents(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
     access_token: &str,
     payload: &mut actix_web::web::Payload,
@@ -136,7 +136,7 @@ pub async fn put_file_contents(
 }
 
 pub async fn put_relative_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     req: WopiPutRelativeRequest<'_>,
 ) -> Result<WopiPutRelativeResult> {
     let WopiPutRelativeRequest {
@@ -263,7 +263,7 @@ pub async fn put_relative_file(
 }
 
 pub async fn rename_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
     access_token: &str,
     requested_name: Option<&str>,
@@ -330,7 +330,7 @@ pub async fn rename_file(
 }
 
 pub async fn put_user_info(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
     access_token: &str,
     payload: &mut actix_web::web::Payload,

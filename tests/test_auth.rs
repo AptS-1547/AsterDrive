@@ -2349,7 +2349,7 @@ async fn test_user_status_cached_in_auth_middleware() {
     let cache = aster_drive::cache::create_cache(&cache_config).await;
 
     let base = common::setup().await;
-    let state = aster_drive::runtime::AppState {
+    let state = aster_drive::runtime::PrimaryAppState {
         db: base.db,
         driver_registry: base.driver_registry,
         runtime_config: base.runtime_config,
@@ -2394,7 +2394,7 @@ async fn test_disable_user_invalidates_status_cache() {
     let cache = aster_drive::cache::create_cache(&cache_config).await;
 
     let base = common::setup().await;
-    let state = aster_drive::runtime::AppState {
+    let state = aster_drive::runtime::PrimaryAppState {
         db: base.db,
         driver_registry: base.driver_registry,
         runtime_config: base.runtime_config,

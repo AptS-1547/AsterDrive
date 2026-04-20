@@ -4,7 +4,7 @@ use crate::config::site_url;
 use crate::db::repository::{follower_enrollment_session_repo, managed_follower_repo};
 use crate::entities::follower_enrollment_session;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use chrono::{Duration, Utc};
 use sea_orm::Set;
 use serde::Serialize;
@@ -40,7 +40,7 @@ pub struct RemoteEnrollmentBootstrap {
 }
 
 pub async fn create_enrollment_command(
-    state: &AppState,
+    state: &PrimaryAppState,
     remote_node_id: i64,
 ) -> Result<RemoteEnrollmentCommandInfo> {
     let master_url = site_url::public_site_url(&state.runtime_config).ok_or_else(|| {
@@ -92,7 +92,7 @@ pub async fn create_enrollment_command(
 }
 
 pub async fn redeem_enrollment_token(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
 ) -> Result<RemoteEnrollmentBootstrap> {
     let trimmed = token.trim();
@@ -142,7 +142,7 @@ pub async fn redeem_enrollment_token(
     .await
 }
 
-pub async fn ack_enrollment_token(state: &AppState, ack_token: &str) -> Result<()> {
+pub async fn ack_enrollment_token(state: &PrimaryAppState, ack_token: &str) -> Result<()> {
     let trimmed = ack_token.trim();
     if trimmed.is_empty() {
         return Err(AsterError::validation_error("ack_token cannot be blank"));

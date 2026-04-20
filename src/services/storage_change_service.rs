@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, HashSet};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 
 pub const STORAGE_CHANGE_CHANNEL_CAPACITY: usize = 1024;
@@ -114,7 +114,7 @@ impl StorageChangeEvent {
     }
 }
 
-pub fn publish(state: &AppState, event: StorageChangeEvent) {
+pub fn publish(state: &PrimaryAppState, event: StorageChangeEvent) {
     if let Err(e) = state.storage_change_tx.send(event) {
         tracing::debug!("skip storage change broadcast without listeners: {e}");
     }

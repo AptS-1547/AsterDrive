@@ -14,7 +14,7 @@ use crate::cache;
 use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob, storage_policy, user};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::file_service::DownloadDisposition;
 use crate::services::{mail_service, policy_service};
 use crate::storage::driver::BlobMetadata;
@@ -143,7 +143,7 @@ async fn build_download_test_state(
     driver: CountingStreamDriver,
     payload_size: i64,
 ) -> (
-    AppState,
+    PrimaryAppState,
     file::Model,
     file_blob::Model,
     CountingStreamDriver,
@@ -241,7 +241,7 @@ async fn build_download_test_state(
             crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
         );
 
-    let state = AppState {
+    let state = PrimaryAppState {
         db: db.clone(),
         driver_registry,
         runtime_config: runtime_config.clone(),

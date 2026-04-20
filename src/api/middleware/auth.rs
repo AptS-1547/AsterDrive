@@ -11,7 +11,7 @@ use std::rc::Rc;
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::request_auth::{access_cookie_token, bearer_token};
 use crate::errors::AsterError;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::auth_service;
 
 /// JWT 认证中间件
@@ -56,8 +56,8 @@ where
 
         Box::pin(async move {
             let state = req
-                .app_data::<web::Data<AppState>>()
-                .ok_or_else(|| AsterError::internal_error("AppState not found"))?;
+                .app_data::<web::Data<PrimaryAppState>>()
+                .ok_or_else(|| AsterError::internal_error("PrimaryAppState not found"))?;
 
             // 1. Cookie 优先
             // 2. Authorization: Bearer fallback
