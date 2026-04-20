@@ -1,3 +1,8 @@
+//! `doctor` 命令的执行编排。
+//!
+//! 这里把数据库连接、基础检查、运行时配置检查和深度审计串成一条执行链，
+//! 最终汇总成统一的 `DoctorReport`。
+
 use sea_orm::{DatabaseConnection, DbBackend};
 
 use super::{
@@ -9,6 +14,7 @@ use super::{
     redact_database_url,
 };
 
+/// Executes the full doctor flow and assembles the final report payload.
 pub(super) async fn execute_doctor_command_impl(args: &DoctorArgs) -> DoctorReport {
     let redacted_database_url = redact_database_url(&args.database_url);
     // `--fix`、`--scope`、`--policy-id` 都意味着用户已经在请求深度审计；

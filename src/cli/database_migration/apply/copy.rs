@@ -1,4 +1,6 @@
-//! CLI 子模块：`copy`。
+//! `database-migrate` 的批量复制与断点续传执行。
+//!
+//! 这里按表顺序分批读取源库、写入目标库，并在每批提交后推进检查点状态。
 
 use std::collections::BTreeMap;
 
@@ -17,6 +19,7 @@ use super::super::{
 };
 use super::convert::decode_row_values;
 
+/// Copies all planned tables in batches and persists checkpoint progress after each commit.
 pub(super) async fn copy_tables_with_resume(
     source: &DatabaseConnection,
     target: &DatabaseConnection,
@@ -119,6 +122,7 @@ pub(super) async fn copy_tables_with_resume(
     Ok(())
 }
 
+/// Resets target-side auto-increment sequences after table data has been copied.
 pub(super) async fn reset_sequences(
     target: &DatabaseConnection,
     plans: &[TablePlan],

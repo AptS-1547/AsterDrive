@@ -1,4 +1,7 @@
-//! CLI 子模块：`helpers`。
+//! `database-migrate` 的共享辅助函数。
+//!
+//! 这里集中放置 SQL 引号、标量查询、时间戳和数据库 URL 脱敏等
+//! 在多个迁移子模块间复用的小工具。
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};

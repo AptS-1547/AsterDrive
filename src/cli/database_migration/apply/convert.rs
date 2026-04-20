@@ -1,4 +1,7 @@
-//! CLI 子模块：`convert`。
+//! `database-migrate` 的行值解码与类型转换。
+//!
+//! 这里负责把源库查询结果解码成统一的中间表示，再按目标列类型转换成
+//! 可插入目标库的参数值。
 
 use std::collections::BTreeMap;
 
@@ -10,6 +13,7 @@ use crate::errors::{AsterError, Result};
 use super::super::helpers::{parse_bool, parse_timestamp};
 use super::super::{BindingKind, CellValue, TablePlan};
 
+/// Decodes a source row and converts each cell into the target backend value shape.
 pub(super) fn decode_row_values(
     row: &QueryResult,
     plan: &TablePlan,

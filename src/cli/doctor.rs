@@ -192,6 +192,7 @@ fn doctor_scope_enabled(scopes: &[DoctorDeepScope], target: DoctorDeepScope) -> 
     scopes.contains(&target)
 }
 
+/// Executes the `doctor` command and returns a structured report for rendering.
 pub async fn execute_doctor_command(args: &DoctorArgs) -> DoctorReport {
     execute::execute_doctor_command_impl(args).await
 }
@@ -291,6 +292,7 @@ async fn doctor_sqlite_search_check(
     }
 }
 
+/// Renders a successful doctor report in the requested output format.
 pub fn render_doctor_success(format: OutputFormat, report: &DoctorReport) -> String {
     match format.resolve() {
         ResolvedOutputFormat::Json => render_success_envelope(report, false),

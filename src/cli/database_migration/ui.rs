@@ -1,4 +1,6 @@
-//! CLI 子模块：`ui`。
+//! `database-migrate` 的终端输出与进度展示。
+//!
+//! 这里根据输出格式渲染 JSON / Human 报告，并负责可选的进度条与阶段日志。
 
 use std::io::{self, IsTerminal, Write};
 
@@ -64,6 +66,7 @@ struct DatabaseMigrationErrorPayload<'a> {
     message: &'a str,
 }
 
+/// Renders a successful migration report in the selected output format.
 pub fn render_database_migration_success(
     format: DatabaseMigrateOutputFormat,
     report: &DatabaseMigrationReport,
@@ -87,6 +90,7 @@ pub fn render_database_migration_success(
     }
 }
 
+/// Renders a migration failure in the selected output format.
 pub fn render_database_migration_error(
     format: DatabaseMigrateOutputFormat,
     err: &AsterError,

@@ -1,4 +1,7 @@
-//! CLI 子模块：`schema`。
+//! `database-migrate` 的 schema 发现与迁移计划构建。
+//!
+//! 这里负责连接数据库、识别后端、校验源库表集合，并把源表元数据整理成
+//! 可执行的复制计划。
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -87,6 +90,7 @@ where
         .collect())
 }
 
+/// Loads the ordered source table plans that drive copy and verification stages.
 pub(super) async fn load_source_plans(source: &DatabaseConnection) -> Result<Vec<TablePlan>> {
     let backend = source.get_database_backend();
     let existing_tables = source_table_names(source, backend).await?;

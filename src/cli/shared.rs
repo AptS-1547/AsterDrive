@@ -1,4 +1,7 @@
-//! CLI 子模块：`shared`。
+//! CLI 共享基础设施。
+//!
+//! 这里集中放置各个 CLI 子命令共用的输出格式、终端配色、数据库连接和
+//! 通用渲染辅助，避免每个子命令重复处理样板逻辑。
 
 use std::io::{self, IsTerminal};
 
@@ -181,6 +184,7 @@ pub(super) fn human_key(label: &str, palette: &CliTerminalPalette) -> String {
     palette.label(&format!("{label:<14}", label = format!("{label}:")))
 }
 
+/// Builds the clap styling palette shared by all CLI subcommands.
 pub fn cli_styles() -> Styles {
     Styles::styled()
         .header(AnsiColor::Green.on_default() | Effects::BOLD)

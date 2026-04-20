@@ -1,4 +1,8 @@
-//! CLI 子模块：`database_migration`。
+//! `aster_drive database-migrate` 的聚合入口。
+//!
+//! 这里负责协调跨数据库迁移的预检、结构准备、断点续传、数据复制、
+//! 校验和最终报告渲染；具体实现拆分在 `apply`、`schema`、`verify`
+//! 等子模块。
 
 mod apply;
 mod checkpoint;
@@ -305,6 +309,7 @@ struct ApplyModeContext<'a> {
     progress: &'a ProgressReporter,
 }
 
+/// Executes an end-to-end cross-database migration or verification flow.
 pub async fn execute_database_migration(
     args: &DatabaseMigrateArgs,
 ) -> Result<DatabaseMigrationReport> {

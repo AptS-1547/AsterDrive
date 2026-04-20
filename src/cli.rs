@@ -1,4 +1,7 @@
 //! CLI 聚合入口。
+//!
+//! 这里统一导出 `doctor`、`config`、`database-migrate` 共享的参数类型、
+//! 执行入口和渲染函数，供根命令分发层直接复用。
 
 mod config;
 mod database_migration;

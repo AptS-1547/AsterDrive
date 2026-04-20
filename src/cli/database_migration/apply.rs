@@ -1,4 +1,7 @@
-//! CLI 子模块：`apply`。
+//! `database-migrate` 的应用执行流程。
+//!
+//! 这里串联目标库 schema 准备、检查点初始化、批量复制、序列重置和
+//! 复制后的完整性校验。
 
 mod convert;
 mod copy;
@@ -19,6 +22,7 @@ use super::schema::{pending_migrations, refresh_target_rows, total_source_rows};
 use super::verify::{verification_message, verification_ready, verify_target};
 use super::{ApplyExecution, ApplyModeContext, MigrationCheckpoint};
 
+/// Applies migrations, copies data with resume support, then verifies the target.
 pub(super) async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<ApplyExecution> {
     ctx.progress
         .stage("structure_prepare", "preparing target schema");

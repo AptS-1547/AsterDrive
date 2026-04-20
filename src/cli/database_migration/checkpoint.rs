@@ -1,4 +1,7 @@
-//! CLI 子模块：`checkpoint`。
+//! `database-migrate` 的断点续传检查点管理。
+//!
+//! 这里负责创建、加载、更新和失败标记迁移检查点，让中断后的数据复制
+//! 可以从已提交的位置继续。
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 
@@ -17,6 +20,7 @@ pub(super) struct InitializedCheckpoint {
     pub(super) resumed: bool,
 }
 
+/// Creates the checkpoint table in the target database when it does not exist.
 pub(super) async fn ensure_checkpoint_table(target: &DatabaseConnection) -> Result<()> {
     let backend = target.get_database_backend();
     let sql = format!(
@@ -64,6 +68,7 @@ pub(super) async fn ensure_checkpoint_table(target: &DatabaseConnection) -> Resu
     Ok(())
 }
 
+/// Loads an existing apply-mode checkpoint or initializes a new one for this plan.
 pub(super) async fn initialize_checkpoint(
     args: &DatabaseMigrateArgs,
     target: &DatabaseConnection,

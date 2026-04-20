@@ -1,3 +1,8 @@
+//! `doctor --deep` 的存储扫描检查。
+//!
+//! 这里负责把底层对象存储审计结果转换成 CLI 友好的检查项，
+//! 包括已追踪对象缺失、未追踪对象和孤儿缩略图三类问题。
+
 use sea_orm::DatabaseConnection;
 
 use crate::errors::Result;
@@ -5,6 +10,7 @@ use crate::services::integrity_service::{self, StorageObjectAudit};
 
 use super::{DoctorCheck, DoctorStatus, doctor_check};
 
+/// Runs storage object auditing and maps the findings into doctor checks.
 pub(super) async fn doctor_storage_scan_checks(
     db: &DatabaseConnection,
     policy_id: Option<i64>,

@@ -1,4 +1,6 @@
-//! CLI 子模块：`verify`。
+//! `database-migrate` 的复制后数据校验。
+//!
+//! 这里检查行数、唯一约束和外键完整性，给出是否可以切换到目标库的判断依据。
 
 use std::collections::BTreeSet;
 

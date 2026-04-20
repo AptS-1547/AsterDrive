@@ -1,4 +1,7 @@
-//! CLI 子模块：`config`。
+//! `aster_drive config` 的聚合入口。
+//!
+//! 这里负责定义配置子命令、参数解析、读写/校验流程和结果渲染；
+//! 底层持久化与配置规则仍复用 `config_repo` 和 `system_config` 相关逻辑。
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -139,6 +142,7 @@ struct ImportFilePayload {
     configs: Vec<ImportItem>,
 }
 
+/// Executes a runtime configuration subcommand against the target database.
 pub async fn execute_config_command(
     database_url: &str,
     command: &ConfigCommand,
@@ -224,6 +228,7 @@ pub async fn execute_config_command(
     }
 }
 
+/// Renders a successful config command result in the requested output format.
 pub fn render_success(format: OutputFormat, data: &ConfigCommandReport) -> String {
     match format.resolve() {
         ResolvedOutputFormat::Json => render_config_json(data, false),
@@ -232,6 +237,7 @@ pub fn render_success(format: OutputFormat, data: &ConfigCommandReport) -> Strin
     }
 }
 
+/// Renders a config command failure in the requested output format.
 pub fn render_error(format: OutputFormat, err: &AsterError) -> String {
     match format.resolve() {
         ResolvedOutputFormat::Json => render_error_json(err, false),
