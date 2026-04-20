@@ -37,6 +37,7 @@ const COPY_TABLE_ORDER: &[&str] = &[
     "storage_policy_group_items",
     "users",
     "user_profiles",
+    "auth_sessions",
     "teams",
     "team_members",
     "folders",
