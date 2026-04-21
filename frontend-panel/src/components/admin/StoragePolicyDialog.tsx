@@ -140,7 +140,7 @@ export function StoragePolicyDialog({
 			type: "remote",
 			title: t("driver_type_remote"),
 			description: t("policy_wizard_remote_storage_desc"),
-			iconName: "Globe",
+			iconSrc: "/static/asterdrive/asterdrive-dark.svg",
 		},
 	];
 	const createSteps = [
@@ -612,10 +612,7 @@ export function StoragePolicyDialog({
 				items={remoteUploadStrategyOptions}
 				value={form.remote_upload_strategy}
 				onValueChange={(value) =>
-					onFieldChange(
-						"remote_upload_strategy",
-						value as RemoteUploadStrategy,
-					)
+					onFieldChange("remote_upload_strategy", value as RemoteUploadStrategy)
 				}
 			>
 				<SelectTrigger id="remote_upload_strategy">

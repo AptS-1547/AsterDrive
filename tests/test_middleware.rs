@@ -8,7 +8,7 @@ use aster_drive::api::{
     middleware::security_headers::{
         REFERRER_POLICY_VALUE, X_CONTENT_TYPE_OPTIONS_VALUE, X_FRAME_OPTIONS_VALUE,
     },
-    routes::frontend::FRONTEND_CSP,
+    routes::frontend::{FRONTEND_CSP_HEADER, FRONTEND_CSP_META},
 };
 use serde_json::Value;
 
@@ -96,16 +96,36 @@ async fn test_frontend_index_sets_csp_header_and_meta() {
         resp.headers()
             .get("Content-Security-Policy")
             .and_then(|value| value.to_str().ok()),
-        Some(FRONTEND_CSP)
+        Some(FRONTEND_CSP_HEADER)
     );
 
     let body = to_bytes(resp.into_body()).await.unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
-    let escaped_csp = FRONTEND_CSP.replace('\'', "&#39;");
+    let escaped_csp = FRONTEND_CSP_META.replace('\'', "&#39;");
     assert!(
         html.contains(&format!(
             "<meta http-equiv=\"Content-Security-Policy\" content=\"{escaped_csp}\" />"
         )),
         "expected index.html to include CSP meta tag"
+    );
+    assert!(
+        !html.contains("frame-ancestors"),
+        "meta CSP should not include header-only frame-ancestors directive"
+    );
+}
+
+#[actix_web::test]
+async fn test_frontend_csp_constants_split_header_only_directives() {
+    assert!(
+        FRONTEND_CSP_HEADER.contains("frame-ancestors 'self'"),
+        "header CSP should retain frame-ancestors"
+    );
+    assert!(
+        !FRONTEND_CSP_META.contains("frame-ancestors"),
+        "meta CSP should exclude frame-ancestors"
+    );
+    assert!(
+        FRONTEND_CSP_META.contains("connect-src 'self' http: https: ws: wss:"),
+        "meta CSP should still allow presigned and remote browser connections"
     );
 }

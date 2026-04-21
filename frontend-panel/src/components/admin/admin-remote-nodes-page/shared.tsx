@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
+import { formatDateTime } from "@/lib/format";
 import type { RemoteNodeInfo } from "@/types/api";
 
 export const INTERACTIVE_TABLE_ROW_CLASS =
@@ -88,5 +89,7 @@ export function formatLastChecked(
 	t: TFunction,
 	lastCheckedAt: string | null | undefined,
 ) {
-	return lastCheckedAt || t("remote_node_never_checked");
+	return lastCheckedAt
+		? formatDateTime(lastCheckedAt)
+		: t("remote_node_never_checked");
 }

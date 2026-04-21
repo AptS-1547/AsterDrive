@@ -162,17 +162,18 @@ fn browser_origin_from_master_url(master_url: &str) -> AsterResult<String> {
     let host = url.host_str().ok_or_else(|| {
         AsterError::validation_error("master binding master_url must include a host")
     })?;
+    let scheme = url.scheme().to_ascii_lowercase();
     let mut authority = host.to_ascii_lowercase();
     if let Some(port) = url.port() {
-        authority.push(':');
-        authority.push_str(&port.to_string());
+        let is_default_port =
+            (scheme == "http" && port == 80) || (scheme == "https" && port == 443);
+        if !is_default_port {
+            authority.push(':');
+            authority.push_str(&port.to_string());
+        }
     }
 
-    Ok(format!(
-        "{}://{}",
-        url.scheme().to_ascii_lowercase(),
-        authority
-    ))
+    Ok(format!("{scheme}://{authority}"))
 }
 
 fn is_preflight_request(req: &ServiceRequest) -> bool {
@@ -284,4 +285,27 @@ fn forbidden(req: ServiceRequest) -> ServiceResponse {
     let _ = ensure_vary(response.headers_mut(), "Access-Control-Request-Method");
     let _ = ensure_vary(response.headers_mut(), "Access-Control-Request-Headers");
     req.into_response(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::browser_origin_from_master_url;
+
+    #[test]
+    fn browser_origin_from_master_url_drops_default_https_port() {
+        assert_eq!(
+            browser_origin_from_master_url(" HTTPS://Example.COM:443/admin/settings ")
+                .expect("default https port should normalize"),
+            "https://example.com"
+        );
+    }
+
+    #[test]
+    fn browser_origin_from_master_url_keeps_non_default_port() {
+        assert_eq!(
+            browser_origin_from_master_url("http://Example.COM:8085/api/v1")
+                .expect("non-default port should be preserved"),
+            "http://example.com:8085"
+        );
+    }
 }

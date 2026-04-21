@@ -2,8 +2,33 @@ import { describe, expect, it, vi } from "vitest";
 
 const createBrowserRouterMock = vi.fn((routes: unknown) => ({ routes }));
 
+vi.mock("@/components/layout/AdminSiteUrlMismatchPrompt", () => ({
+	AdminSiteUrlMismatchPrompt: () => null,
+}));
+
 vi.mock("@/pages/ErrorPage", () => ({
 	default: () => null,
+}));
+
+vi.mock("@/stores/authStore", () => ({
+	useAuthStore: () => undefined,
+}));
+
+vi.mock("@/stores/fileStore", () => ({
+	useFileStore: {
+		getState: () => ({
+			resetWorkspaceState: vi.fn(),
+		}),
+	},
+}));
+
+vi.mock("@/stores/workspaceStore", () => ({
+	useWorkspaceStore: {
+		getState: () => ({
+			workspace: { kind: "personal" },
+		}),
+		setState: vi.fn(),
+	},
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -18,19 +43,25 @@ vi.mock("react-router-dom", async () => {
 	};
 });
 
+async function loadRoutes() {
+	createBrowserRouterMock.mockClear();
+	vi.resetModules();
+	await import("./index");
+	return createBrowserRouterMock.mock.calls[0]?.[0] as Array<{
+		children?: Array<unknown>;
+		element?: {
+			props?: {
+				replace?: boolean;
+				to?: string;
+			};
+		};
+		path?: string;
+	}>;
+}
+
 describe("router", () => {
 	it("redirects unmatched routes to the home route", async () => {
-		await import("./index");
-
-		const routes = createBrowserRouterMock.mock.calls[0]?.[0] as Array<{
-			element?: {
-				props?: {
-					replace?: boolean;
-					to?: string;
-				};
-			};
-			path?: string;
-		}>;
+		const routes = await loadRoutes();
 		const fallbackRoute = routes.at(-1);
 
 		expect(fallbackRoute?.path).toBe("*");
@@ -39,25 +70,7 @@ describe("router", () => {
 	});
 
 	it("registers admin mail settings routes without the removed verify-contact page", async () => {
-		await import("./index");
-
-		const routes = createBrowserRouterMock.mock.calls[0]?.[0] as Array<{
-			children?: Array<{
-				children?: Array<unknown>;
-				element?: {
-					props?: {
-						to?: string;
-					};
-				};
-				path?: string;
-			}>;
-			element?: {
-				props?: {
-					to?: string;
-				};
-			};
-			path?: string;
-		}>;
+		const routes = await loadRoutes();
 		const flattenRoutes = (
 			items: Array<{
 				children?: Array<unknown>;

@@ -217,6 +217,138 @@ fn path_and_query_from_url(url: &str) -> String {
     }
 }
 
+fn rewrite_path_query_param(path_and_query: &str, key: &str, value: Option<&str>) -> String {
+    let mut parsed = reqwest::Url::parse(&format!("http://example.invalid{path_and_query}"))
+        .expect("test path and query should parse");
+    let existing_pairs: Vec<(String, String)> = parsed
+        .query_pairs()
+        .into_owned()
+        .filter(|(existing_key, _)| existing_key != key)
+        .collect();
+    parsed.set_query(None);
+    {
+        let mut query = parsed.query_pairs_mut();
+        for (existing_key, existing_value) in existing_pairs {
+            query.append_pair(&existing_key, &existing_value);
+        }
+        if let Some(value) = value {
+            query.append_pair(key, value);
+        }
+    }
+    path_and_query_from_url(parsed.as_str())
+}
+
+struct BrowserPresignedCorsFixture {
+    provider_state: aster_drive::runtime::PrimaryAppState,
+    presigned_path: String,
+}
+
+async fn setup_browser_presigned_cors_fixture(
+    namespace: &str,
+    master_url: &str,
+) -> BrowserPresignedCorsFixture {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: format!("{namespace}-node"),
+            base_url: "http://provider.example.com".to_string(),
+            namespace: namespace.to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: format!("{namespace}-binding"),
+            master_url: master_url.to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: namespace.to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        &format!("Remote Presigned {namespace} Policy"),
+        &format!("{namespace}-base"),
+        StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        },
+        1024,
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let _ = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+    let folder = folder_service::create(
+        &consumer_state,
+        user.id,
+        &format!("{namespace}-folder"),
+        None,
+    )
+    .await
+    .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let init = upload_service::init_upload(
+        &consumer_state,
+        user.id,
+        &format!("{namespace}.bin"),
+        32,
+        Some(folder.id),
+        None,
+    )
+    .await
+    .expect("remote presigned upload should initialize");
+
+    BrowserPresignedCorsFixture {
+        provider_state,
+        presigned_path: path_and_query_from_url(
+            &init
+                .presigned_url
+                .expect("presigned mode should return presigned_url"),
+        ),
+    }
+}
+
 #[actix_web::test]
 async fn test_remote_node_connection_failure_returns_error_and_persists_last_error() {
     let state = common::setup().await;
@@ -1113,6 +1245,14 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
             .and_then(|value| value.to_str().ok()),
         Some("content-type")
     );
+    let vary = resp
+        .headers()
+        .get(actix_web::http::header::VARY)
+        .and_then(|value| value.to_str().ok())
+        .expect("preflight response should include Vary");
+    assert!(vary.contains("Origin"));
+    assert!(vary.contains("Access-Control-Request-Method"));
+    assert!(vary.contains("Access-Control-Request-Headers"));
 
     let req = test::TestRequest::default()
         .method(actix_web::http::Method::OPTIONS)
@@ -1120,6 +1260,42 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
         .insert_header(("Origin", "http://evil.example.com"))
         .insert_header(("Access-Control-Request-Method", "PUT"))
         .insert_header(("Access-Control-Request-Headers", "content-type"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header(("Access-Control-Request-Method", "DELETE"))
+        .insert_header(("Access-Control-Request-Headers", "content-type"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header(("Access-Control-Request-Method", "PUT"))
+        .insert_header(("Access-Control-Request-Headers", "content-type, x-extra"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+
+    let req = test::TestRequest::put()
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://evil.example.com"))
+        .insert_header((
+            actix_web::http::header::CONTENT_TYPE,
+            "application/octet-stream",
+        ))
+        .insert_header((
+            actix_web::http::header::CONTENT_LENGTH,
+            body.len().to_string(),
+        ))
+        .set_payload(body.clone())
         .to_request();
     let resp = test::call_service(&follower_app, req).await;
     assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
@@ -1151,9 +1327,583 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
             .and_then(|value| value.to_str().ok()),
         Some("ETag")
     );
+    let vary = resp
+        .headers()
+        .get(actix_web::http::header::VARY)
+        .and_then(|value| value.to_str().ok())
+        .expect("actual PUT response should include Vary");
+    assert!(vary.contains("Origin"));
     assert!(
         resp.headers().contains_key(actix_web::http::header::ETAG),
         "browser PUT should expose ETag header"
+    );
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_browser_cors_accepts_master_url_with_path_and_port() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: "http://provider.example.com".to_string(),
+            namespace: "provider-browser-origin-path-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://localhost:3000/admin/settings/general".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-browser-origin-path-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Presigned Browser Origin Path Policy",
+        "browser-origin-path-base",
+        StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        },
+        1024,
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let _ = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+    let folder =
+        folder_service::create(&consumer_state, user.id, "remote-browser-origin-path", None)
+            .await
+            .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let init = upload_service::init_upload(
+        &consumer_state,
+        user.id,
+        "presigned-origin-path.bin",
+        32,
+        Some(folder.id),
+        None,
+    )
+    .await
+    .expect("remote presigned upload should initialize");
+    let presigned_path = path_and_query_from_url(
+        &init
+            .presigned_url
+            .expect("presigned mode should return presigned_url"),
+    );
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header(("Access-Control-Request-Method", "PUT"))
+        .insert_header(("Access-Control-Request-Headers", "content-type"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::NO_CONTENT);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://localhost:3000")
+    );
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_browser_cors_rejects_disabled_binding() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: "http://provider.example.com".to_string(),
+            namespace: "provider-browser-disabled-binding-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    let binding = master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://localhost:3000".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-browser-disabled-binding-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created")
+    .0;
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Presigned Disabled Binding Policy",
+        "browser-disabled-binding-base",
+        StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        },
+        1024,
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let _ = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+    let folder = folder_service::create(
+        &consumer_state,
+        user.id,
+        "remote-browser-disabled-binding",
+        None,
+    )
+    .await
+    .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let init = upload_service::init_upload(
+        &consumer_state,
+        user.id,
+        "presigned-disabled-binding.bin",
+        32,
+        Some(folder.id),
+        None,
+    )
+    .await
+    .expect("remote presigned upload should initialize");
+    let presigned_path = path_and_query_from_url(
+        &init
+            .presigned_url
+            .expect("presigned mode should return presigned_url"),
+    );
+
+    let follower_state = provider_state.follower_view();
+    master_binding_service::sync_from_primary(
+        &follower_state,
+        &binding.access_key,
+        master_binding_service::SyncMasterBindingInput {
+            name: binding.name.clone(),
+            namespace: binding.namespace.clone(),
+            is_enabled: false,
+        },
+    )
+    .await
+    .expect("binding should be disabled");
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header(("Access-Control-Request-Method", "PUT"))
+        .insert_header(("Access-Control-Request-Headers", "content-type"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_browser_cors_passthrough_without_origin_header() {
+    let fixture = setup_browser_presigned_cors_fixture(
+        "provider-browser-no-origin-space",
+        "http://localhost:3000",
+    )
+    .await;
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(fixture.provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let body = b"presigned-no-origin".to_vec();
+    let req = test::TestRequest::put()
+        .uri(&fixture.presigned_path)
+        .insert_header((
+            actix_web::http::header::CONTENT_TYPE,
+            "application/octet-stream",
+        ))
+        .insert_header((
+            actix_web::http::header::CONTENT_LENGTH,
+            body.len().to_string(),
+        ))
+        .set_payload(body)
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert!(
+        !resp
+            .headers()
+            .contains_key(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN),
+        "requests without Origin should bypass browser CORS decoration"
+    );
+    assert!(
+        !resp
+            .headers()
+            .contains_key(actix_web::http::header::ACCESS_CONTROL_EXPOSE_HEADERS),
+        "non-browser requests should not receive expose-headers decoration"
+    );
+    assert!(
+        resp.headers().contains_key(actix_web::http::header::ETAG),
+        "plain presigned PUT should still return ETag"
+    );
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_browser_cors_missing_access_key_passthroughs_to_auth_error() {
+    let fixture = setup_browser_presigned_cors_fixture(
+        "provider-browser-missing-access-key-space",
+        "http://localhost:3000",
+    )
+    .await;
+    let presigned_path =
+        rewrite_path_query_param(&fixture.presigned_path, "aster_access_key", None);
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(fixture.provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::put()
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header((
+            actix_web::http::header::CONTENT_TYPE,
+            "application/octet-stream",
+        ))
+        .insert_header((actix_web::http::header::CONTENT_LENGTH, "4"))
+        .set_payload(b"test".as_slice())
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+    assert!(
+        !resp
+            .headers()
+            .contains_key(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN),
+        "middleware should leave missing access_key requests to auth layer"
+    );
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 2002);
+    assert_eq!(body["msg"], "missing query parameter 'aster_access_key'");
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_browser_cors_invalid_origin_header_returns_bad_request() {
+    let fixture = setup_browser_presigned_cors_fixture(
+        "provider-browser-invalid-origin-space",
+        "http://localhost:3000",
+    )
+    .await;
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(fixture.provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&fixture.presigned_path)
+        .insert_header(("Origin", "http://localhost:3000/admin"))
+        .insert_header(("Access-Control-Request-Method", "PUT"))
+        .insert_header(("Access-Control-Request-Headers", "content-type"))
+        .to_request();
+    let err = test::try_call_service(&follower_app, req)
+        .await
+        .expect_err("invalid Origin header should be rejected before routing");
+    let resp = err.error_response();
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert!(
+        !resp
+            .headers()
+            .contains_key(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN),
+        "invalid Origin should fail before emitting CORS allow headers"
+    );
+    let body = actix_web::body::to_bytes(resp.into_body())
+        .await
+        .expect("bad request body should be readable");
+    let body: serde_json::Value =
+        serde_json::from_slice(&body).expect("bad request body should be valid json");
+    assert_eq!(body["code"], 1000);
+    assert_eq!(
+        body["msg"],
+        "CORS origin must not include a path: 'http://localhost:3000/admin'"
+    );
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_browser_cors_invalid_preflight_header_name_returns_bad_request()
+ {
+    let fixture = setup_browser_presigned_cors_fixture(
+        "provider-browser-invalid-header-name-space",
+        "http://localhost:3000",
+    )
+    .await;
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(fixture.provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&fixture.presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header(("Access-Control-Request-Method", "PUT"))
+        .insert_header(("Access-Control-Request-Headers", "content-type, @bad"))
+        .to_request();
+    let err = test::try_call_service(&follower_app, req)
+        .await
+        .expect_err("invalid preflight header name should be rejected");
+    let resp = err.error_response();
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let body = actix_web::body::to_bytes(resp.into_body())
+        .await
+        .expect("bad request body should be readable");
+    let body: serde_json::Value =
+        serde_json::from_slice(&body).expect("bad request body should be valid json");
+    assert_eq!(body["code"], 1000);
+    assert_eq!(body["msg"], "invalid Access-Control-Request-Headers");
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_browser_cors_keeps_headers_on_expired_signature() {
+    let fixture = setup_browser_presigned_cors_fixture(
+        "provider-browser-expired-signature-space",
+        "http://localhost:3000",
+    )
+    .await;
+    let expired_path =
+        rewrite_path_query_param(&fixture.presigned_path, "aster_expires", Some("1"));
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(fixture.provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::put()
+        .uri(&expired_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header((
+            actix_web::http::header::CONTENT_TYPE,
+            "application/octet-stream",
+        ))
+        .insert_header((actix_web::http::header::CONTENT_LENGTH, "4"))
+        .set_payload(b"test".as_slice())
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .and_then(|value| value.to_str().ok()),
+        Some("ETag")
+    );
+    let vary = resp
+        .headers()
+        .get(actix_web::http::header::VARY)
+        .and_then(|value| value.to_str().ok())
+        .expect("expired presigned response should include Vary");
+    assert!(vary.contains("Origin"));
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 2002);
+    assert_eq!(body["msg"], "remote presigned URL has expired");
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_browser_cors_keeps_headers_on_signature_mismatch() {
+    let fixture = setup_browser_presigned_cors_fixture(
+        "provider-browser-signature-mismatch-space",
+        "http://localhost:3000",
+    )
+    .await;
+    let bad_signature_path =
+        rewrite_path_query_param(&fixture.presigned_path, "aster_signature", Some("deadbeef"));
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(fixture.provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::put()
+        .uri(&bad_signature_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header((
+            actix_web::http::header::CONTENT_TYPE,
+            "application/octet-stream",
+        ))
+        .insert_header((actix_web::http::header::CONTENT_LENGTH, "4"))
+        .set_payload(b"test".as_slice())
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .and_then(|value| value.to_str().ok()),
+        Some("ETag")
+    );
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 2000);
+    assert_eq!(body["msg"], "remote presigned signature mismatch");
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_browser_cors_accepts_master_url_with_default_https_port() {
+    let fixture = setup_browser_presigned_cors_fixture(
+        "provider-browser-default-port-space",
+        " HTTPS://LOCALHOST:443/admin/settings/general ",
+    )
+    .await;
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(fixture.provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&fixture.presigned_path)
+        .insert_header(("Origin", "https://localhost"))
+        .insert_header(("Access-Control-Request-Method", "PUT"))
+        .insert_header(("Access-Control-Request-Headers", "content-type"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::NO_CONTENT);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("https://localhost")
     );
 }
 
