@@ -10,10 +10,15 @@ use crate::storage::remote_protocol::{
     normalize_remote_base_url,
 };
 use chrono::Utc;
+use futures::{StreamExt, stream};
 use sea_orm::{ActiveModelTrait, DbErr, Set, SqlErr};
 use serde::Serialize;
+use std::time::Duration;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
+
+const REMOTE_BINDING_SYNC_TIMEOUT: Duration = Duration::from_secs(5);
+const REMOTE_NODE_HEALTH_TEST_CONCURRENCY: usize = 4;
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -83,6 +88,13 @@ pub struct RemoteNodeHealthTestStats {
 struct ProbedRemoteNode {
     model: managed_follower::Model,
     probe_error: Option<AsterError>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemoteNodeHealthTestOutcome {
+    Skipped,
+    Healthy,
+    Failed,
 }
 
 pub async fn list_paginated<S: PrimaryRuntimeState>(
@@ -161,7 +173,9 @@ pub async fn update<S: PrimaryRuntimeState>(
         .await
         .map_err(map_remote_node_db_err)?;
     refresh_registry(state).await?;
-    if let Err(error) = sync_remote_binding_config(&updated).await {
+    if let Err(error) =
+        sync_remote_binding_config_with_timeout(&updated, REMOTE_BINDING_SYNC_TIMEOUT).await
+    {
         tracing::warn!(
             remote_node_id = updated.id,
             "failed to sync remote binding config to follower: {error}"
@@ -203,31 +217,27 @@ pub async fn run_health_tests<S: PrimaryRuntimeState>(
     state: &S,
 ) -> Result<RemoteNodeHealthTestStats> {
     let nodes = managed_follower_repo::find_all(state.db()).await?;
+    let outcomes = stream::iter(
+        nodes
+            .into_iter()
+            .map(|node| async move { run_health_test_for_node(state, node).await }),
+    )
+    .buffer_unordered(REMOTE_NODE_HEALTH_TEST_CONCURRENCY)
+    .collect::<Vec<_>>()
+    .await;
+
     let mut stats = RemoteNodeHealthTestStats::default();
-
-    for node in nodes {
-        if node.base_url.trim().is_empty() {
-            stats.skipped += 1;
-            continue;
-        }
-
-        if let Err(error) = sync_remote_binding_config(&node).await {
-            tracing::warn!(
-                remote_node_id = node.id,
-                "failed to sync remote binding config during health test: {error}"
-            );
-        }
-        if !node.is_enabled {
-            stats.skipped += 1;
-            continue;
-        }
-
-        let probed = probe_and_persist_node(state, &node).await?;
-        stats.checked += 1;
-        if probed.probe_error.is_none() {
-            stats.healthy += 1;
-        } else {
-            stats.failed += 1;
+    for outcome in outcomes {
+        match outcome? {
+            RemoteNodeHealthTestOutcome::Skipped => stats.skipped += 1,
+            RemoteNodeHealthTestOutcome::Healthy => {
+                stats.checked += 1;
+                stats.healthy += 1;
+            }
+            RemoteNodeHealthTestOutcome::Failed => {
+                stats.checked += 1;
+                stats.failed += 1;
+            }
         }
     }
 
@@ -272,6 +282,34 @@ async fn probe_and_persist_node<S: PrimaryRuntimeState>(
     .await?;
 
     Ok(ProbedRemoteNode { model, probe_error })
+}
+
+async fn run_health_test_for_node<S: PrimaryRuntimeState>(
+    state: &S,
+    node: managed_follower::Model,
+) -> Result<RemoteNodeHealthTestOutcome> {
+    if node.base_url.trim().is_empty() {
+        return Ok(RemoteNodeHealthTestOutcome::Skipped);
+    }
+
+    if let Err(error) =
+        sync_remote_binding_config_with_timeout(&node, REMOTE_BINDING_SYNC_TIMEOUT).await
+    {
+        tracing::warn!(
+            remote_node_id = node.id,
+            "failed to sync remote binding config during health test: {error}"
+        );
+    }
+    if !node.is_enabled {
+        return Ok(RemoteNodeHealthTestOutcome::Skipped);
+    }
+
+    let probed = probe_and_persist_node(state, &node).await?;
+    Ok(if probed.probe_error.is_none() {
+        RemoteNodeHealthTestOutcome::Healthy
+    } else {
+        RemoteNodeHealthTestOutcome::Failed
+    })
 }
 
 fn normalize_create_input(input: CreateRemoteNodeInput) -> Result<CreateRemoteNodeInput> {
@@ -364,6 +402,20 @@ async fn sync_remote_binding_config(node: &managed_follower::Model) -> Result<()
             is_enabled: node.is_enabled,
         })
         .await
+}
+
+async fn sync_remote_binding_config_with_timeout(
+    node: &managed_follower::Model,
+    timeout: Duration,
+) -> Result<()> {
+    tokio::time::timeout(timeout, sync_remote_binding_config(node))
+        .await
+        .map_err(|_| {
+            AsterError::storage_driver_error(format!(
+                "sync remote binding config timed out after {}s",
+                timeout.as_secs()
+            ))
+        })?
 }
 
 fn map_remote_node_db_err(error: DbErr) -> AsterError {

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use actix_web::{App, HttpServer, test, web};
+use aster_drive::api::error_code::ErrorCode;
 use aster_drive::db::repository::{
     file_repo, managed_follower_repo, master_binding_repo, policy_repo, upload_session_repo,
     user_repo,
@@ -17,14 +18,16 @@ use aster_drive::services::{
     auth_service, file_service, folder_service, managed_follower_service, master_binding_service,
     policy_service, thumbnail_service, upload_service,
 };
-use aster_drive::storage::remote_protocol::RemoteStorageClient;
+use aster_drive::storage::remote_protocol::{
+    RemoteStorageClient, RemoteStorageComposeRequest, sign_internal_request, sign_presigned_request,
+};
 use aster_drive::types::{
     DriverType, NullablePatch, RemoteUploadStrategy, StoragePolicyOptions,
     StoredStoragePolicyAllowedTypes, serialize_storage_policy_options,
 };
 use chrono::Utc;
 use futures::TryStreamExt;
-use sea_orm::Set;
+use sea_orm::{ActiveModelTrait, Set};
 
 struct TestHttpServer {
     base_url: String,
@@ -126,6 +129,26 @@ async fn create_remote_policy_with_options(
         .expect("policy snapshot should reload after creating remote policy");
 
     policy
+}
+
+async fn set_policy_max_file_size(
+    state: &aster_drive::runtime::PrimaryAppState,
+    policy: &storage_policy::Model,
+    max_file_size: i64,
+) {
+    let mut active: storage_policy::ActiveModel = policy.clone().into();
+    active.max_file_size = Set(max_file_size);
+    active.updated_at = Set(Utc::now());
+    active
+        .update(&state.db)
+        .await
+        .expect("policy max_file_size should update");
+    state
+        .policy_snapshot
+        .reload(&state.db)
+        .await
+        .expect("policy snapshot should reload after updating max_file_size");
+    state.driver_registry.invalidate(policy.id);
 }
 
 async fn wait_for_remote_probe(
@@ -347,6 +370,152 @@ async fn setup_browser_presigned_cors_fixture(
                 .expect("presigned mode should return presigned_url"),
         ),
     }
+}
+
+#[actix_web::test]
+async fn test_internal_storage_presigned_put_rejects_payload_exceeding_ingress_limit() {
+    let provider_state = common::setup().await;
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+    set_policy_max_file_size(&provider_state, &provider_ingress_policy, 8).await;
+
+    let access_key = "limit-access-key";
+    let secret_key = "limit-secret-key";
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "limit-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            namespace: "provider-limit-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let path = "/api/v1/internal/storage/objects/too-large.bin";
+    let expires_at = Utc::now().timestamp() + 300;
+    let signature = sign_presigned_request(secret_key, "PUT", path, access_key, expires_at);
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "{path}?aster_access_key={access_key}&aster_expires={expires_at}&aster_signature={signature}"
+        ))
+        .insert_header((
+            actix_web::http::header::CONTENT_TYPE,
+            "application/octet-stream",
+        ))
+        .insert_header((actix_web::http::header::CONTENT_LENGTH, "16"))
+        .set_payload(vec![b'x'; 16])
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        serde_json::json!(ErrorCode::FileTooLarge as i32)
+    );
+    assert_eq!(body["msg"], "object size 16 exceeds limit 8");
+}
+
+#[actix_web::test]
+async fn test_internal_storage_compose_rejects_expected_size_exceeding_ingress_limit() {
+    let provider_state = common::setup().await;
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+    set_policy_max_file_size(&provider_state, &provider_ingress_policy, 8).await;
+
+    let access_key = "compose-limit-access-key";
+    let secret_key = "compose-limit-secret-key";
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "compose-limit-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            namespace: "provider-compose-limit-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let body = serde_json::to_vec(&RemoteStorageComposeRequest {
+        target_key: "assembled.bin".to_string(),
+        part_keys: vec!["part-1".to_string(), "part-2".to_string()],
+        expected_size: 16,
+    })
+    .expect("compose request body should serialize");
+    let path = "/api/v1/internal/storage/compose";
+    let timestamp = Utc::now().timestamp();
+    let nonce = "compose-limit-test";
+    let signature = sign_internal_request(
+        secret_key,
+        "POST",
+        path,
+        timestamp,
+        nonce,
+        Some(u64::try_from(body.len()).expect("compose body length should fit u64")),
+    );
+    let req = test::TestRequest::post()
+        .uri(path)
+        .insert_header((actix_web::http::header::CONTENT_TYPE, "application/json"))
+        .insert_header((
+            actix_web::http::header::CONTENT_LENGTH,
+            body.len().to_string(),
+        ))
+        .insert_header(("x-aster-access-key", access_key))
+        .insert_header(("x-aster-timestamp", timestamp.to_string()))
+        .insert_header(("x-aster-nonce", nonce))
+        .insert_header(("x-aster-signature", signature))
+        .set_payload(body)
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        serde_json::json!(ErrorCode::FileTooLarge as i32)
+    );
+    assert_eq!(body["msg"], "composed object size 16 exceeds limit 8");
 }
 
 #[actix_web::test]

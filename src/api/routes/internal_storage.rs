@@ -35,6 +35,16 @@ pub fn routes() -> impl HttpServiceFactory {
         .route("/objects/{tail:.*}", web::delete().to(delete_object))
 }
 
+fn validate_ingress_object_size(size: i64, max_file_size: i64, subject: &str) -> Result<()> {
+    if max_file_size > 0 && size > max_file_size {
+        return Err(AsterError::file_too_large(format!(
+            "{subject} size {} exceeds limit {}",
+            size, max_file_size
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct ObjectQuery {
     offset: Option<u64>,
@@ -144,6 +154,7 @@ async fn put_object(
             "content-length must be non-negative",
         ));
     }
+    validate_ingress_object_size(content_length, ctx.ingress_policy.max_file_size, "object")?;
 
     let driver = state.driver_registry.get_driver(&ctx.ingress_policy)?;
     let stream_driver = driver.as_stream_upload().ok_or_else(|| {
@@ -205,6 +216,11 @@ async fn compose_objects(
             "compose expected_size must be non-negative",
         ));
     }
+    validate_ingress_object_size(
+        body.expected_size,
+        ctx.ingress_policy.max_file_size,
+        "composed object",
+    )?;
 
     let driver = state.driver_registry.get_driver(&ctx.ingress_policy)?;
     let stream_driver = driver.as_stream_upload().ok_or_else(|| {
