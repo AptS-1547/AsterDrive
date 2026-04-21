@@ -282,8 +282,8 @@ function OverviewTrendChart({
 	);
 
 	return (
-		<div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
-			<div className="overflow-hidden rounded-2xl border bg-linear-to-br from-primary/5 via-background to-background p-4">
+		<div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
+			<div className="min-w-0 overflow-hidden rounded-2xl border bg-linear-to-br from-primary/5 via-background to-background p-4">
 				<div className="mb-3 flex flex-wrap items-center gap-2">
 					{series.map((seriesItem) => (
 						<Badge
@@ -299,7 +299,7 @@ function OverviewTrendChart({
 						</Badge>
 					))}
 				</div>
-				<div className="h-[280px] min-w-0">
+				<div className="h-[280px] min-w-0 min-h-[280px]">
 					<ResponsiveContainer width="100%" height="100%">
 						<LineChart
 							data={trendData}

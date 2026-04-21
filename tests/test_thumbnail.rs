@@ -6,7 +6,7 @@ mod common;
 use actix_web::test;
 use aster_drive::api::error_code::ErrorCode;
 use aster_drive::db::repository::{background_task_repo, file_repo};
-use aster_drive::runtime::AppState;
+use aster_drive::runtime::PrimaryAppState;
 use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus};
 use serde_json::{Value, json};
 
@@ -72,19 +72,22 @@ macro_rules! request_thumbnail {
     }};
 }
 
-async fn thumbnail_task_display_name(state: &AppState, file_id: i64) -> String {
+async fn thumbnail_task_display_name(state: &PrimaryAppState, file_id: i64) -> String {
     let file = file_repo::find_by_id(&state.db, file_id).await.unwrap();
     format!("Generate thumbnail for blob #{}", file.blob_id)
 }
 
-async fn blob_for_file(state: &AppState, file_id: i64) -> aster_drive::entities::file_blob::Model {
+async fn blob_for_file(
+    state: &PrimaryAppState,
+    file_id: i64,
+) -> aster_drive::entities::file_blob::Model {
     let file = file_repo::find_by_id(&state.db, file_id).await.unwrap();
     file_repo::find_blob_by_id(&state.db, file.blob_id)
         .await
         .unwrap()
 }
 
-async fn thumbnail_task_count(state: &AppState, file_id: i64) -> usize {
+async fn thumbnail_task_count(state: &PrimaryAppState, file_id: i64) -> usize {
     let display_name = thumbnail_task_display_name(state, file_id).await;
     background_task_repo::list_recent(&state.db, 32)
         .await
@@ -97,7 +100,7 @@ async fn thumbnail_task_count(state: &AppState, file_id: i64) -> usize {
 }
 
 async fn latest_thumbnail_task(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
 ) -> aster_drive::entities::background_task::Model {
     let display_name = thumbnail_task_display_name(state, file_id).await;

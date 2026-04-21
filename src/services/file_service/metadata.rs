@@ -6,7 +6,7 @@ use sea_orm::{ActiveModelTrait, Set};
 use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     storage_change_service,
     workspace_models::FileInfo,
@@ -15,7 +15,7 @@ use crate::services::{
 use crate::types::NullablePatch;
 
 pub(crate) async fn get_info_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<file::Model> {
@@ -23,7 +23,7 @@ pub(crate) async fn get_info_in_scope(
 }
 
 pub(crate) async fn update_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     id: i64,
     name: Option<String>,
@@ -107,7 +107,7 @@ pub(crate) async fn update_in_scope(
 }
 
 /// 获取文件信息
-pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<FileInfo> {
+pub async fn get_info(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<FileInfo> {
     get_info_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id)
         .await
         .map(Into::into)
@@ -115,7 +115,7 @@ pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<FileInf
 
 /// 更新文件（重命名/移动）
 pub async fn update(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     user_id: i64,
     name: Option<String>,
@@ -138,7 +138,7 @@ pub async fn update(
 /// “未传字段”和“显式传 null”，而本函数的 `target_folder_id: None`
 /// 明确表示“移到根目录”。
 pub async fn move_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     user_id: i64,
     target_folder_id: Option<i64>,

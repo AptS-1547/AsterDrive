@@ -8,7 +8,7 @@ use tokio::io::AsyncWriteExt;
 use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::task_service::TaskStepInfo;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::storage::PolicySnapshot;
@@ -77,7 +77,7 @@ pub(super) struct StageZipArchiveForExtractParams<'a> {
 }
 
 pub(super) async fn download_file_to_temp(
-    state: &AppState,
+    state: &PrimaryAppState,
     source_file: &file::Model,
     temp_path: &Path,
 ) -> Result<()> {

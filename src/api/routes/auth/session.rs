@@ -8,7 +8,7 @@ use crate::api::request_auth::{access_cookie_token, bearer_token};
 use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{AuditContext, AuditRequestInfo};
 use crate::services::auth_service::Claims;
 use crate::services::storage_change_service::StorageChangeWorkspace;
@@ -23,7 +23,7 @@ use super::cookies::{
     clear_access_cookie, clear_csrf_cookie, clear_refresh_cookie,
 };
 
-fn refresh_cookie_jti(state: &AppState, req: &HttpRequest) -> Option<String> {
+fn refresh_cookie_jti(state: &PrimaryAppState, req: &HttpRequest) -> Option<String> {
     let refresh_token = req.cookie(REFRESH_COOKIE)?.value().to_string();
     let claims = auth_service::verify_token(&refresh_token, &state.config.auth.jwt_secret).ok()?;
     if claims.token_type != TokenType::Refresh {
@@ -33,7 +33,7 @@ fn refresh_cookie_jti(state: &AppState, req: &HttpRequest) -> Option<String> {
 }
 
 async fn revalidate_storage_event_stream(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     session_version: i64,
     refresh_visible_teams: bool,
@@ -55,7 +55,7 @@ async fn revalidate_storage_event_stream(
 }
 
 pub async fn get_storage_events(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     let user_id = claims.user_id;
@@ -171,7 +171,7 @@ pub async fn get_storage_events(
     ),
 )]
 pub async fn login(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     body: web::Json<super::LoginReq>,
 ) -> Result<HttpResponse> {
@@ -217,7 +217,7 @@ pub async fn login(
         (status = 401, description = "Invalid refresh token"),
     ),
 )]
-pub async fn refresh(state: web::Data<AppState>, req: HttpRequest) -> Result<HttpResponse> {
+pub async fn refresh(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
         &state.runtime_config,
@@ -261,7 +261,7 @@ pub async fn refresh(state: web::Data<AppState>, req: HttpRequest) -> Result<Htt
         (status = 200, description = "Logged out, cookies cleared"),
     ),
 )]
-pub async fn logout(state: web::Data<AppState>, req: HttpRequest) -> HttpResponse {
+pub async fn logout(state: web::Data<PrimaryAppState>, req: HttpRequest) -> HttpResponse {
     if access_cookie_token(&req).is_some() || req.cookie(REFRESH_COOKIE).is_some() {
         if let Err(error) = csrf::ensure_request_source_allowed(
             &req,
@@ -316,7 +316,10 @@ pub async fn logout(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
     ),
     security(("bearer" = [])),
 )]
-pub async fn me(state: web::Data<AppState>, claims: web::ReqData<Claims>) -> Result<HttpResponse> {
+pub async fn me(
+    state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
     let resp =
         user_service::get_me(&state, claims.user_id, usize_to_i64(claims.exp, "jwt exp")?).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
@@ -334,7 +337,7 @@ pub async fn me(state: web::Data<AppState>, claims: web::ReqData<Claims>) -> Res
     security(("bearer" = [])),
 )]
 pub async fn list_sessions(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
@@ -359,7 +362,7 @@ pub async fn list_sessions(
     security(("bearer" = [])),
 )]
 pub async fn delete_other_sessions(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
@@ -385,7 +388,7 @@ pub async fn delete_other_sessions(
     security(("bearer" = [])),
 )]
 pub async fn delete_session(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     claims: web::ReqData<Claims>,
     path: web::Path<String>,
@@ -424,7 +427,7 @@ pub async fn delete_session(
     security(("bearer" = [])),
 )]
 pub async fn put_password(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     claims: web::ReqData<Claims>,
     body: web::Json<ChangePasswordReq>,

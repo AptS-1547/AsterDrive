@@ -62,6 +62,7 @@ pub struct StoragePolicy {
     pub endpoint: String,
     pub bucket: String,
     pub base_path: String,
+    pub remote_node_id: Option<i64>,
     pub max_file_size: i64,
     pub allowed_types: Vec<String>,
     pub options: StoragePolicyOptions,
@@ -82,6 +83,7 @@ impl From<storage_policy::Model> for StoragePolicy {
             endpoint: model.endpoint,
             bucket: model.bucket,
             base_path: model.base_path,
+            remote_node_id: model.remote_node_id,
             max_file_size: model.max_file_size,
             allowed_types: parse_storage_policy_allowed_types(model.allowed_types.as_ref()),
             options: parse_storage_policy_options(model.options.as_ref()),
@@ -110,6 +112,7 @@ pub struct StoragePolicyConnectionInput {
     pub access_key: String,
     pub secret_key: String,
     pub base_path: String,
+    pub remote_node_id: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +134,7 @@ pub struct UpdateStoragePolicyInput {
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
     pub base_path: Option<String>,
+    pub remote_node_id: Option<i64>,
     pub max_file_size: Option<i64>,
     pub chunk_size: Option<i64>,
     pub is_default: Option<bool>,

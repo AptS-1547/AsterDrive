@@ -1,41 +1,47 @@
 //! 工作空间存储服务子模块：`multipart`。
 
 use actix_multipart::Multipart;
-use chrono::Utc;
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
-use crate::services::storage_change_service;
+use crate::runtime::PrimaryAppState;
 use crate::types::{
     DriverType, S3UploadStrategy, effective_s3_multipart_chunk_size, parse_storage_policy_options,
 };
 
 use super::{
-    StoreFromTempHints, StoreFromTempParams, WorkspaceStorageScope, check_quota,
-    create_new_file_from_blob, create_s3_nondedup_blob, ensure_upload_parent_path,
-    local_content_dedup_enabled, parse_relative_upload_path, resolve_policy_for_size,
-    store_from_temp, store_from_temp_with_hints, update_storage_used, verify_folder_access,
+    StoreFromTempHints, StoreFromTempParams, StorePreuploadedNondedupParams, WorkspaceStorageScope,
+    check_quota, cleanup_preuploaded_blob_upload, ensure_upload_parent_path,
+    local_content_dedup_enabled, parse_relative_upload_path, prepare_non_dedup_blob_upload,
+    resolve_policy_for_size, store_from_temp, store_from_temp_with_hints,
+    store_preuploaded_nondedup, verify_folder_access,
 };
 use crate::utils::numbers::usize_to_i64;
 
-pub(crate) fn relay_stream_direct_upload_eligible(
+pub(crate) fn streaming_direct_upload_eligible(
     policy: &crate::entities::storage_policy::Model,
     declared_size: i64,
 ) -> bool {
-    if declared_size <= 0 || policy.driver_type != DriverType::S3 {
+    if declared_size <= 0 {
         return false;
     }
 
-    let options = parse_storage_policy_options(policy.options.as_ref());
-    if options.effective_s3_upload_strategy() != S3UploadStrategy::RelayStream {
-        return false;
-    }
+    match policy.driver_type {
+        DriverType::S3 => {
+            let options = parse_storage_policy_options(policy.options.as_ref());
+            if options.effective_s3_upload_strategy() != S3UploadStrategy::RelayStream {
+                return false;
+            }
 
-    policy.chunk_size == 0 || declared_size <= effective_s3_multipart_chunk_size(policy.chunk_size)
+            policy.chunk_size == 0
+                || declared_size <= effective_s3_multipart_chunk_size(policy.chunk_size)
+        }
+        DriverType::Remote => true,
+        DriverType::Local => false,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -49,7 +55,7 @@ struct DirectUploadParams<'a> {
 }
 
 async fn upload_local_direct(
-    state: &AppState,
+    state: &PrimaryAppState,
     payload: &mut Multipart,
     params: DirectUploadParams<'_>,
 ) -> Result<file::Model> {
@@ -155,8 +161,8 @@ async fn upload_local_direct(
     Err(AsterError::validation_error("empty file"))
 }
 
-async fn upload_s3_relay_direct(
-    state: &AppState,
+async fn upload_streaming_direct(
+    state: &PrimaryAppState,
     payload: &mut Multipart,
     params: DirectUploadParams<'_>,
 ) -> Result<file::Model> {
@@ -179,6 +185,8 @@ async fn upload_s3_relay_direct(
 
     check_quota(&state.db, scope, declared_size).await?;
     let driver = state.driver_registry.get_driver(policy)?;
+    let prepared_upload = prepare_non_dedup_blob_upload(policy, declared_size);
+    let storage_path = prepared_upload.storage_path().to_string();
 
     while let Some(field) = payload.next().await {
         let mut field = field.map_aster_err(AsterError::file_upload_failed)?;
@@ -194,8 +202,6 @@ async fn upload_s3_relay_direct(
             };
             let filename = crate::utils::normalize_validate_name(&filename)?;
 
-            let upload_id = crate::utils::id::new_uuid();
-            let storage_path = format!("files/{upload_id}");
             let (writer, reader) = tokio::io::duplex(RELAY_DIRECT_BUFFER_SIZE);
             let upload_driver = driver.clone();
             let upload_storage_path = storage_path.clone();
@@ -232,63 +238,42 @@ async fn upload_s3_relay_direct(
                 .await?;
 
             if let Err(err) = upload_result {
-                if let Err(cleanup_err) = driver.delete(&storage_path).await {
-                    tracing::warn!(
-                        "failed to cleanup relay direct object {} after upload error: {cleanup_err}",
-                        storage_path
-                    );
-                }
+                cleanup_preuploaded_blob_upload(
+                    driver.as_ref(),
+                    &prepared_upload,
+                    "direct stream upload error",
+                )
+                .await;
                 return Err(err);
             }
 
             if let Err(err) = relay_result {
-                if let Err(cleanup_err) = driver.delete(&storage_path).await {
-                    tracing::warn!(
-                        "failed to cleanup relay direct object {} after relay error: {cleanup_err}",
-                        storage_path
-                    );
-                }
+                cleanup_preuploaded_blob_upload(
+                    driver.as_ref(),
+                    &prepared_upload,
+                    "direct stream relay error",
+                )
+                .await;
                 return Err(err);
             }
 
-            let now = Utc::now();
-            let txn = crate::db::transaction::begin(&state.db).await?;
-            let create_result = async {
-                check_quota(&txn, scope, declared_size).await?;
-                let blob =
-                    create_s3_nondedup_blob(&txn, declared_size, policy.id, &upload_id).await?;
-                let created =
-                    create_new_file_from_blob(&txn, scope, folder_id, &filename, &blob, now)
-                        .await?;
-                update_storage_used(&txn, scope, declared_size).await?;
-                crate::db::transaction::commit(txn).await?;
-                Ok::<file::Model, AsterError>(created)
-            }
-            .await;
-
-            return match create_result {
-                Ok(file) => {
-                    storage_change_service::publish(
-                        state,
-                        storage_change_service::StorageChangeEvent::new(
-                            storage_change_service::StorageChangeKind::FileCreated,
-                            scope,
-                            vec![file.id],
-                            vec![],
-                            vec![file.folder_id],
-                        ),
-                    );
-                    Ok(file)
-                }
-                Err(err) => {
-                    if let Err(cleanup_err) = driver.delete(&storage_path).await {
-                        tracing::warn!(
-                            "failed to cleanup relay direct object {} after DB error: {cleanup_err}",
-                            storage_path
-                        );
-                    }
-                    Err(err)
-                }
+            return match store_preuploaded_nondedup(
+                state,
+                StorePreuploadedNondedupParams {
+                    scope,
+                    folder_id,
+                    filename: &filename,
+                    size: declared_size,
+                    existing_file_id: None,
+                    skip_lock_check: false,
+                    policy,
+                    preuploaded_blob: prepared_upload,
+                },
+            )
+            .await
+            {
+                Ok(file) => Ok(file),
+                Err(err) => Err(err),
             };
         }
     }
@@ -297,7 +282,7 @@ async fn upload_s3_relay_direct(
 }
 
 pub(crate) async fn upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     payload: &mut Multipart,
     folder_id: Option<i64>,
@@ -351,7 +336,7 @@ pub(crate) async fn upload(
     if let Some(declared_size) = declared_size {
         let policy =
             resolve_policy_for_size(state, scope, effective_folder_id, declared_size).await?;
-        if relay_stream_direct_upload_eligible(&policy, declared_size) {
+        if streaming_direct_upload_eligible(&policy, declared_size) {
             tracing::debug!(
                 scope = ?scope,
                 folder_id = effective_folder_id,
@@ -359,10 +344,10 @@ pub(crate) async fn upload(
                 policy_id = policy.id,
                 driver_type = ?policy.driver_type,
                 declared_size,
-                "using relay direct upload fast path"
+                "using streaming direct upload fast path"
             );
 
-            let result = upload_s3_relay_direct(
+            let result = upload_streaming_direct(
                 state,
                 payload,
                 DirectUploadParams {
@@ -381,7 +366,7 @@ pub(crate) async fn upload(
                     file_id = file.id,
                     folder_id = file.folder_id,
                     size = file.size,
-                    "completed relay direct upload"
+                    "completed streaming direct upload"
                 );
             }
             return result;

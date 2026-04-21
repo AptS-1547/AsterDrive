@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildCreatePolicyPayload,
+	buildPolicyTestPayload,
 	buildUpdatePolicyPayload,
 	getPolicyForm,
 } from "@/components/admin/storagePolicyDialogShared";
@@ -18,6 +19,7 @@ describe("storagePolicyDialogShared", () => {
 				access_key: "",
 				secret_key: "",
 				base_path: "/data/archive",
+				remote_node_id: null,
 				max_file_size: 1024,
 				allowed_types: [],
 				options: { content_dedup: true },
@@ -34,10 +36,12 @@ describe("storagePolicyDialogShared", () => {
 			access_key: "",
 			secret_key: "",
 			base_path: "/data/archive",
+			remote_node_id: "",
 			max_file_size: "1024",
 			chunk_size: "10",
 			is_default: true,
 			content_dedup: true,
+			remote_upload_strategy: "relay_stream",
 			s3_upload_strategy: "relay_stream",
 			s3_download_strategy: "relay_stream",
 		});
@@ -53,10 +57,12 @@ describe("storagePolicyDialogShared", () => {
 				access_key: "AKIA",
 				secret_key: "SECRET",
 				base_path: "videos",
+				remote_node_id: "",
 				max_file_size: "2048",
 				chunk_size: "6",
 				is_default: false,
 				content_dedup: false,
+				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "presigned",
 				s3_download_strategy: "relay_stream",
 			}),
@@ -88,10 +94,12 @@ describe("storagePolicyDialogShared", () => {
 				access_key: "",
 				secret_key: "",
 				base_path: "videos",
+				remote_node_id: "",
 				max_file_size: "",
 				chunk_size: "5",
 				is_default: true,
 				content_dedup: false,
+				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "presigned",
 			}),
@@ -107,6 +115,71 @@ describe("storagePolicyDialogShared", () => {
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "presigned",
 			},
+		});
+	});
+
+	it("builds remote payloads with remote node binding only", () => {
+		expect(
+			buildCreatePolicyPayload({
+				name: "Remote Edge",
+				driver_type: "remote",
+				endpoint: "",
+				bucket: "",
+				access_key: "",
+				secret_key: "",
+				base_path: "tenant-a/uploads",
+				remote_node_id: "9",
+				max_file_size: "",
+				chunk_size: "4",
+				is_default: false,
+				content_dedup: false,
+				remote_upload_strategy: "presigned",
+				s3_upload_strategy: "relay_stream",
+				s3_download_strategy: "relay_stream",
+			}),
+		).toEqual({
+			name: "Remote Edge",
+			driver_type: "remote",
+			endpoint: "",
+			bucket: "",
+			access_key: "",
+			secret_key: "",
+			base_path: "tenant-a/uploads",
+			remote_node_id: 9,
+			max_file_size: undefined,
+			chunk_size: 4 * 1024 * 1024,
+			is_default: false,
+			options: {
+				remote_upload_strategy: "presigned",
+			},
+		});
+
+		expect(
+			buildPolicyTestPayload({
+				name: "Remote Edge",
+				driver_type: "remote",
+				endpoint: "",
+				bucket: "",
+				access_key: "",
+				secret_key: "",
+				base_path: "tenant-a/uploads",
+				remote_node_id: "9",
+				max_file_size: "",
+				chunk_size: "4",
+				is_default: false,
+				content_dedup: false,
+				remote_upload_strategy: "presigned",
+				s3_upload_strategy: "relay_stream",
+				s3_download_strategy: "relay_stream",
+			}),
+		).toEqual({
+			driver_type: "remote",
+			endpoint: undefined,
+			bucket: undefined,
+			access_key: undefined,
+			secret_key: undefined,
+			base_path: "tenant-a/uploads",
+			remote_node_id: 9,
 		});
 	});
 });

@@ -8,7 +8,7 @@ use chrono::Utc;
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::folder;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     file_service, folder_service, storage_change_service, workspace_models::FileInfo,
     workspace_storage_service::WorkspaceStorageScope,
@@ -34,7 +34,7 @@ async fn collect_folder_tree_models(
 }
 
 pub async fn collect_folder_tree(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     folder_id: i64,
     include_deleted: bool,
@@ -47,7 +47,11 @@ pub async fn collect_folder_tree(
 /// 递归软删除文件夹及其所有内容（→ 回收站）
 ///
 /// 先收集所有未删除的文件和文件夹 ID，再一次事务内批量 soft_delete。
-pub async fn recursive_soft_delete(state: &AppState, user_id: i64, folder_id: i64) -> Result<()> {
+pub async fn recursive_soft_delete(
+    state: &PrimaryAppState,
+    user_id: i64,
+    folder_id: i64,
+) -> Result<()> {
     let scope = WorkspaceStorageScope::Personal { user_id };
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
     let (files, folder_ids) =
@@ -78,7 +82,11 @@ pub async fn recursive_soft_delete(state: &AppState, user_id: i64, folder_id: i6
 ///
 /// 先递归收集所有文件和文件夹 ID（含已删除），然后一次 batch_purge 处理所有文件，
 /// 再批量删除文件夹记录和属性。比逐个 purge 快得多。
-pub async fn recursive_purge_folder(state: &AppState, user_id: i64, folder_id: i64) -> Result<()> {
+pub async fn recursive_purge_folder(
+    state: &PrimaryAppState,
+    user_id: i64,
+    folder_id: i64,
+) -> Result<()> {
     let (all_files, all_folder_ids) =
         collect_folder_tree_models(&state.db, user_id, folder_id, true).await?;
 
@@ -105,7 +113,7 @@ pub async fn recursive_purge_folder(state: &AppState, user_id: i64, folder_id: i
 ///
 /// 利用 blob 去重：只增加 ref_count，不复制物理数据
 pub fn recursive_copy_folder<'a>(
-    state: &'a AppState,
+    state: &'a PrimaryAppState,
     user_id: i64,
     src_folder_id: i64,
     dest_parent_id: Option<i64>,

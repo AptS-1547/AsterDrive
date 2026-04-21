@@ -1,7 +1,7 @@
 use chrono::Utc;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::preview_app_service;
 use crate::services::wopi_service::proof::validate_wopi_proof;
 use crate::services::wopi_service::types::WopiRequestSource;
@@ -54,7 +54,7 @@ pub(crate) fn ensure_request_source_allowed(
 }
 
 pub(crate) async fn ensure_request_proof_valid(
-    state: &AppState,
+    state: &PrimaryAppState,
     app_config: &WopiAppConfig,
     access_token: &str,
     request_source: &WopiRequestSource<'_>,

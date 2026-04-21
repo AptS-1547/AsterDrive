@@ -9,7 +9,7 @@ use super::{
 use crate::api::response::ApiResponse;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::AuditRequestInfo;
 use crate::services::{auth_service, user_service};
 use crate::types::VerificationPurpose;
@@ -24,7 +24,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
         (status = 200, description = "Check result", body = inline(ApiResponse<CheckResp>)),
     ),
 )]
-pub async fn check(state: web::Data<AppState>) -> Result<HttpResponse> {
+pub async fn check(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
     let has_users = auth_service::check_auth_state(&state).await?;
     let allow_user_registration =
         RuntimeAuthPolicy::from_runtime_config(&state.runtime_config).allow_user_registration;
@@ -46,7 +46,7 @@ pub async fn check(state: web::Data<AppState>) -> Result<HttpResponse> {
     ),
 )]
 pub async fn setup(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     body: web::Json<SetupReq>,
 ) -> Result<HttpResponse> {
@@ -75,7 +75,7 @@ pub async fn setup(
     ),
 )]
 pub async fn register(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     body: web::Json<RegisterReq>,
 ) -> Result<HttpResponse> {
@@ -103,7 +103,7 @@ pub async fn register(
     ),
 )]
 pub async fn resend_register_activation(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     body: web::Json<ResendRegisterActivationReq>,
 ) -> Result<HttpResponse> {
@@ -137,7 +137,7 @@ pub async fn resend_register_activation(
     ),
 )]
 pub async fn confirm_contact_verification(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     query: web::Query<ContactVerificationConfirmQuery>,
 ) -> Result<HttpResponse> {
@@ -243,7 +243,7 @@ pub async fn confirm_contact_verification(
     ),
 )]
 pub async fn request_password_reset(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     body: web::Json<PasswordResetRequestReq>,
 ) -> Result<HttpResponse> {
@@ -276,7 +276,7 @@ pub async fn request_password_reset(
     ),
 )]
 pub async fn confirm_password_reset(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     body: web::Json<PasswordResetConfirmReq>,
 ) -> Result<HttpResponse> {

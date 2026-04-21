@@ -6,7 +6,7 @@ use chrono::Utc;
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     folder_service, storage_change_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -15,7 +15,7 @@ use crate::services::{
 use super::{BatchResult, NormalizedSelection, load_normalized_selection_in_scope};
 
 pub(crate) async fn batch_delete_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -151,7 +151,7 @@ pub(crate) async fn batch_delete_in_scope(
 
 /// 批量删除（软删除 -> 回收站）
 pub async fn batch_delete(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -167,7 +167,7 @@ pub async fn batch_delete(
 
 /// 团队空间批量删除（软删除 -> 回收站）
 pub async fn batch_delete_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
     file_ids: &[i64],

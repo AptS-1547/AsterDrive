@@ -1,6 +1,6 @@
 use crate::entities::file;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::preview_app_service;
 use crate::services::wopi_service::targets::file_extension;
 use crate::services::wopi_service::types::DiscoveredWopiPreviewApp;
@@ -10,7 +10,7 @@ use super::cache::load_discovery;
 use super::types::WopiAppConfig;
 use super::url::{append_wopi_src, expand_action_url, trusted_origins_for_app};
 
-pub fn allowed_origins(state: &AppState) -> Vec<String> {
+pub fn allowed_origins(state: &PrimaryAppState) -> Vec<String> {
     let mut origins = Vec::new();
 
     for app in preview_app_service::get_public_preview_apps(state).apps {
@@ -26,7 +26,7 @@ pub fn allowed_origins(state: &AppState) -> Vec<String> {
 }
 
 pub async fn discover_preview_apps(
-    state: &AppState,
+    state: &PrimaryAppState,
     discovery_url: &str,
 ) -> Result<Vec<DiscoveredWopiPreviewApp>> {
     let discovery = load_discovery(state, discovery_url).await?;
@@ -86,7 +86,7 @@ pub(crate) fn parse_wopi_app_config(
 }
 
 pub(crate) async fn resolve_action_url(
-    state: &AppState,
+    state: &PrimaryAppState,
     app_config: &WopiAppConfig,
     file: &file::Model,
     wopi_src: &str,

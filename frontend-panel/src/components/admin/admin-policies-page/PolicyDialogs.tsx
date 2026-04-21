@@ -3,7 +3,7 @@ import { StoragePolicyDialog } from "@/components/admin/StoragePolicyDialog";
 import type { PolicyFormData } from "@/components/admin/storagePolicyDialogShared";
 import type { ConfirmDialogProps } from "@/components/common/ConfirmDialog";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import type { DriverType } from "@/types/api";
+import type { DriverType, RemoteNodeInfo } from "@/types/api";
 
 interface PolicyDialogsProps {
 	createStep: number;
@@ -17,6 +17,7 @@ interface PolicyDialogsProps {
 	editMode: boolean;
 	endpointValidationMessage: string | null;
 	form: PolicyFormData;
+	remoteNodes: RemoteNodeInfo[];
 	onCreateBack: () => void;
 	onCreateNext: () => void;
 	onCreateStepChange: (step: number) => void;
@@ -45,6 +46,7 @@ export function PolicyDialogs({
 	editMode,
 	endpointValidationMessage,
 	form,
+	remoteNodes,
 	onCreateBack,
 	onCreateNext,
 	onCreateStepChange,
@@ -78,6 +80,7 @@ export function PolicyDialogs({
 				open={dialogOpen}
 				mode={editMode ? "edit" : "create"}
 				form={form}
+				remoteNodes={remoteNodes}
 				submitting={submitting}
 				createStep={createStep}
 				createStepTouched={createStepTouched}

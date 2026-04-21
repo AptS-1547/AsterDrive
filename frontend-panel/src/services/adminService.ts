@@ -12,6 +12,7 @@ import type {
 	ConfigSchemaItem,
 	CreatePolicyGroupRequest,
 	CreatePolicyRequest,
+	CreateRemoteNodeRequest,
 	CreateUserReq,
 	DriverType,
 	ExecuteConfigActionRequest,
@@ -19,6 +20,10 @@ import type {
 	LockPage,
 	MigratePolicyGroupUsersRequest,
 	PolicyGroupUserMigrationResult,
+	RemoteEnrollmentCommandInfo,
+	RemoteNodeInfo,
+	RemoteNodePage,
+	RemoteStorageCapabilities,
 	RemovedCountResponse,
 	ResetUserPasswordRequest,
 	ShareInfo,
@@ -33,8 +38,10 @@ import type {
 	TeamMemberPage,
 	TeamMemberRole,
 	TemplateVariableGroup,
+	TestRemoteNodeParamsReq,
 	UpdatePolicyGroupRequest,
 	UpdatePolicyRequest,
+	UpdateRemoteNodeRequest,
 	UpdateTeamMemberRequest,
 	UpdateUserRequest,
 	UserInfo,
@@ -224,7 +231,39 @@ export const adminPolicyService = {
 		access_key?: string;
 		secret_key?: string;
 		base_path?: string;
+		remote_node_id?: number;
 	}) => api.post<void>("/admin/policies/test", data),
+};
+
+export const adminRemoteNodeService = {
+	list: (params?: { limit?: number; offset?: number }) =>
+		api.get<RemoteNodePage>(
+			withQuery("/admin/remote-nodes", {
+				limit: params?.limit,
+				offset: params?.offset,
+			}),
+		),
+
+	get: (id: number) => api.get<RemoteNodeInfo>(`/admin/remote-nodes/${id}`),
+
+	create: (data: CreateRemoteNodeRequest) =>
+		api.post<RemoteNodeInfo>("/admin/remote-nodes", data),
+
+	update: (id: number, data: UpdateRemoteNodeRequest) =>
+		api.patch<RemoteNodeInfo>(`/admin/remote-nodes/${id}`, data),
+
+	delete: (id: number) => api.delete<void>(`/admin/remote-nodes/${id}`),
+
+	testConnection: (id: number) =>
+		api.post<RemoteNodeInfo>(`/admin/remote-nodes/${id}/test`),
+
+	testParams: (data: TestRemoteNodeParamsReq) =>
+		api.post<RemoteStorageCapabilities>("/admin/remote-nodes/test", data),
+
+	createEnrollmentCommand: (id: number) =>
+		api.post<RemoteEnrollmentCommandInfo>(
+			`/admin/remote-nodes/${id}/enrollment-token`,
+		),
 };
 
 // --- Policy Groups ---

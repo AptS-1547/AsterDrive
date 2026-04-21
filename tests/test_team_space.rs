@@ -70,7 +70,10 @@ macro_rules! multipart_request {
     }};
 }
 
-async fn set_default_policy_chunk_size(state: &aster_drive::runtime::AppState, chunk_size: i64) {
+async fn set_default_policy_chunk_size(
+    state: &aster_drive::runtime::PrimaryAppState,
+    chunk_size: i64,
+) {
     use sea_orm::{ActiveModelTrait, Set};
 
     let policy = aster_drive::db::repository::policy_repo::find_default(&state.db)

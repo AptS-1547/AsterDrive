@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 use crate::db::repository::{file_repo, team_repo};
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     file_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -25,7 +25,7 @@ pub struct DirectLinkTokenInfo {
 }
 
 pub(crate) async fn create_token_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<DirectLinkTokenInfo> {
@@ -34,14 +34,14 @@ pub(crate) async fn create_token_in_scope(
     Ok(DirectLinkTokenInfo { token })
 }
 
-pub(crate) async fn load_public_file(state: &AppState, file_id: i64) -> Result<file::Model> {
+pub(crate) async fn load_public_file(state: &PrimaryAppState, file_id: i64) -> Result<file::Model> {
     let file = file_repo::find_by_id(&state.db, file_id).await?;
     validate_file_scope(state, &file).await?;
     Ok(file)
 }
 
 pub(crate) async fn download_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     requested_name: &str,
     force_download: bool,
@@ -98,7 +98,7 @@ fn parse_token(token: &str) -> Result<(i64, &str)> {
     Ok((file_id, signature))
 }
 
-async fn validate_file_scope(state: &AppState, file: &file::Model) -> Result<()> {
+async fn validate_file_scope(state: &PrimaryAppState, file: &file::Model) -> Result<()> {
     if file.deleted_at.is_some() {
         return Err(AsterError::file_not_found(format!(
             "file #{} is in trash",

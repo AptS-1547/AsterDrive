@@ -3,7 +3,7 @@
 use crate::db::repository::{file_repo, folder_repo, property_repo};
 use crate::entities::entity_property;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{file_service, folder_service};
 use crate::types::EntityType;
 use serde::Serialize;
@@ -36,7 +36,7 @@ impl From<entity_property::Model> for EntityProperty {
 
 /// 验证实体归属并返回
 async fn verify_ownership(
-    state: &AppState,
+    state: &PrimaryAppState,
     entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
@@ -62,7 +62,7 @@ async fn verify_ownership(
 
 /// 列出实体的所有属性
 pub async fn list(
-    state: &AppState,
+    state: &PrimaryAppState,
     entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
@@ -79,7 +79,7 @@ pub async fn list(
 
 /// 设置（新增/更新）属性
 pub async fn set(
-    state: &AppState,
+    state: &PrimaryAppState,
     entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
@@ -117,7 +117,7 @@ pub async fn set(
 
 /// 删除单个属性
 pub async fn delete(
-    state: &AppState,
+    state: &PrimaryAppState,
     entity_type: EntityType,
     entity_id: i64,
     user_id: i64,

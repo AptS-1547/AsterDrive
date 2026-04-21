@@ -9,7 +9,7 @@ use chrono::Utc;
 use crate::db::repository::{upload_session_part_repo, upload_session_repo};
 use crate::entities::upload_session;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::ChunkUploadResponse;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::services::upload_service::shared::{
@@ -36,7 +36,7 @@ async fn increment_session_received_count<C: sea_orm::ConnectionTrait>(
 }
 
 async fn upload_chunk_impl(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
     chunk_number: i32,
     data: &[u8],
@@ -222,7 +222,7 @@ async fn upload_chunk_impl(
 
 /// 上传单个分片
 pub async fn upload_chunk(
-    state: &AppState,
+    state: &PrimaryAppState,
     upload_id: &str,
     chunk_number: i32,
     user_id: i64,
@@ -233,7 +233,7 @@ pub async fn upload_chunk(
 }
 
 pub async fn upload_chunk_for_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     upload_id: &str,
     chunk_number: i32,

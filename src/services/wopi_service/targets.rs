@@ -12,7 +12,7 @@ use sea_orm::ConnectionTrait;
 use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     file_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -294,7 +294,7 @@ pub(crate) async fn find_file_by_name_in_scope<C: ConnectionTrait>(
 }
 
 pub(crate) async fn suggest_available_relative_target(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: Option<i64>,
     name: &str,
@@ -310,7 +310,7 @@ pub(crate) async fn suggest_available_relative_target(
 }
 
 pub(crate) async fn resolve_available_rename_target(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: Option<i64>,
     current_file_id: i64,
@@ -328,7 +328,7 @@ pub(crate) async fn resolve_available_rename_target(
 }
 
 pub(crate) async fn store_relative_target_from_stream(
-    state: &AppState,
+    state: &PrimaryAppState,
     params: StoreRelativeTargetParams<'_>,
 ) -> Result<file::Model> {
     let StoreRelativeTargetParams {
@@ -403,7 +403,7 @@ pub(crate) async fn store_relative_target_from_stream(
 }
 
 pub(crate) async fn build_put_relative_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     payload: &WopiAccessTokenPayload,
     target_name: &str,
     target_file_id: i64,

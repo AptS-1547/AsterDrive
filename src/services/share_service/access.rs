@@ -5,14 +5,14 @@ use chrono::Utc;
 use crate::db::repository::{share_repo, user_profile_repo, user_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::profile_service;
 use crate::utils::hash;
 
 use super::models::{SharePublicInfo, SharePublicOwnerInfo};
 use super::shared::{load_share_record, load_valid_share, resolve_share_name};
 
-pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublicInfo> {
+pub async fn get_share_info(state: &PrimaryAppState, token: &str) -> Result<SharePublicInfo> {
     let db = &state.db;
     let share = load_valid_share(state, token).await?;
     tracing::debug!(share_id = share.id, "loading public share info");
@@ -67,7 +67,7 @@ fn resolve_share_owner_name(
 }
 
 async fn resolve_share_owner_info(
-    state: &AppState,
+    state: &PrimaryAppState,
     share: &share::Model,
 ) -> Result<SharePublicOwnerInfo> {
     let user = user_repo::find_by_id(&state.db, share.user_id).await?;
@@ -85,12 +85,16 @@ async fn resolve_share_owner_info(
     })
 }
 
-pub async fn get_share_avatar_bytes(state: &AppState, token: &str, size: u32) -> Result<Vec<u8>> {
+pub async fn get_share_avatar_bytes(
+    state: &PrimaryAppState,
+    token: &str,
+    size: u32,
+) -> Result<Vec<u8>> {
     let share = load_valid_share(state, token).await?;
     profile_service::get_avatar_bytes(state, share.user_id, size).await
 }
 
-pub async fn verify_password(state: &AppState, token: &str, password: &str) -> Result<()> {
+pub async fn verify_password(state: &PrimaryAppState, token: &str, password: &str) -> Result<()> {
     let share = load_valid_share(state, token).await?;
     tracing::debug!("verifying share password");
 
@@ -143,7 +147,7 @@ pub fn verify_share_cookie(token: &str, cookie_value: &str, secret: &str) -> boo
 }
 
 pub async fn check_share_password_cookie(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     cookie_value: Option<&str>,
 ) -> Result<()> {
@@ -167,7 +171,7 @@ pub struct PasswordVerified {
 }
 
 pub async fn verify_password_and_sign(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     password: &str,
 ) -> Result<PasswordVerified> {

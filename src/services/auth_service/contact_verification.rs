@@ -5,7 +5,7 @@ use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 
 use crate::db::repository::{contact_verification_token_repo, user_repo};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{mail_outbox_service, mail_template::MailTemplatePayload};
 use crate::types::VerificationPurpose;
 use crate::utils::hash;
@@ -23,7 +23,7 @@ use super::{
 };
 
 pub async fn request_email_change(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     new_email: &str,
 ) -> Result<AuthUserInfo> {
@@ -89,7 +89,10 @@ pub async fn request_email_change(
     Ok(AuthUserInfo::from(updated))
 }
 
-pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<Option<UserAuditInfo>> {
+pub async fn resend_email_change(
+    state: &PrimaryAppState,
+    user_id: i64,
+) -> Result<Option<UserAuditInfo>> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let pending_email = user
         .pending_email
@@ -151,7 +154,7 @@ pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<Optio
 }
 
 pub async fn request_password_reset(
-    state: &AppState,
+    state: &PrimaryAppState,
     email: &str,
 ) -> Result<PasswordResetRequestResult> {
     tracing::debug!("requesting password reset");
@@ -211,7 +214,7 @@ pub async fn request_password_reset(
 }
 
 pub async fn confirm_password_reset(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     new_password: &str,
 ) -> Result<AuthUserInfo> {
@@ -279,7 +282,7 @@ pub async fn confirm_password_reset(
 }
 
 pub async fn confirm_contact_verification(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
 ) -> Result<ContactVerificationConfirmResult> {
     tracing::debug!("confirming contact verification");
@@ -397,6 +400,6 @@ pub async fn confirm_contact_verification(
     })
 }
 
-pub async fn cleanup_expired_contact_verification_tokens(state: &AppState) -> Result<u64> {
+pub async fn cleanup_expired_contact_verification_tokens(state: &PrimaryAppState) -> Result<u64> {
     contact_verification_token_repo::delete_expired(&state.db).await
 }

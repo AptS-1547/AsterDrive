@@ -2,7 +2,7 @@
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::utils::numbers::usize_to_u64;
 
@@ -10,7 +10,7 @@ use super::common::{build_trash_file_item, build_trash_folder_item, build_trash_
 use super::models::{TrashContents, TrashFileCursor};
 
 async fn list_trash_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_limit: u64,
     folder_offset: u64,
@@ -109,7 +109,7 @@ async fn list_trash_in_scope(
 
 /// 列出用户回收站内容（分页）
 pub async fn list_trash(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     folder_limit: u64,
     folder_offset: u64,
@@ -128,7 +128,7 @@ pub async fn list_trash(
 }
 
 pub async fn list_team_trash(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
     folder_limit: u64,

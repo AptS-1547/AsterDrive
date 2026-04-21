@@ -110,7 +110,7 @@ describe("UploadPanel", () => {
 				id: "folder-failed",
 				title: "failed.txt",
 				status: "Failed",
-				mode: "S3",
+				mode: "Presigned",
 				progress: 30,
 				group: "Folder B",
 				targetLabel: "Projects",

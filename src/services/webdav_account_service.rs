@@ -10,7 +10,7 @@ use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{folder_repo, webdav_account_repo};
 use crate::entities::webdav_account;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::utils::hash;
 
 fn map_webdav_account_create_db_err(err: DbErr) -> AsterError {
@@ -80,7 +80,7 @@ impl From<webdav_account::Model> for WebdavAccount {
 ///
 /// password 为 None 时自动生成 16 位随机密码
 pub async fn create(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     username: &str,
     password: Option<&str>,
@@ -142,13 +142,13 @@ pub async fn create(
 }
 
 /// 列出用户的所有 WebDAV 账号（带文件夹路径）
-pub async fn list(state: &AppState, user_id: i64) -> Result<Vec<WebdavAccountInfo>> {
+pub async fn list(state: &PrimaryAppState, user_id: i64) -> Result<Vec<WebdavAccountInfo>> {
     let accounts = webdav_account_repo::find_by_user(&state.db, user_id).await?;
     build_account_infos(&state.db, accounts).await
 }
 
 pub async fn list_paginated(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     limit: u64,
     offset: u64,
@@ -190,14 +190,18 @@ async fn build_account_infos(
 }
 
 /// 删除 WebDAV 账号（需要验证归属）
-pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
+pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
     let account = webdav_account_repo::find_by_id(&state.db, id).await?;
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
     webdav_account_repo::delete(&state.db, id).await
 }
 
 /// 切换启用/禁用
-pub async fn toggle_active(state: &AppState, id: i64, user_id: i64) -> Result<WebdavAccount> {
+pub async fn toggle_active(
+    state: &PrimaryAppState,
+    id: i64,
+    user_id: i64,
+) -> Result<WebdavAccount> {
     let account = webdav_account_repo::find_by_id(&state.db, id).await?;
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
     let new_is_active = !account.is_active;
@@ -210,7 +214,11 @@ pub async fn toggle_active(state: &AppState, id: i64, user_id: i64) -> Result<We
 }
 
 /// 测试 WebDAV 凭据是否正确
-pub async fn test_credentials(state: &AppState, username: &str, password: &str) -> Result<()> {
+pub async fn test_credentials(
+    state: &PrimaryAppState,
+    username: &str,
+    password: &str,
+) -> Result<()> {
     let account = webdav_account_repo::find_by_username(&state.db, username)
         .await?
         .ok_or_else(|| AsterError::auth_invalid_credentials("WebDAV account not found"))?;

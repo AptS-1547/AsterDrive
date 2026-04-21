@@ -8,7 +8,7 @@ use crate::api::response::ApiResponse;
 use crate::api::routes::team_scope;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::AuditContext, auth_service::Claims, batch_service, stream_ticket_service,
     task_service, workspace_storage_service::WorkspaceStorageScope,
@@ -61,7 +61,7 @@ pub fn team_routes() -> actix_web::Scope {
     security(("bearer" = [])),
 )]
 pub async fn batch_delete(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     body: web::Json<BatchDeleteReq>,
@@ -93,7 +93,7 @@ pub async fn batch_delete(
     security(("bearer" = [])),
 )]
 pub async fn batch_move(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     body: web::Json<BatchMoveReq>,
@@ -125,7 +125,7 @@ pub async fn batch_move(
     security(("bearer" = [])),
 )]
 pub async fn batch_copy(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     body: web::Json<BatchCopyReq>,
@@ -157,7 +157,7 @@ pub async fn batch_copy(
     security(("bearer" = [])),
 )]
 pub async fn archive_download(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     body: web::Json<ArchiveDownloadReq>,
 ) -> Result<HttpResponse> {
@@ -186,7 +186,7 @@ pub async fn archive_download(
     security(("bearer" = [])),
 )]
 pub async fn archive_compress(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     body: web::Json<ArchiveCompressReq>,
 ) -> Result<HttpResponse> {
@@ -215,7 +215,7 @@ pub async fn archive_compress(
     security(("bearer" = [])),
 )]
 pub async fn archive_download_stream(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
@@ -246,7 +246,7 @@ pub async fn archive_download_stream(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_batch_delete(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -280,7 +280,7 @@ pub(crate) async fn team_batch_delete(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_batch_move(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -314,7 +314,7 @@ pub(crate) async fn team_batch_move(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_batch_copy(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -348,7 +348,7 @@ pub(crate) async fn team_batch_copy(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_archive_download(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     body: web::Json<ArchiveDownloadReq>,
@@ -374,7 +374,7 @@ pub(crate) async fn team_archive_download(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_archive_compress(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     body: web::Json<ArchiveCompressReq>,
@@ -402,7 +402,7 @@ pub(crate) async fn team_archive_compress(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_archive_download_stream(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse> {
@@ -411,7 +411,7 @@ pub(crate) async fn team_archive_download_stream(
 }
 
 pub(crate) async fn batch_delete_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -431,7 +431,7 @@ pub(crate) async fn batch_delete_response(
 }
 
 pub(crate) async fn batch_move_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -452,7 +452,7 @@ pub(crate) async fn batch_move_response(
 }
 
 pub(crate) async fn batch_copy_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -473,7 +473,7 @@ pub(crate) async fn batch_copy_response(
 }
 
 pub(crate) async fn archive_download_ticket_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     body: &ArchiveDownloadReq,
 ) -> Result<HttpResponse> {
@@ -493,7 +493,7 @@ pub(crate) async fn archive_download_ticket_response(
 }
 
 pub(crate) async fn archive_compress_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     body: &ArchiveCompressReq,
 ) -> Result<HttpResponse> {
@@ -513,7 +513,7 @@ pub(crate) async fn archive_compress_response(
 }
 
 pub(crate) async fn archive_download_stream_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     token: &str,
 ) -> Result<HttpResponse> {

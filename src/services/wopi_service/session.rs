@@ -11,7 +11,7 @@ use crate::config::site_url;
 use crate::db::repository::wopi_session_repo;
 use crate::entities::{file, wopi_session};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     auth_service, preview_app_service, workspace_storage_service,
     workspace_storage_service::WorkspaceStorageScope,
@@ -40,7 +40,7 @@ pub(crate) struct ResolvedWopiAccess {
 }
 
 pub(crate) async fn create_launch_session_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     app_key: &str,
@@ -84,7 +84,7 @@ pub(crate) async fn create_launch_session_in_scope(
     })
 }
 
-pub(crate) fn build_public_wopi_src(state: &AppState, file_id: i64) -> Result<String> {
+pub(crate) fn build_public_wopi_src(state: &PrimaryAppState, file_id: i64) -> Result<String> {
     // WOPISrc 指向的是 CheckFileInfo 端点，而不是 `/contents`。
     // 官方路径定义见：
     // - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/checkfileinfo
@@ -100,7 +100,7 @@ pub(crate) fn build_public_wopi_src(state: &AppState, file_id: i64) -> Result<St
 }
 
 pub(crate) async fn create_access_token_for_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     payload: &WopiAccessTokenPayload,
     file_id: i64,
 ) -> Result<String> {
@@ -120,7 +120,7 @@ pub(crate) async fn create_access_token_for_file(
 }
 
 pub(crate) async fn resolve_access_token(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
     access_token: &str,
     request_source: WopiRequestSource<'_>,
@@ -201,7 +201,7 @@ pub(crate) fn scope_from_payload(payload: &WopiAccessTokenPayload) -> WorkspaceS
 }
 
 async fn create_access_token_session(
-    state: &AppState,
+    state: &PrimaryAppState,
     payload: &WopiAccessTokenPayload,
 ) -> Result<String> {
     let token = format!("wopi_{}", crate::utils::id::new_short_token());
@@ -242,6 +242,6 @@ fn payload_from_session(session: &wopi_session::Model) -> Result<WopiAccessToken
     })
 }
 
-pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
+pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
     wopi_session_repo::delete_expired(&state.db).await
 }

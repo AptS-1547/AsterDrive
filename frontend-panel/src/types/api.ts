@@ -89,8 +89,18 @@ export type BackgroundTaskStatus =
 export type CreatePolicyGroupRequest =
 	components["schemas"]["CreatePolicyGroupReq"];
 export type CreatePolicyRequest = components["schemas"]["CreatePolicyReq"];
+export type CreateRemoteNodeRequest =
+	components["schemas"]["CreateRemoteNodeReq"];
 export type DriverType = components["schemas"]["DriverType"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
+export type RemoteEnrollmentCommandInfo =
+	components["schemas"]["RemoteEnrollmentCommandInfo"];
+export type RemoteNodeInfo = components["schemas"]["RemoteNodeInfo"];
+export type RemoteNodePage = components["schemas"]["OffsetPage_RemoteNodeInfo"];
+export type RemoteStorageCapabilities =
+	components["schemas"]["RemoteStorageCapabilities"];
+export type RemoteUploadStrategy =
+	components["schemas"]["RemoteUploadStrategy"];
 export type ResourceLockOwnerInfo =
 	components["schemas"]["ResourceLockOwnerInfo"];
 export type S3UploadStrategy = components["schemas"]["S3UploadStrategy"];
@@ -103,6 +113,11 @@ export type PolicyGroupItemRequest =
 export type UpdatePolicyGroupRequest =
 	components["schemas"]["PatchPolicyGroupReq"];
 export type UpdatePolicyRequest = components["schemas"]["PatchPolicyReq"];
+export type PatchRemoteNodeReq = components["schemas"]["PatchRemoteNodeReq"];
+export type TestRemoteNodeParamsReq =
+	components["schemas"]["TestRemoteNodeParamsReq"];
+export type UpdateRemoteNodeRequest =
+	components["schemas"]["PatchRemoteNodeReq"];
 export type UpdateUserRequest = components["schemas"]["PatchUserReq"];
 export type RemovedCountResponse =
 	components["schemas"]["RemovedCountResponse"];

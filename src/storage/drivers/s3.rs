@@ -970,6 +970,7 @@ mod tests {
             access_key: "key".to_string(),
             secret_key: "secret".to_string(),
             base_path: String::new(),
+            remote_node_id: None,
             max_file_size: 0,
             allowed_types: crate::types::StoredStoragePolicyAllowedTypes::empty(),
             options: crate::types::StoredStoragePolicyOptions::empty(),

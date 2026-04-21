@@ -221,7 +221,7 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 						if (!etag) {
 							reject(
 								new UploadRequestError(
-									"S3 did not return ETag header. Check bucket CORS ExposeHeaders configuration.",
+									"Presigned upload did not return ETag header. Check CORS ExposeHeaders configuration.",
 									{ status: xhr.status, retryable: false },
 								),
 							);
@@ -232,7 +232,7 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 						reject(
 							new UploadRequestError(
 								parseApiMessage(xhr.responseText) ??
-									`S3 upload failed: ${xhr.status}`,
+									`Presigned upload failed: ${xhr.status}`,
 								{
 									status: xhr.status,
 									retryable: isRetryableHttpStatus(xhr.status),

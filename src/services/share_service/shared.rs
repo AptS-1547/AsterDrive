@@ -13,7 +13,7 @@ use sea_orm::DatabaseConnection;
 use crate::db::repository::{file_repo, folder_repo, share_repo, team_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     file_service, folder_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -75,7 +75,7 @@ pub(super) async fn lock_share_resource_in_scope<C: sea_orm::ConnectionTrait>(
 }
 
 pub(super) async fn load_share_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     share_id: i64,
 ) -> Result<share::Model> {
@@ -85,13 +85,16 @@ pub(super) async fn load_share_in_scope(
     Ok(share)
 }
 
-pub(super) async fn load_valid_share(state: &AppState, token: &str) -> Result<share::Model> {
+pub(super) async fn load_valid_share(state: &PrimaryAppState, token: &str) -> Result<share::Model> {
     let share = load_share_record(state, token).await?;
     validate_share(&share)?;
     Ok(share)
 }
 
-pub(super) async fn load_share_record(state: &AppState, token: &str) -> Result<share::Model> {
+pub(super) async fn load_share_record(
+    state: &PrimaryAppState,
+    token: &str,
+) -> Result<share::Model> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
         .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
@@ -140,7 +143,7 @@ pub(super) fn ensure_share_matches_folder(
 }
 
 pub(super) async fn load_share_file_resource(
-    state: &AppState,
+    state: &PrimaryAppState,
     share: &share::Model,
 ) -> Result<crate::entities::file::Model> {
     let file_id = match share_target_for_share(share)? {
@@ -168,7 +171,7 @@ pub(super) async fn load_share_file_resource(
 }
 
 pub(super) async fn load_share_folder_resource(
-    state: &AppState,
+    state: &PrimaryAppState,
     share: &share::Model,
 ) -> Result<crate::entities::folder::Model> {
     let folder_id = match share_target_for_share(share)? {
@@ -196,7 +199,7 @@ pub(super) async fn load_share_folder_resource(
 }
 
 pub(super) async fn load_valid_folder_share_root(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
 ) -> Result<(share::Model, i64)> {
     let share = load_valid_share(state, token).await?;
@@ -205,7 +208,7 @@ pub(super) async fn load_valid_folder_share_root(
 }
 
 pub(super) async fn load_shared_folder_file_target(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     file_id: i64,
 ) -> Result<(share::Model, crate::entities::file::Model)> {
@@ -227,7 +230,7 @@ pub(super) async fn load_shared_folder_file_target(
 }
 
 pub(super) async fn load_shared_subfolder_target(
-    state: &AppState,
+    state: &PrimaryAppState,
     token: &str,
     folder_id: i64,
 ) -> Result<(share::Model, crate::entities::folder::Model)> {

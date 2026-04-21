@@ -99,7 +99,7 @@ test.describe
 			).toBeVisible();
 
 			await page
-				.getByRole("button", { exact: true, name: "Delete selected" })
+				.getByRole("button", { exact: true, name: "Remove selected" })
 				.click();
 			const deleteDialog = page.getByRole("alertdialog");
 			await expect(deleteDialog).toBeVisible();

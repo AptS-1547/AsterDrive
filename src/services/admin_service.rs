@@ -11,7 +11,7 @@ use crate::db::repository::{
     audit_log_repo, background_task_repo, file_repo, share_repo, user_repo,
 };
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, UserStatus};
 use crate::utils::numbers::u32_to_usize;
@@ -118,7 +118,7 @@ pub struct AdminOverview {
 }
 
 pub async fn get_overview(
-    state: &AppState,
+    state: &PrimaryAppState,
     days: u32,
     timezone_name: &str,
     event_limit: u64,
@@ -224,7 +224,7 @@ fn build_background_task_event(
 }
 
 async fn build_daily_reports(
-    state: &AppState,
+    state: &PrimaryAppState,
     today: NaiveDate,
     days: u32,
     timezone: Tz,

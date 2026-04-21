@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 use crate::cache::CacheExt;
 use crate::config::site_url;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     task_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -57,7 +57,7 @@ struct StreamTicketPayload {
 }
 
 pub(crate) async fn create_archive_download_ticket_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     params: &task_service::CreateArchiveTaskParams,
 ) -> Result<StreamTicketInfo> {
@@ -86,7 +86,7 @@ pub(crate) async fn create_archive_download_ticket_in_scope(
 }
 
 pub(crate) async fn resolve_archive_download_ticket_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     token: &str,
 ) -> Result<task_service::CreateArchiveTaskParams> {
@@ -122,7 +122,7 @@ fn cache_key(token: &str) -> String {
 }
 
 async fn store_ticket(
-    state: &AppState,
+    state: &PrimaryAppState,
     cache_key: &str,
     payload: &StreamTicketPayload,
     ttl_secs: u64,
@@ -150,7 +150,7 @@ async fn store_ticket(
     Ok(())
 }
 
-async fn load_ticket(state: &AppState, cache_key: &str) -> Option<StreamTicketPayload> {
+async fn load_ticket(state: &PrimaryAppState, cache_key: &str) -> Option<StreamTicketPayload> {
     if state.config.cache.enabled
         && let Some(payload) = state.cache.get::<StreamTicketPayload>(cache_key).await
     {
@@ -160,7 +160,7 @@ async fn load_ticket(state: &AppState, cache_key: &str) -> Option<StreamTicketPa
     FALLBACK_STREAM_TICKETS.get(cache_key).await
 }
 
-async fn delete_ticket(state: &AppState, cache_key: &str) {
+async fn delete_ticket(state: &PrimaryAppState, cache_key: &str) {
     if state.config.cache.enabled {
         state.cache.delete(cache_key).await;
     }

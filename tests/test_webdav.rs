@@ -186,7 +186,7 @@ async fn test_webdav_get_and_head_do_not_create_runtime_temp_files() {
             .app_data(web::Data::new(state))
             .configure(move |cfg| {
                 aster_drive::webdav::configure(cfg, &webdav_config, &db2);
-                aster_drive::api::configure(cfg, &db1);
+                aster_drive::api::configure_primary(cfg, &db1);
             }),
     )
     .await;
@@ -251,7 +251,7 @@ async fn test_webdav_put_local_fast_path_avoids_runtime_temp_files() {
             .app_data(web::Data::new(state))
             .configure(move |cfg| {
                 aster_drive::webdav::configure(cfg, &webdav_config, &db2);
-                aster_drive::api::configure(cfg, &db1);
+                aster_drive::api::configure_primary(cfg, &db1);
             }),
     )
     .await;
@@ -311,7 +311,7 @@ async fn test_webdav_put_without_content_length_avoids_runtime_temp_files() {
             .app_data(web::Data::new(state))
             .configure(move |cfg| {
                 aster_drive::webdav::configure(cfg, &webdav_config, &db2);
-                aster_drive::api::configure(cfg, &db1);
+                aster_drive::api::configure_primary(cfg, &db1);
             }),
     )
     .await;
@@ -378,7 +378,7 @@ async fn test_webdav_runtime_toggle_takes_effect_immediately() {
             .app_data(web::Data::new(state))
             .configure(move |cfg| {
                 aster_drive::webdav::configure(cfg, &webdav_config, &db2);
-                aster_drive::api::configure(cfg, &db1);
+                aster_drive::api::configure_primary(cfg, &db1);
             }),
     )
     .await;

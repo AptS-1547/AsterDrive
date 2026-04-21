@@ -47,9 +47,28 @@ pub(crate) async fn create_s3_nondedup_blob<C: ConnectionTrait>(
     policy_id: i64,
     upload_id: &str,
 ) -> Result<file_blob::Model> {
+    create_opaque_nondedup_blob(db, size, policy_id, "s3", upload_id).await
+}
+
+pub(crate) async fn create_remote_nondedup_blob<C: ConnectionTrait>(
+    db: &C,
+    size: i64,
+    policy_id: i64,
+    upload_id: &str,
+) -> Result<file_blob::Model> {
+    create_opaque_nondedup_blob(db, size, policy_id, "remote", upload_id).await
+}
+
+async fn create_opaque_nondedup_blob<C: ConnectionTrait>(
+    db: &C,
+    size: i64,
+    policy_id: i64,
+    hash_prefix: &str,
+    object_id: &str,
+) -> Result<file_blob::Model> {
     let now = Utc::now();
-    let file_hash = format!("s3-{upload_id}");
-    let storage_path = format!("files/{upload_id}");
+    let file_hash = format!("{hash_prefix}-{object_id}");
+    let storage_path = format!("files/{object_id}");
 
     file_repo::create_blob(
         db,

@@ -1,0 +1,67 @@
+//! 节点启动模式配置。
+
+use crate::config::Config;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+#[derive(Default)]
+pub enum NodeRuntimeMode {
+    #[default]
+    Primary,
+    Follower,
+}
+
+impl NodeRuntimeMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Follower => "follower",
+        }
+    }
+}
+
+pub fn parse_node_runtime_mode(value: &str) -> Option<NodeRuntimeMode> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "primary" => Some(NodeRuntimeMode::Primary),
+        "follower" => Some(NodeRuntimeMode::Follower),
+        _ => None,
+    }
+}
+
+pub fn start_mode(config: &Config) -> NodeRuntimeMode {
+    config.server.start_mode
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NodeRuntimeMode, parse_node_runtime_mode, start_mode};
+    use crate::config::Config;
+
+    #[test]
+    fn parse_node_runtime_mode_accepts_supported_values() {
+        assert_eq!(
+            parse_node_runtime_mode(" follower "),
+            Some(NodeRuntimeMode::Follower)
+        );
+        assert_eq!(
+            parse_node_runtime_mode("PRIMARY"),
+            Some(NodeRuntimeMode::Primary)
+        );
+        assert_eq!(parse_node_runtime_mode("worker"), None);
+    }
+
+    #[test]
+    fn start_mode_defaults_to_primary() {
+        let config = Config::default();
+        assert_eq!(start_mode(&config), NodeRuntimeMode::Primary);
+    }
+
+    #[test]
+    fn start_mode_reads_follower_value() {
+        let mut config = Config::default();
+        config.server.start_mode = NodeRuntimeMode::Follower;
+
+        assert_eq!(start_mode(&config), NodeRuntimeMode::Follower);
+    }
+}

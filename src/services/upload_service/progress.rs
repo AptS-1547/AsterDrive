@@ -6,7 +6,7 @@ use crate::api::constants::HOUR_SECS;
 use crate::db::repository::upload_session_part_repo;
 use crate::entities::upload_session;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::UploadProgressResponse;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::types::{
@@ -16,7 +16,7 @@ use crate::utils::paths;
 
 /// 查询上传进度
 async fn get_progress_impl(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
 ) -> Result<UploadProgressResponse> {
     tracing::debug!(
@@ -27,39 +27,35 @@ async fn get_progress_impl(
         "loading upload progress"
     );
 
-    let chunks_on_disk = if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
-        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-        let strategy = if policy.driver_type == DriverType::S3 {
-            Some(
-                parse_storage_policy_options(policy.options.as_ref())
-                    .effective_s3_upload_strategy(),
-            )
-        } else {
-            None
-        };
-
-        match strategy {
-            Some(S3UploadStrategy::RelayStream) => {
-                upload_session_part_repo::list_part_numbers(&state.db, &session.id)
+    let chunks_on_disk = if session.status == UploadSessionStatus::Presigned {
+        match (
+            session.s3_temp_key.as_deref(),
+            session.s3_multipart_id.as_deref(),
+        ) {
+            (Some(temp_key), Some(multipart_id)) => {
+                let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
+                state
+                    .driver_registry
+                    .get_multipart_driver(&policy)?
+                    .list_uploaded_parts(temp_key, multipart_id)
                     .await?
-                    .into_iter()
-                    .map(|part_number| part_number - 1)
-                    .collect()
-            }
-            Some(S3UploadStrategy::Presigned)
-                if session.status == UploadSessionStatus::Presigned =>
-            {
-                if let Some(temp_key) = session.s3_temp_key.as_deref() {
-                    state
-                        .driver_registry
-                        .get_multipart_driver(&policy)?
-                        .list_uploaded_parts(temp_key, multipart_id)
-                        .await?
-                } else {
-                    scan_received_chunks(state, &session.id).await
-                }
             }
             _ => scan_received_chunks(state, &session.id).await,
+        }
+    } else if session.s3_multipart_id.is_some() {
+        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
+        let is_s3_relay_multipart = policy.driver_type == DriverType::S3
+            && parse_storage_policy_options(policy.options.as_ref()).effective_s3_upload_strategy()
+                == S3UploadStrategy::RelayStream;
+
+        if is_s3_relay_multipart {
+            upload_session_part_repo::list_part_numbers(&state.db, &session.id)
+                .await?
+                .into_iter()
+                .map(|part_number| part_number - 1)
+                .collect()
+        } else {
+            scan_received_chunks(state, &session.id).await
         }
     } else {
         scan_received_chunks(state, &session.id).await
@@ -86,7 +82,7 @@ async fn get_progress_impl(
 }
 
 pub async fn get_progress(
-    state: &AppState,
+    state: &PrimaryAppState,
     upload_id: &str,
     user_id: i64,
 ) -> Result<UploadProgressResponse> {
@@ -95,7 +91,7 @@ pub async fn get_progress(
 }
 
 pub async fn get_progress_for_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     upload_id: &str,
     user_id: i64,
@@ -104,9 +100,9 @@ pub async fn get_progress_for_team(
     get_progress_impl(state, session).await
 }
 
-/// 为 S3 multipart presigned 上传批量生成 per-part presigned PUT URL
+/// 为 multipart presigned 上传批量生成 per-part presigned PUT URL
 async fn presign_parts_impl(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
     part_numbers: Vec<i32>,
 ) -> Result<HashMap<i32, String>> {
@@ -152,7 +148,7 @@ async fn presign_parts_impl(
 }
 
 pub async fn presign_parts(
-    state: &AppState,
+    state: &PrimaryAppState,
     upload_id: &str,
     user_id: i64,
     part_numbers: Vec<i32>,
@@ -162,7 +158,7 @@ pub async fn presign_parts(
 }
 
 pub async fn presign_parts_for_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     upload_id: &str,
     user_id: i64,
@@ -173,7 +169,7 @@ pub async fn presign_parts_for_team(
 }
 
 /// 扫描临时目录中实际存在的 chunk 文件，返回排序后的 chunk 编号列表
-async fn scan_received_chunks(state: &AppState, upload_id: &str) -> Vec<i32> {
+async fn scan_received_chunks(state: &PrimaryAppState, upload_id: &str) -> Vec<i32> {
     let dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
     let mut received = Vec::new();
     let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {

@@ -193,7 +193,7 @@ fn create_zip_bytes_with_tampered_declared_size(
 }
 
 async fn insert_processing_task(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     processing_started_at: chrono::DateTime<chrono::Utc>,
     last_heartbeat_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> i64 {
@@ -234,7 +234,7 @@ async fn insert_processing_task(
 }
 
 async fn insert_pending_dispatch_task(
-    state: &aster_drive::runtime::AppState,
+    state: &aster_drive::runtime::PrimaryAppState,
     max_attempts: i32,
 ) -> background_task::Model {
     let now = Utc::now();
@@ -799,7 +799,7 @@ async fn test_personal_archive_stream_preserves_empty_folders() {
             .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(web::JsonConfig::default().limit(1024 * 1024))
             .app_data(web::Data::clone(&state))
-            .configure(move |cfg| aster_drive::api::configure(cfg, &db)),
+            .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db)),
     )
     .await;
 
@@ -912,7 +912,7 @@ async fn test_team_archive_stream_is_scoped_to_team_routes() {
             .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(web::JsonConfig::default().limit(1024 * 1024))
             .app_data(web::Data::clone(&state))
-            .configure(move |cfg| aster_drive::api::configure(cfg, &db)),
+            .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db)),
     )
     .await;
 
@@ -1005,7 +1005,7 @@ async fn test_personal_archive_compress_task_creates_workspace_file() {
             .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(web::JsonConfig::default().limit(1024 * 1024))
             .app_data(web::Data::clone(&state))
-            .configure(move |cfg| aster_drive::api::configure(cfg, &db)),
+            .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db)),
     )
     .await;
 
@@ -1238,7 +1238,7 @@ async fn test_team_archive_extract_task_creates_team_folder_tree() {
             .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(web::JsonConfig::default().limit(1024 * 1024))
             .app_data(web::Data::clone(&state))
-            .configure(move |cfg| aster_drive::api::configure(cfg, &db)),
+            .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db)),
     )
     .await;
 

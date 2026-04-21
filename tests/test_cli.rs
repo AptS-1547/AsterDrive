@@ -9,10 +9,17 @@ use std::process::Command;
 use aster_drive::config::DatabaseConfig;
 use aster_drive::db;
 use aster_drive::db::repository::{
-    contact_verification_token_repo, file_repo, policy_repo, user_repo,
+    contact_verification_token_repo, file_repo, follower_enrollment_session_repo,
+    managed_follower_repo, master_binding_repo, policy_repo, user_repo,
 };
-use aster_drive::entities::contact_verification_token;
-use aster_drive::types::{VerificationChannel, VerificationPurpose};
+use aster_drive::entities::{
+    contact_verification_token, follower_enrollment_session, managed_follower, master_binding,
+    storage_policy,
+};
+use aster_drive::types::{
+    DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions, VerificationChannel,
+    VerificationPurpose,
+};
 use chrono::{Duration, Utc};
 use migration::{Migrator, MigratorTrait};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbBackend, Set, Statement};
@@ -21,6 +28,11 @@ use serde_json::Value;
 fn aster_drive_bin() -> &'static str {
     env!("CARGO_BIN_EXE_aster_drive")
 }
+
+const MIGRATION_REMOTE_NODE_NAME: &str = "MigratedRemoteNode";
+const MIGRATION_REMOTE_POLICY_NAME: &str = "MigratedRemotePolicy";
+const MIGRATION_MASTER_BINDING_NAME: &str = "MigratedMasterBinding";
+const MIGRATION_REMOTE_NAMESPACE: &str = "migrate-remote-space";
 
 async fn setup_database_url() -> String {
     let db_path =
@@ -111,7 +123,7 @@ async fn scalar_string(db: &DatabaseConnection, backend: DbBackend, sql: &str) -
 
 async fn seed_migration_fixture(database_url: &str) -> i64 {
     let state = common::setup_with_database_url(database_url).await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
     let folder_req = actix_test::TestRequest::post()
@@ -130,7 +142,98 @@ async fn seed_migration_fixture(database_url: &str) -> i64 {
         .as_i64()
         .expect("folder id should exist");
 
-    upload_test_file_to_folder!(app, token, folder_id)
+    let file_id = upload_test_file_to_folder!(app, token, folder_id);
+    seed_remote_node_fixture(&state.db).await;
+    file_id
+}
+
+async fn seed_remote_node_fixture(db: &DatabaseConnection) {
+    let default_policy = policy_repo::find_default(db)
+        .await
+        .unwrap()
+        .expect("default policy should exist");
+    let now = Utc::now();
+
+    let remote_node = managed_follower_repo::create(
+        db,
+        managed_follower::ActiveModel {
+            name: Set(MIGRATION_REMOTE_NODE_NAME.to_string()),
+            base_url: Set("https://remote.example.com".to_string()),
+            access_key: Set("migrate-remote-ak".to_string()),
+            secret_key: Set("migrate-remote-sk".to_string()),
+            namespace: Set(MIGRATION_REMOTE_NAMESPACE.to_string()),
+            is_enabled: Set(true),
+            last_capabilities: Set(
+                "{\"protocol_version\":\"v1\",\"supports_list\":true}".to_string()
+            ),
+            last_error: Set(String::new()),
+            last_checked_at: Set(Some(now)),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    policy_repo::create(
+        db,
+        storage_policy::ActiveModel {
+            name: Set(MIGRATION_REMOTE_POLICY_NAME.to_string()),
+            driver_type: Set(DriverType::Remote),
+            endpoint: Set(String::new()),
+            bucket: Set(String::new()),
+            access_key: Set(String::new()),
+            secret_key: Set(String::new()),
+            base_path: Set("remote-ingress".to_string()),
+            remote_node_id: Set(Some(remote_node.id)),
+            max_file_size: Set(0),
+            allowed_types: Set(StoredStoragePolicyAllowedTypes::empty()),
+            options: Set(StoredStoragePolicyOptions::empty()),
+            is_default: Set(false),
+            chunk_size: Set(5_242_880),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    follower_enrollment_session_repo::create(
+        db,
+        follower_enrollment_session::ActiveModel {
+            managed_follower_id: Set(remote_node.id),
+            token_hash: Set("migrate-enrollment-token-hash".to_string()),
+            ack_token_hash: Set("migrate-enrollment-ack-token-hash".to_string()),
+            expires_at: Set(now + Duration::minutes(30)),
+            redeemed_at: Set(Some(now - Duration::minutes(5))),
+            acked_at: Set(None),
+            invalidated_at: Set(None),
+            created_at: Set(now - Duration::minutes(10)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    master_binding_repo::create(
+        db,
+        master_binding::ActiveModel {
+            name: Set(MIGRATION_MASTER_BINDING_NAME.to_string()),
+            master_url: Set("https://primary.example.com".to_string()),
+            access_key: Set("migrate-master-ak".to_string()),
+            secret_key: Set("migrate-master-sk".to_string()),
+            namespace: Set(MIGRATION_REMOTE_NAMESPACE.to_string()),
+            ingress_policy_id: Set(default_policy.id),
+            is_enabled: Set(true),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
 }
 
 async fn seed_contact_verification_history(database_url: &str) {
@@ -208,17 +311,66 @@ async fn assert_migrated_fixture(
     let users = scalar_i64(&target_db, target_backend, "SELECT COUNT(*) FROM users").await;
     let folders = scalar_i64(&target_db, target_backend, "SELECT COUNT(*) FROM folders").await;
     let files = scalar_i64(&target_db, target_backend, "SELECT COUNT(*) FROM files").await;
+    let managed_followers = scalar_i64(
+        &target_db,
+        target_backend,
+        "SELECT COUNT(*) FROM managed_followers",
+    )
+    .await;
+    let enrollment_sessions = scalar_i64(
+        &target_db,
+        target_backend,
+        "SELECT COUNT(*) FROM follower_enrollment_sessions",
+    )
+    .await;
+    let master_bindings = scalar_i64(
+        &target_db,
+        target_backend,
+        "SELECT COUNT(*) FROM master_bindings",
+    )
+    .await;
+    let remote_policies = scalar_i64(
+        &target_db,
+        target_backend,
+        &format!(
+            "SELECT COUNT(*) FROM storage_policies \
+             WHERE name = '{MIGRATION_REMOTE_POLICY_NAME}' AND remote_node_id IS NOT NULL"
+        ),
+    )
+    .await;
     let file_name = scalar_string(
         &target_db,
         target_backend,
         &format!("SELECT name FROM files WHERE id = {file_id}"),
     )
     .await;
+    let remote_node_namespace = scalar_string(
+        &target_db,
+        target_backend,
+        &format!(
+            "SELECT namespace FROM managed_followers WHERE name = '{MIGRATION_REMOTE_NODE_NAME}'"
+        ),
+    )
+    .await;
+    let master_binding_namespace = scalar_string(
+        &target_db,
+        target_backend,
+        &format!(
+            "SELECT namespace FROM master_bindings WHERE name = '{MIGRATION_MASTER_BINDING_NAME}'"
+        ),
+    )
+    .await;
 
     assert_eq!(users, 1);
     assert_eq!(folders, 1);
     assert_eq!(files, 1);
+    assert_eq!(managed_followers, 1);
+    assert_eq!(enrollment_sessions, 1);
+    assert_eq!(master_bindings, 1);
+    assert_eq!(remote_policies, 1);
     assert_eq!(file_name, "test-in-folder.txt");
+    assert_eq!(remote_node_namespace, MIGRATION_REMOTE_NAMESPACE);
+    assert_eq!(master_binding_namespace, MIGRATION_REMOTE_NAMESPACE);
 }
 
 #[test]

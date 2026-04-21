@@ -8,7 +8,7 @@ use crate::db::repository::{
 };
 use crate::entities::{team, upload_session};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::types::EntityType;
@@ -16,7 +16,7 @@ use crate::types::EntityType;
 const DEFAULT_TEAM_ARCHIVE_RETENTION_DAYS: i64 = 7;
 const TEAM_ARCHIVE_BATCH_SIZE: u64 = 1_000;
 
-fn load_team_archive_retention_days(state: &AppState) -> i64 {
+fn load_team_archive_retention_days(state: &PrimaryAppState) -> i64 {
     let Some(raw) = state.runtime_config.get("team_archive_retention_days") else {
         return DEFAULT_TEAM_ARCHIVE_RETENTION_DAYS;
     };
@@ -34,7 +34,7 @@ fn load_team_archive_retention_days(state: &AppState) -> i64 {
 }
 
 async fn cleanup_team_upload_sessions(
-    state: &AppState,
+    state: &PrimaryAppState,
     sessions: &[upload_session::Model],
 ) -> Result<()> {
     for session in sessions {
@@ -97,7 +97,7 @@ async fn clear_team_locks<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<()
     Ok(())
 }
 
-async fn purge_archived_team_files(state: &AppState, team: &team::Model) -> Result<()> {
+async fn purge_archived_team_files(state: &PrimaryAppState, team: &team::Model) -> Result<()> {
     let scope = WorkspaceStorageScope::Team {
         team_id: team.id,
         actor_user_id: team.created_by,
@@ -147,7 +147,7 @@ async fn delete_archived_team_folders<C: ConnectionTrait>(db: &C, team_id: i64) 
     Ok(())
 }
 
-async fn force_delete_archived_team(state: &AppState, team: team::Model) -> Result<()> {
+async fn force_delete_archived_team(state: &PrimaryAppState, team: team::Model) -> Result<()> {
     let team_id = team.id;
     let upload_sessions = upload_session_repo::find_by_team(&state.db, team_id).await?;
     cleanup_team_upload_sessions(state, &upload_sessions).await?;
@@ -167,7 +167,7 @@ async fn force_delete_archived_team(state: &AppState, team: team::Model) -> Resu
     Ok(())
 }
 
-pub async fn cleanup_expired_archived_teams(state: &AppState) -> Result<u64> {
+pub async fn cleanup_expired_archived_teams(state: &PrimaryAppState) -> Result<u64> {
     let retention_days = load_team_archive_retention_days(state);
     let cutoff = Utc::now() - chrono::Duration::days(retention_days);
     let expired = team_repo::find_archived_before(&state.db, cutoff).await?;

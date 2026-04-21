@@ -276,6 +276,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/remote-nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_remote_nodes"];
+        put?: never;
+        post: operations["create_remote_node"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/remote-nodes/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_remote_node_params"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/remote-nodes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_remote_node"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_remote_node"];
+        options?: never;
+        head?: never;
+        patch: operations["update_remote_node"];
+        trace?: never;
+    };
+    "/api/v1/admin/remote-nodes/{id}/enrollment-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_remote_node_enrollment_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/remote-nodes/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_remote_node_connection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/shares": {
         parameters: {
             query?: never;
@@ -1427,6 +1507,38 @@ export interface paths {
         get: operations["get_public_preview_apps"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/remote-enrollment/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ack_remote_enrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/remote-enrollment/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["redeem_remote_enrollment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2669,6 +2781,9 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AckRemoteEnrollmentReq: {
+            ack_token: string;
+        };
         /** @description Generic message-only response (used after email operations). */
         ActionMessageResp: {
             message: string;
@@ -2791,6 +2906,46 @@ export interface components {
         AdminTeamListQuery: {
             archived?: boolean | null;
             keyword?: string | null;
+        };
+        /**
+         * @description 统一 API 响应格式
+         *
+         *     成功: `{ "code": 0, "msg": "", "data": {...} }`
+         *     失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+         */
+        ApiResponse_RemoteEnrollmentBootstrap: {
+            code: components["schemas"]["ErrorCode"];
+            data?: {
+                access_key: string;
+                ack_token: string;
+                is_enabled: boolean;
+                master_url: string;
+                namespace: string;
+                /** Format: int64 */
+                remote_node_id: number;
+                remote_node_name: string;
+                secret_key: string;
+            };
+            msg: string;
+        };
+        /**
+         * @description 统一 API 响应格式
+         *
+         *     成功: `{ "code": 0, "msg": "", "data": {...} }`
+         *     失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+         */
+        ApiResponse_RemoteEnrollmentCommandInfo: {
+            code: components["schemas"]["ErrorCode"];
+            data?: {
+                command: string;
+                expires_at: string;
+                master_url: string;
+                /** Format: int64 */
+                remote_node_id: number;
+                remote_node_name: string;
+                token: string;
+            };
+            msg: string;
         };
         /**
          * @description 统一 API 响应格式
@@ -3095,7 +3250,16 @@ export interface components {
             max_file_size?: number | null;
             name: string;
             options?: null | components["schemas"]["StoragePolicyOptions"];
+            /** Format: int64 */
+            remote_node_id?: number | null;
             secret_key?: string | null;
+        };
+        /** @description Create a remote node. */
+        CreateRemoteNodeReq: {
+            base_url?: string | null;
+            is_enabled?: boolean;
+            name: string;
+            namespace: string;
         };
         /** @description Create a new share. */
         CreateShareReq: {
@@ -3130,7 +3294,7 @@ export interface components {
          * @description 存储驱动类型
          * @enum {string}
          */
-        DriverType: "local" | "s3";
+        DriverType: "local" | "s3" | "remote";
         EntityProperty: {
             /** Format: int64 */
             entity_id: number;
@@ -3462,6 +3626,28 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        OffsetPage_RemoteNodeInfo: {
+            items: {
+                base_url: string;
+                capabilities: components["schemas"]["RemoteStorageCapabilities"];
+                created_at: string;
+                /** Format: int64 */
+                id: number;
+                is_enabled: boolean;
+                /** Format: date-time */
+                last_checked_at?: string | null;
+                last_error: string;
+                name: string;
+                namespace: string;
+                updated_at: string;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
         OffsetPage_ResourceLock: {
             items: {
                 created_at: string;
@@ -3530,6 +3716,8 @@ export interface components {
                 max_file_size: number;
                 name: string;
                 options: components["schemas"]["StoragePolicyOptions"];
+                /** Format: int64 */
+                remote_node_id?: number | null;
                 updated_at: string;
             }[];
             /** Format: int64 */
@@ -3740,7 +3928,16 @@ export interface components {
             max_file_size?: number | null;
             name?: string | null;
             options?: null | components["schemas"]["StoragePolicyOptions"];
+            /** Format: int64 */
+            remote_node_id?: number | null;
             secret_key?: string | null;
+        };
+        /** @description Patch a remote node. */
+        PatchRemoteNodeReq: {
+            base_url?: string | null;
+            is_enabled?: boolean | null;
+            name?: string | null;
+            namespace?: string | null;
         };
         /** @description Patch a team member's role. */
         PatchTeamMemberReq: {
@@ -3857,12 +4054,60 @@ export interface components {
             /** Format: int32 */
             purged: number;
         };
+        RedeemRemoteEnrollmentReq: {
+            token: string;
+        };
         /** @description Registration request for new users. */
         RegisterReq: {
             email: string;
             password: string;
             username: string;
         };
+        RemoteEnrollmentBootstrap: {
+            access_key: string;
+            ack_token: string;
+            is_enabled: boolean;
+            master_url: string;
+            namespace: string;
+            /** Format: int64 */
+            remote_node_id: number;
+            remote_node_name: string;
+            secret_key: string;
+        };
+        RemoteEnrollmentCommandInfo: {
+            command: string;
+            expires_at: string;
+            master_url: string;
+            /** Format: int64 */
+            remote_node_id: number;
+            remote_node_name: string;
+            token: string;
+        };
+        RemoteNodeInfo: {
+            base_url: string;
+            capabilities: components["schemas"]["RemoteStorageCapabilities"];
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            is_enabled: boolean;
+            /** Format: date-time */
+            last_checked_at?: string | null;
+            last_error: string;
+            name: string;
+            namespace: string;
+            updated_at: string;
+        };
+        RemoteStorageCapabilities: {
+            protocol_version: string;
+            supports_list: boolean;
+            supports_range_read: boolean;
+            supports_stream_upload: boolean;
+        };
+        /**
+         * @description Remote 上传传输策略（存储策略 options JSON）
+         * @enum {string}
+         */
+        RemoteUploadStrategy: "relay_stream" | "presigned";
         RemovedCountResponse: {
             /** Format: int64 */
             removed: number;
@@ -4056,6 +4301,8 @@ export interface components {
             max_file_size: number;
             name: string;
             options: components["schemas"]["StoragePolicyOptions"];
+            /** Format: int64 */
+            remote_node_id?: number | null;
             updated_at: string;
         };
         StoragePolicyGroup: {
@@ -4119,6 +4366,7 @@ export interface components {
         };
         StoragePolicyOptions: {
             content_dedup?: boolean | null;
+            remote_upload_strategy?: null | components["schemas"]["RemoteUploadStrategy"];
             /** Format: int64 */
             s3_connect_timeout_secs?: number | null;
             s3_download_strategy?: null | components["schemas"]["S3DownloadStrategy"];
@@ -4327,7 +4575,15 @@ export interface components {
             bucket?: string | null;
             driver_type: components["schemas"]["DriverType"];
             endpoint?: string | null;
+            /** Format: int64 */
+            remote_node_id?: number | null;
             secret_key?: string | null;
+        };
+        /** @description Test remote node connection without saving. */
+        TestRemoteNodeParamsReq: {
+            access_key: string;
+            base_url: string;
+            secret_key: string;
         };
         TextLockOwnerInfo: {
             value: string;
@@ -5277,6 +5533,8 @@ export interface operations {
                                 max_file_size: number;
                                 name: string;
                                 options: components["schemas"]["StoragePolicyOptions"];
+                                /** Format: int64 */
+                                remote_node_id?: number | null;
                                 updated_at: string;
                             }[];
                             /** Format: int64 */
@@ -5343,6 +5601,8 @@ export interface operations {
                             max_file_size: number;
                             name: string;
                             options: components["schemas"]["StoragePolicyOptions"];
+                            /** Format: int64 */
+                            remote_node_id?: number | null;
                             updated_at: string;
                         };
                         msg: string;
@@ -5385,15 +5645,15 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Unauthorized */
-            401: {
+            /** @description Connection failed */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Connection failed */
-            500: {
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5437,6 +5697,8 @@ export interface operations {
                             max_file_size: number;
                             name: string;
                             options: components["schemas"]["StoragePolicyOptions"];
+                            /** Format: int64 */
+                            remote_node_id?: number | null;
                             updated_at: string;
                         };
                         msg: string;
@@ -5548,6 +5810,8 @@ export interface operations {
                             max_file_size: number;
                             name: string;
                             options: components["schemas"]["StoragePolicyOptions"];
+                            /** Format: int64 */
+                            remote_node_id?: number | null;
                             updated_at: string;
                         };
                         msg: string;
@@ -5596,15 +5860,15 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Unauthorized */
-            401: {
+            /** @description Connection failed */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Connection failed */
-            500: {
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5967,6 +6231,464 @@ export interface operations {
             };
             /** @description Policy group not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_remote_nodes: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List remote nodes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            items: {
+                                base_url: string;
+                                capabilities: components["schemas"]["RemoteStorageCapabilities"];
+                                created_at: string;
+                                /** Format: int64 */
+                                id: number;
+                                is_enabled: boolean;
+                                /** Format: date-time */
+                                last_checked_at?: string | null;
+                                last_error: string;
+                                name: string;
+                                namespace: string;
+                                updated_at: string;
+                            }[];
+                            /** Format: int64 */
+                            limit: number;
+                            /** Format: int64 */
+                            offset: number;
+                            /** Format: int64 */
+                            total: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_remote_node: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRemoteNodeReq"];
+            };
+        };
+        responses: {
+            /** @description Remote node created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            base_url: string;
+                            capabilities: components["schemas"]["RemoteStorageCapabilities"];
+                            created_at: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_enabled: boolean;
+                            /** Format: date-time */
+                            last_checked_at?: string | null;
+                            last_error: string;
+                            name: string;
+                            namespace: string;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_remote_node_params: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestRemoteNodeParamsReq"];
+            };
+        };
+        responses: {
+            /** @description Remote node connection successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            protocol_version: string;
+                            supports_list: boolean;
+                            supports_range_read: boolean;
+                            supports_stream_upload: boolean;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Connection failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_remote_node: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Remote node ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Remote node details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            base_url: string;
+                            capabilities: components["schemas"]["RemoteStorageCapabilities"];
+                            created_at: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_enabled: boolean;
+                            /** Format: date-time */
+                            last_checked_at?: string | null;
+                            last_error: string;
+                            name: string;
+                            namespace: string;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remote node not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_remote_node: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Remote node ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Remote node deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remote node not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_remote_node: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Remote node ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchRemoteNodeReq"];
+            };
+        };
+        responses: {
+            /** @description Remote node updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            base_url: string;
+                            capabilities: components["schemas"]["RemoteStorageCapabilities"];
+                            created_at: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_enabled: boolean;
+                            /** Format: date-time */
+                            last_checked_at?: string | null;
+                            last_error: string;
+                            name: string;
+                            namespace: string;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remote node not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_remote_node_enrollment_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Remote node ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enrollment command created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RemoteEnrollmentCommandInfo"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remote node not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_remote_node_connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Remote node ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Remote node connection tested */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            base_url: string;
+                            capabilities: components["schemas"]["RemoteStorageCapabilities"];
+                            created_at: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_enabled: boolean;
+                            /** Format: date-time */
+                            last_checked_at?: string | null;
+                            last_error: string;
+                            name: string;
+                            namespace: string;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Connection failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remote node not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remote node is disabled or not ready */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9559,6 +10281,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Storage backend is disabled or not ready */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Thumbnail generation failed */
             500: {
                 headers: {
@@ -10482,6 +11211,52 @@ export interface operations {
             };
         };
     };
+    ack_remote_enrollment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AckRemoteEnrollmentReq"];
+            };
+        };
+        responses: {
+            /** @description Acknowledge a redeemed remote enrollment session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    redeem_remote_enrollment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RedeemRemoteEnrollmentReq"];
+            };
+        };
+        responses: {
+            /** @description Redeem a remote enrollment token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_RemoteEnrollmentBootstrap"];
+                };
+            };
+        };
+    };
     get_share_info: {
         parameters: {
             query?: never;
@@ -10803,6 +11578,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Storage backend is disabled or not ready */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Thumbnail generation failed */
             500: {
                 headers: {
@@ -10966,6 +11748,13 @@ export interface operations {
             };
             /** @description Share or file not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Storage backend is disabled or not ready */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13836,6 +14625,13 @@ export interface operations {
             };
             /** @description File not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Storage backend is disabled or not ready */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };

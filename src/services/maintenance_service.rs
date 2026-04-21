@@ -7,7 +7,7 @@ use chrono::Utc;
 use crate::db::repository::{file_repo, upload_session_repo, version_repo};
 use crate::entities::upload_session;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 
 const COMPLETED_SESSION_BATCH_SIZE: u64 = 1_000;
 const BLOB_RECONCILE_BATCH_SIZE: u64 = 1_000;
@@ -27,7 +27,7 @@ pub struct BlobMaintenanceStats {
 }
 
 pub async fn cleanup_expired_completed_upload_sessions(
-    state: &AppState,
+    state: &PrimaryAppState,
 ) -> Result<UploadSessionMaintenanceStats> {
     let now = Utc::now();
     let mut last_id: Option<String> = None;
@@ -91,7 +91,7 @@ pub async fn cleanup_expired_completed_upload_sessions(
     Ok(stats)
 }
 
-pub async fn reconcile_blob_state(state: &AppState) -> Result<BlobMaintenanceStats> {
+pub async fn reconcile_blob_state(state: &PrimaryAppState) -> Result<BlobMaintenanceStats> {
     let mut actual_ref_counts = load_actual_blob_ref_counts(state).await?;
     let mut last_blob_id: Option<i64> = None;
     let mut stats = BlobMaintenanceStats::default();
@@ -145,7 +145,7 @@ pub async fn reconcile_blob_state(state: &AppState) -> Result<BlobMaintenanceSta
 }
 
 async fn load_actual_blob_ref_counts(
-    state: &AppState,
+    state: &PrimaryAppState,
 ) -> Result<std::collections::HashMap<i64, i64>> {
     let mut actual = file_repo::count_blob_refs_from_files(&state.db).await?;
 
@@ -158,7 +158,7 @@ async fn load_actual_blob_ref_counts(
 }
 
 async fn cleanup_broken_completed_session_object(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: &upload_session::Model,
     tracked_blob_paths: &HashSet<String>,
 ) {

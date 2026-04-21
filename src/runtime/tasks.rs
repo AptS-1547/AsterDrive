@@ -12,7 +12,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
-use super::AppState;
+use super::PrimaryAppState;
 use crate::services::share_service::ShareDownloadRollbackWorker;
 use crate::utils::numbers::u128_to_u64;
 
@@ -84,11 +84,11 @@ async fn spawn_periodic<F, I, Fut>(
     interval_fn: I,
     jitter_cap: Option<Duration>,
     shutdown_token: CancellationToken,
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     task_fn: F,
 ) where
-    I: Fn(&AppState) -> Duration + Send + Sync + 'static,
-    F: Fn(web::Data<AppState>) -> Fut + Send + Sync + 'static,
+    I: Fn(&PrimaryAppState) -> Duration + Send + Sync + 'static,
+    F: Fn(web::Data<PrimaryAppState>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = crate::services::task_service::RuntimeTaskRunOutcome> + Send + 'static,
 {
     // 每轮迭代独立 span，并发清理任务在 trace 里可按 task.name 区分。
@@ -119,10 +119,10 @@ async fn spawn_periodic<F, I, Fut>(
 
 async fn run_periodic_iteration<F, Fut>(
     name: &'static str,
-    state: &web::Data<AppState>,
+    state: &web::Data<PrimaryAppState>,
     task_fn: &F,
 ) where
-    F: Fn(web::Data<AppState>) -> Fut + Send + Sync + 'static,
+    F: Fn(web::Data<PrimaryAppState>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = crate::services::task_service::RuntimeTaskRunOutcome> + Send + 'static,
 {
     let started_at = Utc::now();
@@ -193,18 +193,31 @@ fn effective_jitter_cap(base_interval: Duration, jitter_cap: Duration) -> Durati
     jitter_cap.min(Duration::from_millis(bounded_ms))
 }
 
-/// Spawn all periodic background cleanup tasks.
-pub fn spawn_background_tasks(
-    state: web::Data<AppState>,
-    share_download_rollback_worker: ShareDownloadRollbackWorker,
-) -> BackgroundTasks {
-    let mut tasks = BackgroundTasks::new();
-    let shutdown_token = tasks.shutdown_token();
+fn build_background_tasks_base() -> BackgroundTasks {
+    #[cfg(not(feature = "metrics"))]
+    {
+        BackgroundTasks::new()
+    }
 
     #[cfg(feature = "metrics")]
-    tasks.push(crate::metrics::system_metrics_updater_task(
-        shutdown_token.clone(),
-    ));
+    {
+        let mut tasks = BackgroundTasks::new();
+        tasks.push(crate::metrics::system_metrics_updater_task(
+            tasks.shutdown_token(),
+        ));
+
+        tasks
+    }
+}
+
+/// Spawn all primary-only periodic background cleanup tasks.
+pub fn spawn_primary_background_tasks(
+    state: web::Data<PrimaryAppState>,
+    share_download_rollback_worker: ShareDownloadRollbackWorker,
+) -> BackgroundTasks {
+    let mut tasks = build_background_tasks_base();
+    let shutdown_token = tasks.shutdown_token();
+
     tasks.push(
         crate::services::share_service::share_download_rollback_worker_task(
             shutdown_token.clone(),
@@ -370,6 +383,39 @@ pub fn spawn_background_tasks(
                     tracing::warn!("blob reconcile failed: {error}");
                     crate::services::task_service::RuntimeTaskRunOutcome::failed(
                         Some("Blob reconcile failed".to_string()),
+                        error.to_string(),
+                    )
+                }
+            }
+        },
+    ));
+
+    tasks.push(spawn_periodic(
+        "remote-node-health-test",
+        remote_node_health_test_interval,
+        None,
+        shutdown_token.clone(),
+        state.clone(),
+        |s| async move {
+            match crate::services::managed_follower_service::run_health_tests(&s).await {
+                Ok(stats) if stats.checked > 0 => {
+                    tracing::info!(
+                        checked = stats.checked,
+                        healthy = stats.healthy,
+                        failed = stats.failed,
+                        skipped = stats.skipped,
+                        "completed remote node health test batch"
+                    );
+                    crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
+                        "checked {} remote nodes (healthy {}, failed {}, skipped {})",
+                        stats.checked, stats.healthy, stats.failed, stats.skipped
+                    )))
+                }
+                Ok(_) => crate::services::task_service::RuntimeTaskRunOutcome::quiet(),
+                Err(error) => {
+                    tracing::warn!("remote node health test failed: {error}");
+                    crate::services::task_service::RuntimeTaskRunOutcome::failed(
+                        Some("Remote node health test failed".to_string()),
                         error.to_string(),
                     )
                 }
@@ -563,28 +609,40 @@ pub fn spawn_background_tasks(
     tasks
 }
 
-fn mail_outbox_dispatch_interval(state: &AppState) -> Duration {
+/// Spawn only follower-safe background tasks.
+pub fn spawn_follower_background_tasks() -> BackgroundTasks {
+    tracing::info!("follower mode enabled; skipping primary-only background tasks");
+    build_background_tasks_base()
+}
+
+fn mail_outbox_dispatch_interval(state: &PrimaryAppState) -> Duration {
     Duration::from_secs(
         crate::config::operations::mail_outbox_dispatch_interval_secs(&state.runtime_config),
     )
 }
 
-fn background_task_dispatch_interval(state: &AppState) -> Duration {
+fn background_task_dispatch_interval(state: &PrimaryAppState) -> Duration {
     Duration::from_secs(
         crate::config::operations::background_task_dispatch_interval_secs(&state.runtime_config),
     )
 }
 
-fn maintenance_cleanup_interval(state: &AppState) -> Duration {
+fn maintenance_cleanup_interval(state: &PrimaryAppState) -> Duration {
     Duration::from_secs(
         crate::config::operations::maintenance_cleanup_interval_secs(&state.runtime_config),
     )
 }
 
-fn blob_reconcile_interval(state: &AppState) -> Duration {
+fn blob_reconcile_interval(state: &PrimaryAppState) -> Duration {
     Duration::from_secs(crate::config::operations::blob_reconcile_interval_secs(
         &state.runtime_config,
     ))
+}
+
+fn remote_node_health_test_interval(state: &PrimaryAppState) -> Duration {
+    Duration::from_secs(
+        crate::config::operations::remote_node_health_test_interval_secs(&state.runtime_config),
+    )
 }
 
 #[cfg(test)]

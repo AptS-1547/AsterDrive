@@ -6,7 +6,7 @@ use sea_orm::Set;
 use crate::db::repository::background_task_repo;
 use crate::entities::{background_task, file_blob};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::thumbnail_service;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
@@ -25,7 +25,7 @@ use super::{
 };
 
 pub(crate) async fn ensure_thumbnail_task(
-    state: &AppState,
+    state: &PrimaryAppState,
     blob: &file_blob::Model,
     source_mime_type: &str,
 ) -> Result<()> {
@@ -108,7 +108,7 @@ pub(crate) async fn ensure_thumbnail_task(
 }
 
 pub(super) async fn process_thumbnail_generate_task(
-    state: &AppState,
+    state: &PrimaryAppState,
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {

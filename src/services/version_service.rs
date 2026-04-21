@@ -6,7 +6,7 @@ use sea_orm::{ActiveModelTrait, Set};
 use crate::db::repository::{file_repo, version_repo};
 use crate::entities::file_version;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     storage_change_service,
     workspace_models::{FileInfo, FileVersion},
@@ -49,7 +49,7 @@ fn add_reclaimed_bytes(total: &mut i64, bytes: i64, context: &str) -> Result<()>
 }
 
 async fn restore_version_inner(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file: crate::entities::file::Model,
     version: file_version::Model,
@@ -144,7 +144,7 @@ async fn restore_version_inner(
 }
 
 async fn delete_version_inner(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     version: file_version::Model,
 ) -> Result<()> {
@@ -160,7 +160,7 @@ async fn delete_version_inner(
 }
 
 async fn list_versions_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<Vec<file_version::Model>> {
@@ -169,7 +169,7 @@ async fn list_versions_in_scope(
 }
 
 async fn restore_version_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     version_id: i64,
@@ -188,7 +188,7 @@ async fn restore_version_in_scope(
 }
 
 async fn delete_version_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     version_id: i64,
@@ -208,7 +208,7 @@ async fn delete_version_in_scope(
 
 /// 列出文件的所有版本
 pub async fn list_versions(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
     user_id: i64,
 ) -> Result<Vec<FileVersion>> {
@@ -218,7 +218,7 @@ pub async fn list_versions(
 }
 
 pub async fn list_versions_for_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     file_id: i64,
     user_id: i64,
@@ -237,7 +237,7 @@ pub async fn list_versions_for_team(
 
 /// 恢复到指定版本，并截断该版本及之后的历史版本
 pub async fn restore_version(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
     version_id: i64,
     user_id: i64,
@@ -253,7 +253,7 @@ pub async fn restore_version(
 }
 
 pub async fn restore_version_for_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     file_id: i64,
     version_id: i64,
@@ -274,7 +274,7 @@ pub async fn restore_version_for_team(
 
 /// 删除指定版本（减 blob ref_count）
 pub async fn delete_version(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
     version_id: i64,
     user_id: i64,
@@ -289,7 +289,7 @@ pub async fn delete_version(
 }
 
 pub async fn delete_version_for_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     file_id: i64,
     version_id: i64,
@@ -308,7 +308,7 @@ pub async fn delete_version_for_team(
 }
 
 /// 超出版本上限时清理最旧版本
-pub async fn cleanup_excess(state: &AppState, file_id: i64) -> Result<()> {
+pub async fn cleanup_excess(state: &PrimaryAppState, file_id: i64) -> Result<()> {
     let db = &state.db;
     let file = file_repo::find_by_id(db, file_id).await?;
     let scope = storage_scope_from_file(&file);
@@ -338,7 +338,7 @@ pub async fn cleanup_excess(state: &AppState, file_id: i64) -> Result<()> {
 }
 
 /// 清理所有版本（文件永久删除时调用）
-pub async fn purge_all_versions(state: &AppState, file_id: i64) -> Result<()> {
+pub async fn purge_all_versions(state: &PrimaryAppState, file_id: i64) -> Result<()> {
     let db = &state.db;
     let file = file_repo::find_by_id(db, file_id).await?;
     let scope = storage_scope_from_file(&file);
@@ -367,7 +367,7 @@ pub async fn purge_all_versions(state: &AppState, file_id: i64) -> Result<()> {
 }
 
 /// 如果 blob 不再被任何文件或版本引用，减 ref_count 并可能删除物理文件
-async fn cleanup_blob_if_unused(state: &AppState, blob_id: i64) -> Result<()> {
+async fn cleanup_blob_if_unused(state: &PrimaryAppState, blob_id: i64) -> Result<()> {
     let db = &state.db;
     let blob = file_repo::find_blob_by_id(db, blob_id).await?;
 
@@ -382,7 +382,7 @@ async fn cleanup_blob_if_unused(state: &AppState, blob_id: i64) -> Result<()> {
     Ok(())
 }
 
-async fn get_max_versions(state: &AppState) -> u64 {
+async fn get_max_versions(state: &PrimaryAppState) -> u64 {
     state
         .runtime_config
         .get_u64("max_versions_per_file")

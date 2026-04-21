@@ -6,7 +6,7 @@ use crate::api::response::ApiResponse;
 use crate::api::routes::team_scope;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::services::search_service::SearchResults;
 use crate::services::{
@@ -44,7 +44,7 @@ pub fn team_routes() -> actix_web::Scope {
     security(("bearer" = [])),
 )]
 pub async fn search(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     query: web::Query<SearchParams>,
 ) -> Result<HttpResponse> {
@@ -76,7 +76,7 @@ pub async fn search(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_search(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     query: web::Query<SearchParams>,
@@ -86,7 +86,7 @@ pub(crate) async fn team_search(
 }
 
 pub(crate) async fn search_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     query: &SearchParams,
 ) -> Result<HttpResponse> {

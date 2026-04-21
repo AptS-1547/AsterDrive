@@ -15,7 +15,7 @@ use chrono::Utc;
 use crate::db::repository::upload_session_part_repo;
 use crate::entities::{file, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::services::upload_service::shared::{
     find_file_by_session, mark_session_failed, transition_upload_session_to_assembling,
@@ -40,7 +40,7 @@ enum CompletionPlan {
 
 /// 完成分片上传：组装 → 按策略决定是否计算 hash / 去重 → 写入最终存储
 async fn complete_upload_impl(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
     parts: Option<Vec<(i32, String)>>,
 ) -> Result<file::Model> {
@@ -113,7 +113,7 @@ fn determine_completion_plan(
 }
 
 pub async fn complete_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     upload_id: &str,
     user_id: i64,
     parts: Option<Vec<(i32, String)>>,
@@ -125,7 +125,7 @@ pub async fn complete_upload(
 }
 
 pub async fn complete_upload_for_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     upload_id: &str,
     user_id: i64,
@@ -151,7 +151,7 @@ async fn ensure_uploaded_s3_object_size(
 
     if actual_size != declared_size {
         if let Err(error) = driver.delete(temp_key).await {
-            tracing::warn!("failed to delete S3 temp object: {error}");
+            tracing::warn!("failed to delete uploaded temp object: {error}");
         }
         return Err(AsterError::upload_assembly_failed(format!(
             "size mismatch: declared {} but uploaded {}",
@@ -163,13 +163,13 @@ async fn ensure_uploaded_s3_object_size(
 }
 
 async fn finalize_s3_upload_session(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: &upload_session::Model,
     policy_id: i64,
     storage_path: &str,
     size: i64,
 ) -> Result<file::Model> {
-    // S3 直传模式不会经过本地 assembled 文件，complete 阶段只负责把已经存在的对象
+    // 直传模式不会经过本地 assembled 文件，complete 阶段只负责把已经存在的对象
     // 记成 blob + file，并原子更新配额和 session 状态。
     workspace_storage_service::finalize_upload_session_file(
         state,
@@ -186,7 +186,7 @@ async fn finalize_s3_upload_session(
 }
 
 async fn complete_s3_multipart_upload_session(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
     expected_status: UploadSessionStatus,
     mut completed_parts: Vec<(i32, String)>,
@@ -216,7 +216,7 @@ async fn complete_s3_multipart_upload_session(
         expected_status = ?expected_status,
         policy_id = policy.id,
         part_count = completed_parts.len(),
-        "completing S3 multipart upload session"
+        "completing multipart upload session"
     );
 
     transition_upload_session_to_assembling(db, &upload_id, session.status, expected_status)
@@ -248,7 +248,7 @@ async fn complete_s3_multipart_upload_session(
                 file_id = file.id,
                 blob_id = file.blob_id,
                 size = file.size,
-                "completed S3 multipart upload session"
+                "completed multipart upload session"
             );
             Ok(file)
         }
@@ -259,9 +259,9 @@ async fn complete_s3_multipart_upload_session(
     }
 }
 
-/// 完成 presigned 上传：校验 S3 临时对象 → 直接建文件记录
+/// 完成 presigned 上传：校验预上传对象 → 直接建文件记录
 async fn complete_presigned_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
 ) -> Result<file::Model> {
     // presigned 单文件的 complete 阶段，本质是“确认对象存在且大小正确”，
@@ -280,7 +280,7 @@ async fn complete_presigned_upload(
         driver.as_ref(),
         &temp_key,
         session.total_size,
-        "S3 temp object not found - upload may not have completed",
+        "uploaded object not found - upload may not have completed",
     )
     .await?;
 
@@ -322,9 +322,9 @@ async fn complete_presigned_upload(
     }
 }
 
-/// 完成 S3 multipart presigned 上传：complete multipart → 直接建文件记录
+/// 完成 presigned multipart 上传：complete multipart → 直接建文件记录
 async fn complete_s3_multipart(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
     parts: Vec<(i32, String)>,
 ) -> Result<file::Model> {
@@ -333,14 +333,14 @@ async fn complete_s3_multipart(
         session,
         UploadSessionStatus::Presigned,
         parts,
-        "S3 object not found after multipart complete - assembly may have failed",
+        "uploaded object not found after multipart complete - assembly may have failed",
     )
     .await
 }
 
-/// 完成 S3 relay multipart 上传：直接使用服务端保存的 parts 完成 multipart。
+/// 完成 relay multipart 上传：直接使用服务端保存的 parts 完成 multipart。
 async fn complete_s3_relay_multipart(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
 ) -> Result<file::Model> {
     let db = &state.db;
@@ -373,7 +373,7 @@ async fn complete_s3_relay_multipart(
         session,
         UploadSessionStatus::Uploading,
         completed_parts,
-        "S3 object not found after relay multipart complete - assembly may have failed",
+        "uploaded object not found after relay multipart complete - assembly may have failed",
     )
     .await
 }

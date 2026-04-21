@@ -836,6 +836,8 @@ pub enum DriverType {
     Local,
     #[sea_orm(string_value = "s3")]
     S3,
+    #[sea_orm(string_value = "remote")]
+    Remote,
 }
 
 /// 上传 session 状态
@@ -886,6 +888,18 @@ pub enum S3DownloadStrategy {
     /// 服务端从 S3 拉流后回传给客户端
     RelayStream,
     /// 服务端完成鉴权后重定向到 S3 presigned GET URL
+    Presigned,
+}
+
+/// Remote 上传传输策略（存储策略 options JSON）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteUploadStrategy {
+    /// 主控节点直接把完整请求体流式中继到从节点
+    RelayStream,
+    /// 浏览器通过 presigned URL 直接把对象写到从节点
+    #[serde(alias = "chunked")]
     Presigned,
 }
 
@@ -961,6 +975,8 @@ pub struct StoragePolicyOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3_download_strategy: Option<S3DownloadStrategy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_upload_strategy: Option<RemoteUploadStrategy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_dedup: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1, message = "s3_connect_timeout_secs must be greater than 0"))]
@@ -982,6 +998,11 @@ impl StoragePolicyOptions {
     pub fn effective_s3_download_strategy(&self) -> S3DownloadStrategy {
         self.s3_download_strategy
             .unwrap_or(S3DownloadStrategy::RelayStream)
+    }
+
+    pub fn effective_remote_upload_strategy(&self) -> RemoteUploadStrategy {
+        self.remote_upload_strategy
+            .unwrap_or(RemoteUploadStrategy::RelayStream)
     }
 
     pub fn effective_s3_connect_timeout(&self) -> Duration {
@@ -1081,6 +1102,8 @@ impl TokenType {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::RemoteUploadStrategy;
+
     use super::{
         S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions, parse_storage_policy_options,
     };
@@ -1197,10 +1220,35 @@ mod tests {
         assert_eq!(json, r#"{"s3_download_strategy":"presigned"}"#);
 
         let json = serde_json::to_string(&StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"remote_upload_strategy":"presigned"}"#);
+
+        let json = serde_json::to_string(&StoragePolicyOptions {
             s3_operation_timeout_secs: Some(600),
             ..Default::default()
         })
         .unwrap();
         assert_eq!(json, r#"{"s3_operation_timeout_secs":600}"#);
+    }
+
+    #[test]
+    fn remote_upload_strategy_defaults_to_relay_stream() {
+        let options = parse_storage_policy_options("{}");
+        assert_eq!(
+            options.effective_remote_upload_strategy(),
+            RemoteUploadStrategy::RelayStream
+        );
+    }
+
+    #[test]
+    fn removed_remote_chunked_strategy_aliases_to_presigned() {
+        let options = parse_storage_policy_options(r#"{"remote_upload_strategy":"chunked"}"#);
+        assert_eq!(
+            options.effective_remote_upload_strategy(),
+            RemoteUploadStrategy::Presigned
+        );
     }
 }

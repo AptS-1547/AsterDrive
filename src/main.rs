@@ -52,6 +52,13 @@ enum RootCommand {
         #[command(flatten)]
         args: aster_drive::cli::DatabaseMigrateArgs,
     },
+    /// Manage remote node enrollment from a shell
+    Node {
+        #[arg(long, env = "ASTER_CLI_OUTPUT_FORMAT", default_value = "auto")]
+        output_format: aster_drive::cli::OutputFormat,
+        #[command(subcommand)]
+        action: aster_drive::cli::NodeCommand,
+    },
 }
 
 #[actix_web::main]
@@ -112,6 +119,25 @@ async fn main() -> std::io::Result<()> {
                     std::process::exit(1);
                 }
             },
+            Some(RootCommand::Node {
+                output_format,
+                action,
+            }) => match aster_drive::cli::execute_node_command(&action).await {
+                Ok(data) => {
+                    println!(
+                        "{}",
+                        aster_drive::cli::render_node_success(output_format, &data)
+                    );
+                    return Ok(());
+                }
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        aster_drive::cli::render_node_error(output_format, &error)
+                    );
+                    std::process::exit(1);
+                }
+            },
             Some(RootCommand::Serve) | None => {}
         }
     }
@@ -119,6 +145,7 @@ async fn main() -> std::io::Result<()> {
     // 1. 加载配置（会自动创建 data/config.toml）
     aster_drive::config::init_config().expect("failed to load config");
     let cfg = aster_drive::config::get_config();
+    let runtime_mode = aster_drive::config::node_mode::start_mode(cfg.as_ref());
 
     // 2. 初始化日志（基于配置）
     let log_result = aster_drive::runtime::logging::init_logging(&cfg.logging);
@@ -127,16 +154,7 @@ async fn main() -> std::io::Result<()> {
         tracing::warn!("{}", warning);
     }
 
-    // 3. 启动剩余服务（DB、迁移、驱动注册）
-    let prepared = aster_drive::runtime::startup::prepare()
-        .await
-        .expect("startup failed");
-    let aster_drive::runtime::startup::PreparedRuntime {
-        state,
-        share_download_rollback_worker,
-    } = prepared;
-
-    // 4. 初始化 Prometheus 指标（metrics feature）
+    // 3. 初始化 Prometheus 指标（metrics feature）
     #[cfg(feature = "metrics")]
     {
         match aster_drive::metrics::init_metrics() {
@@ -152,18 +170,46 @@ async fn main() -> std::io::Result<()> {
     // - 不碰 temp_dir/tasks，保留后台任务产物给 retention/排障逻辑处理。
     aster_drive::utils::cleanup_runtime_temp_root(&cfg.server.temp_dir).await;
 
+    match runtime_mode {
+        aster_drive::config::node_mode::NodeRuntimeMode::Primary => {
+            let prepared = aster_drive::runtime::startup::prepare_primary()
+                .await
+                .expect("startup failed");
+            run_primary_http_server(prepared).await
+        }
+        aster_drive::config::node_mode::NodeRuntimeMode::Follower => {
+            let prepared = aster_drive::runtime::startup::prepare_follower()
+                .await
+                .expect("startup failed");
+            run_follower_http_server(prepared).await
+        }
+    }
+}
+
+async fn run_primary_http_server(
+    prepared: aster_drive::runtime::startup::PreparedPrimaryRuntime,
+) -> std::io::Result<()> {
+    let aster_drive::runtime::startup::PreparedPrimaryRuntime {
+        state,
+        share_download_rollback_worker,
+    } = prepared;
     let host = state.config.server.host.clone();
     let port = state.config.server.port;
     let workers = match state.config.server.workers {
         0 => num_cpus::get(),
         n => n,
     };
+    tracing::info!(
+        mode = "primary",
+        host = %host,
+        port,
+        "starting HTTP service"
+    );
 
     let configure_db = state.db.clone();
     let shutdown_db = state.db.clone();
     let state = web::Data::new(state);
-
-    let value = state.clone();
+    let task_state = state.clone();
     let server = HttpServer::new(move || {
         let db = configure_db.clone();
         App::new()
@@ -171,11 +217,10 @@ async fn main() -> std::io::Result<()> {
             .wrap(aster_drive::api::middleware::request_id::RequestIdMiddleware)
             .wrap(aster_drive::api::middleware::cors::RuntimeCors)
             .wrap(aster_drive::api::middleware::security_headers::default_headers())
-            // payload 限制：chunk 上传最大 10MB，JSON 1MB
             .app_data(actix_web::web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(actix_web::web::JsonConfig::default().limit(1024 * 1024))
             .app_data(state.clone())
-            .configure(move |cfg| aster_drive::api::configure(cfg, &db))
+            .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db))
     })
     .keep_alive(std::time::Duration::from_secs(30))
     .client_request_timeout(std::time::Duration::from_millis(5000))
@@ -185,12 +230,10 @@ async fn main() -> std::io::Result<()> {
     .run();
 
     let server_handle = server.handle();
-
-    // 后台清理任务（panic-safe，自动重启）
-    let background_tasks =
-        aster_drive::runtime::tasks::spawn_background_tasks(value, share_download_rollback_worker);
-
-    // 优雅关闭监听
+    let background_tasks = aster_drive::runtime::tasks::spawn_primary_background_tasks(
+        task_state,
+        share_download_rollback_worker,
+    );
     tokio::spawn(async move {
         aster_drive::runtime::shutdown::wait_for_signal().await;
         server_handle.stop(true).await;
@@ -199,6 +242,54 @@ async fn main() -> std::io::Result<()> {
     let server_result = server.await;
     tracing::info!("server stopped");
     aster_drive::runtime::shutdown::perform_shutdown(background_tasks, shutdown_db).await;
+    server_result
+}
 
+async fn run_follower_http_server(
+    prepared: aster_drive::runtime::startup::PreparedFollowerRuntime,
+) -> std::io::Result<()> {
+    let state = prepared.state;
+    let host = state.config.server.host.clone();
+    let port = state.config.server.port;
+    let workers = match state.config.server.workers {
+        0 => num_cpus::get(),
+        n => n,
+    };
+    tracing::info!(
+        mode = "follower",
+        host = %host,
+        port,
+        "starting HTTP service"
+    );
+
+    let shutdown_db = state.db.clone();
+    let state = web::Data::new(state);
+    let server = HttpServer::new(move || {
+        App::new()
+            .wrap(actix_web::middleware::Compress::default())
+            .wrap(aster_drive::api::middleware::request_id::RequestIdMiddleware)
+            .wrap(aster_drive::api::middleware::security_headers::default_headers())
+            .app_data(actix_web::web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(actix_web::web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(state.clone())
+            .configure(aster_drive::api::configure_follower)
+    })
+    .keep_alive(std::time::Duration::from_secs(30))
+    .client_request_timeout(std::time::Duration::from_millis(5000))
+    .client_disconnect_timeout(std::time::Duration::from_millis(1000))
+    .bind((host.as_str(), port))?
+    .workers(workers)
+    .run();
+
+    let server_handle = server.handle();
+    let background_tasks = aster_drive::runtime::tasks::spawn_follower_background_tasks();
+    tokio::spawn(async move {
+        aster_drive::runtime::shutdown::wait_for_signal().await;
+        server_handle.stop(true).await;
+    });
+
+    let server_result = server.await;
+    tracing::info!("server stopped");
+    aster_drive::runtime::shutdown::perform_shutdown(background_tasks, shutdown_db).await;
     server_result
 }

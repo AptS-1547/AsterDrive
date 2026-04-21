@@ -1,17 +1,17 @@
-//! S3 multipart upload 抽象层。
+//! multipart upload 抽象层。
 //!
-//! Multipart upload 是 S3/MinIO/R2 等对象存储特有的语义，本地存储不支持。
+//! Multipart upload 常见于对象存储直传场景；本地存储不支持。
 //! 将其隔离在 `MultipartStorageDriver` 子 trait 中，避免 `StorageDriver` trait
-//! 被 S3 特有概念（upload_id / part_number / ETag）污染。
+//! 被 upload_id / part_number / ETag 等直传语义污染。
 
 use crate::errors::Result;
 use async_trait::async_trait;
 use std::time::Duration;
 
-/// Multipart upload 支持（仅 S3 类驱动）。
+/// Multipart upload 支持。
 ///
 /// 调用方通过 `driver.as_multipart()` 获取引用。
-/// **调用方必须确保 session 携带了 `s3_multipart_id`**，否则不应该调用此方法。
+/// **调用方必须确保 session 携带了 multipart 关联标识**，否则不应该调用此方法。
 #[async_trait]
 pub trait MultipartStorageDriver: Send + Sync {
     /// 创建 multipart upload，返回 provider 端的 upload_id

@@ -9,8 +9,8 @@ pub use crate::config::definitions::{
     BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY, BACKGROUND_TASK_MAX_ATTEMPTS_KEY,
     BACKGROUND_TASK_MAX_CONCURRENCY_KEY, BLOB_RECONCILE_INTERVAL_SECS_KEY,
     MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY, MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY,
-    SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY, TASK_LIST_MAX_LIMIT_KEY,
-    TEAM_MEMBER_LIST_MAX_LIMIT_KEY, THUMBNAIL_MAX_SOURCE_BYTES_KEY,
+    REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+    TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY, THUMBNAIL_MAX_SOURCE_BYTES_KEY,
 };
 
 pub const DEFAULT_MAIL_OUTBOX_DISPATCH_INTERVAL_SECS: u64 = 5;
@@ -20,6 +20,7 @@ pub const DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS: i32 = 3;
 pub const DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY: usize = 1024;
 pub const DEFAULT_MAINTENANCE_CLEANUP_INTERVAL_SECS: u64 = 3600;
 pub const DEFAULT_BLOB_RECONCILE_INTERVAL_SECS: u64 = 6 * 3600;
+pub const DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS: u64 = 300;
 pub const DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT: u64 = 100;
 pub const DEFAULT_TASK_LIST_MAX_LIMIT: u64 = 100;
 pub const DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES: u64 = 10 * 1024 * 1024;
@@ -135,6 +136,14 @@ pub fn blob_reconcile_interval_secs(runtime_config: &RuntimeConfig) -> u64 {
         runtime_config,
         BLOB_RECONCILE_INTERVAL_SECS_KEY,
         DEFAULT_BLOB_RECONCILE_INTERVAL_SECS,
+    )
+}
+
+pub fn remote_node_health_test_interval_secs(runtime_config: &RuntimeConfig) -> u64 {
+    read_positive_u64(
+        runtime_config,
+        REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
+        DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS,
     )
 }
 
@@ -305,15 +314,17 @@ mod tests {
         BLOB_RECONCILE_INTERVAL_SECS_KEY, DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES,
         DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES, DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS,
         DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY, DEFAULT_BLOB_RECONCILE_INTERVAL_SECS,
+        DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS,
         DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY, DEFAULT_TASK_LIST_MAX_LIMIT,
-        DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
-        TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY, archive_extract_max_staging_bytes,
+        DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT, REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
+        SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY, TASK_LIST_MAX_LIMIT_KEY,
+        TEAM_MEMBER_LIST_MAX_LIMIT_KEY, archive_extract_max_staging_bytes,
         avatar_max_upload_size_bytes, background_task_max_attempts,
         background_task_max_concurrency, blob_reconcile_interval_secs,
         normalize_attempts_config_value, normalize_bytes_config_value,
         normalize_concurrency_config_value, normalize_interval_config_value,
-        normalize_list_max_limit_config_value, share_download_rollback_queue_capacity,
-        task_list_max_limit, team_member_list_max_limit,
+        normalize_list_max_limit_config_value, remote_node_health_test_interval_secs,
+        share_download_rollback_queue_capacity, task_list_max_limit, team_member_list_max_limit,
     };
     use crate::config::RuntimeConfig;
     use crate::entities::system_config;
@@ -343,11 +354,27 @@ mod tests {
             blob_reconcile_interval_secs(&runtime_config),
             DEFAULT_BLOB_RECONCILE_INTERVAL_SECS
         );
+        assert_eq!(
+            remote_node_health_test_interval_secs(&runtime_config),
+            DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS
+        );
 
         runtime_config.apply(config_model(BLOB_RECONCILE_INTERVAL_SECS_KEY, "0"));
         assert_eq!(
             blob_reconcile_interval_secs(&runtime_config),
             DEFAULT_BLOB_RECONCILE_INTERVAL_SECS
+        );
+
+        runtime_config.apply(config_model(
+            REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
+            "120",
+        ));
+        assert_eq!(remote_node_health_test_interval_secs(&runtime_config), 120);
+
+        runtime_config.apply(config_model(REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, "0"));
+        assert_eq!(
+            remote_node_health_test_interval_secs(&runtime_config),
+            DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS
         );
     }
 

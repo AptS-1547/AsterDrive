@@ -10,7 +10,7 @@ use crate::config::system_config as shared_system_config;
 use crate::db::repository::{config_repo, user_repo};
 use crate::entities::system_config;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::{self, AuditContext},
     mail_service, preview_app_service, wopi_service,
@@ -97,7 +97,7 @@ impl From<system_config::Model> for SystemConfig {
 }
 
 pub async fn list_paginated(
-    state: &AppState,
+    state: &PrimaryAppState,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<SystemConfig>> {
@@ -114,7 +114,7 @@ pub async fn list_paginated(
     Ok(OffsetPage::new(items, page.total, page.limit, page.offset))
 }
 
-pub async fn get_by_key(state: &AppState, key: &str) -> Result<SystemConfig> {
+pub async fn get_by_key(state: &PrimaryAppState, key: &str) -> Result<SystemConfig> {
     config_repo::find_by_key(&state.db, key)
         .await?
         .map(apply_system_config_definition)
@@ -123,7 +123,7 @@ pub async fn get_by_key(state: &AppState, key: &str) -> Result<SystemConfig> {
 }
 
 pub async fn set(
-    state: &AppState,
+    state: &PrimaryAppState,
     key: &str,
     value: &str,
     updated_by: i64,
@@ -143,14 +143,14 @@ pub async fn set(
     Ok(config.into())
 }
 
-pub async fn delete(state: &AppState, key: &str) -> Result<()> {
+pub async fn delete(state: &PrimaryAppState, key: &str) -> Result<()> {
     config_repo::delete_by_key(&state.db, key).await?;
     state.runtime_config.remove(key);
     Ok(())
 }
 
 pub async fn set_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     key: &str,
     value: &str,
     updated_by: i64,
@@ -171,7 +171,7 @@ pub async fn set_with_audit(
 }
 
 pub async fn execute_action(
-    state: &AppState,
+    state: &PrimaryAppState,
     input: ExecuteConfigActionInput<'_>,
 ) -> Result<ConfigActionResult> {
     let ExecuteConfigActionInput {
@@ -196,7 +196,7 @@ pub async fn execute_action(
 }
 
 pub async fn execute_action_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     input: ExecuteConfigActionInput<'_>,
     audit_ctx: &AuditContext,
 ) -> Result<ConfigActionResult> {
@@ -218,7 +218,7 @@ pub async fn execute_action_with_audit(
 }
 
 async fn execute_mail_action(
-    state: &AppState,
+    state: &PrimaryAppState,
     action: ConfigActionType,
     actor_user_id: i64,
     target_email: Option<&str>,
@@ -256,7 +256,7 @@ async fn execute_mail_action(
 }
 
 async fn execute_preview_app_action(
-    state: &AppState,
+    state: &PrimaryAppState,
     action: ConfigActionType,
     actor_user_id: i64,
     value: Option<&str>,
@@ -317,7 +317,7 @@ async fn execute_preview_app_action(
 }
 
 async fn build_wopi_discovery_preview_apps_into_config(
-    state: &AppState,
+    state: &PrimaryAppState,
     config: &mut preview_app_service::PublicPreviewAppsConfig,
     discovery_url: &str,
 ) -> Result<()> {
@@ -507,7 +507,7 @@ fn validate_value_type(value_type: SystemConfigValueType, value: &str) -> Result
     shared_system_config::validate_value_type(value_type, value)
 }
 
-fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<String> {
+fn normalize_system_value(state: &PrimaryAppState, key: &str, value: &str) -> Result<String> {
     shared_system_config::normalize_system_value(&state.runtime_config, key, value)
 }
 
@@ -527,7 +527,7 @@ pub struct PublicBranding {
     pub allow_user_registration: bool,
 }
 
-pub fn get_public_branding(state: &AppState) -> PublicBranding {
+pub fn get_public_branding(state: &PrimaryAppState) -> PublicBranding {
     let auth_policy = auth_runtime::RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     PublicBranding {
         title: branding::title_or_default(&state.runtime_config),
@@ -540,7 +540,9 @@ pub fn get_public_branding(state: &AppState) -> PublicBranding {
     }
 }
 
-pub fn get_public_preview_apps(state: &AppState) -> preview_app_service::PublicPreviewAppsConfig {
+pub fn get_public_preview_apps(
+    state: &PrimaryAppState,
+) -> preview_app_service::PublicPreviewAppsConfig {
     preview_app_service::get_public_preview_apps(state)
 }
 

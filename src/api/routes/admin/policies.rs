@@ -7,7 +7,7 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{audit_service, auth_service::Claims, policy_service};
 use crate::types::DriverType;
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -27,6 +27,7 @@ fn build_policy_connection_input(
     access_key: Option<String>,
     secret_key: Option<String>,
     base_path: Option<String>,
+    remote_node_id: Option<i64>,
 ) -> policy_service::StoragePolicyConnectionInput {
     policy_service::StoragePolicyConnectionInput {
         driver_type,
@@ -35,6 +36,7 @@ fn build_policy_connection_input(
         access_key: access_key.unwrap_or_default(),
         secret_key: secret_key.unwrap_or_default(),
         base_path: base_path.unwrap_or_default(),
+        remote_node_id,
     }
 }
 
@@ -49,6 +51,7 @@ impl From<CreatePolicyReq> for policy_service::CreateStoragePolicyInput {
                 value.access_key,
                 value.secret_key,
                 value.base_path,
+                value.remote_node_id,
             ),
             max_file_size: value.max_file_size.unwrap_or(0),
             chunk_size: value.chunk_size,
@@ -68,6 +71,7 @@ impl From<PatchPolicyReq> for policy_service::UpdateStoragePolicyInput {
             access_key: value.access_key,
             secret_key: value.secret_key,
             base_path: value.base_path,
+            remote_node_id: value.remote_node_id,
             max_file_size: value.max_file_size,
             chunk_size: value.chunk_size,
             is_default: value.is_default,
@@ -86,6 +90,7 @@ impl From<TestPolicyParamsReq> for policy_service::StoragePolicyConnectionInput 
             value.access_key,
             value.secret_key,
             value.base_path,
+            value.remote_node_id,
         )
     }
 }
@@ -145,7 +150,7 @@ impl From<PatchPolicyGroupReq> for policy_service::UpdateStoragePolicyGroupInput
     security(("bearer" = [])),
 )]
 pub async fn list_policies(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let policies =
@@ -167,7 +172,7 @@ pub async fn list_policies(
     security(("bearer" = [])),
 )]
 pub async fn create_policy(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     body: web::Json<CreatePolicyReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
@@ -189,7 +194,10 @@ pub async fn create_policy(
     ),
     security(("bearer" = [])),
 )]
-pub async fn get_policy(state: web::Data<AppState>, path: web::Path<i64>) -> Result<HttpResponse> {
+pub async fn get_policy(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
     let policy = policy_service::get(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
@@ -210,7 +218,7 @@ pub async fn get_policy(state: web::Data<AppState>, path: web::Path<i64>) -> Res
     security(("bearer" = [])),
 )]
 pub async fn update_policy(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
     body: web::Json<PatchPolicyReq>,
 ) -> Result<HttpResponse> {
@@ -234,7 +242,7 @@ pub async fn update_policy(
     security(("bearer" = [])),
 )]
 pub async fn delete_policy(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     policy_service::delete(&state, *path).await?;
@@ -250,12 +258,12 @@ pub async fn delete_policy(
     responses(
         (status = 200, description = "Connection successful"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
-        (status = 500, description = "Connection failed"),
+        (status = 400, description = "Connection failed"),
     ),
     security(("bearer" = [])),
 )]
 pub async fn test_policy_connection(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     policy_service::test_connection(&state, *path).await?;
@@ -271,13 +279,16 @@ pub async fn test_policy_connection(
     responses(
         (status = 200, description = "Connection successful"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
-        (status = 500, description = "Connection failed"),
+        (status = 400, description = "Connection failed"),
     ),
     security(("bearer" = [])),
 )]
-pub async fn test_policy_params(body: web::Json<TestPolicyParamsReq>) -> Result<HttpResponse> {
+pub async fn test_policy_params(
+    state: web::Data<PrimaryAppState>,
+    body: web::Json<TestPolicyParamsReq>,
+) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    policy_service::test_connection_params(body.into_inner().into()).await?;
+    policy_service::test_connection_params(&state, body.into_inner().into()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -295,7 +306,7 @@ pub async fn test_policy_params(body: web::Json<TestPolicyParamsReq>) -> Result<
     security(("bearer" = [])),
 )]
 pub async fn list_policy_groups(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let groups =
@@ -319,7 +330,7 @@ pub async fn list_policy_groups(
     security(("bearer" = [])),
 )]
 pub async fn create_policy_group(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     body: web::Json<CreatePolicyGroupReq>,
@@ -346,7 +357,7 @@ pub async fn create_policy_group(
     security(("bearer" = [])),
 )]
 pub async fn get_policy_group(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let group = policy_service::get_group(&state, *path).await?;
@@ -370,7 +381,7 @@ pub async fn get_policy_group(
     security(("bearer" = [])),
 )]
 pub async fn update_policy_group(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -400,7 +411,7 @@ pub async fn update_policy_group(
     security(("bearer" = [])),
 )]
 pub async fn delete_policy_group(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -427,7 +438,7 @@ pub async fn delete_policy_group(
     security(("bearer" = [])),
 )]
 pub async fn migrate_policy_group_users(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,

@@ -20,6 +20,7 @@ fn s3_policy(endpoint: &str, bucket: &str) -> aster_drive::entities::storage_pol
         access_key: "rustfsadmin".to_string(),
         secret_key: "rustfsadmin123".to_string(),
         base_path: "test-prefix".to_string(),
+        remote_node_id: None,
         max_file_size: 0,
         allowed_types: aster_drive::types::StoredStoragePolicyAllowedTypes::empty(),
         options: aster_drive::types::StoredStoragePolicyOptions::empty(),

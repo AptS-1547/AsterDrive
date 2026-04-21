@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 
 use crate::api::constants::HOUR_SECS;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::shared::generate_upload_id;
 use crate::types::{
@@ -17,7 +17,7 @@ use super::context::{
 };
 
 pub(super) async fn init_s3_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     ctx: &InitUploadContext,
 ) -> Result<Option<InitUploadResponse>> {
     if ctx.policy.driver_type != DriverType::S3 {
@@ -33,7 +33,7 @@ pub(super) async fn init_s3_upload(
 }
 
 async fn init_presigned_s3_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     ctx: &InitUploadContext,
 ) -> Result<InitUploadResponse> {
     let driver = state.driver_registry.get_driver(&ctx.policy)?;
@@ -128,7 +128,7 @@ async fn init_presigned_s3_upload(
 }
 
 async fn init_relay_stream_s3_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     ctx: &InitUploadContext,
 ) -> Result<InitUploadResponse> {
     let chunk_size = effective_s3_multipart_chunk_size(ctx.policy.chunk_size);

@@ -6,6 +6,7 @@ pub mod extensions;
 pub mod multipart;
 pub mod policy_snapshot;
 pub mod registry;
+pub mod remote_protocol;
 
 pub use driver::{BlobMetadata, PresignedDownloadOptions, StorageDriver, StoragePathVisitor};
 pub use extensions::{ListStorageDriver, PresignedStorageDriver, StreamUploadDriver};

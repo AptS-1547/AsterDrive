@@ -1,0 +1,471 @@
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
+import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
+import { RemoteNodeDialog } from "@/components/admin/admin-remote-nodes-page/RemoteNodeDialog";
+import { RemoteNodeEnrollmentDialog } from "@/components/admin/admin-remote-nodes-page/RemoteNodeEnrollmentDialog";
+import { RemoteNodesTable } from "@/components/admin/admin-remote-nodes-page/RemoteNodesTable";
+import {
+	buildCreateRemoteNodePayload,
+	buildUpdateRemoteNodePayload,
+	emptyRemoteNodeForm,
+	getRemoteNodeBaseUrlValidationMessage,
+	getRemoteNodeForm,
+	type RemoteNodeFormData,
+} from "@/components/admin/remoteNodeDialogShared";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { AdminLayout } from "@/components/layout/AdminLayout";
+import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
+import { AdminPageShell } from "@/components/layout/AdminPageShell";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { handleApiError } from "@/hooks/useApiError";
+import { useApiList } from "@/hooks/useApiList";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { usePageTitle } from "@/hooks/usePageTitle";
+import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
+import { logger } from "@/lib/logger";
+import {
+	buildOffsetPaginationSearchParams,
+	parseOffsetSearchParam,
+	parsePageSizeOption,
+	parsePageSizeSearchParam,
+} from "@/lib/pagination";
+import { adminRemoteNodeService } from "@/services/adminService";
+import type { RemoteEnrollmentCommandInfo, RemoteNodeInfo } from "@/types/api";
+
+const REMOTE_NODE_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const DEFAULT_REMOTE_NODE_PAGE_SIZE = 20 as const;
+const REMOTE_NODE_CREATE_LAST_STEP = 2 as const;
+
+export default function AdminRemoteNodesPage() {
+	const { t } = useTranslation("admin");
+	usePageTitle(t("remote_nodes"));
+	const [searchParams, setSearchParams] = useSearchParams();
+	const [offset, setOffset] = useState(
+		parseOffsetSearchParam(searchParams.get("offset")),
+	);
+	const [pageSize, setPageSize] = useState<
+		(typeof REMOTE_NODE_PAGE_SIZE_OPTIONS)[number]
+	>(
+		parsePageSizeSearchParam(
+			searchParams.get("pageSize"),
+			REMOTE_NODE_PAGE_SIZE_OPTIONS,
+			DEFAULT_REMOTE_NODE_PAGE_SIZE,
+		),
+	);
+	const {
+		items: remoteNodes,
+		setItems: setRemoteNodes,
+		total,
+		setTotal,
+		loading,
+		reload,
+	} = useApiList(
+		() => adminRemoteNodeService.list({ limit: pageSize, offset }),
+		[offset, pageSize],
+	);
+	const [dialogOpen, setDialogOpen] = useState(false);
+	const [editingId, setEditingId] = useState<number | null>(null);
+	const [editingNode, setEditingNode] = useState<RemoteNodeInfo | null>(null);
+	const [enrollmentDialogOpen, setEnrollmentDialogOpen] = useState(false);
+	const [enrollmentCommand, setEnrollmentCommand] =
+		useState<RemoteEnrollmentCommandInfo | null>(null);
+	const [enrollmentCommandCanTest, setEnrollmentCommandCanTest] =
+		useState(false);
+	const [generatingEnrollmentId, setGeneratingEnrollmentId] = useState<
+		number | null
+	>(null);
+	const [form, setForm] = useState<RemoteNodeFormData>(emptyRemoteNodeForm);
+	const [submitting, setSubmitting] = useState(false);
+	const [createStep, setCreateStep] = useState(0);
+	const [createStepTouched, setCreateStepTouched] = useState(false);
+	const totalPages = Math.max(1, Math.ceil(total / pageSize));
+	const currentPage = Math.floor(offset / pageSize) + 1;
+	const prevPageDisabled = offset === 0;
+	const nextPageDisabled = offset + pageSize >= total;
+	const pageSizeOptions = REMOTE_NODE_PAGE_SIZE_OPTIONS.map((size) => ({
+		label: t("page_size_option", { count: size }),
+		value: String(size),
+	}));
+	const remoteNodeBaseUrlValidationMessage =
+		getRemoteNodeBaseUrlValidationMessage(form.base_url, t);
+
+	useEffect(() => {
+		setSearchParams(
+			buildOffsetPaginationSearchParams({
+				offset,
+				pageSize,
+				defaultPageSize: DEFAULT_REMOTE_NODE_PAGE_SIZE,
+			}),
+			{ replace: true },
+		);
+	}, [offset, pageSize, setSearchParams]);
+
+	const handlePageSizeChange = (value: string | null) => {
+		const next = parsePageSizeOption(value, REMOTE_NODE_PAGE_SIZE_OPTIONS);
+		if (next == null) return;
+		setPageSize(next);
+		setOffset(0);
+	};
+
+	const resetDialogState = () => {
+		setCreateStep(0);
+		setCreateStepTouched(false);
+	};
+
+	const openCreate = () => {
+		setEditingId(null);
+		setEditingNode(null);
+		setForm({ ...emptyRemoteNodeForm });
+		setEnrollmentCommandCanTest(false);
+		resetDialogState();
+		setDialogOpen(true);
+	};
+
+	const openEdit = (node: RemoteNodeInfo) => {
+		setEditingId(node.id);
+		setEditingNode(node);
+		setForm(getRemoteNodeForm(node));
+		resetDialogState();
+		setDialogOpen(true);
+	};
+
+	const handleDialogOpenChange = (open: boolean) => {
+		setDialogOpen(open);
+		if (!open) {
+			resetDialogState();
+		}
+	};
+
+	const setField = <K extends keyof RemoteNodeFormData>(
+		key: K,
+		value: RemoteNodeFormData[K],
+	) => setForm((prev) => ({ ...prev, [key]: value }));
+
+	const copyToClipboard = async (value: string) => {
+		try {
+			await navigator.clipboard.writeText(value);
+			toast.success(t("core:copied_to_clipboard"));
+		} catch {
+			toast.error(t("errors:unexpected_error"));
+		}
+	};
+
+	const syncRemoteNodeState = async (remoteNodeId: number) => {
+		try {
+			const latest = await adminRemoteNodeService.get(remoteNodeId);
+			setEditingNode((current) =>
+				current?.id === remoteNodeId ? latest : current,
+			);
+			setRemoteNodes((prev) =>
+				prev.map((node) => (node.id === remoteNodeId ? latest : node)),
+			);
+		} catch (error) {
+			logger.warn(
+				"Failed to refresh remote node state after connection test",
+				error,
+			);
+		}
+	};
+
+	const runConnectionTest = async ({
+		showFailureError = true,
+		showSuccessToast = true,
+	}: {
+		showFailureError?: boolean;
+		showSuccessToast?: boolean;
+	} = {}) => {
+		if (editingId === null) {
+			return false;
+		}
+
+		try {
+			const updated = await adminRemoteNodeService.testConnection(editingId);
+			setEditingNode(updated);
+			setRemoteNodes((prev) =>
+				prev.map((node) => (node.id === editingId ? updated : node)),
+			);
+
+			if (showSuccessToast) {
+				toast.success(t("connection_success"));
+			}
+			return true;
+		} catch (error) {
+			await syncRemoteNodeState(editingId);
+			if (showFailureError) {
+				handleApiError(error);
+			}
+			return false;
+		}
+	};
+
+	const persistRemoteNode = async () => {
+		try {
+			if (editingId !== null) {
+				const updated = await adminRemoteNodeService.update(
+					editingId,
+					buildUpdateRemoteNodePayload(form),
+				);
+				setEditingNode(updated);
+				setRemoteNodes((prev) =>
+					prev.map((node) => (node.id === editingId ? updated : node)),
+				);
+				toast.success(t("remote_node_updated"));
+				handleDialogOpenChange(false);
+			} else {
+				const created = await adminRemoteNodeService.create(
+					buildCreateRemoteNodePayload(form),
+				);
+				const nextTotal = total + 1;
+				const nextLastOffset = Math.max(
+					0,
+					Math.floor((nextTotal - 1) / pageSize) * pageSize,
+				);
+				if (nextLastOffset !== offset) {
+					setOffset(nextLastOffset);
+				} else {
+					await reload();
+				}
+				handleDialogOpenChange(false);
+				const command = await adminRemoteNodeService.createEnrollmentCommand(
+					created.id,
+				);
+				setEnrollmentCommand(command);
+				setEnrollmentCommandCanTest(Boolean(created.base_url.trim()));
+				setEnrollmentDialogOpen(true);
+				toast.success(t("remote_node_enrollment_prepared"));
+			}
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+
+	const submitRemoteNode = async () => {
+		if (submitting) {
+			return;
+		}
+
+		setSubmitting(true);
+		try {
+			await persistRemoteNode();
+		} finally {
+			setSubmitting(false);
+		}
+	};
+
+	const handleCreateBack = () => {
+		setCreateStepTouched(false);
+		setCreateStep((prev) => Math.max(0, prev - 1));
+	};
+
+	const handleCreateStepChange = (step: number) => {
+		setCreateStepTouched(false);
+		setCreateStep(Math.max(0, Math.min(REMOTE_NODE_CREATE_LAST_STEP, step)));
+	};
+
+	const handleCreateNext = () => {
+		if (createStep >= REMOTE_NODE_CREATE_LAST_STEP) {
+			return;
+		}
+
+		setCreateStepTouched(true);
+
+		if (createStep === 0 && (!form.name.trim() || !form.namespace.trim())) {
+			return;
+		}
+		if (createStep === 1 && remoteNodeBaseUrlValidationMessage) {
+			return;
+		}
+
+		setCreateStepTouched(false);
+		setCreateStep((prev) => Math.min(REMOTE_NODE_CREATE_LAST_STEP, prev + 1));
+	};
+
+	const handleSubmit = () => {
+		if (remoteNodeBaseUrlValidationMessage) {
+			return;
+		}
+
+		if (editingId === null && createStep < REMOTE_NODE_CREATE_LAST_STEP) {
+			handleCreateNext();
+			return;
+		}
+
+		void submitRemoteNode();
+	};
+
+	const handleDelete = async (id: number) => {
+		try {
+			await adminRemoteNodeService.delete(id);
+			if (remoteNodes.length === 1 && offset > 0) {
+				setOffset(Math.max(0, offset - pageSize));
+			} else {
+				await reload();
+			}
+			toast.success(t("remote_node_deleted"));
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+
+	const {
+		confirmId: deleteId,
+		requestConfirm,
+		dialogProps: deleteDialogProps,
+	} = useConfirmDialog(handleDelete);
+	const deleteNodeName =
+		deleteId !== null
+			? (remoteNodes.find((node) => node.id === deleteId)?.name ?? "")
+			: "";
+
+	const handleRefresh = async () => {
+		try {
+			const nodesPage = await adminRemoteNodeService.list({
+				limit: pageSize,
+				offset,
+			});
+			setRemoteNodes(nodesPage.items);
+			setTotal(nodesPage.total);
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+
+	const handleEnrollmentDialogOpenChange = (open: boolean) => {
+		setEnrollmentDialogOpen(open);
+		if (!open) {
+			setEnrollmentCommand(null);
+			setEnrollmentCommandCanTest(false);
+		}
+	};
+
+	const handleVerifyEnrollmentConnection = async (remoteNodeId: number) => {
+		try {
+			const updated = await adminRemoteNodeService.testConnection(remoteNodeId);
+			setRemoteNodes((prev) =>
+				prev.map((node) => (node.id === remoteNodeId ? updated : node)),
+			);
+			if (editingId === remoteNodeId) {
+				setEditingNode(updated);
+			}
+			toast.success(t("connection_success"));
+			return true;
+		} catch (error) {
+			await syncRemoteNodeState(remoteNodeId);
+			handleApiError(error);
+			return false;
+		}
+	};
+
+	const handleGenerateEnrollmentCommand = async (node: RemoteNodeInfo) => {
+		setGeneratingEnrollmentId(node.id);
+		try {
+			const command = await adminRemoteNodeService.createEnrollmentCommand(
+				node.id,
+			);
+			setEnrollmentCommand(command);
+			setEnrollmentCommandCanTest(Boolean(node.base_url.trim()));
+			setEnrollmentDialogOpen(true);
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setGeneratingEnrollmentId((current) =>
+				current === node.id ? null : current,
+			);
+		}
+	};
+
+	return (
+		<AdminLayout>
+			<AdminPageShell>
+				<AdminPageHeader
+					title={t("remote_nodes")}
+					description={t("remote_nodes_intro")}
+					actions={
+						<>
+							<Button
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={openCreate}
+							>
+								<Icon name="Plus" className="mr-1 h-4 w-4" />
+								{t("new_remote_node")}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={() => void handleRefresh()}
+								disabled={loading}
+							>
+								<Icon
+									name={loading ? "Spinner" : "ArrowsClockwise"}
+									className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+								/>
+								{t("core:refresh")}
+							</Button>
+						</>
+					}
+				/>
+
+				<RemoteNodesTable
+					loading={loading}
+					items={remoteNodes}
+					generatingEnrollmentId={generatingEnrollmentId}
+					onEdit={openEdit}
+					onGenerateEnrollmentCommand={(node) =>
+						void handleGenerateEnrollmentCommand(node)
+					}
+					onRequestDelete={requestConfirm}
+				/>
+
+				<AdminOffsetPagination
+					total={total}
+					currentPage={currentPage}
+					totalPages={totalPages}
+					pageSize={String(pageSize)}
+					pageSizeOptions={pageSizeOptions}
+					onPageSizeChange={handlePageSizeChange}
+					prevDisabled={prevPageDisabled}
+					nextDisabled={nextPageDisabled}
+					onPrevious={() => setOffset(Math.max(0, offset - pageSize))}
+					onNext={() => setOffset(offset + pageSize)}
+				/>
+
+				<ConfirmDialog
+					{...deleteDialogProps}
+					title={`${t("delete_remote_node")} "${deleteNodeName}"?`}
+					description={t("delete_remote_node_desc")}
+					confirmLabel={t("core:delete")}
+					variant="destructive"
+				/>
+				<RemoteNodeDialog
+					open={dialogOpen}
+					mode={editingId === null ? "create" : "edit"}
+					form={form}
+					editingNode={editingNode}
+					submitting={submitting}
+					createStep={createStep}
+					createStepTouched={createStepTouched}
+					onFieldChange={setField}
+					onOpenChange={handleDialogOpenChange}
+					onRunConnectionTest={() => runConnectionTest()}
+					onSubmit={handleSubmit}
+					onCreateBack={handleCreateBack}
+					onCreateNext={handleCreateNext}
+					onCreateStepChange={handleCreateStepChange}
+				/>
+				<RemoteNodeEnrollmentDialog
+					open={enrollmentDialogOpen}
+					command={enrollmentCommand}
+					canTestConnection={enrollmentCommandCanTest}
+					onCopy={copyToClipboard}
+					onVerifyConnection={handleVerifyEnrollmentConnection}
+					onOpenChange={handleEnrollmentDialogOpenChange}
+				/>
+			</AdminPageShell>
+		</AdminLayout>
+	);
+}

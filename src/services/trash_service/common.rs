@@ -7,7 +7,7 @@ use sea_orm::DatabaseConnection;
 use crate::db::repository::{file_repo, folder_repo, property_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     file_service, folder_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -103,7 +103,7 @@ pub(super) fn parent_restore_target_unavailable(
 }
 
 pub(super) async fn verify_file_in_trash_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
@@ -117,7 +117,7 @@ pub(super) async fn verify_file_in_trash_in_scope(
 }
 
 pub(super) async fn verify_folder_in_trash_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
@@ -131,7 +131,7 @@ pub(super) async fn verify_folder_in_trash_in_scope(
 }
 
 pub(super) async fn recursive_purge_folder_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<()> {

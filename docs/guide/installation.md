@@ -12,6 +12,11 @@ AsterDrive 的部署目标很简单：
 
 网页、公开分享页、管理后台和 WebDAV 都由同一个 AsterDrive 服务提供，**不需要另外部署一套前端站点**——这是设计上的取舍：少一个服务，少一处出错。
 
+::: tip 如果你想做主控 + 从节点
+先把主控实例按这一篇跑稳，再去看 [远程节点](./remote-nodes) 那一章。  
+多节点不是“另一种安装命令”，而是另一层架构选择，拆开讲更不容易把人绕晕。
+:::
+
 ## 先选部署方式
 
 | 方式            | 适合谁                                  |
@@ -158,6 +163,8 @@ systemd 适合长期运行的 Linux 服务器。
 ```bash
 ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true ./aster_drive
 ```
+
+如果你后面准备把另一台 AsterDrive 接成远程存储后端，直接看 [远程节点](./remote-nodes)。
 
 ## 数据库选哪个
 

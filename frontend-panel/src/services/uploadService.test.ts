@@ -355,7 +355,9 @@ describe("uploadService", () => {
 		const xhrMissing = MockXMLHttpRequest.instances[0];
 		xhrMissing.status = 200;
 		xhrMissing.onload?.();
-		await expect(missingEtag).rejects.toThrow("S3 did not return ETag header");
+		await expect(missingEtag).rejects.toThrow(
+			"Presigned upload did not return ETag header",
+		);
 
 		const failedStatus = uploadService.presignedUpload(
 			"https://s3.example/upload",
@@ -364,7 +366,7 @@ describe("uploadService", () => {
 		const xhrStatus = MockXMLHttpRequest.instances[1];
 		xhrStatus.status = 403;
 		xhrStatus.onload?.();
-		await expect(failedStatus).rejects.toThrow("S3 upload failed: 403");
+		await expect(failedStatus).rejects.toThrow("Presigned upload failed: 403");
 
 		const networkFailure = uploadService.presignedUpload(
 			"https://s3.example/upload",

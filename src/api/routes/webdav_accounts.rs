@@ -11,7 +11,7 @@ use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::config::site_url;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{auth_service::Claims, webdav_account_service};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
@@ -42,7 +42,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     ),
     security(("bearer" = [])),
 )]
-pub async fn get_settings(state: web::Data<AppState>) -> Result<HttpResponse> {
+pub async fn get_settings(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
     let endpoint_path = if state.config.webdav.prefix == "/" {
         "/".to_string()
     } else {
@@ -68,7 +68,7 @@ pub async fn get_settings(state: web::Data<AppState>) -> Result<HttpResponse> {
     security(("bearer" = [])),
 )]
 pub async fn list_accounts(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
@@ -95,7 +95,7 @@ pub async fn list_accounts(
     security(("bearer" = [])),
 )]
 pub async fn create_account(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     body: web::Json<CreateWebdavAccountReq>,
 ) -> Result<HttpResponse> {
@@ -125,7 +125,7 @@ pub async fn create_account(
     security(("bearer" = [])),
 )]
 pub async fn delete_account(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -147,7 +147,7 @@ pub async fn delete_account(
     security(("bearer" = [])),
 )]
 pub async fn toggle_account(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -168,7 +168,7 @@ pub async fn toggle_account(
     security(("bearer" = [])),
 )]
 pub async fn test_connection(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     body: web::Json<TestConnectionReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;

@@ -6,7 +6,7 @@ use sea_orm::{ActiveModelTrait, Set};
 use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     storage_change_service,
     workspace_models::FileInfo,
@@ -18,7 +18,7 @@ use super::get_info_in_scope;
 const MAX_COPY_NAME_RETRIES: usize = 32;
 
 pub(crate) async fn copy_file_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     src_id: i64,
     dest_folder_id: Option<i64>,
@@ -94,7 +94,7 @@ pub(crate) async fn copy_file_in_scope(
 ///
 /// `dest_folder_id = None` 表示复制到根目录。
 pub async fn copy_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     src_id: i64,
     user_id: i64,
     dest_folder_id: Option<i64>,
@@ -123,7 +123,7 @@ pub(crate) struct BatchDuplicateFileRecordTargetSpec {
 }
 
 async fn batch_duplicate_file_records_with_specs_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     copy_specs: &[BatchDuplicateFileRecordSpec],
     dest_folder_id: Option<i64>,
@@ -201,7 +201,7 @@ async fn batch_duplicate_file_records_with_specs_in_scope(
 }
 
 pub(crate) async fn duplicate_file_record_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     src: &file::Model,
     dest_folder_id: Option<i64>,
@@ -243,7 +243,7 @@ pub(crate) async fn duplicate_file_record_in_scope(
 ///
 /// 无权限检查，供底层复制流程复用。
 pub async fn duplicate_file_record(
-    state: &AppState,
+    state: &PrimaryAppState,
     src: &file::Model,
     dest_folder_id: Option<i64>,
     dest_name: &str,
@@ -274,7 +274,7 @@ pub async fn duplicate_file_record(
 }
 
 pub(crate) async fn batch_duplicate_file_records_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     src_files: &[file::Model],
     dest_folder_id: Option<i64>,
@@ -293,7 +293,7 @@ pub(crate) async fn batch_duplicate_file_records_in_scope(
 }
 
 pub(crate) async fn batch_duplicate_file_records_with_names_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     copy_specs: &[BatchDuplicateFileRecordSpec],
     dest_folder_id: Option<i64>,
@@ -302,7 +302,7 @@ pub(crate) async fn batch_duplicate_file_records_with_names_in_scope(
 }
 
 pub(crate) async fn batch_duplicate_file_records_to_mixed_folders_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     copy_specs: &[BatchDuplicateFileRecordTargetSpec],
 ) -> Result<()> {
@@ -365,7 +365,7 @@ pub(crate) async fn batch_duplicate_file_records_to_mixed_folders_in_scope(
 /// blob ref_count 按 blob_id 合并递增，配额只更新一次。
 /// 不返回创建的 Model（递归复制场景不需要）。
 pub async fn batch_duplicate_file_records(
-    state: &AppState,
+    state: &PrimaryAppState,
     src_files: &[file::Model],
     dest_folder_id: Option<i64>,
 ) -> Result<Vec<FileInfo>> {

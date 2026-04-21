@@ -6,11 +6,11 @@ mod common;
 use aster_drive::db::repository::config_repo;
 use aster_drive::db::repository::user_repo;
 use aster_drive::entities::user;
-use aster_drive::runtime::AppState;
+use aster_drive::runtime::PrimaryAppState;
 use aster_drive::services::profile_service;
 use aster_drive::types::AvatarSource;
 
-async fn load_user_model(state: &AppState, user_id: i64) -> user::Model {
+async fn load_user_model(state: &PrimaryAppState, user_id: i64) -> user::Model {
     user_repo::find_by_id(&state.db, user_id).await.unwrap()
 }
 

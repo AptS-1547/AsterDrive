@@ -6,6 +6,7 @@
 mod config;
 mod database_migration;
 mod doctor;
+mod node;
 mod shared;
 
 pub use config::{
@@ -20,4 +21,5 @@ pub use doctor::{
     DoctorArgs, DoctorCheck, DoctorReport, DoctorStatus, execute_doctor_command,
     render_doctor_success,
 };
+pub use node::{NodeCommand, execute_node_command, render_node_error, render_node_success};
 pub use shared::{OutputFormat, cli_styles};

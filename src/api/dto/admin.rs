@@ -74,6 +74,8 @@ pub struct CreatePolicyReq {
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
     pub base_path: Option<String>,
+    #[validate(range(min = 1, message = "remote_node_id must be greater than 0"))]
+    pub remote_node_id: Option<i64>,
     #[validate(range(min = 0, message = "max_file_size must be non-negative"))]
     pub max_file_size: Option<i64>,
     #[validate(range(min = 1, message = "chunk_size must be greater than 0"))]
@@ -95,6 +97,8 @@ pub struct PatchPolicyReq {
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
     pub base_path: Option<String>,
+    #[validate(range(min = 1, message = "remote_node_id must be greater than 0"))]
+    pub remote_node_id: Option<i64>,
     #[validate(range(min = 0, message = "max_file_size must be non-negative"))]
     pub max_file_size: Option<i64>,
     #[validate(range(min = 1, message = "chunk_size must be greater than 0"))]
@@ -115,6 +119,43 @@ pub struct TestPolicyParamsReq {
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
     pub base_path: Option<String>,
+    #[validate(range(min = 1, message = "remote_node_id must be greater than 0"))]
+    pub remote_node_id: Option<i64>,
+}
+
+/// Create a remote node.
+#[derive(Deserialize, Validate)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct CreateRemoteNodeReq {
+    #[validate(custom(function = "crate::api::dto::validation::validate_non_blank"))]
+    pub name: String,
+    pub base_url: Option<String>,
+    #[validate(custom(function = "crate::api::dto::validation::validate_non_blank"))]
+    pub namespace: String,
+    #[serde(default = "default_true")]
+    pub is_enabled: bool,
+}
+
+/// Patch a remote node.
+#[derive(Deserialize, Validate)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct PatchRemoteNodeReq {
+    pub name: Option<String>,
+    pub base_url: Option<String>,
+    pub namespace: Option<String>,
+    pub is_enabled: Option<bool>,
+}
+
+/// Test remote node connection without saving.
+#[derive(Deserialize, Validate)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct TestRemoteNodeParamsReq {
+    #[validate(custom(function = "crate::api::dto::validation::validate_non_blank"))]
+    pub base_url: String,
+    #[validate(custom(function = "crate::api::dto::validation::validate_non_blank"))]
+    pub access_key: String,
+    #[validate(custom(function = "crate::api::dto::validation::validate_non_blank"))]
+    pub secret_key: String,
 }
 
 /// A single item within a policy group.

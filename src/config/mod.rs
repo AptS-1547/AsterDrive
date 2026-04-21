@@ -7,6 +7,7 @@ pub mod cors;
 pub mod definitions;
 mod loader;
 pub mod mail;
+pub mod node_mode;
 pub mod operations;
 mod runtime_config;
 mod schema;
@@ -24,6 +25,12 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 static CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
+
+pub fn ensure_default_config_for_current_dir(
+    default: &Config,
+) -> crate::errors::Result<std::path::PathBuf> {
+    loader::ensure_default_config_for_current_dir(default)
+}
 
 pub fn init_config() -> crate::errors::Result<()> {
     let cfg = loader::load()?;

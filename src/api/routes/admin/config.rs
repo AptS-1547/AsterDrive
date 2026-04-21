@@ -6,7 +6,7 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{audit_service, config_service};
 use actix_web::{HttpRequest, HttpResponse, web};
 
@@ -24,7 +24,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn list_config(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let configs =
@@ -81,7 +81,7 @@ pub async fn config_template_variables() -> Result<HttpResponse> {
     security(("bearer" = [])),
 )]
 pub async fn get_config(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
     let config = config_service::get_by_key(&state, &path).await?;
@@ -104,7 +104,7 @@ pub async fn get_config(
     security(("bearer" = [])),
 )]
 pub async fn set_config(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<crate::services::auth_service::Claims>,
     req: HttpRequest,
     path: web::Path<String>,
@@ -131,7 +131,7 @@ pub async fn set_config(
     security(("bearer" = [])),
 )]
 pub async fn delete_config(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
     config_service::delete(&state, &path).await?;
@@ -156,7 +156,7 @@ pub async fn delete_config(
     security(("bearer" = [])),
 )]
 pub async fn execute_config_action(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<crate::services::auth_service::Claims>,
     req: HttpRequest,
     path: web::Path<String>,

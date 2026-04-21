@@ -4,7 +4,7 @@ use sea_orm::Set;
 use crate::db::repository::folder_repo;
 use crate::entities::folder;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::workspace_scope_service::{WorkspaceStorageScope, verify_folder_access};
 
 pub(crate) struct ParsedUploadPath {
@@ -14,7 +14,7 @@ pub(crate) struct ParsedUploadPath {
 }
 
 pub(crate) async fn parse_relative_upload_path(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     base_folder_id: Option<i64>,
     relative_path: &str,
@@ -48,7 +48,7 @@ pub(crate) async fn parse_relative_upload_path(
 }
 
 pub(crate) async fn ensure_upload_parent_path(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     parsed: &ParsedUploadPath,
 ) -> Result<Option<i64>> {

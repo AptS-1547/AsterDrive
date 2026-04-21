@@ -4,8 +4,8 @@ use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::storage_policy::{self, Entity as StoragePolicy};
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<storage_policy::Model> {
@@ -60,6 +60,17 @@ pub async fn find_paginated<C: ConnectionTrait>(
         offset,
     )
     .await
+}
+
+pub async fn count_by_remote_node_id<C: ConnectionTrait>(
+    db: &C,
+    remote_node_id: i64,
+) -> Result<u64> {
+    StoragePolicy::find()
+        .filter(storage_policy::Column::RemoteNodeId.eq(remote_node_id))
+        .count(db)
+        .await
+        .map_err(AsterError::from)
 }
 
 pub async fn create<C: ConnectionTrait>(

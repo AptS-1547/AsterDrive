@@ -6,7 +6,7 @@ mod policies;
 mod shared;
 
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
 
 pub use groups::{
@@ -25,7 +25,7 @@ pub use policies::{
 };
 
 pub async fn create_group_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     input: CreateStoragePolicyGroupInput,
     audit_ctx: &AuditContext,
 ) -> Result<StoragePolicyGroupInfo> {
@@ -48,7 +48,7 @@ pub async fn create_group_with_audit(
 }
 
 pub async fn update_group_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     input: UpdateStoragePolicyGroupInput,
     audit_ctx: &AuditContext,
@@ -72,7 +72,7 @@ pub async fn update_group_with_audit(
 }
 
 pub async fn delete_group_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     id: i64,
     audit_ctx: &AuditContext,
 ) -> Result<()> {
@@ -96,7 +96,7 @@ pub async fn delete_group_with_audit(
 }
 
 pub async fn migrate_group_users_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     source_group_id: i64,
     target_group_id: i64,
     audit_ctx: &AuditContext,

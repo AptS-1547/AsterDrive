@@ -203,3 +203,23 @@ pub(super) async fn connect_database(database_url: &str) -> Result<sea_orm::Data
     config_repo::ensure_defaults(&db).await?;
     Ok(db)
 }
+
+pub(super) async fn prepare_database(database_url: &str) -> Result<sea_orm::DatabaseConnection> {
+    if crate::config::try_get_config().is_none() {
+        crate::config::init_config()?;
+    }
+    let cfg = crate::config::get_config();
+    let db = db::connect(&crate::config::DatabaseConfig {
+        url: database_url.to_string(),
+        pool_size: 1,
+        retry_count: 0,
+    })
+    .await?;
+    crate::runtime::startup::initialize_database_state(
+        &db,
+        cfg.as_ref(),
+        crate::config::node_mode::start_mode(cfg.as_ref()),
+    )
+    .await?;
+    Ok(db)
+}

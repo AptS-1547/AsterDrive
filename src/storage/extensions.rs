@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use std::time::Duration;
 use tokio::io::AsyncRead;
 
-/// Presigned URL 支持（S3/R2/OSS 等对象存储）
+/// Presigned URL 支持（S3/R2/OSS/remote follower 等）
 #[async_trait]
 pub trait PresignedStorageDriver: Send + Sync {
     /// 生成临时下载 URL

@@ -23,6 +23,7 @@ pub struct Model {
     #[serde(skip_serializing)]
     pub secret_key: String,
     pub base_path: String,
+    pub remote_node_id: Option<i64>,
     pub max_file_size: i64, // 0 = unlimited
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub allowed_types: StoredStoragePolicyAllowedTypes, // JSON array
@@ -44,6 +45,12 @@ pub enum Relation {
     FileBlobs,
     #[sea_orm(has_many = "super::folder::Entity")]
     Folders,
+    #[sea_orm(
+        belongs_to = "super::managed_follower::Entity",
+        from = "Column::RemoteNodeId",
+        to = "super::managed_follower::Column::Id"
+    )]
+    ManagedFollower,
 }
 
 impl Related<super::storage_policy_group_item::Entity> for Entity {
@@ -61,6 +68,12 @@ impl Related<super::file_blob::Entity> for Entity {
 impl Related<super::folder::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Folders.def()
+    }
+}
+
+impl Related<super::managed_follower::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ManagedFollower.def()
     }
 }
 

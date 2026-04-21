@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use crate::db::repository::{team_member_repo, team_repo};
 use crate::entities::{team, team_member};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::types::TeamMemberRole;
 
 use super::shared::{
@@ -18,7 +18,11 @@ use super::shared::{
 };
 use super::{CreateTeamInput, TeamInfo, UpdateTeamInput};
 
-pub async fn list_teams(state: &AppState, user_id: i64, archived: bool) -> Result<Vec<TeamInfo>> {
+pub async fn list_teams(
+    state: &PrimaryAppState,
+    user_id: i64,
+    archived: bool,
+) -> Result<Vec<TeamInfo>> {
     let memberships = list_user_team_memberships(state, user_id, archived).await?;
     if memberships.is_empty() {
         return Ok(vec![]);
@@ -45,7 +49,7 @@ pub async fn list_teams(state: &AppState, user_id: i64, archived: bool) -> Resul
 }
 
 pub async fn list_user_team_ids(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     archived: bool,
 ) -> Result<HashSet<i64>> {
@@ -57,7 +61,7 @@ pub async fn list_user_team_ids(
 }
 
 async fn list_user_team_memberships(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     archived: bool,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
@@ -71,7 +75,7 @@ async fn list_user_team_memberships(
 }
 
 pub async fn create_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     creator_user_id: i64,
     input: CreateTeamInput,
 ) -> Result<TeamInfo> {
@@ -90,13 +94,13 @@ pub async fn create_team(
     build_team_info(state, &created_team, TeamMemberRole::Owner).await
 }
 
-pub async fn get_team(state: &AppState, team_id: i64, user_id: i64) -> Result<TeamInfo> {
+pub async fn get_team(state: &PrimaryAppState, team_id: i64, user_id: i64) -> Result<TeamInfo> {
     let (team, membership) = require_team_membership(state, team_id, user_id).await?;
     build_team_info(state, &team, membership.role).await
 }
 
 pub async fn update_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     actor_user_id: i64,
     input: UpdateTeamInput,
@@ -107,7 +111,7 @@ pub async fn update_team(
     build_team_info(state, &updated, membership.role).await
 }
 
-pub async fn archive_team(state: &AppState, team_id: i64, actor_user_id: i64) -> Result<()> {
+pub async fn archive_team(state: &PrimaryAppState, team_id: i64, actor_user_id: i64) -> Result<()> {
     let (team, membership) = require_team_membership(state, team_id, actor_user_id).await?;
     if !membership.role.is_owner() {
         return Err(AsterError::auth_forbidden("team owner role is required"));
@@ -117,7 +121,11 @@ pub async fn archive_team(state: &AppState, team_id: i64, actor_user_id: i64) ->
     archive_team_record(state, team).await
 }
 
-pub async fn restore_team(state: &AppState, team_id: i64, actor_user_id: i64) -> Result<TeamInfo> {
+pub async fn restore_team(
+    state: &PrimaryAppState,
+    team_id: i64,
+    actor_user_id: i64,
+) -> Result<TeamInfo> {
     let team = team_repo::find_archived_by_id(&state.db, team_id).await?;
     let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, actor_user_id)
         .await?

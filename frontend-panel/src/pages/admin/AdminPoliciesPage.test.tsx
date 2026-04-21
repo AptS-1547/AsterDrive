@@ -8,8 +8,10 @@ const mockState = vi.hoisted(() => ({
 	deletePolicy: vi.fn(),
 	handleApiError: vi.fn(),
 	items: [] as Array<Record<string, unknown>>,
+	listRemoteNodes: vi.fn(),
 	loading: false,
 	reload: vi.fn(),
+	remoteNodes: [] as Array<Record<string, unknown>>,
 	searchParams: "",
 	setSearchParams: vi.fn(),
 	testConnection: vi.fn(),
@@ -34,6 +36,8 @@ vi.mock("react-i18next", () => ({
 					return "Local";
 				case "driver_type_s3":
 					return "S3";
+				case "driver_type_remote":
+					return "Remote";
 				case "access_key":
 					return "Access Key";
 				case "secret_key":
@@ -444,15 +448,18 @@ vi.mock("@/hooks/useApiError", () => ({
 vi.mock("@/hooks/useApiList", () => ({
 	useApiList: () => {
 		const [items, setItems] = useState(mockState.items);
+		const [total, setTotal] = useState(mockState.total || items.length);
 		return {
 			items,
 			loading: mockState.loading,
 			reload: async () => {
 				await mockState.reload();
 				setItems(mockState.items);
+				setTotal(mockState.total || mockState.items.length);
 			},
 			setItems,
-			total: mockState.total || items.length,
+			setTotal,
+			total,
 		};
 	},
 }));
@@ -465,6 +472,9 @@ vi.mock("@/services/adminService", () => ({
 		testConnection: (...args: unknown[]) => mockState.testConnection(...args),
 		testParams: (...args: unknown[]) => mockState.testParams(...args),
 		update: (...args: unknown[]) => mockState.update(...args),
+	},
+	adminRemoteNodeService: {
+		list: (...args: unknown[]) => mockState.listRemoteNodes(...args),
 	},
 }));
 
@@ -482,6 +492,7 @@ function createPolicy(overrides: Record<string, unknown> = {}) {
 		max_file_size: 0,
 		name: "Local Policy",
 		options: {},
+		remote_node_id: null,
 		updated_at: "2026-03-28T00:00:00Z",
 		...overrides,
 	};
@@ -509,8 +520,10 @@ describe("AdminPoliciesPage", () => {
 		mockState.deletePolicy.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.items = [];
+		mockState.listRemoteNodes.mockReset();
 		mockState.loading = false;
 		mockState.reload.mockReset();
+		mockState.remoteNodes = [];
 		mockState.searchParams = "";
 		mockState.setSearchParams.mockReset();
 		mockState.testConnection.mockReset();
@@ -529,6 +542,9 @@ describe("AdminPoliciesPage", () => {
 			mockState.items = mockState.items.filter((policy) => policy.id !== id);
 		});
 		mockState.reload.mockResolvedValue(undefined);
+		mockState.listRemoteNodes.mockImplementation(async () => ({
+			items: mockState.remoteNodes,
+		}));
 		mockState.testConnection.mockResolvedValue(undefined);
 		mockState.testParams.mockResolvedValue(undefined);
 		mockState.update.mockImplementation(async (id, payload) =>
@@ -575,6 +591,32 @@ describe("AdminPoliciesPage", () => {
 		expect(localBadge).toHaveClass("bg-emerald-500/10", "text-emerald-600");
 		expect(s3Badge).toHaveAttribute("data-variant", "outline");
 		expect(s3Badge).toHaveClass("bg-blue-500/10", "text-blue-600");
+	});
+
+	it("renders remote policies with the bound remote node name", async () => {
+		mockState.remoteNodes = [
+			{
+				id: 7,
+				name: "Edge East",
+			},
+		];
+		mockState.items = [
+			createPolicy({
+				id: 3,
+				name: "Remote Archive",
+				driver_type: "remote",
+				base_path: "tenant-a/archive",
+				remote_node_id: 7,
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		expect(screen.getByText("Remote")).toBeInTheDocument();
+		expect(screen.getByText("tenant-a/archive")).toBeInTheDocument();
+		await waitFor(() => {
+			expect(screen.getByText("Edge East")).toBeInTheDocument();
+		});
 	});
 
 	it("opens edit from any non-delete policy cell", () => {
@@ -652,6 +694,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: undefined,
 				driver_type: "local",
 				endpoint: undefined,
+				remote_node_id: undefined,
 				secret_key: undefined,
 			});
 		});
@@ -671,6 +714,7 @@ describe("AdminPoliciesPage", () => {
 				max_file_size: 2048,
 				name: "Primary Local",
 				options: {},
+				remote_node_id: undefined,
 				secret_key: "",
 			});
 		});
@@ -793,7 +837,123 @@ describe("AdminPoliciesPage", () => {
 				bucket: "archive",
 				driver_type: "s3",
 				endpoint: "https://s3.example.com",
+				remote_node_id: undefined,
 				secret_key: undefined,
+			});
+		});
+	});
+
+	it("tests remote policy params and creates a bound remote policy", async () => {
+		mockState.remoteNodes = [
+			{
+				id: 7,
+				name: "Edge East",
+				namespace: "tenant-a",
+				base_url: "https://remote.example.com",
+			},
+		];
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
+		fireEvent.click(screen.getByRole("button", { name: /Remote/ }));
+		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Remote Archive" },
+		});
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "select-item:7" }),
+			).toBeInTheDocument();
+		});
+		fireEvent.click(screen.getByRole("button", { name: "select-item:7" }));
+
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: undefined,
+				base_path: undefined,
+				bucket: undefined,
+				driver_type: "remote",
+				endpoint: undefined,
+				remote_node_id: 7,
+				secret_key: undefined,
+			});
+		});
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+
+		await waitFor(() => {
+			expect(mockState.create).toHaveBeenCalledWith({
+				access_key: "",
+				base_path: "",
+				bucket: "",
+				chunk_size: 5 * 1024 * 1024,
+				driver_type: "remote",
+				endpoint: "",
+				is_default: false,
+				max_file_size: undefined,
+				name: "Remote Archive",
+				options: { remote_upload_strategy: "relay_stream" },
+				remote_node_id: 7,
+				secret_key: "",
+			});
+		});
+	});
+
+	it("creates a remote policy with presigned upload strategy", async () => {
+		mockState.remoteNodes = [
+			{
+				id: 9,
+				name: "Edge West",
+				namespace: "tenant-b",
+				base_url: "https://remote-west.example.com",
+			},
+		];
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
+		fireEvent.click(screen.getByRole("button", { name: /Remote/ }));
+		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Remote Presigned Archive" },
+		});
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "select-item:9" }),
+			).toBeInTheDocument();
+		});
+		fireEvent.click(screen.getByRole("button", { name: "select-item:9" }));
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "select-item:presigned" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+
+		await waitFor(() => {
+			expect(mockState.create).toHaveBeenCalledWith({
+				access_key: "",
+				base_path: "",
+				bucket: "",
+				chunk_size: 5 * 1024 * 1024,
+				driver_type: "remote",
+				endpoint: "",
+				is_default: false,
+				max_file_size: undefined,
+				name: "Remote Presigned Archive",
+				options: { remote_upload_strategy: "presigned" },
+				remote_node_id: 9,
+				secret_key: "",
 			});
 		});
 	});
@@ -939,6 +1099,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "archive",
 				driver_type: "s3",
 				endpoint: "https://s3.example.com",
+				remote_node_id: undefined,
 				secret_key: undefined,
 			});
 		});
@@ -1082,6 +1243,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "legacy-bucket",
 				driver_type: "s3",
 				endpoint: "https://s3.example.com",
+				remote_node_id: undefined,
 				secret_key: undefined,
 			});
 		});
@@ -1145,6 +1307,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "relay-bucket",
 				driver_type: "s3",
 				endpoint: "https://s3.example.com",
+				remote_node_id: undefined,
 				secret_key: undefined,
 			});
 		});
@@ -1231,6 +1394,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "broken-bucket",
 				driver_type: "s3",
 				endpoint: "https://s3.example.com",
+				remote_node_id: undefined,
 				secret_key: undefined,
 			});
 		});
@@ -1260,6 +1424,7 @@ describe("AdminPoliciesPage", () => {
 					s3_download_strategy: "relay_stream",
 					s3_upload_strategy: "relay_stream",
 				},
+				remote_node_id: undefined,
 				secret_key: "",
 			});
 		});

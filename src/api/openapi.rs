@@ -45,11 +45,13 @@ use utoipa::{Modify, OpenApi};
 
         // health：用于存活探针和就绪探针，给网关和运维检查服务状态。
         crate::api::routes::health::health,
-        crate::api::routes::health::ready,
+        crate::api::routes::health::primary_ready,
 
         // public：登录前也能读取的公开站点配置，例如品牌信息和预览应用列表。
         crate::api::routes::public::get_branding,
         crate::api::routes::public::get_preview_apps,
+        crate::api::routes::public::redeem_remote_enrollment,
+        crate::api::routes::public::ack_remote_enrollment,
 
         // files::upload：个人空间文件上传生命周期，包括直传、分片和进度控制。
         crate::api::routes::files::upload::upload,
@@ -230,6 +232,14 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::admin::policies::update_policy_group,
         crate::api::routes::admin::policies::delete_policy_group,
         crate::api::routes::admin::policies::migrate_policy_group_users,
+        crate::api::routes::admin::remote_nodes::list_remote_nodes,
+        crate::api::routes::admin::remote_nodes::create_remote_node,
+        crate::api::routes::admin::remote_nodes::get_remote_node,
+        crate::api::routes::admin::remote_nodes::update_remote_node,
+        crate::api::routes::admin::remote_nodes::delete_remote_node,
+        crate::api::routes::admin::remote_nodes::test_remote_node,
+        crate::api::routes::admin::remote_nodes::test_remote_node_params,
+        crate::api::routes::admin::remote_nodes::create_remote_node_enrollment_token,
 
         // admin::users：后台用户列表、资料维护、会话回收和强制删除。
         crate::api::routes::admin::users::list_users,
@@ -307,6 +317,7 @@ use utoipa::{Modify, OpenApi};
             crate::api::pagination::OffsetPage<crate::services::team_service::AdminTeamInfo>,
             crate::api::pagination::OffsetPage<crate::services::policy_service::StoragePolicy>,
             crate::api::pagination::OffsetPage<crate::services::policy_service::StoragePolicyGroupInfo>,
+            crate::api::pagination::OffsetPage<crate::services::managed_follower_service::RemoteNodeInfo>,
             crate::api::pagination::OffsetPage<crate::services::share_service::ShareInfo>,
             crate::api::pagination::OffsetPage<crate::services::share_service::MyShareInfo>,
             crate::api::pagination::OffsetPage<crate::services::task_service::TaskInfo>,
@@ -405,6 +416,9 @@ use utoipa::{Modify, OpenApi};
             crate::api::routes::admin::AdminCreateTeamReq,
             crate::api::routes::admin::AdminPatchTeamReq,
             crate::api::routes::admin::TestPolicyParamsReq,
+            crate::api::routes::admin::CreateRemoteNodeReq,
+            crate::api::routes::admin::PatchRemoteNodeReq,
+            crate::api::routes::admin::TestRemoteNodeParamsReq,
             crate::api::routes::admin::SetConfigReq,
             crate::api::routes::admin::ExecuteConfigActionReq,
             crate::api::routes::admin::ExecuteConfigActionResp,
@@ -424,6 +438,8 @@ use utoipa::{Modify, OpenApi};
             crate::services::policy_service::StoragePolicyGroupInfo,
             crate::services::policy_service::StoragePolicyGroupItemInput,
             crate::services::policy_service::PolicyGroupUserMigrationResult,
+            crate::services::managed_follower_service::RemoteNodeInfo,
+            crate::storage::remote_protocol::RemoteStorageCapabilities,
             crate::types::DriverType,
             crate::types::S3DownloadStrategy,
             crate::types::S3UploadStrategy,

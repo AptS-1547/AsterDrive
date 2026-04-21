@@ -14,7 +14,7 @@ mod shared;
 mod team;
 
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::{self, AuditContext},
     auth_service,
@@ -62,7 +62,7 @@ fn admin_team_audit_details(team: &AdminTeamInfo) -> Option<serde_json::Value> {
 }
 
 pub(crate) async fn create_team_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     actor_user_id: i64,
     input: CreateTeamInput,
     audit_ctx: &AuditContext,
@@ -90,7 +90,7 @@ pub(crate) async fn create_team_with_audit(
 }
 
 pub(crate) async fn update_team_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     actor_user_id: i64,
     input: UpdateTeamInput,
@@ -111,7 +111,7 @@ pub(crate) async fn update_team_with_audit(
 }
 
 pub(crate) async fn archive_team_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     actor_user_id: i64,
     audit_ctx: &AuditContext,
@@ -139,7 +139,7 @@ pub(crate) async fn archive_team_with_audit(
 }
 
 pub(crate) async fn restore_team_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     actor_user_id: i64,
     audit_ctx: &AuditContext,
@@ -159,7 +159,7 @@ pub(crate) async fn restore_team_with_audit(
 }
 
 pub(crate) async fn list_team_audit_entries(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     actor_user_id: i64,
     mut filters: audit_service::AuditLogFilters,
@@ -179,7 +179,7 @@ pub(crate) async fn list_team_audit_entries(
 }
 
 pub(crate) async fn add_member_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     actor_user_id: i64,
     input: AddTeamMemberInput,
@@ -206,7 +206,7 @@ pub(crate) async fn add_member_with_audit(
 }
 
 pub(crate) async fn update_member_role_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     actor_user_id: i64,
     member_user_id: i64,
@@ -241,7 +241,7 @@ pub(crate) async fn update_member_role_with_audit(
 }
 
 pub(crate) async fn remove_member_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     actor_user_id: i64,
     member_user_id: i64,
@@ -273,7 +273,7 @@ pub(crate) async fn remove_member_with_audit(
 }
 
 pub(crate) async fn create_admin_team_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     actor_user_id: i64,
     input: AdminCreateTeamInput,
     audit_ctx: &AuditContext,
@@ -293,7 +293,7 @@ pub(crate) async fn create_admin_team_with_audit(
 }
 
 pub(crate) async fn update_admin_team_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     input: AdminUpdateTeamInput,
     audit_ctx: &AuditContext,
@@ -313,7 +313,7 @@ pub(crate) async fn update_admin_team_with_audit(
 }
 
 pub(crate) async fn archive_admin_team_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     audit_ctx: &AuditContext,
 ) -> Result<()> {
@@ -340,7 +340,7 @@ pub(crate) async fn archive_admin_team_with_audit(
 }
 
 pub(crate) async fn restore_admin_team_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     audit_ctx: &AuditContext,
 ) -> Result<AdminTeamInfo> {
@@ -359,7 +359,7 @@ pub(crate) async fn restore_admin_team_with_audit(
 }
 
 pub(crate) async fn list_admin_team_audit_entries(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     mut filters: audit_service::AuditLogFilters,
     limit: u64,
@@ -372,7 +372,7 @@ pub(crate) async fn list_admin_team_audit_entries(
 }
 
 pub(crate) async fn add_admin_member_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     input: AddTeamMemberInput,
     audit_ctx: &AuditContext,
@@ -398,7 +398,7 @@ pub(crate) async fn add_admin_member_with_audit(
 }
 
 pub(crate) async fn update_admin_member_role_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     member_user_id: i64,
     role: crate::types::TeamMemberRole,
@@ -430,7 +430,7 @@ pub(crate) async fn update_admin_member_role_with_audit(
 }
 
 pub(crate) async fn remove_admin_member_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     member_user_id: i64,
     audit_ctx: &AuditContext,

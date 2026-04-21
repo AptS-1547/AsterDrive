@@ -29,6 +29,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 		{ to: "/admin/users", label: t("users"), icon: "Shield" },
 		{ to: "/admin/teams", label: t("teams"), icon: "Cloud" },
 		{ to: "/admin/policies", label: t("policies"), icon: "HardDrive" },
+		{ to: "/admin/remote-nodes", label: t("remote_nodes"), icon: "Globe" },
 		{
 			to: "/admin/policy-groups",
 			label: t("policy_groups"),

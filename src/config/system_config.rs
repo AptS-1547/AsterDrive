@@ -124,7 +124,8 @@ where
         operations::MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY
         | operations::BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY
         | operations::MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY
-        | operations::BLOB_RECONCILE_INTERVAL_SECS_KEY => {
+        | operations::BLOB_RECONCILE_INTERVAL_SECS_KEY
+        | operations::REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY => {
             operations::normalize_interval_config_value(key, value)
         }
         operations::BACKGROUND_TASK_MAX_CONCURRENCY_KEY => {

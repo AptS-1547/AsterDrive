@@ -2,7 +2,7 @@
 
 use crate::db::repository::user_repo;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::utils::hash;
 
 use super::session::{invalidate_auth_snapshot_cache, purge_all_auth_sessions_in_connection};
@@ -11,7 +11,7 @@ use super::tokens::issue_tokens_for_user;
 use super::{AuthUserInfo, LoginResult, is_email_verified};
 
 pub async fn login(
-    state: &AppState,
+    state: &PrimaryAppState,
     identifier: &str,
     password: &str,
     ip_address: Option<&str>,
@@ -64,7 +64,7 @@ pub async fn login(
 }
 
 pub async fn change_password(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     current_password: &str,
     new_password: &str,
@@ -84,7 +84,7 @@ pub async fn change_password(
 }
 
 pub async fn set_password(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     new_password: &str,
 ) -> Result<AuthUserInfo> {

@@ -9,9 +9,10 @@ use actix_web::web;
 // DTO re-exports from unified dto/ module
 pub use crate::api::dto::admin::{
     AdminCreateTeamReq, AdminListQuery, AdminPatchTeamReq, AdminTeamListQuery, AdminUserListQuery,
-    CreatePolicyGroupReq, CreatePolicyReq, CreateUserReq, ExecuteConfigActionReq,
-    ExecuteConfigActionResp, MigratePolicyGroupUsersReq, PatchPolicyGroupReq, PatchPolicyReq,
-    PatchUserReq, PolicyGroupItemReq, ResetUserPasswordReq, SetConfigReq, TestPolicyParamsReq,
+    CreatePolicyGroupReq, CreatePolicyReq, CreateRemoteNodeReq, CreateUserReq,
+    ExecuteConfigActionReq, ExecuteConfigActionResp, MigratePolicyGroupUsersReq,
+    PatchPolicyGroupReq, PatchPolicyReq, PatchRemoteNodeReq, PatchUserReq, PolicyGroupItemReq,
+    ResetUserPasswordReq, SetConfigReq, TestPolicyParamsReq, TestRemoteNodeParamsReq,
 };
 
 pub(crate) mod audit_logs;
@@ -20,6 +21,7 @@ pub(crate) mod config;
 pub(crate) mod locks;
 pub(crate) mod overview;
 pub(crate) mod policies;
+pub(crate) mod remote_nodes;
 pub(crate) mod shares;
 pub(crate) mod tasks;
 pub(crate) mod teams;
@@ -36,6 +38,10 @@ pub use policies::{
     create_policy, create_policy_group, delete_policy, delete_policy_group, get_policy,
     get_policy_group, list_policies, list_policy_groups, migrate_policy_group_users,
     test_policy_connection, test_policy_params, update_policy, update_policy_group,
+};
+pub use remote_nodes::{
+    create_remote_node, create_remote_node_enrollment_token, delete_remote_node, get_remote_node,
+    list_remote_nodes, test_remote_node, test_remote_node_params, update_remote_node,
 };
 pub use shares::{admin_delete_share, list_all_shares};
 pub use tasks::list_tasks;
@@ -69,6 +75,21 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                         web::post().to(test_policy_connection),
                     )
                     .route("/policies/test", web::post().to(test_policy_params))
+                    // remote nodes
+                    .route("/remote-nodes", web::get().to(list_remote_nodes))
+                    .route("/remote-nodes", web::post().to(create_remote_node))
+                    .route("/remote-nodes/{id}", web::get().to(get_remote_node))
+                    .route("/remote-nodes/{id}", web::patch().to(update_remote_node))
+                    .route("/remote-nodes/{id}", web::delete().to(delete_remote_node))
+                    .route("/remote-nodes/{id}/test", web::post().to(test_remote_node))
+                    .route(
+                        "/remote-nodes/{id}/enrollment-token",
+                        web::post().to(create_remote_node_enrollment_token),
+                    )
+                    .route(
+                        "/remote-nodes/test",
+                        web::post().to(test_remote_node_params),
+                    )
                     // policy groups
                     .route("/policy-groups", web::get().to(list_policy_groups))
                     .route("/policy-groups", web::post().to(create_policy_group))

@@ -8,7 +8,7 @@ use sea_orm::{DatabaseConnection, Set};
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::task_service::TaskLeaseGuard;
 use crate::services::{folder_service, workspace_storage_service::WorkspaceStorageScope};
 use crate::storage::{DriverRegistry, PolicySnapshot};
@@ -62,7 +62,7 @@ pub(super) async fn build_file_display_path(
 }
 
 pub(super) async fn create_unique_folder_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     parent_id: Option<i64>,
     base_name: &str,
@@ -73,7 +73,7 @@ pub(super) async fn create_unique_folder_in_scope(
 }
 
 pub(super) async fn create_folder_exact_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     parent_id: Option<i64>,
     name: &str,
@@ -113,7 +113,7 @@ pub(super) async fn create_folder_exact_in_scope(
 }
 
 async fn resolve_unique_folder_name_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     parent_id: Option<i64>,
     base_name: &str,

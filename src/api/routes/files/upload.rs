@@ -5,7 +5,7 @@ use crate::api::dto::validate_request;
 use crate::api::response::ApiResponse;
 use crate::api::routes::team_scope;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::AuditContext, auth_service::Claims, upload_service,
     workspace_storage_service::WorkspaceStorageScope,
@@ -34,7 +34,7 @@ pub(crate) struct UploadResponseParams<'a> {
     security(("bearer" = [])),
 )]
 pub async fn upload(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     query: web::Query<FileQuery>,
@@ -70,7 +70,7 @@ pub async fn upload(
     security(("bearer" = [])),
 )]
 pub async fn init_chunked_upload(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     body: web::Json<InitUploadReq>,
 ) -> Result<HttpResponse> {
@@ -105,7 +105,7 @@ pub async fn init_chunked_upload(
     security(("bearer" = [])),
 )]
 pub async fn upload_chunk(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<ChunkPath>,
     body: web::Bytes,
@@ -136,7 +136,7 @@ pub async fn upload_chunk(
     security(("bearer" = [])),
 )]
 pub async fn complete_upload(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<UploadIdPath>,
     body: Option<web::Json<CompleteUploadReq>>,
@@ -168,7 +168,7 @@ pub async fn complete_upload(
     security(("bearer" = [])),
 )]
 pub async fn get_upload_progress(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<UploadIdPath>,
 ) -> Result<HttpResponse> {
@@ -190,7 +190,7 @@ pub async fn get_upload_progress(
     security(("bearer" = [])),
 )]
 pub async fn cancel_upload(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<UploadIdPath>,
 ) -> Result<HttpResponse> {
@@ -213,7 +213,7 @@ pub async fn cancel_upload(
     security(("bearer" = [])),
 )]
 pub async fn presign_parts(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<UploadIdPath>,
     body: web::Json<PresignPartsReq>,
@@ -246,7 +246,7 @@ pub async fn presign_parts(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_upload(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -283,7 +283,7 @@ pub(crate) async fn team_upload(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_init_chunked_upload(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     body: web::Json<InitUploadReq>,
@@ -322,7 +322,7 @@ pub(crate) async fn team_init_chunked_upload(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_upload_chunk(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, String, i32)>,
     body: web::Bytes,
@@ -359,7 +359,7 @@ pub(crate) async fn team_upload_chunk(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_complete_upload(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, String)>,
     body: Option<web::Json<CompleteUploadReq>>,
@@ -402,7 +402,7 @@ pub(crate) async fn team_complete_upload(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_get_upload_progress(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse> {
@@ -430,7 +430,7 @@ pub(crate) async fn team_get_upload_progress(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_cancel_upload(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse> {
@@ -458,7 +458,7 @@ pub(crate) async fn team_cancel_upload(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_presign_parts(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, String)>,
     body: web::Json<PresignPartsReq>,
@@ -476,7 +476,7 @@ pub(crate) async fn team_presign_parts(
 }
 
 pub(crate) async fn upload_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     payload: &mut actix_multipart::Multipart,

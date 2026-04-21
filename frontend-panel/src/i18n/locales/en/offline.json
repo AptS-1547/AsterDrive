@@ -5,9 +5,9 @@
 	"auth_stale": "Session pending verification",
 	"offline_status_short": "Offline",
 	"auth_stale_detail": "The app will attempt to reconnect to the server once the connection is restored",
-	"offline_boot_title": "AsterDrive cannot reach the server right now",
-	"offline_boot_description": "This launch could not restore a valid session and the backend is temporarily unreachable. The app shell is up, but it has to wait here until the network or service comes back.",
+	"offline_boot_title": "AsterDrive is having trouble reaching the server",
+	"offline_boot_description": "This session could not be restored and the backend is temporarily unreachable. The app is ready, but some features will stay unavailable until the network or service recovers.",
 	"offline_boot_retry": "Try again",
 	"offline_boot_login": "Go to login",
-	"offline_boot_hint": "If you have logged in before, refresh again after the service recovers to resume normal use."
+	"offline_boot_hint": "If you have signed in before, refresh after the service recovers to continue where you left off."
 }

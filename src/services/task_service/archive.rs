@@ -11,12 +11,12 @@ pub(crate) use selection::{prepare_archive_download_in_scope, stream_archive_dow
 
 use crate::entities::background_task;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 
 use super::TaskLeaseGuard;
 
 pub(super) async fn process_archive_compress_task(
-    state: &AppState,
+    state: &PrimaryAppState,
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
@@ -24,7 +24,7 @@ pub(super) async fn process_archive_compress_task(
 }
 
 pub(super) async fn process_archive_extract_task(
-    state: &AppState,
+    state: &PrimaryAppState,
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {

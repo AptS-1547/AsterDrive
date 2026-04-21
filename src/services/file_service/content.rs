@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     policy_service::StoragePolicy,
     workspace_models::FileInfo,
@@ -26,7 +26,7 @@ pub(crate) struct StreamedTempUpload {
 }
 
 pub(crate) async fn stream_request_body_to_temp_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     payload: &mut Payload,
     resolved_policy_hint: Option<crate::entities::storage_policy::Model>,
     declared_size: Option<i64>,
@@ -168,7 +168,7 @@ impl<'a> StoreFromTempRequest<'a> {
 }
 
 pub async fn store_from_temp(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     request: StoreFromTempRequest<'_>,
 ) -> Result<FileInfo> {
@@ -190,7 +190,7 @@ pub async fn store_from_temp(
 
 /// 上传文件（REST API，multipart）
 pub async fn upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     payload: &mut actix_multipart::Multipart,
     folder_id: Option<i64>,
@@ -210,7 +210,7 @@ pub async fn upload(
 }
 
 pub(crate) async fn update_content_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     body: Bytes,
@@ -330,7 +330,7 @@ pub(crate) async fn update_content_in_scope(
 }
 
 pub(crate) async fn update_content_stream_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     payload: &mut Payload,
@@ -420,7 +420,7 @@ pub(crate) async fn update_content_stream_in_scope(
 /// 支持 ETag 乐观锁（If-Match）+ 悲观锁检查（is_locked）。
 /// 自动创建版本历史。返回 (更新后的 file, 新 blob hash)。
 pub async fn update_content(
-    state: &AppState,
+    state: &PrimaryAppState,
     file_id: i64,
     user_id: i64,
     body: Bytes,
@@ -439,7 +439,7 @@ pub async fn update_content(
 
 /// 根据优先级链解析存储策略：文件夹覆盖 → 用户绑定策略组
 pub async fn resolve_policy(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     folder_id: Option<i64>,
 ) -> Result<StoragePolicy> {
@@ -447,7 +447,7 @@ pub async fn resolve_policy(
 }
 
 pub async fn resolve_policy_for_size(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     folder_id: Option<i64>,
     file_size: i64,
@@ -470,7 +470,7 @@ pub async fn resolve_policy_for_size(
 /// - 其余路径都为每个文件分配独立 blob
 /// - 创建文件记录并更新配额（0 字节不影响配额）
 pub async fn create_empty(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     folder_id: Option<i64>,
     filename: &str,

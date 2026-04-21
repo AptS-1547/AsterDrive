@@ -6,7 +6,7 @@ use super::{
 };
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::AuditContext;
 use crate::services::auth_service::Claims;
 use crate::services::{auth_service, profile_service, user_service};
@@ -26,7 +26,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn request_email_change(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     claims: web::ReqData<Claims>,
     body: web::Json<RequestEmailChangeReq>,
@@ -55,7 +55,7 @@ pub async fn request_email_change(
     security(("bearer" = [])),
 )]
 pub async fn resend_email_change(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     req: HttpRequest,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
@@ -92,7 +92,7 @@ pub async fn resend_email_change(
     security(("bearer" = [])),
 )]
 pub async fn patch_preferences(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     body: web::Json<UpdatePreferencesReq>,
 ) -> Result<HttpResponse> {
@@ -114,7 +114,7 @@ pub async fn patch_preferences(
     security(("bearer" = [])),
 )]
 pub async fn patch_profile(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     body: web::Json<UpdateProfileReq>,
 ) -> Result<HttpResponse> {
@@ -137,7 +137,7 @@ pub async fn patch_profile(
     security(("bearer" = [])),
 )]
 pub async fn upload_avatar(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     mut payload: actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
@@ -159,7 +159,7 @@ pub async fn upload_avatar(
     security(("bearer" = [])),
 )]
 pub async fn put_avatar_source(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     body: web::Json<UpdateAvatarSourceReq>,
 ) -> Result<HttpResponse> {
@@ -181,7 +181,7 @@ pub async fn put_avatar_source(
     security(("bearer" = [])),
 )]
 pub async fn get_self_avatar(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<u32>,
 ) -> Result<HttpResponse> {

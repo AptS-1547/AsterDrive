@@ -34,6 +34,9 @@ pub struct ServerConfig {
     pub temp_dir: String,
     #[serde(default = "ServerConfig::default_upload_temp_dir")]
     pub upload_temp_dir: String,
+    /// 节点静态启动角色。改动后需要重启进程。
+    #[serde(default)]
+    pub start_mode: crate::config::node_mode::NodeRuntimeMode,
 }
 
 impl Default for ServerConfig {
@@ -44,6 +47,7 @@ impl Default for ServerConfig {
             workers: 0,
             temp_dir: Self::default_temp_dir(),
             upload_temp_dir: Self::default_upload_temp_dir(),
+            start_mode: crate::config::node_mode::NodeRuntimeMode::Primary,
         }
     }
 }

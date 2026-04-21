@@ -7,7 +7,7 @@ use actix_web::{App, body::to_bytes, http::header, test, web};
 use serde_json::Value;
 
 const EXPECTED_ALLOW_HEADERS: &str = "authorization, accept, content-type, depth, destination, if, lock-token, overwrite, timeout, x-csrf-token, x-wopi-lock, x-wopi-oldlock, x-wopi-override, x-wopi-overwriterelativetarget, x-wopi-requestedname, x-wopi-relativetarget, x-wopi-size, x-wopi-suggestedtarget";
-const EXPECTED_EXPOSE_HEADERS: &str = "dav, lock-token, x-wopi-itemversion, x-wopi-invalidfilenameerror, x-wopi-lock, x-wopi-lockfailurereason, x-wopi-validrelativetarget";
+const EXPECTED_EXPOSE_HEADERS: &str = "dav, etag, lock-token, x-wopi-itemversion, x-wopi-invalidfilenameerror, x-wopi-lock, x-wopi-lockfailurereason, x-wopi-validrelativetarget";
 
 macro_rules! create_test_app_with_cors {
     ($state:expr) => {{
@@ -20,7 +20,7 @@ macro_rules! create_test_app_with_cors {
                 .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
                 .app_data(web::JsonConfig::default().limit(1024 * 1024))
                 .app_data(web::Data::new(state))
-                .configure(move |cfg| aster_drive::api::configure(cfg, &db)),
+                .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db)),
         )
         .await
     }};

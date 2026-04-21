@@ -10,8 +10,8 @@ import {
 	buildUpdatePolicyPayload,
 	emptyForm,
 	getEndpointValidationMessage,
+	getPolicyConnectionTestKey,
 	getPolicyForm,
-	getS3ConnectionTestKey,
 	hasConnectionFieldChanges,
 	normalizePolicyForm,
 	type PolicyFormData,
@@ -50,8 +50,11 @@ import {
 	parsePageSizeOption,
 	parsePageSizeSearchParam,
 } from "@/lib/pagination";
-import { adminPolicyService } from "@/services/adminService";
-import type { DriverType, StoragePolicy } from "@/types/api";
+import {
+	adminPolicyService,
+	adminRemoteNodeService,
+} from "@/services/adminService";
+import type { DriverType, RemoteNodeInfo, StoragePolicy } from "@/types/api";
 
 const POLICY_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const DEFAULT_POLICY_PAGE_SIZE = 20 as const;
@@ -63,7 +66,9 @@ const INTERACTIVE_TABLE_ROW_CLASS =
 function getPolicyDriverBadgeClass(driverType: DriverType): string {
 	return driverType === "s3"
 		? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
-		: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300";
+		: driverType === "remote"
+			? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300"
+			: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300";
 }
 
 const POLICY_TEXT_CELL_CONTENT_CLASS =
@@ -92,6 +97,7 @@ export default function AdminPoliciesPage() {
 		items: policies,
 		setItems: setPolicies,
 		total,
+		setTotal,
 		loading,
 		reload,
 	} = useApiList(
@@ -103,9 +109,12 @@ export default function AdminPoliciesPage() {
 	const [editingPolicy, setEditingPolicy] = useState<StoragePolicy | null>(
 		null,
 	);
+	const [remoteNodes, setRemoteNodes] = useState<RemoteNodeInfo[]>([]);
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
 	const [submitting, setSubmitting] = useState(false);
-	const [validatedS3Key, setValidatedS3Key] = useState<string | null>(null);
+	const [validatedConnectionKey, setValidatedConnectionKey] = useState<
+		string | null
+	>(null);
 	const [createStep, setCreateStep] = useState(0);
 	const [createStepTouched, setCreateStepTouched] = useState(false);
 	const endpointValidationMessage = getEndpointValidationMessage(form, t);
@@ -117,6 +126,9 @@ export default function AdminPoliciesPage() {
 		label: t("page_size_option", { count: size }),
 		value: String(size),
 	}));
+	const remoteNodeNameById = new Map(
+		remoteNodes.map((node) => [node.id, node.name] as const),
+	);
 
 	useEffect(() => {
 		setSearchParams(
@@ -128,6 +140,27 @@ export default function AdminPoliciesPage() {
 			{ replace: true },
 		);
 	}, [offset, pageSize, setSearchParams]);
+
+	useEffect(() => {
+		let active = true;
+
+		void adminRemoteNodeService
+			.list({ limit: 100, offset: 0 })
+			.then((page) => {
+				if (active) {
+					setRemoteNodes(page.items);
+				}
+			})
+			.catch((error) => {
+				if (active) {
+					handleApiError(error);
+				}
+			});
+
+		return () => {
+			active = false;
+		};
+	}, []);
 
 	const handlePageSizeChange = (value: string | null) => {
 		const next = parsePageSizeOption(value, POLICY_PAGE_SIZE_OPTIONS);
@@ -169,7 +202,7 @@ export default function AdminPoliciesPage() {
 
 	const resetDialogState = () => {
 		saveConfirmDialogProps.onOpenChange(false);
-		setValidatedS3Key(null);
+		setValidatedConnectionKey(null);
 		setCreateStep(0);
 		setCreateStepTouched(false);
 	};
@@ -203,22 +236,43 @@ export default function AdminPoliciesPage() {
 	) => setForm((prev) => ({ ...prev, [key]: value }));
 
 	const setDriverType = (driverType: DriverType) => {
-		setValidatedS3Key(null);
+		setValidatedConnectionKey(null);
 		setCreateStepTouched(false);
-		setForm((prev) =>
-			driverType === "s3"
-				? { ...prev, driver_type: driverType }
-				: {
-						...prev,
-						driver_type: driverType,
-						endpoint: "",
-						bucket: "",
-						access_key: "",
-						secret_key: "",
-						s3_upload_strategy: "relay_stream",
-						s3_download_strategy: "relay_stream",
-					},
-		);
+		setForm((prev) => {
+			if (driverType === "s3") {
+				return {
+					...prev,
+					driver_type: driverType,
+					remote_node_id: "",
+				};
+			}
+
+			if (driverType === "remote") {
+				return {
+					...prev,
+					driver_type: driverType,
+					endpoint: "",
+					bucket: "",
+					access_key: "",
+					secret_key: "",
+					content_dedup: false,
+					remote_upload_strategy: "relay_stream",
+				};
+			}
+
+			return {
+				...prev,
+				driver_type: driverType,
+				endpoint: "",
+				bucket: "",
+				access_key: "",
+				secret_key: "",
+				remote_node_id: "",
+				remote_upload_strategy: "relay_stream",
+				s3_upload_strategy: "relay_stream",
+				s3_download_strategy: "relay_stream",
+			};
+		});
 	};
 
 	const syncNormalizedS3Form = () => {
@@ -250,15 +304,18 @@ export default function AdminPoliciesPage() {
 				await adminPolicyService.testConnection(editingId);
 			}
 
-			if (currentForm.driver_type === "s3") {
-				setValidatedS3Key(getS3ConnectionTestKey(currentForm));
+			if (
+				currentForm.driver_type === "s3" ||
+				currentForm.driver_type === "remote"
+			) {
+				setValidatedConnectionKey(getPolicyConnectionTestKey(currentForm));
 			}
 			if (showSuccessToast) {
 				toast.success(t("connection_success"));
 			}
 			return true;
 		} catch (e) {
-			setValidatedS3Key(null);
+			setValidatedConnectionKey(null);
 			if (showFailureError) {
 				handleApiError(e);
 			}
@@ -298,8 +355,8 @@ export default function AdminPoliciesPage() {
 		}
 	};
 
-	const shouldRunS3SaveTest = () => {
-		if (form.driver_type !== "s3") {
+	const shouldRunConnectionSaveTest = () => {
+		if (form.driver_type !== "s3" && form.driver_type !== "remote") {
 			return false;
 		}
 
@@ -307,7 +364,7 @@ export default function AdminPoliciesPage() {
 			return false;
 		}
 
-		return validatedS3Key !== getS3ConnectionTestKey(form);
+		return validatedConnectionKey !== getPolicyConnectionTestKey(form);
 	};
 
 	const submitPolicy = async (forceSave = false) => {
@@ -317,7 +374,7 @@ export default function AdminPoliciesPage() {
 
 		setSubmitting(true);
 		try {
-			if (!forceSave && shouldRunS3SaveTest()) {
+			if (!forceSave && shouldRunConnectionSaveTest()) {
 				const testPassed = await runConnectionTest({
 					showSuccessToast: false,
 					showFailureError: false,
@@ -364,6 +421,10 @@ export default function AdminPoliciesPage() {
 			return;
 		}
 
+		if (form.driver_type === "remote" && !form.remote_node_id) {
+			return;
+		}
+
 		if (endpointValidationMessage) {
 			return;
 		}
@@ -385,6 +446,19 @@ export default function AdminPoliciesPage() {
 		deleteId !== null
 			? (policies.find((policy) => policy.id === deleteId)?.name ?? "")
 			: "";
+	const handleRefresh = async () => {
+		try {
+			const [policyPage, remoteNodePage] = await Promise.all([
+				adminPolicyService.list({ limit: pageSize, offset }),
+				adminRemoteNodeService.list({ limit: 100, offset: 0 }),
+			]);
+			setPolicies(policyPage.items);
+			setTotal(policyPage.total);
+			setRemoteNodes(remoteNodePage.items);
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
 
 	return (
 		<AdminLayout>
@@ -406,7 +480,7 @@ export default function AdminPoliciesPage() {
 								variant="outline"
 								size="sm"
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
-								onClick={() => void reload()}
+								onClick={() => void handleRefresh()}
 								disabled={loading}
 							>
 								<Icon
@@ -476,7 +550,11 @@ export default function AdminPoliciesPage() {
 										variant="outline"
 										className={getPolicyDriverBadgeClass(policy.driver_type)}
 									>
-										{policy.driver_type === "local" ? "Local" : "S3"}
+										{policy.driver_type === "local"
+											? t("driver_type_local")
+											: policy.driver_type === "remote"
+												? t("driver_type_remote")
+												: t("driver_type_s3")}
 									</Badge>
 								</div>
 							</TableCell>
@@ -485,14 +563,21 @@ export default function AdminPoliciesPage() {
 									<span className="truncate text-xs font-mono text-muted-foreground">
 										{policy.driver_type === "local"
 											? policy.base_path || "./data"
-											: policy.endpoint}
+											: policy.driver_type === "remote"
+												? policy.base_path || t("core:root")
+												: policy.endpoint}
 									</span>
 								</div>
 							</TableCell>
 							<TableCell>
 								<div className={POLICY_TEXT_CELL_CONTENT_CLASS}>
 									<span className="truncate text-xs text-muted-foreground">
-										{policy.bucket || "-"}
+										{policy.driver_type === "remote"
+											? policy.remote_node_id != null
+												? (remoteNodeNameById.get(policy.remote_node_id) ??
+													`#${policy.remote_node_id}`)
+												: "-"
+											: policy.bucket || "-"}
 									</span>
 								</div>
 							</TableCell>
@@ -561,6 +646,7 @@ export default function AdminPoliciesPage() {
 					dialogOpen={dialogOpen}
 					editMode={editingId !== null}
 					form={form}
+					remoteNodes={remoteNodes}
 					submitting={submitting}
 					createStep={createStep}
 					createStepTouched={createStepTouched}

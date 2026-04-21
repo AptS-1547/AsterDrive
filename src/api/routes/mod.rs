@@ -9,6 +9,7 @@ pub mod files;
 pub mod folders;
 pub mod frontend;
 pub mod health;
+pub mod internal_storage;
 pub mod properties;
 pub mod public;
 pub mod search;

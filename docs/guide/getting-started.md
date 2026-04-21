@@ -171,6 +171,7 @@ http://服务器地址:3000
 跑通之后，下面这些可能是你接下来想做的：
 
 - 想真上线、挂 HTTPS、配反向代理 → [部署手册](./installation) / [反向代理](/deployment/reverse-proxy)
+- 想做主控 + 从节点部署 → [远程节点](./remote-nodes)
 - 想了解日常用 AsterDrive 是什么样 → [用户手册](./user-guide)
 - 想深入管理后台 → [管理后台](./admin-console)
 - 想接 Office 在线编辑 → [文件编辑](./editing)

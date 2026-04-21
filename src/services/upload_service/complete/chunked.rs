@@ -3,15 +3,17 @@ use chrono::Utc;
 use crate::db::repository::file_repo;
 use crate::entities::{file, storage_policy, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::shared::{
     mark_session_failed, transition_upload_session_to_assembling,
 };
 use crate::services::workspace_storage_service::{self, PreparedNonDedupBlobUpload};
 use crate::storage::driver::StorageDriver;
-use crate::types::UploadSessionStatus;
+use crate::types::{DriverType, UploadSessionStatus};
 use crate::utils::numbers::usize_to_i64;
 use crate::utils::paths;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 
 struct AssembledTempFile {
     path: String,
@@ -28,7 +30,7 @@ enum AssembledBlobPlan {
 }
 
 pub(super) async fn complete_chunked_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: upload_session::Model,
 ) -> Result<file::Model> {
     let db = &state.db;
@@ -69,11 +71,15 @@ pub(super) async fn complete_chunked_upload(
 }
 
 async fn finalize_chunked_upload_session(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: &upload_session::Model,
     policy: &storage_policy::Model,
     driver: &dyn StorageDriver,
 ) -> Result<file::Model> {
+    if policy.driver_type == DriverType::Remote {
+        return finalize_remote_chunked_upload_session(state, session, policy, driver).await;
+    }
+
     let assembled = assemble_local_chunks_to_temp_file(
         state,
         session,
@@ -92,8 +98,90 @@ async fn finalize_chunked_upload_session(
     .await
 }
 
+async fn finalize_remote_chunked_upload_session(
+    state: &PrimaryAppState,
+    session: &upload_session::Model,
+    policy: &storage_policy::Model,
+    driver: &dyn StorageDriver,
+) -> Result<file::Model> {
+    const CHUNK_RELAY_BUFFER_SIZE: usize = 64 * 1024;
+
+    let prepared =
+        workspace_storage_service::prepare_non_dedup_blob_upload(policy, session.total_size);
+    let (writer, reader) = tokio::io::duplex(CHUNK_RELAY_BUFFER_SIZE);
+    let relay_task = tokio::spawn(stream_local_chunks_into_writer(
+        state.config.server.upload_temp_dir.clone(),
+        session.id.clone(),
+        session.total_chunks,
+        writer,
+    ));
+
+    let upload_result = workspace_storage_service::upload_reader_to_prepared_blob(
+        driver,
+        &prepared,
+        Box::new(reader),
+        session.total_size,
+    )
+    .await;
+
+    let relay_result = relay_task.await.map_err(|error| {
+        AsterError::upload_assembly_failed(format!("remote chunk relay task failed: {error}"))
+    })?;
+
+    upload_result?;
+    if let Err(error) = relay_result {
+        workspace_storage_service::cleanup_preuploaded_blob_upload(
+            driver,
+            &prepared,
+            "chunked upload relay error",
+        )
+        .await;
+        return Err(error);
+    }
+
+    persist_preuploaded_chunked_upload(state, session, driver, &prepared).await
+}
+
+async fn stream_local_chunks_into_writer(
+    upload_temp_dir: String,
+    upload_id: String,
+    total_chunks: i32,
+    mut writer: tokio::io::DuplexStream,
+) -> Result<()> {
+    const STREAM_BUFFER_SIZE: usize = 64 * 1024;
+
+    let mut buffer = vec![0u8; STREAM_BUFFER_SIZE];
+    for chunk_number in 0..total_chunks {
+        let chunk_path = paths::upload_chunk_path(&upload_temp_dir, &upload_id, chunk_number);
+        let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_aster_err_ctx(
+            &format!("open chunk {chunk_number}"),
+            AsterError::upload_assembly_failed,
+        )?;
+
+        loop {
+            let read = chunk_file.read(&mut buffer).await.map_aster_err_ctx(
+                &format!("read chunk {chunk_number}"),
+                AsterError::upload_assembly_failed,
+            )?;
+            if read == 0 {
+                break;
+            }
+            writer
+                .write_all(&buffer[..read])
+                .await
+                .map_aster_err_ctx("relay remote chunk", AsterError::upload_assembly_failed)?;
+        }
+    }
+
+    writer.shutdown().await.map_aster_err_ctx(
+        "shutdown remote chunk relay",
+        AsterError::upload_assembly_failed,
+    )?;
+    Ok(())
+}
+
 async fn assemble_local_chunks_to_temp_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: &upload_session::Model,
     should_dedup: bool,
 ) -> Result<AssembledTempFile> {
@@ -202,7 +290,7 @@ async fn stage_assembled_blob_upload(
 }
 
 async fn persist_assembled_upload(
-    state: &AppState,
+    state: &PrimaryAppState,
     session: &upload_session::Model,
     driver: &dyn StorageDriver,
     policy_id: i64,
@@ -250,6 +338,38 @@ async fn persist_assembled_upload(
             }
             // dedup 失败不主动删 storage 对象：另一路并发上传可能正在引用同内容的 blob，
             // 删除会造成 ref=1 的活 blob 丢数据；留给 orphan-blob GC 处理。
+            Err(error)
+        }
+    }
+}
+
+async fn persist_preuploaded_chunked_upload(
+    state: &PrimaryAppState,
+    session: &upload_session::Model,
+    driver: &dyn StorageDriver,
+    prepared: &PreparedNonDedupBlobUpload,
+) -> Result<file::Model> {
+    let now = Utc::now();
+    let create_result = async {
+        let txn = crate::db::transaction::begin(&state.db).await?;
+        let blob = workspace_storage_service::persist_preuploaded_blob(&txn, prepared).await?;
+        let created =
+            workspace_storage_service::finalize_upload_session_blob(&txn, session, &blob, now)
+                .await?;
+        crate::db::transaction::commit(txn).await?;
+        Ok::<file::Model, AsterError>(created)
+    }
+    .await;
+
+    match create_result {
+        Ok(created) => Ok(created),
+        Err(error) => {
+            workspace_storage_service::cleanup_preuploaded_blob_upload(
+                driver,
+                prepared,
+                "chunked upload DB error after streaming preuploaded blob",
+            )
+            .await;
             Err(error)
         }
     }

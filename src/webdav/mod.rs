@@ -21,7 +21,7 @@ use tokio_util::io::ReaderStream;
 use xmltree::{Element, XMLNode};
 
 use crate::config::WebDavConfig;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::webdav::dav::{
     DavFileSystem, DavLock, DavLockSystem, DavMetaData, DavPath, DavProp, FsError, OpenOptions,
     ReadDirMeta,
@@ -78,7 +78,7 @@ struct PropfindResource {
 pub async fn webdav_handler(
     req: HttpRequest,
     mut payload: web::Payload,
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     webdav: web::Data<WebDavState>,
 ) -> HttpResponse {
     if !state.runtime_config.get_bool_or("webdav_enabled", true) {
@@ -1493,7 +1493,7 @@ mod tests {
     use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
     use crate::db::repository::file_repo;
     use crate::entities::{file, file_blob, storage_policy, user};
-    use crate::runtime::AppState;
+    use crate::runtime::PrimaryAppState;
     use crate::services::{mail_service, policy_service};
     use crate::storage::driver::BlobMetadata;
     use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver, StreamUploadDriver};
@@ -1528,7 +1528,7 @@ mod tests {
         driver_type: DriverType,
         options: crate::types::StoredStoragePolicyOptions,
         driver: Arc<dyn StorageDriver>,
-    ) -> (AppState, user::Model, storage_policy::Model, PathBuf) {
+    ) -> (PrimaryAppState, user::Model, storage_policy::Model, PathBuf) {
         let temp_root = std::env::temp_dir().join(format!(
             "asterdrive-webdav-handler-{}",
             uuid::Uuid::new_v4()
@@ -1622,7 +1622,7 @@ mod tests {
                 crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
             );
 
-        let state = AppState {
+        let state = PrimaryAppState {
             db: db.clone(),
             driver_registry,
             runtime_config: runtime_config.clone(),
@@ -1638,7 +1638,7 @@ mod tests {
     }
 
     async fn create_root_file(
-        state: &AppState,
+        state: &PrimaryAppState,
         user_id: i64,
         policy_id: i64,
         filename: &str,

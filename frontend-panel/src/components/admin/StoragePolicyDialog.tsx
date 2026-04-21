@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
 	PolicyFormData,
+	RemoteUploadStrategy,
 	S3DownloadStrategy,
 	S3UploadStrategy,
 } from "@/components/admin/storagePolicyDialogShared";
@@ -28,12 +29,13 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import type { DriverType } from "@/types/api";
+import type { DriverType, RemoteNodeInfo } from "@/types/api";
 
 interface StoragePolicyDialogProps {
 	open: boolean;
 	mode: "create" | "edit";
 	form: PolicyFormData;
+	remoteNodes: RemoteNodeInfo[];
 	submitting: boolean;
 	createStep: number;
 	createStepTouched: boolean;
@@ -98,6 +100,7 @@ export function StoragePolicyDialog({
 	open,
 	mode,
 	form,
+	remoteNodes,
 	submitting,
 	createStep,
 	createStepTouched,
@@ -116,7 +119,8 @@ export function StoragePolicyDialog({
 	const isCreateMode = mode === "create";
 	const storageOptions: Array<{
 		description: string;
-		iconSrc: string;
+		iconName?: "Globe";
+		iconSrc?: string;
 		type: DriverType;
 		title: string;
 	}> = [
@@ -132,6 +136,12 @@ export function StoragePolicyDialog({
 			description: t("policy_wizard_s3_storage_desc"),
 			iconSrc: "/static/storage/amazon-s3.svg",
 		},
+		{
+			type: "remote",
+			title: t("driver_type_remote"),
+			description: t("policy_wizard_remote_storage_desc"),
+			iconSrc: "/static/asterdrive/asterdrive-dark.svg",
+		},
 	];
 	const createSteps = [
 		{
@@ -142,11 +152,15 @@ export function StoragePolicyDialog({
 			title:
 				form.driver_type === "s3"
 					? t("policy_wizard_step_connection_title")
-					: t("policy_wizard_step_local_title"),
+					: form.driver_type === "remote"
+						? t("policy_wizard_step_remote_title")
+						: t("policy_wizard_step_local_title"),
 			description:
 				form.driver_type === "s3"
 					? t("policy_wizard_step_connection_desc")
-					: t("policy_wizard_step_local_desc"),
+					: form.driver_type === "remote"
+						? t("policy_wizard_step_remote_desc")
+						: t("policy_wizard_step_local_desc"),
 		},
 		{
 			title: t("policy_wizard_step_rules_title"),
@@ -177,7 +191,9 @@ export function StoragePolicyDialog({
 	const currentDriverBadgeClass =
 		form.driver_type === "s3"
 			? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
-			: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300";
+			: form.driver_type === "remote"
+				? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300"
+				: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300";
 	const createNameError =
 		isCreateMode && createStep === 1 && createStepTouched && !form.name.trim()
 			? t("policy_wizard_name_required")
@@ -190,6 +206,16 @@ export function StoragePolicyDialog({
 		!form.bucket.trim()
 			? t("policy_wizard_bucket_required")
 			: null;
+	const createRemoteNodeError =
+		isCreateMode &&
+		createStep === 1 &&
+		createStepTouched &&
+		form.driver_type === "remote" &&
+		!form.remote_node_id
+			? t("policy_wizard_remote_node_required")
+			: null;
+	const selectedRemoteNode =
+		remoteNodes.find((node) => String(node.id) === form.remote_node_id) ?? null;
 	const s3UploadStrategyLabel =
 		form.s3_upload_strategy === "relay_stream"
 			? t("s3_upload_strategy_relay_stream")
@@ -198,6 +224,10 @@ export function StoragePolicyDialog({
 		form.s3_download_strategy === "relay_stream"
 			? t("s3_download_strategy_relay_stream")
 			: t("s3_download_strategy_presigned");
+	const remoteUploadStrategyLabel =
+		form.remote_upload_strategy === "relay_stream"
+			? t("remote_upload_strategy_relay_stream")
+			: t("remote_upload_strategy_presigned");
 	const contentDedupLabel = form.content_dedup
 		? t("policy_wizard_enabled")
 		: t("policy_wizard_disabled");
@@ -251,7 +281,38 @@ export function StoragePolicyDialog({
 					},
 				]
 			: []),
+		...(form.driver_type === "remote"
+			? [
+					{
+						label: t("remote_node"),
+						value:
+							selectedRemoteNode?.name ??
+							t("policy_wizard_remote_node_unselected"),
+					},
+					{
+						label: t("namespace"),
+						value: selectedRemoteNode?.namespace ?? "—",
+					},
+					{
+						label: t("remote_upload_strategy"),
+						value: remoteUploadStrategyLabel,
+					},
+				]
+			: []),
 	];
+	const remoteUploadStrategyOptions = [
+		{
+			label: t("remote_upload_strategy_relay_stream"),
+			value: "relay_stream",
+		},
+		{
+			label: t("remote_upload_strategy_presigned"),
+			value: "presigned",
+		},
+	] satisfies ReadonlyArray<{
+		label: string;
+		value: RemoteUploadStrategy;
+	}>;
 	const s3UploadStrategyOptions = [
 		{
 			label: t("s3_upload_strategy_relay_stream"),
@@ -306,8 +367,81 @@ export function StoragePolicyDialog({
 				value={form.base_path}
 				onChange={(e) => onFieldChange("base_path", e.target.value)}
 				className={ADMIN_CONTROL_HEIGHT_CLASS}
-				placeholder={form.driver_type === "local" ? "./data" : "prefix/path"}
+				placeholder={form.driver_type === "local" ? "./data" : "tenant/prefix"}
 			/>
+		</div>
+	);
+
+	const renderDriverVisual = (
+		option: (typeof storageOptions)[number],
+		className?: string,
+	) =>
+		option.iconSrc ? (
+			<img
+				src={option.iconSrc}
+				alt=""
+				className={cn(
+					"w-auto object-contain",
+					option.type === "local" ? "max-h-7" : "max-h-9",
+					className,
+				)}
+			/>
+		) : (
+			<Icon
+				name={option.iconName ?? "Globe"}
+				className={cn("h-8 w-8 text-amber-600 dark:text-amber-300", className)}
+			/>
+		);
+
+	const remoteNodeOptions = remoteNodes.map((node) => ({
+		label: node.name,
+		value: String(node.id),
+	}));
+
+	const renderRemoteNodeField = (showCreateValidation = false) => (
+		<div className="space-y-2">
+			<Label htmlFor="remote_node_id">{t("remote_node")}</Label>
+			<Select
+				items={remoteNodeOptions}
+				value={form.remote_node_id || "__none__"}
+				onValueChange={(value) =>
+					onFieldChange(
+						"remote_node_id",
+						value == null || value === "__none__" ? "" : value,
+					)
+				}
+			>
+				<SelectTrigger id="remote_node_id">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value="__none__">
+						{t("select_remote_node_placeholder")}
+					</SelectItem>
+					{remoteNodeOptions.map((option) => (
+						<SelectItem key={option.value} value={option.value}>
+							{option.label}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			{showCreateValidation && createRemoteNodeError ? (
+				<p className="text-xs text-destructive">{createRemoteNodeError}</p>
+			) : null}
+			{selectedRemoteNode ? (
+				<p className="text-xs text-muted-foreground">
+					{t("policy_wizard_remote_node_hint", {
+						namespace: selectedRemoteNode.namespace,
+						base_url:
+							selectedRemoteNode.base_url ||
+							t("policy_wizard_remote_base_url_empty"),
+					})}
+				</p>
+			) : remoteNodes.length === 0 ? (
+				<p className="text-xs text-muted-foreground">
+					{t("policy_wizard_remote_nodes_empty")}
+				</p>
+			) : null}
 		</div>
 	);
 
@@ -463,6 +597,45 @@ export function StoragePolicyDialog({
 		</div>
 	);
 
+	const renderRemoteRulesHelper = () => (
+		<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
+			{t("policy_wizard_remote_rules_helper")}
+		</div>
+	);
+
+	const renderRemoteUploadStrategyField = () => (
+		<div className="space-y-2 pt-1">
+			<Label htmlFor="remote_upload_strategy">
+				{t("remote_upload_strategy")}
+			</Label>
+			<Select
+				items={remoteUploadStrategyOptions}
+				value={form.remote_upload_strategy}
+				onValueChange={(value) =>
+					onFieldChange("remote_upload_strategy", value as RemoteUploadStrategy)
+				}
+			>
+				<SelectTrigger id="remote_upload_strategy">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					{remoteUploadStrategyOptions.map((option) => (
+						<SelectItem key={option.value} value={option.value}>
+							{option.label}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<p className="text-xs text-muted-foreground">
+				{t(
+					form.remote_upload_strategy === "relay_stream"
+						? "remote_upload_strategy_relay_stream_desc"
+						: "remote_upload_strategy_presigned_desc",
+				)}
+			</p>
+		</div>
+	);
+
 	const renderLimitsFields = () => (
 		<>
 			<div className="space-y-2">
@@ -517,14 +690,7 @@ export function StoragePolicyDialog({
 		>
 			<div className="flex items-center gap-3">
 				<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-					<img
-						src={currentStorageOption.iconSrc}
-						alt=""
-						className={cn(
-							"w-auto object-contain",
-							currentStorageOption.type === "local" ? "max-h-7" : "max-h-9",
-						)}
-					/>
+					{renderDriverVisual(currentStorageOption)}
 				</div>
 				<div>
 					<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
@@ -704,16 +870,12 @@ export function StoragePolicyDialog({
 																>
 																	<div className="flex items-start gap-4">
 																		<div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-																			<img
-																				src={option.iconSrc}
-																				alt=""
-																				className={cn(
-																					"w-auto object-contain",
-																					option.type === "local"
-																						? "max-h-8"
-																						: "max-h-10",
-																				)}
-																			/>
+																			{renderDriverVisual(
+																				option,
+																				option.type === "local"
+																					? "max-h-8"
+																					: "max-h-10",
+																			)}
 																		</div>
 																		<div className="min-w-0 flex-1">
 																			<div className="flex flex-wrap items-center gap-2">
@@ -742,21 +904,14 @@ export function StoragePolicyDialog({
 															{renderBasePathField()}
 															{form.driver_type === "s3"
 																? renderS3ConnectionFields(true)
-																: null}
+																: form.driver_type === "remote"
+																	? renderRemoteNodeField(true)
+																	: null}
 														</div>
 														<div className="rounded-3xl border border-border/70 bg-muted/20 p-5">
 															<div className="flex items-center gap-3">
 																<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-																	<img
-																		src={currentStorageOption.iconSrc}
-																		alt=""
-																		className={cn(
-																			"w-auto object-contain",
-																			currentStorageOption.type === "local"
-																				? "max-h-7"
-																				: "max-h-9",
-																		)}
-																	/>
+																	{renderDriverVisual(currentStorageOption)}
 																</div>
 																<div>
 																	<p className="text-sm font-medium">
@@ -773,7 +928,9 @@ export function StoragePolicyDialog({
 															<p className="mt-4 text-xs leading-5 text-muted-foreground">
 																{form.driver_type === "s3"
 																	? t("policy_wizard_s3_helper")
-																	: t("policy_wizard_local_helper")}
+																	: form.driver_type === "remote"
+																		? t("policy_wizard_remote_helper")
+																		: t("policy_wizard_local_helper")}
 															</p>
 														</div>
 													</div>
@@ -784,6 +941,12 @@ export function StoragePolicyDialog({
 																<>
 																	{renderS3UploadStrategyField()}
 																	{renderS3DownloadStrategyField()}
+																</>
+															) : form.driver_type === "remote" ? (
+																<>
+																	{renderRemoteRulesHelper()}
+																	{renderRemoteUploadStrategyField()}
+																	{renderRemoteNodeField()}
 																</>
 															) : (
 																<>
@@ -855,6 +1018,17 @@ export function StoragePolicyDialog({
 													{renderS3ConnectionFields()}
 												</div>
 											</section>
+										) : form.driver_type === "remote" ? (
+											<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
+												{renderSectionIntro(
+													t("policy_editor_remote_title"),
+													t("policy_editor_remote_desc"),
+												)}
+												<div className="space-y-4">
+													{renderRemoteNodeField()}
+													{renderRemoteRulesHelper()}
+												</div>
+											</section>
 										) : (
 											<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
 												{renderSectionIntro(
@@ -878,6 +1052,8 @@ export function StoragePolicyDialog({
 														{renderS3UploadStrategyField()}
 														{renderS3DownloadStrategyField()}
 													</>
+												) : form.driver_type === "remote" ? (
+													renderRemoteUploadStrategyField()
 												) : (
 													renderLocalContentDedupField()
 												)}
@@ -924,7 +1100,9 @@ export function StoragePolicyDialog({
 									</>
 								) : (
 									<>
-										{createStep === 1 && form.driver_type === "s3" ? (
+										{createStep === 1 &&
+										(form.driver_type === "s3" ||
+											form.driver_type === "remote") ? (
 											<TestConnectionButton
 												onTest={onRunConnectionTest}
 												disabled={submitting}

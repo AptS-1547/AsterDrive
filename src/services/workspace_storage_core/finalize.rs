@@ -4,7 +4,7 @@ use sea_orm::ConnectionTrait;
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, file_blob, upload_session};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::storage_change_service;
 use crate::services::workspace_scope_service::WorkspaceStorageScope;
 
@@ -40,7 +40,7 @@ pub(crate) struct FinalizeUploadSessionFileParams<'a> {
 }
 
 pub(crate) async fn finalize_upload_session_file(
-    state: &AppState,
+    state: &PrimaryAppState,
     params: FinalizeUploadSessionFileParams<'_>,
 ) -> Result<file::Model> {
     let FinalizeUploadSessionFileParams {

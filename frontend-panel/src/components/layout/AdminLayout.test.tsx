@@ -65,33 +65,30 @@ describe("AdminLayout", () => {
 
 	it("renders the translated navigation and main content", () => {
 		render(<AdminLayout>Admin Content</AdminLayout>);
+		const expectedNavigationLabels = [
+			"translated:overview",
+			"translated:users",
+			"translated:teams",
+			"translated:policies",
+			"translated:remote_nodes",
+			"translated:policy_groups",
+			"translated:shares",
+			"translated:tasks",
+			"translated:locks",
+			"translated:system_settings",
+			"translated:audit_log",
+			"translated:about",
+		];
 
 		expect(screen.getByText("Admin Content")).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: /translated:overview/i }),
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: /translated:users/i }),
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: /translated:policies/i }),
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: /translated:policy_groups/i }),
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: /translated:shares/i }),
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: /translated:tasks/i }),
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: /translated:audit_log/i }),
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: /translated:about/i }),
-		).toBeInTheDocument();
-		expect(screen.getAllByTestId("icon")).toHaveLength(11);
+		for (const label of expectedNavigationLabels) {
+			expect(
+				screen.getByRole("button", { name: new RegExp(label, "i") }),
+			).toBeInTheDocument();
+		}
+		expect(screen.getAllByTestId("icon")).toHaveLength(
+			expectedNavigationLabels.length,
+		);
 	});
 
 	it("opens the mobile sidebar overlay and closes it again", () => {

@@ -11,7 +11,7 @@ use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{audit_log_repo, user_repo};
 use crate::entities::audit_log;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::auth_service::Claims;
 pub use crate::types::AuditAction;
 use crate::types::{TeamMemberRole, UserRole, UserStatus};
@@ -312,7 +312,7 @@ impl AuditRequestInfo {
 
 /// Fire-and-forget 审计日志。DB 错误只 warn 不传播。
 pub async fn log(
-    state: &AppState,
+    state: &PrimaryAppState,
     ctx: &AuditContext,
     action: AuditAction,
     entity_type: Option<&str>,
@@ -347,7 +347,7 @@ pub async fn log(
 }
 
 async fn query_models(
-    state: &AppState,
+    state: &PrimaryAppState,
     filters: AuditLogFilters,
     limit: u64,
     offset: u64,
@@ -372,7 +372,7 @@ async fn query_models(
 }
 
 pub async fn query(
-    state: &AppState,
+    state: &PrimaryAppState,
     filters: AuditLogFilters,
     limit: u64,
     offset: u64,
@@ -434,7 +434,7 @@ fn build_team_audit_entry(
 }
 
 pub async fn query_team_entries(
-    state: &AppState,
+    state: &PrimaryAppState,
     filters: AuditLogFilters,
     limit: u64,
     offset: u64,
@@ -462,7 +462,7 @@ pub async fn query_team_entries(
 }
 
 /// 清理过期审计日志
-pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
+pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
     let retention_days = state
         .runtime_config
         .get_i64("audit_log_retention_days")

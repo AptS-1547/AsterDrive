@@ -2,7 +2,8 @@
 
 use crate::api::error_code::ErrorCode;
 use crate::api::response::{ApiResponse, HealthResponse, MemoryStatsResponse};
-use crate::runtime::AppState;
+use crate::runtime::{FollowerAppState, PrimaryAppState};
+use crate::services::readiness_service;
 use actix_web::{HttpResponse, web};
 
 const READY_DB_UNAVAILABLE_MESSAGE: &str = "Database unavailable";
@@ -10,13 +11,27 @@ const READY_STORAGE_UNAVAILABLE_MESSAGE: &str = "Storage unavailable";
 #[cfg(feature = "metrics")]
 const METRICS_EXPORT_FAILED_MESSAGE: &str = "Failed to export metrics";
 
-pub fn routes() -> actix_web::Scope {
+pub fn primary_routes() -> actix_web::Scope {
     let scope = web::scope("/health")
         .route("", web::get().to(health))
         .route("", web::head().to(health))
-        .route("/ready", web::get().to(ready))
-        .route("/ready", web::head().to(ready));
+        .route("/ready", web::get().to(primary_ready))
+        .route("/ready", web::head().to(primary_ready));
 
+    attach_optional_routes(scope)
+}
+
+pub fn follower_routes() -> actix_web::Scope {
+    let scope = web::scope("/health")
+        .route("", web::get().to(health))
+        .route("", web::head().to(health))
+        .route("/ready", web::get().to(follower_ready))
+        .route("/ready", web::head().to(follower_ready));
+
+    attach_optional_routes(scope)
+}
+
+fn attach_optional_routes(scope: actix_web::Scope) -> actix_web::Scope {
     #[cfg(all(debug_assertions, feature = "openapi"))]
     let scope = scope.route("/memory", web::get().to(memory));
 
@@ -49,26 +64,53 @@ pub async fn health() -> HttpResponse {
         (status = 503, description = "Service unavailable"),
     ),
 )]
-pub async fn ready(state: web::Data<AppState>) -> HttpResponse {
-    if let Err(e) = state.db.ping().await {
-        tracing::error!(error = %e, "health readiness database ping failed");
-        return HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error(
-            ErrorCode::DatabaseError,
-            READY_DB_UNAVAILABLE_MESSAGE,
-        ));
+pub async fn primary_ready(state: web::Data<PrimaryAppState>) -> HttpResponse {
+    if let Err(error) = readiness_service::ping_database(&state.db).await {
+        return ready_database_error(error);
     }
 
-    match crate::services::policy_service::test_default_connection(state.get_ref()).await {
+    match readiness_service::check_primary_ready(state.get_ref()).await {
         Ok(_) => HttpResponse::Ok().json(ApiResponse::ok(status_response("ready"))),
-        Err(error) => {
-            tracing::error!(error = %error, "health readiness storage probe failed");
-            let error_code: ErrorCode = (&error).into();
-            HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error(
-                error_code,
-                READY_STORAGE_UNAVAILABLE_MESSAGE,
-            ))
-        }
+        Err(error) => ready_storage_error(error),
     }
+}
+
+pub async fn follower_ready(state: web::Data<FollowerAppState>) -> HttpResponse {
+    if let Err(error) = readiness_service::ping_database(&state.db).await {
+        return ready_database_error(error);
+    }
+
+    match readiness_service::check_follower_ready(state.get_ref()).await {
+        Ok(_) => HttpResponse::Ok().json(ApiResponse::ok(status_response("ready"))),
+        Err(error) => ready_storage_error(error),
+    }
+}
+
+fn ready_database_error(error: crate::errors::AsterError) -> HttpResponse {
+    tracing::error!(error = %error, "health readiness database ping failed");
+    HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error(
+        ErrorCode::DatabaseError,
+        READY_DB_UNAVAILABLE_MESSAGE,
+    ))
+}
+
+fn ready_storage_error(error: crate::errors::AsterError) -> HttpResponse {
+    tracing::error!(error = %error, "health readiness storage probe failed");
+    let error_code: ErrorCode = (&error).into();
+    HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error(
+        error_code,
+        READY_STORAGE_UNAVAILABLE_MESSAGE,
+    ))
+}
+
+#[cfg_attr(not(all(debug_assertions, feature = "openapi")), allow(dead_code))]
+pub async fn ready(state: web::Data<PrimaryAppState>) -> HttpResponse {
+    primary_ready(state).await
+}
+
+#[cfg_attr(not(all(debug_assertions, feature = "openapi")), allow(dead_code))]
+pub async fn ready_follower_compat(state: web::Data<FollowerAppState>) -> HttpResponse {
+    follower_ready(state).await
 }
 
 pub async fn memory() -> HttpResponse {
@@ -126,7 +168,7 @@ mod tests {
     use crate::cache;
     use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
     use crate::entities::storage_policy;
-    use crate::runtime::AppState;
+    use crate::runtime::PrimaryAppState;
     use crate::services::mail_service;
     use crate::storage::driver::BlobMetadata;
     use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver};
@@ -203,7 +245,7 @@ mod tests {
         }
     }
 
-    async fn build_test_state(driver: Option<ProbeDriver>) -> AppState {
+    async fn build_test_state(driver: Option<ProbeDriver>) -> PrimaryAppState {
         let db = crate::db::connect(&DatabaseConfig {
             url: "sqlite::memory:".to_string(),
             ..Default::default()
@@ -261,7 +303,7 @@ mod tests {
                 crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
             );
 
-        AppState {
+        PrimaryAppState {
             db,
             driver_registry,
             runtime_config: runtime_config.clone(),

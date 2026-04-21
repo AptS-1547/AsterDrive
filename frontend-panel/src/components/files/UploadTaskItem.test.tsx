@@ -66,7 +66,7 @@ describe("UploadTaskItem", () => {
 			<UploadTaskItem
 				title="archive.zip"
 				status="Failed"
-				mode="S3"
+				mode="Presigned"
 				progress={100}
 				detail="Retry required"
 				completed

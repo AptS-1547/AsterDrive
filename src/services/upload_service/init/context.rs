@@ -4,7 +4,7 @@ use sea_orm::Set;
 use crate::db::repository::upload_session_repo;
 use crate::entities::{storage_policy, upload_session};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::types::{UploadMode, UploadSessionStatus};
@@ -38,7 +38,7 @@ pub(super) struct UploadSessionRecordParams {
 }
 
 pub(super) async fn resolve_init_upload_context(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     filename: &str,
     total_size: i64,
@@ -74,7 +74,7 @@ pub(super) async fn resolve_init_upload_context(
 }
 
 async fn resolve_upload_target(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     filename: &str,
     folder_id: Option<i64>,
@@ -109,7 +109,7 @@ async fn resolve_upload_target(
 }
 
 async fn resolve_init_upload_policy(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: Option<i64>,
     total_size: i64,

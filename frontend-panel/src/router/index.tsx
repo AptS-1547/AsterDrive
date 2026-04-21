@@ -26,6 +26,9 @@ const AdminTeamDetailPage = lazy(
 	() => import("@/pages/admin/AdminTeamDetailPage"),
 );
 const AdminPoliciesPage = lazy(() => import("@/pages/admin/AdminPoliciesPage"));
+const AdminRemoteNodesPage = lazy(
+	() => import("@/pages/admin/AdminRemoteNodesPage"),
+);
 const AdminPolicyGroupsPage = lazy(
 	() => import("@/pages/admin/AdminPolicyGroupsPage"),
 );
@@ -208,6 +211,7 @@ export const router = createBrowserRouter([
 				element: <AdminTeamDetailPage />,
 			},
 			{ path: "/admin/policies", element: <AdminPoliciesPage /> },
+			{ path: "/admin/remote-nodes", element: <AdminRemoteNodesPage /> },
 			{ path: "/admin/policy-groups", element: <AdminPolicyGroupsPage /> },
 			{ path: "/admin/shares", element: <AdminSharesPage /> },
 			{ path: "/admin/tasks", element: <AdminTasksPage /> },

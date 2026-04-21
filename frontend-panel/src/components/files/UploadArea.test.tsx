@@ -339,7 +339,7 @@ describe("UploadArea", () => {
 
 		await uploadOneFile();
 
-		await screen.findByText("hello.txt:S3:files:upload_success");
+		await screen.findByText("hello.txt:Presigned:files:upload_success");
 
 		expect(presignedUpload).toHaveBeenCalledWith(
 			"https://s3.example/upload",
@@ -366,7 +366,9 @@ describe("UploadArea", () => {
 
 		await uploadOneFile();
 
-		await screen.findByText("hello.txt:S3 Chunked:files:upload_success");
+		await screen.findByText(
+			"hello.txt:Presigned Multipart:files:upload_success",
+		);
 
 		expect(saveSession).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -858,7 +860,9 @@ describe("UploadArea", () => {
 			</UploadArea>,
 		);
 
-		await screen.findByText("multipart.txt:S3 Chunked:files:upload_success");
+		await screen.findByText(
+			"multipart.txt:Presigned Multipart:files:upload_success",
+		);
 		expect(completeUpload).toHaveBeenCalledWith("upload-multipart-assembling", [
 			{ part_number: 1, etag: "etag-1" },
 			{ part_number: 2, etag: "etag-2" },

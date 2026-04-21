@@ -1,7 +1,7 @@
 //! API 路由：`frontend`。
 
 use crate::config::branding;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use actix_web::{HttpRequest, HttpResponse, web};
 use rust_embed::Embed;
 use std::path::PathBuf;
@@ -14,19 +14,37 @@ struct FrontendAssets;
 const CUSTOM_FRONTEND_DIR: &str = "./frontend-override";
 const FILE_NOT_FOUND_MESSAGE: &str = "File not found";
 
-pub const FRONTEND_CSP: &str = concat!(
+pub const FRONTEND_CSP_HEADER: &str = concat!(
     "default-src 'self'; ",
     "base-uri 'self'; ",
     "object-src 'none'; ",
     "frame-ancestors 'self'; ",
     "script-src 'self' 'unsafe-inline'; ",
     "style-src 'self' 'unsafe-inline'; ",
-    "img-src 'self' data: blob: https:; ",
+    "img-src 'self' data: blob: http: https:; ",
     "font-src 'self' data:; ",
-    "connect-src 'self' ws: wss:; ",
+    // presigned upload / download 可能直接命中外部对象存储或 remote follower，
+    // 这里必须允许浏览器向任意 http(s) 终点发起 XHR/fetch/WebSocket 连接。
+    "connect-src 'self' http: https: ws: wss:; ",
     "media-src 'self' blob:; ",
     "worker-src 'self' blob:; ",
-    "frame-src 'self' https:; ",
+    "frame-src 'self' http: https:; ",
+    "manifest-src 'self'"
+);
+
+pub const FRONTEND_CSP_META: &str = concat!(
+    "default-src 'self'; ",
+    "base-uri 'self'; ",
+    "object-src 'none'; ",
+    "script-src 'self' 'unsafe-inline'; ",
+    "style-src 'self' 'unsafe-inline'; ",
+    "img-src 'self' data: blob: http: https:; ",
+    "font-src 'self' data:; ",
+    // meta CSP 不能承载 frame-ancestors；该约束仍由响应头版 CSP 生效。
+    "connect-src 'self' http: https: ws: wss:; ",
+    "media-src 'self' blob:; ",
+    "worker-src 'self' blob:; ",
+    "frame-src 'self' http: https:; ",
     "manifest-src 'self'"
 );
 
@@ -49,7 +67,7 @@ impl FrontendService {
     }
 
     /// 服务 index.html，替换配置占位符
-    async fn serve_index(state: &AppState) -> HttpResponse {
+    async fn serve_index(state: &PrimaryAppState) -> HttpResponse {
         let html = match Self::load_file("index.html").await {
             Some(data) => String::from_utf8_lossy(&data).into_owned(),
             None => include_str!(concat!(
@@ -73,15 +91,21 @@ impl FrontendService {
                 "%ASTERDRIVE_FAVICON_URL%",
                 &escape_html(branding::favicon_url_or_default(&state.runtime_config)),
             )
-            .replace("%ASTERDRIVE_CSP%", &escape_html(FRONTEND_CSP.to_string()));
+            .replace(
+                "%ASTERDRIVE_CSP%",
+                &escape_html(FRONTEND_CSP_META.to_string()),
+            );
 
         HttpResponse::Ok()
-            .insert_header(("Content-Security-Policy", FRONTEND_CSP))
+            .insert_header(("Content-Security-Policy", FRONTEND_CSP_HEADER))
             .content_type("text/html; charset=utf-8")
             .body(processed)
     }
 
-    pub async fn handle_index(state: web::Data<AppState>, _req: HttpRequest) -> HttpResponse {
+    pub async fn handle_index(
+        state: web::Data<PrimaryAppState>,
+        _req: HttpRequest,
+    ) -> HttpResponse {
         Self::serve_index(state.get_ref()).await
     }
 
@@ -128,7 +152,7 @@ impl FrontendService {
     }
 
     pub async fn handle_spa_fallback(
-        state: web::Data<AppState>,
+        state: web::Data<PrimaryAppState>,
         _req: HttpRequest,
     ) -> HttpResponse {
         Self::serve_index(state.get_ref()).await

@@ -8,7 +8,7 @@ use sea_orm::Set;
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::folder;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     storage_change_service,
     workspace_models::FolderInfo,
@@ -33,7 +33,7 @@ struct PlannedChildFolderCopy {
 }
 
 async fn copy_frontier_files_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     frontier: &[FrontierFolderCopy],
 ) -> Result<()> {
@@ -89,7 +89,7 @@ async fn copy_frontier_files_in_scope(
 }
 
 async fn load_frontier_child_plans_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     frontier: &[FrontierFolderCopy],
 ) -> Result<Vec<PlannedChildFolderCopy>> {
@@ -141,7 +141,7 @@ async fn load_frontier_child_plans_in_scope(
 }
 
 async fn create_frontier_children_from_plans_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     child_plans: Vec<PlannedChildFolderCopy>,
 ) -> Result<Vec<FrontierFolderCopy>> {
@@ -211,7 +211,7 @@ async fn create_frontier_children_from_plans_in_scope(
 }
 
 pub(crate) fn recursive_copy_folder_in_scope<'a>(
-    state: &'a AppState,
+    state: &'a PrimaryAppState,
     scope: WorkspaceStorageScope,
     src_folder_id: i64,
     dest_parent_id: Option<i64>,
@@ -258,7 +258,7 @@ pub(crate) fn recursive_copy_folder_in_scope<'a>(
 }
 
 pub(crate) async fn copy_folder_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     src_id: i64,
     dest_parent_id: Option<i64>,
@@ -348,7 +348,7 @@ pub(crate) async fn copy_folder_in_scope(
 ///
 /// `dest_parent_id = None` 表示复制到根目录。
 pub async fn copy_folder(
-    state: &AppState,
+    state: &PrimaryAppState,
     src_id: i64,
     user_id: i64,
     dest_parent_id: Option<i64>,

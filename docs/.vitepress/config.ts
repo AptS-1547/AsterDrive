@@ -82,6 +82,7 @@ export default defineConfig({
           items: [
             { text: '快速开始', link: '/guide/getting-started' },
             { text: '部署手册', link: '/guide/installation' },
+            { text: '远程节点', link: '/guide/remote-nodes' },
             { text: '用户手册', link: '/guide/user-guide' },
             { text: '常用流程', link: '/guide/core-workflows' },
             { text: '分享与公开访问', link: '/guide/sharing' },

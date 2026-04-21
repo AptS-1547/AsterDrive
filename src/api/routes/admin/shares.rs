@@ -5,7 +5,7 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::share_service;
 use actix_web::{HttpResponse, web};
 
@@ -23,7 +23,7 @@ use actix_web::{HttpResponse, web};
     security(("bearer" = [])),
 )]
 pub async fn list_all_shares(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let shares =
@@ -46,7 +46,7 @@ pub async fn list_all_shares(
     security(("bearer" = [])),
 )]
 pub async fn admin_delete_share(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     share_service::admin_delete_share(&state, *path).await?;

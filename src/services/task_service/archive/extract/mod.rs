@@ -10,7 +10,7 @@ use chrono::Utc;
 use crate::config::operations;
 use crate::entities::{background_task, file};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     storage_change_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -38,7 +38,7 @@ use staging::{
 };
 
 pub(crate) async fn create_archive_extract_task_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     params: CreateArchiveExtractTaskParams,
@@ -74,7 +74,7 @@ pub(crate) async fn create_archive_extract_task_in_scope(
 }
 
 pub(super) async fn process_archive_extract_task(
-    state: &AppState,
+    state: &PrimaryAppState,
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
@@ -311,7 +311,7 @@ fn ensure_source_archive_fits_staging_limit(
 }
 
 async fn resolve_archive_extract_policy_resolver(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
 ) -> Result<ArchiveExtractPolicyResolver> {
     match scope {

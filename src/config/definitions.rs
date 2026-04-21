@@ -39,6 +39,7 @@ pub const SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY: &str =
     "share_download_rollback_queue_capacity";
 pub const MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY: &str = "maintenance_cleanup_interval_secs";
 pub const BLOB_RECONCILE_INTERVAL_SECS_KEY: &str = "blob_reconcile_interval_secs";
+pub const REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY: &str = "remote_node_health_test_interval_secs";
 pub const TEAM_MEMBER_LIST_MAX_LIMIT_KEY: &str = "team_member_list_max_limit";
 pub const TASK_LIST_MAX_LIMIT_KEY: &str = "task_list_max_limit";
 pub const AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY: &str = "avatar_max_upload_size_bytes";
@@ -359,6 +360,19 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "operations",
         description: "Seconds between full blob reconciliation runs",
+    },
+    ConfigDef {
+        key: REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
+        label_i18n_key: "settings_item_remote_node_health_test_interval_secs_label",
+        description_i18n_key: "settings_item_remote_node_health_test_interval_secs_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "operations",
+        description: "Seconds between periodic remote node health test runs",
     },
     ConfigDef {
         key: TEAM_MEMBER_LIST_MAX_LIMIT_KEY,

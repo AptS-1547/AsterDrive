@@ -18,6 +18,7 @@ mod tests {
             access_key: String::new(),
             secret_key: String::new(),
             base_path: base.to_string_lossy().into_owned(),
+            remote_node_id: None,
             max_file_size: 0,
             allowed_types: StoredStoragePolicyAllowedTypes::empty(),
             options: StoredStoragePolicyOptions::empty(),

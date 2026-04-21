@@ -6,13 +6,21 @@ use crate::utils::paths::{
     DEFAULT_CONFIG_PATH, resolve_config_relative_path, resolve_config_relative_sqlite_url,
 };
 use config::{Config as RawConfig, Environment, File};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn load() -> Result<Config> {
     let base_dir = std::env::current_dir()
         .map_aster_err_ctx("failed to resolve current dir", AsterError::config_error)?;
     let env_database_url = std::env::var("ASTER__DATABASE__URL").ok();
     load_from_dir(&base_dir, env_database_url.as_deref(), true)
+}
+
+pub fn ensure_default_config_for_current_dir(default: &Config) -> Result<PathBuf> {
+    let base_dir = std::env::current_dir()
+        .map_aster_err_ctx("failed to resolve current dir", AsterError::config_error)?;
+    let config_path = base_dir.join(DEFAULT_CONFIG_PATH);
+    ensure_default_config_exists(&config_path, default)?;
+    Ok(config_path)
 }
 
 fn load_from_dir(
@@ -22,9 +30,7 @@ fn load_from_dir(
 ) -> Result<Config> {
     let config_path = base_dir.join(DEFAULT_CONFIG_PATH);
 
-    if !config_path.exists() {
-        create_default_config(&config_path)?;
-    }
+    ensure_default_config_exists(&config_path, &Config::default())?;
 
     let mut builder =
         RawConfig::builder().add_source(File::from(config_path.as_path()).required(false));
@@ -56,9 +62,16 @@ fn load_from_dir(
     Ok(cfg)
 }
 
-fn create_default_config(config_path: &Path) -> Result<()> {
-    let default = Config::default();
-    let toml_str = toml::to_string_pretty(&default).map_aster_err(AsterError::config_error)?;
+fn ensure_default_config_exists(config_path: &Path, default: &Config) -> Result<()> {
+    if config_path.exists() {
+        return Ok(());
+    }
+
+    create_default_config(config_path, default)
+}
+
+fn create_default_config(config_path: &Path, default: &Config) -> Result<()> {
+    let toml_str = toml::to_string_pretty(default).map_aster_err(AsterError::config_error)?;
 
     let content = format!(
         "# AsterDrive 配置文件\n\
@@ -99,7 +112,8 @@ fn resolve_loaded_paths(base_dir: &Path, config_path: &Path, cfg: &mut Config) {
 
 #[cfg(test)]
 mod tests {
-    use super::load_from_dir;
+    use super::{ensure_default_config_exists, load_from_dir};
+    use crate::config::{Config, node_mode::NodeRuntimeMode};
     use crate::utils::paths::{
         DEFAULT_CONFIG_PATH, DEFAULT_SQLITE_DATABASE_PATH, DEFAULT_SQLITE_DATABASE_URL,
         DEFAULT_TEMP_DIR, DEFAULT_UPLOAD_TEMP_DIR,
@@ -130,12 +144,30 @@ mod tests {
         let generated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
 
         assert_eq!(cfg.database.url, DEFAULT_SQLITE_DATABASE_URL);
+        assert_eq!(cfg.server.start_mode, NodeRuntimeMode::Primary);
         assert_eq!(cfg.server.temp_dir, DEFAULT_TEMP_DIR);
         assert_eq!(cfg.server.upload_temp_dir, DEFAULT_UPLOAD_TEMP_DIR);
         assert!(dir.join(DEFAULT_CONFIG_PATH).exists());
+        assert!(generated.contains("[server]"));
+        assert!(generated.contains(r#"start_mode = "primary""#));
         assert!(generated.contains(r#"url = "sqlite://asterdrive.db?mode=rwc""#));
         assert!(generated.contains(r#"temp_dir = ".tmp""#));
         assert!(generated.contains(r#"upload_temp_dir = ".uploads""#));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn ensure_default_config_exists_can_seed_follower_mode() {
+        let dir = make_temp_dir("create-follower-default");
+        let config_path = dir.join(DEFAULT_CONFIG_PATH);
+        let mut default = Config::default();
+        default.server.start_mode = NodeRuntimeMode::Follower;
+
+        ensure_default_config_exists(&config_path, &default).unwrap();
+
+        let generated = std::fs::read_to_string(&config_path).unwrap();
+        assert!(generated.contains(r#"start_mode = "follower""#));
 
         let _ = std::fs::remove_dir_all(dir);
     }

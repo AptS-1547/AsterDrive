@@ -12,7 +12,7 @@ use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{file_repo, folder_repo, share_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     batch_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -29,7 +29,7 @@ use super::shared::{
 };
 
 pub(crate) async fn create_share_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     target: ShareTarget,
     password: Option<String>,
@@ -107,7 +107,7 @@ pub(crate) async fn create_share_in_scope(
 }
 
 pub async fn create_share(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     target: ShareTarget,
     password: Option<String>,
@@ -126,7 +126,7 @@ pub async fn create_share(
 }
 
 pub(crate) async fn list_shares_paginated_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     limit: u64,
     offset: u64,
@@ -163,7 +163,7 @@ pub(crate) async fn list_shares_paginated_in_scope(
 }
 
 pub(crate) async fn delete_share_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     share_id: i64,
 ) -> Result<()> {
@@ -175,7 +175,7 @@ pub(crate) async fn delete_share_in_scope(
 }
 
 pub(crate) async fn update_share_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     share_id: i64,
     password: Option<String>,
@@ -228,7 +228,7 @@ pub(crate) async fn update_share_in_scope(
 }
 
 pub(crate) async fn batch_delete_shares_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     share_ids: &[i64],
 ) -> Result<batch_service::BatchResult> {
@@ -289,7 +289,7 @@ pub(crate) async fn batch_delete_shares_in_scope(
 }
 
 pub async fn list_my_shares_paginated(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     limit: u64,
     offset: u64,
@@ -304,7 +304,7 @@ pub async fn list_my_shares_paginated(
 }
 
 pub async fn list_team_shares_paginated(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
     limit: u64,
@@ -322,12 +322,12 @@ pub async fn list_team_shares_paginated(
     .await
 }
 
-pub async fn delete_share(state: &AppState, share_id: i64, user_id: i64) -> Result<()> {
+pub async fn delete_share(state: &PrimaryAppState, share_id: i64, user_id: i64) -> Result<()> {
     delete_share_in_scope(state, WorkspaceStorageScope::Personal { user_id }, share_id).await
 }
 
 pub async fn delete_team_share(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     share_id: i64,
     user_id: i64,
@@ -344,7 +344,7 @@ pub async fn delete_team_share(
 }
 
 pub async fn update_share(
-    state: &AppState,
+    state: &PrimaryAppState,
     share_id: i64,
     user_id: i64,
     password: Option<String>,
@@ -364,7 +364,7 @@ pub async fn update_share(
 }
 
 pub async fn update_team_share(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     share_id: i64,
     user_id: i64,
@@ -403,7 +403,7 @@ pub fn validate_batch_share_ids(share_ids: &[i64]) -> Result<()> {
 }
 
 pub async fn batch_delete_shares(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     share_ids: &[i64],
 ) -> Result<batch_service::BatchResult> {
@@ -417,7 +417,7 @@ pub async fn batch_delete_shares(
 }
 
 pub async fn batch_delete_team_shares(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
     share_ids: &[i64],
@@ -435,7 +435,7 @@ pub async fn batch_delete_team_shares(
 }
 
 pub async fn list_paginated(
-    state: &AppState,
+    state: &PrimaryAppState,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<ShareInfo>> {
@@ -450,7 +450,7 @@ pub async fn list_paginated(
     .await
 }
 
-pub async fn admin_delete_share(state: &AppState, share_id: i64) -> Result<()> {
+pub async fn admin_delete_share(state: &PrimaryAppState, share_id: i64) -> Result<()> {
     share_repo::find_by_id(&state.db, share_id).await?;
     share_repo::delete(&state.db, share_id).await
 }

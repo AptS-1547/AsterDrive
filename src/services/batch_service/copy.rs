@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use futures::{StreamExt, stream};
 
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     file_service, folder_service, storage_change_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -19,7 +19,7 @@ use super::{
 const BATCH_FOLDER_COPY_CONCURRENCY: usize = 4;
 
 pub(crate) async fn batch_copy_in_scope(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -149,7 +149,7 @@ pub(crate) async fn batch_copy_in_scope(
 /// 文件复制会先统一做权限/配额/命名预校验，再批量写入；
 /// 文件夹复制仍复用高层递归 copy 流程以保持行为一致。
 pub async fn batch_copy(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -167,7 +167,7 @@ pub async fn batch_copy(
 
 /// 团队空间批量复制（target_folder_id = None 表示复制到团队根目录）
 pub async fn batch_copy_team(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
     file_ids: &[i64],

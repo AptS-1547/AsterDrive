@@ -16,7 +16,7 @@ mod mutation;
 mod tree;
 
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_models::FolderInfo;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
@@ -45,7 +45,7 @@ pub(crate) use tree::{collect_folder_forest_in_scope, collect_folder_tree_in_sco
 
 // 和其他 service 一样，审计包装留在聚合层，避免核心目录逻辑被日志副作用污染。
 pub(crate) async fn create_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     name: &str,
     parent_id: Option<i64>,
@@ -66,7 +66,7 @@ pub(crate) async fn create_in_scope_with_audit(
 }
 
 pub(crate) async fn delete_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
     audit_ctx: &AuditContext,
@@ -86,7 +86,7 @@ pub(crate) async fn delete_in_scope_with_audit(
 }
 
 pub(crate) async fn update_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
     name: Option<String>,
@@ -116,7 +116,7 @@ pub(crate) async fn update_in_scope_with_audit(
 }
 
 pub(crate) async fn copy_folder_in_scope_with_audit(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
     parent_id: Option<i64>,

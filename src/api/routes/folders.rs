@@ -9,7 +9,7 @@ use crate::api::response::ApiResponse;
 use crate::api::routes::{files, team_scope};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::AuditContext, auth_service::Claims, folder_service,
     workspace_models::FolderInfo, workspace_storage_service::WorkspaceStorageScope,
@@ -62,7 +62,7 @@ pub fn team_routes() -> actix_web::Scope {
     security(("bearer" = [])),
 )]
 pub async fn create_folder(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     body: web::Json<CreateFolderReq>,
@@ -92,7 +92,7 @@ pub async fn create_folder(
     security(("bearer" = [])),
 )]
 pub async fn list_root(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     query: web::Query<FolderListQuery>,
 ) -> Result<HttpResponse> {
@@ -121,7 +121,7 @@ pub async fn list_root(
     security(("bearer" = [])),
 )]
 pub async fn list_folder(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     query: web::Query<FolderListQuery>,
@@ -151,7 +151,7 @@ pub async fn list_folder(
     security(("bearer" = [])),
 )]
 pub async fn get_folder_info(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -179,7 +179,7 @@ pub async fn get_folder_info(
     security(("bearer" = [])),
 )]
 pub async fn get_ancestors(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
@@ -207,7 +207,7 @@ pub async fn get_ancestors(
     security(("bearer" = [])),
 )]
 pub async fn delete_folder(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -239,7 +239,7 @@ pub async fn delete_folder(
     security(("bearer" = [])),
 )]
 pub async fn patch_folder(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -275,7 +275,7 @@ pub async fn patch_folder(
     security(("bearer" = [])),
 )]
 pub async fn set_lock(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     body: web::Json<SetLockReq>,
@@ -308,7 +308,7 @@ pub async fn set_lock(
     security(("bearer" = [])),
 )]
 pub async fn copy_folder(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
@@ -344,7 +344,7 @@ pub async fn copy_folder(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_list_root(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     query: web::Query<FolderListQuery>,
@@ -367,7 +367,7 @@ pub(crate) async fn team_list_root(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_create_folder(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     req: HttpRequest,
@@ -402,7 +402,7 @@ pub(crate) async fn team_create_folder(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_list_folder(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
     query: web::Query<FolderListQuery>,
@@ -435,7 +435,7 @@ pub(crate) async fn team_list_folder(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_get_folder_info(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
@@ -461,7 +461,7 @@ pub(crate) async fn team_get_folder_info(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_get_ancestors(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
@@ -487,7 +487,7 @@ pub(crate) async fn team_get_ancestors(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_delete_folder(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -522,7 +522,7 @@ pub(crate) async fn team_delete_folder(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_patch_folder(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -559,7 +559,7 @@ pub(crate) async fn team_patch_folder(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_copy_folder(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
@@ -596,7 +596,7 @@ pub(crate) async fn team_copy_folder(
     security(("bearer" = [])),
 )]
 pub(crate) async fn team_set_lock(
-    state: web::Data<AppState>,
+    state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
     body: web::Json<SetLockReq>,
@@ -612,7 +612,7 @@ pub(crate) async fn team_set_lock(
 }
 
 pub(crate) async fn create_folder_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -627,7 +627,7 @@ pub(crate) async fn create_folder_response(
 }
 
 pub(crate) async fn list_folder_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     parent_id: Option<i64>,
     query: &FolderListQuery,
@@ -638,7 +638,7 @@ pub(crate) async fn list_folder_response(
 }
 
 pub(crate) async fn get_ancestors_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<HttpResponse> {
@@ -647,7 +647,7 @@ pub(crate) async fn get_ancestors_response(
 }
 
 pub(crate) async fn get_folder_info_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<HttpResponse> {
@@ -656,7 +656,7 @@ pub(crate) async fn get_folder_info_response(
 }
 
 pub(crate) async fn delete_folder_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -668,7 +668,7 @@ pub(crate) async fn delete_folder_response(
 }
 
 pub(crate) async fn patch_folder_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
@@ -691,7 +691,7 @@ pub(crate) async fn patch_folder_response(
 }
 
 pub(crate) async fn set_lock_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
     locked: bool,
@@ -701,7 +701,7 @@ pub(crate) async fn set_lock_response(
 }
 
 pub(crate) async fn copy_folder_response(
-    state: &AppState,
+    state: &PrimaryAppState,
     claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,

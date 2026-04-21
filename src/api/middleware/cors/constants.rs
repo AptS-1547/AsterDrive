@@ -39,6 +39,7 @@ pub(super) const ALLOWED_HEADERS: &[&str] = &[
 
 pub(super) const EXPOSE_HEADERS: &[&str] = &[
     "dav",
+    "etag",
     "lock-token",
     "x-wopi-itemversion",
     "x-wopi-invalidfilenameerror",

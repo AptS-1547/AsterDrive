@@ -6,7 +6,7 @@ use sea_orm::{ActiveModelTrait, ConnectionTrait, IntoActiveModel, Set};
 use crate::cache::CacheExt;
 use crate::db::repository::{auth_session_repo, user_repo};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 
 use super::{AUTH_SNAPSHOT_TTL, AuthSessionInfo, AuthSnapshot, UserAuditInfo, user_audit_info};
 
@@ -14,7 +14,7 @@ fn auth_snapshot_cache_key(user_id: i64) -> String {
     format!("auth_snapshot:{user_id}")
 }
 
-pub async fn get_auth_snapshot(state: &AppState, user_id: i64) -> Result<AuthSnapshot> {
+pub async fn get_auth_snapshot(state: &PrimaryAppState, user_id: i64) -> Result<AuthSnapshot> {
     let cache_key = auth_snapshot_cache_key(user_id);
     if let Some(snapshot) = state.cache.get(&cache_key).await {
         tracing::debug!(user_id, "auth snapshot cache hit");
@@ -31,7 +31,7 @@ pub async fn get_auth_snapshot(state: &AppState, user_id: i64) -> Result<AuthSna
     Ok(snapshot)
 }
 
-pub async fn invalidate_auth_snapshot_cache(state: &AppState, user_id: i64) {
+pub async fn invalidate_auth_snapshot_cache(state: &PrimaryAppState, user_id: i64) {
     state.cache.delete(&auth_snapshot_cache_key(user_id)).await;
 }
 
@@ -44,7 +44,7 @@ pub(crate) async fn purge_all_auth_sessions_in_connection<C: ConnectionTrait>(
 }
 
 pub async fn list_auth_sessions(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     current_refresh_jti: Option<&str>,
 ) -> Result<Vec<AuthSessionInfo>> {
@@ -68,7 +68,7 @@ pub async fn list_auth_sessions(
 }
 
 pub async fn revoke_auth_session(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     session_id: &str,
     current_refresh_jti: Option<&str>,
@@ -99,7 +99,7 @@ pub async fn revoke_auth_session(
 }
 
 pub async fn revoke_other_auth_sessions(
-    state: &AppState,
+    state: &PrimaryAppState,
     user_id: i64,
     current_refresh_jti: &str,
 ) -> Result<u64> {
@@ -139,11 +139,11 @@ pub async fn revoke_other_auth_sessions(
     }
 }
 
-pub async fn cleanup_expired_auth_sessions(state: &AppState) -> Result<u64> {
+pub async fn cleanup_expired_auth_sessions(state: &PrimaryAppState) -> Result<u64> {
     auth_session_repo::delete_expired(&state.db).await
 }
 
-pub async fn revoke_user_sessions(state: &AppState, user_id: i64) -> Result<UserAuditInfo> {
+pub async fn revoke_user_sessions(state: &PrimaryAppState, user_id: i64) -> Result<UserAuditInfo> {
     tracing::debug!(user_id, "revoking user sessions");
     let txn = crate::db::transaction::begin(&state.db).await?;
     let result = async {

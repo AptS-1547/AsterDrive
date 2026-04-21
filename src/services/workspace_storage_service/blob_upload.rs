@@ -2,12 +2,13 @@
 
 use sea_orm::ConnectionTrait;
 use std::path::{Component, Path, PathBuf};
+use tokio::io::AsyncRead;
 
 use crate::entities::file_blob;
 use crate::errors::Result;
 use crate::types::DriverType;
 
-use super::{create_nondedup_blob_with_key, create_s3_nondedup_blob};
+use super::{create_nondedup_blob_with_key, create_remote_nondedup_blob, create_s3_nondedup_blob};
 
 #[derive(Debug, Clone)]
 pub(crate) enum PreparedNonDedupBlobUpload {
@@ -24,12 +25,20 @@ pub(crate) enum PreparedNonDedupBlobUpload {
         size: i64,
         policy_id: i64,
     },
+    Remote {
+        upload_id: String,
+        storage_path: String,
+        size: i64,
+        policy_id: i64,
+    },
 }
 
 impl PreparedNonDedupBlobUpload {
     pub(crate) fn storage_path(&self) -> &str {
         match self {
-            Self::Local { storage_path, .. } | Self::S3 { storage_path, .. } => storage_path,
+            Self::Local { storage_path, .. }
+            | Self::S3 { storage_path, .. }
+            | Self::Remote { storage_path, .. } => storage_path,
         }
     }
 }
@@ -38,22 +47,34 @@ pub(crate) fn prepare_non_dedup_blob_upload(
     policy: &crate::entities::storage_policy::Model,
     size: i64,
 ) -> PreparedNonDedupBlobUpload {
-    if policy.driver_type == DriverType::S3 {
-        let upload_id = crate::utils::id::new_uuid();
-        PreparedNonDedupBlobUpload::S3 {
-            storage_path: format!("files/{upload_id}"),
-            upload_id,
-            size,
-            policy_id: policy.id,
+    match policy.driver_type {
+        DriverType::Local => {
+            let blob_key = crate::utils::id::new_short_token();
+            PreparedNonDedupBlobUpload::Local {
+                base_path: crate::storage::drivers::local::effective_base_path(policy),
+                storage_path: crate::utils::storage_path_from_blob_key(&blob_key),
+                blob_key,
+                size,
+                policy_id: policy.id,
+            }
         }
-    } else {
-        let blob_key = crate::utils::id::new_short_token();
-        PreparedNonDedupBlobUpload::Local {
-            base_path: crate::storage::drivers::local::effective_base_path(policy),
-            storage_path: crate::utils::storage_path_from_blob_key(&blob_key),
-            blob_key,
-            size,
-            policy_id: policy.id,
+        DriverType::S3 => {
+            let upload_id = crate::utils::id::new_uuid();
+            PreparedNonDedupBlobUpload::S3 {
+                storage_path: format!("files/{upload_id}"),
+                upload_id,
+                size,
+                policy_id: policy.id,
+            }
+        }
+        DriverType::Remote => {
+            let upload_id = crate::utils::id::new_uuid();
+            PreparedNonDedupBlobUpload::Remote {
+                storage_path: format!("files/{upload_id}"),
+                upload_id,
+                size,
+                policy_id: policy.id,
+            }
         }
     }
 }
@@ -162,7 +183,7 @@ pub(crate) async fn cleanup_preuploaded_blob_upload(
                 cleanup_empty_local_blob_dirs(parent, base_path).await;
             }
         }
-        PreparedNonDedupBlobUpload::S3 { .. } => {
+        PreparedNonDedupBlobUpload::S3 { .. } | PreparedNonDedupBlobUpload::Remote { .. } => {
             if let Err(cleanup_err) = driver.delete(prepared.storage_path()).await {
                 tracing::warn!(
                     storage_path = %prepared.storage_path(),
@@ -193,6 +214,27 @@ pub(crate) async fn upload_temp_file_to_prepared_blob(
     Ok(())
 }
 
+pub(crate) async fn upload_reader_to_prepared_blob(
+    driver: &dyn crate::storage::driver::StorageDriver,
+    prepared: &PreparedNonDedupBlobUpload,
+    reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
+    size: i64,
+) -> Result<()> {
+    let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+        crate::errors::AsterError::storage_driver_error("stream upload not supported")
+    })?;
+
+    if let Err(error) = stream_driver
+        .put_reader(prepared.storage_path(), reader, size)
+        .await
+    {
+        cleanup_preuploaded_blob_upload(driver, prepared, "stream upload error").await;
+        return Err(error);
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn persist_preuploaded_blob<C: ConnectionTrait>(
     db: &C,
     prepared: &PreparedNonDedupBlobUpload,
@@ -211,5 +253,11 @@ pub(crate) async fn persist_preuploaded_blob<C: ConnectionTrait>(
             policy_id,
             ..
         } => create_s3_nondedup_blob(db, *size, *policy_id, upload_id).await,
+        PreparedNonDedupBlobUpload::Remote {
+            upload_id,
+            size,
+            policy_id,
+            ..
+        } => create_remote_nondedup_blob(db, *size, *policy_id, upload_id).await,
     }
 }

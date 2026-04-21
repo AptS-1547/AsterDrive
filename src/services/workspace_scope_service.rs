@@ -7,7 +7,7 @@
 use crate::db::repository::{file_repo, folder_repo, team_member_repo, team_repo};
 use crate::entities::{file, folder, team};
 use crate::errors::{AsterError, Result};
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 
 /// scope 同时表达“资源属于哪个空间”和“是谁在操作”。
 ///
@@ -36,7 +36,7 @@ impl WorkspaceStorageScope {
 }
 
 pub(crate) async fn require_scope_access(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
 ) -> Result<()> {
     // 个人空间天然只需要“用户正在操作自己的空间”这个前提；
@@ -140,7 +140,7 @@ pub(crate) fn ensure_active_folder_scope(
 }
 
 pub(crate) async fn require_team_access(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
 ) -> Result<team::Model> {
@@ -155,7 +155,7 @@ pub(crate) async fn require_team_access(
 }
 
 pub(crate) async fn require_team_management_access(
-    state: &AppState,
+    state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
 ) -> Result<team::Model> {
@@ -172,7 +172,7 @@ pub(crate) async fn require_team_management_access(
 }
 
 pub(crate) async fn verify_folder_access(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
@@ -186,7 +186,7 @@ pub(crate) async fn verify_folder_access(
 }
 
 pub(crate) async fn verify_file_access(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
@@ -200,7 +200,7 @@ pub(crate) async fn verify_file_access(
 }
 
 pub(crate) async fn list_files_in_folder(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     folder_id: Option<i64>,
 ) -> Result<Vec<file::Model>> {
@@ -215,7 +215,7 @@ pub(crate) async fn list_files_in_folder(
 }
 
 pub(crate) async fn list_folders_in_parent(
-    state: &AppState,
+    state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     parent_id: Option<i64>,
 ) -> Result<Vec<folder::Model>> {

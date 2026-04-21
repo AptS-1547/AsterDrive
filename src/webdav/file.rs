@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use crate::errors::Result as AsterResult;
-use crate::runtime::AppState;
+use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::storage::StorageDriver;
 use crate::utils::numbers::{i64_to_u64, u64_to_i64, usize_to_u64};
@@ -54,7 +54,7 @@ impl std::fmt::Debug for AsterDavFile {
 
 enum FileMode {
     Write {
-        state: AppState,
+        state: PrimaryAppState,
         user_id: i64,
         folder_id: Option<i64>,
         filename: String,
@@ -68,7 +68,7 @@ enum FileMode {
         meta: AsterDavMeta,
     },
     WriteDirect {
-        state: AppState,
+        state: PrimaryAppState,
         user_id: i64,
         folder_id: Option<i64>,
         filename: String,
@@ -87,7 +87,7 @@ enum FileMode {
 impl AsterDavFile {
     /// 创建写模式文件（持有临时文件句柄）
     pub async fn for_write(
-        state: AppState,
+        state: PrimaryAppState,
         user_id: i64,
         folder_id: Option<i64>,
         filename: String,
@@ -127,7 +127,7 @@ impl AsterDavFile {
                     Some(policy),
                     hasher,
                 )
-            } else if workspace_storage_service::relay_stream_direct_upload_eligible(
+            } else if workspace_storage_service::streaming_direct_upload_eligible(
                 &policy, size_hint,
             ) {
                 if policy.max_file_size > 0 && size_hint > policy.max_file_size {
@@ -212,7 +212,7 @@ impl AsterDavFile {
     }
 
     async fn create_upload_temp_file(
-        state: &AppState,
+        state: &PrimaryAppState,
     ) -> Result<(tokio::fs::File, String), FsError> {
         let upload_temp_dir = state.config.server.upload_temp_dir.clone();
         let temp_path = crate::utils::paths::temp_file_path(
@@ -574,7 +574,7 @@ mod tests {
     use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
     use crate::db::repository::file_repo;
     use crate::entities::{storage_policy, user};
-    use crate::runtime::AppState;
+    use crate::runtime::PrimaryAppState;
     use crate::services::mail_service;
     use crate::storage::driver::BlobMetadata;
     use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver, StreamUploadDriver};
@@ -729,7 +729,7 @@ mod tests {
         Ok(entries)
     }
 
-    async fn build_s3_direct_test_state() -> (AppState, user::Model, MockDirectS3Driver) {
+    async fn build_s3_direct_test_state() -> (PrimaryAppState, user::Model, MockDirectS3Driver) {
         let temp_root = std::env::temp_dir().join(format!(
             "asterdrive-webdav-file-direct-s3-{}",
             uuid::Uuid::new_v4()
@@ -824,7 +824,7 @@ mod tests {
                 crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
             );
 
-        let state = AppState {
+        let state = PrimaryAppState {
             db,
             driver_registry,
             runtime_config: runtime_config.clone(),
