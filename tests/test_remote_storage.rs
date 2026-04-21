@@ -22,7 +22,7 @@ use aster_drive::storage::remote_protocol::{
     RemoteStorageClient, RemoteStorageComposeRequest, sign_internal_request, sign_presigned_request,
 };
 use aster_drive::types::{
-    DriverType, NullablePatch, RemoteUploadStrategy, StoragePolicyOptions,
+    DriverType, NullablePatch, RemoteDownloadStrategy, RemoteUploadStrategy, StoragePolicyOptions,
     StoredStoragePolicyAllowedTypes, serialize_storage_policy_options,
 };
 use chrono::Utc;
@@ -981,6 +981,173 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
     assert!(
         tokio::fs::metadata(&provider_empty_path).await.is_err(),
         "provider-side empty object should be deleted after purge"
+    );
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_download_redirects_to_follower() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            namespace: "provider-presigned-download-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-presigned-download-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Presigned Download Policy",
+        "presigned-download-base",
+        StoragePolicyOptions {
+            remote_download_strategy: Some(RemoteDownloadStrategy::Presigned),
+            ..Default::default()
+        },
+        1024,
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let (token, _) = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+    let folder =
+        folder_service::create(&consumer_state, user.id, "remote-presigned-download", None)
+            .await
+            .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let body = b"hello remote presigned download".to_vec();
+    let upload_path = write_temp_upload_file(
+        &consumer_state,
+        &format!("remote-presigned-download-{}.txt", uuid::Uuid::new_v4()),
+        &body,
+    )
+    .await;
+    let upload_path_string = upload_path.to_string_lossy().into_owned();
+    let created = file_service::store_from_temp(
+        &consumer_state,
+        user.id,
+        file_service::StoreFromTempRequest::new(
+            Some(folder.id),
+            "presigned-download.txt",
+            &upload_path_string,
+            i64::try_from(body.len()).expect("body length should fit i64"),
+        ),
+    )
+    .await
+    .expect("remote file upload should succeed");
+    aster_drive::utils::cleanup_temp_file(&upload_path_string).await;
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{}/download", created.id))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+    let location = resp
+        .headers()
+        .get(actix_web::http::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("download redirect should contain Location")
+        .to_string();
+    assert!(
+        location.starts_with(&provider_server.base_url),
+        "remote download should redirect to the follower"
+    );
+    assert!(
+        location.contains("response-content-disposition="),
+        "presigned URL should preserve attachment filename"
+    );
+    assert!(
+        location.contains("response-cache-control="),
+        "presigned URL should preserve cache-control"
+    );
+
+    let response = reqwest::get(&location)
+        .await
+        .expect("presigned remote download request should succeed");
+    assert!(response.status().is_success());
+    assert_eq!(
+        response
+            .headers()
+            .get(reqwest::header::CONTENT_DISPOSITION)
+            .and_then(|value| value.to_str().ok()),
+        Some(r#"attachment; filename="presigned-download.txt""#)
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(reqwest::header::CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok()),
+        Some("private, max-age=0, must-revalidate")
+    );
+    assert_eq!(
+        response
+            .bytes()
+            .await
+            .expect("presigned remote download body should be readable")
+            .as_ref(),
+        body
     );
 
     provider_server.stop().await;

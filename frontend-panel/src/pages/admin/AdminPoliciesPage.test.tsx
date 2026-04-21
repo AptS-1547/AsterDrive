@@ -899,7 +899,10 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: undefined,
 				name: "Remote Archive",
-				options: { remote_upload_strategy: "relay_stream" },
+				options: {
+					remote_download_strategy: "relay_stream",
+					remote_upload_strategy: "relay_stream",
+				},
 				remote_node_id: 7,
 				secret_key: "",
 			});
@@ -936,7 +939,7 @@ describe("AdminPoliciesPage", () => {
 			screen.getByRole("button", { name: "policy_wizard_review" }),
 		);
 		fireEvent.click(
-			screen.getByRole("button", { name: "select-item:presigned" }),
+			screen.getAllByRole("button", { name: "select-item:presigned" })[1],
 		);
 		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
 
@@ -951,8 +954,66 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: undefined,
 				name: "Remote Presigned Archive",
-				options: { remote_upload_strategy: "presigned" },
+				options: {
+					remote_download_strategy: "relay_stream",
+					remote_upload_strategy: "presigned",
+				},
 				remote_node_id: 9,
+				secret_key: "",
+			});
+		});
+	});
+
+	it("creates a remote policy with presigned download strategy", async () => {
+		mockState.remoteNodes = [
+			{
+				id: 10,
+				name: "Edge Download",
+				namespace: "tenant-download",
+				base_url: "https://remote-download.example.com",
+			},
+		];
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
+		fireEvent.click(screen.getByRole("button", { name: /Remote/ }));
+		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Remote Presigned Download Archive" },
+		});
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "select-item:10" }),
+			).toBeInTheDocument();
+		});
+		fireEvent.click(screen.getByRole("button", { name: "select-item:10" }));
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		fireEvent.click(
+			screen.getAllByRole("button", { name: "select-item:presigned" })[0],
+		);
+		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+
+		await waitFor(() => {
+			expect(mockState.create).toHaveBeenCalledWith({
+				access_key: "",
+				base_path: "",
+				bucket: "",
+				chunk_size: 5 * 1024 * 1024,
+				driver_type: "remote",
+				endpoint: "",
+				is_default: false,
+				max_file_size: undefined,
+				name: "Remote Presigned Download Archive",
+				options: {
+					remote_download_strategy: "presigned",
+					remote_upload_strategy: "relay_stream",
+				},
+				remote_node_id: 10,
 				secret_key: "",
 			});
 		});

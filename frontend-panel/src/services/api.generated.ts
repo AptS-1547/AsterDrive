@@ -4104,6 +4104,11 @@ export interface components {
             supports_stream_upload: boolean;
         };
         /**
+         * @description Remote 下载传输策略（存储策略 options JSON）
+         * @enum {string}
+         */
+        RemoteDownloadStrategy: "relay_stream" | "presigned";
+        /**
          * @description Remote 上传传输策略（存储策略 options JSON）
          * @enum {string}
          */
@@ -4366,6 +4371,7 @@ export interface components {
         };
         StoragePolicyOptions: {
             content_dedup?: boolean | null;
+            remote_download_strategy?: null | components["schemas"]["RemoteDownloadStrategy"];
             remote_upload_strategy?: null | components["schemas"]["RemoteUploadStrategy"];
             /** Format: int64 */
             s3_connect_timeout_secs?: number | null;

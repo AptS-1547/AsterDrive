@@ -1,7 +1,7 @@
 //! 远端节点内部对象协议与客户端。
 
 use crate::errors::{AsterError, Result};
-use crate::storage::driver::BlobMetadata;
+use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions};
 use futures::TryStreamExt;
 use hmac::{Hmac, KeyInit, Mac};
 use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
@@ -39,6 +39,9 @@ pub const INTERNAL_AUTH_NONCE_TTL_SECS: u64 = 300;
 pub const PRESIGNED_AUTH_ACCESS_KEY_QUERY: &str = "aster_access_key";
 pub const PRESIGNED_AUTH_EXPIRES_QUERY: &str = "aster_expires";
 pub const PRESIGNED_AUTH_SIGNATURE_QUERY: &str = "aster_signature";
+pub const PRESIGNED_RESPONSE_CACHE_CONTROL_QUERY: &str = "response-cache-control";
+pub const PRESIGNED_RESPONSE_CONTENT_DISPOSITION_QUERY: &str = "response-content-disposition";
+pub const PRESIGNED_RESPONSE_CONTENT_TYPE_QUERY: &str = "response-content-type";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -149,11 +152,14 @@ pub fn sign_internal_request(
 pub fn sign_presigned_request(
     secret_key: &str,
     method: &str,
-    path: &str,
+    request_target: &str,
     access_key: &str,
     expires_at: i64,
 ) -> String {
-    let canonical = format!("{}\n{}\n{}\n{}", method, path, access_key, expires_at);
+    let canonical = format!(
+        "{}\n{}\n{}\n{}",
+        method, request_target, access_key, expires_at
+    );
     let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret_key.as_bytes())
         .expect("HMAC accepts any key length");
     mac.update(canonical.as_bytes());
@@ -401,25 +407,52 @@ impl RemoteStorageClient {
 
     pub fn presigned_put_url(&self, key: &str, expires: Duration) -> Result<String> {
         let mut url = self.object_url(key)?;
-        let expires_secs = i64::try_from(expires.as_secs()).map_err(|_| {
-            AsterError::storage_driver_error("remote presigned URL expiry exceeds i64 range")
-        })?;
-        if expires_secs <= 0 {
-            return Err(AsterError::storage_driver_error(
-                "remote presigned URL expiry must be positive",
-            ));
-        }
-
-        let expires_at = chrono::Utc::now()
-            .timestamp()
-            .checked_add(expires_secs)
-            .ok_or_else(|| {
-                AsterError::storage_driver_error("remote presigned URL expiry overflow")
-            })?;
+        let request_target = presigned_request_target(&url);
+        let expires_at = presigned_expires_at(expires)?;
         let signature = sign_presigned_request(
             &self.secret_key,
             Method::PUT.as_str(),
-            url.path(),
+            &request_target,
+            &self.access_key,
+            expires_at,
+        );
+        url.query_pairs_mut()
+            .append_pair(PRESIGNED_AUTH_ACCESS_KEY_QUERY, &self.access_key)
+            .append_pair(PRESIGNED_AUTH_EXPIRES_QUERY, &expires_at.to_string())
+            .append_pair(PRESIGNED_AUTH_SIGNATURE_QUERY, &signature);
+
+        Ok(url.to_string())
+    }
+
+    pub fn presigned_url(
+        &self,
+        key: &str,
+        expires: Duration,
+        options: PresignedDownloadOptions,
+    ) -> Result<String> {
+        let mut url = self.object_url(key)?;
+        {
+            let mut query = url.query_pairs_mut();
+            if let Some(cache_control) = options.response_cache_control.as_deref() {
+                query.append_pair(PRESIGNED_RESPONSE_CACHE_CONTROL_QUERY, cache_control);
+            }
+            if let Some(content_disposition) = options.response_content_disposition.as_deref() {
+                query.append_pair(
+                    PRESIGNED_RESPONSE_CONTENT_DISPOSITION_QUERY,
+                    content_disposition,
+                );
+            }
+            if let Some(content_type) = options.response_content_type.as_deref() {
+                query.append_pair(PRESIGNED_RESPONSE_CONTENT_TYPE_QUERY, content_type);
+            }
+        }
+
+        let request_target = presigned_request_target(&url);
+        let expires_at = presigned_expires_at(expires)?;
+        let signature = sign_presigned_request(
+            &self.secret_key,
+            Method::GET.as_str(),
+            &request_target,
             &self.access_key,
             expires_at,
         );
@@ -528,6 +561,30 @@ impl RemoteStorageClient {
         self.url_for_path(&format!(
             "{INTERNAL_STORAGE_BASE_PATH}/objects/{encoded_key}/metadata"
         ))
+    }
+}
+
+fn presigned_expires_at(expires: Duration) -> Result<i64> {
+    let expires_secs = i64::try_from(expires.as_secs()).map_err(|_| {
+        AsterError::storage_driver_error("remote presigned URL expiry exceeds i64 range")
+    })?;
+    if expires_secs <= 0 {
+        return Err(AsterError::storage_driver_error(
+            "remote presigned URL expiry must be positive",
+        ));
+    }
+
+    chrono::Utc::now()
+        .timestamp()
+        .checked_add(expires_secs)
+        .ok_or_else(|| AsterError::storage_driver_error("remote presigned URL expiry overflow"))
+}
+
+fn presigned_request_target(url: &reqwest::Url) -> String {
+    if let Some(query) = url.query() {
+        format!("{}?{query}", url.path())
+    } else {
+        url.path().to_string()
     }
 }
 

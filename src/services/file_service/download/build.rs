@@ -10,7 +10,9 @@ use crate::services::file_service::{
 };
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::storage::driver::PresignedDownloadOptions;
-use crate::types::{DriverType, S3DownloadStrategy, parse_storage_policy_options};
+use crate::types::{
+    DriverType, RemoteDownloadStrategy, S3DownloadStrategy, parse_storage_policy_options,
+};
 
 use super::types::{DownloadOutcome, StreamedFile};
 
@@ -127,12 +129,19 @@ pub async fn build_download_outcome_with_disposition(
 
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let options = parse_storage_policy_options(policy.options.as_ref());
-    let should_presign = policy.driver_type == DriverType::S3
-        && disposition == DownloadDisposition::Attachment
-        && options.effective_s3_download_strategy() == S3DownloadStrategy::Presigned;
+    let should_presign = disposition == DownloadDisposition::Attachment
+        && match policy.driver_type {
+            DriverType::S3 => {
+                options.effective_s3_download_strategy() == S3DownloadStrategy::Presigned
+            }
+            DriverType::Remote => {
+                options.effective_remote_download_strategy() == RemoteDownloadStrategy::Presigned
+            }
+            DriverType::Local => false,
+        };
 
     if should_presign {
-        // 只有"附件下载 + S3 + 策略允许"才走 presigned redirect。
+        // 只有"附件下载 + 存储驱动支持 + 策略允许"才走 presigned redirect。
         // inline 预览仍由服务端统一加 CSP 和缓存头，避免把浏览器安全策略交给外部存储。
         return build_presigned_redirect_outcome(state, &policy, file, blob).await;
     }
@@ -173,7 +182,8 @@ async fn build_presigned_redirect_outcome(
         blob_id = blob.id,
         policy_id = blob.policy_id,
         ttl_secs = PRESIGNED_DOWNLOAD_TTL_SECS,
-        "redirecting file download to presigned S3 URL"
+        driver_type = ?policy.driver_type,
+        "redirecting file download to presigned storage URL"
     );
 
     Ok(DownloadOutcome::PresignedRedirect { url })

@@ -134,6 +134,32 @@ pub async fn authorize_presigned_put_request<S: FollowerRuntimeState>(
     })
 }
 
+pub async fn authorize_presigned_get_request<S: FollowerRuntimeState>(
+    state: &S,
+    req: &actix_web::HttpRequest,
+) -> Result<AuthorizedMasterBinding> {
+    if req.method() != actix_web::http::Method::GET {
+        return Err(AsterError::auth_token_invalid(
+            "remote presigned auth only supports GET",
+        ));
+    }
+
+    let binding = authorize_presigned_binding_request(state, req).await?;
+    let ingress_policy = state
+        .policy_snapshot()
+        .get_policy_or_err(binding.ingress_policy_id)?;
+    if ingress_policy.driver_type == crate::types::DriverType::Remote {
+        return Err(AsterError::precondition_failed(
+            "master binding ingress policy cannot use remote driver",
+        ));
+    }
+
+    Ok(AuthorizedMasterBinding {
+        binding,
+        ingress_policy,
+    })
+}
+
 pub async fn sync_from_primary<S: FollowerRuntimeState>(
     state: &S,
     access_key: &str,
@@ -259,7 +285,7 @@ async fn authorize_presigned_binding_request<S: FollowerRuntimeState>(
     if !verify_presigned_signature(
         &binding.secret_key,
         req.method().as_str(),
-        req.uri().path(),
+        &presigned_request_target(req),
         &access_key,
         expires_at,
         &signature,
@@ -377,7 +403,7 @@ fn verify_signature(
 fn verify_presigned_signature(
     secret_key: &str,
     method: &str,
-    path: &str,
+    request_target: &str,
     access_key: &str,
     expires_at: i64,
     provided_signature: &str,
@@ -387,11 +413,36 @@ fn verify_presigned_signature(
         return false;
     }
 
-    let expected = sign_presigned_request(secret_key, method, path, access_key, expires_at);
+    let expected =
+        sign_presigned_request(secret_key, method, request_target, access_key, expires_at);
     let Ok(expected) = hex::decode(expected) else {
         return false;
     };
     expected == decoded
+}
+
+fn presigned_request_target(req: &actix_web::HttpRequest) -> String {
+    let path = req.uri().path();
+    let Some(query) = req.uri().query() else {
+        return path.to_string();
+    };
+
+    let filtered: Vec<&str> = query
+        .split('&')
+        .filter(|segment| !segment.is_empty())
+        .filter(|segment| {
+            let key = segment.split('=').next().unwrap_or_default();
+            key != PRESIGNED_AUTH_ACCESS_KEY_QUERY
+                && key != PRESIGNED_AUTH_EXPIRES_QUERY
+                && key != PRESIGNED_AUTH_SIGNATURE_QUERY
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        path.to_string()
+    } else {
+        format!("{path}?{}", filtered.join("&"))
+    }
 }
 
 fn header_value(req: &actix_web::HttpRequest, name: &str) -> Result<String> {

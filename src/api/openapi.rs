@@ -441,6 +441,7 @@ use utoipa::{Modify, OpenApi};
             crate::services::managed_follower_service::RemoteNodeInfo,
             crate::storage::remote_protocol::RemoteStorageCapabilities,
             crate::types::DriverType,
+            crate::types::RemoteDownloadStrategy,
             crate::types::S3DownloadStrategy,
             crate::types::S3UploadStrategy,
             crate::types::StoragePolicyOptions,

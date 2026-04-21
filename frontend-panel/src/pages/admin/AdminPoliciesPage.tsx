@@ -256,6 +256,7 @@ export default function AdminPoliciesPage() {
 					access_key: "",
 					secret_key: "",
 					content_dedup: false,
+					remote_download_strategy: "relay_stream",
 					remote_upload_strategy: "relay_stream",
 				};
 			}
@@ -268,6 +269,7 @@ export default function AdminPoliciesPage() {
 				access_key: "",
 				secret_key: "",
 				remote_node_id: "",
+				remote_download_strategy: "relay_stream",
 				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "relay_stream",

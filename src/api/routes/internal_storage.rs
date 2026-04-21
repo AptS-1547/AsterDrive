@@ -7,9 +7,9 @@ use crate::runtime::FollowerAppState;
 use crate::services::master_binding_service;
 use crate::storage::driver::{BlobMetadata, StorageDriver};
 use crate::storage::remote_protocol::{
-    INTERNAL_AUTH_SIGNATURE_HEADER, RemoteBindingSyncRequest, RemoteStorageCapabilities,
-    RemoteStorageComposeRequest, RemoteStorageComposeResponse, RemoteStorageListResponse,
-    RemoteStorageObjectMetadata,
+    INTERNAL_AUTH_SIGNATURE_HEADER, PRESIGNED_AUTH_ACCESS_KEY_QUERY, RemoteBindingSyncRequest,
+    RemoteStorageCapabilities, RemoteStorageComposeRequest, RemoteStorageComposeResponse,
+    RemoteStorageListResponse, RemoteStorageObjectMetadata,
 };
 use actix_web::{HttpRequest, HttpResponse, dev::HttpServiceFactory, web};
 use futures::StreamExt;
@@ -50,6 +50,12 @@ struct ObjectQuery {
     offset: Option<u64>,
     length: Option<u64>,
     prefix: Option<String>,
+    #[serde(rename = "response-cache-control")]
+    response_cache_control: Option<String>,
+    #[serde(rename = "response-content-disposition")]
+    response_content_disposition: Option<String>,
+    #[serde(rename = "response-content-type")]
+    response_content_type: Option<String>,
 }
 
 async fn metadata_or_not_found(
@@ -323,7 +329,18 @@ async fn get_object(
     path: web::Path<String>,
     query: web::Query<ObjectQuery>,
 ) -> Result<HttpResponse> {
-    let ctx = master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
+    let ctx = if req.headers().contains_key(INTERNAL_AUTH_SIGNATURE_HEADER) {
+        master_binding_service::authorize_internal_request(state.get_ref(), &req).await?
+    } else if req
+        .query_string()
+        .split('&')
+        .filter(|segment| !segment.is_empty())
+        .any(|segment| segment.split('=').next() == Some(PRESIGNED_AUTH_ACCESS_KEY_QUERY))
+    {
+        master_binding_service::authorize_presigned_get_request(state.get_ref(), &req).await?
+    } else {
+        master_binding_service::authorize_internal_request(state.get_ref(), &req).await?
+    };
     let storage_path =
         master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner());
     let driver = state.driver_registry.get_driver(&ctx.ingress_policy)?;
@@ -335,18 +352,30 @@ async fn get_object(
     };
     let body = ReaderStream::with_capacity(stream, 64 * 1024);
 
-    Ok(HttpResponse::Ok()
-        .insert_header((
-            actix_web::http::header::CONTENT_TYPE,
-            metadata
-                .content_type
-                .unwrap_or_else(|| "application/octet-stream".to_string()),
-        ))
-        .insert_header((
-            actix_web::http::header::CONTENT_LENGTH,
-            metadata.size.to_string(),
-        ))
-        .streaming(body))
+    let mut response = HttpResponse::Ok();
+    response.insert_header((
+        actix_web::http::header::CONTENT_TYPE,
+        query
+            .response_content_type
+            .clone()
+            .or(metadata.content_type)
+            .unwrap_or_else(|| "application/octet-stream".to_string()),
+    ));
+    response.insert_header((
+        actix_web::http::header::CONTENT_LENGTH,
+        metadata.size.to_string(),
+    ));
+    response.insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"));
+    if let Some(content_disposition) = query.response_content_disposition.as_deref() {
+        response.insert_header((
+            actix_web::http::header::CONTENT_DISPOSITION,
+            content_disposition,
+        ));
+    }
+    if let Some(cache_control) = query.response_cache_control.as_deref() {
+        response.insert_header((actix_web::http::header::CACHE_CONTROL, cache_control));
+    }
+    Ok(response.streaming(body))
 }
 
 async fn head_object(

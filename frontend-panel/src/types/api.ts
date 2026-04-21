@@ -99,6 +99,8 @@ export type RemoteNodeInfo = components["schemas"]["RemoteNodeInfo"];
 export type RemoteNodePage = components["schemas"]["OffsetPage_RemoteNodeInfo"];
 export type RemoteStorageCapabilities =
 	components["schemas"]["RemoteStorageCapabilities"];
+export type RemoteDownloadStrategy =
+	components["schemas"]["RemoteDownloadStrategy"];
 export type RemoteUploadStrategy =
 	components["schemas"]["RemoteUploadStrategy"];
 export type ResourceLockOwnerInfo =

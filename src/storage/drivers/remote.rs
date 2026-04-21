@@ -185,11 +185,13 @@ impl StreamUploadDriver for RemoteDriver {
 impl PresignedStorageDriver for RemoteDriver {
     async fn presigned_url(
         &self,
-        _path: &str,
-        _expires: Duration,
-        _options: PresignedDownloadOptions,
+        path: &str,
+        expires: Duration,
+        options: PresignedDownloadOptions,
     ) -> Result<Option<String>> {
-        Ok(None)
+        self.client
+            .presigned_url(&self.object_key(path), expires, options)
+            .map(Some)
     }
 
     async fn presigned_put_url(&self, path: &str, expires: Duration) -> Result<Option<String>> {

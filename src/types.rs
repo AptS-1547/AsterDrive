@@ -891,6 +891,17 @@ pub enum S3DownloadStrategy {
     Presigned,
 }
 
+/// Remote 下载传输策略（存储策略 options JSON）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteDownloadStrategy {
+    /// 主控节点从从节点拉流后回传给客户端
+    RelayStream,
+    /// 主控节点完成鉴权后重定向到从节点 presigned GET URL
+    Presigned,
+}
+
 /// Remote 上传传输策略（存储策略 options JSON）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -975,6 +986,8 @@ pub struct StoragePolicyOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3_download_strategy: Option<S3DownloadStrategy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_download_strategy: Option<RemoteDownloadStrategy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_upload_strategy: Option<RemoteUploadStrategy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_dedup: Option<bool>,
@@ -998,6 +1011,11 @@ impl StoragePolicyOptions {
     pub fn effective_s3_download_strategy(&self) -> S3DownloadStrategy {
         self.s3_download_strategy
             .unwrap_or(S3DownloadStrategy::RelayStream)
+    }
+
+    pub fn effective_remote_download_strategy(&self) -> RemoteDownloadStrategy {
+        self.remote_download_strategy
+            .unwrap_or(RemoteDownloadStrategy::RelayStream)
     }
 
     pub fn effective_remote_upload_strategy(&self) -> RemoteUploadStrategy {
@@ -1102,7 +1120,7 @@ impl TokenType {
 
 #[cfg(test)]
 mod tests {
-    use crate::types::RemoteUploadStrategy;
+    use crate::types::{RemoteDownloadStrategy, RemoteUploadStrategy};
 
     use super::{
         S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions, parse_storage_policy_options,
@@ -1142,6 +1160,24 @@ mod tests {
         assert_eq!(
             options.effective_s3_download_strategy(),
             S3DownloadStrategy::Presigned
+        );
+    }
+
+    #[test]
+    fn remote_download_strategy_defaults_to_relay_stream() {
+        let options = StoragePolicyOptions::default();
+        assert_eq!(
+            options.effective_remote_download_strategy(),
+            RemoteDownloadStrategy::RelayStream
+        );
+    }
+
+    #[test]
+    fn explicit_remote_presigned_download_strategy_maps_to_presigned() {
+        let options = parse_storage_policy_options(r#"{"remote_download_strategy":"presigned"}"#);
+        assert_eq!(
+            options.effective_remote_download_strategy(),
+            RemoteDownloadStrategy::Presigned
         );
     }
 
@@ -1218,6 +1254,13 @@ mod tests {
         })
         .unwrap();
         assert_eq!(json, r#"{"s3_download_strategy":"presigned"}"#);
+
+        let json = serde_json::to_string(&StoragePolicyOptions {
+            remote_download_strategy: Some(RemoteDownloadStrategy::Presigned),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"remote_download_strategy":"presigned"}"#);
 
         let json = serde_json::to_string(&StoragePolicyOptions {
             remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),

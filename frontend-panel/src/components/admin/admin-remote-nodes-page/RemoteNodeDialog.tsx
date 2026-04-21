@@ -201,66 +201,6 @@ export function RemoteNodeDialog({
 		</section>
 	);
 
-	const renderCreateFlowDiagram = () => (
-		<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
-			{renderSectionIntro(
-				t("remote_node_wizard_flow_title"),
-				t("remote_node_wizard_flow_desc"),
-			)}
-			<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_96px_minmax(0,1fr)_96px_minmax(0,1fr)] md:items-center">
-				<div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-					<p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-						{t("remote_node_wizard_flow_current_node")}
-					</p>
-					<p className="mt-2 font-semibold text-foreground">
-						{form.name || t("new_remote_node")}
-					</p>
-					<p className="mt-2 text-xs leading-5 text-muted-foreground">
-						{t("remote_node_wizard_followup_value")}
-					</p>
-				</div>
-				<div className="flex justify-center">
-					<Badge
-						variant="outline"
-						className="rounded-full border-foreground/15 px-3 py-1 text-[11px] font-medium"
-					>
-						{t("remote_node_enrollment_step_arrow_issue")}
-					</Badge>
-				</div>
-				<div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-					<p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-						2
-					</p>
-					<p className="mt-2 font-semibold text-foreground">
-						{t("remote_node_enrollment_step_run_title")}
-					</p>
-					<p className="mt-2 text-xs leading-5 text-muted-foreground">
-						{t("remote_node_enrollment_step_run_desc")}
-					</p>
-				</div>
-				<div className="flex justify-center">
-					<Badge
-						variant="outline"
-						className="rounded-full border-foreground/15 px-3 py-1 text-[11px] font-medium"
-					>
-						{t("remote_node_enrollment_step_arrow_run")}
-					</Badge>
-				</div>
-				<div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-					<p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-						3
-					</p>
-					<p className="mt-2 font-semibold text-foreground">
-						{t("remote_node_enrollment_step_restart_title")}
-					</p>
-					<p className="mt-2 text-xs leading-5 text-muted-foreground">
-						{t("remote_node_enrollment_step_restart_desc")}
-					</p>
-				</div>
-			</div>
-		</section>
-	);
-
 	useEffect(() => {
 		if (!open || !isCreateMode) {
 			previousCreateStepRef.current = 0;
@@ -541,7 +481,6 @@ export function RemoteNodeDialog({
 																	))}
 																</div>
 															</section>
-															{renderCreateFlowDiagram()}
 														</div>
 														<div className="min-w-0 space-y-4 lg:sticky lg:top-0 lg:self-start">
 															{renderCreateSummaryCard(
