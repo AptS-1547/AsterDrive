@@ -21,6 +21,7 @@
 | `GET` | `/files/{id}/download` | 下载文件内容 |
 | `GET` | `/files/{id}/thumbnail` | 获取缩略图 |
 | `PUT` | `/files/{id}/content` | 覆盖文件内容并写入版本历史 |
+| `POST` | `/files/{id}/extract` | 把归档文件解包成后台任务 |
 | `PATCH` | `/files/{id}` | 重命名或移动文件 |
 | `DELETE` | `/files/{id}` | 软删除到回收站 |
 | `POST` | `/files/{id}/lock` | 简化锁定 / 解锁 |
@@ -91,6 +92,7 @@
 - `GET /files/{id}/download`：下载文件；默认是流式响应，若命中的 S3 / Remote 策略把下载策略设为 `presigned`，则会在鉴权后返回 `302` 重定向到短时效的对象存储 GET URL；支持 `If-None-Match`，命中时返回 `304`
 - `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
+- `POST /files/{id}/extract`：把 ZIP 等受支持归档文件解包成后台任务，结果会出现在 `/tasks`
 - `PATCH /files/{id}`：改名或移动
 - `DELETE /files/{id}`：软删除到回收站
 
@@ -208,7 +210,25 @@
 - `action_url` 会带上实际回调入口 `WOPISrc`
 - 当前实现里的 `access_token_ttl` 按 WOPI 规范返回“过期时间的 Unix 毫秒时间戳”，不是“剩余多少秒”
 - 生成 WOPI 启动会话时要求系统已配置 `public_site_url`
-- 真实 WOPI 回调不走这条路径，而是走 `/api/v1/wopi/files/{id}` 及其 `/contents` 变体，详细见 [WOPI](/api/wopi)
+- 真实 WOPI 回调不走这条路径，而是走 `/api/v1/wopi/files/{id}` 及其 `/contents` 变体，详细见 [WOPI](./wopi.md)
+
+### `POST /files/{id}/extract`
+
+请求体：
+
+```json
+{
+  "target_folder_id": 12,
+  "output_folder_name": "docs-unpacked"
+}
+```
+
+要点：
+
+- 这条接口不会同步返回解包结果，而是创建一个 `archive_extract` 后台任务
+- `target_folder_id = null` 时，按当前实现会在默认作用域下解析目标目录
+- `output_folder_name` 不传时，服务端会为解包结果推导输出目录名
+- 真正的解包进度、失败原因和最终输出目录信息，要去 [`后台任务 API`](./tasks.md) 里看对应 `TaskInfo`
 
 ## 锁与复制
 

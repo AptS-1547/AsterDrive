@@ -2,490 +2,305 @@
 
 本文描述的是当前仓库已经落地的实现，不是早期设计草图。
 
-如果你是第一次进入这个仓库，建议按下面的顺序读：
-
-1. 先看“给新开发者的 60 秒版本”
-2. 再看“从哪里开始看代码”
-3. 然后看“一个请求如何流转”
-4. 最后再回头看具体的数据模型和链路细节
-
-如果你已经知道系统大图，但还想看几个核心后端模块内部为什么这样拆、约束落在哪，继续看 [`module-designs.md`](./module-designs.md)。
+如果你刚接手这个仓库，建议先看这页，再看 [`module-designs.md`](./module-designs.md)。
 
 ## 给新开发者的 60 秒版本
 
-- AsterDrive 目前是一个单体应用：一个 Rust 进程同时提供 REST API、健康检查、WebDAV，并负责把前端页面直接服务出去
-- 元数据主要在数据库里，文件内容主要在存储驱动里；两者通过 `files` / `file_blobs` / `file_versions` 等表串起来
-- 个人空间和团队空间共用同一条文件主链路，只是 route 层通过 `WorkspaceStorageScope` 切换作用域
-- 绝大多数功能改动都落在这条主线上：
+- AsterDrive 现在不是“只有一个运行模式的单体服务”，而是同一套代码支持两种节点模式：
+  - `primary`：对外提供主 REST API、公开分享、WebDAV、前端页面，并负责运行时配置和后台任务
+  - `follower`：只暴露健康检查和内部对象存储协议，给远端主节点当受管存储节点
+- 元数据主要在数据库里，文件内容主要在存储驱动里；两者通过 `files`、`file_blobs`、`file_versions`、`upload_sessions` 等表关联
+- 个人空间和团队空间共用同一条文件主链路，只是在 route / service 层通过 `WorkspaceStorageScope` 切换作用域
+- 后端主线仍然是：
   `src/api/routes/*` -> `src/services/*` -> `src/db/repository/*` / `src/storage/*`
-- 前端代码在 `frontend-panel/`，但生产运行时仍由后端统一托管
-- 团队相关入口主要在 `src/api/routes/teams.rs` 与 `src/api/routes/team_*`；团队空间里的文件操作仍复用 `files` / `folders` / `upload` / `share` / `trash` 这些 service
-- WebDAV 不是普通 REST 路由的一个小分支，而是一套单独的接入路径，主要代码在 `src/webdav/`
-- 配置分两类：
-  - 静态配置：`data/config.toml` + 环境变量，影响进程启动和基础设施
-  - 运行时配置：数据库里的 `system_config`，影响 WebDAV 开关、回收站保留期、版本数上限等业务行为
-    也包括默认配额、公开站点地址、预览应用注册表、后台调度周期、团队归档保留期、CORS、注册/邮件/头像和 WOPI 等配置；完整单一数据源是 `src/config/definitions.rs`
+- WebDAV 不是普通 REST 路由的一个分支，而是独立挂载在 `src/webdav/`
+- 前端代码在 `frontend-panel/`，生产产物由 primary 节点直接服务
+- 配置分两层：
+  - 静态配置：`data/config.toml` + `ASTER__...` 环境变量
+  - 运行时配置：数据库 `system_config`，单一数据源是 `src/config/definitions.rs`
 
-## 从哪里开始看代码
-
-按你要解决的问题，优先看这些位置：
+## 先看哪里
 
 | 你想回答的问题 | 先看哪里 | 为什么 |
 | --- | --- | --- |
-| 服务怎么启动、路由怎么挂上去 | `src/main.rs`、`src/runtime/startup.rs`、`src/api/mod.rs` | 这里决定了启动顺序、路由注册顺序、后台任务和全局中间件 |
-| 一个 REST 接口怎么实现 | `src/api/routes/*` 对应文件 | 这里负责请求参数、鉴权包装、响应格式 |
-| 团队工作空间为什么和个人空间长得几乎一样 | `src/api/routes/teams.rs`、`src/api/routes/team_*`、`src/services/workspace_storage_service.rs` | route 层只换作用域，真正的文件 / 文件夹 / 上传语义还是复用同一套 service |
-| 权限、配额、锁、回收站、版本这类业务规则在哪 | `src/services/*` | 业务规则主要集中在 service 层，不应散落在 route 或 repo 里 |
-| 数据是怎么查和写的 | `src/db/repository/*` | 仓库当前把数据库访问封装在 repo 层 |
-| 文件内容怎么落盘 / 上 S3 | `src/storage/*` | 存储驱动抽象和具体实现都在这里 |
-| WebDAV 请求为什么和 REST 不一样 | `src/webdav/*` | WebDAV 走单独的文件系统适配和锁系统 |
-| 前端页面和调用关系 | `frontend-panel/src/*`、`frontend-panel/src/services/*` | 页面逻辑和 API 调用都在前端子项目里 |
-| 表结构或字段怎么演进 | `migration/`、`src/entities/*` | 迁移与实体定义必须一起看 |
+| 服务怎么启动、怎么区分 primary / follower | `src/main.rs`、`src/config/node_mode.rs`、`src/runtime/startup/` | 这里决定启动模式、运行时状态和节点职责 |
+| 主节点挂了哪些路由 | `src/api/primary.rs`、`src/api/routes/` | 这里决定 `/api/v1`、`/health`、`/d`、`/pv`、WebDAV 和前端兜底的注册顺序 |
+| 从节点到底暴露什么 | `src/api/follower.rs`、`src/api/routes/internal_storage.rs` | follower 只负责内部存储协议和健康检查 |
+| 一个 REST 接口怎么实现 | 对应 `src/api/routes/**` 文件 | route 层做参数解析、鉴权包装和响应适配 |
+| 文件 / 团队 / 分享 / 上传的业务规则在哪 | `src/services/**` | 业务语义集中在 service 层，不应散落在 route 里 |
+| 数据怎么查怎么写 | `src/db/repository/**` | repo 层封装数据库访问和跨库兼容细节 |
+| 文件内容怎么落盘 / 上 S3 / 走远端节点 | `src/storage/**` | 驱动抽象、具体驱动和远端协议都在这里 |
+| WebDAV 为什么和 REST 不一样 | `src/webdav/**` | 这是单独的协议接入层 |
+| 团队空间为什么复用个人空间语义 | `src/services/workspace_scope_service.rs`、`src/services/workspace_storage_service/`、`src/services/folder_service/`、`src/services/file_service/` | scope 切换和统一存储链路都在这里 |
+| 表结构怎么演进 | `migration/`、`src/entities/**` | migration 和 entity 必须一起看 |
 
-如果你要追一个具体功能，通常最省时间的方式是：
+追一个具体功能时，最省时间的路径通常是：
 
-1. 先从 `src/api/routes/xxx.rs` 找入口
-2. 再跳到对应 `src/services/xxx_service.rs`
-3. 最后看 repo / storage / webdav 细节
+1. 先从对应 `src/api/routes/**` 找入口
+2. 再跳到 `src/services/**`
+3. 最后看 `src/db/repository/**`、`src/storage/**` 或 `src/webdav/**`
 
-## 系统边界
+## 运行模式与系统边界
 
-当前仓库同时提供五类入口：
+### Primary 节点
+
+primary 会注册这些入口：
 
 - REST API：`/api/v1/*`
 - 健康检查：`/health*`
-- 短期内容直链：`/d/{token}/{filename}` 与 `/pv/{token}/{filename}`
-- WebDAV：默认挂载在 `/webdav`
-- 前端页面：管理面板与公开分享页由后端直接服务
+- 公开分享与直链：
+  - `/api/v1/s/{token}*`
+  - `/d/{token}/{filename}`
+  - `/pv/{token}/{filename}`
+- WebDAV：默认 `/webdav`
+- 前端页面与静态资源：由 `src/api/routes/frontend.rs` 兜底
+- 开发态 OpenAPI：
+  - `/swagger-ui`
+  - `/api-docs/openapi.json`
 
-另有三类只在特定构建里提供的辅助入口：
+### Follower 节点
 
-- `/swagger-ui` 与 `/api-docs/openapi.json`：仅 `debug_assertions + openapi feature` 构建时注册
-- `/health/memory`：仅 `debug_assertions + openapi feature` 构建时注册
-- `/health/metrics`：仅启用 `metrics` feature 时注册
+follower 不提供普通用户 API、WebDAV 或前端页面，只注册：
+
+- 健康检查：`/health*`
+- 内部对象存储协议：`/api/v1/internal/storage/*`
+
+这条内部协议当前用于主节点和受管远端节点之间的对象写入、对象拼接、对象列举与绑定同步。
 
 ## 一个请求如何流转
 
-### 普通 REST 请求
+### Primary 上的普通 REST 请求
 
-一个典型 REST 请求大致会经历下面这些步骤：
+1. `src/main.rs` 进入 `run_primary_http_server()`
+2. `src/api/primary.rs` 注册 `/api/v1` 下的各模块路由
+3. 请求先经过全局中间件：
+   - 压缩
+   - Request ID
+   - 运行时 CORS
+   - 安全响应头
+4. 命中对应 `src/api/routes/**` handler
+5. 受保护接口再经过路由级 JWT 鉴权和限流
+6. `src/services/**` 执行业务规则
+7. `src/db/repository/**` 负责数据库读写；涉及二进制内容时进入 `src/storage/**`
+8. route 层返回统一 JSON，或者直接返回文件流 / SSE / WebDAV / Prometheus 文本响应
 
-1. 进入 `actix-web` 应用，由 `src/api/mod.rs` 注册出来的 route 命中具体 handler
-2. 经过全局中间件，例如压缩、Request ID、CORS
-3. 如果是受保护接口，再经过路由级的 JWT 鉴权和限流
-4. `src/api/routes/*` 里的 handler 解析参数，尽量只做很薄的一层 HTTP 适配
-5. `src/services/*` 执行业务规则，例如权限检查、锁检查、配额检查、版本处理、分享范围校验
-   如果是团队工作空间，还会额外做团队成员身份和团队配额 / 策略组校验
-6. `src/db/repository/*` 负责数据库访问；如果涉及文件内容，再进入 `src/storage/*`
-7. route 层把结果包成统一 JSON 响应，或者直接返回流式内容
+例外要记住：
 
-例外也要记住：
+- `/d/...`、`/pv/...`、文件下载、缩略图、分享下载不走统一 JSON 包装
+- `GET /api/v1/auth/events/storage` 是 SSE
+- `GET /health/metrics` 是 Prometheus text exposition
+- 前端兜底路由最后注册，所以 API / WebDAV 必须先于它注册
 
-- 下载、缩略图、分享下载、WebDAV 响应、Prometheus 指标不会走统一 JSON 包装
-- 直接下载链接 `/d/{token}/{filename}` 与预览链接 `/pv/{token}/{filename}` 都不会走统一 JSON 包装
-- `GET /api/v1/auth/events/storage` 返回的是 SSE `text/event-stream`，也不是普通 JSON
-- 前端页面路由是最后注册的兜底路由，所以 API / WebDAV 必须先于它注册
+### Follower 上的内部存储请求
+
+1. `src/api/follower.rs` 只注册 `/api/v1/internal/storage/*`
+2. `src/api/routes/internal_storage.rs` 校验内部签名或预签名访问
+3. `master_binding_service` 解析主节点绑定关系和 ingress 策略
+4. 通过 `driver_registry` 取得实际存储驱动
+5. 请求落到本地 / S3 / 远端驱动能力接口
+
+如果你在查远端节点写入问题，不要先去普通 `files` / `upload` 路由里找。
 
 ### WebDAV 请求
 
-WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
+WebDAV 不走 `src/api/routes/**`，而是：
 
-1. 命中 `src/webdav/mod.rs` 注册的挂载前缀
+1. 由 `crate::webdav::configure()` 在 primary 上挂到配置的 prefix
 2. 检查运行时开关 `webdav_enabled`
 3. 做 Basic 或 Bearer 认证
-4. 为本次请求构造带用户上下文的 `AsterDavFs`
-5. 为本次请求构造数据库锁系统
-6. 进入自研 WebDAV handler，统一分发标准 WebDAV 方法与 DeltaV 补充能力
-
-所以如果你在排查 WebDAV 行为，不要先去 REST route 里找。
+4. 为请求构造带用户上下文的 `AsterDavFs`
+5. 使用数据库锁系统和版本能力
+6. 进入自研 WebDAV / DeltaV handler
 
 ## 分层结构
 
 ```text
-┌────────────────────────────────────┐
-│ 接入层                                                      │
-│  - React 管理面板 / 公开分享页                                │
-│  - REST API (actix-web)                                    │
-│  - WebDAV / DeltaV 自研协议层与请求分发                       │
-├────────────────────────────────────┤
-│ 应用层                                                      │
-│  - 路由、OpenAPI、统一响应、错误码                             │
-│  - JWT / Cookie 认证、Request ID、CORS、限流                 │
-├────────────────────────────────────┤
-│ 业务层                                                      │
-│  - auth / team / file / folder / upload / share / trash    │
-│  - version / lock / property / policy / config / audit     │
-│  - workspace_storage                                        │
-│  - webdav_account / webdav_service / thumbnail             │
-├────────────────────────────────────┤
-│ 基础设施层                                                   │
-│  - SeaORM + migration                                      │
-│  - StorageDriver(Local / S3)                               │
-│  - CacheBackend(Memory / Redis / Noop)                     │
-├────────────────────────────────────┤
-│ 数据层                                                      │
-│  - users / teams / team_members / folders / files          │
-│  - file_blobs / file_versions / shares / upload_sessions   │
-│  - upload_session_parts / user_profiles / mail_outbox      │
-│  - webdav_accounts / entity_properties / resource_locks    │
-│  - contact_verification_tokens                             │
-│  - storage_policies / storage_policy_groups / system_config│
-└────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│ 接入层                                      │
+│  - React 前端 / 公开分享页                   │
+│  - REST API (primary)                       │
+│  - Internal Storage API (follower)          │
+│  - WebDAV / DeltaV                          │
+├─────────────────────────────────────────────┤
+│ 应用层                                      │
+│  - 路由、DTO、统一响应、错误码               │
+│  - JWT / Admin / Rate Limit / CORS 等中间件 │
+├─────────────────────────────────────────────┤
+│ 业务层                                      │
+│  - auth / profile / team / file / folder    │
+│  - upload / batch / share / trash / task    │
+│  - policy / config / audit / webdav / wopi  │
+│  - workspace scope / storage core           │
+├─────────────────────────────────────────────┤
+│ 基础设施层                                  │
+│  - SeaORM + migration                       │
+│  - StorageDriver(Local / S3 / Remote)       │
+│  - CacheBackend(Memory / Redis / Noop)      │
+├─────────────────────────────────────────────┤
+│ 数据层                                      │
+│  - users / teams / team_members             │
+│  - folders / files / file_blobs / versions  │
+│  - shares / upload_sessions / tasks         │
+│  - webdav_accounts / system_config / locks  │
+└─────────────────────────────────────────────┘
 ```
 
-这个分层在仓库里的一个实用判断标准是：
+仓库里的实用判断标准仍然是：
 
-- route 层处理 HTTP
+- route 层处理 HTTP / 协议适配
 - service 层处理业务语义
-- repo 层处理数据库查询
-- storage 层处理二进制内容
-
-如果你发现某个复杂业务判断写在 route 层，通常就是代码气味。
-
-## 改动应该落在哪一层
-
-新开发者最容易踩的坑，是把代码改在“不该承载这类语义”的地方。可以按这个规则判断：
-
-| 你要改的东西 | 优先落点 |
-| --- | --- |
-| 新增 REST 接口、调整请求体 / 响应体 | `src/api/routes/*` |
-| 权限、配额、锁、回收站、版本、分享范围等业务规则 | `src/services/*` |
-| 新增查询、分页、过滤条件 | `src/db/repository/*` |
-| 本地 / S3 读写行为、预签名 URL、对象路径规则 | `src/storage/*` |
-| WebDAV 协议方法、锁、路径解析、DeltaV | `src/webdav/*` |
-| 表字段、索引、默认值 | `migration/` + `src/entities/*` |
-| 页面交互、状态管理、前端 API 调用 | `frontend-panel/src/*` |
+- repo 层处理数据库读写
+- storage 层处理对象内容
 
 ## 关键模块
 
 | 模块 | 当前职责 |
 | --- | --- |
-| `src/main.rs` | 进程入口、HTTP 服务器、全局中间件、后台任务启动、优雅退出 |
-| `src/runtime/startup.rs` | 数据库连接、迁移、默认策略、默认策略组、默认运行时配置、缓存、缩略图 worker |
-| `src/api/` | REST 路由、OpenAPI、统一响应、认证与中间件 |
-| `src/services/` | 业务规则集中层，处理权限、团队成员关系、配额、去重、版本、回收站等语义 |
-| `src/services/integrity_service.rs` | `doctor --deep` 的一致性审计核心；批量核对存储计数、Blob 引用、对象清单和目录树 |
-| `src/db/repository/` | 面向实体的数据库访问封装 |
-| `src/storage/` | 存储抽象，封装本地与 S3 兼容后端，也负责对象路径分页/流式扫描接口 |
-| `src/webdav/` | WebDAV 文件系统、认证、数据库锁、DeltaV 最小子集 |
-| `src/cli.rs` | CLI 根入口；当前子命令包括 `serve`、`doctor`、`config`、`database-migrate` |
-| `frontend-panel/` | React 19 + Vite 前端，打包产物由后端服务 |
-| `migration/` | SeaORM 迁移，启动时自动执行 |
-| `tests/` | 集成测试，覆盖 API 契约和关键行为 |
+| `src/main.rs` | 进程入口、选择节点模式、启动 HTTP 服务、优雅退出 |
+| `src/runtime/startup/common.rs` | 连接数据库、跑 migration、准备默认策略和运行时配置、加载 policy snapshot / driver registry / cache |
+| `src/runtime/startup/primary.rs` | 构造 primary 运行时：`RuntimeConfig`、邮件发送器、SSE 广播、分享下载回滚队列 |
+| `src/runtime/startup/follower.rs` | 构造 follower 运行时：只保留 follower 需要的共享状态 |
+| `src/runtime/tasks.rs` | primary 周期任务与 metrics worker 的注册和关闭 |
+| `src/api/primary.rs` | primary 路由注册 |
+| `src/api/follower.rs` | follower 路由注册 |
+| `src/api/routes/auth/mod.rs` | 认证、会话、偏好、头像、SSE |
+| `src/api/routes/files/` | 文件读写、上传、缩略图、版本、WOPI 启动 |
+| `src/api/routes/folders.rs` | 文件夹接口和团队空间聚合入口；团队 `files` 路由挂在这里 |
+| `src/api/routes/admin/` | 管理后台接口，包括策略、远端节点、用户、团队、配置、锁、审计 |
+| `src/api/routes/share_public.rs` | 公开分享页 API、`/d` 直链、`/pv` 预览直链 |
+| `src/api/routes/internal_storage.rs` | follower 内部对象存储协议 |
+| `src/services/` | 业务规则集中层 |
+| `src/storage/drivers/` | 本地、S3、远端驱动 |
+| `src/webdav/` | WebDAV 文件系统、认证、锁与 DeltaV 支持 |
+| `frontend-panel/` | React 19 + Vite 前端，构建产物由后端服务 |
 
-## 启动与配置
+## 启动流程
 
-### 启动流程
+### 通用启动步骤
 
-当前启动顺序大致是：
+`src/main.rs` 当前的大致顺序是：
 
-1. 安装自定义 panic hook
+1. 安装 panic hook
 2. 加载 `.env`
-3. 加载 `data/config.toml`；若不存在则在当前工作目录下的 `data/` 自动生成
+3. 初始化静态配置
 4. 初始化日志
-5. 连接数据库并执行全部迁移
-6. 若系统里还没有任何存储策略，自动创建默认本地策略 `Local Default`，目录为 `data/uploads`
-7. 写入认证 cookie 运行时引导值：根据静态配置里的 `bootstrap_insecure_cookies` 初始化 `auth_cookie_secure`
-8. 确保存储策略组已种好；如果缺默认组会自动补，历史用户缺 `policy_group_id` 时也会回填到默认组
-9. 确保默认运行时配置存在
-10. 初始化运行时快照、策略快照、驱动注册中心与缓存后端
-11. 启动缩略图后台 worker
-12. 注册 REST、健康检查、WebDAV 与前端路由
-13. 启动后台周期任务（周期由运行时配置驱动；下面是默认值）：
-    - 每 5 秒：派发到期邮件 outbox
-    - 每 5 秒：派发可执行的 `background_task`
-    - 每小时：清理过期上传 session
-    - 每小时：清理过期的已完成上传 session
-    - 每小时：清理过期回收站条目
-    - 每小时：清理超过保留期的已归档团队
-    - 每小时：清理过期资源锁
-    - 每小时：清理过期审计日志
-    - 每小时：清理已过期任务记录及其临时产物
-    - 每小时：清理已过期 WOPI session
-    - 每 6 小时：全表校正 Blob 引用计数并清理孤儿 Blob，也会重试清理那些 `ref_count = 0` 但对象上次没删掉的 Blob
+5. 可选初始化 metrics
+6. 清理 runtime 临时目录
+7. 根据 `config.server.start_mode` 选择 `primary` 或 `follower`
 
-### 配置分层
+### `prepare_common()`
 
-新开发者需要先分清这两类配置：
+`src/runtime/startup/common.rs` 会做所有节点共享的准备：
 
-#### 静态配置
+1. 连接数据库
+2. 执行全部 migration
+3. 准备 SQLite 搜索加速能力（若当前后端适用）
+4. 确保至少存在一个默认本地存储策略
+5. 仅 primary 模式下补种默认策略组
+6. 初始化 `auth_cookie_secure` 引导值
+7. 写入 `system_config` 默认值
+8. 清理废弃的 `node_runtime_mode` 运行时配置键
+9. 重载 `PolicySnapshot`
+10. 根据节点模式重载 `DriverRegistry`
+11. 初始化缓存后端
+
+### Primary 特有启动
+
+`src/runtime/startup/primary.rs` 额外准备：
+
+- `RuntimeConfig`
+- 运行时邮件发送器
+- 存储变更广播通道
+- 分享下载回滚队列
+
+随后 `src/api/primary.rs` 注册主路由，并在 `src/runtime/tasks.rs` 启动 primary 周期任务。
+
+### Follower 特有启动
+
+`src/runtime/startup/follower.rs` 只保留 follower 需要的共享状态。
+
+随后 `src/api/follower.rs` 仅注册：
+
+- `/api/v1/internal/storage/*`
+- `/health*`
+
+`spawn_follower_background_tasks()` 当前不会启动 primary 的业务清理任务。
+
+## 后台任务
+
+primary 周期任务由 `src/runtime/tasks.rs` 注册，间隔来自运行时配置：
+
+- `share-download-rollback`
+- `mail-outbox-dispatch`
+- `background-task-dispatch`
+- `upload-cleanup`
+- `completed-upload-cleanup`
+- `blob-reconcile`
+- `remote-node-health-test`
+- `trash-cleanup`
+- `team-archive-cleanup`
+- `lock-cleanup`
+- `auth-session-cleanup`
+- `audit-cleanup`
+- `task-cleanup`
+- `wopi-session-cleanup`
+
+这些周期任务每次执行后都会写成 `SystemRuntime` 风格的任务运行记录，供管理后台查看。
+
+## 配置分层
+
+### 静态配置
 
 静态配置来自：
 
 - `data/config.toml`
 - 环境变量 `ASTER__...`
 
-它们主要控制：
+主要控制：
 
-- 监听地址和端口
+- 监听地址、端口、worker 数
+- 节点启动模式
 - 数据库连接
-- WebDAV 挂载前缀
-- 缓存后端
-- 日志
+- WebDAV 前缀
+- 缓存和日志
 
-这类配置在进程启动前就要确定。
+### 运行时配置
 
-#### 运行时配置
+运行时配置保存在数据库 `system_config`，由管理员接口热更新。
 
-运行时配置在数据库 `system_config` 表里，主要通过管理员接口管理。
-定义单一数据源在 `src/config/definitions.rs`，接口上的 schema 视图来自这里。
-
-它们覆盖的范围比下面这份示例列表更广，当前除了存储 / WOPI / CORS，还包含注册开关、头像上传限制、邮件 SMTP 与模板、任务保留期、分页上限等键。下面只列一批最常见项：
+单一数据源在 `src/config/definitions.rs`，常见键包括：
 
 - `webdav_enabled`
+- `default_storage_quota`
 - `trash_retention_days`
 - `team_archive_retention_days`
 - `max_versions_per_file`
-- `audit_log_enabled`
-- `audit_log_retention_days`
-- `default_storage_quota`
-- `public_site_url`
 - `auth_cookie_secure`
-- `cors_enabled`
-- `cors_allowed_origins`
-- `cors_allow_credentials`
-- `cors_max_age_secs`
-- `gravatar_base_url`
-- `frontend_preview_apps_json`
-- `wopi_access_token_ttl_secs`
-- `wopi_lock_ttl_secs`
-- `wopi_discovery_cache_ttl_secs`
+- `public_site_url`
+- `cors_*`
 - `mail_outbox_dispatch_interval_secs`
 - `background_task_dispatch_interval_secs`
 - `maintenance_cleanup_interval_secs`
 - `blob_reconcile_interval_secs`
-
-这类配置更接近业务开关，而不是基础设施开关。
-
-## 运维完整性检查
-
-`doctor` 现在分成两层：
-
-- 默认检查：数据库连接、迁移状态、运行时配置、公开站点地址、邮件、预览应用、默认存储策略
-- 深度检查：`src/cli/doctor.rs` 调用 `src/services/integrity_service.rs`，继续核对存储一致性
-
-深度检查当前有四类：
-
-- `storage_usage`：对比 `users.storage_used` / `teams.storage_used` 和 `files`、`file_versions` 的实际累计大小
-- `blob_ref_counts`：对比 `file_blobs.ref_count` 和 `files`、`file_versions` 的真实引用数
-- `storage_objects`：遍历各存储策略的对象路径，找缺失 Blob、未追踪对象、孤儿缩略图
-- `folder_tree`：找缺失父目录、跨工作空间父目录、循环引用
-
-命令语义上还要记住这几点：
-
-- `--scope` 只裁剪 deep checks，不影响默认检查
-- `--policy-id` 只作用于 `blob_ref_counts` 和 `storage_objects`
-- `--fix` 目前只会修复 `storage_used` 与 `file_blobs.ref_count`
-
-实现上有两个关键约束：
-
-- 数据库审计一律走 keyset batch，不做整表 `.all()`；当前批大小在 `src/services/integrity_service.rs` 里固定为 `1000`
-- 对象存储扫描不再一次性收集全量路径。`src/storage/driver.rs` 提供 `scan_paths` visitor 接口，本地驱动按目录递增遍历，S3 驱动按 `list_objects_v2` continuation token 分页消费
-
-这套检查仍然是“路径级一致性校验”，不是内容级校验：
-
-- 不读取对象内容
-- 不计算 checksum
-- 不比较数据库记录和对象内容哈希是否一致
-
-## 核心数据模型
-
-### 文件与 Blob 分离
-
-- `files` 是用户可见的文件记录
-- `file_blobs` 是实际内容；只有 local 显式开启 `content_dedup` 时，上传路径才会按 `sha256 + policy_id` 去重；其余路径都会创建独立 Blob
-- 多个 `files` 与 `file_versions` 可以引用同一个 Blob
-
-这让系统能同时支持：
-
-- 内容去重
-- 低成本复制
-- 历史版本
-- 缩略图按 Blob 复用
-
-如果你第一次改文件相关逻辑，先记住一句话：
-“用户看到的是 `files`，真正的内容复用靠的是 `file_blobs`。”
-
-### 存储策略
-
-策略保存在数据库，而非 `data/config.toml`。解析顺序如下：
-
-```text
-文件夹 policy_id -> 工作空间绑定的策略组规则
-```
-
-更具体一点：
-
-- 个人空间：没有目录覆盖时，按 `users.policy_group_id` 命中的策略组规则选策略
-- 团队空间：没有目录覆盖时，按 `teams.policy_group_id` 命中的策略组规则选策略
-- 系统默认策略组主要用于新用户 / 新团队初始化和补种，不是每次上传时的直接兜底分支
-
-策略决定：
-
-- 驱动类型：`local` 或 `s3`
-- 根目录或对象前缀
-- 单文件大小限制
-- 分片大小 `chunk_size`
-- 是否通过 `options` 启用 local `content_dedup` 或选择 S3 上传方式
-
-这意味着：
-
-- “文件存哪”是业务数据，不是部署时写死的配置
-- 同一个系统里可以同时存在多套存储后端
-
-### 个人空间与团队空间
-
-- 个人空间和团队空间共用同一套 `file_service` / `folder_service` / `upload_service` / `share_service` / `trash_service`
-- route 层通过 `WorkspaceStorageScope::{Personal, Team}` 指明当前操作落在哪个工作空间
-- 团队空间额外多了三层约束：
-  - 必须是团队成员
-  - 配额按团队统计，不再按个人统计
-  - 默认存储策略来自团队绑定的 `policy_group_id`
-
-### 回收站与软删除
-
-- 普通删除会写 `deleted_at`，进入回收站
-- 文件夹删除会递归标记子文件和子文件夹
-- 恢复时若原父目录已不存在，会自动恢复到根目录
-- 物理删除由显式 purge 或后台保留期清理触发
-- purge 事务内先删除 `files` / `file_versions` 等业务记录，并递减 Blob 引用计数
-- 真实对象和缩略图的清理由事务后执行，只有对象确认已经不存在时，才会删除 `file_blobs` 元数据
-- 如果对象删除失败，`file_blobs` 会保留，通常表现为 `ref_count = 0` 的待清理 Blob，避免数据库先于存储“失忆”
-- 真正执行对象删除前，会先用一次数据库级 CAS 抢占清理权，短暂把 `ref_count` 置为 `-1`；如果对象删除或校验失败，再恢复回 `0`，留给后续 maintenance 重试
-
-所以删除相关需求要先分清：
-
-- 你要的是“软删除”
-- 还是“从回收站恢复”
-- 还是“物理清除并回收 Blob / 配额”
-
-### 版本与锁
-
-- 历史版本保存在 `file_versions`
-- 覆盖写入时，旧 Blob 会转入历史版本
-- `resource_locks` 是锁的事实来源
-- `files.is_locked` / `folders.is_locked` 只是同步出来的快速状态位
-
-也就是说，`is_locked` 更像缓存状态位，不是最终真相。
-
-### 分享
-
-- 分享可指向文件或文件夹，也可以来自个人空间或团队空间
-- 支持密码、过期时间、下载次数限制
-- 公开 API 位于 `/api/v1/s/{token}/*`
-- 预览直链最终落在 `/pv/{token}/{filename}`，常见入口是 `/api/v1/files/{id}/preview-link` 与 `/api/v1/s/{token}/preview-link`
-- 公开页面路由为 `/s/:token`
-- 目录分享现在已经支持继续浏览子目录
-
-### WebDAV 专用账号
-
-- Basic Auth 使用独立表 `webdav_accounts`
-- 每个账号可以限制到某个根文件夹
-- WebDAV 协议入口仅接受 Basic Auth，对应 `webdav_accounts` 独立账号
-- JWT 只用于 `/api/v1/webdav-accounts` 这类管理接口，不用于 `/webdav/*` 协议入口
-
-## 上传链路
-
-新开发者最容易把三类事情混在一起：
-
-- 新建空文件：`POST /api/v1/files/new`
-- 上传新文件：`/api/v1/files/upload*`
-- 覆盖现有文件内容：`PUT /api/v1/files/{id}/content`
-
-它们的语义不一样，代码入口也不一样。
-
-### REST 上传
-
-上传协商由 `POST /api/v1/files/upload/init` 返回四种模式：
-
-- `direct`：客户端回退到普通 `multipart/form-data` 直传
-- `chunked`：客户端按 `chunk_size` 上传分片，再调用 `complete`
-- `presigned`：仅 S3 策略可用，客户端先把文件 `PUT` 到 `presigned_url`，再调用 `complete`
-- `presigned_multipart`：仅 S3 策略可用，客户端先为每个 part 申请 URL，再调用 `complete`
-
-这些模式最终都会进入统一的存储逻辑：
-
-1. 解析生效存储策略
-2. 校验大小限制与用户配额
-3. 只有 local 显式开启 `content_dedup` 时，`direct` / `chunked` / 覆盖写入 / 空文件这些路径才会计算 SHA-256
-4. 只有拿到 SHA-256 的本地上传路径才会按 `hash + policy_id` 做 Blob 去重；local 默认关闭 `content_dedup`
-5. 所有 S3 路径（`relay_stream` / `presigned` / `presigned_multipart`）都不会做 Blob 去重
-6. 创建文件记录
-7. 更新用户已用空间
-
-如果你在追上传问题，优先看：
-
-- `src/api/routes/files.rs`
-- `src/services/upload_service.rs`
-- `src/services/file_service.rs`
-- `src/storage/*`
-
-### 覆盖写入与历史版本
-
-当前文件被覆盖时：
-
-1. 检查锁状态
-2. 当前 Blob 进入 `file_versions`
-3. 文件切换到新 Blob
-4. 超过 `max_versions_per_file` 的最老版本会被自动清理
-
-REST 普通上传不会按文件名覆盖已有文件；WebDAV `PUT` 才是当前最主要的覆盖入口。
-
-## WebDAV 与 DeltaV
-
-仓库里的 WebDAV 支持分成两层理解：
-
-- 标准 WebDAV：由 `src/webdav/mod.rs` 自研 handler 承接
-- DeltaV 最小补充：仓库自己拦截实现
-
-当前额外补的 DeltaV 子集是：
-
-- `REPORT` 的 `DAV:version-tree`
-- `VERSION-CONTROL`
-- `OPTIONS` 里追加 `DAV: version-control`
-
-这些功能直接复用现有的 `file_versions` 表。
-
-当前不是完整 DeltaV 服务器，只是最小可用子集。
-
-## 前端交付方式
-
-- 构建期：`build.rs` 会检查 `frontend-panel/dist`
-- 若前端未构建，构建脚本将生成回退页，提醒先执行前端构建
-- 运行期：后端优先读取 `./frontend-override`
-- 若磁盘上没有对应文件，再回退到嵌入资源
-- 匿名页启动时会先请求 `/api/v1/public/branding`，因此品牌文案和公开站点地址不需要硬编码在前端构建产物里
-
-因此：
-
-- 生产镜像通常走嵌入资源
-- 本地调试时可以直接用磁盘上的前端产物覆盖嵌入页面
-
-## 可观测性与辅助入口
-
-- `/health`：存活检查
-- `/health/ready`：就绪检查，包含数据库 `ping`
-- `/health/memory`：堆统计，仅 `debug_assertions + openapi feature` 构建可用
-- `/health/metrics`：Prometheus 指标，仅 `metrics` feature 构建可用
-- `/swagger-ui`：仅 `debug_assertions + openapi feature` 构建注册
-- `/api-docs/openapi.json`：仅 `debug_assertions + openapi feature` 构建注册
-
-如果你在本地调 API，带 `openapi` feature 的 debug 构建会更方便。
-
-## 常见开发任务看哪里
-
-- 登录、注册、JWT、Cookie：`src/api/routes/auth.rs`、`src/services/auth_service.rs`
-- 团队与团队工作空间：`src/api/routes/teams.rs`、`src/api/routes/team_*`、`src/services/team_service.rs`、`src/services/workspace_storage_service.rs`
-- 用户资料与头像：`src/services/profile_service.rs`
-- 文件列表、重命名、移动、复制：`src/services/file_service.rs`、`src/services/folder_service.rs`
-- 回收站：`src/services/trash_service.rs`
-- 分享与公开页：`src/services/share_service.rs`、`src/api/routes/share_public.rs`
-- 实时文件树刷新与 SSE：`src/api/routes/auth.rs`、`src/services/storage_change_service.rs`、`frontend-panel/src/hooks/useStorageChangeEvents.ts`
-- 搜索：`src/services/search_service.rs`、`src/db/repository/search_repo.rs`
-- 存储策略与 S3：`src/services/policy_service.rs`、`src/storage/s3.rs`
-- WebDAV：`src/webdav/*`
-- 前端 API 封装：`frontend-panel/src/services/*`
-
-## 当前已知问题
-
-- `allowed_types` 字段已在策略模型中落库，但当前 REST API 没有管理它，也没有在上传链路里实际执行类型限制
+- `remote_node_health_test_interval_secs`
+
+## 改动应该落在哪一层
+
+| 你要改的东西 | 优先落点 |
+| --- | --- |
+| 新增主节点 REST 接口 | `src/api/routes/**` |
+| 新增 follower 内部协议能力 | `src/api/routes/internal_storage.rs`、`src/storage/remote_protocol.rs` |
+| 权限、配额、锁、版本、分享范围、团队语义 | `src/services/**` |
+| 新增查询、分页、过滤条件 | `src/db/repository/**` |
+| 本地 / S3 / 远端对象读写与预签名规则 | `src/storage/**` |
+| WebDAV 协议行为 | `src/webdav/**` |
+| 表字段、索引、默认值 | `migration/` + `src/entities/**` |
+| 前端页面、状态管理、SDK 调用 | `frontend-panel/src/**` |
+
+如果你发现复杂业务判断写在 route 层，基本就是代码气味。
+
+## 继续阅读
+
+- [`module-designs.md`](./module-designs.md)
+- [`api/index.md`](./api/index.md)
+- [`testing.md`](./testing.md)

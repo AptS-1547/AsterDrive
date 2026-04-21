@@ -97,8 +97,26 @@
 
 这个接口会校验当前密码；新密码仍然走和注册相同的长度校验。
 
-- `PATCH /auth/preferences`：只会合并请求体里非 `null` 的字段，并返回完整的最新偏好对象；当前偏好里也包含 `storage_event_stream_enabled`
+- `GET /auth/me`：返回的 `preferences` 除了内置界面偏好外，还可能包含 `preferences.custom`，用于自定义前端读写自己的用户级 KV 配置
+- `PATCH /auth/preferences`：只会合并请求体里非 `null` 的内置字段，并返回完整的最新偏好对象；当前偏好里也包含 `storage_event_stream_enabled`
+  还支持两个和自定义前端有关的字段：
+  - `custom`：把任意 JSON 值按 key 合并写入当前用户的自定义偏好
+  - `remove_custom_keys`：显式删除一组自定义偏好 key
+  自定义 key 不能和内置字段重名（例如 `theme_mode`、`language`）
 - `PATCH /auth/profile`：当前只支持修改 `display_name`
+
+`PATCH /auth/preferences` 的一个自定义 KV 示例：
+
+```json
+{
+  "language": "zh",
+  "custom": {
+    "my-frontend.sidebar": { "collapsed": true },
+    "my-frontend.accent": "sunset"
+  },
+  "remove_custom_keys": ["my-frontend.legacy"]
+}
+```
 
 ## 联系方式验证与密码重置
 

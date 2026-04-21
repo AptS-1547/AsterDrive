@@ -1,18 +1,40 @@
 # API 概览
 
-这页按功能分组带你找接口，不打算把每个接口都写成 OpenAPI 导出物。
+这页按功能分组带你找接口，不打算把每个接口都重写成 OpenAPI 导出物。
 
-绝大多数 JSON / REST 接口都挂在：
+绝大多数面向用户的 JSON / REST 接口都挂在：
 
 ```text
 /api/v1
 ```
 
-当前明确不在这个前缀下的入口有：
+## 先分清节点模式
+
+当前仓库有两类 HTTP 暴露面：
+
+- `primary` 节点：
+  - 普通用户 REST API
+  - 公开分享 API
+  - WebDAV
+  - 前端页面
+  - 健康检查
+- `follower` 节点：
+  - 健康检查
+  - 内部对象存储协议 `/api/v1/internal/storage/*`
+
+这意味着：
+
+- 你在浏览器、前端 SDK、公开分享页会碰到的，基本都在本目录这些页面里
+- `/api/v1/internal/storage/*` 是主从节点之间的内部协议，不是给浏览器客户端用的普通公开 API
+
+## 不在 `/api/v1` 下的入口
+
+当前明确不在 `/api/v1` 前缀下的能力有：
 
 - 健康检查：`/health*`
 - 直接下载链接：`/d/{token}/{filename}`
 - 预览下载链接：`/pv/{token}/{filename}`
+- WebDAV：默认 `/webdav`
 
 ## 统一响应格式
 
@@ -49,6 +71,7 @@
 - WOPI `CheckFileInfo` 与内容回调
 - WebDAV 协议响应
 - Prometheus 指标
+- follower 内部对象读取流 `/api/v1/internal/storage/objects/{tail:.*}`
 
 ## 错误码分域
 
@@ -74,6 +97,15 @@
 - `Authorization: Basic ...`
 - `Authorization: Bearer <jwt>`
 
+### Follower 内部存储协议
+
+- 主节点签名头：
+  - `x-aster-access-key`
+  - `x-aster-timestamp`
+  - `x-aster-nonce`
+  - `x-aster-signature`
+- 某些对象 GET / PUT 也支持预签名 query 参数
+
 ## 工作空间作用域
 
 当前有两类受保护工作空间：
@@ -96,35 +128,37 @@
 
 ## 模块索引
 
-- [认证](/api/auth)
-- [文件](/api/files)
-- [文件夹](/api/folders)
-- [团队与团队空间](/api/teams)
-- [批量操作](/api/batch)
-- [分享](/api/shares)
-- [回收站](/api/trash)
-- [搜索](/api/search)
-- [后台任务](/api/tasks)
-- [WOPI](/api/wopi)
-- [WebDAV](/api/webdav)
-- [属性](/api/properties)
-- [公共接口](/api/public)
-- [管理](/api/admin)
-- [健康检查](/api/health)
+- [认证](./auth.md)
+- [文件](./files.md)
+- [文件夹](./folders.md)
+- [团队与团队空间](./teams.md)
+- [批量操作](./batch.md)
+- [分享](./shares.md)
+- [回收站](./trash.md)
+- [搜索](./search.md)
+- [后台任务](./tasks.md)
+- [WOPI](./wopi.md)
+- [WebDAV](./webdav.md)
+- [属性](./properties.md)
+- [公共接口](./public.md)
+- [管理](./admin.md)
+- [健康检查](./health.md)
+- [内部存储协议（follower）](./internal-storage.md)
 
 其中比较值得优先看的几组能力是：
 
-- 上传与版本：见 [文件](/api/files)
-- 批量删除 / 移动 / 复制：见 [批量操作](/api/batch)
-- 回收站恢复与清理：见 [回收站](/api/trash)
-- 搜索与筛选：见 [搜索](/api/search)
-- 后台任务列表与重试：见 [后台任务](/api/tasks)
-- 团队管理与团队工作空间：见 [团队与团队空间](/api/teams)
-- 公开分享：见 [分享](/api/shares)
-- Office / WOPI 预览与回调：见 [WOPI](/api/wopi)
-- WebDAV 协议、账号与 DeltaV：见 [WebDAV](/api/webdav)
-- 登录页与公开页启动配置：见 [公共接口](/api/public)
-- 后台策略、锁、运行时配置与审计：见 [管理](/api/admin)
+- 上传与版本：见 [文件](./files.md)
+- 批量删除 / 移动 / 复制 / 打包：见 [批量操作](./batch.md)
+- 回收站恢复与清理：见 [回收站](./trash.md)
+- 搜索与筛选：见 [搜索](./search.md)
+- 后台任务列表与重试：见 [后台任务](./tasks.md)
+- 团队管理与团队工作空间：见 [团队与团队空间](./teams.md)
+- 公开分享：见 [分享](./shares.md)
+- Office / WOPI 预览与回调：见 [WOPI](./wopi.md)
+- WebDAV 协议、账号与 DeltaV：见 [WebDAV](./webdav.md)
+- 登录页、匿名页与远端节点注册握手：见 [公共接口](./public.md)
+- 主从节点内部对象协议：见 [内部存储协议（follower）](./internal-storage.md)
+- 后台策略、远端节点、锁、运行时配置与审计：见 [管理](./admin.md)
 
 ## OpenAPI 与 Swagger
 
@@ -135,12 +169,12 @@
 
 ## 继续阅读
 
-- [认证](/api/auth)
-- [文件](/api/files)
-- [团队与团队空间](/api/teams)
-- [搜索](/api/search)
-- [后台任务](/api/tasks)
-- [WOPI](/api/wopi)
-- [分享](/api/shares)
-- [公共接口](/api/public)
-- [管理](/api/admin)
+- [认证](./auth.md)
+- [文件](./files.md)
+- [团队与团队空间](./teams.md)
+- [搜索](./search.md)
+- [后台任务](./tasks.md)
+- [WOPI](./wopi.md)
+- [分享](./shares.md)
+- [公共接口](./public.md)
+- [管理](./admin.md)

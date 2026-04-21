@@ -228,6 +228,6 @@ WOPI 相关能力分成两层：
 
 ## 相关文档
 
-- [文件 API](/api/files)
-- [团队与团队空间 API](/api/teams)
-- [公共接口](/api/public)
+- [文件 API](./files.md)
+- [团队与团队空间 API](./teams.md)
+- [公共接口](./public.md)

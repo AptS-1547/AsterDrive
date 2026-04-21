@@ -2,7 +2,7 @@
 
 以下路径都相对于 `/api/v1`，且都需要认证。
 
-这组接口只负责“列出现有任务、查看详情、重试失败任务”，不负责创建任务。
+这组接口负责“列出现有任务、查看详情、重试失败任务”。真正创建任务的入口分散在其他模块里。
 
 ## 个人空间
 
@@ -19,6 +19,22 @@
 | `GET` | `/teams/{team_id}/tasks` | 分页列出指定团队任务 |
 | `GET` | `/teams/{team_id}/tasks/{id}` | 读取单个团队任务 |
 | `POST` | `/teams/{team_id}/tasks/{id}/retry` | 重试失败的团队任务 |
+
+## 谁会创建这些任务
+
+当前最常见的创建入口有：
+
+- `POST /batch/archive-compress`
+- `POST /teams/{team_id}/batch/archive-compress`
+- `POST /files/{id}/extract`
+- `POST /teams/{team_id}/files/{id}/extract`
+
+另外，系统内部还会创建：
+
+- `thumbnail_generate`
+- `system_runtime`
+
+不过这两类任务没有 `creator_user_id`，普通用户 `/tasks` 列表通常看不到；管理员可以在 `/api/v1/admin/tasks` 看全部任务。
 
 ## 分页
 
@@ -42,6 +58,9 @@
 - `kind`
 - `status`
 - `display_name`
+- `creator_user_id`
+- `team_id`
+- `share_id`
 - `progress_current`
 - `progress_total`
 - `progress_percent`
@@ -49,9 +68,11 @@
 - `attempt_count`
 - `max_attempts`
 - `last_error`
-- `payload_json`
-- `result_json`
+- `payload`
+- `result`
+- `steps`
 - `can_retry`
+- `lease_expires_at`
 - `started_at`
 - `finished_at`
 - `expires_at`
@@ -60,14 +81,29 @@
 
 其中：
 
+- `payload` / `result` 已经是结构化对象，不再是旧文档里说的 `payload_json` / `result_json`
+- `steps` 会给出更细的阶段状态、阶段进度和阶段文案
 - `can_retry = true` 目前只在 `status = failed` 时出现
 - `progress_total <= 0` 时，成功任务的 `progress_percent` 会直接视为 `100`
-- `expires_at` 表示这条任务记录以及相关临时产物的清理时间；默认保留期来自运行时配置 `task_retention_hours`，默认 `24` 小时
-- 当前公开 OpenAPI / 前端 SDK 里的 `BackgroundTaskKind` 只有 `archive_extract` 和 `archive_compress`
+- `expires_at` 表示这条任务记录的自然过期时间；任务临时产物会按保留期单独清理
+
+## 当前任务类型
+
+当前代码和前端 SDK 里的 `BackgroundTaskKind` 有四种：
+
+- `archive_extract`
+- `archive_compress`
+- `thumbnail_generate`
+- `system_runtime`
+
+对普通用户来说，最常见的是前两种：
+
+- `archive_extract`：解压归档文件到工作空间目录
+- `archive_compress`：把一组选中资源打包并写回工作空间
 
 ## `POST /tasks/{id}/retry`
 
-这条接口和团队对应版本都只接受“失败态”任务：
+这条接口和团队对应版本都只接受失败态任务：
 
 - 只有 `status = failed` 才能重试
 - 成功重试后，任务会被重置回待执行状态
@@ -77,10 +113,9 @@
 
 ## 当前实现现状
 
-有件事得直说，不然你看接口名会被带沟里：
+有两件事别搞混：
 
-- 当前 `/batch/archive-download` 和团队对应接口走的是“短期 stream ticket + 直接 ZIP 流下载”
-- 它们不会创建这里的 `background_task` 记录
-- 旧文档里提过 `archive_download` 这个任务枚举值；但按当前公开 OpenAPI / 前端 SDK，任务类型只暴露 `archive_extract`、`archive_compress`
+- `/batch/archive-download` 及团队对应接口走的是“短期 stream ticket + 直接 ZIP 流下载”，不会创建 `background_task`
+- `/batch/archive-compress` 和 `/files/{id}/extract` 才会真正创建这里能看到的后台任务
 
-也就是说，如果你只用当前公开 REST 能力，任务列表很可能长期为空，这是实现现状，不是你调错了。
+所以如果你只用了下载 ticket 打包链路，任务列表为空是正常现象；如果你用了压缩 / 解压链路，列表就应该能看到对应任务。

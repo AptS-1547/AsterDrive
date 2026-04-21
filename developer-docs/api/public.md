@@ -2,12 +2,14 @@
 
 这组路径都相对于 `/api/v1`，且不需要认证。
 
-目前公开给匿名页面启动用的接口有两条：
+其中前两条主要给匿名页面启动用，后两条用于 primary 和 follower 之间的远端节点 enrollment 握手。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/public/branding` | 读取登录页、公开页和匿名入口需要的品牌配置 |
 | `GET` | `/public/preview-apps` | 读取匿名态可见的预览应用注册表 |
+| `POST` | `/public/remote-enrollment/redeem` | follower 用 enrollment token 兑换远端节点绑定信息 |
+| `POST` | `/public/remote-enrollment/ack` | follower 确认 enrollment 已完成 |
 
 ## `GET /public/branding`
 
@@ -76,3 +78,63 @@
   - `wopi` 预览器常见字段有 `mode`、`action` / `action_url` / `action_url_template`、`discovery_url`
 - 前端文件预览、公开分享预览和 WOPI 集成入口都会依赖这份注册表，而不是把预览器信息硬编码在前端里
 - 管理员当前可以通过 `/api/v1/admin/config/frontend_preview_apps_json` 维护这份注册表
+
+## `POST /public/remote-enrollment/redeem`
+
+这条接口不是给匿名网页用的，而是给 follower CLI enrollment 流程用的。
+
+请求体：
+
+```json
+{
+  "token": "enr_xxxxx"
+}
+```
+
+成功后返回绑定引导数据：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "remote_node_id": 7,
+    "remote_node_name": "edge-sh-01",
+    "master_url": "https://drive.example.com",
+    "access_key": "rk_xxx",
+    "secret_key": "rs_xxx",
+    "namespace": "remote/edge-sh-01",
+    "is_enabled": true,
+    "ack_token": "enr_ack_xxx"
+  }
+}
+```
+
+要点：
+
+- `master_url` 要求主节点已经配置 `public_site_url`
+- `access_key` / `secret_key` / `namespace` 是后续内部存储协议要用的绑定信息
+- 兑换成功后，并不代表 enrollment 已彻底完成；follower 还需要继续调用 ack 接口
+
+## `POST /public/remote-enrollment/ack`
+
+同样是 enrollment 流程专用接口。
+
+请求体：
+
+```json
+{
+  "ack_token": "enr_ack_xxx"
+}
+```
+
+成功时返回空的统一成功响应：
+
+```json
+{
+  "code": 0,
+  "msg": ""
+}
+```
+
+语义上，这表示 follower 已经拿到绑定信息，并向主节点确认这次 enrollment 会话可以结束。

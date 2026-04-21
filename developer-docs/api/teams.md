@@ -71,6 +71,7 @@
 | `GET` | `/teams/{team_id}/files/{id}/download` | 下载团队文件 |
 | `GET` | `/teams/{team_id}/files/{id}/thumbnail` | 获取团队文件缩略图 |
 | `PUT` | `/teams/{team_id}/files/{id}/content` | 覆盖团队文件内容 |
+| `POST` | `/teams/{team_id}/files/{id}/extract` | 把团队归档文件解包成后台任务 |
 | `PATCH` | `/teams/{team_id}/files/{id}` | 重命名或移动团队文件 |
 | `DELETE` | `/teams/{team_id}/files/{id}` | 软删除团队文件 |
 | `POST` | `/teams/{team_id}/files/{id}/lock` | 锁定 / 解锁团队文件 |
@@ -81,8 +82,8 @@
 
 这部分请求体、分页参数、上传模式、锁语义、版本语义都和个人空间一致，直接对照这些文档看就行：
 
-- [文件 API](/api/files)
-- [文件夹 API](/api/folders)
+- [文件 API](./files.md)
+- [文件夹 API](./folders.md)
 
 ## 批量、搜索、分享与回收站
 
@@ -91,6 +92,7 @@
 | `POST` | `/teams/{team_id}/batch/delete` | 批量删除团队文件和文件夹 |
 | `POST` | `/teams/{team_id}/batch/move` | 批量移动团队文件和文件夹 |
 | `POST` | `/teams/{team_id}/batch/copy` | 批量复制团队文件和文件夹 |
+| `POST` | `/teams/{team_id}/batch/archive-compress` | 创建团队空间压缩归档后台任务 |
 | `POST` | `/teams/{team_id}/batch/archive-download` | 创建团队空间 ZIP 下载 ticket |
 | `GET` | `/teams/{team_id}/batch/archive-download/{token}` | 下载团队空间 ZIP |
 | `GET` | `/teams/{team_id}/search` | 搜索团队工作空间 |
@@ -109,12 +111,12 @@
 
 这几组能力同样复用个人空间契约：
 
-- [批量操作 API](/api/batch)
-- [搜索 API](/api/search)
-- [分享 API](/api/shares)
-- [回收站 API](/api/trash)
-- [后台任务 API](/api/tasks)
-- [WOPI](/api/wopi)
+- [批量操作 API](./batch.md)
+- [搜索 API](./search.md)
+- [分享 API](./shares.md)
+- [回收站 API](./trash.md)
+- [后台任务 API](./tasks.md)
+- [WOPI](./wopi.md)
 
 只有两条团队特有语义需要额外记住：
 
@@ -122,6 +124,8 @@
 - 文件写入时会优先使用目录级 `policy_id`；没有目录覆盖时，再按 `teams.policy_group_id` 的规则解析实际存储策略
 - 团队文件的 WOPI 启动入口虽然是 `/teams/{team_id}/files/{id}/wopi/open`，但真正回调时仍然走统一的 `/api/v1/wopi/files/{id}`；团队作用域信息保存在 access token 里
 - 团队批量打包下载 ticket 只能在对应团队路由下消费，不能拿去个人 `/batch/archive-download/{token}` 复用
+- 团队 `POST /teams/{team_id}/files/{id}/extract` 语义和个人空间一致：创建 `archive_extract` 任务，不会同步阻塞到解包完成
+- 团队 `POST /teams/{team_id}/batch/archive-compress` 语义和个人空间一致：创建 `archive_compress` 任务，把打包结果写回团队工作空间
 
 团队文件的 `GET /teams/{team_id}/files/{id}/direct-link` 语义和个人空间一致：接口只返回 token，真正下载仍然走根路径 `/d/{token}/{filename}`。默认 inline 直链由 AsterDrive 流式返回；追加 `?download=1` 后会复用附件下载分流，命中 `presigned` 策略时返回 `302`。
 

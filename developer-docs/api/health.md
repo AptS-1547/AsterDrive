@@ -2,12 +2,14 @@
 
 健康检查路径不在 `/api/v1` 下，而是直接挂在根路径。
 
+这组接口在 `primary` 和 `follower` 两种节点模式下都会注册。
+
 ## 接口列表
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` / `HEAD` | `/health` | 存活检查 |
-| `GET` / `HEAD` | `/health/ready` | 就绪检查，包含数据库连通性 |
+| `GET` / `HEAD` | `/health/ready` | 就绪检查，包含数据库和存储可用性 |
 | `GET` | `/health/memory` | 堆内存统计，仅 `debug_assertions + openapi feature` 构建注册 |
 | `GET` | `/health/metrics` | Prometheus 指标，仅 `metrics` feature 启用时存在 |
 
@@ -29,12 +31,20 @@
 
 `build_time` 来自编译期写入的 `ASTER_BUILD_TIME`。
 
+`HEAD /health` 语义相同，只是不返回响应体。
+
 ## `GET /health/ready`
 
-该接口会 `ping` 数据库：
+这条接口不是只看数据库。当前逻辑会先 `ping` 数据库，再做节点模式对应的存储就绪检查：
 
-- 数据库正常：`200`
-- 数据库不可用：`503`
+- `primary`：检查主节点当前可用的存储运行时状态
+- `follower`：检查 follower 当前的存储驱动和绑定所需状态
+
+返回语义：
+
+- 全部就绪：`200`
+- 数据库不可用：`503`，消息是 `Database unavailable`
+- 存储不可用：`503`，消息是 `Storage unavailable`
 
 部署建议：
 

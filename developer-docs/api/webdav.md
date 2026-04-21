@@ -87,4 +87,4 @@ http://localhost:3000/webdav
 - Bearer JWT：复用普通登录态，不受 `root_folder_id` 限制
 - `webdav_enabled = false` 时，WebDAV 请求会直接返回 `503`
 
-如果部署在反向代理后面，还要确认代理层允许 WebDAV 方法和相关请求头，见 [反向代理部署](/deployment/reverse-proxy)。
+如果部署在反向代理后面，还要确认代理层允许 WebDAV 方法和相关请求头，见 [反向代理部署](../../docs/deployment/reverse-proxy.md)。
