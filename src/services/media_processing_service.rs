@@ -17,12 +17,6 @@ use crate::types::{MediaProcessorKind, parse_storage_policy_options};
 const VIPS_CLI_THUMBNAIL_VERSION: &str = "vips-cli-v1";
 const STORAGE_NATIVE_THUMBNAIL_VERSION: &str = "storage-native-v1";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MediaKind {
-    Image,
-    Other,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedThumbnailProcessor {
     kind: MediaProcessorKind,
@@ -182,19 +176,17 @@ pub(crate) fn resolve_thumbnail_processor_for_blob(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
     file_name: &str,
-    source_mime_type: &str,
 ) -> Result<ResolvedThumbnailProcessor> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    resolve_thumbnail_processor_for_policy(state, &policy, file_name, source_mime_type)
+    resolve_thumbnail_processor_for_policy(state, &policy, file_name)
 }
 
 pub async fn load_thumbnail_if_exists(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
     file_name: &str,
-    source_mime_type: &str,
 ) -> Result<Option<ThumbnailData>> {
-    let ctx = build_thumbnail_context(state, blob, file_name, source_mime_type)?;
+    let ctx = build_thumbnail_context(state, blob, file_name)?;
     load_thumbnail_if_exists_with_context(state, blob, &ctx).await
 }
 
@@ -204,7 +196,7 @@ pub async fn get_or_generate_thumbnail(
     file_name: &str,
     source_mime_type: &str,
 ) -> Result<ThumbnailData> {
-    let ctx = build_thumbnail_context(state, blob, file_name, source_mime_type)?;
+    let ctx = build_thumbnail_context(state, blob, file_name)?;
     if let Some(data) = load_thumbnail_if_exists_with_context(state, blob, &ctx).await? {
         return Ok(data);
     }
@@ -239,7 +231,7 @@ pub async fn generate_and_store_thumbnail(
     file_name: &str,
     source_mime_type: &str,
 ) -> Result<StoredThumbnail> {
-    let ctx = build_thumbnail_context(state, blob, file_name, source_mime_type)?;
+    let ctx = build_thumbnail_context(state, blob, file_name)?;
     generate_and_store_with_context(state, blob, source_mime_type, &ctx).await
 }
 
@@ -283,21 +275,11 @@ pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) 
     Ok(())
 }
 
-fn media_kind_for_mime(mime: &str) -> MediaKind {
-    if mime.trim().to_ascii_lowercase().starts_with("image/") {
-        MediaKind::Image
-    } else {
-        MediaKind::Other
-    }
-}
-
 fn resolve_thumbnail_processor_for_policy(
     state: &PrimaryAppState,
     policy: &storage_policy::Model,
     file_name: &str,
-    source_mime_type: &str,
 ) -> Result<ResolvedThumbnailProcessor> {
-    let media_kind = media_kind_for_mime(source_mime_type);
     let registry = media_processing_config::media_processing_registry(&state.runtime_config);
     let source_extension = media_processing_config::file_extension(file_name);
     let mut last_unavailable_reason = None;
@@ -312,7 +294,6 @@ fn resolve_thumbnail_processor_for_policy(
                 processor = MediaProcessorKind::StorageNative.as_str(),
                 processor_match = "policy",
                 skip_reason = "policy thumbnail extension binding did not match source file",
-                media_kind = ?media_kind,
                 "skipped unmatched policy-native media processor"
             );
         } else {
@@ -334,7 +315,6 @@ fn resolve_thumbnail_processor_for_policy(
                     processor = MediaProcessorKind::StorageNative.as_str(),
                     processor_match = "policy",
                     skip_reason = %reason,
-                    media_kind = ?media_kind,
                     "skipped unavailable policy-native media processor"
                 );
                 last_unavailable_reason = Some(reason);
@@ -346,7 +326,6 @@ fn resolve_thumbnail_processor_for_policy(
                     source_extension = source_extension.as_deref().unwrap_or(""),
                     processor = MediaProcessorKind::StorageNative.as_str(),
                     processor_match = "policy",
-                    media_kind = ?media_kind,
                     "resolved media processor from storage policy"
                 );
                 return Ok(resolved_thumbnail_processor_from_config(&processor_config));
@@ -377,7 +356,6 @@ fn resolve_thumbnail_processor_for_policy(
                 processor = candidate.processor.kind.as_str(),
                 processor_match = candidate.match_kind.as_str(),
                 skip_reason = %reason,
-                media_kind = ?media_kind,
                 "skipped unavailable media processor"
             );
             last_unavailable_reason = Some(reason);
@@ -391,7 +369,6 @@ fn resolve_thumbnail_processor_for_policy(
             source_extension = source_extension.as_deref().unwrap_or(""),
             processor = candidate.processor.kind.as_str(),
             processor_match = candidate.match_kind.as_str(),
-            media_kind = ?media_kind,
             "resolved media processor"
         );
         return Ok(resolved_thumbnail_processor_from_config(
@@ -408,11 +385,9 @@ fn build_thumbnail_context(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
     file_name: &str,
-    source_mime_type: &str,
 ) -> Result<ThumbnailContext> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let processor =
-        resolve_thumbnail_processor_for_policy(state, &policy, file_name, source_mime_type)?;
+    let processor = resolve_thumbnail_processor_for_policy(state, &policy, file_name)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     Ok(ThumbnailContext { driver, processor })
 }
@@ -857,7 +832,7 @@ fn requires_server_side_source_limit(processor: &ResolvedThumbnailProcessor) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::{MediaKind, known_thumbnail_cache_paths, media_kind_for_mime};
+    use super::known_thumbnail_cache_paths;
     use crate::config::media_processing::command_is_available;
 
     #[test]
@@ -868,12 +843,6 @@ mod tests {
         assert!(paths.contains(&format!("_thumb/v2/ab/ca/{hash}.webp")));
         assert!(paths.contains(&format!("_thumb/vips-cli-v1/ab/ca/{hash}.webp")));
         assert!(paths.contains(&format!("_thumb/storage-native-v1/ab/ca/{hash}.webp")));
-    }
-
-    #[test]
-    fn media_kind_classifies_thumbnail_mimes() {
-        assert_eq!(media_kind_for_mime("image/png"), MediaKind::Image);
-        assert_eq!(media_kind_for_mime("application/pdf"), MediaKind::Other);
     }
 
     #[test]

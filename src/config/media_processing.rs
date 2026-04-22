@@ -575,7 +575,7 @@ mod tests {
 
     #[test]
     fn public_thumbnail_support_exposes_enabled_processor_capabilities() {
-        let mut runtime_config = RuntimeConfig::new();
+        let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(
             MEDIA_PROCESSING_REGISTRY_JSON_KEY,
             r#"{

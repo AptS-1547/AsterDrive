@@ -34,7 +34,6 @@ pub(crate) async fn ensure_thumbnail_task(
         state,
         blob,
         source_file_name,
-        source_mime_type,
     )?
     .kind();
     tracing::debug!(

@@ -108,7 +108,7 @@ macro_rules! upload_file_bytes {
             .as_bytes(),
         );
         payload.extend_from_slice(format!("Content-Type: {}\r\n\r\n", $content_type).as_bytes());
-        payload.extend_from_slice(&$bytes);
+        payload.extend_from_slice(b"fake-heic".as_ref());
         payload.extend_from_slice(b"\r\n------TestBound--\r\n");
 
         let req = test::TestRequest::post()
@@ -390,7 +390,7 @@ async fn test_thumbnail_failed_task_returns_error_without_requeue() {
     let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
-    let invalid_png = b"not-a-real-png".to_vec();
+    let _invalid_png = b"not-a-real-png".to_vec();
     let file_id = upload_file_bytes!(app, token, "broken.png", "image/png", invalid_png);
 
     let first = request_thumbnail!(app, token, file_id);
