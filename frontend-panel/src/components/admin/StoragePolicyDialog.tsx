@@ -236,6 +236,9 @@ export function StoragePolicyDialog({
 	const contentDedupLabel = form.content_dedup
 		? t("policy_wizard_enabled")
 		: t("policy_wizard_disabled");
+	const storageNativeThumbnailLabel = form.storage_native_thumbnail
+		? t("policy_wizard_enabled")
+		: t("policy_wizard_disabled");
 	const createSummaryItems = [
 		{ label: t("driver_type"), value: currentStorageOption.title },
 		{
@@ -260,6 +263,10 @@ export function StoragePolicyDialog({
 			value: form.is_default
 				? t("policy_wizard_enabled")
 				: t("policy_wizard_disabled"),
+		},
+		{
+			label: t("storage_native_thumbnail"),
+			value: storageNativeThumbnailLabel,
 		},
 		...(form.driver_type === "local"
 			? [
@@ -615,6 +622,26 @@ export function StoragePolicyDialog({
 			</div>
 			<p className="text-xs text-muted-foreground">
 				{t("local_content_dedup_desc")}
+			</p>
+		</div>
+	);
+
+	const renderStorageNativeThumbnailField = () => (
+		<div className="space-y-2 pt-1">
+			<div className="flex items-center gap-2">
+				<Switch
+					id="storage_native_thumbnail"
+					checked={form.storage_native_thumbnail}
+					onCheckedChange={(value) =>
+						onFieldChange("storage_native_thumbnail", value)
+					}
+				/>
+				<Label htmlFor="storage_native_thumbnail">
+					{t("storage_native_thumbnail")}
+				</Label>
+			</div>
+			<p className="text-xs text-muted-foreground">
+				{t("storage_native_thumbnail_desc")}
 			</p>
 		</div>
 	);
@@ -1015,6 +1042,7 @@ export function StoragePolicyDialog({
 																	{renderLocalContentDedupField()}
 																</>
 															)}
+															{renderStorageNativeThumbnailField()}
 															{renderLimitsFields()}
 															{renderDefaultToggle()}
 														</div>
@@ -1119,6 +1147,7 @@ export function StoragePolicyDialog({
 												) : (
 													renderLocalContentDedupField()
 												)}
+												{renderStorageNativeThumbnailField()}
 												{renderLimitsFields()}
 												{renderDefaultToggle()}
 											</div>

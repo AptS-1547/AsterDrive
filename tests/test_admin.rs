@@ -8,6 +8,8 @@ use chrono::{Duration, Utc};
 use sea_orm::Set;
 use serde_json::Value;
 use std::io::Cursor;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use aster_drive::db::repository::background_task_repo;
 use aster_drive::entities::background_task;
@@ -35,6 +37,24 @@ fn avatar_upload_payload() -> (String, Vec<u8>) {
     body.extend_from_slice(&png.into_inner());
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
     (boundary, body)
+}
+
+fn write_fake_vips_command() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("aster-drive-vips-test-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("fake-vips");
+    std::fs::write(
+        &path,
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"vips-8.16.0\"\n  exit 0\nfi\necho \"unexpected args: $@\" >&2\nexit 1\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&path, permissions).unwrap();
+    }
+    path
 }
 
 #[actix_web::test]
@@ -110,6 +130,7 @@ async fn test_admin_scope_allows_admin_users() {
     assert!(keys.contains(&"avatar_max_upload_size_bytes"));
     assert!(keys.contains(&"archive_extract_max_staging_bytes"));
     assert!(keys.contains(&"thumbnail_max_source_bytes"));
+    assert!(keys.contains(&"media_processing_registry_json"));
     assert!(keys.contains(&"branding_title"));
     assert!(keys.contains(&"branding_description"));
     assert!(keys.contains(&"branding_favicon_url"));
@@ -1527,6 +1548,58 @@ async fn test_admin_config_action_defaults_to_admin_email() {
         .last_message()
         .expect("test email should be sent");
     assert_eq!(message.to.address, "test@example.com");
+}
+
+#[actix_web::test]
+async fn test_admin_config_action_tests_vips_command_from_draft() {
+    let fake_vips = write_fake_vips_command();
+    let fake_vips_command = fake_vips.to_string_lossy().to_string();
+    let draft_value = serde_json::json!({
+        "version": 1,
+        "processors": [
+            {
+                "kind": "vips_cli",
+                "enabled": false,
+                "extensions": ["heic"],
+                "config": {
+                    "command": fake_vips_command
+                }
+            },
+            {
+                "kind": "images",
+                "enabled": true
+            }
+        ]
+    })
+    .to_string();
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/config/media_processing_registry_json/action")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "action": "test_vips_cli",
+            "value": draft_value
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["data"]["message"]
+        .as_str()
+        .expect("config action should return a message");
+    assert!(message.contains("is available"));
+    assert!(message.contains("vips-8.16.0"));
+    assert!(message.contains(fake_vips.to_string_lossy().as_ref()));
+
+    let _ = std::fs::remove_dir_all(
+        fake_vips
+            .parent()
+            .expect("fake vips script should have a parent directory"),
+    );
 }
 
 #[actix_web::test]

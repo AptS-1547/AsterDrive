@@ -155,6 +155,7 @@ export default function AdminSettingsPage({
 		handleBuildWopiDiscoveryPreviewConfig,
 		handleSaveAll,
 		handleSendTestEmail,
+		handleTestVipsCliCommand,
 		hasAnyConfig,
 		hasUnsavedChanges,
 		hasValidationError,
@@ -426,6 +427,7 @@ export default function AdminSettingsPage({
 				handleBuildWopiDiscoveryPreviewConfig={
 					handleBuildWopiDiscoveryPreviewConfig
 				}
+				handleTestVipsCliCommand={handleTestVipsCliCommand}
 				isMobileNavigation={isMobileNavigation}
 				markCustomDeleted={markCustomDeleted}
 				newCustomRowErrors={newCustomRowErrors}

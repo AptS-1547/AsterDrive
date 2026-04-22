@@ -44,6 +44,10 @@ pub const TEAM_MEMBER_LIST_MAX_LIMIT_KEY: &str = "team_member_list_max_limit";
 pub const TASK_LIST_MAX_LIMIT_KEY: &str = "task_list_max_limit";
 pub const AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY: &str = "avatar_max_upload_size_bytes";
 pub const THUMBNAIL_MAX_SOURCE_BYTES_KEY: &str = "thumbnail_max_source_bytes";
+pub const MEDIA_PROCESSING_REGISTRY_JSON_KEY: &str = "media_processing_registry_json";
+pub const THUMBNAIL_DEFAULT_PROCESSOR_KEY: &str = "thumbnail_default_processor";
+pub const THUMBNAIL_VIPS_CLI_ENABLED_KEY: &str = "thumbnail_vips_cli_enabled";
+pub const THUMBNAIL_VIPS_COMMAND_KEY: &str = "thumbnail_vips_command";
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
 pub const MAX_VERSIONS_PER_FILE_KEY: &str = "max_versions_per_file";
@@ -473,8 +477,19 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage",
+        category: "storage.media_processing",
         description: "Maximum original file size eligible for thumbnail generation in bytes",
+    },
+    ConfigDef {
+        key: MEDIA_PROCESSING_REGISTRY_JSON_KEY,
+        label_i18n_key: "settings_item_media_processing_registry_json_label",
+        description_i18n_key: "settings_item_media_processing_registry_json_desc",
+        value_type: SystemConfigValueType::Multiline,
+        default_fn: crate::config::media_processing::default_media_processing_registry_json,
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage.media_processing",
+        description: "Media processing rule registry used to route thumbnail generation by file extension",
     },
     // ── User ───────────────────────────────────────────────
     ConfigDef {

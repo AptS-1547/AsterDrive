@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+	getMediaProcessingConfigIssuesFromString,
+	MEDIA_PROCESSING_CONFIG_KEY,
+} from "@/components/admin/mediaProcessingConfigEditorShared";
+import {
 	getPreviewAppsConfigIssuesFromString,
 	PREVIEW_APPS_CONFIG_KEY,
 } from "@/components/admin/previewAppsConfigEditorShared";
@@ -24,7 +28,9 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { adminConfigService } from "@/services/adminService";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
+import { useThumbnailSupportStore } from "@/stores/thumbnailSupportStore";
 import type {
+	ConfigActionType,
 	ConfigSchemaItem,
 	SystemConfig,
 	TemplateVariableGroup,
@@ -122,6 +128,22 @@ export function useAdminSettingsData({
 		},
 		[t],
 	);
+
+	const handleTestVipsCliCommand = useCallback(async (value: string) => {
+		try {
+			const response = await adminConfigService.action(
+				MEDIA_PROCESSING_CONFIG_KEY,
+				{
+					action: "test_vips_cli" as ConfigActionType,
+					value,
+				},
+			);
+			toast.success(response.message);
+		} catch (error) {
+			handleApiError(error);
+			throw error;
+		}
+	}, []);
 
 	const load = useCallback(async (options?: { showLoading?: boolean }) => {
 		const showLoading = options?.showLoading ?? true;
@@ -395,6 +417,19 @@ export function useAdminSettingsData({
 		);
 	}, [configs, draftValues]);
 
+	const mediaProcessingValidationIssues = useMemo(() => {
+		const config = configs.find(
+			(item) => item.key === MEDIA_PROCESSING_CONFIG_KEY,
+		);
+		if (!config) {
+			return [];
+		}
+
+		return getMediaProcessingConfigIssuesFromString(
+			draftValues[config.key] ?? config.value,
+		);
+	}, [configs, draftValues]);
+
 	const configValidationErrors = useMemo(() => {
 		const errors = new Map<string, string>();
 		const configsByKey = new Map(
@@ -428,16 +463,19 @@ export function useAdminSettingsData({
 	const hasValidationError =
 		newCustomRowErrors.size > 0 ||
 		previewAppsValidationIssues.length > 0 ||
+		mediaProcessingValidationIssues.length > 0 ||
 		configValidationErrors.size > 0;
 	const hasUnsavedChanges = changedCount > 0;
 	const hasAnyConfig = configs.length > 0;
 	const validationMessage =
 		configValidationErrors.values().next().value ??
-		(previewAppsValidationIssues.length > 0
-			? t("preview_apps_validation_error")
-			: newCustomRowErrors.size > 0
-				? t("custom_config_validation_error")
-				: undefined);
+		(mediaProcessingValidationIssues.length > 0
+			? t("media_processing_validation_error")
+			: previewAppsValidationIssues.length > 0
+				? t("preview_apps_validation_error")
+				: newCustomRowErrors.size > 0
+					? t("custom_config_validation_error")
+					: undefined);
 
 	const getDraftValue = useCallback(
 		(config: SystemConfig) => draftValues[config.key] ?? config.value,
@@ -522,6 +560,9 @@ export function useAdminSettingsData({
 			const previewAppsChanged = changedExistingConfigs.some(
 				(config) => config.key === PREVIEW_APPS_CONFIG_KEY,
 			);
+			const mediaProcessingChanged = changedExistingConfigs.some(
+				(config) => config.key === MEDIA_PROCESSING_CONFIG_KEY,
+			);
 			const nextConfigsByKey = new Map(
 				configs.map((config) => [config.key, config] as const),
 			);
@@ -561,6 +602,10 @@ export function useAdminSettingsData({
 			if (previewAppsChanged) {
 				usePreviewAppStore.getState().invalidate();
 				void usePreviewAppStore.getState().load({ force: true });
+			}
+			if (mediaProcessingChanged) {
+				useThumbnailSupportStore.getState().invalidate();
+				void useThumbnailSupportStore.getState().load({ force: true });
 			}
 			toast.success(t("settings_saved"));
 		} catch (error) {
@@ -608,6 +653,7 @@ export function useAdminSettingsData({
 		handleBuildWopiDiscoveryPreviewConfig,
 		handleSaveAll,
 		handleSendTestEmail,
+		handleTestVipsCliCommand,
 		hasAnyConfig,
 		hasUnsavedChanges,
 		hasValidationError,

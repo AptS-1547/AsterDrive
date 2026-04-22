@@ -6,6 +6,7 @@ use image::ImageFormat;
 use image::imageops::FilterType;
 use image::{ImageReader, Limits};
 
+use crate::config::media_processing;
 use crate::config::operations;
 use crate::db::repository::file_repo;
 use crate::entities::file_blob;
@@ -15,34 +16,37 @@ use crate::storage::StorageDriver;
 
 const THUMB_MAX_DIM: u32 = 200;
 const THUMB_PREFIX: &str = "_thumb";
-const THUMB_VERSION: &str = "v2";
+pub(crate) const CURRENT_IMAGES_THUMBNAIL_VERSION: &str = "images-v1";
+pub(crate) const LEGACY_IMAGES_THUMBNAIL_VERSION: &str = "v2";
 /// 单次解码最大内存分配（防止恶意/超大图 OOM）
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
 
-/// 判断 MIME 类型是否支持生成缩略图
-pub fn is_supported_mime(mime: &str) -> bool {
-    matches!(
-        mime,
-        "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "image/bmp" | "image/tiff"
-    )
+/// 判断文件名后缀是否支持内置 images 缩略图
+pub fn is_supported_file_name(file_name: &str) -> bool {
+    media_processing::file_extension(file_name)
+        .is_some_and(|extension| media_processing::builtin_images_supports_extension(&extension))
 }
 
-pub fn ensure_supported_mime(mime: &str) -> Result<()> {
-    if is_supported_mime(mime) {
+pub fn ensure_supported_file_name(file_name: &str) -> Result<()> {
+    if is_supported_file_name(file_name) {
         return Ok(());
     }
 
     Err(AsterError::validation_error(format!(
-        "thumbnails are not supported for MIME type '{mime}'"
+        "thumbnails are not supported for file '{file_name}'"
     )))
 }
 
 /// 计算缩略图在存储驱动中的路径
 pub(crate) fn thumb_path(blob_hash: &str) -> String {
+    thumb_path_for_version(blob_hash, CURRENT_IMAGES_THUMBNAIL_VERSION)
+}
+
+pub(crate) fn thumb_path_for_version(blob_hash: &str, version: &str) -> String {
     format!(
         "{}/{}/{}/{}/{}.webp",
         THUMB_PREFIX,
-        THUMB_VERSION,
+        version,
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
@@ -62,12 +66,12 @@ pub(crate) fn legacy_thumb_path(blob_hash: &str) -> String {
 pub(crate) fn thumbnail_etag_value_for(blob_hash: &str, thumbnail_version: Option<&str>) -> String {
     format!(
         "thumb-{}-{blob_hash}",
-        thumbnail_version.unwrap_or(THUMB_VERSION)
+        thumbnail_version.unwrap_or(CURRENT_IMAGES_THUMBNAIL_VERSION)
     )
 }
 
-pub(crate) fn thumbnail_version(blob: &file_blob::Model) -> &str {
-    blob.thumbnail_version.as_deref().unwrap_or(THUMB_VERSION)
+pub(crate) fn current_thumbnail_max_dim() -> u32 {
+    THUMB_MAX_DIM
 }
 
 pub(crate) fn is_thumbnail_path(path: &str) -> bool {
@@ -125,8 +129,13 @@ pub async fn get_or_generate(state: &PrimaryAppState, blob: &file_blob::Model) -
     let driver = thumbnail_driver(state, blob)?;
     let path = thumb_path(&blob.hash);
     if driver.exists(&path).await.unwrap_or(false) {
-        if let Err(error) =
-            file_repo::set_thumbnail_metadata(&state.db, blob.id, &path, THUMB_VERSION).await
+        if let Err(error) = file_repo::set_thumbnail_metadata(
+            &state.db,
+            blob.id,
+            &path,
+            CURRENT_IMAGES_THUMBNAIL_VERSION,
+        )
+        .await
         {
             tracing::warn!(
                 blob_id = blob.id,
@@ -140,8 +149,13 @@ pub async fn get_or_generate(state: &PrimaryAppState, blob: &file_blob::Model) -
 
     if let Err(e) = driver.put(&path, &webp_bytes).await {
         tracing::warn!("failed to store thumbnail {path}: {e}");
-    } else if let Err(error) =
-        file_repo::set_thumbnail_metadata(&state.db, blob.id, &path, THUMB_VERSION).await
+    } else if let Err(error) = file_repo::set_thumbnail_metadata(
+        &state.db,
+        blob.id,
+        &path,
+        CURRENT_IMAGES_THUMBNAIL_VERSION,
+    )
+    .await
     {
         tracing::warn!(
             blob_id = blob.id,
@@ -169,8 +183,13 @@ pub async fn generate_and_store(
     let path = thumb_path(&blob.hash);
 
     if driver.exists(&path).await.unwrap_or(false) {
-        if let Err(error) =
-            file_repo::set_thumbnail_metadata(&state.db, blob.id, &path, THUMB_VERSION).await
+        if let Err(error) = file_repo::set_thumbnail_metadata(
+            &state.db,
+            blob.id,
+            &path,
+            CURRENT_IMAGES_THUMBNAIL_VERSION,
+        )
+        .await
         {
             tracing::warn!(
                 blob_id = blob.id,
@@ -183,7 +202,13 @@ pub async fn generate_and_store(
 
     let webp_bytes = render_thumbnail_bytes(driver.as_ref(), blob).await?;
     let stored_path = driver.put(&path, &webp_bytes).await?;
-    file_repo::set_thumbnail_metadata(&state.db, blob.id, &stored_path, THUMB_VERSION).await?;
+    file_repo::set_thumbnail_metadata(
+        &state.db,
+        blob.id,
+        &stored_path,
+        CURRENT_IMAGES_THUMBNAIL_VERSION,
+    )
+    .await?;
     Ok((stored_path, false))
 }
 
@@ -256,7 +281,7 @@ fn thumbnail_driver(
     state.driver_registry.get_driver(&policy)
 }
 
-async fn render_thumbnail_bytes(
+pub(crate) async fn render_thumbnail_bytes(
     driver: &dyn StorageDriver,
     blob: &file_blob::Model,
 ) -> Result<Vec<u8>> {
@@ -269,7 +294,10 @@ async fn render_thumbnail_bytes(
         )?
 }
 
-fn ensure_source_size_supported(blob: &file_blob::Model, max_source_bytes: i64) -> Result<()> {
+pub(crate) fn ensure_source_size_supported(
+    blob: &file_blob::Model,
+    max_source_bytes: i64,
+) -> Result<()> {
     if blob.size > max_source_bytes {
         return Err(AsterError::validation_error(format!(
             "thumbnail source exceeds {} MiB limit",
@@ -331,7 +359,10 @@ mod tests {
     #[test]
     fn thumbnail_paths_are_versioned() {
         let hash = "abc".repeat(21) + "a";
-        assert_eq!(thumb_path(&hash), format!("_thumb/v2/ab/ca/{hash}.webp"));
+        assert_eq!(
+            thumb_path(&hash),
+            format!("_thumb/images-v1/ab/ca/{hash}.webp")
+        );
     }
 
     #[test]
@@ -339,7 +370,7 @@ mod tests {
         let hash = "abc".repeat(21) + "a";
         assert_eq!(
             thumbnail_etag_value_for(&hash, None),
-            format!("thumb-v2-{hash}")
+            format!("thumb-images-v1-{hash}")
         );
     }
 

@@ -16,7 +16,7 @@ use aster_drive::db::repository::{
 use aster_drive::entities::storage_policy;
 use aster_drive::services::{
     auth_service, file_service, folder_service, managed_follower_service, master_binding_service,
-    policy_service, thumbnail_service, upload_service,
+    policy_service, upload_service,
 };
 use aster_drive::storage::remote_protocol::{
     RemoteStorageClient, RemoteStorageComposeRequest, sign_internal_request, sign_presigned_request,
@@ -1469,9 +1469,14 @@ async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_di
     let created_blob = file_repo::find_blob_by_id(&consumer_state.db, created_file.blob_id)
         .await
         .expect("uploaded blob should be queryable");
-    thumbnail_service::generate_and_store(&consumer_state, &created_blob)
-        .await
-        .expect("thumbnail should generate while remote node is enabled");
+    aster_drive::services::media_processing_service::generate_and_store_thumbnail(
+        &consumer_state,
+        &created_blob,
+        &created_file.name,
+        &created_file.mime_type,
+    )
+    .await
+    .expect("thumbnail should generate while remote node is enabled");
 
     managed_follower_service::update(
         &consumer_state,

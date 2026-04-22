@@ -10,6 +10,7 @@ use crate::config::branding;
 use crate::config::cors;
 use crate::config::definitions::{ALL_CONFIGS, ConfigDef};
 use crate::config::mail;
+use crate::config::media_processing;
 use crate::config::operations;
 use crate::config::site_url;
 use crate::config::wopi;
@@ -144,6 +145,9 @@ where
         | operations::ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY
         | operations::THUMBNAIL_MAX_SOURCE_BYTES_KEY => {
             operations::normalize_bytes_config_value(key, value)
+        }
+        media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY => {
+            media_processing::normalize_media_processing_registry_config_value(value)
         }
         mail::MAIL_SMTP_HOST_KEY => mail::normalize_smtp_host_config_value(value),
         mail::MAIL_SMTP_PORT_KEY => mail::normalize_smtp_port_config_value(value),

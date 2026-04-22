@@ -37,6 +37,7 @@ export interface AdminSettingsCategoryContentProps {
 		discoveryUrl: string;
 		value: string;
 	}) => Promise<string>;
+	handleTestVipsCliCommand: (value: string) => Promise<void>;
 	isMobileNavigation: boolean;
 	markCustomDeleted: (key: string) => void;
 	newCustomRowErrors: Map<string, string>;

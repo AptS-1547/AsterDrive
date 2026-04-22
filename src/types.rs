@@ -7,7 +7,7 @@ use std::fmt;
 use std::time::Duration;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 /// PATCH 请求里的可空字段三态：
 /// - `Absent`：字段未传，保持不变
@@ -915,6 +915,26 @@ pub enum RemoteUploadStrategy {
     Presigned,
 }
 
+/// 统一媒体处理器类型（system_config / storage_policy.options）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MediaProcessorKind {
+    Images,
+    VipsCli,
+    StorageNative,
+}
+
+impl MediaProcessorKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Images => "images",
+            Self::VipsCli => "vips_cli",
+            Self::StorageNative => "storage_native",
+        }
+    }
+}
+
 /// Raw JSON array stored in `storage_policies.allowed_types`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
 pub struct StoredStoragePolicyAllowedTypes(pub String);
@@ -991,6 +1011,9 @@ pub struct StoragePolicyOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_upload_strategy: Option<RemoteUploadStrategy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_storage_policy_thumbnail_processor"))]
+    pub thumbnail_processor: Option<MediaProcessorKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_dedup: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1, message = "s3_connect_timeout_secs must be greater than 0"))]
@@ -1024,6 +1047,10 @@ impl StoragePolicyOptions {
             .unwrap_or(RemoteUploadStrategy::RelayStream)
     }
 
+    pub fn uses_storage_native_thumbnail(&self) -> bool {
+        self.thumbnail_processor == Some(MediaProcessorKind::StorageNative)
+    }
+
     pub fn effective_s3_connect_timeout(&self) -> Duration {
         Duration::from_secs(
             self.s3_connect_timeout_secs
@@ -1047,6 +1074,18 @@ impl StoragePolicyOptions {
                 .unwrap_or(DEFAULT_S3_OPERATION_TIMEOUT_SECS),
         )
     }
+}
+
+fn validate_storage_policy_thumbnail_processor(
+    value: &MediaProcessorKind,
+) -> std::result::Result<(), ValidationError> {
+    if *value != MediaProcessorKind::StorageNative {
+        let mut error = ValidationError::new("invalid");
+        error.message = Some("thumbnail_processor only supports 'storage_native'".into());
+        return Err(error);
+    }
+
+    Ok(())
 }
 
 pub fn parse_storage_policy_options(options: &str) -> StoragePolicyOptions {
@@ -1122,9 +1161,11 @@ impl TokenType {
 #[cfg(test)]
 mod tests {
     use crate::types::{RemoteDownloadStrategy, RemoteUploadStrategy};
+    use validator::Validate;
 
     use super::{
-        S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions, parse_storage_policy_options,
+        MediaProcessorKind, S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions,
+        parse_storage_policy_options,
     };
     use std::time::Duration;
 
@@ -1179,6 +1220,26 @@ mod tests {
         assert_eq!(
             options.effective_remote_download_strategy(),
             RemoteDownloadStrategy::Presigned
+        );
+    }
+
+    #[test]
+    fn explicit_thumbnail_processor_maps_to_media_processor_kind() {
+        let options = parse_storage_policy_options(r#"{"thumbnail_processor":"storage_native"}"#);
+        assert_eq!(
+            options.thumbnail_processor,
+            Some(MediaProcessorKind::StorageNative)
+        );
+    }
+
+    #[test]
+    fn thumbnail_processor_validation_rejects_non_storage_native_values() {
+        let options = parse_storage_policy_options(r#"{"thumbnail_processor":"vips_cli"}"#);
+        let error = options.validate().unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("thumbnail_processor only supports")
         );
     }
 
@@ -1269,6 +1330,13 @@ mod tests {
         })
         .unwrap();
         assert_eq!(json, r#"{"remote_upload_strategy":"presigned"}"#);
+
+        let json = serde_json::to_string(&StoragePolicyOptions {
+            thumbnail_processor: Some(MediaProcessorKind::StorageNative),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"thumbnail_processor":"storage_native"}"#);
 
         let json = serde_json::to_string(&StoragePolicyOptions {
             s3_operation_timeout_secs: Some(600),

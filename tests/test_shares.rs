@@ -193,7 +193,7 @@ async fn test_shared_thumbnail_returns_304_for_matching_if_none_match() {
         .and_then(|value| value.to_str().ok())
         .expect("shared thumbnail response should include ETag")
         .to_string();
-    assert!(etag.contains("thumb-v2-"));
+    assert!(etag.contains("thumb-images-v1-"));
     assert_eq!(
         resp.headers()
             .get("Cache-Control")

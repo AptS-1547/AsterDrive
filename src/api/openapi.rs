@@ -428,6 +428,7 @@ use utoipa::{Modify, OpenApi};
             crate::services::config_service::TemplateVariableGroup,
             crate::services::config_service::ConfigActionType,
             crate::services::config_service::PublicBranding,
+            crate::config::media_processing::PublicThumbnailSupport,
             crate::services::preview_app_service::PreviewAppProvider,
             crate::services::preview_app_service::PreviewOpenMode,
             crate::services::preview_app_service::PublicPreviewAppConfig,

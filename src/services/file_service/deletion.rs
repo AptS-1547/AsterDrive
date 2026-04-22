@@ -7,7 +7,7 @@ use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
-    storage_change_service, thumbnail_service,
+    media_processing_service, storage_change_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::utils::numbers::usize_to_u32;
@@ -149,7 +149,7 @@ async fn cleanup_claimed_blob(state: &PrimaryAppState, current_blob: &file_blob:
         }
     }
 
-    if let Err(e) = thumbnail_service::delete_thumbnail(state, current_blob).await {
+    if let Err(e) = media_processing_service::delete_thumbnail(state, current_blob).await {
         tracing::warn!(
             blob_id = current_blob.id,
             "failed to delete thumbnail during blob cleanup: {e}"

@@ -17,6 +17,7 @@ pub mod maintenance_service;
 pub mod managed_follower_enrollment_service;
 pub mod managed_follower_service;
 pub mod master_binding_service;
+pub mod media_processing_service;
 pub mod policy_service;
 pub mod preview_app_service;
 pub mod preview_link_service;

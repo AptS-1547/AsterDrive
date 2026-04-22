@@ -3187,7 +3187,7 @@ export interface components {
             part_number: number;
         };
         /** @enum {string} */
-        ConfigActionType: "build_wopi_discovery_preview_config" | "send_test_email";
+        ConfigActionType: "build_wopi_discovery_preview_config" | "send_test_email" | "test_vips_cli";
         /** @description 系统配置的 schema 信息（从 ALL_CONFIGS 生成） */
         ConfigSchemaItem: {
             category: string;
@@ -3512,6 +3512,11 @@ export interface components {
             updated_at: string;
             username: string;
         };
+        /**
+         * @description 统一媒体处理器类型（system_config / storage_policy.options）
+         * @enum {string}
+         */
+        MediaProcessorKind: "images" | "vips_cli" | "storage_native";
         MemoryStatsResponse: {
             heap_allocated_mb: string;
             heap_peak_mb: string;
@@ -4050,6 +4055,11 @@ export interface components {
             /** Format: int32 */
             version?: number;
         };
+        PublicThumbnailSupport: {
+            extensions?: string[];
+            /** Format: int32 */
+            version: number;
+        };
         PurgedCountResponse: {
             /** Format: int32 */
             purged: number;
@@ -4381,6 +4391,7 @@ export interface components {
             /** Format: int64 */
             s3_read_timeout_secs?: number | null;
             s3_upload_strategy?: null | components["schemas"]["S3UploadStrategy"];
+            thumbnail_processor?: null | components["schemas"]["MediaProcessorKind"];
         };
         StoragePolicySummaryInfo: {
             driver_type: components["schemas"]["DriverType"];
@@ -4603,13 +4614,17 @@ export interface components {
             blob_hash: string;
             /** Format: int64 */
             blob_id: number;
+            processor: components["schemas"]["MediaProcessorKind"];
+            source_file_name?: string;
             source_mime_type: string;
         };
         ThumbnailGenerateTaskResult: {
             /** Format: int64 */
             blob_id: number;
+            processor: components["schemas"]["MediaProcessorKind"];
             reused_existing_thumbnail: boolean;
             thumbnail_path: string;
+            thumbnail_version: string;
         };
         TrashContents: {
             files: components["schemas"]["TrashFileItem"][];

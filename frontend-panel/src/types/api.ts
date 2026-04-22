@@ -92,6 +92,7 @@ export type CreatePolicyRequest = components["schemas"]["CreatePolicyReq"];
 export type CreateRemoteNodeRequest =
 	components["schemas"]["CreateRemoteNodeReq"];
 export type DriverType = components["schemas"]["DriverType"];
+export type MediaProcessorKind = components["schemas"]["MediaProcessorKind"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
 export type RemoteEnrollmentCommandInfo =
 	components["schemas"]["RemoteEnrollmentCommandInfo"];
@@ -156,6 +157,8 @@ export type PublicPreviewAppDefinition =
 	components["schemas"]["PublicPreviewAppDefinition"];
 export type PublicPreviewAppsConfig =
 	components["schemas"]["PublicPreviewAppsConfig"];
+export type PublicThumbnailSupport =
+	components["schemas"]["PublicThumbnailSupport"];
 export type SystemConfig = components["schemas"]["SystemConfig"];
 export type SystemConfigPage = components["schemas"]["OffsetPage_SystemConfig"];
 export type SystemConfigSource = components["schemas"]["SystemConfigSource"];

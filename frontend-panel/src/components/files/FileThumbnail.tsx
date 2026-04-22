@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { useEnteredViewport } from "@/hooks/useEnteredViewport";
 import { fileService } from "@/services/fileService";
+import { useThumbnailSupportStore } from "@/stores/thumbnailSupportStore";
 import type { FileInfo, FileListItem } from "@/types/api";
 import { Icon } from "../ui/icon";
 import { FileTypeIcon } from "./FileTypeIcon";
@@ -11,18 +13,55 @@ interface FileThumbnailProps {
 	thumbnailPath?: string;
 }
 
+function getThumbnailExtension(fileName: string) {
+	const trimmed = fileName.trim().toLowerCase();
+	const dot = trimmed.lastIndexOf(".");
+	if (dot <= 0 || dot === trimmed.length - 1) {
+		return "";
+	}
+	return trimmed.slice(dot + 1);
+}
+
+function supportsThumbnailExtension(
+	fileName: string,
+	extensions: string[] | undefined,
+) {
+	const extension = getThumbnailExtension(fileName);
+	if (!extension || !extensions?.length) {
+		return false;
+	}
+
+	return extensions.some(
+		(candidate) =>
+			candidate.trim().replace(/^\./, "").toLowerCase() === extension,
+	);
+}
+
 export function FileThumbnail({
 	file,
 	size = "sm",
 	thumbnailPath,
 }: FileThumbnailProps) {
-	const isImage =
-		file.mime_type.startsWith("image/") && file.mime_type !== "image/svg+xml";
+	const thumbnailSupport = useThumbnailSupportStore((state) => state.config);
+	const thumbnailSupportLoaded = useThumbnailSupportStore(
+		(state) => state.isLoaded,
+	);
+	const loadThumbnailSupport = useThumbnailSupportStore((state) => state.load);
+	const canRequestThumbnail =
+		thumbnailSupportLoaded &&
+		supportsThumbnailExtension(file.name, thumbnailSupport?.extensions);
+
+	useEffect(() => {
+		if (!thumbnailSupportLoaded) {
+			void loadThumbnailSupport();
+		}
+	}, [loadThumbnailSupport, thumbnailSupportLoaded]);
+
 	const { ref, hasEnteredViewport } = useEnteredViewport<HTMLDivElement>({
-		enabled: isImage,
+		enabled: canRequestThumbnail,
 	});
 	const blobPath =
-		isImage && hasEnteredViewport
+		canRequestThumbnail && hasEnteredViewport
 			? (thumbnailPath ?? fileService.thumbnailPath(file.id))
 			: null;
 	const { blobUrl, error, loading } = useBlobUrl(blobPath, {
@@ -35,13 +74,13 @@ export function FileThumbnail({
 				ref={ref}
 				className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/40"
 			>
-				{isImage && loading && !error && !blobUrl ? (
+				{canRequestThumbnail && loading && !error && !blobUrl ? (
 					<Icon
 						name="Spinner"
 						className="h-3.5 w-3.5 animate-spin text-muted-foreground"
 						data-testid="thumbnail-loading"
 					/>
-				) : !isImage || error || !blobUrl ? (
+				) : !canRequestThumbnail || error || !blobUrl ? (
 					<FileTypeIcon
 						mimeType={file.mime_type}
 						fileName={file.name}
@@ -62,7 +101,7 @@ export function FileThumbnail({
 	}
 
 	if (size === "md") {
-		if (isImage && loading && !error && !blobUrl) {
+		if (canRequestThumbnail && loading && !error && !blobUrl) {
 			return (
 				<div
 					ref={ref}
@@ -77,7 +116,7 @@ export function FileThumbnail({
 			);
 		}
 
-		if (!isImage || error || !blobUrl) {
+		if (!canRequestThumbnail || error || !blobUrl) {
 			return (
 				<div
 					ref={ref}
@@ -106,7 +145,7 @@ export function FileThumbnail({
 		);
 	}
 
-	if (isImage && loading && !error && !blobUrl) {
+	if (canRequestThumbnail && loading && !error && !blobUrl) {
 		return (
 			<div
 				ref={ref}
@@ -121,7 +160,7 @@ export function FileThumbnail({
 		);
 	}
 
-	if (!isImage || error || !blobUrl) {
+	if (!canRequestThumbnail || error || !blobUrl) {
 		return (
 			<div ref={ref} className="flex h-full w-full items-center justify-center">
 				<FileTypeIcon

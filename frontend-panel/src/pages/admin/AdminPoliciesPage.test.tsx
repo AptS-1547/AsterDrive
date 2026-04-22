@@ -721,6 +721,35 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_created");
 	});
 
+	it("creates a local policy without policy-level media processor overrides", async () => {
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard();
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Native Thumb Local" },
+		});
+		advanceCreateWizardToRulesStep();
+		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+
+		await waitFor(() => {
+			expect(mockState.create).toHaveBeenCalledWith({
+				access_key: "",
+				base_path: "",
+				bucket: "",
+				chunk_size: 5 * 1024 * 1024,
+				driver_type: "local",
+				endpoint: "",
+				is_default: false,
+				max_file_size: undefined,
+				name: "Native Thumb Local",
+				options: {},
+				remote_node_id: undefined,
+				secret_key: "",
+			});
+		});
+	});
+
 	it("keeps the create dialog shell fixed and scrolls the form body internally", () => {
 		const { container } = render(<AdminPoliciesPage />);
 

@@ -29,6 +29,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
     web::scope("/public")
         .route("/branding", web::get().to(get_branding))
         .route("/preview-apps", web::get().to(get_preview_apps))
+        .route("/thumbnail-support", web::get().to(get_thumbnail_support))
         .route(
             "/remote-enrollment/redeem",
             web::post().to(redeem_remote_enrollment),
@@ -65,6 +66,20 @@ pub async fn get_branding(state: web::Data<PrimaryAppState>) -> Result<HttpRespo
 pub async fn get_preview_apps(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
     let preview_apps = config_service::get_public_preview_apps(&state);
     Ok(HttpResponse::Ok().json(ApiResponse::ok(preview_apps)))
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/public/thumbnail-support",
+    tag = "public",
+    operation_id = "get_public_thumbnail_support",
+    responses(
+        (status = 200, description = "Public thumbnail support config", body = inline(ApiResponse<crate::config::media_processing::PublicThumbnailSupport>)),
+    ),
+)]
+pub async fn get_thumbnail_support(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
+    let support = config_service::get_public_thumbnail_support(&state);
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(support)))
 }
 
 #[api_docs_macros::path(

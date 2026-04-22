@@ -108,6 +108,13 @@ pub trait StorageDriver: Send + Sync {
         None
     }
 
+    /// 获取存储侧原生缩略图支持
+    ///
+    /// OneDrive / 数据万象 / 对象存储图片处理等驱动返回 Some。
+    fn as_native_thumbnail(&self) -> Option<&dyn super::extensions::NativeThumbnailStorageDriver> {
+        None
+    }
+
     /// 获取 multipart upload 支持（S3 特有）
     ///
     /// 通过 downcast 获取 MultipartStorageDriver，用于分片上传。

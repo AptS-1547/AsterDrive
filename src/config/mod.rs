@@ -7,6 +7,7 @@ pub mod cors;
 pub mod definitions;
 mod loader;
 pub mod mail;
+pub mod media_processing;
 pub mod node_mode;
 pub mod operations;
 mod runtime_config;

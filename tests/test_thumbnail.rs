@@ -5,10 +5,16 @@ mod common;
 
 use actix_web::test;
 use aster_drive::api::error_code::ErrorCode;
-use aster_drive::db::repository::{background_task_repo, file_repo};
+use aster_drive::db::repository::{background_task_repo, file_repo, policy_repo};
 use aster_drive::runtime::PrimaryAppState;
-use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus};
+use aster_drive::types::{
+    BackgroundTaskKind, BackgroundTaskStatus, MediaProcessorKind, StoragePolicyOptions,
+    serialize_storage_policy_options,
+};
+use sea_orm::{ActiveModelTrait, Set};
 use serde_json::{Value, json};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 /// 生成一个最小的 1x1 红色 PNG。
 fn tiny_png() -> Vec<u8> {
@@ -19,13 +25,74 @@ fn tiny_png() -> Vec<u8> {
     buf.into_inner()
 }
 
+fn tiny_webp() -> Vec<u8> {
+    let image =
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(1, 1, image::Rgb([255, 0, 0])));
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut buf, image::ImageFormat::WebP).unwrap();
+    buf.into_inner()
+}
+
 fn current_thumb_path(blob_hash: &str) -> String {
     format!(
-        "_thumb/v2/{}/{}/{}.webp",
+        "_thumb/images-v1/{}/{}/{}.webp",
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
     )
+}
+
+fn vips_thumb_path(blob_hash: &str) -> String {
+    format!(
+        "_thumb/vips-cli-v1/{}/{}/{}.webp",
+        &blob_hash[..2],
+        &blob_hash[2..4],
+        blob_hash
+    )
+}
+
+fn thumbnail_registry_json_with_vips_command(command: &str) -> String {
+    json!({
+        "version": 1,
+        "processors": [
+            {
+                "enabled": true,
+                "kind": "vips_cli",
+                "config": {
+                    "command": command,
+                }
+            }
+        ]
+    })
+    .to_string()
+}
+
+fn write_fake_vips_thumbnail_command() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "aster-drive-thumbnail-vips-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let output_fixture_path = dir.join("fixture.webp");
+    std::fs::write(&output_fixture_path, tiny_webp()).unwrap();
+
+    let script_path = dir.join("fake-vips");
+    std::fs::write(
+        &script_path,
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"vips-8.16.0\"\n  exit 0\nfi\nif [ \"$1\" = \"thumbnail\" ]; then\n  cp '{}' \"$3\"\n  exit 0\nfi\necho \"unexpected args: $@\" >&2\nexit 1\n",
+            output_fixture_path.display()
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        let mut permissions = std::fs::metadata(&script_path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&script_path, permissions).unwrap();
+    }
+    script_path
 }
 
 macro_rules! upload_file_bytes {
@@ -73,8 +140,27 @@ macro_rules! request_thumbnail {
 }
 
 async fn thumbnail_task_display_name(state: &PrimaryAppState, file_id: i64) -> String {
+    thumbnail_task_display_name_for_processor(state, file_id, MediaProcessorKind::Images).await
+}
+
+async fn thumbnail_task_display_name_for_processor(
+    state: &PrimaryAppState,
+    file_id: i64,
+    processor: MediaProcessorKind,
+) -> String {
     let file = file_repo::find_by_id(&state.db, file_id).await.unwrap();
-    format!("Generate thumbnail for blob #{}", file.blob_id)
+    format!(
+        "Generate thumbnail for blob #{} via {}",
+        file.blob_id,
+        thumbnail_processor_display_name(processor)
+    )
+}
+
+fn thumbnail_processor_display_name(processor: MediaProcessorKind) -> &'static str {
+    match processor {
+        MediaProcessorKind::Images => "AsterDrive built-in",
+        _ => processor.as_str(),
+    }
 }
 
 async fn blob_for_file(
@@ -99,11 +185,34 @@ async fn thumbnail_task_count(state: &PrimaryAppState, file_id: i64) -> usize {
         .count()
 }
 
+async fn enable_default_policy_storage_native_thumbnail(state: &PrimaryAppState) {
+    let policy = policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist");
+    let mut active: aster_drive::entities::storage_policy::ActiveModel = policy.into();
+    active.options = Set(serialize_storage_policy_options(&StoragePolicyOptions {
+        thumbnail_processor: Some(MediaProcessorKind::StorageNative),
+        ..Default::default()
+    })
+    .unwrap());
+    active.update(&state.db).await.unwrap();
+    state.policy_snapshot.reload(&state.db).await.unwrap();
+}
+
 async fn latest_thumbnail_task(
     state: &PrimaryAppState,
     file_id: i64,
 ) -> aster_drive::entities::background_task::Model {
-    let display_name = thumbnail_task_display_name(state, file_id).await;
+    latest_thumbnail_task_for_processor(state, file_id, MediaProcessorKind::Images).await
+}
+
+async fn latest_thumbnail_task_for_processor(
+    state: &PrimaryAppState,
+    file_id: i64,
+    processor: MediaProcessorKind,
+) -> aster_drive::entities::background_task::Model {
+    let display_name = thumbnail_task_display_name_for_processor(state, file_id, processor).await;
     background_task_repo::find_latest_by_kind_and_display_name(
         &state.db,
         BackgroundTaskKind::ThumbnailGenerate,
@@ -156,7 +265,7 @@ async fn test_thumbnail_returns_200_after_generation() {
         blob.thumbnail_path.as_deref(),
         Some(expected_thumbnail_path.as_str())
     );
-    assert_eq!(blob.thumbnail_version.as_deref(), Some("v2"));
+    assert_eq!(blob.thumbnail_version.as_deref(), Some("images-v1"));
 
     let resp = request_thumbnail!(app, token, file_id);
     assert_eq!(resp.status(), 200);
@@ -201,7 +310,7 @@ async fn test_thumbnail_returns_304_for_matching_if_none_match() {
         .and_then(|value| value.to_str().ok())
         .expect("thumbnail response should include ETag")
         .to_string();
-    assert!(etag.contains("thumb-v2-"));
+    assert!(etag.contains("thumb-images-v1-"));
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
@@ -309,4 +418,121 @@ async fn test_thumbnail_failed_task_returns_error_without_requeue() {
 
     let count_after = thumbnail_task_count(&state, file_id).await;
     assert_eq!(count_after, count_before);
+}
+
+#[actix_web::test]
+async fn test_thumbnail_vips_cli_missing_command_falls_back_to_images() {
+    let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        "media_processing_registry_json",
+        &thumbnail_registry_json_with_vips_command("definitely-missing-vips-cli"),
+    ));
+
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_file_bytes!(app, token, "test.png", "image/png", tiny_png());
+
+    let first = request_thumbnail!(app, token, file_id);
+    assert_eq!(first.status(), 202);
+
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .unwrap();
+
+    let task = latest_thumbnail_task(&state, file_id).await;
+    assert_eq!(task.status, BackgroundTaskStatus::Succeeded);
+    assert_eq!(thumbnail_task_count(&state, file_id).await, 1);
+
+    let second = request_thumbnail!(app, token, file_id);
+    assert_eq!(second.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_thumbnail_heic_uses_vips_cli_processor_when_extension_matches() {
+    let state = common::setup().await;
+    let fake_vips = write_fake_vips_thumbnail_command();
+    state.runtime_config.apply(common::system_config_model(
+        "media_processing_registry_json",
+        &json!({
+            "version": 1,
+            "processors": [
+                {
+                    "kind": "vips_cli",
+                    "enabled": true,
+                    "extensions": ["heic"],
+                    "config": {
+                        "command": fake_vips
+                    }
+                },
+                {
+                    "kind": "images",
+                    "enabled": true
+                }
+            ]
+        })
+        .to_string(),
+    ));
+
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_file_bytes!(
+        app,
+        token,
+        "capture.heic",
+        "image/heic",
+        b"fake-heic".to_vec()
+    );
+
+    let first = request_thumbnail!(app, token, file_id);
+    assert_eq!(first.status(), 202);
+
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .unwrap();
+
+    let task =
+        latest_thumbnail_task_for_processor(&state, file_id, MediaProcessorKind::VipsCli).await;
+    assert_eq!(task.status, BackgroundTaskStatus::Succeeded);
+
+    let blob = blob_for_file(&state, file_id).await;
+    let expected_thumbnail_path = vips_thumb_path(&blob.hash);
+    assert_eq!(
+        blob.thumbnail_path.as_deref(),
+        Some(expected_thumbnail_path.as_str())
+    );
+    assert_eq!(blob.thumbnail_version.as_deref(), Some("vips-cli-v1"));
+
+    let second = request_thumbnail!(app, token, file_id);
+    assert_eq!(second.status(), 200);
+    assert_eq!(
+        second
+            .headers()
+            .get("Content-Type")
+            .and_then(|value| value.to_str().ok()),
+        Some("image/webp")
+    );
+}
+
+#[actix_web::test]
+async fn test_thumbnail_storage_native_processor_without_driver_capability_falls_back_to_images() {
+    let state = common::setup().await;
+    enable_default_policy_storage_native_thumbnail(&state).await;
+
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_file_bytes!(app, token, "test.png", "image/png", tiny_png());
+
+    let first = request_thumbnail!(app, token, file_id);
+    assert_eq!(first.status(), 202);
+
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .unwrap();
+
+    let task = latest_thumbnail_task(&state, file_id).await;
+    assert_eq!(task.status, BackgroundTaskStatus::Succeeded);
+    assert_eq!(thumbnail_task_count(&state, file_id).await, 1);
+
+    let second = request_thumbnail!(app, token, file_id);
+    assert_eq!(second.status(), 200);
 }

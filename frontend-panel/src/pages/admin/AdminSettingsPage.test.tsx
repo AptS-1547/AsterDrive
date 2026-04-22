@@ -64,6 +64,27 @@ const translationMap: Record<string, string> = {
 	settings_section_expand: "settings_section_expand",
 	settings_subcategory_mail_config: "settings_subcategory_mail_config",
 	settings_subcategory_mail_template: "settings_subcategory_mail_template",
+	settings_subcategory_storage_media_processing: "Media Processing",
+	settings_subcategory_storage_media_processing_desc:
+		"Configure available media processors, thumbnail limits, and optional vips CLI integration.",
+	media_processing_editor_title: "media_processing_editor_title",
+	media_processing_editor_desc: "media_processing_editor_desc",
+	media_processing_editor_validation_title:
+		"media_processing_editor_validation_title",
+	media_processing_editor_processor_command_desc:
+		"media_processing_editor_processor_command_desc",
+	media_processing_editor_processor_command_label:
+		"media_processing_editor_processor_command_label",
+	media_processing_editor_processor_command_placeholder:
+		"media_processing_editor_processor_command_placeholder",
+	media_processing_editor_processor_test_command:
+		"media_processing_editor_processor_test_command",
+	media_processing_editor_processor_testing_command:
+		"media_processing_editor_processor_testing_command",
+	media_processing_editor_processor_enabled_desc:
+		"media_processing_editor_processor_enabled_desc",
+	thumbnail_processor_images: "AsterDrive Built-in",
+	thumbnail_processor_vips_cli: "vips_cli",
 	settings_save_hint:
 		"更改会先暂存为草稿，确认无误后再统一保存，⌘/Ctrl + S 保存。",
 	settings_template_variable_reset_url_desc:
@@ -492,6 +513,9 @@ function getMockConfigCategory(key: string) {
 	if (key.startsWith("custom")) return "custom";
 	if (key.startsWith("mail_template_")) return "mail.template";
 	if (key.startsWith("mail_")) return "mail.config";
+	if (key === "media_processing_registry_json")
+		return "storage.media_processing";
+	if (key.startsWith("thumbnail_")) return "storage.media_processing";
 	return "storage";
 }
 
@@ -509,6 +533,9 @@ function getMockConfigValueType(key: string): SystemConfigValueType {
 		key.endsWith("_bytes")
 	) {
 		return "number";
+	}
+	if (key === "media_processing_registry_json") {
+		return "multiline";
 	}
 	return "string";
 }
@@ -1444,6 +1471,187 @@ describe("AdminSettingsPage", () => {
 		).toBeGreaterThan(0);
 		expect(screen.queryByLabelText("Code editor")).not.toBeInTheDocument();
 		expect(mockState.codeEditorProps).toBeNull();
+	});
+
+	it("renders media processing configs in a dedicated storage subcategory section", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "storage.media_processing",
+					key: "media_processing_registry_json",
+					value: JSON.stringify(
+						{
+							version: 1,
+							processors: [
+								{
+									kind: "vips_cli",
+									enabled: true,
+									extensions: ["heic"],
+									config: {
+										command: "custom-vips",
+									},
+								},
+								{
+									kind: "images",
+									enabled: true,
+								},
+							],
+						},
+						null,
+						2,
+					),
+					value_type: "multiline",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "storage.media_processing",
+				key: "media_processing_registry_json",
+				label_i18n_key: "settings_item_media_processing_registry_json_label",
+				value_type: "multiline",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="storage" />);
+
+		expect(await screen.findByText("Media Processing")).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"Configure available media processors, thumbnail limits, and optional vips CLI integration.",
+			),
+		).toBeInTheDocument();
+		fireEvent.click(
+			screen.getByRole("button", { name: /settings_section_expand/i }),
+		);
+		expect(
+			screen.getByText("media_processing_editor_title"),
+		).toBeInTheDocument();
+	});
+
+	it("renders media processing registry with the custom editor", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "storage.media_processing",
+					key: "media_processing_registry_json",
+					value: JSON.stringify(
+						{
+							version: 1,
+							processors: [
+								{
+									kind: "vips_cli",
+									enabled: true,
+									extensions: ["heic"],
+									config: {
+										command: "custom-vips",
+									},
+								},
+								{
+									kind: "images",
+									enabled: true,
+								},
+							],
+						},
+						null,
+						2,
+					),
+					value_type: "multiline",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "storage.media_processing",
+				key: "media_processing_registry_json",
+				label_i18n_key: "settings_item_media_processing_registry_json_label",
+				value_type: "multiline",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="storage" />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /settings_section_expand/i }),
+		);
+		expect(await screen.findByText("AsterDrive Built-in")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("custom-vips")).toBeInTheDocument();
+		expect(
+			screen.getAllByRole("button", {
+				name: /switch:media-processing-.*-enabled:/,
+			}).length,
+		).toBeGreaterThan(0);
+
+		expect(screen.queryByLabelText("Code editor")).not.toBeInTheDocument();
+	});
+
+	it("tests the vips command against the current media processing draft", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "storage.media_processing",
+					key: "media_processing_registry_json",
+					value: JSON.stringify(
+						{
+							version: 1,
+							processors: [
+								{
+									kind: "vips_cli",
+									enabled: false,
+									extensions: ["heic"],
+									config: {
+										command: "/usr/local/bin/vips-custom",
+									},
+								},
+								{
+									kind: "images",
+									enabled: true,
+								},
+							],
+						},
+						null,
+						2,
+					),
+					value_type: "multiline",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "storage.media_processing",
+				key: "media_processing_registry_json",
+				label_i18n_key: "settings_item_media_processing_registry_json_label",
+				value_type: "multiline",
+			}),
+		]);
+		mockState.actionConfig.mockResolvedValueOnce({
+			message:
+				"vips_cli command '/usr/local/bin/vips-custom' is available: vips-8.16.0",
+		});
+
+		render(<AdminSettingsPage section="storage" />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /settings_section_expand/i }),
+		);
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: /media_processing_editor_processor_test_command/i,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.actionConfig).toHaveBeenCalledWith(
+				"media_processing_registry_json",
+				expect.objectContaining({
+					action: "test_vips_cli",
+					value: expect.stringContaining("/usr/local/bin/vips-custom"),
+				}),
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"vips_cli command '/usr/local/bin/vips-custom' is available: vips-8.16.0",
+		);
 	});
 
 	it("builds WOPI discovery apps into the local preview app draft", async () => {

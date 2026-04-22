@@ -7,7 +7,7 @@ use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::AuditContext, auth_service::Claims, direct_link_service, file_service,
-    preview_link_service, thumbnail_service, wopi_service, workspace_models::FileInfo,
+    media_processing_service, preview_link_service, wopi_service, workspace_models::FileInfo,
     workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -455,7 +455,7 @@ pub(crate) fn thumbnail_response(
     if_none_match: Option<&str>,
     cache_control: String,
 ) -> HttpResponse {
-    let etag_value = thumbnail_service::thumbnail_etag_value_for(
+    let etag_value = media_processing_service::thumbnail_etag_value_for(
         &result.blob_hash,
         result.thumbnail_version.as_deref(),
     );

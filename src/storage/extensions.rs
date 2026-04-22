@@ -64,6 +64,24 @@ pub trait StreamUploadDriver: Send + Sync {
     async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String>;
 }
 
+#[derive(Debug, Clone)]
+pub struct NativeThumbnailRequest {
+    pub storage_path: String,
+    pub source_mime_type: String,
+    pub max_width: u32,
+    pub max_height: u32,
+}
+
+/// 存储侧原生缩略图支持（OneDrive / 数据万象 / 对象存储图片处理等）
+#[async_trait]
+pub trait NativeThumbnailStorageDriver: Send + Sync {
+    /// 返回 `None` 表示该驱动当前不支持这个对象或 MIME 的原生缩略图能力。
+    async fn get_native_thumbnail(
+        &self,
+        request: &NativeThumbnailRequest,
+    ) -> Result<Option<Vec<u8>>>;
+}
+
 /// 为所有 StorageDriver 提供 StreamUploadDriver 的默认实现
 ///
 /// 此模块提供基于临时文件的通用实现，供不支持原生流式上传的驱动使用。

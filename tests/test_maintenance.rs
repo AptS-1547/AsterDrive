@@ -165,7 +165,7 @@ fn thumb_path(blob_hash: &str) -> String {
 
 fn current_thumb_path(blob_hash: &str) -> String {
     format!(
-        "_thumb/v2/{}/{}/{}.webp",
+        "_thumb/images-v1/{}/{}/{}.webp",
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash

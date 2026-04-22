@@ -314,12 +314,14 @@ pub async fn get_shared_thumbnail(
     let share = load_valid_share(state, token).await?;
     tracing::debug!(share_id = share.id, "loading shared thumbnail");
     let file = load_share_file_resource(state, &share).await?;
-    crate::services::thumbnail_service::ensure_supported_mime(&file.mime_type)?;
-
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
-    let data = crate::services::thumbnail_service::get_or_generate(state, &blob).await?;
-    let thumbnail_version =
-        crate::services::thumbnail_service::thumbnail_version(&blob).to_string();
+    let thumbnail = crate::services::media_processing_service::get_or_generate_thumbnail(
+        state,
+        &blob,
+        &file.name,
+        &file.mime_type,
+    )
+    .await?;
     tracing::debug!(
         share_id = share.id,
         file_id = file.id,
@@ -327,9 +329,9 @@ pub async fn get_shared_thumbnail(
         "loaded shared thumbnail"
     );
     Ok(file_service::ThumbnailResult {
-        data,
+        data: thumbnail.data,
         blob_hash: blob.hash,
-        thumbnail_version: Some(thumbnail_version),
+        thumbnail_version: Some(thumbnail.thumbnail_version),
     })
 }
 
@@ -341,21 +343,23 @@ pub async fn get_shared_folder_file_thumbnail(
     let (_, file) = load_shared_folder_file_target(state, token, file_id).await?;
     tracing::debug!(file_id = file.id, "loading shared folder file thumbnail");
 
-    crate::services::thumbnail_service::ensure_supported_mime(&file.mime_type)?;
-
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
-    let data = crate::services::thumbnail_service::get_or_generate(state, &blob).await?;
-    let thumbnail_version =
-        crate::services::thumbnail_service::thumbnail_version(&blob).to_string();
+    let thumbnail = crate::services::media_processing_service::get_or_generate_thumbnail(
+        state,
+        &blob,
+        &file.name,
+        &file.mime_type,
+    )
+    .await?;
     tracing::debug!(
         file_id = file.id,
         blob_id = blob.id,
         "loaded shared folder file thumbnail"
     );
     Ok(file_service::ThumbnailResult {
-        data,
+        data: thumbnail.data,
         blob_hash: blob.hash,
-        thumbnail_version: Some(thumbnail_version),
+        thumbnail_version: Some(thumbnail.thumbnail_version),
     })
 }
 

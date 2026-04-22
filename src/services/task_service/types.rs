@@ -108,7 +108,10 @@ pub struct RuntimeTaskPayload {
 pub struct ThumbnailGenerateTaskPayload {
     pub blob_id: i64,
     pub blob_hash: String,
+    #[serde(default)]
+    pub source_file_name: String,
     pub source_mime_type: String,
+    pub processor: crate::types::MediaProcessorKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,6 +126,8 @@ pub struct RuntimeTaskResult {
 pub struct ThumbnailGenerateTaskResult {
     pub blob_id: i64,
     pub thumbnail_path: String,
+    pub thumbnail_version: String,
+    pub processor: crate::types::MediaProcessorKind,
     pub reused_existing_thumbnail: bool,
 }
 

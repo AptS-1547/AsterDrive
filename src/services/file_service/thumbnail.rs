@@ -1,10 +1,10 @@
 //! 文件服务子模块：`thumbnail`。
 
 use crate::db::repository::file_repo;
-use crate::errors::Result;
+use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
-    task_service, thumbnail_service, workspace_storage_service::WorkspaceStorageScope,
+    media_processing_service, task_service, workspace_storage_service::WorkspaceStorageScope,
 };
 
 use super::get_info_in_scope;
@@ -22,19 +22,36 @@ pub(crate) async fn get_thumbnail_data_in_scope(
     file_id: i64,
 ) -> Result<Option<ThumbnailResult>> {
     let f = get_info_in_scope(state, scope, file_id).await?;
-    thumbnail_service::ensure_supported_mime(&f.mime_type)?;
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
-    match thumbnail_service::load_thumbnail_if_exists(state, &blob).await? {
-        Some(data) => {
-            let thumbnail_version = thumbnail_service::thumbnail_version(&blob).to_string();
-            Ok(Some(ThumbnailResult {
-                data,
-                blob_hash: blob.hash,
-                thumbnail_version: Some(thumbnail_version),
-            }))
+    let thumbnail = match media_processing_service::load_thumbnail_if_exists(
+        state,
+        &blob,
+        &f.name,
+        &f.mime_type,
+    )
+    .await
+    {
+        Ok(thumbnail) => thumbnail,
+        Err(AsterError::PreconditionFailed(message)) => {
+            return Err(AsterError::validation_error(message));
         }
+        Err(error) => return Err(error),
+    };
+
+    match thumbnail {
+        Some(thumbnail) => Ok(Some(ThumbnailResult {
+            data: thumbnail.data,
+            blob_hash: blob.hash,
+            thumbnail_version: Some(thumbnail.thumbnail_version),
+        })),
         None => {
-            task_service::ensure_thumbnail_task(state, &blob, &f.mime_type).await?;
+            match task_service::ensure_thumbnail_task(state, &blob, &f.name, &f.mime_type).await {
+                Ok(()) => {}
+                Err(AsterError::PreconditionFailed(message)) => {
+                    return Err(AsterError::validation_error(message));
+                }
+                Err(error) => return Err(error),
+            }
             Ok(None)
         }
     }

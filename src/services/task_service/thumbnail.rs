@@ -7,7 +7,7 @@ use crate::db::repository::background_task_repo;
 use crate::entities::{background_task, file_blob};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::thumbnail_service;
+use crate::services::media_processing_service;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 use super::steps::{
@@ -27,9 +27,24 @@ use super::{
 pub(crate) async fn ensure_thumbnail_task(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
+    source_file_name: &str,
     source_mime_type: &str,
 ) -> Result<()> {
-    let display_name = thumbnail_task_display_name(blob.id);
+    let processor = media_processing_service::resolve_thumbnail_processor_for_blob(
+        state,
+        blob,
+        source_file_name,
+        source_mime_type,
+    )?
+    .kind();
+    tracing::debug!(
+        blob_id = blob.id,
+        source_file_name,
+        processor = processor.as_str(),
+        source_mime_type,
+        "ensuring thumbnail background task"
+    );
+    let display_name = thumbnail_task_display_name(blob.id, processor);
     if let Some(existing) = background_task_repo::find_latest_by_kind_and_display_name(
         &state.db,
         BackgroundTaskKind::ThumbnailGenerate,
@@ -56,7 +71,9 @@ pub(crate) async fn ensure_thumbnail_task(
     let payload = ThumbnailGenerateTaskPayload {
         blob_id: blob.id,
         blob_hash: blob.hash.clone(),
+        source_file_name: source_file_name.to_string(),
         source_mime_type: source_mime_type.to_string(),
+        processor,
     };
     let payload_json = serialize_task_payload(&payload)?;
     let steps_json =
@@ -113,6 +130,14 @@ pub(super) async fn process_thumbnail_generate_task(
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
     let payload: ThumbnailGenerateTaskPayload = parse_task_payload(task)?;
+    tracing::debug!(
+        task_id = task.id,
+        blob_id = payload.blob_id,
+        source_file_name = payload.source_file_name,
+        processor = payload.processor.as_str(),
+        source_mime_type = payload.source_mime_type,
+        "processing thumbnail background task"
+    );
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
     set_task_step_succeeded(
@@ -162,11 +187,26 @@ pub(super) async fn process_thumbnail_generate_task(
     )
     .await?;
 
-    let (thumbnail_path, reused_existing_thumbnail) =
-        thumbnail_service::generate_and_store(state, &blob).await?;
+    let stored = media_processing_service::generate_and_store_thumbnail_with_processor(
+        state,
+        &blob,
+        &payload.source_file_name,
+        &payload.source_mime_type,
+        payload.processor,
+    )
+    .await?;
+    tracing::debug!(
+        task_id = task.id,
+        blob_id = blob.id,
+        processor = payload.processor.as_str(),
+        reused_existing_thumbnail = stored.reused_existing_thumbnail,
+        thumbnail_version = stored.thumbnail_version,
+        thumbnail_path = stored.thumbnail_path,
+        "thumbnail background task completed render phase"
+    );
     lease_guard.ensure_active()?;
 
-    if reused_existing_thumbnail {
+    if stored.reused_existing_thumbnail {
         set_task_step_succeeded(
             &mut steps,
             TASK_STEP_RENDER_THUMBNAIL,
@@ -196,10 +236,12 @@ pub(super) async fn process_thumbnail_generate_task(
 
     let result_json = serialize_task_result(&ThumbnailGenerateTaskResult {
         blob_id: blob.id,
-        thumbnail_path: thumbnail_path.clone(),
-        reused_existing_thumbnail,
+        thumbnail_path: stored.thumbnail_path.clone(),
+        thumbnail_version: stored.thumbnail_version.clone(),
+        processor: payload.processor,
+        reused_existing_thumbnail: stored.reused_existing_thumbnail,
     })?;
-    let status_text = if reused_existing_thumbnail {
+    let status_text = if stored.reused_existing_thumbnail {
         "Thumbnail already available"
     } else {
         "Thumbnail ready"
@@ -216,6 +258,19 @@ pub(super) async fn process_thumbnail_generate_task(
     .await
 }
 
-fn thumbnail_task_display_name(blob_id: i64) -> String {
-    format!("Generate thumbnail for blob #{blob_id}")
+fn thumbnail_task_display_name(
+    blob_id: i64,
+    processor: crate::types::MediaProcessorKind,
+) -> String {
+    format!(
+        "Generate thumbnail for blob #{blob_id} via {}",
+        thumbnail_processor_display_name(processor)
+    )
+}
+
+fn thumbnail_processor_display_name(processor: crate::types::MediaProcessorKind) -> &'static str {
+    match processor {
+        crate::types::MediaProcessorKind::Images => "AsterDrive built-in",
+        _ => processor.as_str(),
+    }
 }

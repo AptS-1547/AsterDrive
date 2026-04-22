@@ -17,6 +17,9 @@ pub(super) struct CommonRuntimeParts {
 }
 
 const OBSOLETE_NODE_RUNTIME_MODE_KEY: &str = "node_runtime_mode";
+const OBSOLETE_THUMBNAIL_DEFAULT_PROCESSOR_KEY: &str = "thumbnail_default_processor";
+const OBSOLETE_THUMBNAIL_VIPS_CLI_ENABLED_KEY: &str = "thumbnail_vips_cli_enabled";
+const OBSOLETE_THUMBNAIL_VIPS_COMMAND_KEY: &str = "thumbnail_vips_command";
 
 pub(super) async fn prepare_common(mode: NodeRuntimeMode) -> Result<CommonRuntimeParts> {
     let cfg = config::get_config();
@@ -74,23 +77,29 @@ pub async fn initialize_database_state(
     .await?;
     crate::db::repository::config_repo::ensure_defaults(database).await?;
     purge_obsolete_node_runtime_mode(database).await?;
+    purge_obsolete_config_key(database, OBSOLETE_THUMBNAIL_DEFAULT_PROCESSOR_KEY).await?;
+    purge_obsolete_config_key(database, OBSOLETE_THUMBNAIL_VIPS_CLI_ENABLED_KEY).await?;
+    purge_obsolete_config_key(database, OBSOLETE_THUMBNAIL_VIPS_COMMAND_KEY).await?;
     Ok(())
 }
 
 async fn purge_obsolete_node_runtime_mode(database: &sea_orm::DatabaseConnection) -> Result<()> {
+    purge_obsolete_config_key(database, OBSOLETE_NODE_RUNTIME_MODE_KEY).await
+}
+
+async fn purge_obsolete_config_key(
+    database: &sea_orm::DatabaseConnection,
+    key: &str,
+) -> Result<()> {
     let deleted = crate::entities::system_config::Entity::delete_many()
-        .filter(crate::entities::system_config::Column::Key.eq(OBSOLETE_NODE_RUNTIME_MODE_KEY))
+        .filter(crate::entities::system_config::Column::Key.eq(key))
         .exec(database)
         .await
         .map_aster_err(AsterError::database_operation)?
         .rows_affected;
 
     if deleted > 0 {
-        tracing::info!(
-            key = OBSOLETE_NODE_RUNTIME_MODE_KEY,
-            deleted,
-            "removed obsolete runtime config key"
-        );
+        tracing::info!(key, deleted, "removed obsolete runtime config key");
     }
 
     Ok(())
