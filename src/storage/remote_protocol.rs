@@ -8,6 +8,7 @@ use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::io::AsyncRead;
 use tokio_util::io::{ReaderStream, StreamReader};
@@ -28,6 +29,16 @@ const STORAGE_KEY_ENCODE_SET: &AsciiSet = &CONTROLS
 const DEFAULT_REMOTE_CONNECT_TIMEOUT_SECS: u64 = 5;
 const DEFAULT_REMOTE_READ_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_REMOTE_OPERATION_TIMEOUT_SECS: u64 = 60 * 60;
+
+static REMOTE_HTTP_CLIENT: LazyLock<std::result::Result<reqwest::Client, String>> =
+    LazyLock::new(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(DEFAULT_REMOTE_CONNECT_TIMEOUT_SECS))
+            .read_timeout(Duration::from_secs(DEFAULT_REMOTE_READ_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(DEFAULT_REMOTE_OPERATION_TIMEOUT_SECS))
+            .build()
+            .map_err(|e| format!("build remote HTTP client: {e}"))
+    });
 
 pub const INTERNAL_STORAGE_BASE_PATH: &str = "/api/v1/internal/storage";
 pub const INTERNAL_AUTH_ACCESS_KEY_HEADER: &str = "x-aster-access-key";
@@ -193,14 +204,7 @@ impl RemoteStorageClient {
             ));
         }
 
-        let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(DEFAULT_REMOTE_CONNECT_TIMEOUT_SECS))
-            .read_timeout(Duration::from_secs(DEFAULT_REMOTE_READ_TIMEOUT_SECS))
-            .timeout(Duration::from_secs(DEFAULT_REMOTE_OPERATION_TIMEOUT_SECS))
-            .build()
-            .map_err(|e| {
-                AsterError::storage_driver_error(format!("build remote HTTP client: {e}"))
-            })?;
+        let client = remote_http_client()?;
 
         Ok(Self {
             base_url: normalized_base_url,
@@ -562,6 +566,13 @@ impl RemoteStorageClient {
             "{INTERNAL_STORAGE_BASE_PATH}/objects/{encoded_key}/metadata"
         ))
     }
+}
+
+fn remote_http_client() -> Result<reqwest::Client> {
+    REMOTE_HTTP_CLIENT
+        .as_ref()
+        .cloned()
+        .map_err(|message| AsterError::storage_driver_error(message.clone()))
 }
 
 fn presigned_expires_at(expires: Duration) -> Result<i64> {
