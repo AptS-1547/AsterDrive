@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::io::Cursor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::media_processing as media_processing_config;
@@ -11,16 +11,20 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::storage::{StorageDriver, extensions::NativeThumbnailRequest};
 use crate::types::MediaProcessorKind;
-use image::ImageFormat;
+use image::{ImageFormat, ImageReader, Limits};
+use tokio::io::AsyncReadExt;
 
 use super::cli_input::prepare_cli_source;
 use super::resolve::{build_thumbnail_context, build_thumbnail_context_with_processor};
 use super::shared::{
-    ResolvedMediaProcessor, StoredThumbnail, ThumbnailContext, ThumbnailData,
-    requires_server_side_source_limit,
+    ResolvedMediaProcessor, StoredThumbnail, TempDirGuard, ThumbnailContext, ThumbnailData,
+    requires_server_side_source_limit, run_cli_command_with_timeout,
 };
 
 const FFMPEG_THUMBNAIL_BATCH_SIZE: u32 = 50;
+const MAX_CLI_THUMBNAIL_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_CLI_THUMBNAIL_OUTPUT_BYTES_U64: u64 = 16 * 1024 * 1024;
+const MAX_CLI_THUMBNAIL_DECODE_ALLOC: u64 = 64 * 1024 * 1024;
 
 pub async fn probe_ffmpeg_cli_command(command: &str) -> Result<String> {
     let command = media_processing_config::normalize_ffmpeg_command(command)?;
@@ -38,18 +42,15 @@ pub async fn probe_ffmpeg_cli_command(command: &str) -> Result<String> {
 
     let probe_command = command.clone();
     let output = tokio::task::spawn_blocking(move || {
-        std::process::Command::new(&probe_command)
-            .arg("-version")
-            .output()
+        run_cli_command_with_timeout(&probe_command, &["-version"], |message| {
+            AsterError::validation_error(format!("ffmpeg_cli probe failed: {message}"))
+        })
     })
     .await
     .map_aster_err_ctx(
         "ffmpeg CLI probe task panicked",
-        AsterError::thumbnail_generation_failed,
-    )?
-    .map_err(|error| {
-        AsterError::validation_error(format!("spawn ffmpeg_cli '{command}': {error}"))
-    })?;
+        AsterError::validation_error,
+    )??;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -430,14 +431,15 @@ async fn render_thumbnail_with_vips_cli(
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_aster_err_ctx("create vips temp dir", AsterError::storage_driver_error)?;
+    let temp_dir = TempDirGuard::new(temp_dir);
 
-    let output_path = temp_dir.join("thumbnail.webp");
+    let output_path = temp_dir.path().join("thumbnail.webp");
     let prepared_input = prepare_cli_source(
         driver,
         &blob.storage_path,
         source_file_name,
         source_mime_type,
-        &temp_dir,
+        temp_dir.path(),
         false,
     )
     .await?;
@@ -457,21 +459,21 @@ async fn render_thumbnail_with_vips_cli(
         "starting vips CLI thumbnail render"
     );
     tokio::task::spawn_blocking(move || {
-        let output = std::process::Command::new(&command)
-            .arg("thumbnail")
-            .arg(&input_arg)
-            .arg(&output_arg)
-            .arg(max_dim.to_string())
-            .arg("--height")
-            .arg(max_dim.to_string())
-            .arg("--size")
-            .arg("down")
-            .output()
-            .map_err(|error| {
-                AsterError::thumbnail_generation_failed(format!(
-                    "spawn vips CLI '{command}': {error}"
-                ))
-            })?;
+        let max_dim_arg = max_dim.to_string();
+        let output = run_cli_command_with_timeout(
+            &command,
+            &[
+                "thumbnail",
+                &input_arg,
+                &output_arg,
+                &max_dim_arg,
+                "--height",
+                &max_dim_arg,
+                "--size",
+                "down",
+            ],
+            AsterError::thumbnail_generation_failed,
+        )?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -494,11 +496,7 @@ async fn render_thumbnail_with_vips_cli(
         AsterError::thumbnail_generation_failed,
     )??;
 
-    let thumbnail = tokio::fs::read(&output_path).await.map_aster_err_ctx(
-        "read vips thumbnail output",
-        AsterError::thumbnail_generation_failed,
-    );
-    crate::utils::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
+    let thumbnail = read_cli_thumbnail_output(&output_path, "read vips thumbnail output").await;
     if let Ok(bytes) = &thumbnail {
         tracing::debug!(
             blob_id = blob.id,
@@ -523,14 +521,15 @@ async fn render_thumbnail_with_ffmpeg_cli(
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_aster_err_ctx("create ffmpeg temp dir", AsterError::storage_driver_error)?;
+    let temp_dir = TempDirGuard::new(temp_dir);
 
-    let output_path = temp_dir.join("thumbnail.png");
+    let output_path = temp_dir.path().join("thumbnail.png");
     let prepared_input = prepare_cli_source(
         driver,
         &blob.storage_path,
         source_file_name,
         source_mime_type,
-        &temp_dir,
+        temp_dir.path(),
         true,
     )
     .await?;
@@ -553,31 +552,30 @@ async fn render_thumbnail_with_ffmpeg_cli(
         "starting ffmpeg CLI thumbnail render"
     );
     tokio::task::spawn_blocking(move || {
-        let output = std::process::Command::new(&command)
-            .arg("-hide_banner")
-            .arg("-loglevel")
-            .arg("error")
-            .arg("-nostdin")
-            .arg("-i")
-            .arg(&input_arg)
-            .arg("-map")
-            .arg("0:v:0")
-            .arg("-vf")
-            .arg(&filter_arg)
-            .arg("-frames:v")
-            .arg("1")
-            .arg("-an")
-            .arg("-sn")
-            .arg("-c:v")
-            .arg("png")
-            .arg("-y")
-            .arg(&output_arg)
-            .output()
-            .map_err(|error| {
-                AsterError::thumbnail_generation_failed(format!(
-                    "spawn ffmpeg CLI '{command}': {error}"
-                ))
-            })?;
+        let output = run_cli_command_with_timeout(
+            &command,
+            &[
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-i",
+                &input_arg,
+                "-map",
+                "0:v:0",
+                "-vf",
+                &filter_arg,
+                "-frames:v",
+                "1",
+                "-an",
+                "-sn",
+                "-c:v",
+                "png",
+                "-y",
+                &output_arg,
+            ],
+            AsterError::thumbnail_generation_failed,
+        )?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -600,10 +598,8 @@ async fn render_thumbnail_with_ffmpeg_cli(
         AsterError::thumbnail_generation_failed,
     )??;
 
-    let thumbnail_png = tokio::fs::read(&output_path).await.map_aster_err_ctx(
-        "read ffmpeg thumbnail output",
-        AsterError::thumbnail_generation_failed,
-    );
+    let thumbnail_png =
+        read_cli_thumbnail_output(&output_path, "read ffmpeg thumbnail output").await;
     let thumbnail = match thumbnail_png {
         Ok(bytes) => tokio::task::spawn_blocking(move || encode_webp_from_image_bytes(bytes))
             .await
@@ -613,7 +609,6 @@ async fn render_thumbnail_with_ffmpeg_cli(
             )?,
         Err(error) => Err(error),
     };
-    crate::utils::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
     if let Ok(bytes) = &thumbnail {
         tracing::debug!(
             blob_id = blob.id,
@@ -625,6 +620,37 @@ async fn render_thumbnail_with_ffmpeg_cli(
     thumbnail
 }
 
+async fn read_cli_thumbnail_output(path: &Path, context: &'static str) -> Result<Vec<u8>> {
+    let metadata = tokio::fs::metadata(path)
+        .await
+        .map_aster_err_ctx(context, AsterError::thumbnail_generation_failed)?;
+    if metadata.len() > MAX_CLI_THUMBNAIL_OUTPUT_BYTES_U64 {
+        return Err(AsterError::thumbnail_generation_failed(format!(
+            "{context}: output exceeds {} MiB limit",
+            MAX_CLI_THUMBNAIL_OUTPUT_BYTES_U64 / 1024 / 1024
+        )));
+    }
+
+    let file = tokio::fs::File::open(path)
+        .await
+        .map_aster_err_ctx(context, AsterError::thumbnail_generation_failed)?;
+    let mut limited = file.take(MAX_CLI_THUMBNAIL_OUTPUT_BYTES_U64 + 1);
+    let mut bytes = Vec::new();
+    limited
+        .read_to_end(&mut bytes)
+        .await
+        .map_aster_err_ctx(context, AsterError::thumbnail_generation_failed)?;
+
+    if bytes.len() > MAX_CLI_THUMBNAIL_OUTPUT_BYTES {
+        return Err(AsterError::thumbnail_generation_failed(format!(
+            "{context}: output exceeds {} MiB limit",
+            MAX_CLI_THUMBNAIL_OUTPUT_BYTES_U64 / 1024 / 1024
+        )));
+    }
+
+    Ok(bytes)
+}
+
 fn first_non_empty_output_line(output: &[u8]) -> Option<String> {
     String::from_utf8_lossy(output)
         .lines()
@@ -634,7 +660,18 @@ fn first_non_empty_output_line(output: &[u8]) -> Option<String> {
 }
 
 fn encode_webp_from_image_bytes(bytes: Vec<u8>) -> Result<Vec<u8>> {
-    let image = image::load_from_memory(&bytes).map_aster_err_ctx(
+    let mut reader = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_aster_err_ctx(
+            "guess ffmpeg thumbnail output format",
+            AsterError::thumbnail_generation_failed,
+        )?;
+
+    let mut limits = Limits::default();
+    limits.max_alloc = Some(MAX_CLI_THUMBNAIL_DECODE_ALLOC);
+    reader.limits(limits);
+
+    let image = reader.decode().map_aster_err_ctx(
         "decode ffmpeg thumbnail output",
         AsterError::thumbnail_generation_failed,
     )?;

@@ -38,6 +38,8 @@ export interface PolicyFormData {
 	remote_upload_strategy: RemoteUploadStrategy;
 	s3_upload_strategy: S3UploadStrategy;
 	s3_download_strategy: S3DownloadStrategy;
+	thumbnail_processor: StoragePolicyOptions["thumbnail_processor"];
+	thumbnail_extensions: string[];
 }
 
 function parseRemoteNodeId(value: string): number | undefined {
@@ -92,6 +94,11 @@ export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 		});
 	}
 
+	if (form.thumbnail_processor) {
+		options.thumbnail_processor = form.thumbnail_processor;
+		options.thumbnail_extensions = form.thumbnail_extensions;
+	}
+
 	return options;
 }
 
@@ -121,6 +128,8 @@ export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 		remote_upload_strategy: getEffectiveRemoteUploadStrategy(options),
 		s3_upload_strategy: getEffectiveS3UploadStrategy(options),
 		s3_download_strategy: getEffectiveS3DownloadStrategy(options),
+		thumbnail_processor: options.thumbnail_processor ?? null,
+		thumbnail_extensions: options.thumbnail_extensions ?? [],
 	};
 }
 
@@ -284,4 +293,6 @@ export const emptyForm: PolicyFormData = {
 	remote_upload_strategy: "relay_stream",
 	s3_upload_strategy: "relay_stream",
 	s3_download_strategy: "relay_stream",
+	thumbnail_processor: null,
+	thumbnail_extensions: [],
 };

@@ -39,6 +39,7 @@ fn avatar_upload_payload() -> (String, Vec<u8>) {
     (boundary, body)
 }
 
+#[cfg(unix)]
 fn write_fake_vips_command() -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("aster-drive-vips-test-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -48,12 +49,9 @@ fn write_fake_vips_command() -> std::path::PathBuf {
         "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"vips-8.16.0\"\n  exit 0\nfi\necho \"unexpected args: $@\" >&2\nexit 1\n",
     )
     .unwrap();
-    #[cfg(unix)]
-    {
-        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(&path, permissions).unwrap();
-    }
+    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&path, permissions).unwrap();
     path
 }
 
@@ -1550,6 +1548,7 @@ async fn test_admin_config_action_defaults_to_admin_email() {
     assert_eq!(message.to.address, "test@example.com");
 }
 
+#[cfg(unix)]
 #[actix_web::test]
 async fn test_admin_config_action_tests_vips_command_from_draft() {
     let fake_vips = write_fake_vips_command();

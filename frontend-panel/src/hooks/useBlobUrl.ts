@@ -202,6 +202,7 @@ async function acquireBlobUrl(
 			if (previousObjectUrl) {
 				URL.revokeObjectURL(previousObjectUrl);
 			}
+			notifyBlobUrlInvalidation(path);
 			return "";
 		}
 

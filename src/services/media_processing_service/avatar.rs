@@ -12,7 +12,10 @@ use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader, Limits};
 
 use super::resolve::resolve_avatar_processor;
-use super::shared::{MediaOperation, ProcessedAvatar, cli_source_temp_path};
+use super::shared::{
+    MediaOperation, ProcessedAvatar, TempDirGuard, cli_source_temp_path,
+    run_cli_command_with_timeout,
+};
 
 pub async fn probe_vips_cli_command(command: &str) -> Result<String> {
     let command = media_processing_config::normalize_vips_command(command)?;
@@ -30,18 +33,12 @@ pub async fn probe_vips_cli_command(command: &str) -> Result<String> {
 
     let probe_command = command.clone();
     let output = tokio::task::spawn_blocking(move || {
-        std::process::Command::new(&probe_command)
-            .arg("--version")
-            .output()
+        run_cli_command_with_timeout(&probe_command, &["--version"], |message| {
+            AsterError::validation_error(format!("vips_cli probe failed: {message}"))
+        })
     })
     .await
-    .map_aster_err_ctx(
-        "vips CLI probe task panicked",
-        AsterError::thumbnail_generation_failed,
-    )?
-    .map_err(|error| {
-        AsterError::validation_error(format!("spawn vips_cli '{command}': {error}"))
-    })?;
+    .map_aster_err_ctx("vips CLI probe task panicked", AsterError::validation_error)??;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -176,10 +173,11 @@ async fn render_avatar_with_vips_cli(
             "create avatar vips temp dir",
             AsterError::storage_driver_error,
         )?;
+    let temp_dir = TempDirGuard::new(temp_dir);
 
-    let input_path = cli_source_temp_path(&temp_dir, file_name, "");
-    let small_output_path = temp_dir.join("avatar-512.webp");
-    let large_output_path = temp_dir.join("avatar-1024.webp");
+    let input_path = cli_source_temp_path(temp_dir.path(), file_name, "");
+    let small_output_path = temp_dir.path().join("avatar-512.webp");
+    let large_output_path = temp_dir.path().join("avatar-1024.webp");
     tokio::fs::write(&input_path, original)
         .await
         .map_aster_err_ctx(
@@ -205,23 +203,23 @@ async fn render_avatar_with_vips_cli(
             (AVATAR_SIZE_SM, &small_output_arg),
             (AVATAR_SIZE_LG, &large_output_arg),
         ] {
-            let output = std::process::Command::new(&command)
-                .arg("thumbnail")
-                .arg(&input_arg)
-                .arg(output_arg)
-                .arg(size.to_string())
-                .arg("--height")
-                .arg(size.to_string())
-                .arg("--size")
-                .arg("both")
-                .arg("--crop")
-                .arg("centre")
-                .output()
-                .map_err(|error| {
-                    AsterError::file_upload_failed(format!(
-                        "spawn avatar vips CLI '{command}': {error}"
-                    ))
-                })?;
+            let size_arg = size.to_string();
+            let output = run_cli_command_with_timeout(
+                &command,
+                &[
+                    "thumbnail",
+                    &input_arg,
+                    output_arg,
+                    &size_arg,
+                    "--height",
+                    &size_arg,
+                    "--size",
+                    "both",
+                    "--crop",
+                    "centre",
+                ],
+                AsterError::file_upload_failed,
+            )?;
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
                 let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -257,8 +255,6 @@ async fn render_avatar_with_vips_cli(
             "read avatar vips 1024 output",
             AsterError::file_upload_failed,
         )?;
-    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
-
     tracing::debug!(
         operation = MediaOperation::Avatar.as_str(),
         processor = MediaProcessorKind::VipsCli.as_str(),

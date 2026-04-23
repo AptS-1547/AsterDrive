@@ -168,7 +168,7 @@ function createBaseConfigs() {
 			value_type: "multiline",
 		}),
 		createConfig({
-			category: "general.preview",
+			category: "storage.media_processing",
 			key: MEDIA_PROCESSING_CONFIG_KEY,
 			value: createValidMediaProcessingConfig(),
 			value_type: "multiline",
@@ -198,7 +198,7 @@ function createCorsConfigs(overrides?: {
 function getConfigCategory(key: string) {
 	if (key.startsWith("custom")) return "custom";
 	if (key === PREVIEW_APPS_CONFIG_KEY) return "general.preview";
-	if (key === MEDIA_PROCESSING_CONFIG_KEY) return "general.preview";
+	if (key === MEDIA_PROCESSING_CONFIG_KEY) return "storage.media_processing";
 	return "general";
 }
 

@@ -94,6 +94,7 @@ fn ffmpeg_command_for_tests() -> Option<String> {
     .find(|candidate| aster_drive::config::media_processing::command_is_available(candidate))
 }
 
+#[cfg(unix)]
 fn write_fake_vips_thumbnail_command() -> (std::path::PathBuf, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(format!(
         "aster-drive-thumbnail-vips-{}",
@@ -115,12 +116,9 @@ fn write_fake_vips_thumbnail_command() -> (std::path::PathBuf, std::path::PathBu
         ),
     )
     .unwrap();
-    #[cfg(unix)]
-    {
-        let mut permissions = std::fs::metadata(&script_path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(&script_path, permissions).unwrap();
-    }
+    let mut permissions = std::fs::metadata(&script_path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&script_path, permissions).unwrap();
     (script_path, input_log_path)
 }
 
@@ -477,6 +475,7 @@ async fn test_thumbnail_vips_cli_missing_command_falls_back_to_images() {
     assert_eq!(second.status(), 200);
 }
 
+#[cfg(unix)]
 #[actix_web::test]
 async fn test_thumbnail_heic_uses_vips_cli_processor_when_extension_matches() {
     let state = common::setup().await;
@@ -617,7 +616,7 @@ async fn test_thumbnail_mp4_uses_ffmpeg_cli_processor_when_extension_matches() {
 }
 
 #[actix_web::test]
-async fn test_thumbnail_storage_native_processor_without_driver_capability_falls_back_to_images() {
+async fn test_thumbnail_storage_native_processor_without_driver_capability_skips_to_images() {
     let state = common::setup().await;
     enable_default_policy_storage_native_thumbnail(&state).await;
 

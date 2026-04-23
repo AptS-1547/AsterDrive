@@ -93,7 +93,7 @@ prometheus = { version = "0.14", optional = true, default-features = false }
 sysinfo = { version = "0.38", optional = true, default-features = false, features = ["system"] }
 rand = { version = "0.10.1", default-features = false, features = ["std", "std_rng", "thread_rng"] }
 redis = { version = "1.2.0", features = ["connection-manager", "tokio-comp", "tokio-rustls-comp"] }
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
+reqwest = { version = "0.13", features = ["stream", "json"] }
 rsa = "0.9.10"
 rust-embed = "8"
 sea-orm = { version = "~2.0.0-rc.38", features = ["sqlx-mysql", "sqlx-postgres", "sqlx-sqlite", "macros", "runtime-tokio-rustls"] }

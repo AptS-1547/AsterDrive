@@ -1,11 +1,119 @@
+use std::io::Read;
 use std::path::PathBuf;
+use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::config::media_processing as media_processing_config;
+use crate::errors::{AsterError, Result};
 use crate::storage::StorageDriver;
 use crate::types::MediaProcessorKind;
 
+const CLI_PROCESS_TIMEOUT: Duration = Duration::from_secs(60);
+
+pub(crate) struct TempDirGuard {
+    path: PathBuf,
+}
+
+impl TempDirGuard {
+    pub(crate) fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    pub(crate) fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_dir_all(&self.path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(
+                path = %self.path.display(),
+                "failed to cleanup media processing temp dir: {error}"
+            );
+        }
+    }
+}
+
+pub(crate) fn run_cli_command_with_timeout(
+    command: &str,
+    args: &[&str],
+    error: impl Fn(String) -> AsterError,
+) -> Result<Output> {
+    let mut child = Command::new(command)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|spawn_error| error(format!("spawn CLI '{command}': {spawn_error}")))?;
+    let stdout_reader = child.stdout.take().map(spawn_pipe_reader);
+    let stderr_reader = child.stderr.take().map(spawn_pipe_reader);
+    let started_at = Instant::now();
+
+    let status = loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|wait_error| error(format!("wait for CLI '{command}': {wait_error}")))?
+        {
+            break status;
+        }
+
+        if started_at.elapsed() >= CLI_PROCESS_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            let stdout = join_pipe_reader(stdout_reader);
+            let stderr = join_pipe_reader(stderr_reader);
+            if let Some(error) = stdout.err().or_else(|| stderr.err()) {
+                tracing::warn!("failed to read CLI output after timeout: {error}");
+            }
+            return Err(error(format!(
+                "CLI '{command}' timed out after {} seconds",
+                CLI_PROCESS_TIMEOUT.as_secs()
+            )));
+        }
+
+        std::thread::sleep(Duration::from_millis(50));
+    };
+
+    let stdout = join_pipe_reader(stdout_reader)
+        .map_err(|read_error| error(format!("read CLI stdout: {read_error}")))?;
+    let stderr = join_pipe_reader(stderr_reader)
+        .map_err(|read_error| error(format!("read CLI stderr: {read_error}")))?;
+
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn spawn_pipe_reader<R>(mut pipe: R) -> std::thread::JoinHandle<std::io::Result<Vec<u8>>>
+where
+    R: Read + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let mut output = Vec::new();
+        pipe.read_to_end(&mut output)?;
+        Ok(output)
+    })
+}
+
+fn join_pipe_reader(
+    reader: Option<std::thread::JoinHandle<std::io::Result<Vec<u8>>>>,
+) -> std::io::Result<Vec<u8>> {
+    match reader {
+        Some(reader) => reader
+            .join()
+            .map_err(|_| std::io::Error::other("CLI output reader thread panicked"))?,
+        None => Ok(Vec::new()),
+    }
+}
+
 pub(crate) const FFMPEG_CLI_THUMBNAIL_VERSION: &str = "ffmpeg-cli-v1";
+pub(crate) const LEGACY_IMAGES_V2_THUMBNAIL_VERSION: &str = "v2";
 pub(crate) const VIPS_CLI_THUMBNAIL_VERSION: &str = "vips-cli-v1";
 pub(crate) const STORAGE_NATIVE_THUMBNAIL_VERSION: &str = "storage-native-v1";
 
@@ -111,6 +219,10 @@ pub(crate) fn known_thumbnail_cache_paths(blob_hash: &str) -> Vec<String> {
         crate::services::thumbnail_service::thumb_path(blob_hash),
         crate::services::thumbnail_service::thumb_path_for_version(
             blob_hash,
+            LEGACY_IMAGES_V2_THUMBNAIL_VERSION,
+        ),
+        crate::services::thumbnail_service::thumb_path_for_version(
+            blob_hash,
             VIPS_CLI_THUMBNAIL_VERSION,
         ),
         crate::services::thumbnail_service::thumb_path_for_version(
@@ -143,4 +255,23 @@ fn infer_extension_from_mime(source_mime_type: &str) -> Option<String> {
     mime_guess::get_mime_extensions_str(source_mime_type)
         .and_then(|extensions| extensions.first().copied())
         .map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LEGACY_IMAGES_V2_THUMBNAIL_VERSION, known_thumbnail_cache_paths};
+
+    const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn known_thumbnail_cache_paths_include_legacy_v2_path() {
+        let paths = known_thumbnail_cache_paths(HASH);
+
+        assert!(paths.iter().any(|path| {
+            path == &crate::services::thumbnail_service::thumb_path_for_version(
+                HASH,
+                LEGACY_IMAGES_V2_THUMBNAIL_VERSION,
+            )
+        }));
+    }
 }

@@ -1,4 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use crate::config::RuntimeConfig;
@@ -278,17 +280,29 @@ pub fn command_is_available(command: &str) -> bool {
 
     let command_path = Path::new(command);
     if command_path.is_absolute() || command.contains(std::path::MAIN_SEPARATOR) {
-        return command_path.is_file();
+        return is_executable_file(command_path);
     }
 
     std::env::var_os("PATH")
         .map(|paths| {
             std::env::split_paths(&paths).any(|dir| {
                 let candidate = dir.join(command);
-                candidate.is_file()
+                is_executable_file(&candidate)
             })
         })
         .unwrap_or(false)
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    path.metadata()
+        .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
 }
 
 fn parse_media_processing_registry_config(value: &str) -> Result<MediaProcessingRegistryConfig> {

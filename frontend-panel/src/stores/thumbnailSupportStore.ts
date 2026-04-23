@@ -4,6 +4,7 @@ import { thumbnailSupportService } from "@/services/thumbnailSupportService";
 import type { PublicThumbnailSupport } from "@/types/api";
 
 let inFlightLoad: Promise<void> | null = null;
+let latestLoadToken = 0;
 
 interface ThumbnailSupportState {
 	config: PublicThumbnailSupport | null;
@@ -26,11 +27,15 @@ export const useThumbnailSupportStore = create<ThumbnailSupportState>(
 
 		load: async ({ force = false } = {}) => {
 			if (!force && get().isLoaded) return;
-			if (inFlightLoad) return inFlightLoad;
+			if (!force && inFlightLoad) return inFlightLoad;
 
-			inFlightLoad = (async () => {
+			const loadToken = latestLoadToken + 1;
+			latestLoadToken = loadToken;
+			let loadPromise: Promise<void> | null = null;
+			loadPromise = (async () => {
 				try {
 					const config = await thumbnailSupportService.get();
+					if (latestLoadToken !== loadToken) return;
 					set({
 						config,
 						isLoaded: true,
@@ -40,16 +45,21 @@ export const useThumbnailSupportStore = create<ThumbnailSupportState>(
 						"thumbnail support bootstrap failed, using empty support list",
 						error,
 					);
+					if (latestLoadToken !== loadToken) return;
 					set({
 						config: null,
 						isLoaded: true,
 					});
 				} finally {
-					inFlightLoad = null;
+					if (inFlightLoad === loadPromise) {
+						inFlightLoad = null;
+					}
 				}
 			})();
 
-			return inFlightLoad;
+			inFlightLoad = loadPromise;
+
+			return loadPromise;
 		},
 	}),
 );

@@ -77,4 +77,33 @@ describe("thumbnailSupportStore", () => {
 		expect(useThumbnailSupportStore.getState().config).toEqual(supportConfig);
 		expect(useThumbnailSupportStore.getState().isLoaded).toBe(true);
 	});
+
+	it("starts a new forced refresh instead of reusing an existing load", async () => {
+		let resolveInitialLoad!: (value: typeof supportConfig) => void;
+		const initialLoad = new Promise<typeof supportConfig>((resolve) => {
+			resolveInitialLoad = resolve;
+		});
+		const forcedConfig = {
+			version: 1,
+			extensions: ["png", "heic", "mp4"],
+		};
+		mockState.get
+			.mockReturnValueOnce(initialLoad)
+			.mockResolvedValueOnce(forcedConfig);
+
+		const { useThumbnailSupportStore } = await loadStore();
+
+		const firstLoad = useThumbnailSupportStore.getState().load();
+		const forcedLoad = useThumbnailSupportStore
+			.getState()
+			.load({ force: true });
+
+		expect(mockState.get).toHaveBeenCalledTimes(2);
+
+		resolveInitialLoad(supportConfig);
+		await Promise.all([firstLoad, forcedLoad]);
+
+		expect(useThumbnailSupportStore.getState().config).toEqual(forcedConfig);
+		expect(useThumbnailSupportStore.getState().isLoaded).toBe(true);
+	});
 });

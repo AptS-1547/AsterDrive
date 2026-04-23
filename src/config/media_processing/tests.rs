@@ -139,6 +139,28 @@ fn command_is_available_rejects_blank_command() {
     assert!(!command_is_available("   "));
 }
 
+#[cfg(unix)]
+#[test]
+fn command_is_available_rejects_non_executable_files() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join(format!(
+        "aster-media-command-test-{}",
+        rand::random::<u64>()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let command = dir.join("plain-file");
+    std::fs::write(&command, "#!/bin/sh\nexit 0\n").unwrap();
+
+    let mut permissions = std::fs::metadata(&command).unwrap().permissions();
+    permissions.set_mode(0o644);
+    std::fs::set_permissions(&command, permissions).unwrap();
+
+    assert!(!command_is_available(command.to_str().unwrap()));
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn default_registry_includes_known_processors_in_fixed_order() {
     let config = default_media_processing_registry();

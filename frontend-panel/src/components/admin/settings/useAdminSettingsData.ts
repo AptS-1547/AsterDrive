@@ -134,7 +134,7 @@ export function useAdminSettingsData({
 			const response = await adminConfigService.action(
 				MEDIA_PROCESSING_CONFIG_KEY,
 				{
-					action: "test_vips_cli" as ConfigActionType,
+					action: "test_vips_cli" satisfies ConfigActionType,
 					value,
 				},
 			);
@@ -150,7 +150,7 @@ export function useAdminSettingsData({
 			const response = await adminConfigService.action(
 				MEDIA_PROCESSING_CONFIG_KEY,
 				{
-					action: "test_ffmpeg_cli" as ConfigActionType,
+					action: "test_ffmpeg_cli" satisfies ConfigActionType,
 					value,
 				},
 			);

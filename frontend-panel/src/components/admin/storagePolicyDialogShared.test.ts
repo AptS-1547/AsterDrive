@@ -49,6 +49,8 @@ describe("storagePolicyDialogShared", () => {
 			remote_upload_strategy: "relay_stream",
 			s3_upload_strategy: "relay_stream",
 			s3_download_strategy: "relay_stream",
+			thumbnail_processor: "storage_native",
+			thumbnail_extensions: ["png", "jpg"],
 		});
 	});
 
@@ -71,6 +73,8 @@ describe("storagePolicyDialogShared", () => {
 				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "presigned",
 				s3_download_strategy: "relay_stream",
+				thumbnail_processor: null,
+				thumbnail_extensions: [],
 			}),
 		).toEqual({
 			name: "Media",
@@ -109,6 +113,8 @@ describe("storagePolicyDialogShared", () => {
 				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "presigned",
+				thumbnail_processor: null,
+				thumbnail_extensions: [],
 			}),
 		).toEqual({
 			name: "Media",
@@ -144,6 +150,8 @@ describe("storagePolicyDialogShared", () => {
 				remote_upload_strategy: "presigned",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "relay_stream",
+				thumbnail_processor: null,
+				thumbnail_extensions: [],
 			}),
 		).toEqual({
 			name: "Remote Edge",
@@ -181,6 +189,8 @@ describe("storagePolicyDialogShared", () => {
 				remote_upload_strategy: "presigned",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "relay_stream",
+				thumbnail_processor: null,
+				thumbnail_extensions: [],
 			}),
 		).toEqual({
 			driver_type: "remote",
@@ -190,6 +200,42 @@ describe("storagePolicyDialogShared", () => {
 			secret_key: undefined,
 			base_path: "tenant-a/uploads",
 			remote_node_id: 9,
+		});
+	});
+
+	it("preserves policy-level thumbnail options in create and update payloads", () => {
+		const form = {
+			name: "Native Thumbnails",
+			driver_type: "remote" as const,
+			endpoint: "",
+			bucket: "",
+			access_key: "",
+			secret_key: "",
+			base_path: "tenant-a/uploads",
+			remote_node_id: "9",
+			max_file_size: "",
+			chunk_size: "4",
+			is_default: false,
+			content_dedup: false,
+			remote_download_strategy: "presigned" as const,
+			remote_upload_strategy: "presigned" as const,
+			s3_upload_strategy: "relay_stream" as const,
+			s3_download_strategy: "relay_stream" as const,
+			thumbnail_processor: "storage_native" as const,
+			thumbnail_extensions: ["png", "jpg"],
+		};
+
+		expect(buildCreatePolicyPayload(form).options).toEqual({
+			remote_download_strategy: "presigned",
+			remote_upload_strategy: "presigned",
+			thumbnail_processor: "storage_native",
+			thumbnail_extensions: ["png", "jpg"],
+		});
+		expect(buildUpdatePolicyPayload(form).options).toEqual({
+			remote_download_strategy: "presigned",
+			remote_upload_strategy: "presigned",
+			thumbnail_processor: "storage_native",
+			thumbnail_extensions: ["png", "jpg"],
 		});
 	});
 });

@@ -14,6 +14,13 @@ use sea_orm::{
 
 const BOOTSTRAP_ENABLE_VIPS_CLI_ENV: &str = "ASTER_BOOTSTRAP_ENABLE_VIPS_CLI";
 const BOOTSTRAP_ENABLE_FFMPEG_CLI_ENV: &str = "ASTER_BOOTSTRAP_ENABLE_FFMPEG_CLI";
+const BOOTSTRAP_MEDIA_PROCESSOR_ENV_FLAGS: &[(MediaProcessorKind, &str)] = &[
+    (MediaProcessorKind::VipsCli, BOOTSTRAP_ENABLE_VIPS_CLI_ENV),
+    (
+        MediaProcessorKind::FfmpegCli,
+        BOOTSTRAP_ENABLE_FFMPEG_CLI_ENV,
+    ),
+];
 
 fn find_definition(key: &str) -> Option<&'static ConfigDef> {
     ALL_CONFIGS.iter().find(|def| def.key == key)
@@ -207,24 +214,31 @@ fn bootstrap_media_processing_registry_default_value<F>(get_env: &F) -> String
 where
     F: Fn(&str) -> Option<String>,
 {
-    let enable_vips = env_flag_enabled(get_env, BOOTSTRAP_ENABLE_VIPS_CLI_ENV);
-    let enable_ffmpeg = env_flag_enabled(get_env, BOOTSTRAP_ENABLE_FFMPEG_CLI_ENV);
+    let enabled_processors = bootstrap_enabled_media_processors(get_env);
 
-    if !enable_vips && !enable_ffmpeg {
+    if enabled_processors.is_empty() {
         return media_processing::default_media_processing_registry_json();
     }
 
     let mut config = media_processing::default_media_processing_registry();
     for processor in &mut config.processors {
-        match processor.kind {
-            MediaProcessorKind::VipsCli if enable_vips => processor.enabled = true,
-            MediaProcessorKind::FfmpegCli if enable_ffmpeg => processor.enabled = true,
-            _ => {}
+        if enabled_processors.contains(&processor.kind) {
+            processor.enabled = true;
         }
     }
 
     serde_json::to_string_pretty(&config)
         .expect("bootstrapped media processing registry should serialize")
+}
+
+fn bootstrap_enabled_media_processors<F>(get_env: &F) -> Vec<MediaProcessorKind>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    BOOTSTRAP_MEDIA_PROCESSOR_ENV_FLAGS
+        .iter()
+        .filter_map(|(kind, env_name)| env_flag_enabled(get_env, env_name).then_some(*kind))
+        .collect()
 }
 
 fn env_flag_enabled<F>(get_env: &F, name: &str) -> bool

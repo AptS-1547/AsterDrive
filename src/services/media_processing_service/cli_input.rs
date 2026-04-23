@@ -103,23 +103,13 @@ pub(crate) async fn prepare_cli_source(
 }
 
 async fn materialize_local_cli_source(source_path: &Path, input_path: &Path) -> Result<()> {
-    match tokio::fs::hard_link(source_path, input_path).await {
-        Ok(()) => Ok(()),
-        Err(link_error) => {
-            tracing::debug!(
-                source_path = %source_path.display(),
-                input_path = %input_path.display(),
-                "failed to hard-link local media source for CLI input; falling back to copy: {link_error}"
-            );
-            tokio::fs::copy(source_path, input_path)
-                .await
-                .map(|_| ())
-                .map_aster_err_ctx(
-                    "copy local media source temp file",
-                    AsterError::thumbnail_generation_failed,
-                )
-        }
-    }
+    tokio::fs::copy(source_path, input_path)
+        .await
+        .map(|_| ())
+        .map_aster_err_ctx(
+            "copy local media source temp file",
+            AsterError::thumbnail_generation_failed,
+        )
 }
 
 #[cfg(test)]

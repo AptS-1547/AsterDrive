@@ -10,8 +10,6 @@ use crate::db::repository::{
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::{PrimaryAppState, PrimaryRuntimeState};
-use crate::storage::StorageDriver;
-use crate::storage::drivers::{local::LocalDriver, remote::RemoteDriver, s3::S3Driver};
 use crate::types::{
     DriverType, StoragePolicyOptions, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
     parse_storage_policy_options,
@@ -34,73 +32,11 @@ fn driver_type_name(driver_type: DriverType) -> &'static str {
     }
 }
 
-fn build_policy_support_probe_model(
-    policy_id: i64,
+fn ensure_storage_native_thumbnail_supported(
     connection: &StoragePolicyConnectionInput,
-    max_file_size: i64,
-    chunk_size: i64,
-    options: StoredStoragePolicyOptions,
-) -> storage_policy::Model {
-    let now = Utc::now();
-    storage_policy::Model {
-        id: policy_id,
-        name: "__thumbnail_support_probe__".to_string(),
-        driver_type: connection.driver_type,
-        endpoint: connection.endpoint.clone(),
-        bucket: connection.bucket.clone(),
-        access_key: connection.access_key.clone(),
-        secret_key: connection.secret_key.clone(),
-        base_path: connection.base_path.clone(),
-        remote_node_id: connection.remote_node_id,
-        max_file_size,
-        allowed_types: StoredStoragePolicyAllowedTypes::empty(),
-        options,
-        is_default: false,
-        chunk_size,
-        created_at: now,
-        updated_at: now,
-    }
-}
-
-async fn ensure_storage_native_thumbnail_supported(
-    state: &PrimaryAppState,
-    policy_id: i64,
-    connection: &StoragePolicyConnectionInput,
-    max_file_size: i64,
-    chunk_size: i64,
     options: &StoragePolicyOptions,
-    serialized_options: StoredStoragePolicyOptions,
 ) -> Result<()> {
     if !options.uses_storage_native_thumbnail() {
-        return Ok(());
-    }
-
-    let probe_policy = build_policy_support_probe_model(
-        policy_id,
-        connection,
-        max_file_size,
-        chunk_size,
-        serialized_options,
-    );
-    let supported = match connection.driver_type {
-        DriverType::Local => LocalDriver::new(&probe_policy)?
-            .as_native_thumbnail()
-            .is_some(),
-        DriverType::S3 => S3Driver::new(&probe_policy)?
-            .as_native_thumbnail()
-            .is_some(),
-        DriverType::Remote => {
-            let remote_node_id = connection.remote_node_id.ok_or_else(|| {
-                AsterError::validation_error("remote storage policy requires remote_node_id")
-            })?;
-            let follower = managed_follower_repo::find_by_id(&state.db, remote_node_id).await?;
-            RemoteDriver::new(&probe_policy, &follower)?
-                .as_native_thumbnail()
-                .is_some()
-        }
-    };
-
-    if supported {
         return Ok(());
     }
 
@@ -163,16 +99,7 @@ pub async fn create(
         base_path: base_path.clone(),
         remote_node_id,
     };
-    ensure_storage_native_thumbnail_supported(
-        state,
-        0,
-        &connection,
-        max_file_size,
-        chunk_size,
-        &options,
-        serialized_options.clone(),
-    )
-    .await?;
+    ensure_storage_native_thumbnail_supported(&connection, &options)?;
 
     let txn = crate::db::transaction::begin(&state.db).await?;
     let now = Utc::now();
@@ -291,8 +218,6 @@ pub async fn update(
     let existing_access_key = existing.access_key.clone();
     let existing_secret_key = existing.secret_key.clone();
     let existing_remote_node_id = existing.remote_node_id;
-    let existing_max_file_size = existing.max_file_size;
-    let existing_chunk_size = existing.chunk_size;
     let existing_options = parse_storage_policy_options(existing.options.as_ref());
     let final_endpoint = endpoint.unwrap_or_else(|| existing_endpoint.clone());
     let final_bucket = bucket.unwrap_or_else(|| existing_bucket.clone());
@@ -313,8 +238,6 @@ pub async fn update(
         remote_node_id.or(existing.remote_node_id),
     )
     .await?;
-    let final_max_file_size = max_file_size.unwrap_or(existing_max_file_size);
-    let final_chunk_size = chunk_size.unwrap_or(existing_chunk_size);
     let options_provided = options.is_some();
     let final_options = options.unwrap_or(existing_options).normalized();
     let serialized_final_options = serialize_options(&final_options)?;
@@ -327,16 +250,7 @@ pub async fn update(
         base_path: final_base_path.clone(),
         remote_node_id: normalized_remote_node_id,
     };
-    ensure_storage_native_thumbnail_supported(
-        state,
-        id,
-        &final_connection,
-        final_max_file_size,
-        final_chunk_size,
-        &final_options,
-        serialized_final_options.clone(),
-    )
-    .await?;
+    ensure_storage_native_thumbnail_supported(&final_connection, &final_options)?;
 
     if let Some(false) = is_default
         && existing.is_default
