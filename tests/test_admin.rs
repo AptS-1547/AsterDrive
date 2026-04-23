@@ -1096,6 +1096,24 @@ async fn test_admin_tasks_cleanup_uses_explicit_finished_before() {
                        finished_at: Option<chrono::DateTime<Utc>>,
                        updated_at: chrono::DateTime<Utc>,
                        display_name: &str| {
+        let payload_json = match kind {
+            BackgroundTaskKind::SystemRuntime => {
+                StoredTaskPayload(r#"{"task_name":"background-task-dispatch"}"#.to_string())
+            }
+            BackgroundTaskKind::ArchiveExtract => StoredTaskPayload(
+                r##"{"file_id":1,"source_file_name":"upload.zip","target_folder_id":null,"output_folder_name":"upload"}"##
+                    .to_string(),
+            ),
+            BackgroundTaskKind::ArchiveCompress => StoredTaskPayload(
+                r#"{"file_ids":[],"folder_ids":[1],"archive_name":"archive.zip","target_folder_id":null}"#
+                    .to_string(),
+            ),
+            BackgroundTaskKind::ThumbnailGenerate => StoredTaskPayload(
+                r#"{"blob_id":1,"blob_hash":"hash","source_file_name":"image.png","source_mime_type":"image/png","processor":"images"}"#
+                    .to_string(),
+            ),
+        };
+
         background_task_repo::create(
             &state.db,
             background_task::ActiveModel {
@@ -1105,7 +1123,7 @@ async fn test_admin_tasks_cleanup_uses_explicit_finished_before() {
                 team_id: Set(None),
                 share_id: Set(None),
                 display_name: Set(display_name.to_string()),
-                payload_json: Set(StoredTaskPayload("{}".to_string())),
+                payload_json: Set(payload_json),
                 result_json: Set(None),
                 steps_json: Set(None),
                 progress_current: Set(1),
@@ -1185,8 +1203,16 @@ async fn test_admin_tasks_cleanup_uses_explicit_finished_before() {
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
+    let status = resp.status();
+    let body_bytes = test::read_body(resp).await;
+    assert_eq!(
+        status,
+        200,
+        "cleanup failed: {}",
+        String::from_utf8_lossy(&body_bytes)
+    );
+    let body: Value =
+        serde_json::from_slice(&body_bytes).expect("cleanup response should be valid json");
     assert_eq!(body["data"]["removed"], 1);
 
     let req = test::TestRequest::get()

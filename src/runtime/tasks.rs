@@ -163,6 +163,32 @@ async fn run_periodic_iteration<F, Fut>(
     }
 }
 
+fn background_task_dispatch_outcome(
+    result: crate::errors::Result<crate::services::task_service::DispatchStats>,
+) -> crate::services::task_service::RuntimeTaskRunOutcome {
+    match result {
+        Ok(stats) => {
+            if stats.claimed > 0 || stats.failed > 0 {
+                tracing::info!(
+                    claimed = stats.claimed,
+                    succeeded = stats.succeeded,
+                    retried = stats.retried,
+                    failed = stats.failed,
+                    "processed background task batch"
+                );
+            }
+            crate::services::task_service::RuntimeTaskRunOutcome::quiet()
+        }
+        Err(error) => {
+            tracing::warn!("background task dispatch failed: {error}");
+            crate::services::task_service::RuntimeTaskRunOutcome::failed(
+                Some("Background task dispatch failed".to_string()),
+                error.to_string(),
+            )
+        }
+    }
+}
+
 fn periodic_sleep_duration(base_interval: Duration, jitter_cap: Option<Duration>) -> Duration {
     let Some(jitter_cap) = jitter_cap else {
         return base_interval;
@@ -271,29 +297,7 @@ pub fn spawn_primary_background_tasks(
         |s| async move {
             // 这是后台任务主调度器：
             // 周期性捞取 Pending / Retry / stale Processing 任务，并发起认领与执行。
-            match crate::services::task_service::dispatch_due(&s).await {
-                Ok(stats) if stats.claimed > 0 || stats.failed > 0 => {
-                    tracing::info!(
-                        claimed = stats.claimed,
-                        succeeded = stats.succeeded,
-                        retried = stats.retried,
-                        failed = stats.failed,
-                        "processed background task batch"
-                    );
-                    crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
-                        "claimed {}, succeeded {}, retried {}, failed {}",
-                        stats.claimed, stats.succeeded, stats.retried, stats.failed
-                    )))
-                }
-                Ok(_) => crate::services::task_service::RuntimeTaskRunOutcome::quiet(),
-                Err(error) => {
-                    tracing::warn!("background task dispatch failed: {error}");
-                    crate::services::task_service::RuntimeTaskRunOutcome::failed(
-                        Some("Background task dispatch failed".to_string()),
-                        error.to_string(),
-                    )
-                }
-            }
+            background_task_dispatch_outcome(crate::services::task_service::dispatch_due(&s).await)
         },
     ));
 
@@ -648,6 +652,8 @@ fn remote_node_health_test_interval(state: &PrimaryAppState) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::errors::AsterError;
+    use crate::services::task_service::{DispatchStats, RuntimeTaskRunOutcome};
 
     #[test]
     fn periodic_sleep_duration_is_unchanged_without_jitter() {
@@ -685,5 +691,31 @@ mod tests {
         tasks.push(async {});
 
         tasks.shutdown().await;
+    }
+
+    #[test]
+    fn background_task_dispatch_success_is_quiet_even_when_tasks_were_processed() {
+        let outcome = background_task_dispatch_outcome(Ok(DispatchStats {
+            claimed: 1,
+            succeeded: 1,
+            retried: 0,
+            failed: 1,
+        }));
+
+        assert_eq!(outcome, RuntimeTaskRunOutcome::quiet());
+    }
+
+    #[test]
+    fn background_task_dispatch_failure_is_recorded() {
+        let outcome =
+            background_task_dispatch_outcome(Err(AsterError::internal_error("dispatcher crashed")));
+
+        assert_eq!(
+            outcome,
+            RuntimeTaskRunOutcome::failed(
+                Some("Background task dispatch failed".to_string()),
+                "Internal Server Error: dispatcher crashed",
+            )
+        );
     }
 }
