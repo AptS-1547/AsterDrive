@@ -9,6 +9,46 @@ interface CachedPreviewAppsPayload {
 	config: PublicPreviewAppsConfig;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasLocalizedLabels(value: unknown) {
+	if (!isRecord(value)) {
+		return false;
+	}
+
+	return Object.values(value).some(
+		(item) => typeof item === "string" && item.trim().length > 0,
+	);
+}
+
+function isPreviewAppsConfig(value: unknown): value is PublicPreviewAppsConfig {
+	if (!isRecord(value)) {
+		return false;
+	}
+
+	const { apps, version } = value;
+	if (
+		typeof version !== "number" ||
+		!Array.isArray(apps) ||
+		apps.length === 0
+	) {
+		return false;
+	}
+
+	return apps.every(
+		(app) =>
+			isRecord(app) &&
+			typeof app.key === "string" &&
+			app.key.trim().length > 0 &&
+			typeof app.icon === "string" &&
+			typeof app.provider === "string" &&
+			app.provider.trim().length > 0 &&
+			hasLocalizedLabels(app.labels),
+	);
+}
+
 function readCachedPreviewApps(): PublicPreviewAppsConfig | null {
 	try {
 		const raw = localStorage.getItem(PREVIEW_APPS_CACHE_KEY);
@@ -18,6 +58,11 @@ function readCachedPreviewApps(): PublicPreviewAppsConfig | null {
 
 		const parsed = JSON.parse(raw) as CachedPreviewAppsPayload | null;
 		if (!parsed || typeof parsed !== "object" || !("config" in parsed)) {
+			localStorage.removeItem(PREVIEW_APPS_CACHE_KEY);
+			return null;
+		}
+
+		if (!isPreviewAppsConfig(parsed.config)) {
 			localStorage.removeItem(PREVIEW_APPS_CACHE_KEY);
 			return null;
 		}

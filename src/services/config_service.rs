@@ -448,7 +448,6 @@ fn build_imported_wopi_preview_apps(
                 .icon_url
                 .unwrap_or_else(|| "/static/preview-apps/file.svg".to_string()),
             enabled,
-            label_i18n_key: None,
             labels: BTreeMap::from([
                 ("en".to_string(), discovered_app.label.clone()),
                 ("zh".to_string(), discovered_app.label.clone()),
@@ -734,7 +733,6 @@ mod tests {
                 provider: preview_app_service::PreviewAppProvider::Wopi,
                 icon: "http://localhost:8080/word.ico".to_string(),
                 enabled: false,
-                label_i18n_key: None,
                 labels: BTreeMap::from([("en".to_string(), "Word".to_string())]),
                 extensions: vec!["docx".to_string()],
                 config: preview_app_service::PublicPreviewAppConfig {
@@ -808,7 +806,6 @@ mod tests {
             provider: preview_app_service::PreviewAppProvider::Wopi,
             icon: "http://localhost:8080/word.ico".to_string(),
             enabled: true,
-            label_i18n_key: None,
             labels: BTreeMap::from([("en".to_string(), "Word".to_string())]),
             extensions: Vec::new(),
             config: preview_app_service::PublicPreviewAppConfig {

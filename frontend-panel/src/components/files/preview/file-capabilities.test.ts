@@ -275,13 +275,19 @@ describe("file preview capabilities", () => {
 					extensions: ["md"],
 					icon: "Scroll",
 					key: "builtin.markdown",
-					label_i18n_key: "open_with_markdown",
+					labels: {
+						en: "Markdown preview",
+						zh: "Markdown 预览",
+					},
 					provider: "builtin",
 				},
 				{
 					icon: "FileCode",
 					key: "builtin.code",
-					label_i18n_key: "open_with_code",
+					labels: {
+						en: "Source view",
+						zh: "源码视图",
+					},
 					provider: "builtin",
 				},
 				{
@@ -396,13 +402,19 @@ describe("file preview capabilities", () => {
 					extensions: ["md"],
 					icon: "/static/preview-apps/markdown.svg",
 					key: "builtin.markdown",
-					label_i18n_key: "open_with_markdown",
+					labels: {
+						en: "Markdown preview",
+						zh: "Markdown 预览",
+					},
 					provider: "builtin",
 				},
 				{
 					icon: "/static/preview-apps/code.svg",
 					key: "builtin.code",
-					label_i18n_key: "open_with_code",
+					labels: {
+						en: "Source view",
+						zh: "源码视图",
+					},
 					provider: "builtin",
 				},
 				{
@@ -425,7 +437,10 @@ describe("file preview capabilities", () => {
 					extensions: ["pdf"],
 					icon: "/static/preview-apps/pdf.svg",
 					key: "builtin.pdf",
-					label_i18n_key: "open_with_pdf",
+					labels: {
+						en: "PDF preview",
+						zh: "PDF 预览",
+					},
 					provider: "builtin",
 				},
 			],
@@ -484,7 +499,7 @@ describe("file preview capabilities", () => {
 		expect(detectFilePreviewProfile(archive).options).toEqual([]);
 	});
 
-	it("falls back to legacy defaults when configured apps omit direct bindings", () => {
+	it("uses configured builtins as defaults when their built-in bindings match", () => {
 		const json = { name: "data.json", mime_type: "application/json" };
 		const previewApps = {
 			version: 2,
@@ -492,13 +507,19 @@ describe("file preview capabilities", () => {
 				{
 					icon: "BracketsCurly",
 					key: "builtin.formatted",
-					label_i18n_key: "open_with_formatted",
+					labels: {
+						en: "Formatted view",
+						zh: "格式化视图",
+					},
 					provider: "builtin",
 				},
 				{
 					icon: "FileCode",
 					key: "builtin.code",
-					label_i18n_key: "open_with_code",
+					labels: {
+						en: "Source view",
+						zh: "源码视图",
+					},
 					provider: "builtin",
 				},
 			],
@@ -595,13 +616,19 @@ describe("file preview capabilities", () => {
 					extensions: ["md"],
 					icon: "/static/preview-apps/markdown.svg",
 					key: "builtin.markdown",
-					label_i18n_key: "open_with_markdown",
+					labels: {
+						en: "Markdown preview",
+						zh: "Markdown 预览",
+					},
 					provider: "builtin",
 				},
 				{
 					icon: "/static/preview-apps/code.svg",
 					key: "builtin.code",
-					label_i18n_key: "open_with_code",
+					labels: {
+						en: "Source view",
+						zh: "源码视图",
+					},
 					provider: "builtin",
 				},
 			],

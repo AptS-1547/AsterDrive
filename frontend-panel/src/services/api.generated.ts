@@ -4044,7 +4044,6 @@ export interface components {
             extensions?: string[];
             icon: string;
             key: string;
-            label_i18n_key?: string | null;
             labels?: {
                 [key: string]: string;
             };

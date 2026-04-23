@@ -128,30 +128,11 @@ function getProviderDefaultIcon(
 	return getPreviewAppDefaultIcon(key, provider);
 }
 
-function getTranslatedLegacyAppLabel(app: PreviewAppsEditorApp, t: Translate) {
-	const key = app.label_i18n_key.trim();
-	if (!key) {
-		return "";
-	}
-
-	const translated = t(`files:${key}`);
-	if (!translated || translated === key || translated === `files:${key}`) {
-		return "";
-	}
-
-	return translated;
-}
-
 function getLocalizedAppLabel(
 	app: PreviewAppsEditorApp,
 	language: string | undefined,
-	t: Translate,
 ) {
-	return (
-		pickLocalizedLabel(app.labels, language) ||
-		getTranslatedLegacyAppLabel(app, t) ||
-		app.key.trim()
-	);
+	return pickLocalizedLabel(app.labels, language) || app.key.trim();
 }
 
 function getAppHeading(
@@ -161,7 +142,7 @@ function getAppHeading(
 	t: Translate,
 ) {
 	return (
-		getLocalizedAppLabel(app, language, t) ||
+		getLocalizedAppLabel(app, language) ||
 		t("preview_apps_app_title", { index: index + 1 })
 	);
 }

@@ -28,7 +28,6 @@ export interface PreviewAppsEditorApp {
 	extensions: string[];
 	icon: string;
 	key: string;
-	label_i18n_key: string;
 	labels: Record<string, string>;
 	provider: PreviewAppProviderValue;
 }
@@ -93,43 +92,6 @@ const PREVIEW_APP_KEY_META: Record<string, { icon: string; labelKey: string }> =
 		},
 	};
 
-const PREVIEW_APP_LEGACY_LABELS: Record<string, Record<string, string>> = {
-	"builtin.audio": { en: "Audio preview", zh: "音频预览" },
-	"builtin.code": { en: "Source view", zh: "源码视图" },
-	"builtin.formatted": { en: "Formatted view", zh: "格式化视图" },
-	"builtin.image": { en: "Image preview", zh: "图片预览" },
-	"builtin.markdown": { en: "Markdown preview", zh: "Markdown 预览" },
-	"builtin.office_google": {
-		en: "Google Viewer",
-		zh: "Google 预览器",
-	},
-	"builtin.office_microsoft": {
-		en: "Microsoft Viewer",
-		zh: "Microsoft 预览器",
-	},
-	"builtin.pdf": { en: "PDF preview", zh: "PDF 预览" },
-	[BUILTIN_TABLE_PREVIEW_APP_KEY]: { en: "Table preview", zh: "表格预览" },
-	"builtin.try_text": { en: "Open as text", zh: "以文本方式打开" },
-	"builtin.video": { en: "Video preview", zh: "视频预览" },
-	open_with_audio: { en: "Audio preview", zh: "音频预览" },
-	open_with_code: { en: "Source view", zh: "源码视图" },
-	open_with_formatted: { en: "Formatted view", zh: "格式化视图" },
-	open_with_image: { en: "Image preview", zh: "图片预览" },
-	open_with_markdown: { en: "Markdown preview", zh: "Markdown 预览" },
-	open_with_office_google: {
-		en: "Google Viewer",
-		zh: "Google 预览器",
-	},
-	open_with_office_microsoft: {
-		en: "Microsoft Viewer",
-		zh: "Microsoft 预览器",
-	},
-	open_with_pdf: { en: "PDF preview", zh: "PDF 预览" },
-	open_with_table: { en: "Table preview", zh: "表格预览" },
-	open_with_try_text: { en: "Open as text", zh: "以文本方式打开" },
-	open_with_video: { en: "Video preview", zh: "视频预览" },
-};
-
 const ICON_URL_PATTERN =
 	/^(https?:\/\/|\/\/|\/(?!\/)|\.\/|\.\.\/|data:image\/|blob:)/i;
 
@@ -187,16 +149,6 @@ function isPreviewAppIconUrl(value: string) {
 	return ICON_URL_PATTERN.test(value.trim());
 }
 
-function getLegacyPreviewAppLabels(
-	key: string,
-	labelI18nKey: string,
-): Record<string, string> {
-	const matched =
-		PREVIEW_APP_LEGACY_LABELS[key.trim()] ??
-		PREVIEW_APP_LEGACY_LABELS[labelI18nKey.trim()];
-	return matched ? { ...matched } : {};
-}
-
 function readPreviewAppProvider(value: unknown): PreviewAppProviderValue {
 	const normalized = readString(value).trim().toLowerCase();
 	if (normalized === "builtin") {
@@ -232,7 +184,6 @@ function normalizeApp(value: unknown): PreviewAppsEditorApp {
 			extensions: [],
 			icon: "",
 			key: "",
-			label_i18n_key: "",
 			labels: {},
 			provider: "",
 		};
@@ -240,7 +191,6 @@ function normalizeApp(value: unknown): PreviewAppsEditorApp {
 
 	const key = readString(value.key);
 	const provider = getPreviewAppProvider(value.provider);
-	const labelI18nKey = readString(value.label_i18n_key);
 	const labels = readStringMap(value.labels);
 	const config = cloneConfigMap(value.config);
 
@@ -254,11 +204,7 @@ function normalizeApp(value: unknown): PreviewAppsEditorApp {
 		extensions: readStringList(value.extensions),
 		icon: normalizePreviewAppIconOverride(key, value.icon, provider),
 		key,
-		label_i18n_key: labelI18nKey,
-		labels:
-			Object.keys(labels).length > 0
-				? labels
-				: getLegacyPreviewAppLabels(key, labelI18nKey),
+		labels,
 		provider,
 	};
 }
@@ -411,9 +357,6 @@ export function serializePreviewAppsConfig(config: PreviewAppsEditorConfig) {
 					key,
 					provider: app.provider,
 					...(Object.keys(nextLabels).length > 0 ? { labels: nextLabels } : {}),
-					...(app.label_i18n_key.trim()
-						? { label_i18n_key: app.label_i18n_key.trim() }
-						: {}),
 				};
 			}),
 		},
@@ -466,10 +409,7 @@ export function getPreviewAppsConfigIssues(
 			});
 		}
 
-		if (
-			!app.label_i18n_key.trim() &&
-			Object.values(app.labels).every((value) => value.trim().length === 0)
-		) {
+		if (Object.values(app.labels).every((value) => value.trim().length === 0)) {
 			issues.push({
 				key: "preview_apps_error_app_label_required",
 				values: { index: appNumber },
@@ -582,7 +522,6 @@ export function createPreviewAppDraft(
 		extensions: [],
 		icon: "",
 		key: getNextCustomKey(existingKeys),
-		label_i18n_key: "",
 		labels: {},
 		provider: "url_template",
 	};

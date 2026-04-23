@@ -405,7 +405,7 @@
 	"preview_apps_error_no_apps": "At least one preview app is required.",
 	"preview_apps_error_app_key_required": "App {{index}} must define a non-empty key.",
 	"preview_apps_error_app_key_duplicate": "App {{index}} reuses duplicate key \"{{key}}\".",
-	"preview_apps_error_app_label_required": "App {{index}} must provide localized labels or a legacy i18n label key.",
+	"preview_apps_error_app_label_required": "App {{index}} must provide localized labels.",
 	"preview_apps_error_app_provider_required": "App {{index}} must define a provider.",
 	"preview_apps_error_builtin_required": "Built-in preview app \"{{key}}\" cannot be removed.",
 	"preview_apps_error_url_template_mode_required": "URL template app {{index}} must define a mode.",

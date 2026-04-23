@@ -853,7 +853,7 @@ function normalizeConfiguredOption(
 	return {
 		key: app.key,
 		mode,
-		labelKey: app.label_i18n_key ?? "",
+		labelKey: "",
 		labels: app.labels ?? undefined,
 		icon: getConfiguredPreviewIcon(app, category),
 		config: (app.config as Record<string, unknown> | undefined) ?? {},

@@ -68,11 +68,10 @@ fn validate_preview_apps_config(config: &mut PublicPreviewAppsConfig) -> Result<
     for app in &mut config.apps {
         app.key = normalize_non_empty("app key", &app.key)?;
         app.icon = app.icon.trim().to_string();
-        app.label_i18n_key = normalize_optional_text(app.label_i18n_key.take());
         app.labels = normalize_locale_labels(std::mem::take(&mut app.labels))?;
-        if app.label_i18n_key.is_none() && app.labels.is_empty() {
+        if app.labels.is_empty() {
             return Err(AsterError::validation_error(format!(
-                "preview app '{}' must provide labels or label_i18n_key",
+                "preview app '{}' must provide localized labels",
                 app.key
             )));
         }
@@ -192,17 +191,6 @@ where
     }
     *items = unique.into_iter().collect();
     Ok(())
-}
-
-fn normalize_optional_text(value: Option<String>) -> Option<String> {
-    value.and_then(|value| {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        }
-    })
 }
 
 fn normalize_locale_labels(labels: BTreeMap<String, String>) -> Result<BTreeMap<String, String>> {

@@ -29,7 +29,6 @@ fn test_wopi_app() -> PublicPreviewAppDefinition {
         provider: PreviewAppProvider::Wopi,
         icon: "/icon.svg".to_string(),
         enabled: true,
-        label_i18n_key: None,
         labels: BTreeMap::new(),
         extensions: vec!["docx".to_string()],
         config: PublicPreviewAppConfig {

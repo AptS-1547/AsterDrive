@@ -107,7 +107,6 @@ fn preview_apps_json_is_normalized_and_pretty_printed() {
         provider: PreviewAppProvider::UrlTemplate,
         icon: "Globe".to_string(),
         enabled: true,
-        label_i18n_key: None,
         labels: std::collections::BTreeMap::from([
             (" EN ".to_string(), " Viewer ".to_string()),
             ("zh".to_string(), " 查看器 ".to_string()),
@@ -155,6 +154,78 @@ fn preview_apps_reject_legacy_rules_field() {
 
     let error = normalize_public_preview_apps_config_value(&raw).unwrap_err();
     assert!(error.to_string().contains("unknown field `rules`"));
+}
+
+#[test]
+fn preview_apps_reject_legacy_label_i18n_key_field() {
+    let raw = json!({
+        "version": 2,
+        "apps": [
+            {
+                "key": "builtin.image",
+                "provider": "builtin",
+                "icon": "Eye",
+                "label_i18n_key": "open_with_image"
+            },
+            {
+                "key": "builtin.video",
+                "provider": "builtin",
+                "icon": "Monitor",
+                "labels": { "en": "Video preview" }
+            },
+            {
+                "key": "builtin.audio",
+                "provider": "builtin",
+                "icon": "FileAudio",
+                "labels": { "en": "Audio preview" }
+            },
+            {
+                "key": "builtin.pdf",
+                "provider": "builtin",
+                "icon": "FileText",
+                "labels": { "en": "PDF preview" },
+                "extensions": ["pdf"]
+            },
+            {
+                "key": "builtin.markdown",
+                "provider": "builtin",
+                "icon": "Eye",
+                "labels": { "en": "Markdown preview" },
+                "extensions": ["md", "markdown"]
+            },
+            {
+                "key": "builtin.table",
+                "provider": "builtin",
+                "icon": "Table",
+                "labels": { "en": "Table preview" },
+                "extensions": ["csv", "tsv"],
+                "config": { "delimiter": "auto" }
+            },
+            {
+                "key": "builtin.formatted",
+                "provider": "builtin",
+                "icon": "BracketsCurly",
+                "labels": { "en": "Formatted view" },
+                "extensions": ["json", "xml"]
+            },
+            {
+                "key": "builtin.code",
+                "provider": "builtin",
+                "icon": "FileCode",
+                "labels": { "en": "Source view" }
+            },
+            {
+                "key": "builtin.try_text",
+                "provider": "builtin",
+                "icon": "FileCode",
+                "labels": { "en": "Open as text" }
+            }
+        ]
+    })
+    .to_string();
+
+    let error = normalize_public_preview_apps_config_value(&raw).unwrap_err();
+    assert!(error.to_string().contains("unknown field `label_i18n_key`"));
 }
 
 #[test]

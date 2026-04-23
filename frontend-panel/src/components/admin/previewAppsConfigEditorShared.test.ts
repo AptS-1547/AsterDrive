@@ -220,7 +220,6 @@ describe("previewAppsConfigEditorShared", () => {
 						extensions: [],
 						icon: "",
 						key: "",
-						label_i18n_key: "",
 						labels: {},
 						provider: "",
 					},
@@ -230,7 +229,6 @@ describe("previewAppsConfigEditorShared", () => {
 						extensions: [],
 						icon: "",
 						key: "",
-						label_i18n_key: "",
 						labels: {},
 						provider: "url_template",
 					},
@@ -242,7 +240,6 @@ describe("previewAppsConfigEditorShared", () => {
 						extensions: ["docx"],
 						icon: "",
 						key: "custom.onlyoffice",
-						label_i18n_key: "",
 						labels: {
 							zh: "OnlyOffice",
 						},

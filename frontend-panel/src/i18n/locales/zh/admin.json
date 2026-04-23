@@ -405,7 +405,7 @@
 	"preview_apps_error_no_apps": "至少需要保留一个预览应用。",
 	"preview_apps_error_app_key_required": "应用 {{index}} 必须填写非空 key。",
 	"preview_apps_error_app_key_duplicate": "应用 {{index}} 重复使用了 key「{{key}}」。",
-	"preview_apps_error_app_label_required": "应用 {{index}} 至少要填写动态多语言标签或旧 i18n key 其中一个。",
+	"preview_apps_error_app_label_required": "应用 {{index}} 至少要填写一组多语言标签。",
 	"preview_apps_error_app_provider_required": "应用 {{index}} 必须填写 provider。",
 	"preview_apps_error_builtin_required": "内置预览应用「{{key}}」不能被删除。",
 	"preview_apps_error_url_template_mode_required": "URL 模板应用 {{index}} 必须填写打开模式。",

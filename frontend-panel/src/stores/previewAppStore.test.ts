@@ -24,7 +24,10 @@ const cachedConfig = {
 			extensions: ["md"],
 			icon: "Scroll",
 			key: "builtin.markdown",
-			label_i18n_key: "open_with_markdown",
+			labels: {
+				en: "Markdown preview",
+				zh: "Markdown 预览",
+			},
 			provider: "builtin",
 		},
 	],
@@ -37,7 +40,10 @@ const freshConfig = {
 			extensions: ["md"],
 			icon: "FileCode",
 			key: "builtin.code",
-			label_i18n_key: "open_with_code",
+			labels: {
+				en: "Source view",
+				zh: "源码视图",
+			},
 			provider: "builtin",
 		},
 	],
@@ -53,6 +59,32 @@ describe("previewAppStore", () => {
 		localStorage.clear();
 		mockState.get.mockReset();
 		mockState.warn.mockReset();
+	});
+
+	it("drops stale cached configs that still rely on legacy preview app labels", async () => {
+		localStorage.setItem(
+			"aster-cached-preview-apps",
+			JSON.stringify({
+				config: {
+					version: 2,
+					apps: [
+						{
+							extensions: ["md"],
+							icon: "Scroll",
+							key: "builtin.markdown",
+							label_i18n_key: "open_with_markdown",
+							provider: "builtin",
+						},
+					],
+				},
+			}),
+		);
+
+		const { PREVIEW_APPS_CACHE_KEY, usePreviewAppStore } = await loadStore();
+
+		expect(usePreviewAppStore.getState().config).toBeNull();
+		expect(usePreviewAppStore.getState().isLoaded).toBe(false);
+		expect(localStorage.getItem(PREVIEW_APPS_CACHE_KEY)).toBeNull();
 	});
 
 	it("hydrates cached config immediately and revalidates it once per session", async () => {

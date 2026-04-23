@@ -1440,7 +1440,10 @@ describe("AdminSettingsPage", () => {
 									key: "builtin.image",
 									icon: "Eye",
 									enabled: true,
-									label_i18n_key: "open_with_image",
+									labels: {
+										en: "Image preview",
+										zh: "图片预览",
+									},
 									provider: "builtin",
 								},
 							],

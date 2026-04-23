@@ -176,7 +176,6 @@ fn app_with_config(
         provider,
         icon: icon.to_string(),
         enabled: true,
-        label_i18n_key: None,
         labels,
         extensions: extensions.iter().map(|value| value.to_string()).collect(),
         config,
