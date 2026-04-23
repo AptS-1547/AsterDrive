@@ -1,19 +1,21 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { cloneElement, isValidElement } from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminTasksPage from "@/pages/admin/AdminTasksPage";
 import type { TaskInfo } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
+	cleanupCompleted: vi.fn(),
 	handleApiError: vi.fn(),
 	list: vi.fn(),
+	toastSuccess: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string, options?: Record<string, unknown>) => {
-			if (key === "admin:entries_page") {
+			if (key === "admin:entries_page" || key === "entries_page") {
 				return `entries:${options?.current}/${options?.pages}/${options?.total}`;
 			}
 			if (key === "admin:overview_background_tasks_source_system") {
@@ -25,20 +27,37 @@ vi.mock("react-i18next", () => ({
 			if (key === "admin:overview_background_tasks_source_team") {
 				return `source:team:${options?.id}`;
 			}
-			if (key === "admin:page_size_option") {
+			if (key === "admin:page_size_option" || key === "page_size_option") {
 				return `size:${options?.count}`;
+			}
+			if (key === "admin:tasks_cleaned" || key === "tasks_cleaned") {
+				return `tasks_cleaned:${options?.count}`;
+			}
+			if (
+				key === "admin:task_cleanup_confirm_desc" ||
+				key === "task_cleanup_confirm_desc"
+			) {
+				return `cleanup-desc:${options?.finishedBefore}:${options?.kind}:${options?.status}`;
 			}
 			return key;
 		},
 	}),
 }));
 
+vi.mock("sonner", () => ({
+	toast: {
+		success: (...args: unknown[]) => mockState.toastSuccess(...args),
+	},
+}));
+
 vi.mock("@/components/common/EmptyState", () => ({
 	EmptyState: ({
+		action,
 		title,
 		description,
 		icon,
 	}: {
+		action?: React.ReactNode;
 		title: string;
 		description?: string;
 		icon?: React.ReactNode;
@@ -47,6 +66,7 @@ vi.mock("@/components/common/EmptyState", () => ({
 			<div>{title}</div>
 			<div>{description}</div>
 			<div>{icon}</div>
+			<div>{action}</div>
 		</div>
 	),
 }));
@@ -68,15 +88,18 @@ vi.mock("@/components/layout/AdminPageHeader", () => ({
 		title,
 		description,
 		actions,
+		toolbar,
 	}: {
 		title: string;
 		description: string;
 		actions?: React.ReactNode;
+		toolbar?: React.ReactNode;
 	}) => (
 		<div>
 			<h1>{title}</h1>
 			<p>{description}</p>
 			<div>{actions}</div>
+			<div>{toolbar}</div>
 		</div>
 	),
 }));
@@ -88,9 +111,13 @@ vi.mock("@/components/layout/AdminPageShell", () => ({
 }));
 
 vi.mock("@/components/layout/AdminSurface", () => ({
-	AdminSurface: ({ children }: { children: React.ReactNode }) => (
-		<div data-testid="admin-surface">{children}</div>
-	),
+	AdminSurface: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => <div className={className}>{children}</div>,
 }));
 
 vi.mock("@/components/ui/badge", () => ({
@@ -104,19 +131,80 @@ vi.mock("@/components/ui/button", () => ({
 		children,
 		disabled,
 		onClick,
+		type,
 	}: {
 		children: React.ReactNode;
 		disabled?: boolean;
 		onClick?: () => void;
+		type?: "button" | "submit" | "reset";
 	}) => (
-		<button type="button" disabled={disabled} onClick={onClick}>
+		<button type={type ?? "button"} disabled={disabled} onClick={onClick}>
 			{children}
 		</button>
 	),
 }));
 
+vi.mock("@/components/ui/dialog", () => ({
+	Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
+		open ? <div>{children}</div> : null,
+	DialogContent: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	DialogDescription: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	DialogFooter: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	DialogHeader: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	DialogTitle: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+}));
+
 vi.mock("@/components/ui/icon", () => ({
 	Icon: ({ name }: { name: string }) => <span>{name}</span>,
+}));
+
+vi.mock("@/components/ui/input", () => ({
+	Input: ({
+		id,
+		value,
+		onChange,
+		placeholder,
+		"aria-label": ariaLabel,
+		type,
+	}: {
+		id?: string;
+		value?: string;
+		onChange?: (event: { target: { value: string } }) => void;
+		placeholder?: string;
+		"aria-label"?: string;
+		type?: string;
+	}) => (
+		<input
+			id={id}
+			aria-label={ariaLabel}
+			placeholder={placeholder}
+			type={type}
+			value={value}
+			onChange={(event) =>
+				onChange?.({ target: { value: event.target.value } })
+			}
+		/>
+	),
+}));
+
+vi.mock("@/components/ui/label", () => ({
+	Label: ({
+		children,
+		htmlFor,
+	}: {
+		children: React.ReactNode;
+		htmlFor?: string;
+	}) => <label htmlFor={htmlFor}>{children}</label>,
 }));
 
 vi.mock("@/components/ui/scroll-area", () => ({
@@ -132,18 +220,26 @@ vi.mock("@/components/ui/scroll-area", () => ({
 vi.mock("@/components/ui/select", () => ({
 	Select: ({
 		children,
+		items,
 		onValueChange,
 		value,
 	}: {
 		children: React.ReactNode;
+		items?: Array<{ label: string; value: string }>;
 		onValueChange?: (value: string) => void;
 		value?: string;
 	}) => (
 		<div>
 			<div>{`select:${value}`}</div>
-			<button type="button" onClick={() => onValueChange?.("50")}>
-				select-50
-			</button>
+			{items?.map((item) => (
+				<button
+					key={item.value}
+					type="button"
+					onClick={() => onValueChange?.(item.value)}
+				>
+					{`select-${item.value}`}
+				</button>
+			))}
 			{children}
 		</div>
 	),
@@ -213,11 +309,14 @@ vi.mock("@/hooks/useApiError", () => ({
 vi.mock("@/lib/format", () => ({
 	formatDateAbsolute: (value: string) => `date:${value}`,
 	formatDateAbsoluteWithOffset: (value: string) => `date-with-offset:${value}`,
+	formatDateTime: (value: string) => `time:${value}`,
 	formatNumber: (value: number) => String(value),
 }));
 
 vi.mock("@/services/adminService", () => ({
 	adminTaskService: {
+		cleanupCompleted: (...args: unknown[]) =>
+			mockState.cleanupCompleted(...args),
 		list: (...args: unknown[]) => mockState.list(...args),
 	},
 }));
@@ -258,17 +357,28 @@ function createTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
 }
 
 function renderPage(initialEntry = "/admin/tasks") {
-	render(
+	return render(
 		<MemoryRouter initialEntries={[initialEntry]}>
+			<LocationProbe />
 			<AdminTasksPage />
 		</MemoryRouter>,
 	);
 }
 
+function LocationProbe() {
+	const location = useLocation();
+
+	return <div data-testid="location-search">{location.search}</div>;
+}
+
 describe("AdminTasksPage", () => {
 	beforeEach(() => {
+		mockState.cleanupCompleted.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.list.mockReset();
+		mockState.toastSuccess.mockReset();
+
+		mockState.cleanupCompleted.mockResolvedValue({ removed: 2 });
 		mockState.list.mockResolvedValue({
 			items: [createTask()],
 			total: 1,
@@ -338,10 +448,6 @@ describe("AdminTasksPage", () => {
 			.mockResolvedValueOnce({
 				items: [createTask({ id: 52 })],
 				total: 25,
-			})
-			.mockResolvedValueOnce({
-				items: [createTask({ id: 53 })],
-				total: 25,
 			});
 
 		renderPage();
@@ -356,6 +462,9 @@ describe("AdminTasksPage", () => {
 		expect(screen.getByText("Trash cleanup")).toBeInTheDocument();
 		expect(screen.getByText("source:user:7")).toBeInTheDocument();
 		expect(screen.getByText("source:system")).toBeInTheDocument();
+		expect(screen.getByText("60%")).toBeInTheDocument();
+		expect(screen.queryByText("#31")).not.toBeInTheDocument();
+		expect(screen.queryByText("3 / 5")).not.toBeInTheDocument();
 		expect(screen.getAllByText("date:2026-04-17T00:01:00Z")).toHaveLength(2);
 		expect(screen.getByText("entries:1/2/25")).toBeInTheDocument();
 
@@ -370,7 +479,7 @@ describe("AdminTasksPage", () => {
 		expect(screen.getByText("source:team:8")).toBeInTheDocument();
 		expect(screen.getByText("zip writer failed")).toBeInTheDocument();
 
-		fireEvent.click(screen.getByRole("button", { name: "select-50" }));
+		fireEvent.click(screen.getAllByRole("button", { name: "select-50" })[0]);
 
 		await waitFor(() => {
 			expect(mockState.list).toHaveBeenNthCalledWith(3, {
@@ -378,25 +487,126 @@ describe("AdminTasksPage", () => {
 				offset: 0,
 			});
 		});
+	});
 
-		fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
+	it("reads filters from the url and clears them in one update", async () => {
+		mockState.list.mockResolvedValueOnce({
+			items: [createTask({ status: "failed", kind: "archive_compress" })],
+			total: 1,
+		});
+
+		renderPage("/admin/tasks?kind=archive_compress&status=failed");
 
 		await waitFor(() => {
-			expect(mockState.list).toHaveBeenNthCalledWith(4, {
-				limit: 50,
+			expect(mockState.list).toHaveBeenCalledWith({
+				kind: "archive_compress",
+				limit: 20,
 				offset: 0,
+				status: "failed",
 			});
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: /clear_filters/ }));
+
+		await waitFor(() => {
+			expect(screen.getByTestId("location-search").textContent).toBe("");
 		});
 	});
 
-	it("routes loading failures through handleApiError", async () => {
-		const error = new Error("tasks failed");
-		mockState.list.mockRejectedValueOnce(error);
+	it("cleans up completed tasks from the dialog and reloads the list", async () => {
+		mockState.list
+			.mockResolvedValueOnce({
+				items: [createTask({ status: "failed" })],
+				total: 1,
+			})
+			.mockResolvedValueOnce({
+				items: [createTask({ id: 91, status: "succeeded" })],
+				total: 1,
+			});
 
 		renderPage();
 
 		await waitFor(() => {
-			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
+			expect(mockState.list).toHaveBeenCalledTimes(1);
+		});
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /task_cleanup_action/ }),
+		);
+
+		expect(screen.getByText("admin:task_cleanup_title")).toBeInTheDocument();
+		const finishedBefore = "2026-04-20T12:30";
+		const finishedBeforeIso = new Date(finishedBefore).toISOString();
+		fireEvent.change(
+			screen.getByLabelText("admin:task_cleanup_finished_before"),
+			{
+				target: { value: finishedBefore },
+			},
+		);
+		expect(
+			screen.getByText(
+				`cleanup-desc:time:${finishedBeforeIso}:admin:all_task_types:admin:all_completed_task_statuses`,
+			),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: /cleanup_completed_tasks/,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.cleanupCompleted).toHaveBeenCalledWith({
+				finished_before: finishedBeforeIso,
+			});
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("tasks_cleaned:2");
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	it("routes loading failures through handleApiError", async () => {
+		const loadError = new Error("tasks failed");
+		mockState.list.mockRejectedValueOnce(loadError);
+
+		renderPage();
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(loadError);
+		});
+	});
+
+	it("routes cleanup failures through handleApiError", async () => {
+		const cleanupError = new Error("cleanup failed");
+		mockState.cleanupCompleted.mockRejectedValueOnce(cleanupError);
+
+		renderPage();
+
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenCalledTimes(1);
+		});
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /task_cleanup_action/ }),
+		);
+		const finishedBefore = "2026-04-21T08:00";
+		const finishedBeforeIso = new Date(finishedBefore).toISOString();
+		fireEvent.change(
+			screen.getByLabelText("admin:task_cleanup_finished_before"),
+			{
+				target: { value: finishedBefore },
+			},
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: /cleanup_completed_tasks/ }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.cleanupCompleted).toHaveBeenCalledWith({
+				finished_before: finishedBeforeIso,
+			});
+			expect(mockState.handleApiError).toHaveBeenCalledWith(cleanupError);
 		});
 	});
 });

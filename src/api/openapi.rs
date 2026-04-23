@@ -277,8 +277,9 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::admin::shares::list_all_shares,
         crate::api::routes::admin::shares::admin_delete_share,
 
-        // admin::tasks：后台任务列表查询。
+        // admin::tasks：后台任务列表查询与条件清理。
         crate::api::routes::admin::tasks::list_tasks,
+        crate::api::routes::admin::tasks::cleanup_tasks,
 
         // admin::locks：后台锁列表、强制解锁和过期锁清理。
         crate::api::routes::admin::locks::list_locks,
@@ -412,6 +413,8 @@ use utoipa::{Modify, OpenApi};
             crate::api::routes::admin::CreateUserReq,
             crate::api::routes::admin::PatchUserReq,
             crate::api::routes::admin::ResetUserPasswordReq,
+            crate::api::routes::admin::AdminTaskListQuery,
+            crate::api::routes::admin::AdminTaskCleanupReq,
             crate::api::routes::admin::AdminTeamListQuery,
             crate::api::routes::admin::AdminCreateTeamReq,
             crate::api::routes::admin::AdminPatchTeamReq,

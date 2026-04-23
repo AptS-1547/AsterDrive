@@ -1,5 +1,6 @@
 //! Admin-only DTOs consolidated from `src/api/routes/admin/`.
 
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use std::collections::HashSet;
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -242,6 +243,29 @@ pub struct ExecuteConfigActionResp {
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
+}
+
+// ── Tasks ──────────────────────────────────────────────────────────────────
+
+/// Query parameters for the admin task list.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(
+    all(debug_assertions, feature = "openapi"),
+    derive(IntoParams, ToSchema)
+)]
+pub struct AdminTaskListQuery {
+    pub kind: Option<crate::types::BackgroundTaskKind>,
+    pub status: Option<crate::types::BackgroundTaskStatus>,
+}
+
+/// Cleanup completed background tasks by admin-specified conditions.
+#[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminTaskCleanupReq {
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub finished_before: DateTime<Utc>,
+    pub kind: Option<crate::types::BackgroundTaskKind>,
+    pub status: Option<crate::types::BackgroundTaskStatus>,
 }
 
 // ── Admin Teams ─────────────────────────────────────────────────────────────

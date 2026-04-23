@@ -22,6 +22,7 @@
 	"status_canceled": "已取消",
 	"kind_archive_extract": "在线解压",
 	"kind_archive_compress": "在线压缩",
+	"kind_thumbnail_generate": "缩略图生成",
 	"kind_system_runtime": "系统运行任务",
 	"progress_label": "进度",
 	"progress_ratio_label": "原始进度",

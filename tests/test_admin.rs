@@ -1085,6 +1085,133 @@ async fn test_admin_tasks_lists_all_recorded_tasks() {
 }
 
 #[actix_web::test]
+async fn test_admin_tasks_cleanup_uses_explicit_finished_before() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let now = Utc::now();
+
+    let insert_task = |kind: BackgroundTaskKind,
+                       status: BackgroundTaskStatus,
+                       finished_at: Option<chrono::DateTime<Utc>>,
+                       updated_at: chrono::DateTime<Utc>,
+                       display_name: &str| {
+        background_task_repo::create(
+            &state.db,
+            background_task::ActiveModel {
+                kind: Set(kind),
+                status: Set(status),
+                creator_user_id: Set(Some(1)),
+                team_id: Set(None),
+                share_id: Set(None),
+                display_name: Set(display_name.to_string()),
+                payload_json: Set(StoredTaskPayload("{}".to_string())),
+                result_json: Set(None),
+                steps_json: Set(None),
+                progress_current: Set(1),
+                progress_total: Set(1),
+                status_text: Set(Some("done".to_string())),
+                attempt_count: Set(0),
+                max_attempts: Set(1),
+                next_run_at: Set(updated_at),
+                processing_started_at: Set(None),
+                last_heartbeat_at: Set(None),
+                lease_expires_at: Set(None),
+                started_at: Set(finished_at),
+                finished_at: Set(finished_at),
+                last_error: Set(None),
+                expires_at: Set(now + Duration::hours(24)),
+                created_at: Set(updated_at),
+                updated_at: Set(updated_at),
+                ..Default::default()
+            },
+        )
+    };
+
+    let old_failed = insert_task(
+        BackgroundTaskKind::SystemRuntime,
+        BackgroundTaskStatus::Failed,
+        Some(now - Duration::hours(72)),
+        now - Duration::hours(72),
+        "Old failed runtime task",
+    )
+    .await
+    .expect("old failed task should be inserted");
+    let recent_failed = insert_task(
+        BackgroundTaskKind::SystemRuntime,
+        BackgroundTaskStatus::Failed,
+        Some(now - Duration::hours(2)),
+        now - Duration::hours(2),
+        "Recent failed runtime task",
+    )
+    .await
+    .expect("recent failed task should be inserted");
+    let old_succeeded = insert_task(
+        BackgroundTaskKind::SystemRuntime,
+        BackgroundTaskStatus::Succeeded,
+        Some(now - Duration::hours(96)),
+        now - Duration::hours(96),
+        "Old succeeded runtime task",
+    )
+    .await
+    .expect("old succeeded task should be inserted");
+    let other_kind = insert_task(
+        BackgroundTaskKind::ArchiveExtract,
+        BackgroundTaskStatus::Failed,
+        Some(now - Duration::hours(96)),
+        now - Duration::hours(96),
+        "Old failed extract task",
+    )
+    .await
+    .expect("other kind task should be inserted");
+    let active_task = insert_task(
+        BackgroundTaskKind::SystemRuntime,
+        BackgroundTaskStatus::Processing,
+        None,
+        now - Duration::hours(96),
+        "Active runtime task",
+    )
+    .await
+    .expect("active task should be inserted");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/tasks/cleanup")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "finished_before": (now - Duration::hours(24)).to_rfc3339(),
+            "kind": "system_runtime",
+            "status": "failed"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["removed"], 1);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/tasks?limit=10")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let ids = body["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["id"].as_i64())
+        .collect::<Vec<_>>();
+
+    assert!(!ids.contains(&old_failed.id));
+    assert!(ids.contains(&recent_failed.id));
+    assert!(ids.contains(&old_succeeded.id));
+    assert!(ids.contains(&other_kind.id));
+    assert!(ids.contains(&active_task.id));
+}
+
+#[actix_web::test]
 async fn test_admin_can_read_uploaded_user_avatar() {
     let state = common::setup().await;
     let app = create_test_app!(state);

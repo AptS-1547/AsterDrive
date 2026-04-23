@@ -1,45 +1,25 @@
+import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
+import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
+import { AdminTaskCleanupDialog } from "@/components/admin/admin-tasks-page/AdminTaskCleanupDialog";
+import { AdminTaskFiltersToolbar } from "@/components/admin/admin-tasks-page/AdminTaskFiltersToolbar";
+import { AdminTaskTable } from "@/components/admin/admin-tasks-page/AdminTaskTable";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
-import { AdminSurface } from "@/components/layout/AdminSurface";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
-import {
-	formatDateAbsolute,
-	formatDateAbsoluteWithOffset,
-	formatNumber,
-} from "@/lib/format";
+import { toDateTimeLocalValue, toIsoDateTime } from "@/lib/dateTimeLocal";
+import { formatDateTime } from "@/lib/format";
 import {
 	buildOffsetPaginationSearchParams,
 	parseOffsetSearchParam,
@@ -55,27 +35,83 @@ import type {
 
 const TASK_PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
 const DEFAULT_TASK_PAGE_SIZE = 20 as const;
-const TASK_MANAGED_QUERY_KEYS = ["offset", "pageSize"] as const;
-const TASK_TEXT_CELL_CONTENT_CLASS =
-	"flex min-w-0 items-center rounded-lg bg-muted/10 px-3 py-3 text-left transition-colors duration-200";
-const TASK_BADGE_CELL_CONTENT_CLASS =
-	"flex items-center rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
+const TASK_MANAGED_QUERY_KEYS = [
+	"kind",
+	"offset",
+	"pageSize",
+	"status",
+] as const;
+const TASK_KIND_FILTER_VALUES = [
+	"archive_extract",
+	"archive_compress",
+	"thumbnail_generate",
+	"system_runtime",
+] as const;
+const TASK_STATUS_FILTER_VALUES = [
+	"pending",
+	"processing",
+	"retry",
+	"succeeded",
+	"failed",
+	"canceled",
+] as const;
+const TASK_TERMINAL_STATUS_FILTER_VALUES = [
+	"succeeded",
+	"failed",
+	"canceled",
+] as const;
+const DEFAULT_TASK_CLEANUP_LOOKBACK_HOURS = 24;
+
+type TaskKindFilter = "__all__" | BackgroundTaskKind;
+type TaskStatusFilter = "__all__" | BackgroundTaskStatus;
+type TaskTerminalStatusFilter =
+	| "__all__"
+	| (typeof TASK_TERMINAL_STATUS_FILTER_VALUES)[number];
+type TaskCleanupRequest = {
+	finished_before: string;
+	kind?: BackgroundTaskKind;
+	status?: (typeof TASK_TERMINAL_STATUS_FILTER_VALUES)[number];
+};
 
 function normalizeOffset(offset: number) {
 	return Math.max(0, Math.floor(offset));
 }
 
+function parseTaskKindSearchParam(value: string | null): TaskKindFilter {
+	return TASK_KIND_FILTER_VALUES.includes(
+		value as (typeof TASK_KIND_FILTER_VALUES)[number],
+	)
+		? (value as BackgroundTaskKind)
+		: "__all__";
+}
+
+function parseTaskStatusSearchParam(value: string | null): TaskStatusFilter {
+	return TASK_STATUS_FILTER_VALUES.includes(
+		value as (typeof TASK_STATUS_FILTER_VALUES)[number],
+	)
+		? (value as BackgroundTaskStatus)
+		: "__all__";
+}
+
 function buildManagedTaskSearchParams({
 	offset,
 	pageSize,
+	kind,
+	status,
 }: {
 	offset: number;
 	pageSize: (typeof TASK_PAGE_SIZE_OPTIONS)[number];
+	kind: TaskKindFilter;
+	status: TaskStatusFilter;
 }) {
 	return buildOffsetPaginationSearchParams({
 		offset,
 		pageSize,
 		defaultPageSize: DEFAULT_TASK_PAGE_SIZE,
+		extraParams: {
+			kind: kind !== "__all__" ? kind : undefined,
+			status: status !== "__all__" ? status : undefined,
+		},
 	});
 }
 
@@ -87,6 +123,8 @@ function getManagedTaskSearchString(searchParams: URLSearchParams) {
 			TASK_PAGE_SIZE_OPTIONS,
 			DEFAULT_TASK_PAGE_SIZE,
 		),
+		kind: parseTaskKindSearchParam(searchParams.get("kind")),
+		status: parseTaskStatusSearchParam(searchParams.get("status")),
 	}).toString();
 }
 
@@ -104,28 +142,12 @@ function mergeManagedTaskSearchParams(
 	return merged;
 }
 
-function getTaskStatusBadgeClass(status: BackgroundTaskStatus) {
-	switch (status) {
-		case "succeeded":
-			return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300";
-		case "failed":
-			return "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300";
-		case "processing":
-		case "retry":
-			return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300";
-		case "pending":
-			return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300";
-		case "canceled":
-			return "border-border bg-muted/30 text-muted-foreground";
-	}
-}
-
-function taskExecutionAt(task: TaskInfo) {
-	return task.started_at ?? task.created_at;
-}
-
-function taskDetail(task: TaskInfo) {
-	return task.last_error ?? task.status_text ?? "-";
+function defaultCleanupFinishedBeforeValue() {
+	return toDateTimeLocalValue(
+		new Date(
+			Date.now() - DEFAULT_TASK_CLEANUP_LOOKBACK_HOURS * 60 * 60 * 1000,
+		).toISOString(),
+	);
 }
 
 export default function AdminTasksPage() {
@@ -144,6 +166,21 @@ export default function AdminTasksPage() {
 			DEFAULT_TASK_PAGE_SIZE,
 		),
 	);
+	const [kindFilter, setKindFilter] = useState<TaskKindFilter>(
+		parseTaskKindSearchParam(searchParams.get("kind")),
+	);
+	const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>(
+		parseTaskStatusSearchParam(searchParams.get("status")),
+	);
+	const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
+	const [cleanupFinishedBefore, setCleanupFinishedBefore] = useState(
+		defaultCleanupFinishedBeforeValue,
+	);
+	const [cleanupKindFilter, setCleanupKindFilter] =
+		useState<TaskKindFilter>("__all__");
+	const [cleanupStatusFilter, setCleanupStatusFilter] =
+		useState<TaskTerminalStatusFilter>("__all__");
+	const [cleanupSubmitting, setCleanupSubmitting] = useState(false);
 	const lastWrittenSearchRef = useRef<string | null>(null);
 	const setOffset = (value: number) => {
 		setOffsetState(normalizeOffset(value));
@@ -163,15 +200,21 @@ export default function AdminTasksPage() {
 			TASK_PAGE_SIZE_OPTIONS,
 			DEFAULT_TASK_PAGE_SIZE,
 		);
+		const nextKind = parseTaskKindSearchParam(searchParams.get("kind"));
+		const nextStatus = parseTaskStatusSearchParam(searchParams.get("status"));
 
 		setOffsetState((prev) => (prev === nextOffset ? prev : nextOffset));
 		setPageSize((prev) => (prev === nextPageSize ? prev : nextPageSize));
+		setKindFilter((prev) => (prev === nextKind ? prev : nextKind));
+		setStatusFilter((prev) => (prev === nextStatus ? prev : nextStatus));
 	}, [searchParams]);
 
 	useEffect(() => {
 		const nextManagedSearchParams = buildManagedTaskSearchParams({
 			offset,
 			pageSize,
+			kind: kindFilter,
+			status: statusFilter,
 		});
 		const nextSearch = nextManagedSearchParams.toString();
 		const currentSearch = getManagedTaskSearchString(searchParams);
@@ -191,17 +234,29 @@ export default function AdminTasksPage() {
 			mergeManagedTaskSearchParams(searchParams, nextManagedSearchParams),
 			{ replace: true },
 		);
-	}, [offset, pageSize, searchParams, setSearchParams]);
+	}, [
+		kindFilter,
+		offset,
+		pageSize,
+		searchParams,
+		setSearchParams,
+		statusFilter,
+	]);
 
 	const { items, loading, reload, total } = useApiList(
 		() =>
 			adminTaskService.list({
 				limit: pageSize,
 				offset,
+				...(kindFilter !== "__all__" ? { kind: kindFilter } : {}),
+				...(statusFilter !== "__all__" ? { status: statusFilter } : {}),
 			}),
-		[offset, pageSize],
+		[kindFilter, offset, pageSize, statusFilter],
 	);
 
+	const activeFilterCount =
+		(kindFilter !== "__all__" ? 1 : 0) + (statusFilter !== "__all__" ? 1 : 0);
+	const hasServerFilters = activeFilterCount > 0;
 	const totalPages = Math.max(1, Math.ceil(total / pageSize));
 	const currentPage = Math.floor(offset / pageSize) + 1;
 	const prevPageDisabled = offset === 0;
@@ -234,6 +289,8 @@ export default function AdminTasksPage() {
 				return t("tasks:kind_archive_extract");
 			case "archive_compress":
 				return t("tasks:kind_archive_compress");
+			case "thumbnail_generate":
+				return t("tasks:kind_thumbnail_generate");
 			case "system_runtime":
 				return t("tasks:kind_system_runtime");
 			default:
@@ -255,11 +312,113 @@ export default function AdminTasksPage() {
 		return t("admin:overview_background_tasks_source_system");
 	};
 
+	const taskKindFilterOptions = [
+		{ label: t("admin:all_task_types"), value: "__all__" },
+		...TASK_KIND_FILTER_VALUES.map((value) => ({
+			label: formatTaskKind(value),
+			value,
+		})),
+	] satisfies ReadonlyArray<{ label: string; value: string }>;
+	const taskStatusFilterOptions = [
+		{ label: t("admin:all_task_statuses"), value: "__all__" },
+		...TASK_STATUS_FILTER_VALUES.map((value) => ({
+			label: formatTaskStatus(value),
+			value,
+		})),
+	] satisfies ReadonlyArray<{ label: string; value: string }>;
+	const cleanupStatusFilterOptions = [
+		{ label: t("admin:all_completed_task_statuses"), value: "__all__" },
+		...TASK_TERMINAL_STATUS_FILTER_VALUES.map((value) => ({
+			label: formatTaskStatus(value),
+			value,
+		})),
+	] satisfies ReadonlyArray<{ label: string; value: string }>;
+
+	const resetFilters = () => {
+		setKindFilter("__all__");
+		setStatusFilter("__all__");
+		setOffset(0);
+	};
+
+	const resetCleanupConditions = () => {
+		setCleanupFinishedBefore(defaultCleanupFinishedBeforeValue());
+		setCleanupKindFilter("__all__");
+		setCleanupStatusFilter("__all__");
+	};
+
 	const handlePageSizeChange = (value: string | null) => {
 		const next = parsePageSizeOption(value, TASK_PAGE_SIZE_OPTIONS);
 		if (next == null) return;
 		setPageSize(next);
 		setOffset(0);
+	};
+
+	const handleKindFilterChange = (value: string | null) => {
+		setKindFilter(
+			value === "__all__" ? "__all__" : parseTaskKindSearchParam(value),
+		);
+		setOffset(0);
+	};
+
+	const handleStatusFilterChange = (value: string | null) => {
+		setStatusFilter(
+			value === "__all__" ? "__all__" : parseTaskStatusSearchParam(value),
+		);
+		setOffset(0);
+	};
+
+	const cleanupRequest = (() => {
+		const finishedBefore = toIsoDateTime(cleanupFinishedBefore);
+		if (finishedBefore == null) {
+			return null;
+		}
+		return {
+			finished_before: finishedBefore,
+			...(cleanupKindFilter !== "__all__" ? { kind: cleanupKindFilter } : {}),
+			...(cleanupStatusFilter !== "__all__"
+				? { status: cleanupStatusFilter }
+				: {}),
+		} satisfies TaskCleanupRequest;
+	})();
+
+	const describeCleanupConditions = (request: TaskCleanupRequest | null) => {
+		if (request == null) {
+			return t("admin:task_cleanup_confirm_desc_invalid");
+		}
+		return t("admin:task_cleanup_confirm_desc", {
+			finishedBefore: formatDateTime(request.finished_before),
+			kind:
+				request.kind != null
+					? formatTaskKind(request.kind)
+					: t("admin:all_task_types"),
+			status:
+				request.status != null
+					? formatTaskStatus(request.status)
+					: t("admin:all_completed_task_statuses"),
+		});
+	};
+
+	const handleCleanupSubmit = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		if (cleanupRequest == null) {
+			return;
+		}
+
+		setCleanupSubmitting(true);
+		try {
+			const result = await adminTaskService.cleanupCompleted(cleanupRequest);
+			toast.success(t("admin:tasks_cleaned", { count: result.removed }));
+			setCleanupDialogOpen(false);
+			if (offset !== 0) {
+				setOffset(0);
+			} else {
+				await reload();
+			}
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setCleanupSubmitting(false);
+		}
 	};
 
 	return (
@@ -269,220 +428,120 @@ export default function AdminTasksPage() {
 					title={t("admin:tasks")}
 					description={t("admin:tasks_intro")}
 					actions={
-						<Button
-							variant="outline"
-							size="sm"
-							className={ADMIN_CONTROL_HEIGHT_CLASS}
-							onClick={() => void reload()}
-							disabled={loading}
-						>
-							<Icon
-								name={loading ? "Spinner" : "ArrowsClockwise"}
-								className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
-							/>
-							{t("core:refresh")}
-						</Button>
+						<>
+							<Button
+								variant="outline"
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={() => setCleanupDialogOpen(true)}
+								disabled={cleanupSubmitting}
+							>
+								<Icon name="Trash" className="mr-1 h-3.5 w-3.5" />
+								{t("admin:task_cleanup_action")}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={() => void reload()}
+								disabled={loading || cleanupSubmitting}
+							>
+								<Icon
+									name={loading ? "Spinner" : "ArrowsClockwise"}
+									className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+								/>
+								{t("core:refresh")}
+							</Button>
+						</>
+					}
+					toolbar={
+						<AdminTaskFiltersToolbar
+							activeFilterCount={activeFilterCount}
+							hasServerFilters={hasServerFilters}
+							kindFilter={kindFilter}
+							kindOptions={taskKindFilterOptions}
+							onKindChange={handleKindFilterChange}
+							onResetFilters={resetFilters}
+							onStatusChange={handleStatusFilterChange}
+							statusFilter={statusFilter}
+							statusOptions={taskStatusFilterOptions}
+						/>
 					}
 				/>
 
 				{loading ? (
 					<SkeletonTable columns={8} rows={6} />
 				) : items.length === 0 ? (
-					<EmptyState
-						icon={<Icon name="Clock" className="h-10 w-10" />}
-						title={t("admin:no_tasks")}
-						description={t("admin:no_tasks_desc")}
-					/>
+					hasServerFilters ? (
+						<EmptyState
+							icon={<Icon name="Clock" className="h-10 w-10" />}
+							title={t("admin:no_filtered_tasks")}
+							description={t("admin:no_filtered_tasks_desc")}
+							action={
+								<Button variant="outline" onClick={resetFilters}>
+									{t("admin:clear_filters")}
+								</Button>
+							}
+						/>
+					) : (
+						<EmptyState
+							icon={<Icon name="Clock" className="h-10 w-10" />}
+							title={t("admin:no_tasks")}
+							description={t("admin:no_tasks_desc")}
+						/>
+					)
 				) : (
-					<AdminSurface padded={false}>
-						<ScrollArea className="min-h-0 flex-1">
-							<Table>
-								<TableHeader>
-									<TableRow>
-										<TableHead className="w-16">{t("admin:id")}</TableHead>
-										<TableHead className="min-w-[240px]">
-											{t("admin:task_name")}
-										</TableHead>
-										<TableHead className="w-[180px]">
-											{t("core:type")}
-										</TableHead>
-										<TableHead className="w-[160px]">
-											{t("core:status")}
-										</TableHead>
-										<TableHead className="w-[160px]">
-											{t("admin:task_source")}
-										</TableHead>
-										<TableHead className="w-[160px]">
-											{t("admin:task_progress")}
-										</TableHead>
-										<TableHead className="w-[180px]">
-											{t("admin:task_execution_time")}
-										</TableHead>
-										<TableHead className="min-w-[240px]">
-											{t("admin:task_detail")}
-										</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{items.map((task) => (
-										<TableRow key={task.id}>
-											<TableCell>
-												<div className={TASK_TEXT_CELL_CONTENT_CLASS}>
-													<span className="font-mono text-xs text-muted-foreground">
-														{task.id}
-													</span>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted/10 px-3 py-3 text-left">
-													<span className="truncate text-sm font-medium text-foreground">
-														{task.display_name}
-													</span>
-													<span className="font-mono text-xs text-muted-foreground">
-														#{task.id}
-													</span>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className={TASK_BADGE_CELL_CONTENT_CLASS}>
-													<Badge variant="outline">
-														{formatTaskKind(task.kind)}
-													</Badge>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className={TASK_BADGE_CELL_CONTENT_CLASS}>
-													<span
-														className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${getTaskStatusBadgeClass(task.status)}`}
-													>
-														{formatTaskStatus(task.status)}
-													</span>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className={TASK_TEXT_CELL_CONTENT_CLASS}>
-													<span className="text-xs text-muted-foreground">
-														{formatTaskSource(task)}
-													</span>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className="flex min-w-0 flex-col rounded-lg bg-muted/10 px-3 py-3 text-left">
-													<span className="text-sm font-medium text-foreground">
-														{task.progress_percent}%
-													</span>
-													<span className="text-xs text-muted-foreground">
-														{formatNumber(task.progress_current)}
-														{task.progress_total > 0
-															? ` / ${formatNumber(task.progress_total)}`
-															: ""}
-													</span>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className={TASK_TEXT_CELL_CONTENT_CLASS}>
-													<span
-														className="text-xs text-muted-foreground whitespace-nowrap"
-														title={formatDateAbsoluteWithOffset(
-															taskExecutionAt(task),
-														)}
-													>
-														{formatDateAbsolute(taskExecutionAt(task))}
-													</span>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className={TASK_TEXT_CELL_CONTENT_CLASS}>
-													<span
-														className="truncate text-xs text-muted-foreground"
-														title={taskDetail(task)}
-													>
-														{taskDetail(task)}
-													</span>
-												</div>
-											</TableCell>
-										</TableRow>
-									))}
-								</TableBody>
-							</Table>
-						</ScrollArea>
-					</AdminSurface>
+					<AdminTaskTable
+						items={items}
+						formatTaskKind={formatTaskKind}
+						formatTaskSource={formatTaskSource}
+						formatTaskStatus={formatTaskStatus}
+					/>
 				)}
 
-				{total > 0 ? (
-					<div className="flex items-center justify-between gap-3 px-4 pb-4 text-sm text-muted-foreground md:px-6">
-						<div className="flex items-center gap-3">
-							<span>
-								{t("admin:entries_page", {
-									total,
-									current: currentPage,
-									pages: totalPages,
-								})}
-							</span>
-							<Select
-								items={pageSizeOptions}
-								value={String(pageSize)}
-								onValueChange={handlePageSizeChange}
-							>
-								<SelectTrigger width="page-size">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{pageSizeOptions.map((option) => (
-										<SelectItem key={option.value} value={option.value}>
-											{option.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
-						<TooltipProvider>
-							<div className="flex items-center gap-2">
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={prevPageDisabled}
-												onClick={() =>
-													setOffset(Math.max(0, offset - pageSize))
-												}
-											/>
-										}
-									>
-										<Icon name="CaretLeft" className="h-4 w-4" />
-									</TooltipTrigger>
-									{prevPageDisabled ? (
-										<TooltipContent>
-											{t("admin:pagination_prev_disabled")}
-										</TooltipContent>
-									) : null}
-								</Tooltip>
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<Button
-												variant="outline"
-												size="sm"
-												disabled={nextPageDisabled}
-												onClick={() => setOffset(offset + pageSize)}
-											/>
-										}
-									>
-										<Icon name="CaretRight" className="h-4 w-4" />
-									</TooltipTrigger>
-									{nextPageDisabled ? (
-										<TooltipContent>
-											{t("admin:pagination_next_disabled")}
-										</TooltipContent>
-									) : null}
-								</Tooltip>
-							</div>
-						</TooltipProvider>
-					</div>
-				) : null}
+				<AdminOffsetPagination
+					total={total}
+					currentPage={currentPage}
+					totalPages={totalPages}
+					pageSize={String(pageSize)}
+					pageSizeOptions={pageSizeOptions}
+					onPageSizeChange={handlePageSizeChange}
+					prevDisabled={prevPageDisabled}
+					nextDisabled={nextPageDisabled}
+					onPrevious={() => setOffset(Math.max(0, offset - pageSize))}
+					onNext={() => setOffset(offset + pageSize)}
+				/>
 			</AdminPageShell>
+
+			<AdminTaskCleanupDialog
+				description={describeCleanupConditions(cleanupRequest)}
+				finishedBefore={cleanupFinishedBefore}
+				kindFilter={cleanupKindFilter}
+				kindOptions={taskKindFilterOptions}
+				onFinishedBeforeChange={setCleanupFinishedBefore}
+				onKindFilterChange={(value) =>
+					setCleanupKindFilter(
+						value == null || value === "__all__"
+							? "__all__"
+							: parseTaskKindSearchParam(value),
+					)
+				}
+				onOpenChange={setCleanupDialogOpen}
+				onResetConditions={resetCleanupConditions}
+				onStatusFilterChange={(value) =>
+					setCleanupStatusFilter(
+						value == null || value === "__all__"
+							? "__all__"
+							: (value as TaskTerminalStatusFilter),
+					)
+				}
+				onSubmit={handleCleanupSubmit}
+				open={cleanupDialogOpen}
+				statusFilter={cleanupStatusFilter}
+				statusOptions={cleanupStatusFilterOptions}
+				submitDisabled={cleanupRequest == null || cleanupSubmitting}
+				submitting={cleanupSubmitting}
+			/>
 		</AdminLayout>
 	);
 }

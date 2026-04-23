@@ -8,11 +8,12 @@ use actix_web::web;
 
 // DTO re-exports from unified dto/ module
 pub use crate::api::dto::admin::{
-    AdminCreateTeamReq, AdminListQuery, AdminPatchTeamReq, AdminTeamListQuery, AdminUserListQuery,
-    CreatePolicyGroupReq, CreatePolicyReq, CreateRemoteNodeReq, CreateUserReq,
-    ExecuteConfigActionReq, ExecuteConfigActionResp, MigratePolicyGroupUsersReq,
-    PatchPolicyGroupReq, PatchPolicyReq, PatchRemoteNodeReq, PatchUserReq, PolicyGroupItemReq,
-    ResetUserPasswordReq, SetConfigReq, TestPolicyParamsReq, TestRemoteNodeParamsReq,
+    AdminCreateTeamReq, AdminListQuery, AdminPatchTeamReq, AdminTaskCleanupReq, AdminTaskListQuery,
+    AdminTeamListQuery, AdminUserListQuery, CreatePolicyGroupReq, CreatePolicyReq,
+    CreateRemoteNodeReq, CreateUserReq, ExecuteConfigActionReq, ExecuteConfigActionResp,
+    MigratePolicyGroupUsersReq, PatchPolicyGroupReq, PatchPolicyReq, PatchRemoteNodeReq,
+    PatchUserReq, PolicyGroupItemReq, ResetUserPasswordReq, SetConfigReq, TestPolicyParamsReq,
+    TestRemoteNodeParamsReq,
 };
 
 pub(crate) mod audit_logs;
@@ -44,7 +45,7 @@ pub use remote_nodes::{
     list_remote_nodes, test_remote_node, test_remote_node_params, update_remote_node,
 };
 pub use shares::{admin_delete_share, list_all_shares};
-pub use tasks::list_tasks;
+pub use tasks::{cleanup_tasks, list_tasks};
 pub use teams::{
     add_team_member, create_team, delete_team, delete_team_member, get_team, list_team_audit_logs,
     list_team_members, list_teams, patch_team_member, restore_team, update_team,
@@ -138,6 +139,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                     .route("/shares/{id}", web::delete().to(admin_delete_share))
                     // tasks
                     .route("/tasks", web::get().to(list_tasks))
+                    .route("/tasks/cleanup", web::post().to(cleanup_tasks))
                     // config
                     .route("/config", web::get().to(list_config))
                     .route("/config/schema", web::get().to(config_schema))

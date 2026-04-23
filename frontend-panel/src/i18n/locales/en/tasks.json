@@ -22,6 +22,7 @@
 	"status_canceled": "Canceled",
 	"kind_archive_extract": "Archive extract",
 	"kind_archive_compress": "Archive compress",
+	"kind_thumbnail_generate": "Thumbnail generation",
 	"kind_system_runtime": "System runtime task",
 	"progress_label": "Progress",
 	"progress_ratio_label": "Raw progress",

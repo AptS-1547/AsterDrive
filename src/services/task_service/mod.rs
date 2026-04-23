@@ -54,6 +54,19 @@ pub(super) const TASK_DRAIN_MAX_ROUNDS: usize = 32;
 const TASK_LEASE_LOST_MESSAGE_PREFIX: &str = "background task lease lost";
 const TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX: &str = "background task lease renewal timed out";
 
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct AdminTaskListFilters {
+    pub(crate) kind: Option<BackgroundTaskKind>,
+    pub(crate) status: Option<BackgroundTaskStatus>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AdminTaskCleanupFilters {
+    pub(crate) finished_before: chrono::DateTime<chrono::Utc>,
+    pub(crate) kind: Option<BackgroundTaskKind>,
+    pub(crate) status: Option<BackgroundTaskStatus>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct TaskLease {
     // processing_token 是持久化的 fencing token，不跟进程生命周期绑定。
@@ -178,9 +191,19 @@ pub(crate) async fn list_tasks_paginated_for_admin(
     state: &PrimaryAppState,
     limit: u64,
     offset: u64,
+    filters: AdminTaskListFilters,
 ) -> Result<OffsetPage<TaskInfo>> {
     let limit = limit.clamp(1, operations::task_list_max_limit(&state.runtime_config));
-    let (tasks, total) = background_task_repo::find_paginated_all(&state.db, limit, offset).await?;
+    let (tasks, total) = background_task_repo::find_paginated_all_filtered(
+        &state.db,
+        limit,
+        offset,
+        &background_task_repo::AdminTaskFilters {
+            kind: filters.kind,
+            status: filters.status,
+        },
+    )
+    .await?;
 
     let mut items = Vec::with_capacity(tasks.len());
     for task in tasks {
@@ -188,6 +211,22 @@ pub(crate) async fn list_tasks_paginated_for_admin(
     }
 
     Ok(OffsetPage::new(items, total, limit, offset))
+}
+
+pub(crate) async fn cleanup_tasks_for_admin(
+    state: &PrimaryAppState,
+    filters: AdminTaskCleanupFilters,
+) -> Result<u64> {
+    validate_admin_task_cleanup_status(filters.status)?;
+    background_task_repo::delete_terminal_by_filters(
+        &state.db,
+        &background_task_repo::TerminalTaskCleanupFilters {
+            finished_before: filters.finished_before,
+            kind: filters.kind,
+            status: filters.status,
+        },
+    )
+    .await
 }
 
 pub(crate) async fn get_task_in_scope(
@@ -528,6 +567,15 @@ fn configured_task_max_attempts(state: &PrimaryAppState, kind: BackgroundTaskKin
     }
 }
 
+fn validate_admin_task_cleanup_status(status: Option<BackgroundTaskStatus>) -> Result<()> {
+    if status.is_some_and(|value| !value.is_terminal()) {
+        return Err(AsterError::validation_error(
+            "only completed task statuses can be cleaned up",
+        ));
+    }
+    Ok(())
+}
+
 fn load_task_retention_hours(state: &PrimaryAppState) -> i64 {
     let Some(raw) = state.runtime_config.get("task_retention_hours") else {
         return DEFAULT_TASK_RETENTION_HOURS;
@@ -590,4 +638,29 @@ pub(super) fn truncate_status_text(value: &str) -> String {
 
 pub(super) fn truncate_error(error: &str) -> String {
     error.chars().take(TASK_LAST_ERROR_MAX_LEN).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_admin_task_cleanup_status;
+    use crate::types::BackgroundTaskStatus;
+
+    #[test]
+    fn validate_admin_task_cleanup_status_accepts_terminal_statuses() {
+        for status in [
+            BackgroundTaskStatus::Succeeded,
+            BackgroundTaskStatus::Failed,
+            BackgroundTaskStatus::Canceled,
+        ] {
+            validate_admin_task_cleanup_status(Some(status))
+                .expect("terminal task cleanup status should be accepted");
+        }
+    }
+
+    #[test]
+    fn validate_admin_task_cleanup_status_rejects_active_statuses() {
+        let error = validate_admin_task_cleanup_status(Some(BackgroundTaskStatus::Processing))
+            .expect_err("active task cleanup status should be rejected");
+        assert!(error.message().contains("completed task statuses"));
+    }
 }

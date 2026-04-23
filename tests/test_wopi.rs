@@ -109,7 +109,6 @@ fn test_wopi_app_definition(
         provider: PreviewAppProvider::Wopi,
         icon: "/static/preview-apps/microsoft-onedrive.svg".to_string(),
         enabled,
-        label_i18n_key: None,
         labels: BTreeMap::from([("en".to_string(), "OnlyOffice".to_string())]),
         extensions: vec!["docx".to_string(), "xlsx".to_string(), "pptx".to_string()],
         config: PublicPreviewAppConfig {

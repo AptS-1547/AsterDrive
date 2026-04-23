@@ -8,6 +8,8 @@ import type {
 	AdminTeamInfo,
 	AdminTeamPage,
 	AdminUpdateTeamRequest,
+	BackgroundTaskKind,
+	BackgroundTaskStatus,
 	ConfigActionType,
 	ConfigSchemaItem,
 	CreatePolicyGroupRequest,
@@ -354,13 +356,26 @@ export const adminShareService = {
 };
 
 export const adminTaskService = {
-	list: (params?: { limit?: number; offset?: number }) =>
+	list: (params?: {
+		limit?: number;
+		offset?: number;
+		kind?: BackgroundTaskKind;
+		status?: BackgroundTaskStatus;
+	}) =>
 		api.get<TaskPage>(
 			withQuery("/admin/tasks", {
 				limit: params?.limit,
 				offset: params?.offset,
+				kind: params?.kind,
+				status: params?.status,
 			}),
 		),
+
+	cleanupCompleted: (data: {
+		finished_before: string;
+		kind?: BackgroundTaskKind;
+		status?: BackgroundTaskStatus;
+	}) => api.post<RemovedCountResponse>("/admin/tasks/cleanup", data),
 };
 
 export const adminLockService = {

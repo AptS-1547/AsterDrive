@@ -1,9 +1,11 @@
 //! 管理员 API 路由：`tasks`。
 
+use crate::api::dto::admin::{AdminTaskCleanupReq, AdminTaskListQuery};
+use crate::api::dto::validate_request;
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
-use crate::api::response::ApiResponse;
+use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::task_service;
@@ -14,7 +16,7 @@ use actix_web::{HttpResponse, web};
     path = "/api/v1/admin/tasks",
     tag = "admin",
     operation_id = "admin_list_tasks",
-    params(LimitOffsetQuery),
+    params(LimitOffsetQuery, AdminTaskListQuery),
     responses(
         (status = 200, description = "All background tasks", body = inline(ApiResponse<OffsetPage<task_service::TaskInfo>>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
@@ -24,13 +26,49 @@ use actix_web::{HttpResponse, web};
 )]
 pub async fn list_tasks(
     state: web::Data<PrimaryAppState>,
-    query: web::Query<LimitOffsetQuery>,
+    page: web::Query<LimitOffsetQuery>,
+    query: web::Query<AdminTaskListQuery>,
 ) -> Result<HttpResponse> {
     let page = task_service::list_tasks_paginated_for_admin(
         &state,
-        query.limit_or(20, 100),
-        query.offset(),
+        page.limit_or(20, 100),
+        page.offset(),
+        task_service::AdminTaskListFilters {
+            kind: query.kind,
+            status: query.status,
+        },
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(page)))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/admin/tasks/cleanup",
+    tag = "admin",
+    operation_id = "admin_cleanup_tasks",
+    request_body = AdminTaskCleanupReq,
+    responses(
+        (status = 200, description = "Completed tasks cleaned up", body = inline(ApiResponse<RemovedCountResponse>)),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn cleanup_tasks(
+    state: web::Data<PrimaryAppState>,
+    body: web::Json<AdminTaskCleanupReq>,
+) -> Result<HttpResponse> {
+    validate_request(&*body)?;
+    let removed = task_service::cleanup_tasks_for_admin(
+        &state,
+        task_service::AdminTaskCleanupFilters {
+            finished_before: body.finished_before,
+            kind: body.kind,
+            status: body.status,
+        },
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(RemovedCountResponse { removed })))
 }

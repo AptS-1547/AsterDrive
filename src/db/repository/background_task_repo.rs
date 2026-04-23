@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveEnum, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
-    QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
+    QueryFilter, QueryOrder, QuerySelect, Select, sea_query::Expr,
 };
 
 use crate::db::repository::pagination_repo::fetch_offset_page;
@@ -66,9 +66,34 @@ pub async fn find_paginated_all<C: ConnectionTrait>(
     limit: u64,
     offset: u64,
 ) -> Result<(Vec<background_task::Model>, u64)> {
+    find_paginated_all_filtered(db, limit, offset, &AdminTaskFilters::default()).await
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AdminTaskFilters {
+    pub kind: Option<BackgroundTaskKind>,
+    pub status: Option<BackgroundTaskStatus>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TerminalTaskCleanupFilters {
+    pub finished_before: DateTime<Utc>,
+    pub kind: Option<BackgroundTaskKind>,
+    pub status: Option<BackgroundTaskStatus>,
+}
+
+pub async fn find_paginated_all_filtered<C: ConnectionTrait>(
+    db: &C,
+    limit: u64,
+    offset: u64,
+    filters: &AdminTaskFilters,
+) -> Result<(Vec<background_task::Model>, u64)> {
     fetch_offset_page(
         db,
-        BackgroundTask::find().order_by_desc(background_task::Column::UpdatedAt),
+        apply_admin_filters(
+            BackgroundTask::find().order_by_desc(background_task::Column::UpdatedAt),
+            filters,
+        ),
         limit,
         offset,
     )
@@ -532,6 +557,55 @@ pub async fn delete_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<u64>
         .rows_affected)
 }
 
+pub async fn delete_terminal_by_filters<C: ConnectionTrait>(
+    db: &C,
+    filters: &TerminalTaskCleanupFilters,
+) -> Result<u64> {
+    Ok(BackgroundTask::delete_many()
+        .filter(terminal_cleanup_condition(filters))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?
+        .rows_affected)
+}
+
+fn apply_admin_filters(
+    mut query: Select<BackgroundTask>,
+    filters: &AdminTaskFilters,
+) -> Select<BackgroundTask> {
+    if let Some(kind) = filters.kind {
+        query = query.filter(background_task::Column::Kind.eq(kind));
+    }
+    if let Some(status) = filters.status {
+        query = query.filter(background_task::Column::Status.eq(status));
+    }
+    query
+}
+
+fn terminal_cleanup_condition(filters: &TerminalTaskCleanupFilters) -> Condition {
+    let mut condition = Condition::all();
+    condition = condition.add(match filters.status {
+        Some(status) => background_task::Column::Status.eq(status),
+        None => background_task::Column::Status.is_in([
+            BackgroundTaskStatus::Succeeded,
+            BackgroundTaskStatus::Failed,
+            BackgroundTaskStatus::Canceled,
+        ]),
+    });
+    if let Some(kind) = filters.kind {
+        condition = condition.add(background_task::Column::Kind.eq(kind));
+    }
+    condition.add(
+        Condition::any()
+            .add(background_task::Column::FinishedAt.lte(filters.finished_before))
+            .add(
+                Condition::all()
+                    .add(background_task::Column::FinishedAt.is_null())
+                    .add(background_task::Column::UpdatedAt.lte(filters.finished_before)),
+            ),
+    )
+}
+
 fn claimable_condition(now: DateTime<Utc>, stale_before: DateTime<Utc>) -> Condition {
     // 可认领任务有两类：
     // 1. Pending / Retry 且 next_run_at 已到；
@@ -572,4 +646,225 @@ fn processing_stale_condition(now: DateTime<Utc>, stale_before: DateTime<Utc>) -
                 .add(background_task::Column::LastHeartbeatAt.is_null())
                 .add(background_task::Column::ProcessingStartedAt.lte(stale_before)),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        AdminTaskFilters, TerminalTaskCleanupFilters, delete_terminal_by_filters,
+        find_paginated_all_filtered,
+    };
+    use crate::config::DatabaseConfig;
+    use crate::entities::background_task;
+    use crate::types::{
+        BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskSteps,
+    };
+    use chrono::{Duration, Utc};
+    use migration::{Migrator, MigratorTrait};
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+
+    async fn build_test_db() -> sea_orm::DatabaseConnection {
+        let db = crate::db::connect(&DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .expect("background task repo test DB should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("background task repo test migrations should succeed");
+        db
+    }
+
+    async fn insert_task(
+        db: &sea_orm::DatabaseConnection,
+        kind: BackgroundTaskKind,
+        status: BackgroundTaskStatus,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> background_task::Model {
+        let created_at = updated_at - Duration::hours(1);
+        let task_name = match kind {
+            BackgroundTaskKind::ArchiveCompress => "archive-compress",
+            BackgroundTaskKind::ArchiveExtract => "archive-extract",
+            BackgroundTaskKind::ThumbnailGenerate => "thumbnail-generate",
+            BackgroundTaskKind::SystemRuntime => "task-cleanup",
+        };
+        let payload_json = match kind {
+            BackgroundTaskKind::ArchiveCompress => serde_json::json!({
+                "file_ids": [],
+                "folder_ids": [],
+                "archive_name": "repo-test.zip",
+                "target_folder_id": null,
+            }),
+            BackgroundTaskKind::ArchiveExtract => serde_json::json!({
+                "file_id": 1,
+                "source_file_name": "repo-test.zip",
+                "target_folder_id": null,
+                "output_folder_name": "repo-test",
+            }),
+            BackgroundTaskKind::ThumbnailGenerate => serde_json::json!({
+                "blob_id": 1,
+                "blob_hash": "hash",
+                "source_file_name": "repo-test.png",
+                "source_mime_type": "image/png",
+                "processor": "image_magick",
+            }),
+            BackgroundTaskKind::SystemRuntime => serde_json::json!({
+                "task_name": task_name,
+            }),
+        };
+
+        background_task::ActiveModel {
+            kind: Set(kind),
+            status: Set(status),
+            creator_user_id: Set(Some(7)),
+            team_id: Set(None),
+            share_id: Set(None),
+            display_name: Set(format!("{kind:?}-{status:?}")),
+            payload_json: Set(StoredTaskPayload(payload_json.to_string())),
+            result_json: Set(None),
+            steps_json: Set(Some(StoredTaskSteps("[]".to_string()))),
+            progress_current: Set(0),
+            progress_total: Set(0),
+            status_text: Set(None),
+            attempt_count: Set(0),
+            max_attempts: Set(1),
+            next_run_at: Set(created_at),
+            processing_token: Set(0),
+            processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            lease_expires_at: Set(None),
+            started_at: Set(None),
+            finished_at: Set(finished_at),
+            last_error: Set(None),
+            expires_at: Set(updated_at + Duration::hours(24)),
+            created_at: Set(created_at),
+            updated_at: Set(updated_at),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("background task test row should insert")
+    }
+
+    #[tokio::test]
+    async fn find_paginated_all_filtered_applies_kind_and_status() {
+        let db = build_test_db().await;
+        let now = Utc::now();
+        let wanted = insert_task(
+            &db,
+            BackgroundTaskKind::ArchiveExtract,
+            BackgroundTaskStatus::Failed,
+            Some(now - Duration::hours(2)),
+            now - Duration::minutes(5),
+        )
+        .await;
+        insert_task(
+            &db,
+            BackgroundTaskKind::ArchiveExtract,
+            BackgroundTaskStatus::Processing,
+            None,
+            now - Duration::minutes(4),
+        )
+        .await;
+        insert_task(
+            &db,
+            BackgroundTaskKind::SystemRuntime,
+            BackgroundTaskStatus::Failed,
+            Some(now - Duration::hours(3)),
+            now - Duration::minutes(3),
+        )
+        .await;
+
+        let (items, total) = find_paginated_all_filtered(
+            &db,
+            20,
+            0,
+            &AdminTaskFilters {
+                kind: Some(BackgroundTaskKind::ArchiveExtract),
+                status: Some(BackgroundTaskStatus::Failed),
+            },
+        )
+        .await
+        .expect("filtered admin task query should succeed");
+
+        assert_eq!(total, 1);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, wanted.id);
+    }
+
+    #[tokio::test]
+    async fn delete_terminal_by_filters_only_removes_matching_completed_tasks() {
+        let db = build_test_db().await;
+        let now = Utc::now();
+        let old_succeeded = insert_task(
+            &db,
+            BackgroundTaskKind::SystemRuntime,
+            BackgroundTaskStatus::Succeeded,
+            Some(now - Duration::hours(72)),
+            now - Duration::hours(72),
+        )
+        .await;
+        let old_failed = insert_task(
+            &db,
+            BackgroundTaskKind::SystemRuntime,
+            BackgroundTaskStatus::Failed,
+            Some(now - Duration::hours(60)),
+            now - Duration::hours(60),
+        )
+        .await;
+        let recent_failed = insert_task(
+            &db,
+            BackgroundTaskKind::SystemRuntime,
+            BackgroundTaskStatus::Failed,
+            Some(now - Duration::hours(4)),
+            now - Duration::hours(4),
+        )
+        .await;
+        let other_kind = insert_task(
+            &db,
+            BackgroundTaskKind::ArchiveExtract,
+            BackgroundTaskStatus::Failed,
+            Some(now - Duration::hours(60)),
+            now - Duration::hours(60),
+        )
+        .await;
+        let active_task = insert_task(
+            &db,
+            BackgroundTaskKind::SystemRuntime,
+            BackgroundTaskStatus::Processing,
+            None,
+            now - Duration::hours(80),
+        )
+        .await;
+
+        let removed = delete_terminal_by_filters(
+            &db,
+            &TerminalTaskCleanupFilters {
+                finished_before: now - Duration::hours(24),
+                kind: Some(BackgroundTaskKind::SystemRuntime),
+                status: Some(BackgroundTaskStatus::Failed),
+            },
+        )
+        .await
+        .expect("task cleanup delete should succeed");
+
+        assert_eq!(removed, 1);
+
+        let remaining_ids = background_task::Entity::find()
+            .all(&db)
+            .await
+            .expect("remaining tasks should load")
+            .into_iter()
+            .map(|task| task.id)
+            .collect::<Vec<_>>();
+
+        assert!(remaining_ids.contains(&old_succeeded.id));
+        assert!(!remaining_ids.contains(&old_failed.id));
+        assert!(remaining_ids.contains(&recent_failed.id));
+        assert!(remaining_ids.contains(&other_kind.id));
+        assert!(remaining_ids.contains(&active_task.id));
+    }
 }

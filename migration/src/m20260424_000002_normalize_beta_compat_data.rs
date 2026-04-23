@@ -56,9 +56,11 @@ async fn normalize_remote_upload_strategy(manager: &SchemaManager<'_>) -> Result
             continue;
         };
 
+        let value_bind = bind_param(backend, 1);
+        let id_bind = bind_param(backend, 2);
         db.execute_raw(Statement::from_sql_and_values(
             backend,
-            "UPDATE storage_policies SET options = ? WHERE id = ?",
+            format!("UPDATE storage_policies SET options = {value_bind} WHERE id = {id_bind}"),
             vec![normalized.into(), id.into()],
         ))
         .await?;
@@ -90,9 +92,13 @@ async fn normalize_resource_lock_owner_info(manager: &SchemaManager<'_>) -> Resu
             continue;
         }
 
+        let owner_info_bind = bind_param(backend, 1);
+        let id_bind = bind_param(backend, 2);
         db.execute_raw(Statement::from_sql_and_values(
             backend,
-            "UPDATE resource_locks SET owner_info = ? WHERE id = ?",
+            format!(
+                "UPDATE resource_locks SET owner_info = {owner_info_bind} WHERE id = {id_bind}"
+            ),
             vec![normalized.into(), id.into()],
         ))
         .await?;
@@ -105,10 +111,11 @@ async fn normalize_preview_apps_config(manager: &SchemaManager<'_>) -> Result<()
     let db = manager.get_connection();
     let backend = db.get_database_backend();
     let key_ident = quote_ident(backend, "key");
+    let key_bind = bind_param(backend, 1);
     let rows = db
         .query_all_raw(Statement::from_sql_and_values(
             backend,
-            format!("SELECT id, value FROM system_config WHERE {key_ident} = ?"),
+            format!("SELECT id, value FROM system_config WHERE {key_ident} = {key_bind}"),
             vec![PREVIEW_APPS_CONFIG_KEY.into()],
         ))
         .await?;
@@ -126,9 +133,11 @@ async fn normalize_preview_apps_config(manager: &SchemaManager<'_>) -> Result<()
             continue;
         };
 
+        let value_bind = bind_param(backend, 1);
+        let id_bind = bind_param(backend, 2);
         db.execute_raw(Statement::from_sql_and_values(
             backend,
-            "UPDATE system_config SET value = ? WHERE id = ?",
+            format!("UPDATE system_config SET value = {value_bind} WHERE id = {id_bind}"),
             vec![normalized.into(), id.into()],
         ))
         .await?;
@@ -364,6 +373,13 @@ fn quote_ident(backend: DbBackend, ident: &str) -> String {
             format!("\"{}\"", ident.replace('"', "\"\""))
         }
         _ => format!("\"{}\"", ident.replace('"', "\"\"")),
+    }
+}
+
+fn bind_param(backend: DbBackend, index: usize) -> String {
+    match backend {
+        DbBackend::Postgres => format!("${index}"),
+        _ => "?".to_string(),
     }
 }
 
