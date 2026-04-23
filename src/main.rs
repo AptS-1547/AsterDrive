@@ -142,10 +142,22 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
+    let bootstrap_config_path =
+        aster_drive::services::node_enrollment_service::prepare_follower_bootstrap_config()
+            .expect("failed to prepare follower bootstrap config");
+
     // 1. 加载配置（会自动创建 data/config.toml）
     aster_drive::config::init_config().expect("failed to load config");
     let cfg = aster_drive::config::get_config();
     let runtime_mode = aster_drive::config::node_mode::start_mode(cfg.as_ref());
+    if let Some(config_path) = bootstrap_config_path.as_ref()
+        && runtime_mode != aster_drive::config::node_mode::NodeRuntimeMode::Follower
+    {
+        panic!(
+            "before bootstrapping this node from remote enrollment env, set [server].start_mode = \"follower\" in {} and restart",
+            config_path.display()
+        );
+    }
 
     // 2. 初始化日志（基于配置）
     let log_result = aster_drive::runtime::logging::init_logging(&cfg.logging);

@@ -6,6 +6,11 @@
 如果你连主控实例都还没跑起来，先看 [部署手册](./installation)。
 :::
 
+::: tip 如果 follower 用 Docker
+现在 Docker follower 已经支持在容器启动时直接读取 bootstrap ENV 自动 enroll。  
+如果你不想再手动进容器执行 `aster_drive node enroll`，直接看 [Docker 部署从节点](/deployment/docker-follower)。
+:::
+
 ## 先把概念说清楚
 
 AsterDrive 的远程节点能力，本质上是让**另一台 AsterDrive** 充当存储后端。
@@ -142,7 +147,7 @@ aster_drive node enroll --master-url https://drive.example.com --token enr_xxxxx
 
 进入从节点自己的工作目录后，执行刚才那条命令。
 
-如果你要显式指定数据库或入站策略，也可以这样追加参数：
+如果你要显式指定数据库，或者想覆盖 follower 默认入站落点，也可以这样追加参数：
 
 ```bash
 aster_drive node enroll \
@@ -157,6 +162,14 @@ aster_drive node enroll \
 - 用 token 去主控端兑换一次性的 bootstrap 配置
 - 在从节点本地写入主控绑定和接收命名空间
 - 绑定一条本地**非 remote** 的入站策略
+
+这里的 `--ingress-policy-id` 很容易让人误会。  
+它的作用不是“告诉主控端用哪条远程策略”，而是：
+
+- 告诉 **follower 自己**：“主控写进来的对象，应该落到 follower 的哪条本地策略”
+
+所以默认情况下，如果 follower 只有一条默认本地策略，**完全不用传**。  
+只有当 follower 上有多条本地 / S3 策略，而你想让远程对象固定落到某一条非默认策略时，才需要显式追加 `--ingress-policy-id`。
 
 如果当前配置还是 `primary` 模式，CLI 会直接报错，并要求你先把 `start_mode` 改成 `follower`。  
 这不是 bug，是故意拦你，免得你把普通主控实例误接成从节点。

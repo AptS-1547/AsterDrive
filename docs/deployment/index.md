@@ -29,6 +29,7 @@ AsterDrive 是单服务交付：
 | 方式 | 适合谁 |
 | --- | --- |
 | [Docker](/deployment/docker) | NAS、单机、小团队、已有容器环境 |
+| [Docker 从节点](/deployment/docker-follower) | 想把另一台 AsterDrive 直接接成 Docker follower |
 | [systemd](/deployment/systemd) | 云主机、物理机、长期稳定运行 |
 | 直接运行二进制 | 本地测试、临时验证 |
 
@@ -120,6 +121,7 @@ bootstrap_insecure_cookies = false
 ## 下一步看哪里
 
 - 用 Docker：看 [Docker 部署](/deployment/docker)
+- 用 Docker 跑远程从节点：看 [Docker 部署从节点](/deployment/docker-follower)
 - 用 systemd：看 [systemd 部署](/deployment/systemd)
 - 准备备份、恢复和恢复后校验：看 [备份与恢复](/deployment/backup)
 - 想在命令行里做部署检查、离线配置或跨数据库迁移：看 [运维 CLI](/deployment/ops-cli)

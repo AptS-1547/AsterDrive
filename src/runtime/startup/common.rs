@@ -76,11 +76,29 @@ pub async fn initialize_database_state(
     )
     .await?;
     crate::db::repository::config_repo::ensure_defaults(database).await?;
+    if matches!(mode, NodeRuntimeMode::Follower) {
+        handle_optional_follower_bootstrap(
+            crate::services::node_enrollment_service::bootstrap_from_env_if_configured(database)
+                .await,
+        );
+    }
     purge_obsolete_node_runtime_mode(database).await?;
     purge_obsolete_config_key(database, OBSOLETE_THUMBNAIL_DEFAULT_PROCESSOR_KEY).await?;
     purge_obsolete_config_key(database, OBSOLETE_THUMBNAIL_VIPS_CLI_ENABLED_KEY).await?;
     purge_obsolete_config_key(database, OBSOLETE_THUMBNAIL_VIPS_COMMAND_KEY).await?;
     Ok(())
+}
+
+fn handle_optional_follower_bootstrap<T>(result: Result<T>) {
+    if let Err(error) = result {
+        tracing::warn!(
+            error = %error,
+            master_url_env = crate::services::node_enrollment_service::BOOTSTRAP_REMOTE_MASTER_URL_ENV,
+            token_env = crate::services::node_enrollment_service::BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN_ENV,
+            ingress_policy_env = crate::services::node_enrollment_service::BOOTSTRAP_REMOTE_INGRESS_POLICY_ID_ENV,
+            "follower enrollment bootstrap from environment failed; continuing startup without applying bootstrap env"
+        );
+    }
 }
 
 async fn purge_obsolete_node_runtime_mode(database: &sea_orm::DatabaseConnection) -> Result<()> {
@@ -146,4 +164,21 @@ async fn ensure_default_policy(db: &sea_orm::DatabaseConnection) -> Result<()> {
 
     tracing::info!("created default local storage policy (data dir: {data_dir})");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn optional_follower_bootstrap_success_keeps_startup_flow() {
+        handle_optional_follower_bootstrap::<()>(Ok(()));
+    }
+
+    #[test]
+    fn optional_follower_bootstrap_error_does_not_abort_startup() {
+        handle_optional_follower_bootstrap::<()>(Err(AsterError::validation_error(
+            "enrollment token has already been completed",
+        )));
+    }
 }

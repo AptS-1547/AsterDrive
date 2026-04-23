@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
@@ -10,6 +10,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -21,6 +22,9 @@ import {
 	type RemoteNodeFormData,
 } from "../remoteNodeDialogShared";
 import { formatLastChecked, TestConnectionButton } from "./shared";
+
+const DOCKER_FOLLOWER_DOCS_URL =
+	"https://asterdrive.docs.esap.cc/deployment/docker-follower";
 
 interface RemoteNodeDialogProps {
 	createStep: number;
@@ -201,6 +205,42 @@ export function RemoteNodeDialog({
 		</section>
 	);
 
+	const renderCreateDocsCard = () => (
+		<section className="rounded-3xl border border-border/70 bg-background/85 p-5">
+			<div className="flex items-start gap-3">
+				<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted/20 text-primary">
+					<Icon name="Globe" className="h-5 w-5" />
+				</div>
+				<div className="min-w-0">
+					<h3 className="text-sm font-semibold">
+						{t("remote_node_wizard_docs_title")}
+					</h3>
+					<p className="mt-1 text-xs leading-5 text-muted-foreground">
+						{t("remote_node_wizard_docs_desc")}
+					</p>
+				</div>
+			</div>
+			<a
+				href={DOCKER_FOLLOWER_DOCS_URL}
+				target="_blank"
+				rel="noreferrer"
+				className={cn(
+					buttonVariants({ variant: "outline", size: "sm" }),
+					`${ADMIN_CONTROL_HEIGHT_CLASS} mt-4 w-full justify-between rounded-xl`,
+				)}
+			>
+				<span className="inline-flex items-center gap-2">
+					<Icon name="Globe" className="h-4 w-4" />
+					{t("remote_node_wizard_docs_link")}
+				</span>
+				<Icon
+					name="ArrowSquareOut"
+					className="h-3.5 w-3.5 text-muted-foreground"
+				/>
+			</a>
+		</section>
+	);
+
 	useEffect(() => {
 		if (!open || !isCreateMode) {
 			previousCreateStepRef.current = 0;
@@ -376,6 +416,7 @@ export function RemoteNodeDialog({
 															{renderCreateSummaryCard(
 																currentCreateStep.description,
 															)}
+															{renderCreateDocsCard()}
 														</div>
 													</div>
 												) : createStep === 1 ? (
@@ -455,6 +496,7 @@ export function RemoteNodeDialog({
 															{renderCreateSummaryCard(
 																currentCreateStep.description,
 															)}
+															{renderCreateDocsCard()}
 														</div>
 													</div>
 												) : (
@@ -486,6 +528,7 @@ export function RemoteNodeDialog({
 															{renderCreateSummaryCard(
 																currentCreateStep.description,
 															)}
+															{renderCreateDocsCard()}
 															<section className="rounded-3xl border border-border/70 bg-background/85 p-5">
 																<h3 className="text-sm font-semibold">
 																	{t("remote_node_enrollment_command_title")}

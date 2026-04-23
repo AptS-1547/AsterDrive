@@ -1008,9 +1008,7 @@ export function StoragePolicyDialog({
 																	{renderRemoteNodeField()}
 																</>
 															) : (
-																<>
-																	{renderLocalContentDedupField()}
-																</>
+																renderLocalContentDedupField()
 															)}
 															{renderLimitsFields()}
 															{renderDefaultToggle()}

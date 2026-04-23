@@ -7,12 +7,16 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryRuntimeState;
 use chrono::{Duration, Utc};
 use sea_orm::Set;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 const DEFAULT_ENROLLMENT_TTL_MINUTES: i64 = 30;
 const ENROLL_COMMAND_BINARY: &str = "aster_drive";
+pub const ENROLLMENT_TOKEN_REPLACED_MESSAGE: &str =
+    "enrollment token has been replaced by a newer session";
+pub const ENROLLMENT_TOKEN_COMPLETED_MESSAGE: &str = "enrollment token has already been completed";
+pub const ENROLLMENT_TOKEN_EXPIRED_MESSAGE: &str = "enrollment token has expired";
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -26,7 +30,7 @@ pub struct RemoteEnrollmentCommandInfo {
     pub command: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct RemoteEnrollmentBootstrap {
     pub remote_node_id: i64,
@@ -108,16 +112,18 @@ pub async fn redeem_enrollment_token<S: PrimaryRuntimeState>(
 
         if enrollment.invalidated_at.is_some() {
             return Err(AsterError::validation_error(
-                "enrollment token has been replaced by a newer session",
+                ENROLLMENT_TOKEN_REPLACED_MESSAGE,
             ));
         }
         if enrollment.acked_at.is_some() {
             return Err(AsterError::validation_error(
-                "enrollment token has already been completed",
+                ENROLLMENT_TOKEN_COMPLETED_MESSAGE,
             ));
         }
         if enrollment.expires_at <= Utc::now() {
-            return Err(AsterError::validation_error("enrollment token has expired"));
+            return Err(AsterError::validation_error(
+                ENROLLMENT_TOKEN_EXPIRED_MESSAGE,
+            ));
         }
 
         follower_enrollment_session_repo::mark_redeemed_if_needed(txn, enrollment.id).await?;

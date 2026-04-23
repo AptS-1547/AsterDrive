@@ -19,6 +19,11 @@ sudo chown -R 10001:10001 ./data
 容器把服务跑起来，不等于可以直接把 `3000` 端口长期暴露到公网。  
 正式上线时，前面还是应该接一层反向代理来处理 HTTPS、**浏览器页面基线** `Content-Security-Policy` 等安全响应头、上传限制、WebDAV 和 WOPI。不要把整站 CSP 直接改成全站 `sandbox`。
 
+::: tip 如果这个容器要跑成从节点
+现在 follower 已经支持在启动时直接读取 bootstrap ENV 完成 enroll。  
+如果你想用 Docker 把另一台 AsterDrive 接成远程节点，不要再照旧文档手动 `docker exec` 跑 `node enroll`，直接看 [Docker 部署从节点](/deployment/docker-follower)。
+:::
+
 ## `/data` 里通常会有什么
 
 如果你按上面的命令把 `./data` bind mount 到容器的 `/data`，目录里通常会看到：
@@ -109,6 +114,7 @@ services:
 - 默认策略组是否已经创建
 - 如果启用了外部 Office / WOPI 打开方式，至少用一个真实 Office 文件试开并保存一次
 - 如果以后要走 S3 / MinIO，是否已经计划好对象存储浏览器上传放行规则和密钥管理
+- 如果这台实例实际要跑成 `follower`，是否已经按 [Docker 部署从节点](/deployment/docker-follower) 配好长期 `start_mode` 和一次性 bootstrap ENV
 
 ## 查看运行状态
 

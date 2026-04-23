@@ -1,20 +1,14 @@
 //! `aster_drive node` 的聚合入口。
 
 use crate::config::node_mode::NodeRuntimeMode;
-use crate::db::repository::policy_repo;
 use crate::errors::{AsterError, Result};
-use crate::services::master_binding_service;
-use crate::storage::remote_protocol::normalize_remote_base_url;
-use crate::types::DriverType;
 use clap::{Args, Subcommand};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::shared::{
     CliTerminalPalette, OutputFormat, ResolvedOutputFormat, human_key, prepare_database,
     render_error_json, render_success_envelope,
 };
-
-const FOLLOWER_DEFAULT_SERVER_HOST: &str = "0.0.0.0";
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum NodeCommand {
@@ -51,24 +45,6 @@ pub struct NodeEnrollReport {
     connectivity_hint: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct ApiEnvelope<T> {
-    code: i32,
-    msg: String,
-    data: Option<T>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RemoteEnrollmentBootstrap {
-    remote_node_name: String,
-    master_url: String,
-    access_key: String,
-    secret_key: String,
-    namespace: String,
-    is_enabled: bool,
-    ack_token: String,
-}
-
 pub async fn execute_node_command(command: &NodeCommand) -> Result<NodeEnrollReport> {
     match command {
         NodeCommand::Enroll(args) => execute_enroll(args).await,
@@ -94,46 +70,28 @@ pub fn render_node_error(format: OutputFormat, err: &AsterError) -> String {
 async fn execute_enroll(args: &NodeEnrollArgs) -> Result<NodeEnrollReport> {
     let config_path = ensure_follower_start_mode()?;
     let config = crate::config::get_config();
-    let master_url = normalize_remote_base_url(&args.master_url)?;
     let database_url = resolve_database_url(args.database_url.as_deref())?;
     let db = prepare_database(&database_url).await?;
-    let ingress_policy = resolve_ingress_policy(&db, args.ingress_policy_id).await?;
-    let bootstrap = redeem_enrollment(&master_url, &args.token).await?;
-    let binding_name = bootstrap.remote_node_name;
-    let enrolled_master_url = bootstrap.master_url;
-    let access_key = bootstrap.access_key;
-    let secret_key = bootstrap.secret_key;
-    let namespace = bootstrap.namespace;
-    let is_enabled = bootstrap.is_enabled;
-    let ack_token = bootstrap.ack_token;
-
-    let (binding, action) = crate::db::transaction::with_transaction(&db, async |txn| {
-        master_binding_service::upsert_from_enrollment(
-            txn,
-            master_binding_service::UpsertMasterBindingInput {
-                name: binding_name.clone(),
-                master_url: enrolled_master_url.clone(),
-                access_key: access_key.clone(),
-                secret_key: secret_key.clone(),
-                namespace: namespace.clone(),
-                ingress_policy_id: ingress_policy.id,
-                is_enabled,
-            },
-        )
-        .await
-    })
+    let result = crate::services::node_enrollment_service::enroll(
+        &db,
+        crate::services::node_enrollment_service::NodeEnrollmentInput {
+            master_url: args.master_url.clone(),
+            token: args.token.clone(),
+            ingress_policy_id: args.ingress_policy_id,
+        },
+    )
     .await?;
+    let binding = result.binding;
+    let ingress_policy = result.ingress_policy;
     let binding_id = binding.id;
 
-    ack_enrollment(&master_url, &ack_token).await?;
-
     Ok(NodeEnrollReport {
-        action,
+        action: result.action,
         binding_id,
-        binding_name,
-        master_url: enrolled_master_url,
-        namespace,
-        access_key,
+        binding_name: binding.name.clone(),
+        master_url: binding.master_url.clone(),
+        namespace: binding.namespace.clone(),
+        access_key: binding.access_key.clone(),
         ingress_policy_id: ingress_policy.id,
         ingress_policy_name: ingress_policy.name,
         config_path,
@@ -145,7 +103,7 @@ async fn execute_enroll(args: &NodeEnrollArgs) -> Result<NodeEnrollReport> {
 }
 
 fn ensure_follower_start_mode() -> Result<String> {
-    let default = follower_seed_config();
+    let default = crate::services::node_enrollment_service::follower_seed_config();
     let config_path = crate::config::ensure_default_config_for_current_dir(&default)?;
     let config_path = config_path.display().to_string();
 
@@ -165,13 +123,6 @@ fn ensure_follower_start_mode() -> Result<String> {
     )))
 }
 
-fn follower_seed_config() -> crate::config::Config {
-    let mut default = crate::config::Config::default();
-    default.server.start_mode = NodeRuntimeMode::Follower;
-    default.server.host = FOLLOWER_DEFAULT_SERVER_HOST.to_string();
-    default
-}
-
 fn resolve_database_url(explicit: Option<&str>) -> Result<String> {
     if let Some(database_url) = explicit {
         return Ok(database_url.to_string());
@@ -179,109 +130,6 @@ fn resolve_database_url(explicit: Option<&str>) -> Result<String> {
 
     crate::config::init_config()?;
     Ok(crate::config::get_config().database.url.clone())
-}
-
-async fn redeem_enrollment(master_url: &str, token: &str) -> Result<RemoteEnrollmentBootstrap> {
-    let url = format!("{master_url}/api/v1/public/remote-enrollment/redeem");
-    let response = reqwest::Client::new()
-        .post(url)
-        .json(&serde_json::json!({ "token": token }))
-        .send()
-        .await
-        .map_err(|error| {
-            AsterError::config_error(format!(
-                "failed to reach master enrollment endpoint: {error}"
-            ))
-        })?;
-
-    parse_api_response(response, "master enrollment request").await
-}
-
-async fn ack_enrollment(master_url: &str, ack_token: &str) -> Result<()> {
-    let url = format!("{master_url}/api/v1/public/remote-enrollment/ack");
-    let response = reqwest::Client::new()
-        .post(url)
-        .json(&serde_json::json!({ "ack_token": ack_token }))
-        .send()
-        .await
-        .map_err(|error| {
-            AsterError::config_error(format!(
-                "failed to reach master enrollment ack endpoint: {error}"
-            ))
-        })?;
-
-    parse_empty_api_response(response, "master enrollment ack request").await
-}
-
-async fn parse_api_response<T: for<'de> Deserialize<'de>>(
-    response: reqwest::Response,
-    action: &str,
-) -> Result<T> {
-    let status = response.status();
-    let body = response.bytes().await.map_err(|error| {
-        AsterError::config_error(format!("failed to read {action} response body: {error}"))
-    })?;
-    let envelope: ApiEnvelope<T> = serde_json::from_slice(&body).map_err(|error| {
-        AsterError::config_error(format!("failed to parse {action} response: {error}"))
-    })?;
-
-    if !status.is_success() || envelope.code != 0 {
-        let message = if envelope.msg.trim().is_empty() {
-            format!("{action} failed with HTTP {status}")
-        } else {
-            envelope.msg
-        };
-        return Err(AsterError::validation_error(message));
-    }
-
-    envelope
-        .data
-        .ok_or_else(|| AsterError::config_error(format!("{action} response is missing data")))
-}
-
-async fn parse_empty_api_response(response: reqwest::Response, action: &str) -> Result<()> {
-    let status = response.status();
-    let body = response.bytes().await.map_err(|error| {
-        AsterError::config_error(format!("failed to read {action} response body: {error}"))
-    })?;
-    let envelope: ApiEnvelope<serde_json::Value> =
-        serde_json::from_slice(&body).map_err(|error| {
-            AsterError::config_error(format!("failed to parse {action} response: {error}"))
-        })?;
-
-    if !status.is_success() || envelope.code != 0 {
-        let message = if envelope.msg.trim().is_empty() {
-            format!("{action} failed with HTTP {status}")
-        } else {
-            envelope.msg
-        };
-        return Err(AsterError::validation_error(message));
-    }
-
-    Ok(())
-}
-
-async fn resolve_ingress_policy(
-    db: &sea_orm::DatabaseConnection,
-    ingress_policy_id: Option<i64>,
-) -> Result<crate::entities::storage_policy::Model> {
-    let policy = if let Some(policy_id) = ingress_policy_id {
-        policy_repo::find_by_id(db, policy_id).await?
-    } else {
-        policy_repo::find_default(db).await?.ok_or_else(|| {
-            AsterError::storage_policy_not_found(
-                "no default storage policy found; pass --ingress-policy-id explicitly",
-            )
-        })?
-    };
-
-    if policy.driver_type == DriverType::Remote {
-        return Err(AsterError::validation_error(
-            "ingress policy cannot use the remote driver",
-        ));
-    }
-
-    Ok(policy)
 }
 
 fn render_node_human(report: &NodeEnrollReport) -> String {
@@ -359,10 +207,7 @@ fn host_is_loopback(server_host: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        FOLLOWER_DEFAULT_SERVER_HOST, NodeEnrollReport, follower_seed_config, host_is_loopback,
-        render_node_human,
-    };
+    use super::{NodeEnrollReport, host_is_loopback, render_node_human};
 
     #[test]
     fn render_node_human_focuses_on_connectivity_steps() {
@@ -404,9 +249,12 @@ mod tests {
 
     #[test]
     fn follower_seed_config_uses_public_bind_host() {
-        let config = follower_seed_config();
+        let config = crate::services::node_enrollment_service::follower_seed_config();
 
         assert_eq!(config.server.start_mode, super::NodeRuntimeMode::Follower);
-        assert_eq!(config.server.host, FOLLOWER_DEFAULT_SERVER_HOST);
+        assert_eq!(
+            config.server.host,
+            crate::services::node_enrollment_service::FOLLOWER_DEFAULT_SERVER_HOST
+        );
     }
 }

@@ -119,6 +119,7 @@ export default defineConfig({
           items: [
             { text: '部署概览', link: '/deployment/' },
             { text: 'Docker 部署', link: '/deployment/docker' },
+            { text: 'Docker 从节点', link: '/deployment/docker-follower' },
             { text: 'systemd', link: '/deployment/systemd' },
             { text: '运维 CLI', link: '/deployment/ops-cli' },
             { text: '反向代理', link: '/deployment/reverse-proxy' },
