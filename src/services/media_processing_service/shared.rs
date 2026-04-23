@@ -5,9 +5,11 @@ use crate::config::media_processing as media_processing_config;
 use crate::storage::StorageDriver;
 use crate::types::MediaProcessorKind;
 
-pub(crate) const FFMPEG_CLI_THUMBNAIL_VERSION: &str = "ffmpeg-cli-v1";
-pub(crate) const VIPS_CLI_THUMBNAIL_VERSION: &str = "vips-cli-v1";
+pub(crate) const FFMPEG_CLI_THUMBNAIL_VERSION: &str = "ffmpeg-cli-v2";
+pub(crate) const VIPS_CLI_THUMBNAIL_VERSION: &str = "vips-cli-v2";
 pub(crate) const STORAGE_NATIVE_THUMBNAIL_VERSION: &str = "storage-native-v1";
+const LEGACY_FFMPEG_CLI_THUMBNAIL_VERSION: &str = "ffmpeg-cli-v1";
+const LEGACY_VIPS_CLI_THUMBNAIL_VERSION: &str = "vips-cli-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MediaOperation {
@@ -120,6 +122,14 @@ pub(crate) fn known_thumbnail_cache_paths(blob_hash: &str) -> Vec<String> {
         crate::services::thumbnail_service::thumb_path_for_version(
             blob_hash,
             FFMPEG_CLI_THUMBNAIL_VERSION,
+        ),
+        crate::services::thumbnail_service::thumb_path_for_version(
+            blob_hash,
+            LEGACY_VIPS_CLI_THUMBNAIL_VERSION,
+        ),
+        crate::services::thumbnail_service::thumb_path_for_version(
+            blob_hash,
+            LEGACY_FFMPEG_CLI_THUMBNAIL_VERSION,
         ),
         crate::services::thumbnail_service::thumb_path_for_version(
             blob_hash,

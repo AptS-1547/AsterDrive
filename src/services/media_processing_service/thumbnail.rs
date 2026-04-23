@@ -20,6 +20,8 @@ use super::shared::{
     requires_server_side_source_limit,
 };
 
+const FFMPEG_THUMBNAIL_BATCH_SIZE: u32 = 50;
+
 pub async fn probe_ffmpeg_cli_command(command: &str) -> Result<String> {
     let command = media_processing_config::normalize_ffmpeg_command(command)?;
     if !media_processing_config::command_is_available(&command) {
@@ -462,6 +464,8 @@ async fn render_thumbnail_with_vips_cli(
             .arg(max_dim.to_string())
             .arg("--height")
             .arg(max_dim.to_string())
+            .arg("--size")
+            .arg("down")
             .output()
             .map_err(|error| {
                 AsterError::thumbnail_generation_failed(format!(
@@ -536,7 +540,7 @@ async fn render_thumbnail_with_ffmpeg_cli(
     let output_arg = output_path.to_string_lossy().to_string();
     let max_dim = crate::services::thumbnail_service::current_thumbnail_max_dim();
     let filter_arg = format!(
-        "thumbnail,scale=min(iw\\,{max_dim}):min(ih\\,{max_dim}):force_original_aspect_ratio=decrease"
+        "thumbnail={FFMPEG_THUMBNAIL_BATCH_SIZE}:log=quiet,scale=min(iw\\,{max_dim}):min(ih\\,{max_dim}):force_original_aspect_ratio=decrease"
     );
     tracing::debug!(
         blob_id = blob.id,
@@ -553,6 +557,7 @@ async fn render_thumbnail_with_ffmpeg_cli(
             .arg("-hide_banner")
             .arg("-loglevel")
             .arg("error")
+            .arg("-nostdin")
             .arg("-i")
             .arg(&input_arg)
             .arg("-map")

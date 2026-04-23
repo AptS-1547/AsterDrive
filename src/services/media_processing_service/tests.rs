@@ -42,6 +42,8 @@ fn known_thumbnail_cache_paths_include_current_and_legacy_namespaces() {
     let paths = known_thumbnail_cache_paths(&hash);
     assert!(paths.contains(&format!("_thumb/images-v1/ab/ca/{hash}.webp")));
     assert!(paths.contains(&format!("_thumb/v2/ab/ca/{hash}.webp")));
+    assert!(paths.contains(&format!("_thumb/vips-cli-v2/ab/ca/{hash}.webp")));
+    assert!(paths.contains(&format!("_thumb/ffmpeg-cli-v2/ab/ca/{hash}.webp")));
     assert!(paths.contains(&format!("_thumb/vips-cli-v1/ab/ca/{hash}.webp")));
     assert!(paths.contains(&format!("_thumb/ffmpeg-cli-v1/ab/ca/{hash}.webp")));
     assert!(paths.contains(&format!("_thumb/storage-native-v1/ab/ca/{hash}.webp")));

@@ -52,7 +52,7 @@ fn current_thumb_path(blob_hash: &str) -> String {
 
 fn vips_thumb_path(blob_hash: &str) -> String {
     format!(
-        "_thumb/vips-cli-v1/{}/{}/{}.webp",
+        "_thumb/vips-cli-v2/{}/{}/{}.webp",
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
@@ -61,7 +61,7 @@ fn vips_thumb_path(blob_hash: &str) -> String {
 
 fn ffmpeg_thumb_path(blob_hash: &str) -> String {
     format!(
-        "_thumb/ffmpeg-cli-v1/{}/{}/{}.webp",
+        "_thumb/ffmpeg-cli-v2/{}/{}/{}.webp",
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
@@ -530,7 +530,7 @@ async fn test_thumbnail_heic_uses_vips_cli_processor_when_extension_matches() {
         blob.thumbnail_path.as_deref(),
         Some(expected_thumbnail_path.as_str())
     );
-    assert_eq!(blob.thumbnail_version.as_deref(), Some("vips-cli-v1"));
+    assert_eq!(blob.thumbnail_version.as_deref(), Some("vips-cli-v2"));
 
     let second = request_thumbnail!(app, token, file_id);
     assert_eq!(second.status(), 200);
@@ -600,7 +600,7 @@ async fn test_thumbnail_mp4_uses_ffmpeg_cli_processor_when_extension_matches() {
         blob.thumbnail_path.as_deref(),
         Some(expected_thumbnail_path.as_str())
     );
-    assert_eq!(blob.thumbnail_version.as_deref(), Some("ffmpeg-cli-v1"));
+    assert_eq!(blob.thumbnail_version.as_deref(), Some("ffmpeg-cli-v2"));
 
     let second = request_thumbnail!(app, token, file_id);
     assert_eq!(second.status(), 200);
