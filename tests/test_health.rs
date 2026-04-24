@@ -82,11 +82,10 @@ async fn test_health_ready_returns_503_when_default_storage_is_unavailable() {
     assert_eq!(resp.status(), 503);
 
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(
-        body["code"],
-        serde_json::json!(ErrorCode::StorageDriverError as i32)
-    );
     assert_eq!(body["msg"], "Storage unavailable");
+    // Local filesystem probe failures can classify into different storage subcodes
+    // depending on the OS errno, but they should always redact to E031 here.
+    assert_eq!(body["error"]["internal_code"], "E031");
 }
 
 #[actix_web::test]

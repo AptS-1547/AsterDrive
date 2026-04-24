@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ActiveEnum, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
-    QueryFilter, QueryOrder, QuerySelect, Select, sea_query::Expr,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select, sea_query::Expr,
 };
 
 use crate::db::repository::pagination_repo::fetch_offset_page;
@@ -108,6 +108,14 @@ pub async fn list_recent<C: ConnectionTrait>(
         .order_by_desc(background_task::Column::UpdatedAt)
         .limit(limit)
         .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn count_processing<C: ConnectionTrait>(db: &C) -> Result<u64> {
+    BackgroundTask::find()
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
+        .count(db)
         .await
         .map_err(AsterError::from)
 }

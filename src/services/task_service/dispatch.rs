@@ -320,9 +320,15 @@ pub async fn drain(state: &PrimaryAppState) -> Result<DispatchStats> {
         total.succeeded += stats.succeeded;
         total.retried += stats.retried;
         total.failed += stats.failed;
-        if claimed == 0 {
+        if claimed > 0 {
+            continue;
+        }
+
+        if background_task_repo::count_processing(&state.db).await? == 0 {
             break;
         }
+
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 
     Ok(total)

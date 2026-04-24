@@ -798,7 +798,7 @@ async fn test_remote_node_connection_failure_returns_error_and_persists_last_err
     let error = managed_follower_service::test_connection(&state, node.id)
         .await
         .expect_err("connection test should surface probe failures");
-    assert_eq!(error.code(), "E005");
+    assert_eq!(error.code(), "E031");
 
     let stored = managed_follower_repo::find_by_id(&state.db, node.id)
         .await

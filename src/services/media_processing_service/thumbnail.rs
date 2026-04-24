@@ -12,7 +12,7 @@ use crate::errors::{
     thumbnail_generation_error_with_subcode,
 };
 use crate::runtime::PrimaryAppState;
-use crate::storage::{StorageDriver, extensions::NativeThumbnailRequest};
+use crate::storage::{StorageDriver, StorageErrorKind, extensions::NativeThumbnailRequest};
 use crate::types::MediaProcessorKind;
 use image::{ImageFormat, ImageReader, Limits};
 use tokio::io::AsyncReadExt;
@@ -744,6 +744,17 @@ async fn load_thumbnail_from_path(
                 if clear_metadata_on_missing {
                     clear_thumbnail_metadata(state, blob).await;
                 }
+                Ok(None)
+            }
+            // The thumbnail may appear between the initial read and the follow-up existence
+            // probe while another worker is persisting it. Treat that as a cache miss so the
+            // request can return 202 instead of surfacing a transient 500.
+            Ok(true) if matches!(error.storage_error_kind(), Some(StorageErrorKind::NotFound)) => {
+                tracing::debug!(
+                    blob_id = blob.id,
+                    path,
+                    "thumbnail appeared after initial not-found read; treating as cache miss"
+                );
                 Ok(None)
             }
             Ok(true) => Err(error),
