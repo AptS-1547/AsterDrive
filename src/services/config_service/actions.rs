@@ -1,27 +1,19 @@
-//! 服务模块：`config_service`。
-
-use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::config::auth_runtime;
-use crate::config::branding;
-use crate::config::definitions::ALL_CONFIGS;
 use crate::config::mail;
 use crate::config::media_processing;
-use crate::config::site_url;
-use crate::config::system_config as shared_system_config;
-use crate::db::repository::{config_repo, user_repo};
-use crate::entities::system_config;
+use crate::db::repository::user_repo;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::{self, AuditContext},
     mail_service, media_processing_service, preview_app_service, wopi_service,
 };
-use crate::types::{SystemConfigSource, SystemConfigValueType, parse_storage_policy_options};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
+
+use super::system::set;
 
 pub const MAIL_CONFIG_ACTION_KEY: &str = "mail";
 const PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT: &str = "__wopi_discovery__";
@@ -62,117 +54,6 @@ pub struct ExecuteConfigActionInput<'a> {
     pub target_email: Option<&'a str>,
     pub value: Option<&'a str>,
     pub discovery_url: Option<&'a str>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct SystemConfig {
-    pub id: i64,
-    pub key: String,
-    pub value: String,
-    pub value_type: SystemConfigValueType,
-    pub requires_restart: bool,
-    pub is_sensitive: bool,
-    pub source: SystemConfigSource,
-    pub namespace: String,
-    pub category: String,
-    pub description: String,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    pub updated_by: Option<i64>,
-}
-
-impl From<system_config::Model> for SystemConfig {
-    fn from(model: system_config::Model) -> Self {
-        Self {
-            id: model.id,
-            key: model.key,
-            value: model.value,
-            value_type: model.value_type,
-            requires_restart: model.requires_restart,
-            is_sensitive: model.is_sensitive,
-            source: model.source,
-            namespace: model.namespace,
-            category: model.category,
-            description: model.description,
-            updated_at: model.updated_at,
-            updated_by: model.updated_by,
-        }
-    }
-}
-
-pub async fn list_paginated(
-    state: &PrimaryAppState,
-    limit: u64,
-    offset: u64,
-) -> Result<OffsetPage<SystemConfig>> {
-    let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
-        config_repo::find_paginated(&state.db, limit, offset).await
-    })
-    .await?;
-    let items = page
-        .items
-        .into_iter()
-        .map(apply_system_config_definition)
-        .map(Into::into)
-        .collect();
-    Ok(OffsetPage::new(items, page.total, page.limit, page.offset))
-}
-
-pub async fn get_by_key(state: &PrimaryAppState, key: &str) -> Result<SystemConfig> {
-    config_repo::find_by_key(&state.db, key)
-        .await?
-        .map(apply_system_config_definition)
-        .map(Into::into)
-        .ok_or_else(|| AsterError::record_not_found(format!("config key '{key}'")))
-}
-
-pub async fn set(
-    state: &PrimaryAppState,
-    key: &str,
-    value: &str,
-    updated_by: i64,
-) -> Result<SystemConfig> {
-    let mut normalized_value = value.to_string();
-
-    // 系统配置做值类型校验
-    if let Some(def) = ALL_CONFIGS.iter().find(|d| d.key == key) {
-        validate_value_type(def.value_type, value)?;
-        normalized_value = normalize_system_value(state, key, value)?;
-    }
-
-    let config = apply_system_config_definition(
-        config_repo::upsert(&state.db, key, &normalized_value, updated_by).await?,
-    );
-    state.runtime_config.apply(config.clone());
-    Ok(config.into())
-}
-
-pub async fn delete(state: &PrimaryAppState, key: &str) -> Result<()> {
-    config_repo::delete_by_key(&state.db, key).await?;
-    state.runtime_config.remove(key);
-    Ok(())
-}
-
-pub async fn set_with_audit(
-    state: &PrimaryAppState,
-    key: &str,
-    value: &str,
-    updated_by: i64,
-    audit_ctx: &AuditContext,
-) -> Result<SystemConfig> {
-    let config = set(state, key, value, updated_by).await?;
-    audit_service::log(
-        state,
-        audit_ctx,
-        audit_service::AuditAction::ConfigUpdate,
-        None,
-        None,
-        Some(key),
-        audit_service::details(audit_service::ConfigUpdateDetails { value }),
-    )
-    .await;
-    Ok(config)
 }
 
 pub async fn execute_action(
@@ -418,7 +299,6 @@ async fn build_wopi_discovery_preview_apps_into_config(
     }
 
     next_apps.extend(imported_apps);
-
     config.apps = next_apps;
     Ok(())
 }
@@ -554,151 +434,6 @@ fn slugify_preview_app_key_segment(value: &str) -> String {
     } else {
         trimmed.to_string()
     }
-}
-
-/// 校验值是否匹配声明的类型
-fn validate_value_type(value_type: SystemConfigValueType, value: &str) -> Result<()> {
-    shared_system_config::validate_value_type(value_type, value)
-}
-
-fn normalize_system_value(state: &PrimaryAppState, key: &str, value: &str) -> Result<String> {
-    shared_system_config::normalize_system_value(&state.runtime_config, key, value)
-}
-
-fn apply_system_config_definition(config: system_config::Model) -> system_config::Model {
-    shared_system_config::apply_definition(config)
-}
-
-#[derive(Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct PublicBranding {
-    pub title: String,
-    pub description: String,
-    pub favicon_url: String,
-    pub wordmark_dark_url: String,
-    pub wordmark_light_url: String,
-    pub site_url: Option<String>,
-    pub allow_user_registration: bool,
-}
-
-pub fn get_public_branding(state: &PrimaryAppState) -> PublicBranding {
-    let auth_policy = auth_runtime::RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
-    PublicBranding {
-        title: branding::title_or_default(&state.runtime_config),
-        description: branding::description_or_default(&state.runtime_config),
-        favicon_url: branding::favicon_url_or_default(&state.runtime_config),
-        wordmark_dark_url: branding::wordmark_dark_url_or_default(&state.runtime_config),
-        wordmark_light_url: branding::wordmark_light_url_or_default(&state.runtime_config),
-        site_url: site_url::public_site_url(&state.runtime_config),
-        allow_user_registration: auth_policy.allow_user_registration,
-    }
-}
-
-pub fn get_public_preview_apps(
-    state: &PrimaryAppState,
-) -> preview_app_service::PublicPreviewAppsConfig {
-    preview_app_service::get_public_preview_apps(state)
-}
-
-pub fn get_public_thumbnail_support(
-    state: &PrimaryAppState,
-) -> crate::config::media_processing::PublicThumbnailSupport {
-    let mut support =
-        crate::config::media_processing::public_thumbnail_support(&state.runtime_config);
-    let mut extensions = support.extensions.iter().cloned().collect::<BTreeSet<_>>();
-
-    for policy in state.policy_snapshot.all_policies() {
-        let options = parse_storage_policy_options(policy.options.as_ref());
-        if !options.uses_storage_native_thumbnail() || options.thumbnail_extensions.is_empty() {
-            continue;
-        }
-
-        match state.driver_registry.get_driver(&policy) {
-            Ok(driver) if driver.as_native_thumbnail().is_some() => {
-                extensions.extend(options.thumbnail_extensions);
-            }
-            Ok(_) => {}
-            Err(error) => {
-                tracing::debug!(
-                    policy_id = policy.id,
-                    "skip storage-native thumbnail public support for policy: {error}"
-                );
-            }
-        }
-    }
-
-    support.extensions = extensions.into_iter().collect();
-    support
-}
-
-// ── Config Schema ─────────────────────────────────────────────────────
-
-/// 系统配置的 schema 信息（从 ALL_CONFIGS 生成）
-#[derive(Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct ConfigSchemaItem {
-    pub key: String,
-    pub label_i18n_key: String,
-    pub description_i18n_key: String,
-    pub value_type: SystemConfigValueType,
-    pub category: String,
-    pub description: String,
-    pub requires_restart: bool,
-    pub is_sensitive: bool,
-}
-
-#[derive(Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct TemplateVariableItem {
-    pub token: String,
-    pub label_i18n_key: String,
-    pub description_i18n_key: String,
-}
-
-#[derive(Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct TemplateVariableGroup {
-    pub category: String,
-    pub template_code: String,
-    pub label_i18n_key: String,
-    pub variables: Vec<TemplateVariableItem>,
-}
-
-/// 返回所有系统配置的 schema 信息
-pub fn get_schema() -> Vec<ConfigSchemaItem> {
-    ALL_CONFIGS
-        .iter()
-        .map(|def| ConfigSchemaItem {
-            key: def.key.to_string(),
-            label_i18n_key: def.label_i18n_key.to_string(),
-            description_i18n_key: def.description_i18n_key.to_string(),
-            value_type: def.value_type,
-            category: def.category.to_string(),
-            description: def.description.to_string(),
-            requires_restart: def.requires_restart,
-            is_sensitive: def.is_sensitive,
-        })
-        .collect()
-}
-
-pub fn list_template_variable_groups() -> Vec<TemplateVariableGroup> {
-    crate::services::mail_template::list_template_variable_groups()
-        .into_iter()
-        .map(|group| TemplateVariableGroup {
-            category: group.category,
-            template_code: group.template_code,
-            label_i18n_key: group.label_i18n_key,
-            variables: group
-                .variables
-                .into_iter()
-                .map(|variable| TemplateVariableItem {
-                    token: variable.token,
-                    label_i18n_key: variable.label_i18n_key,
-                    description_i18n_key: variable.description_i18n_key,
-                })
-                .collect(),
-        })
-        .collect()
 }
 
 #[cfg(test)]

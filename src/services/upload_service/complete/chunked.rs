@@ -2,10 +2,10 @@ use chrono::Utc;
 
 use crate::db::repository::file_repo;
 use crate::entities::{file, storage_policy, upload_session};
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{AsterError, MapAsterErr, Result, upload_assembly_error_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::shared::{
-    handle_completion_error, transition_upload_session_to_assembling,
+    cleanup_upload_temp_dir, run_upload_completion_stage,
 };
 use crate::services::workspace_storage_service::{self, PreparedNonDedupBlobUpload};
 use crate::storage::driver::StorageDriver;
@@ -35,39 +35,20 @@ pub(super) async fn complete_chunked_upload(
 ) -> Result<file::Model> {
     let db = &state.db;
     let upload_id = session.id.clone();
-
-    transition_upload_session_to_assembling(
+    let created = run_upload_completion_stage(
         db,
-        &upload_id,
-        session.status,
+        &session,
         UploadSessionStatus::Uploading,
+        "completed upload session",
+        async {
+            let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
+            let driver = state.driver_registry.get_driver(&policy)?;
+            finalize_chunked_upload_session(state, &session, &policy, driver.as_ref()).await
+        },
     )
     .await?;
-
-    let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-    let result = finalize_chunked_upload_session(state, &session, &policy, driver.as_ref()).await;
-
-    match result {
-        Ok(created) => {
-            let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, &upload_id);
-            crate::utils::cleanup_temp_dir(&temp_dir).await;
-            tracing::debug!(
-                upload_id = %upload_id,
-                file_id = created.id,
-                blob_id = created.blob_id,
-                size = created.size,
-                "completed upload session"
-            );
-            Ok(created)
-        }
-        Err(error) => {
-            // 本地装配错误仍然会把 session 置为 failed；
-            // 但远端存储瞬时不可用时应恢复为 uploading，让客户端稍后重试。
-            handle_completion_error(db, &upload_id, UploadSessionStatus::Uploading, &error).await;
-            Err(error)
-        }
-    }
+    cleanup_upload_temp_dir(state, &upload_id).await;
+    Ok(created)
 }
 
 async fn finalize_chunked_upload_session(
@@ -125,7 +106,10 @@ async fn finalize_remote_chunked_upload_session(
     .await;
 
     let relay_result = relay_task.await.map_err(|error| {
-        AsterError::upload_assembly_failed(format!("remote chunk relay task failed: {error}"))
+        upload_assembly_error_with_subcode(
+            "upload.chunk_relay_failed",
+            format!("remote chunk relay task failed: {error}"),
+        )
     })?;
 
     upload_result?;
@@ -153,30 +137,37 @@ async fn stream_local_chunks_into_writer(
     let mut buffer = vec![0u8; STREAM_BUFFER_SIZE];
     for chunk_number in 0..total_chunks {
         let chunk_path = paths::upload_chunk_path(&upload_temp_dir, &upload_id, chunk_number);
-        let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_aster_err_ctx(
-            &format!("open chunk {chunk_number}"),
-            AsterError::upload_assembly_failed,
-        )?;
+        let mut chunk_file = tokio::fs::File::open(&chunk_path)
+            .await
+            .map_aster_err_ctx(&format!("open chunk {chunk_number}"), |message| {
+                upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
+            })?;
 
         loop {
-            let read = chunk_file.read(&mut buffer).await.map_aster_err_ctx(
-                &format!("read chunk {chunk_number}"),
-                AsterError::upload_assembly_failed,
-            )?;
+            let read = chunk_file
+                .read(&mut buffer)
+                .await
+                .map_aster_err_ctx(&format!("read chunk {chunk_number}"), |message| {
+                    upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
+                })?;
             if read == 0 {
                 break;
             }
             writer
                 .write_all(&buffer[..read])
                 .await
-                .map_aster_err_ctx("relay remote chunk", AsterError::upload_assembly_failed)?;
+                .map_aster_err_ctx("relay remote chunk", |message| {
+                    upload_assembly_error_with_subcode("upload.chunk_relay_failed", message)
+                })?;
         }
     }
 
-    writer.shutdown().await.map_aster_err_ctx(
-        "shutdown remote chunk relay",
-        AsterError::upload_assembly_failed,
-    )?;
+    writer
+        .shutdown()
+        .await
+        .map_aster_err_ctx("shutdown remote chunk relay", |message| {
+            upload_assembly_error_with_subcode("upload.chunk_relay_failed", message)
+        })?;
     Ok(())
 }
 
@@ -195,7 +186,9 @@ async fn assemble_local_chunks_to_temp_file(
         paths::upload_assembled_path(&state.config.server.upload_temp_dir, upload_id);
     let mut out_file = tokio::fs::File::create(&assembled_path)
         .await
-        .map_aster_err_ctx("create assembled file", AsterError::upload_assembly_failed)?;
+        .map_aster_err_ctx("create assembled file", |message| {
+            upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
+        })?;
     let mut hasher = should_dedup.then(Sha256::new);
     let mut size: i64 = 0;
     let mut buffer = vec![0u8; ASSEMBLY_BUFFER_SIZE];
@@ -206,16 +199,19 @@ async fn assemble_local_chunks_to_temp_file(
     for i in 0..session.total_chunks {
         let chunk_path =
             paths::upload_chunk_path(&state.config.server.upload_temp_dir, upload_id, i);
-        let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_aster_err_ctx(
-            &format!("open chunk {i}"),
-            AsterError::upload_assembly_failed,
-        )?;
+        let mut chunk_file = tokio::fs::File::open(&chunk_path)
+            .await
+            .map_aster_err_ctx(&format!("open chunk {i}"), |message| {
+                upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
+            })?;
 
         loop {
-            let n = chunk_file.read(&mut buffer).await.map_aster_err_ctx(
-                &format!("read chunk {i}"),
-                AsterError::upload_assembly_failed,
-            )?;
+            let n = chunk_file
+                .read(&mut buffer)
+                .await
+                .map_aster_err_ctx(&format!("read chunk {i}"), |message| {
+                    upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
+                })?;
             if n == 0 {
                 break;
             }
@@ -226,18 +222,25 @@ async fn assemble_local_chunks_to_temp_file(
             }
             let chunk_len = usize_to_i64(n, "assembled chunk length")?;
             size = size.checked_add(chunk_len).ok_or_else(|| {
-                AsterError::upload_assembly_failed("assembled upload size exceeds i64 range")
+                upload_assembly_error_with_subcode(
+                    "upload.assembly_size_overflow",
+                    "assembled upload size exceeds i64 range",
+                )
             })?;
             out_file
                 .write_all(data)
                 .await
-                .map_aster_err_ctx("write assembled", AsterError::upload_assembly_failed)?;
+                .map_aster_err_ctx("write assembled", |message| {
+                    upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
+                })?;
         }
     }
     out_file
         .flush()
         .await
-        .map_aster_err_ctx("flush assembled", AsterError::upload_assembly_failed)?;
+        .map_aster_err_ctx("flush assembled", |message| {
+            upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
+        })?;
     drop(out_file);
 
     Ok(AssembledTempFile {

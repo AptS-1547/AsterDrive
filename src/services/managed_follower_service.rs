@@ -3,7 +3,7 @@
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{managed_follower_repo, policy_repo};
 use crate::entities::managed_follower;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, Result, validation_error_with_subcode};
 use crate::runtime::PrimaryRuntimeState;
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::remote_protocol::{
@@ -201,7 +201,7 @@ pub async fn test_connection<S: PrimaryRuntimeState>(state: &S, id: i64) -> Resu
     let node = managed_follower_repo::find_by_id(state.db(), id).await?;
     let probed = probe_and_persist_node(state, &node).await?;
     if let Some(error) = probed.probe_error {
-        return Err(map_connection_test_error(error));
+        return Err(error);
     }
     Ok(probed.model.into())
 }
@@ -209,9 +209,7 @@ pub async fn test_connection<S: PrimaryRuntimeState>(state: &S, id: i64) -> Resu
 pub async fn test_connection_params(
     input: TestRemoteNodeInput,
 ) -> Result<RemoteStorageCapabilities> {
-    probe_connection(&input)
-        .await
-        .map_err(map_connection_test_error)
+    probe_connection(&input).await
 }
 
 pub async fn run_health_tests<S: PrimaryRuntimeState>(
@@ -425,17 +423,12 @@ async fn sync_remote_binding_config_with_timeout(
 
 fn map_remote_node_db_err(error: DbErr) -> AsterError {
     if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
-        AsterError::validation_error("remote node unique field conflict")
+        validation_error_with_subcode(
+            "remote_node.unique_conflict",
+            "remote node unique field conflict",
+        )
     } else {
         AsterError::from(error)
-    }
-}
-
-fn map_connection_test_error(error: AsterError) -> AsterError {
-    if matches!(error, AsterError::StorageDriverError(_)) {
-        AsterError::validation_error(error.message().to_string())
-    } else {
-        error
     }
 }
 

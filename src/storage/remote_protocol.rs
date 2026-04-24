@@ -1,9 +1,12 @@
 //! 远端节点内部对象协议与客户端。
 
 use crate::api::error_code::ErrorCode;
-use crate::errors::{AsterError, Result};
+use crate::api::response::ApiErrorInfo;
+use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
 use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions};
-use crate::storage::error::{StorageErrorKind, storage_driver_error};
+use crate::storage::error::{
+    StorageErrorKind, storage_driver_error, storage_driver_error_with_subcode,
+};
 use futures::TryStreamExt;
 use hmac::{Hmac, KeyInit, Mac};
 use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
@@ -111,6 +114,7 @@ struct ApiEnvelope<T> {
     code: i32,
     msg: String,
     data: Option<T>,
+    error: Option<ApiErrorInfo>,
 }
 
 pub fn normalize_remote_base_url(value: &str) -> Result<String> {
@@ -692,6 +696,10 @@ async fn build_remote_status_error(
     let body = response.text().await.unwrap_or_default();
     let envelope = serde_json::from_str::<ApiEnvelope<serde_json::Value>>(&body).ok();
     let remote_code = envelope.as_ref().map(|value| value.code);
+    let remote_subcode = envelope
+        .as_ref()
+        .and_then(|value| value.error.as_ref())
+        .and_then(|value| value.subcode.as_deref());
     let remote_message = envelope
         .as_ref()
         .map(|envelope| envelope.msg.as_str())
@@ -703,6 +711,9 @@ async fn build_remote_status_error(
     } else {
         format!("{context}: {remote_message}")
     };
+    if let Some(error) = remote_code.and_then(|code| remote_api_error(code, &message)) {
+        return error;
+    }
     let kind = remote_code
         .and_then(remote_api_error_kind)
         .unwrap_or_else(|| remote_status_error_kind(status));
@@ -711,32 +722,70 @@ async fn build_remote_status_error(
         reqwest::StatusCode::NOT_FOUND if not_found_as_record => {
             AsterError::record_not_found("remote storage object not found")
         }
-        reqwest::StatusCode::PRECONDITION_FAILED => AsterError::precondition_failed(message),
-        _ => storage_driver_error(kind, message),
+        reqwest::StatusCode::PRECONDITION_FAILED => remote_subcode
+            .map(|subcode| precondition_failed_with_subcode(subcode, message.clone()))
+            .unwrap_or_else(|| AsterError::precondition_failed(message)),
+        _ => remote_subcode
+            .map(|subcode| storage_driver_error_with_subcode(kind, subcode, message.clone()))
+            .unwrap_or_else(|| storage_driver_error(kind, message)),
+    }
+}
+
+fn remote_api_error(code: i32, message: &str) -> Option<AsterError> {
+    match code {
+        code if code == ErrorCode::StorageQuotaExceeded as i32 => {
+            Some(AsterError::storage_quota_exceeded(message.to_string()))
+        }
+        _ => None,
     }
 }
 
 fn remote_api_error_kind(code: i32) -> Option<StorageErrorKind> {
     match code {
         code if code == ErrorCode::BadRequest as i32 => Some(StorageErrorKind::Misconfigured),
+        code if code == ErrorCode::StoragePolicyNotFound as i32
+            || code == ErrorCode::StorageMisconfigured as i32 =>
+        {
+            Some(StorageErrorKind::Misconfigured)
+        }
         code if code == ErrorCode::NotFound as i32
             || code == ErrorCode::FileNotFound as i32
-            || code == ErrorCode::UploadSessionNotFound as i32 =>
+            || code == ErrorCode::UploadSessionNotFound as i32
+            || code == ErrorCode::StorageObjectNotFound as i32 =>
         {
             Some(StorageErrorKind::NotFound)
         }
-        code if code == ErrorCode::RateLimited as i32 => Some(StorageErrorKind::RateLimited),
+        code if code == ErrorCode::RateLimited as i32
+            || code == ErrorCode::StorageRateLimited as i32 =>
+        {
+            Some(StorageErrorKind::RateLimited)
+        }
         code if code == ErrorCode::AuthFailed as i32
             || code == ErrorCode::TokenExpired as i32
-            || code == ErrorCode::TokenInvalid as i32 =>
+            || code == ErrorCode::TokenInvalid as i32
+            || code == ErrorCode::StorageAuthFailed as i32 =>
         {
             Some(StorageErrorKind::Auth)
         }
-        code if code == ErrorCode::Forbidden as i32 => Some(StorageErrorKind::Permission),
+        code if code == ErrorCode::Forbidden as i32
+            || code == ErrorCode::StoragePermissionDenied as i32 =>
+        {
+            Some(StorageErrorKind::Permission)
+        }
         code if code == ErrorCode::PreconditionFailed as i32 => {
             Some(StorageErrorKind::Precondition)
         }
-        code if code == ErrorCode::UnsupportedDriver as i32 => Some(StorageErrorKind::Unsupported),
+        code if code == ErrorCode::StoragePreconditionFailed as i32 => {
+            Some(StorageErrorKind::Precondition)
+        }
+        code if code == ErrorCode::UnsupportedDriver as i32
+            || code == ErrorCode::StorageOperationUnsupported as i32 =>
+        {
+            Some(StorageErrorKind::Unsupported)
+        }
+        code if code == ErrorCode::StorageTransientFailure as i32 => {
+            Some(StorageErrorKind::Transient)
+        }
         code if code == ErrorCode::StorageDriverError as i32 => Some(StorageErrorKind::Unknown),
         _ => None,
     }
@@ -784,6 +833,10 @@ mod tests {
             remote_api_error_kind(ErrorCode::UnsupportedDriver as i32),
             Some(StorageErrorKind::Unsupported)
         );
+        assert_eq!(
+            remote_api_error_kind(ErrorCode::StorageOperationUnsupported as i32),
+            Some(StorageErrorKind::Unsupported)
+        );
     }
 
     #[test]
@@ -796,5 +849,16 @@ mod tests {
             remote_status_error_kind(reqwest::StatusCode::SERVICE_UNAVAILABLE),
             StorageErrorKind::Transient
         );
+    }
+
+    #[test]
+    fn remote_api_error_maps_storage_quota_exceeded() {
+        let err = remote_api_error(
+            ErrorCode::StorageQuotaExceeded as i32,
+            "put remote storage object: quota exceeded",
+        )
+        .expect("quota error should map");
+        assert!(matches!(err, AsterError::StorageQuotaExceeded(_)));
+        assert_eq!(err.message(), "put remote storage object: quota exceeded");
     }
 }

@@ -196,7 +196,15 @@ export function createFileService(workspace: Workspace) {
 						err as {
 							response?: {
 								status: number;
-								data?: { code?: number; msg?: string };
+								data?: {
+									code?: number;
+									msg?: string;
+									error?: {
+										internal_code?: string;
+										subcode?: string;
+										retryable?: boolean;
+									} | null;
+								};
 							} | null;
 						}
 					).response;
@@ -206,6 +214,11 @@ export function createFileService(workspace: Workspace) {
 						const apiErr = new ApiError(
 							(body?.code ?? status) as ErrorCode,
 							body?.msg ?? `HTTP ${status}`,
+							{
+								internalCode: body?.error?.internal_code ?? undefined,
+								subcode: body?.error?.subcode ?? undefined,
+								retryable: body?.error?.retryable ?? undefined,
+							},
 						);
 						(apiErr as ApiError & { status: number }).status = status;
 						throw apiErr;

@@ -3,7 +3,7 @@ use sea_orm::ConnectionTrait;
 
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, file_blob, upload_session};
-use crate::errors::{AsterError, Result};
+use crate::errors::{Result, upload_assembly_error_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::storage_change_service;
 use crate::services::workspace_scope_service::WorkspaceStorageScope;
@@ -84,15 +84,19 @@ async fn mark_upload_session_completed<C: ConnectionTrait>(
 
     let session_fresh = upload_session_repo::find_by_id(db, session_id).await?;
     if session_fresh.status == crate::types::UploadSessionStatus::Failed {
-        return Err(AsterError::upload_assembly_failed(
+        return Err(upload_assembly_error_with_subcode(
+            "upload.previous_failure",
             "upload was canceled during assembly",
         ));
     }
 
-    Err(AsterError::upload_assembly_failed(format!(
-        "session status is '{:?}', expected 'assembling'",
-        session_fresh.status
-    )))
+    Err(upload_assembly_error_with_subcode(
+        "upload.status_conflict",
+        format!(
+            "session status is '{:?}', expected 'assembling'",
+            session_fresh.status
+        ),
+    ))
 }
 
 fn scope_from_session(session: &upload_session::Model) -> WorkspaceStorageScope {

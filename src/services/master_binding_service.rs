@@ -2,7 +2,7 @@
 
 use crate::db::repository::{master_binding_repo, policy_repo};
 use crate::entities::{master_binding, storage_policy};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
 use crate::runtime::FollowerRuntimeState;
 use crate::storage::remote_protocol::{
     INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER, INTERNAL_AUTH_NONCE_TTL_SECS,
@@ -90,7 +90,8 @@ pub async fn authorize_internal_request<S: FollowerRuntimeState>(
         .policy_snapshot()
         .get_policy_or_err(binding.ingress_policy_id)?;
     if ingress_policy.driver_type == crate::types::DriverType::Remote {
-        return Err(AsterError::precondition_failed(
+        return Err(precondition_failed_with_subcode(
+            "master_binding.remote_ingress_unsupported",
             "master binding ingress policy cannot use remote driver",
         ));
     }
@@ -123,7 +124,8 @@ pub async fn authorize_presigned_put_request<S: FollowerRuntimeState>(
         .policy_snapshot()
         .get_policy_or_err(binding.ingress_policy_id)?;
     if ingress_policy.driver_type == crate::types::DriverType::Remote {
-        return Err(AsterError::precondition_failed(
+        return Err(precondition_failed_with_subcode(
+            "master_binding.remote_ingress_unsupported",
             "master binding ingress policy cannot use remote driver",
         ));
     }
@@ -149,7 +151,8 @@ pub async fn authorize_presigned_get_request<S: FollowerRuntimeState>(
         .policy_snapshot()
         .get_policy_or_err(binding.ingress_policy_id)?;
     if ingress_policy.driver_type == crate::types::DriverType::Remote {
-        return Err(AsterError::precondition_failed(
+        return Err(precondition_failed_with_subcode(
+            "master_binding.remote_ingress_unsupported",
             "master binding ingress policy cannot use remote driver",
         ));
     }
@@ -215,7 +218,8 @@ async fn authorize_binding_request<S: FollowerRuntimeState>(
         .find_master_binding_by_access_key(&access_key)
         .ok_or_else(|| AsterError::auth_invalid_credentials("unknown internal access_key"))?;
     if !allow_disabled && !binding.is_enabled {
-        return Err(AsterError::precondition_failed(
+        return Err(precondition_failed_with_subcode(
+            "master_binding.disabled",
             "master binding is disabled",
         ));
     }
@@ -277,7 +281,8 @@ async fn authorize_presigned_binding_request<S: FollowerRuntimeState>(
         .find_master_binding_by_access_key(&access_key)
         .ok_or_else(|| AsterError::auth_invalid_credentials("unknown internal access_key"))?;
     if !binding.is_enabled {
-        return Err(AsterError::precondition_failed(
+        return Err(precondition_failed_with_subcode(
+            "master_binding.disabled",
             "master binding is disabled",
         ));
     }

@@ -6,7 +6,9 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
 use crate::entities::file;
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{
+    AsterError, MapAsterErr, Result, file_upload_error_with_subcode, validation_error_with_subcode,
+};
 use crate::runtime::PrimaryAppState;
 use crate::types::DriverType;
 
@@ -29,6 +31,58 @@ struct DirectUploadParams<'a> {
     declared_size: i64,
 }
 
+fn upload_field_read_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.field_read_failed", message)
+}
+
+fn upload_local_staging_path_resolve_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.local_staging_path_resolve_failed", message)
+}
+
+fn upload_local_staging_dir_create_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.local_staging_dir_create_failed", message)
+}
+
+fn upload_local_staging_file_create_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.local_staging_file_create_failed", message)
+}
+
+fn upload_local_staging_write_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.local_staging_write_failed", message)
+}
+
+fn upload_local_staging_flush_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.local_staging_flush_failed", message)
+}
+
+fn upload_direct_relay_write_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.direct_relay_write_failed", message)
+}
+
+fn upload_direct_relay_shutdown_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.direct_relay_shutdown_failed", message)
+}
+
+fn upload_temp_dir_create_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.temp_dir_create_failed", message)
+}
+
+fn upload_temp_file_create_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.temp_file_create_failed", message)
+}
+
+fn upload_temp_file_write_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.temp_file_write_failed", message)
+}
+
+fn upload_temp_file_flush_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.temp_file_flush_failed", message)
+}
+
+fn upload_empty_file_error() -> AsterError {
+    validation_error_with_subcode("upload.empty_file", "empty file")
+}
+
 async fn upload_local_direct(
     state: &PrimaryAppState,
     payload: &mut Multipart,
@@ -45,7 +99,7 @@ async fn upload_local_direct(
     let should_dedup = local_content_dedup_enabled(policy);
 
     while let Some(field) = payload.next().await {
-        let mut field = field.map_aster_err(AsterError::file_upload_failed)?;
+        let mut field = field.map_aster_err(upload_field_read_failed)?;
         let is_file = field
             .content_disposition()
             .and_then(|content| content.get_filename().map(|name| name.to_string()));
@@ -63,41 +117,47 @@ async fn upload_local_direct(
                 crate::storage::drivers::local::upload_staging_path(policy, &staging_token)
                     .map_aster_err_ctx(
                         "resolve local staging path",
-                        AsterError::file_upload_failed,
+                        upload_local_staging_path_resolve_failed,
                     )?;
             if let Some(parent) = staging_path.parent() {
                 tokio::fs::create_dir_all(parent).await.map_aster_err_ctx(
                     "create local staging dir",
-                    AsterError::file_upload_failed,
+                    upload_local_staging_dir_create_failed,
                 )?;
             }
 
             let mut staging_file = tokio::fs::File::create(&staging_path)
                 .await
-                .map_aster_err_ctx("create local staging file", AsterError::file_upload_failed)?;
+                .map_aster_err_ctx(
+                    "create local staging file",
+                    upload_local_staging_file_create_failed,
+                )?;
             let mut hasher = should_dedup.then(Sha256::new);
             let mut size: i64 = 0;
             let staging_path = staging_path.to_string_lossy().into_owned();
 
             let write_result = async {
                 while let Some(chunk) = field.next().await {
-                    let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
+                    let chunk = chunk.map_aster_err(upload_field_read_failed)?;
                     if let Some(hasher) = hasher.as_mut() {
                         hasher.update(&chunk);
                     }
                     staging_file.write_all(&chunk).await.map_aster_err_ctx(
                         "write local staging file",
-                        AsterError::file_upload_failed,
+                        upload_local_staging_write_failed,
                     )?;
                     size = size
                         .checked_add(usize_to_i64(chunk.len(), "chunk length")?)
                         .ok_or_else(|| {
-                            AsterError::file_upload_failed("accumulated chunk size overflows i64")
+                            file_upload_error_with_subcode(
+                                "upload.body_size_overflow",
+                                "accumulated chunk size overflows i64",
+                            )
                         })?;
                 }
                 staging_file.flush().await.map_aster_err_ctx(
                     "flush local staging file",
-                    AsterError::file_upload_failed,
+                    upload_local_staging_flush_failed,
                 )?;
                 Ok::<(), AsterError>(())
             }
@@ -112,7 +172,7 @@ async fn upload_local_direct(
 
             if size == 0 {
                 crate::utils::cleanup_temp_file(&staging_path).await;
-                return Err(AsterError::validation_error("empty file"));
+                return Err(upload_empty_file_error());
             }
 
             let precomputed_hash =
@@ -133,7 +193,7 @@ async fn upload_local_direct(
         }
     }
 
-    Err(AsterError::validation_error("empty file"))
+    Err(upload_empty_file_error())
 }
 
 async fn upload_streaming_direct(
@@ -164,7 +224,7 @@ async fn upload_streaming_direct(
     let storage_path = prepared_upload.storage_path().to_string();
 
     while let Some(field) = payload.next().await {
-        let mut field = field.map_aster_err(AsterError::file_upload_failed)?;
+        let mut field = field.map_aster_err(upload_field_read_failed)?;
         let is_file = field
             .content_disposition()
             .and_then(|content| content.get_filename().map(|name| name.to_string()));
@@ -188,15 +248,15 @@ async fn upload_streaming_direct(
                     let relay_task = tokio::task::spawn_local(async move {
                         let mut writer = writer;
                         while let Some(chunk) = field.next().await {
-                            let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
+                            let chunk = chunk.map_aster_err(upload_field_read_failed)?;
                             writer.write_all(&chunk).await.map_aster_err_ctx(
                                 "relay direct write",
-                                AsterError::file_upload_failed,
+                                upload_direct_relay_write_failed,
                             )?;
                         }
                         writer.shutdown().await.map_aster_err_ctx(
                             "relay direct shutdown",
-                            AsterError::file_upload_failed,
+                            upload_direct_relay_shutdown_failed,
                         )?;
                         Ok::<(), AsterError>(())
                     });
@@ -205,7 +265,10 @@ async fn upload_streaming_direct(
                         .put_reader(&upload_storage_path, Box::new(reader), declared_size)
                         .await;
                     let relay_result = relay_task.await.map_err(|err| {
-                        AsterError::file_upload_failed(format!("relay direct task failed: {err}"))
+                        file_upload_error_with_subcode(
+                            "upload.direct_relay_task_failed",
+                            format!("relay direct task failed: {err}"),
+                        )
                     })?;
 
                     Ok::<(Result<String>, Result<()>), AsterError>((upload_result, relay_result))
@@ -253,7 +316,7 @@ async fn upload_streaming_direct(
         }
     }
 
-    Err(AsterError::validation_error("empty file"))
+    Err(upload_empty_file_error())
 }
 
 pub(crate) async fn upload(
@@ -275,7 +338,8 @@ pub(crate) async fn upload(
     if let Some(declared_size) = declared_size
         && declared_size < 0
     {
-        return Err(AsterError::validation_error(
+        return Err(validation_error_with_subcode(
+            "upload.declared_size_invalid",
             "declared_size cannot be negative",
         ));
     }
@@ -390,15 +454,15 @@ pub(crate) async fn upload(
         crate::utils::paths::runtime_temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
     tokio::fs::create_dir_all(&runtime_temp_dir)
         .await
-        .map_aster_err_ctx("create temp dir", AsterError::file_upload_failed)?;
+        .map_aster_err_ctx("create temp dir", upload_temp_dir_create_failed)?;
 
     let mut temp_file = tokio::fs::File::create(&temp_path)
         .await
-        .map_aster_err_ctx("create temp", AsterError::file_upload_failed)?;
+        .map_aster_err_ctx("create temp", upload_temp_file_create_failed)?;
     let mut size: i64 = 0;
 
     while let Some(field) = payload.next().await {
-        let mut field = field.map_aster_err(AsterError::file_upload_failed)?;
+        let mut field = field.map_aster_err(upload_field_read_failed)?;
         let is_file = field
             .content_disposition()
             .and_then(|content| content.get_filename().map(|name| name.to_string()));
@@ -411,15 +475,18 @@ pub(crate) async fn upload(
             };
 
             while let Some(chunk) = field.next().await {
-                let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
+                let chunk = chunk.map_aster_err(upload_field_read_failed)?;
                 temp_file
                     .write_all(&chunk)
                     .await
-                    .map_aster_err_ctx("write temp", AsterError::file_upload_failed)?;
+                    .map_aster_err_ctx("write temp", upload_temp_file_write_failed)?;
                 size = size
                     .checked_add(usize_to_i64(chunk.len(), "chunk length")?)
                     .ok_or_else(|| {
-                        AsterError::file_upload_failed("accumulated chunk size overflows i64")
+                        file_upload_error_with_subcode(
+                            "upload.body_size_overflow",
+                            "accumulated chunk size overflows i64",
+                        )
                     })?;
             }
             break;
@@ -429,12 +496,12 @@ pub(crate) async fn upload(
     temp_file
         .flush()
         .await
-        .map_aster_err_ctx("flush temp", AsterError::file_upload_failed)?;
+        .map_aster_err_ctx("flush temp", upload_temp_file_flush_failed)?;
     drop(temp_file);
 
     if size == 0 {
         crate::utils::cleanup_temp_file(&temp_path).await;
-        return Err(AsterError::validation_error("empty file"));
+        return Err(upload_empty_file_error());
     }
 
     let result = store_from_temp(

@@ -5,7 +5,10 @@ use futures::StreamExt;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{
+    AsterError, MapAsterErr, Result, file_upload_error_with_subcode,
+    precondition_failed_with_subcode, validation_error_with_subcode,
+};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     policy_service::StoragePolicy,
@@ -23,6 +26,22 @@ pub(crate) struct StreamedTempUpload {
     pub size: i64,
     pub resolved_policy: Option<crate::entities::storage_policy::Model>,
     pub precomputed_hash: Option<String>,
+}
+
+fn upload_temp_dir_create_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.temp_dir_create_failed", message)
+}
+
+fn upload_temp_file_create_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.temp_file_create_failed", message)
+}
+
+fn upload_temp_file_write_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.temp_file_write_failed", message)
+}
+
+fn upload_temp_file_flush_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.temp_file_flush_failed", message)
 }
 
 pub(crate) async fn stream_request_body_to_temp_upload(
@@ -60,20 +79,23 @@ pub(crate) async fn stream_request_body_to_temp_upload(
         );
         tokio::fs::create_dir_all(&runtime_temp_dir)
             .await
-            .map_aster_err_ctx("create temp dir", AsterError::file_upload_failed)?;
+            .map_aster_err_ctx("create temp dir", upload_temp_dir_create_failed)?;
         (temp_path, false)
     };
 
     let mut temp_file = tokio::fs::File::create(&temp_path)
         .await
-        .map_aster_err_ctx("create temp", AsterError::file_upload_failed)?;
+        .map_aster_err_ctx("create temp", upload_temp_file_create_failed)?;
     let mut size: i64 = 0;
     let mut hasher = should_hash.then(Sha256::new);
 
     let write_result = async {
         while let Some(chunk) = payload.next().await {
             let chunk = chunk.map_aster_err_with(|| {
-                AsterError::validation_error("failed to read request body")
+                validation_error_with_subcode(
+                    "upload.request_body_read_failed",
+                    "failed to read request body",
+                )
             })?;
             if let Some(hasher) = hasher.as_mut() {
                 hasher.update(&chunk);
@@ -81,17 +103,20 @@ pub(crate) async fn stream_request_body_to_temp_upload(
             temp_file
                 .write_all(&chunk)
                 .await
-                .map_aster_err_ctx("write temp", AsterError::file_upload_failed)?;
+                .map_aster_err_ctx("write temp", upload_temp_file_write_failed)?;
             size = size
                 .checked_add(usize_to_i64(chunk.len(), "request body chunk length")?)
                 .ok_or_else(|| {
-                    AsterError::file_upload_failed("accumulated request body size overflows i64")
+                    file_upload_error_with_subcode(
+                        "upload.request_body_size_overflow",
+                        "accumulated request body size overflows i64",
+                    )
                 })?;
         }
         temp_file
             .flush()
             .await
-            .map_aster_err_ctx("flush temp", AsterError::file_upload_failed)?;
+            .map_aster_err_ctx("flush temp", upload_temp_file_flush_failed)?;
         Ok::<(), AsterError>(())
     }
     .await;
@@ -107,7 +132,8 @@ pub(crate) async fn stream_request_body_to_temp_upload(
         && size != declared_size
     {
         crate::utils::cleanup_temp_file(&temp_path).await;
-        return Err(AsterError::validation_error(
+        return Err(validation_error_with_subcode(
+            "upload.request_size_mismatch",
             "request body length does not match declared size",
         ));
     }
@@ -246,7 +272,8 @@ pub(crate) async fn update_content_in_scope(
     if let Some(etag) = if_match {
         let expected = etag.trim_matches('"');
         if !expected.eq_ignore_ascii_case(&current_blob.hash) {
-            return Err(AsterError::precondition_failed(
+            return Err(precondition_failed_with_subcode(
+                "file.etag_mismatch",
                 "file has been modified (ETag mismatch)",
             ));
         }
@@ -367,7 +394,8 @@ pub(crate) async fn update_content_stream_in_scope(
     if let Some(etag) = if_match {
         let expected = etag.trim_matches('"');
         if !expected.eq_ignore_ascii_case(&current_blob.hash) {
-            return Err(AsterError::precondition_failed(
+            return Err(precondition_failed_with_subcode(
+                "file.etag_mismatch",
                 "file has been modified (ETag mismatch)",
             ));
         }

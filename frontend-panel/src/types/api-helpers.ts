@@ -17,6 +17,7 @@ export const ErrorCode = {
 	RateLimited: 1006,
 	MailNotConfigured: 1007,
 	MailDeliveryFailed: 1008,
+	Conflict: 1009,
 	AuthFailed: 2000,
 	TokenExpired: 2001,
 	TokenInvalid: 2002,
@@ -40,6 +41,14 @@ export const ErrorCode = {
 	StorageDriverError: 4001,
 	StorageQuotaExceeded: 4002,
 	UnsupportedDriver: 4003,
+	StorageAuthFailed: 4004,
+	StoragePermissionDenied: 4005,
+	StorageMisconfigured: 4006,
+	StorageObjectNotFound: 4007,
+	StorageRateLimited: 4008,
+	StorageTransientFailure: 4009,
+	StoragePreconditionFailed: 4010,
+	StorageOperationUnsupported: 4011,
 	FolderNotFound: 5000,
 	ShareNotFound: 6000,
 	ShareExpired: 6001,
@@ -47,10 +56,17 @@ export const ErrorCode = {
 	ShareDownloadLimitReached: 6003,
 } as const satisfies Record<string, ErrorCode>;
 
+export interface ApiErrorInfo {
+	internal_code: string;
+	subcode?: string | null;
+	retryable?: boolean | null;
+}
+
 export interface ApiResponse<T> {
 	code: ErrorCode;
 	msg: string;
 	data?: T | null;
+	error?: ApiErrorInfo | null;
 }
 
 export type TrashItem =

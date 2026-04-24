@@ -14,12 +14,13 @@ use chrono::Utc;
 
 use crate::db::repository::upload_session_part_repo;
 use crate::entities::{file, upload_session};
-use crate::errors::{AsterError, Result};
+use crate::errors::{
+    AsterError, Result, upload_assembly_error_with_subcode, validation_error_with_subcode,
+};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::services::upload_service::shared::{
-    find_file_by_session, handle_completion_error, transition_upload_session_to_assembling,
-    upload_completion_error_is_retryable,
+    find_file_by_session, run_upload_completion_stage, upload_completion_error_is_retryable,
 };
 use crate::services::{
     workspace_models::FileInfo,
@@ -31,6 +32,7 @@ use crate::utils::numbers::u64_to_i64;
 
 use self::chunked::complete_chunked_upload;
 
+#[derive(Debug)]
 enum CompletionPlan {
     ReturnCompleted,
     CompletePresigned,
@@ -80,7 +82,8 @@ fn determine_completion_plan(
     }
 
     if session.status == UploadSessionStatus::Failed {
-        return Err(AsterError::upload_assembly_failed(
+        return Err(upload_assembly_error_with_subcode(
+            "upload.previous_failure",
             "upload assembly failed previously; please start a new upload",
         ));
     }
@@ -88,7 +91,10 @@ fn determine_completion_plan(
     if session.status == UploadSessionStatus::Presigned {
         if session.s3_multipart_id.is_some() {
             let parts = parts.ok_or_else(|| {
-                AsterError::validation_error("parts required for multipart upload completion")
+                validation_error_with_subcode(
+                    "upload.parts_required",
+                    "parts required for multipart upload completion",
+                )
             })?;
             return Ok(CompletionPlan::CompletePresignedMultipart { parts });
         }
@@ -104,10 +110,13 @@ fn determine_completion_plan(
     }
 
     if session.received_count != session.total_chunks {
-        return Err(AsterError::upload_assembly_failed(format!(
-            "expected {} chunks, got {}",
-            session.total_chunks, session.received_count
-        )));
+        return Err(upload_assembly_error_with_subcode(
+            "upload.incomplete_chunks",
+            format!(
+                "expected {} chunks, got {}",
+                session.total_chunks, session.received_count
+            ),
+        ));
     }
 
     Ok(CompletionPlan::AssembleChunks)
@@ -147,7 +156,12 @@ async fn ensure_uploaded_s3_object_size(
     let meta = match driver.metadata(temp_key).await {
         Ok(meta) => meta,
         Err(error) => match driver.exists(temp_key).await {
-            Ok(false) => return Err(AsterError::upload_assembly_failed(missing_message)),
+            Ok(false) => {
+                return Err(upload_assembly_error_with_subcode(
+                    "upload.temp_object_missing",
+                    missing_message,
+                ));
+            }
             Ok(true) => return Err(error),
             Err(exists_error) => {
                 tracing::warn!(
@@ -164,10 +178,13 @@ async fn ensure_uploaded_s3_object_size(
         if let Err(error) = driver.delete(temp_key).await {
             tracing::warn!("failed to delete uploaded temp object: {error}");
         }
-        return Err(AsterError::upload_assembly_failed(format!(
-            "size mismatch: declared {} but uploaded {}",
-            declared_size, actual_size
-        )));
+        return Err(upload_assembly_error_with_subcode(
+            "upload.temp_object_size_mismatch",
+            format!(
+                "size mismatch: declared {} but uploaded {}",
+                declared_size, actual_size
+            ),
+        ));
     }
 
     Ok(actual_size)
@@ -207,12 +224,19 @@ async fn complete_s3_multipart_upload_session(
     let temp_key = session
         .s3_temp_key
         .as_deref()
-        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_temp_key"))?
+        .ok_or_else(|| {
+            upload_assembly_error_with_subcode("upload.session_corrupted", "missing s3_temp_key")
+        })?
         .to_string();
     let multipart_id = session
         .s3_multipart_id
         .as_deref()
-        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_multipart_id"))?
+        .ok_or_else(|| {
+            upload_assembly_error_with_subcode(
+                "upload.session_corrupted",
+                "missing s3_multipart_id",
+            )
+        })?
         .to_string();
 
     let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
@@ -230,67 +254,53 @@ async fn complete_s3_multipart_upload_session(
         "completing multipart upload session"
     );
 
-    transition_upload_session_to_assembling(db, &upload_id, session.status, expected_status)
-        .await?;
-
-    let result = async {
-        completed_parts.sort_by_key(|(part_number, _)| *part_number);
-        // multipart complete 之前要先把 part 列表排序；驱动层依赖有序 part 序列。
-        if let Err(error) = multipart
-            .complete_multipart_upload(&temp_key, &multipart_id, completed_parts)
-            .await
-        {
-            // 远端节点可能已经完成了 multipart，但最终响应在返回前丢了。
-            // 这时继续按已落盘对象收尾，避免把可恢复的上传直接打成 failed。
-            if upload_completion_error_is_retryable(&error)
-                && let Ok(actual_size) = ensure_uploaded_s3_object_size(
-                    driver_ref,
-                    &temp_key,
-                    session.total_size,
-                    missing_message,
-                )
+    run_upload_completion_stage(
+        db,
+        &session,
+        expected_status,
+        "completed multipart upload session",
+        async {
+            completed_parts.sort_by_key(|(part_number, _)| *part_number);
+            // multipart complete 之前要先把 part 列表排序；驱动层依赖有序 part 序列。
+            if let Err(error) = multipart
+                .complete_multipart_upload(&temp_key, &multipart_id, completed_parts)
                 .await
             {
-                return finalize_s3_upload_session(
-                    state,
-                    &session,
-                    policy.id,
-                    &temp_key,
-                    actual_size,
-                )
-                .await;
+                // 远端节点可能已经完成了 multipart，但最终响应在返回前丢了。
+                // 这时继续按已落盘对象收尾，避免把可恢复的上传直接打成 failed。
+                if upload_completion_error_is_retryable(&error)
+                    && let Ok(actual_size) = ensure_uploaded_s3_object_size(
+                        driver_ref,
+                        &temp_key,
+                        session.total_size,
+                        missing_message,
+                    )
+                    .await
+                {
+                    return finalize_s3_upload_session(
+                        state,
+                        &session,
+                        policy.id,
+                        &temp_key,
+                        actual_size,
+                    )
+                    .await;
+                }
+                return Err(error);
             }
-            return Err(error);
-        }
 
-        let actual_size = ensure_uploaded_s3_object_size(
-            driver_ref,
-            &temp_key,
-            session.total_size,
-            missing_message,
-        )
-        .await?;
+            let actual_size = ensure_uploaded_s3_object_size(
+                driver_ref,
+                &temp_key,
+                session.total_size,
+                missing_message,
+            )
+            .await?;
 
-        finalize_s3_upload_session(state, &session, policy.id, &temp_key, actual_size).await
-    }
-    .await;
-
-    match result {
-        Ok(file) => {
-            tracing::debug!(
-                upload_id = %upload_id,
-                file_id = file.id,
-                blob_id = file.blob_id,
-                size = file.size,
-                "completed multipart upload session"
-            );
-            Ok(file)
-        }
-        Err(error) => {
-            handle_completion_error(db, &upload_id, expected_status, &error).await;
-            Err(error)
-        }
-    }
+            finalize_s3_upload_session(state, &session, policy.id, &temp_key, actual_size).await
+        },
+    )
+    .await
 }
 
 /// 完成 presigned 上传：校验预上传对象 → 直接建文件记录
@@ -304,7 +314,9 @@ async fn complete_presigned_upload(
     let temp_key = session
         .s3_temp_key
         .as_deref()
-        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_temp_key"))?
+        .ok_or_else(|| {
+            upload_assembly_error_with_subcode("upload.session_corrupted", "missing s3_temp_key")
+        })?
         .to_string();
 
     let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
@@ -325,35 +337,16 @@ async fn complete_presigned_upload(
         policy_id = policy.id,
         "completing presigned upload session"
     );
-    transition_upload_session_to_assembling(
+    run_upload_completion_stage(
         db,
-        &upload_id,
-        session.status,
+        &session,
         UploadSessionStatus::Presigned,
+        "completed presigned upload session",
+        async {
+            finalize_s3_upload_session(state, &session, policy.id, &temp_key, actual_size).await
+        },
     )
-    .await?;
-
-    let result = async {
-        finalize_s3_upload_session(state, &session, policy.id, &temp_key, actual_size).await
-    }
-    .await;
-
-    match result {
-        Ok(file) => {
-            tracing::debug!(
-                upload_id = %upload_id,
-                file_id = file.id,
-                blob_id = file.blob_id,
-                size = file.size,
-                "completed presigned upload session"
-            );
-            Ok(file)
-        }
-        Err(error) => {
-            handle_completion_error(db, &upload_id, UploadSessionStatus::Presigned, &error).await;
-            Err(error)
-        }
-    }
+    .await
 }
 
 /// 完成 presigned multipart 上传：complete multipart → 直接建文件记录
@@ -382,19 +375,25 @@ async fn complete_s3_relay_multipart(
     let expected_parts =
         crate::utils::numbers::i32_to_usize(session.total_chunks, "upload session total_chunks")?;
     if parts.len() != expected_parts {
-        return Err(AsterError::upload_assembly_failed(format!(
-            "expected {} parts, got {}",
-            session.total_chunks,
-            parts.len()
-        )));
+        return Err(upload_assembly_error_with_subcode(
+            "upload.incomplete_parts",
+            format!(
+                "expected {} parts, got {}",
+                session.total_chunks,
+                parts.len()
+            ),
+        ));
     }
 
     for (expected, part) in (1..=session.total_chunks).zip(parts.iter()) {
         if part.part_number != expected {
-            return Err(AsterError::upload_assembly_failed(format!(
-                "missing uploaded part {}; got {:?}",
-                expected, part.part_number
-            )));
+            return Err(upload_assembly_error_with_subcode(
+                "upload.missing_part",
+                format!(
+                    "missing uploaded part {}; got {:?}",
+                    expected, part.part_number
+                ),
+            ));
         }
     }
 
@@ -410,4 +409,73 @@ async fn complete_s3_relay_multipart(
         "uploaded object not found after relay multipart complete - assembly may have failed",
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CompletionPlan, determine_completion_plan};
+    use crate::entities::upload_session;
+    use crate::types::UploadSessionStatus;
+
+    fn mock_session(status: UploadSessionStatus) -> upload_session::Model {
+        upload_session::Model {
+            id: "test-upload".to_string(),
+            user_id: 1,
+            team_id: None,
+            filename: "demo.bin".to_string(),
+            total_size: 12,
+            chunk_size: 4,
+            total_chunks: 3,
+            received_count: 3,
+            folder_id: None,
+            policy_id: 1,
+            status,
+            s3_temp_key: None,
+            s3_multipart_id: None,
+            file_id: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+        }
+    }
+
+    #[test]
+    fn determine_completion_plan_marks_previous_failure_with_subcode() {
+        let err = determine_completion_plan(&mock_session(UploadSessionStatus::Failed), None)
+            .expect_err("failed session should not continue");
+
+        assert_eq!(err.code(), "E057");
+        assert_eq!(err.api_error_subcode(), Some("upload.previous_failure"));
+    }
+
+    #[test]
+    fn determine_completion_plan_requires_parts_for_presigned_multipart() {
+        let mut session = mock_session(UploadSessionStatus::Presigned);
+        session.s3_multipart_id = Some("mp-1".to_string());
+
+        let err =
+            determine_completion_plan(&session, None).expect_err("multipart complete needs parts");
+
+        assert_eq!(err.code(), "E005");
+        assert_eq!(err.api_error_subcode(), Some("upload.parts_required"));
+    }
+
+    #[test]
+    fn determine_completion_plan_marks_incomplete_chunks_with_subcode() {
+        let mut session = mock_session(UploadSessionStatus::Uploading);
+        session.received_count = 2;
+
+        let err =
+            determine_completion_plan(&session, None).expect_err("missing chunks should fail");
+
+        assert_eq!(err.code(), "E057");
+        assert_eq!(err.api_error_subcode(), Some("upload.incomplete_chunks"));
+    }
+
+    #[test]
+    fn determine_completion_plan_returns_chunk_assembly_when_all_chunks_arrived() {
+        let plan =
+            determine_completion_plan(&mock_session(UploadSessionStatus::Uploading), None).unwrap();
+        assert!(matches!(plan, CompletionPlan::AssembleChunks));
+    }
 }

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::api::constants::HOUR_SECS;
 use crate::db::repository::upload_session_part_repo;
 use crate::entities::upload_session;
-use crate::errors::{AsterError, Result};
+use crate::errors::{Result, validation_error_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::UploadProgressResponse;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
@@ -112,20 +112,24 @@ async fn presign_parts_impl(
         "presigning multipart upload parts"
     );
     if session.status != UploadSessionStatus::Presigned {
-        return Err(AsterError::validation_error(format!(
-            "session status is '{:?}', expected 'presigned'",
-            session.status
-        )));
+        return Err(validation_error_with_subcode(
+            "upload.status_conflict",
+            format!(
+                "session status is '{:?}', expected 'presigned'",
+                session.status
+            ),
+        ));
     }
 
-    let multipart_id = session
-        .s3_multipart_id
-        .as_deref()
-        .ok_or_else(|| AsterError::validation_error("not a multipart upload session"))?;
-    let temp_key = session
-        .s3_temp_key
-        .as_deref()
-        .ok_or_else(|| AsterError::validation_error("missing s3_temp_key"))?;
+    let multipart_id = session.s3_multipart_id.as_deref().ok_or_else(|| {
+        validation_error_with_subcode(
+            "upload.chunk_session_invalid",
+            "not a multipart upload session",
+        )
+    })?;
+    let temp_key = session.s3_temp_key.as_deref().ok_or_else(|| {
+        validation_error_with_subcode("upload.session_corrupted", "missing s3_temp_key")
+    })?;
 
     let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
     let multipart = state.driver_registry.get_multipart_driver(&policy)?;

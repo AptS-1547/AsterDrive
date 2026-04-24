@@ -1,23 +1,13 @@
 //! 文件服务子模块：`thumbnail`。
 
 use crate::db::repository::file_repo;
-use crate::errors::{AsterError, Result};
+use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     media_processing_service, task_service, workspace_storage_service::WorkspaceStorageScope,
 };
 
 use super::get_info_in_scope;
-
-fn map_thumbnail_precondition(message: String) -> AsterError {
-    if message.starts_with("no enabled thumbnail processor matched")
-        || message.starts_with("built-in images processor")
-    {
-        return AsterError::validation_error(message);
-    }
-
-    AsterError::precondition_failed(message)
-}
 
 /// 缩略图查询结果：有数据直接返回，正在生成则标记 pending
 pub struct ThumbnailResult {
@@ -34,14 +24,9 @@ pub(crate) async fn get_thumbnail_data_in_scope(
 ) -> Result<Option<ThumbnailResult>> {
     let f = get_info_in_scope(state, scope, file_id).await?;
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
-    let thumbnail =
-        match media_processing_service::load_thumbnail_if_exists(state, &blob, &f.name).await {
-            Ok(thumbnail) => thumbnail,
-            Err(AsterError::PreconditionFailed(message)) => {
-                return Err(map_thumbnail_precondition(message));
-            }
-            Err(error) => return Err(error),
-        };
+    let thumbnail = media_processing_service::load_thumbnail_if_exists(state, &blob, &f.name)
+        .await
+        .map_err(media_processing_service::map_thumbnail_request_error)?;
 
     match thumbnail {
         Some(thumbnail) => Ok(Some(ThumbnailResult {
@@ -51,13 +36,9 @@ pub(crate) async fn get_thumbnail_data_in_scope(
             thumbnail_version: Some(thumbnail.thumbnail_version),
         })),
         None => {
-            match task_service::ensure_thumbnail_task(state, &blob, &f.name, &f.mime_type).await {
-                Ok(()) => {}
-                Err(AsterError::PreconditionFailed(message)) => {
-                    return Err(map_thumbnail_precondition(message));
-                }
-                Err(error) => return Err(error),
-            }
+            task_service::ensure_thumbnail_task(state, &blob, &f.name, &f.mime_type)
+                .await
+                .map_err(media_processing_service::map_thumbnail_request_error)?;
             Ok(None)
         }
     }

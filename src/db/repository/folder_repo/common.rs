@@ -3,14 +3,14 @@
 use sea_orm::{ColumnTrait, Condition, DbErr, SqlErr};
 
 use crate::entities::folder;
-use crate::errors::AsterError;
+use crate::errors::{AsterError, validation_error_with_subcode};
 
 pub fn duplicate_name_message(name: &str) -> String {
     format!("folder '{name}' already exists in this location")
 }
 
 pub fn duplicate_name_error(name: &str) -> AsterError {
-    AsterError::validation_error(duplicate_name_message(name))
+    validation_error_with_subcode("folder.name_conflict", duplicate_name_message(name))
 }
 
 pub fn is_name_conflict_db_err(err: &DbErr) -> bool {
@@ -34,7 +34,13 @@ pub fn map_bulk_name_db_err(err: DbErr, message: &str) -> AsterError {
 }
 
 pub fn is_duplicate_name_error(err: &AsterError, name: &str) -> bool {
-    matches!(err, AsterError::ValidationError(message) if message == &duplicate_name_message(name))
+    matches!(err, AsterError::ValidationError(_)) && err.message() == duplicate_name_message(name)
+}
+
+pub fn is_any_duplicate_name_error(err: &AsterError) -> bool {
+    matches!(err, AsterError::ValidationError(_))
+        && err.message().starts_with("folder '")
+        && err.message().ends_with("' already exists in this location")
 }
 
 #[derive(Clone, Copy)]

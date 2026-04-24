@@ -7,7 +7,10 @@ use image::imageops::FilterType;
 use image::{ImageReader, Limits};
 
 use crate::entities::file_blob;
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{
+    AsterError, MapAsterErr, Result, thumbnail_generation_error_with_subcode,
+    validation_error_with_subcode,
+};
 use crate::storage::StorageDriver;
 
 const THUMB_MAX_DIM: u32 = 200;
@@ -16,6 +19,22 @@ pub(crate) const CURRENT_THUMBNAIL_VERSION: &str = "1";
 pub(crate) const IMAGES_THUMBNAIL_PROCESSOR_NAMESPACE: &str = "images";
 /// 单次解码最大内存分配（防止恶意/超大图 OOM）
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
+
+fn thumbnail_format_guess_failed(message: String) -> AsterError {
+    thumbnail_generation_error_with_subcode("thumbnail.format_guess_failed", message)
+}
+
+fn thumbnail_decode_failed(message: String) -> AsterError {
+    thumbnail_generation_error_with_subcode("thumbnail.decode_failed", message)
+}
+
+fn thumbnail_encode_failed(message: String) -> AsterError {
+    thumbnail_generation_error_with_subcode("thumbnail.encode_failed", message)
+}
+
+fn thumbnail_task_panicked(message: String) -> AsterError {
+    thumbnail_generation_error_with_subcode("thumbnail.task_panicked", message)
+}
 
 /// 计算缩略图在存储驱动中的路径
 pub(crate) fn thumb_path(blob_hash: &str) -> String {
@@ -70,7 +89,7 @@ fn generate_thumbnail(data: Vec<u8>) -> Result<Vec<u8>> {
     // ImageReader: 支持格式检测 + 内存限制
     let mut reader = ImageReader::new(Cursor::new(data))
         .with_guessed_format()
-        .map_aster_err_ctx("guess format", AsterError::thumbnail_generation_failed)?;
+        .map_aster_err_ctx("guess format", thumbnail_format_guess_failed)?;
 
     // 限制解码内存，防止恶意超大图 OOM
     let mut limits = Limits::default();
@@ -80,7 +99,7 @@ fn generate_thumbnail(data: Vec<u8>) -> Result<Vec<u8>> {
     // decode() 消费 reader → 内部 Cursor 持有的 Vec<u8> 原始字节在此释放
     let img = reader
         .decode()
-        .map_aster_err_ctx("decode", AsterError::thumbnail_generation_failed)?;
+        .map_aster_err_ctx("decode", thumbnail_decode_failed)?;
 
     // 已经小于目标尺寸 → 直接编码，跳过 resize
     if img.width() <= THUMB_MAX_DIM && img.height() <= THUMB_MAX_DIM {
@@ -97,7 +116,7 @@ fn generate_thumbnail(data: Vec<u8>) -> Result<Vec<u8>> {
 fn encode_webp(img: &image::DynamicImage) -> Result<Vec<u8>> {
     let mut buf = Cursor::new(Vec::new());
     img.write_to(&mut buf, ImageFormat::WebP)
-        .map_aster_err_ctx("encode webp", AsterError::thumbnail_generation_failed)?;
+        .map_aster_err_ctx("encode webp", thumbnail_encode_failed)?;
     Ok(buf.into_inner())
 }
 
@@ -108,10 +127,7 @@ pub(crate) async fn render_thumbnail_bytes(
     let original = driver.get(&blob.storage_path).await?;
     tokio::task::spawn_blocking(move || generate_thumbnail(original))
         .await
-        .map_aster_err_ctx(
-            "thumbnail task panicked",
-            AsterError::thumbnail_generation_failed,
-        )?
+        .map_aster_err_ctx("thumbnail task panicked", thumbnail_task_panicked)?
 }
 
 pub(crate) fn ensure_source_size_supported(
@@ -119,10 +135,13 @@ pub(crate) fn ensure_source_size_supported(
     max_source_bytes: i64,
 ) -> Result<()> {
     if blob.size > max_source_bytes {
-        return Err(AsterError::validation_error(format!(
-            "thumbnail source exceeds {} MiB limit",
-            max_source_bytes / 1024 / 1024
-        )));
+        return Err(validation_error_with_subcode(
+            "thumbnail.source_too_large",
+            format!(
+                "thumbnail source exceeds {} MiB limit",
+                max_source_bytes / 1024 / 1024
+            ),
+        ));
     }
 
     Ok(())
@@ -171,10 +190,10 @@ mod tests {
             "thumbnail max source bytes",
         )
         .unwrap();
-        assert!(
-            ensure_source_size_supported(&blob_with_size(max_source_bytes + 1), max_source_bytes,)
-                .is_err()
-        );
+        let err =
+            ensure_source_size_supported(&blob_with_size(max_source_bytes + 1), max_source_bytes)
+                .unwrap_err();
+        assert_eq!(err.api_error_subcode(), Some("thumbnail.source_too_large"));
     }
 
     #[test]

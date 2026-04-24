@@ -3,9 +3,13 @@
 use actix_web::http::StatusCode;
 use std::any::Any;
 
+use crate::api::response::ApiErrorInfo;
 use crate::storage::error::{
     StorageErrorKind, storage_driver_error_display_message, storage_driver_error_kind_from_message,
 };
+
+const API_ERROR_SUBCODE_PREFIX: &str = "__ASTER_API_SUBCODE__=";
+const API_ERROR_SUBCODE_SEPARATOR: &str = "::";
 
 /// 计数宏：计算传入标识符的数量（放在 define_errors! 之前，因为后者在展开时会调用此宏）
 macro_rules! count {
@@ -34,6 +38,12 @@ macro_rules! define_errors {
                 }
             }
 
+            pub(crate) fn raw_message(&self) -> &str {
+                match self {
+                    $(AsterError::$variant(msg) => msg.as_str(),)*
+                }
+            }
+
             /// 错误类型名称
             pub fn error_type(&self) -> &'static str {
                 match self {
@@ -43,12 +53,7 @@ macro_rules! define_errors {
 
             /// 错误详情
             pub fn message(&self) -> &str {
-                if let AsterError::StorageDriverError(msg) = self {
-                    return storage_driver_error_display_message(msg);
-                }
-                match self {
-                    $(AsterError::$variant(msg) => msg.as_str(),)*
-                }
+                api_error_display_message(storage_driver_error_display_message(self.raw_message()))
             }
         }
 
@@ -142,6 +147,43 @@ impl AsterError {
             }
             Self::PreconditionFailed(_) => Some(StorageErrorKind::Precondition),
             Self::UnsupportedDriver(_) => Some(StorageErrorKind::Unsupported),
+            _ => None,
+        }
+    }
+
+    pub fn api_error_info(&self) -> ApiErrorInfo {
+        ApiErrorInfo {
+            internal_code: self.code().to_string(),
+            subcode: self.api_error_subcode().map(str::to_string),
+            retryable: self.api_error_retryable(),
+        }
+    }
+
+    pub fn api_error_subcode(&self) -> Option<&str> {
+        if let Some(subcode) = api_error_subcode_from_message(self.raw_message()) {
+            return Some(subcode);
+        }
+
+        match self.storage_error_kind()? {
+            StorageErrorKind::Auth => Some("storage.auth"),
+            StorageErrorKind::Misconfigured => Some("storage.misconfigured"),
+            StorageErrorKind::NotFound => Some("storage.not_found"),
+            StorageErrorKind::Permission => Some("storage.permission"),
+            StorageErrorKind::Precondition => Some("storage.precondition"),
+            StorageErrorKind::RateLimited => Some("storage.rate_limited"),
+            StorageErrorKind::Transient => Some("storage.transient"),
+            StorageErrorKind::Unsupported => Some("storage.unsupported"),
+            StorageErrorKind::Unknown => Some("storage.unknown"),
+        }
+    }
+
+    fn api_error_retryable(&self) -> Option<bool> {
+        match self {
+            Self::RateLimited(_) | Self::UploadAssembling(_) => Some(true),
+            Self::StorageDriverError(_) => Some(matches!(
+                self.storage_error_kind(),
+                Some(StorageErrorKind::Transient | StorageErrorKind::RateLimited)
+            )),
             _ => None,
         }
     }
@@ -268,7 +310,11 @@ impl actix_web::ResponseError for AsterError {
         if self.share_error_should_disable_cache() {
             response.insert_header(("Cache-Control", "no-store, max-age=0"));
         }
-        response.json(ApiResponse::<()>::error(error_code, self.client_message()))
+        response.json(ApiResponse::<()>::error_with_details(
+            error_code,
+            self.client_message(),
+            Some(self.api_error_info()),
+        ))
     }
 }
 
@@ -288,6 +334,70 @@ pub type Result<T> = std::result::Result<T, AsterError>;
 
 pub fn display_error(err: impl std::fmt::Display) -> String {
     err.to_string()
+}
+
+pub fn validation_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::validation_error)
+}
+
+pub fn precondition_failed_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::precondition_failed)
+}
+
+pub fn file_upload_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::file_upload_failed)
+}
+
+pub fn chunk_upload_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::chunk_upload_failed)
+}
+
+pub fn upload_assembly_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::upload_assembly_failed)
+}
+
+pub fn thumbnail_generation_error_with_subcode(
+    subcode: &str,
+    message: impl Into<String>,
+) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::thumbnail_generation_failed)
+}
+
+fn tag_error_with_subcode(
+    subcode: &str,
+    message: impl Into<String>,
+    f: impl FnOnce(String) -> AsterError,
+) -> AsterError {
+    f(encode_api_error_subcode_message(subcode, message.into()))
+}
+
+pub(crate) fn encode_api_error_subcode_message(subcode: &str, message: String) -> String {
+    format!("{API_ERROR_SUBCODE_PREFIX}{subcode}{API_ERROR_SUBCODE_SEPARATOR}{message}")
+}
+
+fn split_encoded_api_error_subcode_message(raw_message: &str) -> Option<(&str, &str)> {
+    let encoded = raw_message.strip_prefix(API_ERROR_SUBCODE_PREFIX)?;
+    encoded.split_once(API_ERROR_SUBCODE_SEPARATOR)
+}
+
+fn api_error_display_message(raw_message: &str) -> &str {
+    split_encoded_api_error_subcode_message(raw_message)
+        .map(|(_, message)| message)
+        .unwrap_or(raw_message)
+}
+
+fn api_error_subcode_from_message(raw_message: &str) -> Option<&str> {
+    split_encoded_api_error_subcode_message(raw_message)
+        .map(|(subcode, _)| subcode)
+        .or_else(|| {
+            let storage_message = storage_driver_error_display_message(raw_message);
+            (storage_message != raw_message)
+                .then(|| {
+                    split_encoded_api_error_subcode_message(storage_message)
+                        .map(|(subcode, _)| subcode)
+                })
+                .flatten()
+        })
 }
 
 fn map_display_error<E: std::fmt::Display + 'static>(
@@ -352,7 +462,13 @@ impl<T, E: std::fmt::Display + 'static> MapAsterErr<T> for std::result::Result<T
 
 #[cfg(test)]
 mod tests {
-    use super::{AsterError, MapAsterErr, ResponseLogLevel};
+    use super::{
+        AsterError, MapAsterErr, ResponseLogLevel, thumbnail_generation_error_with_subcode,
+        upload_assembly_error_with_subcode, validation_error_with_subcode,
+    };
+    use crate::api::error_code::ErrorCode;
+    use crate::storage::error::{StorageErrorKind, storage_driver_error};
+    use actix_web::body;
     use actix_web::http::StatusCode;
 
     #[test]
@@ -437,5 +553,113 @@ mod tests {
 
         assert_eq!(err.code(), "E006");
         assert_eq!(err.message(), "load user: user#42");
+    }
+
+    #[actix_web::test]
+    async fn storage_transient_error_response_includes_specific_code_and_details() {
+        let err = storage_driver_error(StorageErrorKind::Transient, "remote timeout");
+        let response = actix_web::ResponseError::error_response(&err);
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let body = body::to_bytes(response.into_body())
+            .await
+            .expect("response body should read");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("response body should be valid json");
+
+        assert_eq!(
+            payload["code"],
+            serde_json::json!(ErrorCode::StorageTransientFailure as i32)
+        );
+        assert_eq!(payload["msg"], "Storage Driver Error");
+        assert_eq!(payload["error"]["internal_code"], "E031");
+        assert_eq!(payload["error"]["subcode"], "storage.transient");
+        assert_eq!(payload["error"]["retryable"], true);
+    }
+
+    #[actix_web::test]
+    async fn storage_permission_error_response_includes_specific_code_and_details() {
+        let err = storage_driver_error(StorageErrorKind::Permission, "access denied");
+        let response = actix_web::ResponseError::error_response(&err);
+
+        let body = body::to_bytes(response.into_body())
+            .await
+            .expect("response body should read");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("response body should be valid json");
+
+        assert_eq!(
+            payload["code"],
+            serde_json::json!(ErrorCode::StoragePermissionDenied as i32)
+        );
+        assert_eq!(payload["error"]["internal_code"], "E031");
+        assert_eq!(payload["error"]["subcode"], "storage.permission");
+        assert_eq!(payload["error"]["retryable"], false);
+    }
+
+    #[actix_web::test]
+    async fn validation_subcode_response_uses_conflict_code_and_preserves_message() {
+        let err = validation_error_with_subcode("auth.email_exists", "email already exists");
+        let response = actix_web::ResponseError::error_response(&err);
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body = body::to_bytes(response.into_body())
+            .await
+            .expect("response body should read");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("response body should be valid json");
+
+        assert_eq!(
+            payload["code"],
+            serde_json::json!(ErrorCode::Conflict as i32)
+        );
+        assert_eq!(payload["msg"], "email already exists");
+        assert_eq!(payload["error"]["internal_code"], "E005");
+        assert_eq!(payload["error"]["subcode"], "auth.email_exists");
+        assert!(payload["error"]["retryable"].is_null());
+    }
+
+    #[actix_web::test]
+    async fn upload_assembly_response_preserves_subcode_on_server_error() {
+        let err =
+            upload_assembly_error_with_subcode("upload.temp_object_missing", "object missing");
+        let response = actix_web::ResponseError::error_response(&err);
+
+        let body = body::to_bytes(response.into_body())
+            .await
+            .expect("response body should read");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("response body should be valid json");
+
+        assert_eq!(
+            payload["code"],
+            serde_json::json!(ErrorCode::UploadAssemblyFailed as i32)
+        );
+        assert_eq!(payload["msg"], "Upload Assembly Failed");
+        assert_eq!(payload["error"]["subcode"], "upload.temp_object_missing");
+    }
+
+    #[actix_web::test]
+    async fn thumbnail_generation_response_preserves_subcode_on_server_error() {
+        let err = thumbnail_generation_error_with_subcode(
+            "thumbnail.output_invalid",
+            "decode ffmpeg thumbnail output",
+        );
+        let response = actix_web::ResponseError::error_response(&err);
+
+        let body = body::to_bytes(response.into_body())
+            .await
+            .expect("response body should read");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("response body should be valid json");
+
+        assert_eq!(
+            payload["code"],
+            serde_json::json!(ErrorCode::ThumbnailFailed as i32)
+        );
+        assert_eq!(payload["msg"], "Thumbnail Generation Failed");
+        assert_eq!(payload["error"]["subcode"], "thumbnail.output_invalid");
     }
 }

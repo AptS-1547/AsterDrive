@@ -7,6 +7,7 @@ use bytes::Bytes;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
+use crate::db::repository::file_repo;
 use crate::errors::Result as AsterResult;
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
@@ -560,9 +561,7 @@ fn map_store_error(error: crate::errors::AsterError) -> FsError {
     match &error {
         crate::errors::AsterError::FileTooLarge(_) => FsError::TooLarge,
         crate::errors::AsterError::StorageQuotaExceeded(_) => FsError::InsufficientStorage,
-        crate::errors::AsterError::ValidationError(msg) if msg.contains("already exists") => {
-            FsError::Exists
-        }
+        _ if file_repo::is_any_duplicate_name_error(&error) => FsError::Exists,
         _ => FsError::GeneralFailure,
     }
 }

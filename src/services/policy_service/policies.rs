@@ -347,9 +347,7 @@ pub async fn test_default_connection<S: PrimaryRuntimeState>(state: &S) -> Resul
 pub async fn test_connection<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<()> {
     let policy = policy_repo::find_by_id(state.db(), id).await?;
     let driver = state.driver_registry().get_driver(&policy)?;
-    probe_storage_driver(driver.as_ref(), "write test failed")
-        .await
-        .map_err(map_connection_test_error)
+    probe_storage_driver(driver.as_ref(), "write test failed").await
 }
 
 pub async fn test_connection_params<S: PrimaryRuntimeState>(
@@ -403,9 +401,7 @@ pub async fn test_connection_params<S: PrimaryRuntimeState>(
         DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),
     };
 
-    probe_storage_driver(driver.as_ref(), "connection test failed")
-        .await
-        .map_err(map_connection_test_error)
+    probe_storage_driver(driver.as_ref(), "connection test failed").await
 }
 
 async fn probe_storage_driver(
@@ -421,12 +417,4 @@ async fn probe_storage_driver(
         tracing::warn!(path = %test_path, "failed to clean up connection test file: {e}");
     }
     Ok(())
-}
-
-fn map_connection_test_error(error: AsterError) -> AsterError {
-    if matches!(error, AsterError::StorageDriverError(_)) {
-        AsterError::validation_error(error.message().to_string())
-    } else {
-        error
-    }
 }

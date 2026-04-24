@@ -5,7 +5,7 @@
 //! WOPI 专用的 lock、rename、PUT_RELATIVE 语义。
 
 use crate::db::repository::file_repo;
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{AsterError, MapAsterErr, Result, precondition_failed_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::{file_service, profile_service};
 use crate::types::NullablePatch;
@@ -82,7 +82,8 @@ pub async fn get_file_contents(
     if let Some(max_expected_size) = max_expected_size
         && resolved.file.size > max_expected_size
     {
-        return Err(AsterError::precondition_failed(
+        return Err(precondition_failed_with_subcode(
+            "wopi.max_expected_size_exceeded",
             "file is larger than X-WOPI-MaxExpectedSize",
         ));
     }

@@ -213,6 +213,32 @@ describe("http api helpers", () => {
 		await expect(api.get("/files")).rejects.toBeInstanceOf(ApiError);
 	});
 
+	it("preserves backend error details on ApiError", async () => {
+		mockState.client.get.mockResolvedValue({
+			data: {
+				code: ErrorCode.StorageTransientFailure,
+				msg: "Storage Driver Error",
+				error: {
+					internal_code: "E031",
+					subcode: "storage.transient",
+					retryable: true,
+				},
+			},
+		});
+
+		const { api } = await loadHttpModule();
+
+		await expect(api.get("/files")).rejects.toEqual(
+			expect.objectContaining({
+				code: ErrorCode.StorageTransientFailure,
+				message: "Storage Driver Error",
+				internalCode: "E031",
+				subcode: "storage.transient",
+				retryable: true,
+			}),
+		);
+	});
+
 	it("adds the csrf header to unsafe requests when the cookie exists", async () => {
 		setTestCookie("aster_csrf=csrf-token-1; path=/");
 

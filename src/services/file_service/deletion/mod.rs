@@ -1,0 +1,14 @@
+//! 文件删除子模块聚合入口。
+
+mod blob_cleanup;
+mod purge;
+mod soft_delete;
+
+pub(crate) use blob_cleanup::{cleanup_unreferenced_blob, ensure_blob_cleanup_if_unreferenced};
+pub(crate) use purge::batch_purge_in_scope;
+pub use purge::{batch_purge, purge};
+pub use soft_delete::delete;
+pub(crate) use soft_delete::delete_in_scope;
+
+#[cfg(test)]
+mod tests;

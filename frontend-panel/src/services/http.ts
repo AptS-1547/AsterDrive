@@ -6,6 +6,7 @@ import type {
 import axios, { AxiosHeaders } from "axios";
 import { config } from "@/config/app";
 import {
+	type ApiErrorInfo as ApiErrorInfoPayload,
 	type ApiResponse,
 	ErrorCode,
 	type ErrorCode as ErrorCodeType,
@@ -85,6 +86,12 @@ export type ApiRequestConfig = Pick<
 	"headers" | "params" | "signal"
 >;
 
+type ApiErrorDetails = {
+	internalCode?: string;
+	subcode?: string;
+	retryable?: boolean;
+};
+
 export function isRequestCanceled(error: unknown): boolean {
 	if (typeof axios.isCancel === "function" && axios.isCancel(error)) {
 		return true;
@@ -159,10 +166,37 @@ client.interceptors.response.use(
 
 export class ApiError extends Error {
 	code: ErrorCodeType;
-	constructor(code: ErrorCodeType, message: string) {
+	internalCode?: string;
+	subcode?: string;
+	retryable?: boolean;
+
+	constructor(
+		code: ErrorCodeType,
+		message: string,
+		details: ApiErrorDetails = {},
+	) {
 		super(message);
 		this.code = code;
+		this.internalCode = details.internalCode;
+		this.subcode = details.subcode;
+		this.retryable = details.retryable;
 	}
+}
+
+function normalizeApiErrorInfo(
+	value: ApiErrorInfoPayload | null | undefined,
+): ApiErrorDetails {
+	if (!value || typeof value !== "object") {
+		return {};
+	}
+
+	return {
+		internalCode:
+			typeof value.internal_code === "string" ? value.internal_code : undefined,
+		subcode: typeof value.subcode === "string" ? value.subcode : undefined,
+		retryable:
+			typeof value.retryable === "boolean" ? value.retryable : undefined,
+	};
 }
 
 function extractApiError(error: unknown): ApiError | null {
@@ -189,7 +223,14 @@ function extractApiError(error: unknown): ApiError | null {
 		return null;
 	}
 
-	return new ApiError(code as ErrorCodeType, message);
+	const errorInfo =
+		"error" in data && typeof data.error === "object" ? data.error : null;
+
+	return new ApiError(
+		code as ErrorCodeType,
+		message,
+		normalizeApiErrorInfo(errorInfo as ApiErrorInfoPayload | null),
+	);
 }
 
 async function unwrap<T>(
@@ -197,7 +238,7 @@ async function unwrap<T>(
 ): Promise<T> {
 	const { data: resp } = await promise;
 	if (resp.code !== ErrorCode.Success) {
-		throw new ApiError(resp.code, resp.msg);
+		throw new ApiError(resp.code, resp.msg, normalizeApiErrorInfo(resp.error));
 	}
 	return resp.data as T;
 }

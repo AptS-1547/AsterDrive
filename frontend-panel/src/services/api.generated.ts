@@ -404,6 +404,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tasks/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_cleanup_tasks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/teams": {
         parameters: {
             query?: never;
@@ -2882,6 +2898,17 @@ export interface components {
             /** Format: int64 */
             policy_group_id?: number | null;
         };
+        /** @description Cleanup completed background tasks by admin-specified conditions. */
+        AdminTaskCleanupReq: {
+            finished_before: string;
+            kind?: null | components["schemas"]["BackgroundTaskKind"];
+            status?: null | components["schemas"]["BackgroundTaskStatus"];
+        };
+        /** @description Query parameters for the admin task list. */
+        AdminTaskListQuery: {
+            kind?: null | components["schemas"]["BackgroundTaskKind"];
+            status?: null | components["schemas"]["BackgroundTaskStatus"];
+        };
         AdminTeamInfo: {
             archived_at?: string | null;
             created_at: string;
@@ -2907,6 +2934,11 @@ export interface components {
             archived?: boolean | null;
             keyword?: string | null;
         };
+        ApiErrorInfo: {
+            internal_code: string;
+            retryable?: boolean | null;
+            subcode?: string | null;
+        };
         /**
          * @description 统一 API 响应格式
          *
@@ -2926,6 +2958,7 @@ export interface components {
                 remote_node_name: string;
                 secret_key: string;
             };
+            error?: null | components["schemas"]["ApiErrorInfo"];
             msg: string;
         };
         /**
@@ -2945,6 +2978,7 @@ export interface components {
                 remote_node_name: string;
                 token: string;
             };
+            error?: null | components["schemas"]["ApiErrorInfo"];
             msg: string;
         };
         /**
@@ -2967,6 +3001,7 @@ export interface components {
                 total_chunks: number;
                 upload_id: string;
             };
+            error?: null | components["schemas"]["ApiErrorInfo"];
             msg: string;
         };
         /**
@@ -2987,6 +3022,7 @@ export interface components {
                 requires_restart: boolean;
                 value_type: components["schemas"]["SystemConfigValueType"];
             }[];
+            error?: null | components["schemas"]["ApiErrorInfo"];
             msg: string;
         };
         /**
@@ -3003,6 +3039,7 @@ export interface components {
                 template_code: string;
                 variables: components["schemas"]["TemplateVariableItem"][];
             }[];
+            error?: null | components["schemas"]["ApiErrorInfo"];
             msg: string;
         };
         /** @description Request an archive compression task for the selected files and folders. */
@@ -3188,7 +3225,6 @@ export interface components {
         };
         /** @enum {string} */
         ConfigActionType: "build_wopi_discovery_preview_config" | "send_test_email" | "test_vips_cli" | "test_ffmpeg_cli";
-        /** @description 系统配置的 schema 信息（从 ALL_CONFIGS 生成） */
         ConfigSchemaItem: {
             category: string;
             description: string;
@@ -3315,7 +3351,7 @@ export interface components {
          * @example 0
          * @enum {integer}
          */
-        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 1006 | 1007 | 1008 | 2000 | 2001 | 2002 | 2003 | 2004 | 2005 | 2006 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 3011 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
+        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 1006 | 1007 | 1008 | 1009 | 2000 | 2001 | 2002 | 2003 | 2004 | 2005 | 2006 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 3011 | 4000 | 4001 | 4002 | 4003 | 4004 | 4005 | 4006 | 4007 | 4008 | 4009 | 4010 | 4011 | 5000 | 6000 | 6001 | 6002 | 6003;
         /** @description Execute a config action (e.g., send test email). */
         ExecuteConfigActionReq: {
             action: components["schemas"]["ConfigActionType"];
@@ -4958,6 +4994,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5022,6 +5059,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5146,6 +5184,7 @@ export interface operations {
                             value: string;
                             value_type: components["schemas"]["SystemConfigValueType"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5213,6 +5252,7 @@ export interface operations {
                             value: string;
                             value_type: components["schemas"]["SystemConfigValueType"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5311,6 +5351,7 @@ export interface operations {
                             message: string;
                             value?: string | null;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5396,6 +5437,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5430,6 +5472,7 @@ export interface operations {
                             /** Format: int64 */
                             removed: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5509,6 +5552,7 @@ export interface operations {
                             stats: components["schemas"]["AdminOverviewStats"];
                             timezone: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5577,6 +5621,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5638,6 +5683,7 @@ export interface operations {
                             remote_node_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5734,6 +5780,7 @@ export interface operations {
                             remote_node_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5847,6 +5894,7 @@ export interface operations {
                             remote_node_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -5948,6 +5996,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6000,6 +6049,7 @@ export interface operations {
                             name: string;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6058,6 +6108,7 @@ export interface operations {
                             name: string;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6169,6 +6220,7 @@ export interface operations {
                             name: string;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6237,6 +6289,7 @@ export interface operations {
                             /** Format: int64 */
                             target_group_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6313,6 +6366,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6368,6 +6422,7 @@ export interface operations {
                             namespace: string;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6415,6 +6470,7 @@ export interface operations {
                             supports_range_read: boolean;
                             supports_stream_upload: boolean;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6476,6 +6532,7 @@ export interface operations {
                             namespace: string;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6583,6 +6640,7 @@ export interface operations {
                             namespace: string;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6688,6 +6746,7 @@ export interface operations {
                             namespace: string;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6776,6 +6835,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -6843,6 +6903,8 @@ export interface operations {
             query?: {
                 limit?: number | null;
                 offset?: number | null;
+                kind?: null | components["schemas"]["BackgroundTaskKind"];
+                status?: null | components["schemas"]["BackgroundTaskStatus"];
             };
             header?: never;
             path?: never;
@@ -6901,9 +6963,63 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_cleanup_tasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminTaskCleanupReq"];
+            };
+        };
+        responses: {
+            /** @description Completed tasks cleaned up */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            removed: number;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {
@@ -6971,6 +7087,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7032,6 +7149,7 @@ export interface operations {
                             storage_used: number;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7099,6 +7217,7 @@ export interface operations {
                             storage_used: number;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7212,6 +7331,7 @@ export interface operations {
                             storage_used: number;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7294,6 +7414,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7360,6 +7481,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7425,6 +7547,7 @@ export interface operations {
                             user_id: number;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7536,6 +7659,7 @@ export interface operations {
                             user_id: number;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7603,6 +7727,7 @@ export interface operations {
                             storage_used: number;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7680,6 +7805,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7741,6 +7867,7 @@ export interface operations {
                             updated_at: string;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7808,6 +7935,7 @@ export interface operations {
                             updated_at: string;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -7928,6 +8056,7 @@ export interface operations {
                             updated_at: string;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8123,6 +8252,7 @@ export interface operations {
                             allow_user_registration: boolean;
                             has_users: boolean;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8190,6 +8320,7 @@ export interface operations {
                             updated_at: string;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8231,6 +8362,7 @@ export interface operations {
                         data?: {
                             message: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8270,6 +8402,7 @@ export interface operations {
                             /** Format: int64 */
                             expires_in: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8341,6 +8474,7 @@ export interface operations {
                             updated_at: string;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8380,6 +8514,7 @@ export interface operations {
                             /** Format: int64 */
                             expires_in: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8425,6 +8560,7 @@ export interface operations {
                         data?: {
                             message: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8470,6 +8606,7 @@ export interface operations {
                         data?: {
                             message: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8519,6 +8656,7 @@ export interface operations {
                             theme_mode?: null | components["schemas"]["ThemeMode"];
                             view_mode?: null | components["schemas"]["PrefViewMode"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8557,6 +8695,7 @@ export interface operations {
                             avatar: components["schemas"]["AvatarInfo"];
                             display_name?: string | null;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8602,6 +8741,7 @@ export interface operations {
                             avatar: components["schemas"]["AvatarInfo"];
                             display_name?: string | null;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8648,6 +8788,7 @@ export interface operations {
                             avatar: components["schemas"]["AvatarInfo"];
                             display_name?: string | null;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8725,6 +8866,7 @@ export interface operations {
                             /** Format: int64 */
                             expires_in: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8779,6 +8921,7 @@ export interface operations {
                             updated_at: string;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8817,6 +8960,7 @@ export interface operations {
                         data?: {
                             message: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8849,6 +8993,7 @@ export interface operations {
                             last_seen_at: string;
                             user_agent?: string | null;
                         }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8883,6 +9028,7 @@ export interface operations {
                             /** Format: int64 */
                             removed: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -8972,6 +9118,7 @@ export interface operations {
                             updated_at: string;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9041,6 +9188,7 @@ export interface operations {
                             team_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9087,6 +9235,7 @@ export interface operations {
                             expires_at: string;
                             token: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9170,6 +9319,7 @@ export interface operations {
                             /** Format: int32 */
                             succeeded: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9218,6 +9368,7 @@ export interface operations {
                             /** Format: int32 */
                             succeeded: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9266,6 +9417,7 @@ export interface operations {
                             /** Format: int32 */
                             succeeded: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9327,6 +9479,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9393,6 +9546,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9437,6 +9591,7 @@ export interface operations {
                             total_chunks?: number | null;
                             upload_id?: string | null;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9567,6 +9722,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9614,6 +9770,7 @@ export interface operations {
                         data?: {
                             [key: string]: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9666,6 +9823,7 @@ export interface operations {
                             /** Format: int32 */
                             total_chunks: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9726,6 +9884,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9825,6 +9984,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9889,6 +10049,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -9967,6 +10128,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10010,6 +10172,7 @@ export interface operations {
                         data?: {
                             token: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10124,6 +10287,7 @@ export interface operations {
                             team_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10195,6 +10359,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10241,6 +10406,7 @@ export interface operations {
                             max_uses: number;
                             path: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10364,6 +10530,7 @@ export interface operations {
                             /** Format: int32 */
                             version: number;
                         }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10456,6 +10623,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10513,6 +10681,7 @@ export interface operations {
                             };
                             mode?: null | components["schemas"]["PreviewOpenMode"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10574,6 +10743,7 @@ export interface operations {
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["FileCursor"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10625,6 +10795,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10682,6 +10853,7 @@ export interface operations {
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["FileCursor"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10778,6 +10950,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10823,6 +10996,7 @@ export interface operations {
                             id: number;
                             name: string;
                         }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10884,6 +11058,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -10941,6 +11116,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11002,6 +11178,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11054,6 +11231,7 @@ export interface operations {
                             namespace: string;
                             value?: string | null;
                         }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11110,6 +11288,7 @@ export interface operations {
                             namespace: string;
                             value?: string | null;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11211,6 +11390,7 @@ export interface operations {
                             wordmark_dark_url: string;
                             wordmark_light_url: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11239,6 +11419,7 @@ export interface operations {
                             /** Format: int32 */
                             version?: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11329,6 +11510,7 @@ export interface operations {
                             /** Format: int64 */
                             view_count: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11423,6 +11605,7 @@ export interface operations {
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["FileCursor"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11543,6 +11726,7 @@ export interface operations {
                             max_uses: number;
                             path: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11674,6 +11858,7 @@ export interface operations {
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["FileCursor"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11720,6 +11905,7 @@ export interface operations {
                             max_uses: number;
                             path: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11888,6 +12074,7 @@ export interface operations {
                             /** Format: int64 */
                             total_folders: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -11952,6 +12139,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12005,6 +12193,7 @@ export interface operations {
                             /** Format: int64 */
                             view_count: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12046,6 +12235,7 @@ export interface operations {
                             /** Format: int32 */
                             succeeded: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12144,6 +12334,7 @@ export interface operations {
                             /** Format: int64 */
                             view_count: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12234,6 +12425,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12302,6 +12494,7 @@ export interface operations {
                             team_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12377,6 +12570,7 @@ export interface operations {
                             team_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12444,6 +12638,7 @@ export interface operations {
                             storage_used: number;
                             updated_at: string;
                         }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12499,6 +12694,7 @@ export interface operations {
                             storage_used: number;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12567,6 +12763,7 @@ export interface operations {
                             storage_used: number;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12681,6 +12878,7 @@ export interface operations {
                             storage_used: number;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12756,6 +12954,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12822,6 +13021,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12887,6 +13087,7 @@ export interface operations {
                             user_id: number;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -12998,6 +13199,7 @@ export interface operations {
                             user_id: number;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13066,6 +13268,7 @@ export interface operations {
                             storage_used: number;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13152,6 +13355,7 @@ export interface operations {
                             team_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13208,6 +13412,7 @@ export interface operations {
                             expires_at: string;
                             token: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13310,6 +13515,7 @@ export interface operations {
                             /** Format: int32 */
                             succeeded: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13368,6 +13574,7 @@ export interface operations {
                             /** Format: int32 */
                             succeeded: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13426,6 +13633,7 @@ export interface operations {
                             /** Format: int32 */
                             succeeded: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13497,6 +13705,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13566,6 +13775,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13620,6 +13830,7 @@ export interface operations {
                             total_chunks?: number | null;
                             upload_id?: string | null;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13674,6 +13885,7 @@ export interface operations {
                             total_chunks: number;
                             upload_id: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13792,6 +14004,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13848,6 +14061,7 @@ export interface operations {
                         data?: {
                             [key: string]: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13909,6 +14123,7 @@ export interface operations {
                             /** Format: int32 */
                             total_chunks: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -13978,6 +14193,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14095,6 +14311,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14168,6 +14385,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14255,6 +14473,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14307,6 +14526,7 @@ export interface operations {
                         data?: {
                             token: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14439,6 +14659,7 @@ export interface operations {
                             team_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14519,6 +14740,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14574,6 +14796,7 @@ export interface operations {
                             max_uses: number;
                             path: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14715,6 +14938,7 @@ export interface operations {
                             /** Format: int32 */
                             version: number;
                         }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14825,6 +15049,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14891,6 +15116,7 @@ export interface operations {
                             };
                             mode?: null | components["schemas"]["PreviewOpenMode"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -14962,6 +15188,7 @@ export interface operations {
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["FileCursor"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15023,6 +15250,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15089,6 +15317,7 @@ export interface operations {
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["FileCursor"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15203,6 +15432,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15257,6 +15487,7 @@ export interface operations {
                             id: number;
                             name: string;
                         }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15327,6 +15558,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15393,6 +15625,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15463,6 +15696,7 @@ export interface operations {
                             /** Format: int64 */
                             user_id: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15539,6 +15773,7 @@ export interface operations {
                             /** Format: int64 */
                             total_folders: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15613,6 +15848,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15676,6 +15912,7 @@ export interface operations {
                             /** Format: int64 */
                             view_count: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15727,6 +15964,7 @@ export interface operations {
                             /** Format: int32 */
                             succeeded: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15843,6 +16081,7 @@ export interface operations {
                             /** Format: int64 */
                             view_count: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -15943,6 +16182,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16020,6 +16260,7 @@ export interface operations {
                             team_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16104,6 +16345,7 @@ export interface operations {
                             team_id?: number | null;
                             updated_at: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16178,6 +16420,7 @@ export interface operations {
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["TrashFileCursor"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16222,6 +16465,7 @@ export interface operations {
                             /** Format: int32 */
                             purged: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16371,6 +16615,7 @@ export interface operations {
                             folders_total: number;
                             next_file_cursor?: null | components["schemas"]["TrashFileCursor"];
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16405,6 +16650,7 @@ export interface operations {
                             /** Format: int32 */
                             purged: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16532,6 +16778,7 @@ export interface operations {
                             /** Format: int64 */
                             total: number;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16575,6 +16822,7 @@ export interface operations {
                             root_folder_path?: string | null;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16610,6 +16858,7 @@ export interface operations {
                             endpoint: string;
                             prefix: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16719,6 +16968,7 @@ export interface operations {
                             user_id: number;
                             username: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16785,6 +17035,7 @@ export interface operations {
                             status: string;
                             version: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };
@@ -16813,6 +17064,7 @@ export interface operations {
                             status: string;
                             version: string;
                         };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
                     };
                 };

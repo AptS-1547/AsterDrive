@@ -1,10 +1,15 @@
 use crate::config::media_processing as media_processing_config;
 use crate::entities::{file_blob, storage_policy};
-use crate::errors::{AsterError, Result};
+use crate::errors::{
+    AsterError, Result, precondition_failed_with_subcode, validation_error_with_subcode,
+};
 use crate::runtime::PrimaryAppState;
 use crate::types::{MediaProcessorKind, parse_storage_policy_options};
 
 use super::shared::{MediaOperation, ResolvedMediaProcessor, ThumbnailContext};
+
+const THUMBNAIL_PROCESSOR_MATCH_MISSING_PREFIX: &str = "no enabled thumbnail processor matched";
+const BUILTIN_IMAGES_PROCESSOR_PREFIX: &str = "built-in images processor";
 
 pub(crate) fn resolve_thumbnail_processor_for_blob(
     state: &PrimaryAppState,
@@ -13,6 +18,21 @@ pub(crate) fn resolve_thumbnail_processor_for_blob(
 ) -> Result<ResolvedMediaProcessor> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     resolve_thumbnail_processor_for_policy(state, &policy, file_name)
+}
+
+pub(crate) fn map_thumbnail_request_error(error: AsterError) -> AsterError {
+    let display_message = error.message().to_string();
+    if matches!(error, AsterError::PreconditionFailed(_))
+        && thumbnail_precondition_is_user_fixable(&display_message)
+    {
+        let subcode = error
+            .api_error_subcode()
+            .map(str::to_string)
+            .unwrap_or_else(|| "thumbnail.processor_unavailable".to_string());
+        return validation_error_with_subcode(&subcode, display_message);
+    }
+
+    error
 }
 
 pub(super) fn build_thumbnail_context(
@@ -45,7 +65,7 @@ pub(super) fn build_thumbnail_context_with_processor(
         Some(source_file_name),
         Some((state, policy)),
     )? {
-        return Err(AsterError::precondition_failed(reason));
+        return Err(thumbnail_processor_unavailable_error(reason));
     }
 
     let driver = state.driver_registry.get_driver(policy)?;
@@ -247,7 +267,7 @@ fn resolve_media_processor_from_candidates(
 ) -> Result<ResolvedMediaProcessor> {
     let source_extension = media_processing_config::file_extension(file_name);
     if candidates.is_empty() {
-        return Err(AsterError::precondition_failed(format!(
+        return Err(thumbnail_processor_unavailable_error(format!(
             "no enabled {} processor matched '{file_name}'",
             operation.as_str()
         )));
@@ -293,5 +313,44 @@ fn resolve_media_processor_from_candidates(
             operation.as_str()
         )
     });
-    Err(AsterError::precondition_failed(reason))
+    Err(thumbnail_processor_unavailable_error(reason))
+}
+
+fn thumbnail_precondition_is_user_fixable(message: &str) -> bool {
+    message.starts_with(THUMBNAIL_PROCESSOR_MATCH_MISSING_PREFIX)
+        || message.starts_with(BUILTIN_IMAGES_PROCESSOR_PREFIX)
+}
+
+fn thumbnail_processor_unavailable_error(message: impl Into<String>) -> AsterError {
+    precondition_failed_with_subcode("thumbnail.processor_unavailable", message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{map_thumbnail_request_error, thumbnail_processor_unavailable_error};
+    use crate::errors::AsterError;
+
+    #[test]
+    fn map_thumbnail_request_error_surfaces_unsupported_input_as_validation_error() {
+        let error = map_thumbnail_request_error(thumbnail_processor_unavailable_error(
+            "built-in images processor does not support file extension 'psd'",
+        ));
+        assert!(matches!(error, AsterError::ValidationError(_)));
+        assert_eq!(
+            error.api_error_subcode(),
+            Some("thumbnail.processor_unavailable")
+        );
+    }
+
+    #[test]
+    fn map_thumbnail_request_error_keeps_operator_preconditions_as_precondition_failed() {
+        let error = map_thumbnail_request_error(thumbnail_processor_unavailable_error(
+            "no available thumbnail processor matched 'demo.mov'",
+        ));
+        assert!(matches!(error, AsterError::PreconditionFailed(_)));
+        assert_eq!(
+            error.api_error_subcode(),
+            Some("thumbnail.processor_unavailable")
+        );
+    }
 }

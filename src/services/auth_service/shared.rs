@@ -6,7 +6,7 @@ use sea_orm::{ActiveModelTrait, ConnectionTrait, DbErr, IntoActiveModel, Set, Sq
 use crate::config::auth_runtime::RuntimeContactVerificationPolicy;
 use crate::db::repository::{contact_verification_token_repo, user_repo};
 use crate::entities::{contact_verification_token, user};
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::mail_service;
 use crate::types::{UserRole, UserStatus, VerificationChannel, VerificationPurpose};
@@ -18,6 +18,18 @@ use super::{ACTIVE_VERIFICATION_REQUEST_MESSAGE, INITIAL_SESSION_VERSION};
 
 fn is_unique_conflict_db_err(err: &DbErr) -> bool {
     matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
+}
+
+fn username_exists_error() -> AsterError {
+    validation_error_with_subcode("auth.username_exists", "username already exists")
+}
+
+fn email_exists_error() -> AsterError {
+    validation_error_with_subcode("auth.email_exists", "email already exists")
+}
+
+fn identifier_exists_error() -> AsterError {
+    validation_error_with_subcode("auth.identifier_exists", "username or email already exists")
 }
 
 async fn map_user_create_db_err<C: ConnectionTrait>(
@@ -36,7 +48,7 @@ async fn map_user_create_db_err<C: ConnectionTrait>(
         .flatten()
         .is_some()
     {
-        return AsterError::validation_error("username already exists");
+        return username_exists_error();
     }
 
     if user_repo::find_by_email(db, email)
@@ -50,15 +62,15 @@ async fn map_user_create_db_err<C: ConnectionTrait>(
             .flatten()
             .is_some()
     {
-        return AsterError::validation_error("email already exists");
+        return email_exists_error();
     }
 
-    AsterError::validation_error("username or email already exists")
+    identifier_exists_error()
 }
 
 pub(super) fn map_user_email_db_err(err: DbErr) -> AsterError {
     if is_unique_conflict_db_err(&err) {
-        AsterError::validation_error("email already exists")
+        email_exists_error()
     } else {
         AsterError::from(err)
     }
@@ -103,13 +115,13 @@ pub(super) async fn ensure_email_available<C: ConnectionTrait>(
     if let Some(existing) = user_repo::find_by_email(db, email).await?
         && Some(existing.id) != exclude_user_id
     {
-        return Err(AsterError::validation_error("email already exists"));
+        return Err(email_exists_error());
     }
 
     if let Some(existing) = user_repo::find_by_pending_email(db, email).await?
         && Some(existing.id) != exclude_user_id
     {
-        return Err(AsterError::validation_error("email already exists"));
+        return Err(email_exists_error());
     }
 
     Ok(())
@@ -142,7 +154,7 @@ pub(super) async fn create_user_with_role<C: ConnectionTrait>(
     validate_password(password)?;
 
     if user_repo::find_by_username(db, &username).await?.is_some() {
-        return Err(AsterError::validation_error("username already exists"));
+        return Err(username_exists_error());
     }
     ensure_email_available(db, &email, None).await?;
 

@@ -564,7 +564,9 @@ fn to_fs_error(err: crate::errors::AsterError) -> FsError {
 
         crate::errors::AsterError::FileTooLarge(_) => FsError::TooLarge,
 
-        crate::errors::AsterError::ValidationError(msg) if msg.contains("already exists") => {
+        _ if file_repo::is_any_duplicate_name_error(&err)
+            || folder_repo::is_any_duplicate_name_error(&err) =>
+        {
             FsError::Exists
         }
 

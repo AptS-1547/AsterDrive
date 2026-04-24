@@ -70,7 +70,10 @@ async fn cleanup_team_upload_sessions(
 }
 
 fn is_missing_cleanup_target(err: &AsterError) -> bool {
-    matches!(err.code(), "E006" | "E020" | "E040")
+    matches!(
+        err,
+        AsterError::RecordNotFound(_) | AsterError::FileNotFound(_) | AsterError::FolderNotFound(_)
+    )
 }
 
 async fn clear_team_locks<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<()> {

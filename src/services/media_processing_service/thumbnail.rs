@@ -7,7 +7,10 @@ use crate::config::media_processing as media_processing_config;
 use crate::config::operations;
 use crate::db::repository::file_repo;
 use crate::entities::file_blob;
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{
+    AsterError, MapAsterErr, Result, precondition_failed_with_subcode,
+    thumbnail_generation_error_with_subcode,
+};
 use crate::runtime::PrimaryAppState;
 use crate::storage::{StorageDriver, extensions::NativeThumbnailRequest};
 use crate::types::MediaProcessorKind;
@@ -25,6 +28,14 @@ const FFMPEG_THUMBNAIL_BATCH_SIZE: u32 = 50;
 const MAX_CLI_THUMBNAIL_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_CLI_THUMBNAIL_OUTPUT_BYTES_U64: u64 = 16 * 1024 * 1024;
 const MAX_CLI_THUMBNAIL_DECODE_ALLOC: u64 = 64 * 1024 * 1024;
+
+fn thumbnail_render_failed(message: impl Into<String>) -> AsterError {
+    thumbnail_generation_error_with_subcode("thumbnail.render_failed", message)
+}
+
+fn thumbnail_output_invalid(message: impl Into<String>) -> AsterError {
+    thumbnail_generation_error_with_subcode("thumbnail.output_invalid", message)
+}
 
 pub async fn probe_ffmpeg_cli_command(command: &str) -> Result<String> {
     let command = media_processing_config::normalize_ffmpeg_command(command)?;
@@ -431,7 +442,8 @@ async fn render_thumbnail_with_storage_native(
     source_mime_type: &str,
 ) -> Result<Vec<u8>> {
     let native = driver.as_native_thumbnail().ok_or_else(|| {
-        AsterError::precondition_failed(
+        precondition_failed_with_subcode(
+            "thumbnail.processor_unavailable",
             "storage driver does not support native thumbnail processing",
         )
     })?;
@@ -444,7 +456,10 @@ async fn render_thumbnail_with_storage_native(
         })
         .await?
         .ok_or_else(|| {
-            AsterError::precondition_failed("storage driver could not produce a native thumbnail")
+            precondition_failed_with_subcode(
+                "thumbnail.processor_unavailable",
+                "storage driver could not produce a native thumbnail",
+            )
         })?;
     tracing::debug!(
         blob_id = blob.id,
@@ -509,7 +524,7 @@ async fn render_thumbnail_with_vips_cli(
                 "--size",
                 "down",
             ],
-            AsterError::thumbnail_generation_failed,
+            thumbnail_render_failed,
         )?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -521,17 +536,14 @@ async fn render_thumbnail_with_vips_cli(
             } else {
                 format!("exit status {}", output.status)
             };
-            return Err(AsterError::thumbnail_generation_failed(format!(
+            return Err(thumbnail_render_failed(format!(
                 "vips CLI thumbnail command failed: {detail}"
             )));
         }
         Ok::<(), AsterError>(())
     })
     .await
-    .map_aster_err_ctx(
-        "vips CLI thumbnail task panicked",
-        AsterError::thumbnail_generation_failed,
-    )??;
+    .map_aster_err_ctx("vips CLI thumbnail task panicked", thumbnail_render_failed)??;
 
     let thumbnail = read_cli_thumbnail_output(&output_path, "read vips thumbnail output").await;
     if let Ok(bytes) = &thumbnail {
@@ -611,7 +623,7 @@ async fn render_thumbnail_with_ffmpeg_cli(
                 "-y",
                 &output_arg,
             ],
-            AsterError::thumbnail_generation_failed,
+            thumbnail_render_failed,
         )?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -623,7 +635,7 @@ async fn render_thumbnail_with_ffmpeg_cli(
             } else {
                 format!("exit status {}", output.status)
             };
-            return Err(AsterError::thumbnail_generation_failed(format!(
+            return Err(thumbnail_render_failed(format!(
                 "ffmpeg CLI thumbnail command failed: {detail}"
             )));
         }
@@ -632,7 +644,7 @@ async fn render_thumbnail_with_ffmpeg_cli(
     .await
     .map_aster_err_ctx(
         "ffmpeg CLI thumbnail task panicked",
-        AsterError::thumbnail_generation_failed,
+        thumbnail_render_failed,
     )??;
 
     let thumbnail_png =
@@ -642,7 +654,7 @@ async fn render_thumbnail_with_ffmpeg_cli(
             .await
             .map_aster_err_ctx(
                 "ffmpeg thumbnail webp encode task panicked",
-                AsterError::thumbnail_generation_failed,
+                thumbnail_render_failed,
             )?,
         Err(error) => Err(error),
     };
@@ -660,9 +672,9 @@ async fn render_thumbnail_with_ffmpeg_cli(
 async fn read_cli_thumbnail_output(path: &Path, context: &'static str) -> Result<Vec<u8>> {
     let metadata = tokio::fs::metadata(path)
         .await
-        .map_aster_err_ctx(context, AsterError::thumbnail_generation_failed)?;
+        .map_aster_err_ctx(context, thumbnail_render_failed)?;
     if metadata.len() > MAX_CLI_THUMBNAIL_OUTPUT_BYTES_U64 {
-        return Err(AsterError::thumbnail_generation_failed(format!(
+        return Err(thumbnail_output_invalid(format!(
             "{context}: output exceeds {} MiB limit",
             MAX_CLI_THUMBNAIL_OUTPUT_BYTES_U64 / 1024 / 1024
         )));
@@ -670,16 +682,16 @@ async fn read_cli_thumbnail_output(path: &Path, context: &'static str) -> Result
 
     let file = tokio::fs::File::open(path)
         .await
-        .map_aster_err_ctx(context, AsterError::thumbnail_generation_failed)?;
+        .map_aster_err_ctx(context, thumbnail_render_failed)?;
     let mut limited = file.take(MAX_CLI_THUMBNAIL_OUTPUT_BYTES_U64 + 1);
     let mut bytes = Vec::new();
     limited
         .read_to_end(&mut bytes)
         .await
-        .map_aster_err_ctx(context, AsterError::thumbnail_generation_failed)?;
+        .map_aster_err_ctx(context, thumbnail_render_failed)?;
 
     if bytes.len() > MAX_CLI_THUMBNAIL_OUTPUT_BYTES {
-        return Err(AsterError::thumbnail_generation_failed(format!(
+        return Err(thumbnail_output_invalid(format!(
             "{context}: output exceeds {} MiB limit",
             MAX_CLI_THUMBNAIL_OUTPUT_BYTES_U64 / 1024 / 1024
         )));
@@ -701,24 +713,20 @@ fn encode_webp_from_image_bytes(bytes: Vec<u8>) -> Result<Vec<u8>> {
         .with_guessed_format()
         .map_aster_err_ctx(
             "guess ffmpeg thumbnail output format",
-            AsterError::thumbnail_generation_failed,
+            thumbnail_output_invalid,
         )?;
 
     let mut limits = Limits::default();
     limits.max_alloc = Some(MAX_CLI_THUMBNAIL_DECODE_ALLOC);
     reader.limits(limits);
 
-    let image = reader.decode().map_aster_err_ctx(
-        "decode ffmpeg thumbnail output",
-        AsterError::thumbnail_generation_failed,
-    )?;
+    let image = reader
+        .decode()
+        .map_aster_err_ctx("decode ffmpeg thumbnail output", thumbnail_output_invalid)?;
     let mut buf = Cursor::new(Vec::new());
     image
         .write_to(&mut buf, ImageFormat::WebP)
-        .map_aster_err_ctx(
-            "encode ffmpeg thumbnail webp",
-            AsterError::thumbnail_generation_failed,
-        )?;
+        .map_aster_err_ctx("encode ffmpeg thumbnail webp", thumbnail_output_invalid)?;
     Ok(buf.into_inner())
 }
 

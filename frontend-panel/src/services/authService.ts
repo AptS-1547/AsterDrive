@@ -109,7 +109,11 @@ export const authService = {
 			},
 		);
 		if (resp.code !== ErrorCode.Success) {
-			throw new ApiError(resp.code, resp.msg);
+			throw new ApiError(resp.code, resp.msg, {
+				internalCode: resp.error?.internal_code ?? undefined,
+				subcode: resp.error?.subcode ?? undefined,
+				retryable: resp.error?.retryable ?? undefined,
+			});
 		}
 		return resp.data as UserProfileInfo;
 	},

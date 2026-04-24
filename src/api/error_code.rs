@@ -14,6 +14,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use utoipa::ToSchema;
 
 use crate::errors::AsterError;
+use crate::storage::StorageErrorKind;
 
 /// API 错误码，序列化为数字
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
@@ -34,6 +35,7 @@ pub enum ErrorCode {
     RateLimited = 1006,
     MailNotConfigured = 1007,
     MailDeliveryFailed = 1008,
+    Conflict = 1009,
 
     // 认证错误 2000-2099
     AuthFailed = 2000,
@@ -63,6 +65,14 @@ pub enum ErrorCode {
     StorageDriverError = 4001,
     StorageQuotaExceeded = 4002,
     UnsupportedDriver = 4003,
+    StorageAuthFailed = 4004,
+    StoragePermissionDenied = 4005,
+    StorageMisconfigured = 4006,
+    StorageObjectNotFound = 4007,
+    StorageRateLimited = 4008,
+    StorageTransientFailure = 4009,
+    StoragePreconditionFailed = 4010,
+    StorageOperationUnsupported = 4011,
 
     // 文件夹错误 5000-5099
     FolderNotFound = 5000,
@@ -83,7 +93,25 @@ impl From<&AsterError> for ErrorCode {
             }
             AsterError::ConfigError(_) => ErrorCode::ConfigError,
             AsterError::InternalError(_) => ErrorCode::InternalServerError,
-            AsterError::ValidationError(_) => ErrorCode::BadRequest,
+            AsterError::ValidationError(_) => {
+                if matches!(
+                    err.api_error_subcode(),
+                    Some(
+                        "auth.username_exists"
+                            | "auth.email_exists"
+                            | "auth.identifier_exists"
+                            | "file.name_conflict"
+                            | "folder.name_conflict"
+                            | "team.member_exists"
+                            | "webdav.username_exists"
+                            | "remote_node.unique_conflict"
+                    )
+                ) {
+                    ErrorCode::Conflict
+                } else {
+                    ErrorCode::BadRequest
+                }
+            }
             AsterError::RecordNotFound(_) => ErrorCode::NotFound,
             AsterError::MailNotConfigured(_) => ErrorCode::MailNotConfigured,
             AsterError::MailDeliveryFailed(_) => ErrorCode::MailDeliveryFailed,
@@ -106,7 +134,22 @@ impl From<&AsterError> for ErrorCode {
 
             // 存储策略
             AsterError::StoragePolicyNotFound(_) => ErrorCode::StoragePolicyNotFound,
-            AsterError::StorageDriverError(_) => ErrorCode::StorageDriverError,
+            AsterError::StorageDriverError(_) => {
+                match err
+                    .storage_error_kind()
+                    .unwrap_or(StorageErrorKind::Unknown)
+                {
+                    StorageErrorKind::Auth => ErrorCode::StorageAuthFailed,
+                    StorageErrorKind::Misconfigured => ErrorCode::StorageMisconfigured,
+                    StorageErrorKind::NotFound => ErrorCode::StorageObjectNotFound,
+                    StorageErrorKind::Permission => ErrorCode::StoragePermissionDenied,
+                    StorageErrorKind::Precondition => ErrorCode::StoragePreconditionFailed,
+                    StorageErrorKind::RateLimited => ErrorCode::StorageRateLimited,
+                    StorageErrorKind::Transient => ErrorCode::StorageTransientFailure,
+                    StorageErrorKind::Unsupported => ErrorCode::StorageOperationUnsupported,
+                    StorageErrorKind::Unknown => ErrorCode::StorageDriverError,
+                }
+            }
             AsterError::StorageQuotaExceeded(_) => ErrorCode::StorageQuotaExceeded,
             AsterError::UnsupportedDriver(_) => ErrorCode::UnsupportedDriver,
 

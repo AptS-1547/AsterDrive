@@ -4,10 +4,12 @@ import { ErrorCode } from "@/types/api-helpers";
 const mockState = vi.hoisted(() => {
 	class MockApiError extends Error {
 		code: number;
+		subcode?: string;
 
-		constructor(code: number, message: string) {
+		constructor(code: number, message: string, subcode?: string) {
 			super(message);
 			this.code = code;
+			this.subcode = subcode;
 		}
 	}
 
@@ -57,6 +59,63 @@ describe("handleApiError", () => {
 		);
 		expect(mockState.toastError).toHaveBeenCalledWith(
 			"translated:errors:pending_activation",
+		);
+	});
+
+	it("falls back to subcode translations when the top-level code is generic", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.StorageDriverError,
+				"Storage Driver Error",
+				"storage.transient",
+			),
+		);
+
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:storage_transient_failure",
+		);
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"translated:errors:storage_transient_failure",
+		);
+	});
+
+	it("prefers subcode translations over generic upload codes", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.FileUploadFailed,
+				"Upload Failed",
+				"upload.temp_file_write_failed",
+			),
+		);
+
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:upload_temp_file_write_failed",
+		);
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"translated:errors:upload_temp_file_write_failed",
+		);
+	});
+
+	it("uses subcode translations for structured conflict errors", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.Conflict,
+				"email already exists",
+				"auth.email_exists",
+			),
+		);
+
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:auth_email_exists",
+		);
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"translated:errors:auth_email_exists",
 		);
 	});
 

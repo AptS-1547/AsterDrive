@@ -4,10 +4,26 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 
 use crate::api::constants::HOUR_SECS;
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{AsterError, MapAsterErr, Result, thumbnail_generation_error_with_subcode};
 use crate::storage::{PresignedDownloadOptions, StorageDriver};
 
 use super::shared::cli_source_temp_path;
+
+fn thumbnail_source_temp_create_failed(message: String) -> AsterError {
+    thumbnail_generation_error_with_subcode("thumbnail.source_temp_create_failed", message)
+}
+
+fn thumbnail_source_stream_failed(message: String) -> AsterError {
+    thumbnail_generation_error_with_subcode("thumbnail.source_stream_failed", message)
+}
+
+fn thumbnail_source_temp_flush_failed(message: String) -> AsterError {
+    thumbnail_generation_error_with_subcode("thumbnail.source_temp_flush_failed", message)
+}
+
+fn thumbnail_source_temp_copy_failed(message: String) -> AsterError {
+    thumbnail_generation_error_with_subcode("thumbnail.source_temp_copy_failed", message)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PreparedCliSourceKind {
@@ -81,18 +97,18 @@ pub(crate) async fn prepare_cli_source(
         .await
         .map_aster_err_ctx(
             "create media source temp file",
-            AsterError::thumbnail_generation_failed,
+            thumbnail_source_temp_create_failed,
         )?;
     let mut input_stream = driver.get_stream(storage_path).await?;
     tokio::io::copy(&mut input_stream, &mut input_file)
         .await
         .map_aster_err_ctx(
             "stream media source temp file",
-            AsterError::thumbnail_generation_failed,
+            thumbnail_source_stream_failed,
         )?;
     input_file.flush().await.map_aster_err_ctx(
         "flush media source temp file",
-        AsterError::thumbnail_generation_failed,
+        thumbnail_source_temp_flush_failed,
     )?;
     drop(input_file);
 
@@ -108,7 +124,7 @@ async fn materialize_local_cli_source(source_path: &Path, input_path: &Path) -> 
         .map(|_| ())
         .map_aster_err_ctx(
             "copy local media source temp file",
-            AsterError::thumbnail_generation_failed,
+            thumbnail_source_temp_copy_failed,
         )
 }
 

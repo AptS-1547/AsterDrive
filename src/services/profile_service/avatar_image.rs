@@ -3,7 +3,9 @@
 use actix_multipart::Multipart;
 use futures::StreamExt;
 
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{
+    AsterError, MapAsterErr, Result, file_upload_error_with_subcode, validation_error_with_subcode,
+};
 
 pub(super) struct AvatarUploadData {
     pub file_name: String,
@@ -19,7 +21,9 @@ pub(super) async fn read_avatar_upload(
     let mut file_name = None;
 
     while let Some(field) = payload.next().await {
-        let mut field = field.map_aster_err(AsterError::file_upload_failed)?;
+        let mut field = field.map_aster_err(|message| {
+            file_upload_error_with_subcode("avatar.upload_read_failed", message)
+        })?;
         let Some(current_file_name) = field
             .content_disposition()
             .and_then(|cd| cd.get_filename())
@@ -28,7 +32,9 @@ pub(super) async fn read_avatar_upload(
             .map(ToOwned::to_owned)
         else {
             while let Some(chunk) = field.next().await {
-                chunk.map_aster_err(AsterError::file_upload_failed)?;
+                chunk.map_aster_err(|message| {
+                    file_upload_error_with_subcode("avatar.upload_read_failed", message)
+                })?;
             }
             continue;
         };
@@ -36,7 +42,9 @@ pub(super) async fn read_avatar_upload(
         saw_file = true;
         file_name = Some(current_file_name);
         while let Some(chunk) = field.next().await {
-            let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
+            let chunk = chunk.map_aster_err(|message| {
+                file_upload_error_with_subcode("avatar.upload_read_failed", message)
+            })?;
             if bytes.len() + chunk.len() > max_upload_size {
                 return Err(AsterError::file_too_large(format!(
                     "avatar upload exceeds {} bytes",
@@ -49,7 +57,10 @@ pub(super) async fn read_avatar_upload(
     }
 
     if !saw_file || bytes.is_empty() {
-        return Err(AsterError::validation_error("avatar file is required"));
+        return Err(validation_error_with_subcode(
+            "avatar.file_required",
+            "avatar file is required",
+        ));
     }
 
     Ok(AvatarUploadData {

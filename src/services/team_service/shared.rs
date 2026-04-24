@@ -13,7 +13,7 @@ use sea_orm::{ConnectionTrait, DbErr, IntoActiveModel, Set, SqlErr};
 use crate::config::operations;
 use crate::db::repository::{policy_group_repo, team_member_repo, team_repo, user_repo};
 use crate::entities::{team, team_member, user};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, Result, validation_error_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::types::TeamMemberRole;
 
@@ -26,10 +26,14 @@ const MISSING_CREATOR_USERNAME: &str = "<deleted_user>";
 
 fn map_team_member_create_db_err(err: DbErr) -> AsterError {
     if matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
-        AsterError::validation_error("user is already a team member")
+        existing_team_member_error()
     } else {
         AsterError::from(err)
     }
+}
+
+pub(super) fn existing_team_member_error() -> AsterError {
+    validation_error_with_subcode("team.member_exists", "user is already a team member")
 }
 
 pub(crate) fn validate_team_name(name: &str) -> Result<String> {

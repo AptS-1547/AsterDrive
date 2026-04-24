@@ -16,7 +16,8 @@ use crate::types::TeamMemberRole;
 
 use super::shared::{
     build_team_member_info, ensure_can_manage_team, ensure_not_last_manager, ensure_not_last_owner,
-    load_team_member_page, map_member_create_error, require_team_membership, resolve_target_user,
+    existing_team_member_error, load_team_member_page, map_member_create_error,
+    require_team_membership, resolve_target_user,
 };
 use super::{AddTeamMemberInput, TeamMemberInfo, TeamMemberListFilters, TeamMemberPage};
 
@@ -68,9 +69,7 @@ pub async fn add_admin_member(
         .await?
         .is_some()
     {
-        return Err(AsterError::validation_error(
-            "user is already a team member",
-        ));
+        return Err(existing_team_member_error());
     }
 
     let membership = team_member::ActiveModel {
@@ -207,9 +206,7 @@ pub async fn add_member(
         .await?
         .is_some()
     {
-        return Err(AsterError::validation_error(
-            "user is already a team member",
-        ));
+        return Err(existing_team_member_error());
     }
 
     let membership = team_member::ActiveModel {

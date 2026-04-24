@@ -1,6 +1,6 @@
 //! 存储错误分类与编码。
 
-use crate::errors::AsterError;
+use crate::errors::{AsterError, encode_api_error_subcode_message};
 
 const STORAGE_ERROR_KIND_PREFIX: &str = "__ASTER_STORAGE_KIND__=";
 const STORAGE_ERROR_KIND_SEPARATOR: &str = "::";
@@ -52,6 +52,17 @@ impl StorageErrorKind {
 
 pub fn storage_driver_error(kind: StorageErrorKind, message: impl Into<String>) -> AsterError {
     AsterError::storage_driver_error(encode_storage_driver_error_message(kind, message.into()))
+}
+
+pub fn storage_driver_error_with_subcode(
+    kind: StorageErrorKind,
+    subcode: &str,
+    message: impl Into<String>,
+) -> AsterError {
+    storage_driver_error(
+        kind,
+        encode_api_error_subcode_message(subcode, message.into()),
+    )
 }
 
 pub fn storage_driver_error_display_message(raw_message: &str) -> &str {
@@ -245,5 +256,20 @@ mod tests {
             storage_driver_error_display_message(error.message()),
             "remote storage request failed: error sending request"
         );
+    }
+
+    #[test]
+    fn tagged_storage_error_preserves_nested_api_subcode() {
+        let error = storage_driver_error_with_subcode(
+            StorageErrorKind::Transient,
+            "storage.remote_timeout",
+            "remote timeout",
+        );
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Transient)
+        );
+        assert_eq!(error.api_error_subcode(), Some("storage.remote_timeout"));
+        assert_eq!(error.message(), "remote timeout");
     }
 }

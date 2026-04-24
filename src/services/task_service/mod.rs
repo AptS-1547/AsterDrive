@@ -22,7 +22,7 @@ use crate::api::pagination::OffsetPage;
 use crate::config::operations;
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskResult};
@@ -53,6 +53,8 @@ pub(super) const TASK_STATUS_TEXT_MAX_LEN: usize = 255;
 pub(super) const TASK_DRAIN_MAX_ROUNDS: usize = 32;
 const TASK_LEASE_LOST_MESSAGE_PREFIX: &str = "background task lease lost";
 const TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX: &str = "background task lease renewal timed out";
+const TASK_LEASE_LOST_SUBCODE: &str = "task.lease_lost";
+const TASK_LEASE_RENEWAL_TIMEOUT_SUBCODE: &str = "task.lease_renewal_timed_out";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct AdminTaskListFilters {
@@ -593,33 +595,31 @@ fn load_task_retention_hours(state: &PrimaryAppState) -> i64 {
 }
 
 pub(super) fn task_lease_lost(lease: TaskLease) -> AsterError {
-    AsterError::precondition_failed(format!(
-        "{TASK_LEASE_LOST_MESSAGE_PREFIX} for task #{} with token {}",
-        lease.task_id, lease.processing_token
-    ))
+    precondition_failed_with_subcode(
+        TASK_LEASE_LOST_SUBCODE,
+        format!(
+            "{TASK_LEASE_LOST_MESSAGE_PREFIX} for task #{} with token {}",
+            lease.task_id, lease.processing_token
+        ),
+    )
 }
 
 pub(super) fn task_lease_renewal_timed_out(lease: TaskLease) -> AsterError {
-    AsterError::precondition_failed(format!(
-        "{TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX} for task #{} with token {}",
-        lease.task_id, lease.processing_token
-    ))
+    precondition_failed_with_subcode(
+        TASK_LEASE_RENEWAL_TIMEOUT_SUBCODE,
+        format!(
+            "{TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX} for task #{} with token {}",
+            lease.task_id, lease.processing_token
+        ),
+    )
 }
 
 pub(super) fn is_task_lease_lost(error: &AsterError) -> bool {
-    matches!(
-        error,
-        AsterError::PreconditionFailed(message)
-            if message.starts_with(TASK_LEASE_LOST_MESSAGE_PREFIX)
-    )
+    error.api_error_subcode() == Some(TASK_LEASE_LOST_SUBCODE)
 }
 
 pub(super) fn is_task_lease_renewal_timed_out(error: &AsterError) -> bool {
-    matches!(
-        error,
-        AsterError::PreconditionFailed(message)
-            if message.starts_with(TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX)
-    )
+    error.api_error_subcode() == Some(TASK_LEASE_RENEWAL_TIMEOUT_SUBCODE)
 }
 
 fn task_lease_renewal_timeout() -> StdDuration {

@@ -9,7 +9,7 @@ use super::error::storage_driver_error;
 use super::multipart::MultipartStorageDriver;
 use crate::db::repository::{managed_follower_repo, master_binding_repo};
 use crate::entities::storage_policy;
-use crate::errors::{AsterError, Result};
+use crate::errors::{Result, precondition_failed_with_subcode};
 use crate::types::DriverType;
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -186,9 +186,10 @@ impl DriverRegistry {
                     )
                 })?;
                 if !remote_node.is_enabled {
-                    return Err(AsterError::precondition_failed(format!(
-                        "remote node #{remote_node_id} is disabled"
-                    )));
+                    return Err(precondition_failed_with_subcode(
+                        "remote_node.disabled",
+                        format!("remote node #{remote_node_id} is disabled"),
+                    ));
                 }
                 Ok(DriverEntry::Remote(Arc::new(RemoteDriver::new(
                     policy,

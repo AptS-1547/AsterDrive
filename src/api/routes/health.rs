@@ -97,9 +97,10 @@ fn ready_database_error(error: crate::errors::AsterError) -> HttpResponse {
 fn ready_storage_error(error: crate::errors::AsterError) -> HttpResponse {
     tracing::error!(error = %error, "health readiness storage probe failed");
     let error_code: ErrorCode = (&error).into();
-    HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error(
+    HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error_with_details(
         error_code,
         READY_STORAGE_UNAVAILABLE_MESSAGE,
+        Some(error.api_error_info()),
     ))
 }
 

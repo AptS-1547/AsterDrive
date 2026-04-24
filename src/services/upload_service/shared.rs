@@ -2,13 +2,18 @@
 
 use chrono::{DateTime, Utc};
 use sea_orm::{ConnectionTrait, Set};
+use std::future::Future;
 
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, upload_session};
-use crate::errors::{AsterError, Result};
+use crate::errors::{
+    AsterError, Result, chunk_upload_error_with_subcode, upload_assembly_error_with_subcode,
+    validation_error_with_subcode,
+};
+use crate::runtime::PrimaryAppState;
 use crate::storage::StorageErrorKind;
 use crate::types::UploadSessionStatus;
-use crate::utils::id;
+use crate::utils::{id, paths};
 
 pub(super) fn upload_session_chunk_unavailable_error(
     session: &upload_session::Model,
@@ -23,9 +28,10 @@ pub(super) fn upload_session_chunk_unavailable_error(
         UploadSessionStatus::Completed => {
             AsterError::upload_session_expired("session already completed")
         }
-        UploadSessionStatus::Presigned => {
-            AsterError::validation_error("session does not accept relay chunk uploads")
-        }
+        UploadSessionStatus::Presigned => validation_error_with_subcode(
+            "upload.chunk_transport_mismatch",
+            "session does not accept relay chunk uploads",
+        ),
         UploadSessionStatus::Uploading => {
             AsterError::upload_session_not_found(format!("session {}", session.id))
         }
@@ -37,10 +43,13 @@ pub(super) fn expected_chunk_size_for_upload(
     chunk_number: i32,
 ) -> Result<i64> {
     if session.total_chunks <= 0 || session.chunk_size <= 0 {
-        return Err(AsterError::chunk_upload_failed(format!(
-            "invalid upload session chunk metadata: total_chunks={}, chunk_size={}",
-            session.total_chunks, session.chunk_size
-        )));
+        return Err(chunk_upload_error_with_subcode(
+            "upload.chunk_session_invalid",
+            format!(
+                "invalid upload session chunk metadata: total_chunks={}, chunk_size={}",
+                session.total_chunks, session.chunk_size
+            ),
+        ));
     }
 
     if chunk_number < session.total_chunks - 1 {
@@ -50,10 +59,13 @@ pub(super) fn expected_chunk_size_for_upload(
     let preceding = session.chunk_size * i64::from(session.total_chunks - 1);
     let expected = session.total_size - preceding;
     if expected <= 0 {
-        return Err(AsterError::chunk_upload_failed(format!(
-            "invalid final chunk size for upload {}: total_size={}, preceding={preceding}",
-            session.id, session.total_size
-        )));
+        return Err(chunk_upload_error_with_subcode(
+            "upload.chunk_session_invalid",
+            format!(
+                "invalid final chunk size for upload {}: total_size={}, preceding={preceding}",
+                session.id, session.total_size
+            ),
+        ));
     }
     Ok(expected)
 }
@@ -63,7 +75,7 @@ pub(super) async fn generate_upload_id<C: ConnectionTrait>(db: &C) -> Result<Str
     for _ in 0..5 {
         let candidate = id::new_uuid();
         match upload_session_repo::find_by_id(db, &candidate).await {
-            Err(e) if e.code() == "E054" => return Ok(candidate),
+            Err(AsterError::UploadSessionNotFound(_)) => return Ok(candidate),
             Err(e) => return Err(e),
             Ok(_) => {
                 tracing::warn!("upload_id collision: {candidate}, retrying");
@@ -100,13 +112,54 @@ pub(super) async fn transition_upload_session_to_assembling<C: ConnectionTrait>(
     )
     .await?;
     if !transitioned {
-        return Err(AsterError::upload_assembly_failed(format!(
-            "session status is '{:?}', expected '{}'",
-            actual_status,
-            upload_session_status_label(expected_status)
-        )));
+        return Err(upload_assembly_error_with_subcode(
+            "upload.status_conflict",
+            format!(
+                "session status is '{:?}', expected '{}'",
+                actual_status,
+                upload_session_status_label(expected_status)
+            ),
+        ));
     }
     Ok(())
+}
+
+pub(super) async fn run_upload_completion_stage<C, Fut>(
+    db: &C,
+    session: &upload_session::Model,
+    expected_status: UploadSessionStatus,
+    success_log_message: &'static str,
+    completion_future: Fut,
+) -> Result<file::Model>
+where
+    C: ConnectionTrait,
+    Fut: Future<Output = Result<file::Model>>,
+{
+    let upload_id = session.id.as_str();
+    transition_upload_session_to_assembling(db, upload_id, session.status, expected_status).await?;
+
+    match completion_future.await {
+        Ok(file) => {
+            tracing::debug!(
+                upload_id,
+                file_id = file.id,
+                blob_id = file.blob_id,
+                size = file.size,
+                "{}",
+                success_log_message
+            );
+            Ok(file)
+        }
+        Err(error) => {
+            handle_completion_error(db, upload_id, expected_status, &error).await;
+            Err(error)
+        }
+    }
+}
+
+pub(super) async fn cleanup_upload_temp_dir(state: &PrimaryAppState, upload_id: &str) {
+    let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
+    crate::utils::cleanup_temp_dir(&temp_dir).await;
 }
 
 /// 根据 session 查找已完成的文件（幂等重试用）
@@ -115,7 +168,8 @@ pub(super) async fn find_file_by_session<C: ConnectionTrait>(
     session: &upload_session::Model,
 ) -> Result<file::Model> {
     let file_id = session.file_id.ok_or_else(|| {
-        AsterError::upload_assembly_failed(
+        upload_assembly_error_with_subcode(
+            "upload.completed_file_missing",
             "upload already completed but file_id not found; please refresh",
         )
     })?;
@@ -314,6 +368,10 @@ mod tests {
         let session = mock_session(100, 0, 10); // chunk_size = 0
         let err = expected_chunk_size_for_upload(&session, 0).unwrap_err();
         assert_eq!(err.code(), "E056"); // ChunkUploadFailed
+        assert_eq!(
+            err.api_error_subcode(),
+            Some("upload.chunk_session_invalid")
+        );
     }
 
     #[test]
@@ -322,6 +380,10 @@ mod tests {
         let session = mock_session(1_000_000, 1_048_576, 2); // 2 chunks, but total < 1 chunk
         let err = expected_chunk_size_for_upload(&session, 1).unwrap_err();
         assert_eq!(err.code(), "E056");
+        assert_eq!(
+            err.api_error_subcode(),
+            Some("upload.chunk_session_invalid")
+        );
     }
 
     #[test]
@@ -345,6 +407,10 @@ mod tests {
         session.status = Presigned;
         let e = upload_session_chunk_unavailable_error(&session);
         assert_eq!(e.code(), "E005"); // ValidationError
+        assert_eq!(
+            e.api_error_subcode(),
+            Some("upload.chunk_transport_mismatch")
+        );
 
         session.status = Uploading;
         let e = upload_session_chunk_unavailable_error(&session);

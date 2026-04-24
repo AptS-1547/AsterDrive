@@ -15,6 +15,7 @@ use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
+use crate::storage::StorageErrorKind;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 use super::archive;
@@ -445,12 +446,14 @@ fn retry_delay_secs(attempt_count: i32) -> i64 {
 
 fn should_retry_task_error(kind: BackgroundTaskKind, error: &AsterError) -> bool {
     match kind {
-        BackgroundTaskKind::ThumbnailGenerate => matches!(
-            error,
-            AsterError::DatabaseConnection(_)
-                | AsterError::DatabaseOperation(_)
-                | AsterError::StorageDriverError(_)
-        ),
+        BackgroundTaskKind::ThumbnailGenerate => match error {
+            AsterError::DatabaseConnection(_) | AsterError::DatabaseOperation(_) => true,
+            AsterError::StorageDriverError(_) => matches!(
+                error.storage_error_kind(),
+                Some(StorageErrorKind::Transient | StorageErrorKind::RateLimited)
+            ),
+            _ => false,
+        },
         BackgroundTaskKind::ArchiveCompress
         | BackgroundTaskKind::ArchiveExtract
         | BackgroundTaskKind::SystemRuntime => true,
@@ -478,8 +481,10 @@ mod tests {
     use tokio::time::{Duration, sleep};
 
     use crate::errors::AsterError;
+    use crate::storage::error::{StorageErrorKind, storage_driver_error};
+    use crate::types::BackgroundTaskKind;
 
-    use super::{evaluate_heartbeat_result, run_with_concurrency_limit};
+    use super::{evaluate_heartbeat_result, run_with_concurrency_limit, should_retry_task_error};
     use crate::services::task_service::{
         TaskLease, TaskLeaseGuard, is_task_lease_lost, is_task_lease_renewal_timed_out,
     };
@@ -546,5 +551,20 @@ mod tests {
             evaluate_heartbeat_result(&lease_guard, Err(AsterError::database_operation("boom")))
                 .expect_err("expired renewal window should stop the worker");
         assert!(is_task_lease_renewal_timed_out(&error));
+    }
+
+    #[test]
+    fn thumbnail_retry_only_keeps_transient_storage_errors() {
+        let transient = storage_driver_error(StorageErrorKind::Transient, "remote timeout");
+        let misconfigured = storage_driver_error(StorageErrorKind::Misconfigured, "missing bucket");
+
+        assert!(should_retry_task_error(
+            BackgroundTaskKind::ThumbnailGenerate,
+            &transient
+        ));
+        assert!(!should_retry_task_error(
+            BackgroundTaskKind::ThumbnailGenerate,
+            &misconfigured
+        ));
     }
 }

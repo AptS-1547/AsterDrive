@@ -8,7 +8,9 @@ use chrono::Utc;
 
 use crate::db::repository::{upload_session_part_repo, upload_session_repo};
 use crate::entities::upload_session;
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{
+    AsterError, MapAsterErr, Result, chunk_upload_error_with_subcode, validation_error_with_subcode,
+};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::ChunkUploadResponse;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
@@ -58,18 +60,22 @@ async fn upload_chunk_impl(
         return Err(AsterError::upload_session_expired("session expired"));
     }
     if chunk_number < 0 || chunk_number >= session.total_chunks {
-        return Err(AsterError::validation_error(format!(
-            "chunk_number {} out of range [0, {})",
-            chunk_number, session.total_chunks
-        )));
+        return Err(validation_error_with_subcode(
+            "upload.chunk_number_out_of_range",
+            format!(
+                "chunk_number {} out of range [0, {})",
+                chunk_number, session.total_chunks
+            ),
+        ));
     }
 
     let expected_size = expected_chunk_size_for_upload(&session, chunk_number)?;
     let data_len = usize_to_i64(data.len(), "chunk data length")?;
     if data_len != expected_size {
-        return Err(AsterError::chunk_upload_failed(format!(
-            "chunk {chunk_number} size mismatch: expected {expected_size}, got {data_len}"
-        )));
+        return Err(chunk_upload_error_with_subcode(
+            "upload.chunk_size_mismatch",
+            format!("chunk {chunk_number} size mismatch: expected {expected_size}, got {data_len}"),
+        ));
     }
 
     if let (Some(temp_key), Some(multipart_id)) = (
@@ -179,7 +185,9 @@ async fn upload_chunk_impl(
         Ok(mut file) => {
             file.write_all(data)
                 .await
-                .map_aster_err_ctx("write chunk", AsterError::chunk_upload_failed)?;
+                .map_aster_err_ctx("write chunk", |message| {
+                    chunk_upload_error_with_subcode("upload.chunk_persist_failed", message)
+                })?;
         }
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             let updated = upload_session_repo::find_by_id(db, upload_id).await?;
@@ -196,9 +204,10 @@ async fn upload_chunk_impl(
             });
         }
         Err(error) => {
-            return Err(AsterError::chunk_upload_failed(format!(
-                "create chunk file: {error}"
-            )));
+            return Err(chunk_upload_error_with_subcode(
+                "upload.chunk_persist_failed",
+                format!("create chunk file: {error}"),
+            ));
         }
     }
 

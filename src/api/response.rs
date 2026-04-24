@@ -1,11 +1,21 @@
 //! 统一 API 响应封装。
 
 use actix_web::HttpResponse;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use super::error_code::ErrorCode;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ApiErrorInfo {
+    pub internal_code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subcode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retryable: Option<bool>,
+}
 
 /// 统一 API 响应格式
 ///
@@ -18,6 +28,8 @@ pub struct ApiResponse<T: Serialize> {
     pub msg: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<T>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<ApiErrorInfo>,
 }
 
 impl<T: Serialize> ApiResponse<T> {
@@ -26,6 +38,7 @@ impl<T: Serialize> ApiResponse<T> {
             code: ErrorCode::Success,
             msg: String::new(),
             data: Some(data),
+            error: None,
         }
     }
 
@@ -34,14 +47,24 @@ impl<T: Serialize> ApiResponse<T> {
             code: ErrorCode::Success,
             msg: String::new(),
             data: None,
+            error: None,
         }
     }
 
     pub fn error(code: ErrorCode, msg: &str) -> ApiResponse<()> {
+        Self::error_with_details(code, msg, None)
+    }
+
+    pub fn error_with_details(
+        code: ErrorCode,
+        msg: &str,
+        error: Option<ApiErrorInfo>,
+    ) -> ApiResponse<()> {
         ApiResponse {
             code,
             msg: msg.to_string(),
             data: None,
+            error,
         }
     }
 

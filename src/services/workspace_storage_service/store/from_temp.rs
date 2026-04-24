@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob, storage_policy};
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{AsterError, MapAsterErr, Result, file_upload_error_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::storage_change_service;
 use crate::storage::driver::StorageDriver;
@@ -62,6 +62,14 @@ struct WriteFileRecordFromTempParams<'a> {
     now: chrono::DateTime<Utc>,
     storage_delta: i64,
     new_file_mode: NewFileMode,
+}
+
+fn upload_hash_temp_open_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.hash_temp_open_failed", message)
+}
+
+fn upload_hash_temp_read_failed(message: String) -> AsterError {
+    file_upload_error_with_subcode("upload.hash_temp_read_failed", message)
 }
 
 pub(super) async fn store_from_temp_internal(
@@ -228,13 +236,13 @@ async fn compute_dedup_target(
             let mut hasher = Sha256::new();
             let mut reader = tokio::fs::File::open(temp_path)
                 .await
-                .map_aster_err_ctx("open temp", AsterError::file_upload_failed)?;
+                .map_aster_err_ctx("open temp", upload_hash_temp_open_failed)?;
             let mut buf = vec![0u8; HASH_BUF_SIZE];
             loop {
                 let n = reader
                     .read(&mut buf)
                     .await
-                    .map_aster_err_ctx("read temp", AsterError::file_upload_failed)?;
+                    .map_aster_err_ctx("read temp", upload_hash_temp_read_failed)?;
                 if n == 0 {
                     break;
                 }

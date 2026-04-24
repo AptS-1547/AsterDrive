@@ -176,7 +176,11 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 				{ timeout: 0 },
 			);
 			if (resp.data.code !== ErrorCode.Success) {
-				throw new ApiError(resp.data.code, resp.data.msg);
+				throw new ApiError(resp.data.code, resp.data.msg, {
+					internalCode: resp.data.error?.internal_code ?? undefined,
+					subcode: resp.data.error?.subcode ?? undefined,
+					retryable: resp.data.error?.retryable ?? undefined,
+				});
 			}
 			return resp.data.data as FileInfo;
 		},
