@@ -20,7 +20,10 @@ use crate::services::workspace_models::FileInfo;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
 pub use chunk::{upload_chunk, upload_chunk_for_team};
-pub use complete::{complete_upload, complete_upload_for_team};
+pub use complete::{
+    complete_upload, complete_upload_for_team, complete_upload_for_team_with_audit,
+    complete_upload_with_audit,
+};
 pub use init::{init_upload, init_upload_for_team};
 pub use lifecycle::{cancel_upload, cancel_upload_for_team, cleanup_expired};
 pub use progress::{get_progress, get_progress_for_team, presign_parts, presign_parts_for_team};
