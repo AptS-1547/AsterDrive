@@ -173,7 +173,7 @@ async fn list_objects(
     let prefix = query
         .prefix
         .as_deref()
-        .map(|value| master_binding_service::provider_storage_path(&ctx.binding, value))
+        .map(|value| master_binding_service::provider_storage_prefix(&ctx.binding, value))
         .transpose()?;
     let items = list_driver
         .list_paths(prefix.as_deref())

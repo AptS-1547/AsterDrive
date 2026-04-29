@@ -3,6 +3,9 @@
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use sea_orm_migration::prelude::*;
 
+const MANAGED_FOLLOWERS_TABLE_NAME: &str = "managed_followers";
+const MANAGED_FOLLOWERS_NAMESPACE_PREFIX: &str = "mf";
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -262,7 +265,12 @@ async fn restore_managed_follower_namespace(manager: &SchemaManager<'_>) -> Resu
         )
         .await?;
 
-    fill_namespace_from_id(manager, "managed_followers", "mf").await?;
+    fill_namespace_from_id(
+        manager,
+        MANAGED_FOLLOWERS_TABLE_NAME,
+        MANAGED_FOLLOWERS_NAMESPACE_PREFIX,
+    )
+    .await?;
     require_string_column(
         manager,
         ManagedFollowers::Table,
@@ -451,26 +459,52 @@ async fn fill_namespace_from_id(
     table: &str,
     prefix: &str,
 ) -> Result<(), DbErr> {
+    let table = validated_namespace_restore_table(table)?;
+    let prefix = validated_namespace_restore_prefix(prefix)?;
     let db = manager.get_connection();
     let backend = db.get_database_backend();
+    let prefix_bind = bind_param(backend, 1)?;
     let sql = match backend {
-        DbBackend::Postgres => {
-            format!("UPDATE {table} SET namespace = '{prefix}_' || id WHERE namespace IS NULL")
-        }
-        DbBackend::MySql => format!(
-            "UPDATE {table} SET namespace = CONCAT('{prefix}_', id) WHERE namespace IS NULL"
+        DbBackend::Postgres => format!(
+            "UPDATE {table} SET namespace = CAST({prefix_bind} AS TEXT) || '_' || id WHERE namespace IS NULL"
         ),
-        DbBackend::Sqlite => {
-            format!("UPDATE {table} SET namespace = '{prefix}_' || id WHERE namespace IS NULL")
-        }
+        DbBackend::MySql => format!(
+            "UPDATE {table} SET namespace = CONCAT({prefix_bind}, '_', id) WHERE namespace IS NULL"
+        ),
+        DbBackend::Sqlite => format!(
+            "UPDATE {table} SET namespace = {prefix_bind} || '_' || id WHERE namespace IS NULL"
+        ),
         backend => {
             return Err(DbErr::Migration(format!(
                 "unsupported database backend for namespace restore: {backend:?}"
             )));
         }
     };
-    db.execute_unprepared(&sql).await?;
+    db.execute_raw(Statement::from_sql_and_values(
+        backend,
+        sql,
+        vec![prefix.to_string().into()],
+    ))
+    .await?;
     Ok(())
+}
+
+fn validated_namespace_restore_table(table: &str) -> Result<&'static str, DbErr> {
+    match table {
+        MANAGED_FOLLOWERS_TABLE_NAME => Ok(MANAGED_FOLLOWERS_TABLE_NAME),
+        table => Err(DbErr::Migration(format!(
+            "unsupported namespace restore table: {table}"
+        ))),
+    }
+}
+
+fn validated_namespace_restore_prefix(prefix: &str) -> Result<&'static str, DbErr> {
+    match prefix {
+        MANAGED_FOLLOWERS_NAMESPACE_PREFIX => Ok(MANAGED_FOLLOWERS_NAMESPACE_PREFIX),
+        prefix => Err(DbErr::Migration(format!(
+            "unsupported namespace restore prefix: {prefix}"
+        ))),
+    }
 }
 
 async fn copy_master_binding_storage_namespace_to_namespace(
@@ -495,6 +529,11 @@ where
     C: IntoIden,
 {
     if manager.get_database_backend() == DbBackend::Sqlite {
+        // SQLite cannot ALTER COLUMN ... SET NOT NULL here, so this migration
+        // returns early. `managed_ingress_profile.master_binding_id: i64` is
+        // non-optional and runtime deserialization will panic if NULLs remain;
+        // correctness relies on ensure_no_unbound_ingress_profile_bindings or
+        // equivalent application-level guarantees preserving that precondition.
         return Ok(());
     }
 
@@ -518,6 +557,11 @@ where
     C: IntoIden,
 {
     if manager.get_database_backend() == DbBackend::Sqlite {
+        // SQLite cannot ALTER COLUMN ... SET NOT NULL here, so this migration
+        // returns early. `managed_ingress_profile.master_binding_id: i64` is
+        // non-optional and runtime deserialization will panic if NULLs remain;
+        // correctness relies on ensure_no_unbound_ingress_profile_bindings or
+        // equivalent application-level guarantees preserving that precondition.
         return Ok(());
     }
 
@@ -542,5 +586,30 @@ fn bind_param(backend: DbBackend, index: usize) -> Result<String, DbErr> {
         backend => Err(DbErr::Migration(format!(
             "unsupported database backend for bind param rendering: {backend:?}"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn namespace_restore_validation_accepts_hardcoded_values() {
+        assert_eq!(
+            validated_namespace_restore_table(MANAGED_FOLLOWERS_TABLE_NAME).unwrap(),
+            MANAGED_FOLLOWERS_TABLE_NAME
+        );
+        assert_eq!(
+            validated_namespace_restore_prefix(MANAGED_FOLLOWERS_NAMESPACE_PREFIX).unwrap(),
+            MANAGED_FOLLOWERS_NAMESPACE_PREFIX
+        );
+    }
+
+    #[test]
+    fn namespace_restore_validation_rejects_dynamic_values() {
+        assert!(validated_namespace_restore_table("system_config").is_err());
+        assert!(
+            validated_namespace_restore_prefix("x'); DROP TABLE managed_followers; --").is_err()
+        );
     }
 }

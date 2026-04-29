@@ -862,6 +862,15 @@ async fn build_remote_status_error(
 ) -> AsterError {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
+    build_remote_status_error_from_parts(status, &body, context, not_found_as_record)
+}
+
+fn build_remote_status_error_from_parts(
+    status: reqwest::StatusCode,
+    body: &str,
+    context: &str,
+    not_found_as_record: bool,
+) -> AsterError {
     let envelope = serde_json::from_str::<ApiEnvelope<serde_json::Value>>(&body).ok();
     let remote_code = envelope.as_ref().map(|value| value.code);
     let remote_subcode = envelope
@@ -897,7 +906,7 @@ async fn build_remote_status_error(
 
     match status {
         reqwest::StatusCode::NOT_FOUND if not_found_as_record || is_not_found_remote_code => {
-            AsterError::record_not_found("remote storage object not found")
+            AsterError::record_not_found(message)
         }
         reqwest::StatusCode::PRECONDITION_FAILED => remote_subcode
             .map(|subcode| precondition_failed_with_subcode(subcode, message.clone()))
@@ -1063,5 +1072,26 @@ mod tests {
         .expect("quota error should map");
         assert!(matches!(err, AsterError::StorageQuotaExceeded(_)));
         assert_eq!(err.message(), "put remote storage object: quota exceeded");
+    }
+
+    #[test]
+    fn not_found_record_error_uses_contextual_remote_message() {
+        let body = serde_json::json!({
+            "code": ErrorCode::NotFound as i32,
+            "msg": "managed_ingress_profile 'profile-a'",
+        })
+        .to_string();
+        let err = build_remote_status_error_from_parts(
+            reqwest::StatusCode::NOT_FOUND,
+            &body,
+            "update remote ingress profile",
+            false,
+        );
+
+        assert!(matches!(err, AsterError::RecordNotFound(_)));
+        assert_eq!(
+            err.message(),
+            "update remote ingress profile: managed_ingress_profile 'profile-a'"
+        );
     }
 }

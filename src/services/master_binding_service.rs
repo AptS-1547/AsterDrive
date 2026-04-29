@@ -301,12 +301,25 @@ async fn authorize_presigned_binding_request<S: FollowerRuntimeState>(
 
 pub fn provider_storage_path(binding: &master_binding::Model, object_key: &str) -> Result<String> {
     let object_key = crate::storage::object_key::normalize_relative_key(object_key)?;
-    if object_key == "." {
+    if object_key == "." || object_key.is_empty() {
+        return Err(AsterError::validation_error(
+            "object key cannot target the storage namespace root",
+        ));
+    }
+    Ok(crate::storage::object_key::join_key_prefix(
+        &binding.storage_namespace,
+        &object_key,
+    ))
+}
+
+pub fn provider_storage_prefix(binding: &master_binding::Model, prefix: &str) -> Result<String> {
+    let prefix = crate::storage::object_key::normalize_relative_key(prefix)?;
+    if prefix == "." || prefix.is_empty() {
         Ok(binding.storage_namespace.clone())
     } else {
         Ok(crate::storage::object_key::join_key_prefix(
             &binding.storage_namespace,
-            &object_key,
+            &prefix,
         ))
     }
 }
@@ -494,12 +507,29 @@ mod tests {
             provider_storage_path(&binding(), "folder/file.txt").unwrap(),
             "mb_test/folder/file.txt"
         );
-        assert_eq!(provider_storage_path(&binding(), "").unwrap(), "mb_test");
+    }
+
+    #[test]
+    fn provider_storage_path_rejects_namespace_root() {
+        assert!(provider_storage_path(&binding(), "").is_err());
+        assert!(provider_storage_path(&binding(), ".").is_err());
+        assert!(provider_storage_path(&binding(), "/").is_err());
     }
 
     #[test]
     fn provider_storage_path_rejects_escape_attempts() {
         assert!(provider_storage_path(&binding(), "../secret.txt").is_err());
         assert!(provider_storage_path(&binding(), "folder\\..\\secret.txt").is_err());
+    }
+
+    #[test]
+    fn provider_storage_prefix_allows_namespace_root() {
+        assert_eq!(provider_storage_prefix(&binding(), "").unwrap(), "mb_test");
+        assert_eq!(provider_storage_prefix(&binding(), ".").unwrap(), "mb_test");
+        assert_eq!(provider_storage_prefix(&binding(), "/").unwrap(), "mb_test");
+        assert_eq!(
+            provider_storage_prefix(&binding(), "folder").unwrap(),
+            "mb_test/folder"
+        );
     }
 }

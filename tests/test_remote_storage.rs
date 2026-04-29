@@ -811,6 +811,13 @@ async fn test_managed_ingress_profile_api_isolates_multiple_primary_bindings() {
         vec!["same.bin".to_string()]
     );
     assert_eq!(
+        client_a
+            .list_paths(Some("."))
+            .await
+            .expect("binding a root prefix list should succeed"),
+        vec!["same.bin".to_string()]
+    );
+    assert_eq!(
         client_b
             .list_paths(None)
             .await
@@ -2725,6 +2732,7 @@ async fn test_remote_presigned_download_browser_cors_allows_get() {
         .expect("actual GET response should expose download headers");
     assert!(exposed_headers.contains("Content-Disposition"));
     assert!(exposed_headers.contains("Content-Length"));
+    assert!(exposed_headers.contains("Content-Range"));
     assert!(exposed_headers.contains("Content-Type"));
     let vary = resp
         .headers()

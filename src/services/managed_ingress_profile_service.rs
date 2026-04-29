@@ -19,6 +19,8 @@ use crate::storage::remote_protocol::{
 use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
 use chrono::Utc;
 use sea_orm::Set;
+use std::ffi::OsString;
+use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -536,11 +538,76 @@ fn resolve_managed_local_path(root: &str, relative: &str) -> Result<PathBuf> {
     }
     let normalized = normalize_relative_local_path(relative)?;
     let root_path = Path::new(trimmed_root);
-    Ok(if normalized == "." {
+    fs::create_dir_all(root_path).map_aster_err_ctx(
+        &format!(
+            "create server.follower.managed_ingress_local_root '{}'",
+            root_path.display()
+        ),
+        AsterError::config_error,
+    )?;
+    let canonical_root = fs::canonicalize(root_path).map_aster_err_ctx(
+        &format!(
+            "canonicalize server.follower.managed_ingress_local_root '{}'",
+            root_path.display()
+        ),
+        AsterError::config_error,
+    )?;
+    let candidate = if normalized == "." {
         root_path.to_path_buf()
     } else {
         root_path.join(normalized)
-    })
+    };
+
+    let mut existing_ancestor = candidate.clone();
+    let mut missing_components = Vec::<OsString>::new();
+    loop {
+        match fs::metadata(&existing_ancestor) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let Some(name) = existing_ancestor.file_name() else {
+                    return Err(AsterError::config_error(format!(
+                        "managed ingress local path has no existing ancestor: {}",
+                        candidate.display()
+                    )));
+                };
+                missing_components.push(name.to_os_string());
+                let Some(parent) = existing_ancestor.parent() else {
+                    return Err(AsterError::config_error(format!(
+                        "managed ingress local path has no parent: {}",
+                        candidate.display()
+                    )));
+                };
+                existing_ancestor = parent.to_path_buf();
+            }
+            Err(error) => {
+                return Err(AsterError::config_error(format!(
+                    "inspect managed ingress local path '{}': {error}",
+                    existing_ancestor.display()
+                )));
+            }
+        }
+    }
+
+    let mut resolved = fs::canonicalize(&existing_ancestor).map_aster_err_ctx(
+        &format!(
+            "canonicalize managed ingress local path '{}'",
+            existing_ancestor.display()
+        ),
+        AsterError::config_error,
+    )?;
+    for component in missing_components.into_iter().rev() {
+        resolved.push(component);
+    }
+
+    if resolved.starts_with(&canonical_root) {
+        Ok(resolved)
+    } else {
+        Err(AsterError::config_error(format!(
+            "local ingress base_path '{}' escapes server.follower.managed_ingress_local_root '{}'",
+            relative,
+            root_path.display()
+        )))
+    }
 }
 
 fn normalize_relative_local_path(value: &str) -> Result<String> {
@@ -622,7 +689,8 @@ struct IngressProfileFields {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_relative_local_path;
+    use super::{normalize_relative_local_path, resolve_managed_local_path};
+    use std::fs;
 
     #[test]
     fn normalize_relative_local_path_keeps_normal_segments() {
@@ -648,5 +716,52 @@ mod tests {
                 .message()
                 .contains("server.follower.managed_ingress_local_root")
         );
+    }
+
+    #[test]
+    fn resolve_managed_local_path_allows_missing_child_inside_root() {
+        let root = std::env::temp_dir().join(format!(
+            "aster-managed-ingress-root-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).unwrap();
+
+        let resolved = resolve_managed_local_path(root.to_str().unwrap(), "profiles/new").unwrap();
+        assert_eq!(
+            resolved,
+            fs::canonicalize(&root)
+                .unwrap()
+                .join("profiles")
+                .join("new")
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_managed_local_path_rejects_symlink_escape() {
+        let root = std::env::temp_dir().join(format!(
+            "aster-managed-ingress-root-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let outside = std::env::temp_dir().join(format!(
+            "aster-managed-ingress-outside-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
+
+        let error =
+            resolve_managed_local_path(root.to_str().unwrap(), "escape/profile").unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("server.follower.managed_ingress_local_root")
+        );
+
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&outside);
     }
 }

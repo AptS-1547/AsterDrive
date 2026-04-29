@@ -24,7 +24,7 @@ const PRESIGNED_OBJECTS_PATH_PREFIX: &str = "/api/v1/internal/storage/objects/";
 const PREFLIGHT_ALLOWED_METHODS: &str = "GET, PUT, OPTIONS";
 const PUT_ACTUAL_EXPOSE_HEADERS: &str = "ETag";
 const GET_ACTUAL_EXPOSE_HEADERS: &str =
-    "Cache-Control, Content-Disposition, Content-Length, Content-Type, ETag";
+    "Cache-Control, Content-Disposition, Content-Length, Content-Range, Content-Type, ETag";
 
 pub struct PresignedInternalStorageCors;
 
@@ -300,7 +300,39 @@ fn forbidden(req: ServiceRequest) -> ServiceResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::browser_origin_from_master_url;
+    use super::{apply_actual_headers, browser_origin_from_master_url};
+    use actix_web::http::{
+        Method, header,
+        header::{HeaderMap, HeaderValue},
+    };
+
+    #[test]
+    fn apply_actual_headers_exposes_content_range_for_get() {
+        let mut headers = HeaderMap::new();
+        apply_actual_headers(&mut headers, &Method::GET);
+
+        let exposed = headers
+            .get(header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .and_then(|value| value.to_str().ok())
+            .expect("GET responses should expose download headers");
+        assert!(
+            exposed
+                .split(',')
+                .any(|header| header.trim() == "Content-Range"),
+            "GET expose headers should include Content-Range"
+        );
+    }
+
+    #[test]
+    fn apply_actual_headers_keeps_existing_put_expose_headers() {
+        let mut headers = HeaderMap::new();
+        apply_actual_headers(&mut headers, &Method::PUT);
+
+        assert_eq!(
+            headers.get(header::ACCESS_CONTROL_EXPOSE_HEADERS),
+            Some(&HeaderValue::from_static("ETag"))
+        );
+    }
 
     #[test]
     fn browser_origin_from_master_url_drops_default_https_port() {
