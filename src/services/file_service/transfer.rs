@@ -139,10 +139,11 @@ async fn batch_duplicate_file_records_with_specs_in_scope(
     })?;
     let now = chrono::Utc::now();
 
-    workspace_storage_service::check_quota(&state.db, scope, total_size).await?;
-
     let txn = crate::db::transaction::begin(&state.db).await?;
-    workspace_storage_service::check_quota(&txn, scope, total_size).await?;
+
+    // 原子性地增加配额（CAS 语义：如果 quota > 0 且 used + total_size > quota，则失败）
+    // 这避免了并发场景下的 TOCTOU 问题
+    workspace_storage_service::update_storage_used(&txn, scope, total_size).await?;
 
     let mut blob_counts: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
     for spec in copy_specs {
@@ -193,8 +194,6 @@ async fn batch_duplicate_file_records_with_specs_in_scope(
             "failed to load all copied files after batch insert",
         ));
     }
-
-    workspace_storage_service::update_storage_used(&txn, scope, total_size).await?;
 
     crate::db::transaction::commit(txn).await?;
     Ok(created_files)

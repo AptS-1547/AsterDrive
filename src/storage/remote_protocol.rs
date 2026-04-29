@@ -913,7 +913,7 @@ fn build_remote_status_error_from_parts(
     context: &str,
     not_found_as_record: bool,
 ) -> AsterError {
-    let envelope = serde_json::from_str::<ApiEnvelope<serde_json::Value>>(&body).ok();
+    let envelope = serde_json::from_str::<ApiEnvelope<serde_json::Value>>(body).ok();
     let remote_code = envelope.as_ref().map(|value| value.code);
     let remote_subcode = envelope
         .as_ref()

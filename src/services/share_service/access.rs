@@ -10,7 +10,7 @@ use crate::services::profile_service;
 use crate::utils::hash;
 
 use super::models::{SharePublicInfo, SharePublicOwnerInfo};
-use super::shared::{load_share_record, load_valid_share, resolve_share_name};
+use super::shared::{load_valid_share, resolve_share_name};
 
 pub async fn get_share_info(state: &PrimaryAppState, token: &str) -> Result<SharePublicInfo> {
     let db = &state.db;
@@ -151,7 +151,8 @@ pub async fn check_share_password_cookie(
     token: &str,
     cookie_value: Option<&str>,
 ) -> Result<()> {
-    let share = load_share_record(state, token).await?;
+    // 使用 load_valid_share 而非 load_share_record，确保验证过期时间和下载次数限制
+    let share = load_valid_share(state, token).await?;
 
     if share.password.is_some() {
         let value = cookie_value

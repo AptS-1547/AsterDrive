@@ -4,6 +4,7 @@ use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::driver::{BlobMetadata, StorageDriver, StoragePathVisitor};
 use crate::storage::extensions::{ListStorageDriver, LocalPathStorageDriver, StreamUploadDriver};
+use crate::utils::numbers;
 use async_trait::async_trait;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
@@ -392,8 +393,10 @@ impl StreamUploadDriver for LocalDriver {
         &self,
         storage_path: &str,
         mut reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
-        _size: i64,
+        size: i64,
     ) -> Result<String> {
+        let declared_size = numbers::i64_to_u64(size, "local put_reader declared size")?;
+
         // 创建临时文件
         let temp_path = std::env::temp_dir().join(format!(
             "aster_put_reader_{}_{}",
@@ -406,9 +409,18 @@ impl StreamUploadDriver for LocalDriver {
             .await
             .map_aster_err(AsterError::storage_driver_error)?;
 
-        tokio::io::copy(&mut reader, &mut file)
+        let written = tokio::io::copy(&mut reader, &mut file)
             .await
             .map_aster_err_ctx("write temp file", AsterError::storage_driver_error)?;
+
+        // 验证实际写入大小与声明大小一致
+        if written != declared_size {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(AsterError::storage_driver_error(format!(
+                "size mismatch: declared {}, actual written {}",
+                size, written
+            )));
+        }
 
         // 确保数据落盘
         file.flush()

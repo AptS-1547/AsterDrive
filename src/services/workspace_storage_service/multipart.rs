@@ -175,9 +175,18 @@ async fn upload_local_direct(
                 return Err(upload_empty_file_error());
             }
 
+            // 验证实际接收大小与声明大小一致
+            if size != declared_size {
+                crate::utils::cleanup_temp_file(&staging_path).await;
+                return Err(AsterError::validation_error(format!(
+                    "size mismatch: declared {} bytes, received {} bytes",
+                    declared_size, size
+                )));
+            }
+
             let precomputed_hash =
                 hasher.map(|hasher| crate::utils::hash::sha256_digest_to_hex(&hasher.finalize()));
-            let resolved_policy = (size == declared_size).then_some(policy.clone());
+            let resolved_policy = Some(policy.clone());
             let result = store_from_temp_with_hints(
                 state,
                 StoreFromTempParams::new(scope, folder_id, &filename, &staging_path, size),

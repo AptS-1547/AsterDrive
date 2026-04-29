@@ -31,10 +31,16 @@ pub struct SystemConfig {
 
 impl From<system_config::Model> for SystemConfig {
     fn from(model: system_config::Model) -> Self {
+        // 敏感配置值在 API 响应中脱敏
+        let value = if model.is_sensitive {
+            "***REDACTED***".to_string()
+        } else {
+            model.value
+        };
         Self {
             id: model.id,
             key: model.key,
-            value: model.value,
+            value,
             value_type: model.value_type,
             requires_restart: model.requires_restart,
             is_sensitive: model.is_sensitive,
@@ -108,6 +114,12 @@ pub async fn set_with_audit(
     audit_ctx: &AuditContext,
 ) -> Result<SystemConfig> {
     let config = set(state, key, value, updated_by).await?;
+    // 敏感配置值在审计日志中脱敏
+    let audit_value = if config.is_sensitive {
+        "***REDACTED***"
+    } else {
+        value
+    };
     audit_service::log(
         state,
         audit_ctx,
@@ -115,7 +127,7 @@ pub async fn set_with_audit(
         None,
         None,
         Some(key),
-        audit_service::details(audit_service::ConfigUpdateDetails { value }),
+        audit_service::details(audit_service::ConfigUpdateDetails { value: audit_value }),
     )
     .await;
     Ok(config)
