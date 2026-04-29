@@ -332,7 +332,7 @@ async fn backfill_storage_namespaces(manager: &SchemaManager<'_>) -> Result<(), 
     let rows = db
         .query_all_raw(Statement::from_string(
             backend,
-            "SELECT id FROM master_bindings ORDER BY id".to_string(),
+            "SELECT id, namespace FROM master_bindings ORDER BY id".to_string(),
         ))
         .await?;
 
@@ -340,18 +340,21 @@ async fn backfill_storage_namespaces(manager: &SchemaManager<'_>) -> Result<(), 
         return Ok(());
     }
 
-    let mut values = Vec::with_capacity(rows.len() * 2);
+    let mut values = Vec::with_capacity(rows.len() * 3);
     let mut cases = Vec::with_capacity(rows.len());
     let mut ids = Vec::with_capacity(rows.len());
     for row in rows {
         let id = row
             .try_get_by_index::<i64>(0)
             .map_err(|error| DbErr::Migration(format!("read master_bindings.id: {error}")))?;
-        let namespace = new_storage_namespace();
+        let storage_namespace = row
+            .try_get_by_index::<Option<String>>(1)
+            .map_err(|error| DbErr::Migration(format!("read master_bindings.namespace: {error}")))?
+            .unwrap_or_else(new_storage_namespace);
         let case_id_bind = bind_param(backend, values.len() + 1)?;
         values.push(id.into());
         let namespace_bind = bind_param(backend, values.len() + 1)?;
-        values.push(namespace.into());
+        values.push(storage_namespace.into());
         cases.push(format!("WHEN {case_id_bind} THEN {namespace_bind}"));
         ids.push(id);
     }
@@ -382,41 +385,66 @@ async fn backfill_storage_namespaces(manager: &SchemaManager<'_>) -> Result<(), 
 async fn backfill_ingress_profile_binding(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     let db = manager.get_connection();
     let backend = db.get_database_backend();
+
+    let binding_count = master_bindings_count(manager).await?;
+    let profiles_have_rows = managed_ingress_profiles_have_rows(manager).await?;
+
+    if binding_count == 0 {
+        if profiles_have_rows {
+            return Err(DbErr::Migration(
+                "managed_ingress_profiles rows exist but master_bindings is empty; cannot backfill managed_ingress_profiles.master_binding_id".to_string(),
+            ));
+        }
+        return Ok(());
+    }
+
+    if binding_count > 1 {
+        if profiles_have_rows {
+            return Err(DbErr::Migration(format!(
+                "旧 profile 存在且绑定多于1，需显式迁移 managed_ingress_profiles.master_binding_id; master_bindings.count={binding_count}, resolve_effective_target needs one default managed ingress profile scoped to each master binding"
+            )));
+        }
+        return Ok(());
+    }
+
     let binding_id = db
         .query_one_raw(Statement::from_string(
             backend,
-            "SELECT id FROM master_bindings ORDER BY is_enabled DESC, id LIMIT 1".to_string(),
+            "SELECT id FROM master_bindings LIMIT 1".to_string(),
         ))
         .await?
-        .map(|row| {
-            row.try_get_by_index::<i64>(0).map_err(|error| {
-                DbErr::Migration(format!("read selected master_bindings.id: {error}"))
-            })
-        })
-        .transpose()?;
+        .ok_or_else(|| {
+            DbErr::Migration(
+                "master_bindings.count returned 1 but SELECT id found no row".to_string(),
+            )
+        })?
+        .try_get_by_index::<i64>(0)
+        .map_err(|error| DbErr::Migration(format!("read unique master_bindings.id: {error}")))?;
 
-    match binding_id {
-        Some(id) => {
-            let bind = bind_param(backend, 1)?;
-            db.execute_raw(Statement::from_sql_and_values(
-                backend,
-                format!(
-                    "UPDATE managed_ingress_profiles SET master_binding_id = {bind} WHERE master_binding_id IS NULL"
-                ),
-                vec![id.into()],
-            ))
-            .await?;
-        }
-        None => {
-            if managed_ingress_profiles_have_rows(manager).await? {
-                return Err(DbErr::Migration(
-                    "managed_ingress_profiles rows exist but master_bindings is empty; cannot backfill managed_ingress_profiles.master_binding_id".to_string(),
-                ));
-            }
-        }
-    }
+    let bind = bind_param(backend, 1)?;
+    db.execute_raw(Statement::from_sql_and_values(
+        backend,
+        format!(
+            "UPDATE managed_ingress_profiles SET master_binding_id = {bind} WHERE master_binding_id IS NULL"
+        ),
+        vec![binding_id.into()],
+    ))
+    .await?;
 
     Ok(())
+}
+
+async fn master_bindings_count(manager: &SchemaManager<'_>) -> Result<i64, DbErr> {
+    let db = manager.get_connection();
+    let backend = db.get_database_backend();
+    db.query_one_raw(Statement::from_string(
+        backend,
+        "SELECT COUNT(*) FROM master_bindings".to_string(),
+    ))
+    .await?
+    .ok_or_else(|| DbErr::Migration("COUNT(*) over master_bindings returned no row".to_string()))?
+    .try_get_by_index::<i64>(0)
+    .map_err(|error| DbErr::Migration(format!("read master_bindings count: {error}")))
 }
 
 async fn managed_ingress_profiles_have_rows(manager: &SchemaManager<'_>) -> Result<bool, DbErr> {

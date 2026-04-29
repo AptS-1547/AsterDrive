@@ -125,6 +125,13 @@ pub async fn authorize_internal_request<S: FollowerRuntimeState>(
     resolve_authorized_ingress(state, binding).await
 }
 
+pub async fn authorize_internal_binding_request<S: FollowerRuntimeState>(
+    state: &S,
+    req: &actix_web::HttpRequest,
+) -> Result<master_binding::Model> {
+    authorize_binding_request(state, req, false).await
+}
+
 pub async fn authorize_binding_sync_request<S: FollowerRuntimeState>(
     state: &S,
     req: &actix_web::HttpRequest,

@@ -132,11 +132,85 @@ fn partial_content_range(
     Ok(Some(PartialContentRange { start, end, length }))
 }
 
+fn requested_partial_content_range(
+    req: &HttpRequest,
+    total_size: u64,
+    query: &ObjectQuery,
+) -> Result<Option<PartialContentRange>> {
+    if let Some(range_header) = req.headers().get(actix_web::http::header::RANGE) {
+        let (offset, length) = parse_range_header(range_header, total_size)?;
+        return partial_content_range(total_size, offset, length);
+    }
+
+    partial_content_range(total_size, query.offset, query.length)
+}
+
+fn parse_range_header(
+    value: &actix_web::http::header::HeaderValue,
+    total_size: u64,
+) -> Result<(Option<u64>, Option<u64>)> {
+    let raw = value
+        .to_str()
+        .map_err(|_| AsterError::validation_error("range header must be valid ASCII"))?
+        .trim();
+    let range = raw
+        .strip_prefix("bytes=")
+        .ok_or_else(|| AsterError::validation_error("range header must use bytes unit"))?;
+    if range.contains(',') {
+        return Err(AsterError::validation_error(
+            "multiple range requests are not supported",
+        ));
+    }
+
+    let (start_raw, end_raw) = range
+        .split_once('-')
+        .ok_or_else(|| AsterError::validation_error("range header is malformed"))?;
+    if start_raw.is_empty() && end_raw.is_empty() {
+        return Err(AsterError::validation_error("range header is malformed"));
+    }
+
+    if start_raw.is_empty() {
+        let suffix_length = parse_range_bound(end_raw, "range suffix length")?;
+        if suffix_length == 0 {
+            return Err(AsterError::validation_error(
+                "range suffix length must be greater than zero",
+            ));
+        }
+        return Ok((
+            Some(total_size.saturating_sub(suffix_length)),
+            Some(suffix_length),
+        ));
+    }
+
+    let start = parse_range_bound(start_raw, "range start")?;
+    if end_raw.is_empty() {
+        return Ok((Some(start), None));
+    }
+
+    let end = parse_range_bound(end_raw, "range end")?;
+    if end < start {
+        return Err(AsterError::validation_error(
+            "range end must be greater than or equal to range start",
+        ));
+    }
+    let length = end
+        .checked_sub(start)
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| AsterError::validation_error("range length exceeds u64 range"))?;
+    Ok((Some(start), Some(length)))
+}
+
+fn parse_range_bound(value: &str, name: &str) -> Result<u64> {
+    value
+        .parse::<u64>()
+        .map_err(|_| AsterError::validation_error(format!("{name} must be a non-negative integer")))
+}
+
 async fn get_capabilities(
     state: web::Data<FollowerAppState>,
     req: HttpRequest,
 ) -> Result<HttpResponse> {
-    master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
+    master_binding_service::authorize_internal_binding_request(state.get_ref(), &req).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(RemoteStorageCapabilities::default())))
 }
 
@@ -396,7 +470,7 @@ async fn get_object(
     let storage_path =
         master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner())?;
     let metadata = metadata_or_not_found(ctx.ingress_driver.as_ref(), &storage_path).await?;
-    let partial_range = partial_content_range(metadata.size, query.offset, query.length)?;
+    let partial_range = requested_partial_content_range(&req, metadata.size, &query)?;
     let stream = match partial_range.as_ref() {
         Some(range) => {
             ctx.ingress_driver

@@ -1100,6 +1100,59 @@ async fn test_remote_node_connection_failure_returns_error_and_persists_last_err
 }
 
 #[actix_web::test]
+async fn test_internal_storage_capabilities_probe_does_not_require_ingress_profile() {
+    let provider_state = common::setup().await;
+    let access_key = "capabilities-no-ingress-access-key";
+    let secret_key = "capabilities-no-ingress-secret-key";
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "capabilities-no-ingress-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let path = "/api/v1/internal/storage/capabilities";
+    let timestamp = Utc::now().timestamp();
+    let nonce = "capabilities-no-ingress-test";
+    let signature = sign_internal_request(secret_key, "GET", path, timestamp, nonce, None);
+    let req = test::TestRequest::get()
+        .uri(path)
+        .insert_header(("x-aster-access-key", access_key))
+        .insert_header(("x-aster-timestamp", timestamp.to_string()))
+        .insert_header(("x-aster-nonce", nonce))
+        .insert_header(("x-aster-signature", signature))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["protocol_version"], "v1");
+    assert_eq!(body["data"]["supports_range_read"], true);
+}
+
+#[actix_web::test]
 async fn test_remote_storage_end_to_end_via_internal_api() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
@@ -2744,6 +2797,94 @@ async fn test_remote_presigned_download_browser_cors_allows_get() {
     assert_eq!(downloaded.as_ref(), body);
 
     provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_internal_storage_get_honors_range_header() {
+    let provider_state = common::setup().await;
+    let access_key = "range-header-access-key";
+    let secret_key = "range-header-secret-key";
+    let object_key = "range-header.bin";
+    let body = b"0123456789abcdef";
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "range-header-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(&provider_state, access_key, access_key).await;
+    let binding = master_binding_repo::find_by_access_key(&provider_state.db, access_key)
+        .await
+        .expect("provider binding lookup should succeed")
+        .expect("provider binding should exist");
+    let storage_path = managed_ingress_object_path(
+        &provider_state,
+        access_key,
+        &binding.storage_namespace,
+        "",
+        object_key,
+    );
+    tokio::fs::create_dir_all(
+        storage_path
+            .parent()
+            .expect("provider object path should have parent"),
+    )
+    .await
+    .expect("provider object parent should be created");
+    tokio::fs::write(&storage_path, body)
+        .await
+        .expect("provider object should be written");
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let path = format!("/api/v1/internal/storage/objects/{object_key}");
+    let timestamp = Utc::now().timestamp();
+    let nonce = "range-header-test";
+    let signature = sign_internal_request(secret_key, "GET", &path, timestamp, nonce, None);
+    let req = test::TestRequest::get()
+        .uri(&path)
+        .insert_header((actix_web::http::header::RANGE, "bytes=4-8"))
+        .insert_header(("x-aster-access-key", access_key))
+        .insert_header(("x-aster-timestamp", timestamp.to_string()))
+        .insert_header(("x-aster-nonce", nonce))
+        .insert_header(("x-aster-signature", signature))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::CONTENT_RANGE)
+            .and_then(|value| value.to_str().ok()),
+        Some("bytes 4-8/16")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok()),
+        Some("5")
+    );
+    let downloaded = test::read_body(resp).await;
+    assert_eq!(downloaded.as_ref(), b"45678");
 }
 
 #[actix_web::test]
