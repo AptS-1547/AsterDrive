@@ -108,7 +108,7 @@ WOPI 最常见的用途，就是把 `docx`、`xlsx`、`pptx` 这类文件交给 
 
 最常见的准备顺序是：
 
-1. 先把 `公开站点地址` 填成用户真实访问 AsterDrive 的 HTTP(S) 来源；多个公开入口一行一个
+1. 先把 `公开站点地址` 填成用户真实访问 AsterDrive 的 HTTP(S) 来源；多个公开入口逐项添加
 2. 在 `预览应用` 里导入或创建 WOPI 打开方式
 3. 如果外部 Office 服务和 AsterDrive 不在同一个来源，再把对应 Office 域名加入 `网络访问` 的允许跨域来源
 4. 用一个真实 Office 文件试开一次，再确认能正常保存回 AsterDrive

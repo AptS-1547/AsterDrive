@@ -6,6 +6,10 @@ import { PREVIEW_APPS_CONFIG_KEY } from "@/components/admin/previewAppsConfigEdi
 import { useAdminSettingsCategoryContent } from "@/components/admin/settings/AdminSettingsCategoryContentContext";
 import {
 	ConfigCodeEditor,
+	type ConfigDraftValue,
+	configDraftValuesEqual,
+	configValueToString,
+	configValueToStringArray,
 	formatDisplayValue,
 	getAvailableDisplayUnits,
 	getBrandingAssetPreviewAppearance,
@@ -53,7 +57,10 @@ function FieldMeta({ config }: { config: SystemConfig }) {
 		openTemplateVariablesDialog,
 		t,
 	} = useAdminSettingsCategoryContent();
-	const draftChanged = getDraftValue(config) !== config.value;
+	const draftChanged = !configDraftValuesEqual(
+		getDraftValue(config),
+		config.value as ConfigDraftValue,
+	);
 	const requiresRestart = getConfigRequiresRestart(config);
 	const configLabel = getSystemConfigLabel(config);
 	const configDescription = getSystemConfigDescription(config);
@@ -102,17 +109,6 @@ function FieldMeta({ config }: { config: SystemConfig }) {
 	);
 }
 
-function splitPublicSiteUrlRows(value: string) {
-	if (!value) {
-		return [""];
-	}
-	return value.split(/\r\n|[,\r\n]/);
-}
-
-function serializePublicSiteUrlRows(rows: string[]) {
-	return rows.join("\n");
-}
-
 function PublicSiteUrlOriginsControl({
 	config,
 	draftValue,
@@ -120,12 +116,12 @@ function PublicSiteUrlOriginsControl({
 	hasError,
 }: {
 	config: SystemConfig;
-	draftValue: string;
+	draftValue: string[];
 	fullWidth?: boolean;
 	hasError?: boolean;
 }) {
 	const { t, updateDraftValue } = useAdminSettingsCategoryContent();
-	const rows = splitPublicSiteUrlRows(draftValue);
+	const rows = draftValue.length > 0 ? draftValue : [""];
 	const nextRowIdRef = useRef(0);
 	const rowIdsRef = useRef<string[]>([]);
 	const createRowId = () => {
@@ -147,7 +143,7 @@ function PublicSiteUrlOriginsControl({
 	});
 
 	const updateRows = (nextRows: string[]) => {
-		updateDraftValue(config.key, serializePublicSiteUrlRows(nextRows));
+		updateDraftValue(config.key, nextRows);
 	};
 
 	return (
@@ -171,6 +167,11 @@ function PublicSiteUrlOriginsControl({
 							}}
 							placeholder="https://drive.example.com"
 						/>
+						{index === 0 ? (
+							<span className="shrink-0 text-xs font-medium text-primary">
+								{t("public_site_url_primary_origin")}
+							</span>
+						) : null}
 						<Button
 							type="button"
 							variant="outline"
@@ -318,7 +319,7 @@ function ConfigInputControl({
 	hasError,
 }: {
 	config: SystemConfig;
-	draftValue: string;
+	draftValue: ConfigDraftValue;
 	fullWidth?: boolean;
 	hasError?: boolean;
 }) {
@@ -331,6 +332,7 @@ function ConfigInputControl({
 		updateDraftValue,
 	} = useAdminSettingsCategoryContent();
 	const valueType = getConfigValueType(config);
+	const draftStringValue = configValueToString(draftValue);
 	const isSensitive = getConfigIsSensitive(config);
 	const multiline = isMultilineType(valueType);
 	const brandingPreviewAppearance = isBrandingAssetConfig(config)
@@ -350,7 +352,7 @@ function ConfigInputControl({
 									: "text"
 						}
 						inputMode={isNumberType(valueType) ? "decimal" : "text"}
-						value={draftValue}
+						value={draftStringValue}
 						aria-invalid={hasError ? true : undefined}
 						onChange={(event) =>
 							updateDraftValue(config.key, event.target.value)
@@ -359,7 +361,7 @@ function ConfigInputControl({
 					/>
 				</div>
 				<UrlAssetPreview
-					url={draftValue}
+					url={draftStringValue}
 					appearance={brandingPreviewAppearance}
 				/>
 			</div>
@@ -372,7 +374,7 @@ function ConfigInputControl({
 				onBuildWopiDiscoveryPreviewConfig={
 					handleBuildWopiDiscoveryPreviewConfig
 				}
-				value={draftValue}
+				value={draftStringValue}
 				onChange={(nextValue) => updateDraftValue(config.key, nextValue)}
 			/>
 		);
@@ -383,7 +385,7 @@ function ConfigInputControl({
 			<MediaProcessingConfigEditor
 				onTestFfmpegCliCommand={handleTestFfmpegCliCommand}
 				onTestVipsCliCommand={handleTestVipsCliCommand}
-				value={draftValue}
+				value={draftStringValue}
 				onChange={(nextValue) => updateDraftValue(config.key, nextValue)}
 			/>
 		);
@@ -393,7 +395,7 @@ function ConfigInputControl({
 		return (
 			<PublicSiteUrlOriginsControl
 				config={config}
-				draftValue={draftValue}
+				draftValue={configValueToStringArray(draftValue)}
 				fullWidth={fullWidth}
 				hasError={hasError}
 			/>
@@ -405,7 +407,7 @@ function ConfigInputControl({
 			<ConfigCodeEditor
 				language={getConfigEditorLanguage(config)}
 				theme={editorTheme}
-				value={draftValue}
+				value={draftStringValue}
 				onChange={(value) => updateDraftValue(config.key, value)}
 			/>
 		);
@@ -416,7 +418,7 @@ function ConfigInputControl({
 		return (
 			<ScaledNumberInputControl
 				config={config}
-				draftValue={draftValue}
+				draftValue={draftStringValue}
 				fullWidth={fullWidth}
 				hasError={hasError}
 				unitLabelKey="settings_time_unit_label"
@@ -429,7 +431,7 @@ function ConfigInputControl({
 		return (
 			<ScaledNumberInputControl
 				config={config}
-				draftValue={draftValue}
+				draftValue={draftStringValue}
 				fullWidth={fullWidth}
 				hasError={hasError}
 				unitLabelKey="settings_size_unit_label"
@@ -445,7 +447,7 @@ function ConfigInputControl({
 			}
 			inputMode={isNumberType(valueType) ? "decimal" : "text"}
 			className={fullWidth ? "w-full max-w-2xl" : "max-w-2xl"}
-			value={draftValue}
+			value={draftStringValue}
 			aria-invalid={hasError ? true : undefined}
 			onChange={(event) => updateDraftValue(config.key, event.target.value)}
 			placeholder={t("config_value")}
@@ -457,6 +459,7 @@ export function SystemConfigRow({ config }: { config: SystemConfig }) {
 	const { configValidationErrors, getDraftValue, t, updateDraftValue } =
 		useAdminSettingsCategoryContent();
 	const draftValue = getDraftValue(config);
+	const draftStringValue = configValueToString(draftValue);
 	const valueType = getConfigValueType(config);
 	const error = configValidationErrors.get(config.key);
 
@@ -468,13 +471,13 @@ export function SystemConfigRow({ config }: { config: SystemConfig }) {
 					<Switch
 						id={config.key}
 						aria-invalid={error ? true : undefined}
-						checked={draftValue === "true"}
+						checked={draftStringValue === "true"}
 						onCheckedChange={(checked) =>
 							updateDraftValue(config.key, checked ? "true" : "false")
 						}
 					/>
 					<span>
-						{draftValue === "true"
+						{draftStringValue === "true"
 							? t("settings_value_on")
 							: t("settings_value_off")}
 					</span>
@@ -495,8 +498,12 @@ export function CustomConfigRow({ config }: { config: SystemConfig }) {
 	const { getDraftValue, markCustomDeleted, t } =
 		useAdminSettingsCategoryContent();
 	const draftValue = getDraftValue(config);
+	const draftStringValue = configValueToString(draftValue);
 	const valueType = getConfigValueType(config);
-	const draftChanged = draftValue !== config.value;
+	const draftChanged = !configDraftValuesEqual(
+		draftValue,
+		config.value as ConfigDraftValue,
+	);
 	const multiline = isMultilineType(valueType);
 
 	return (
@@ -526,7 +533,11 @@ export function CustomConfigRow({ config }: { config: SystemConfig }) {
 						: "flex flex-col gap-3 sm:flex-row sm:items-center"
 				}
 			>
-				<ConfigInputControl config={config} draftValue={draftValue} fullWidth />
+				<ConfigInputControl
+					config={config}
+					draftValue={draftStringValue}
+					fullWidth
+				/>
 				<Button
 					variant="ghost"
 					size="sm"

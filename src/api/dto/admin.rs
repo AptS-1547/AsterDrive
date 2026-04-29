@@ -220,7 +220,7 @@ fn default_true() -> bool {
 #[derive(Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SetConfigReq {
-    pub value: String,
+    pub value: crate::services::config_service::SystemConfigValue,
 }
 
 /// Execute a config action (e.g., send test email).

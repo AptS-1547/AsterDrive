@@ -7,15 +7,15 @@ import {
 	getPublicSiteUrls,
 	normalizePublicSiteUrl,
 	publicSiteUrlMatches,
-	setPublicSiteUrl,
+	setPublicSiteUrls,
 } from "@/lib/publicSiteUrl";
 import { adminConfigService } from "@/services/adminService";
 import { useBrandingStore } from "@/stores/brandingStore";
 
 const PUBLIC_SITE_URL_KEY = "public_site_url";
 
-function syncPublicSiteUrlRuntime(value: string | null | undefined) {
-	const siteUrl = setPublicSiteUrl(value);
+function syncPublicSiteUrlRuntime(value: string[] | null | undefined) {
+	const siteUrl = setPublicSiteUrls(value);
 	useBrandingStore.setState({ siteUrl });
 }
 
@@ -65,12 +65,14 @@ export function AdminSiteUrlMismatchPrompt() {
 					(origin) => origin !== siteUrlMismatchCurrentOrigin,
 				),
 				siteUrlMismatchCurrentOrigin,
-			].join("\n");
+			];
 			const savedConfig = await adminConfigService.set(
 				PUBLIC_SITE_URL_KEY,
-				nextValue || siteUrlMismatchCurrentOrigin,
+				nextValue,
 			);
-			syncPublicSiteUrlRuntime(savedConfig.value);
+			syncPublicSiteUrlRuntime(
+				Array.isArray(savedConfig.value) ? savedConfig.value : [],
+			);
 			toast.success(t("settings_saved"));
 		} catch (error) {
 			handleApiError(error);

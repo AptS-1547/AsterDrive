@@ -29,7 +29,7 @@ import {
 	ADMIN_SETTINGS_SAVE_BAR_MIN_RESERVED_HEIGHT_DESKTOP_PX,
 	ADMIN_SETTINGS_SAVE_BAR_MIN_RESERVED_HEIGHT_MOBILE_PX,
 } from "@/lib/constants";
-import { setPublicSiteUrl } from "@/lib/publicSiteUrl";
+import { setPublicSiteUrls } from "@/lib/publicSiteUrl";
 import { useAuthStore } from "@/stores/authStore";
 import { useBrandingStore } from "@/stores/brandingStore";
 import { useThemeStore } from "@/stores/themeStore";
@@ -61,8 +61,8 @@ const SAVE_BAR_EXIT_DURATION_MS = 140;
 
 export type AdminSettingsTab = (typeof CATEGORY_ORDER)[number];
 
-function syncPublicSiteUrlRuntime(value: string | null | undefined) {
-	const siteUrl = setPublicSiteUrl(value);
+function syncPublicSiteUrlRuntime(value: string[] | null | undefined) {
+	const siteUrl = setPublicSiteUrls(value);
 	useBrandingStore.setState({ siteUrl });
 }
 

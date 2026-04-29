@@ -438,7 +438,7 @@ export const adminConfigService = {
 
 	get: (key: string) => api.get<SystemConfig>(`/admin/config/${key}`),
 
-	set: (key: string, value: string) =>
+	set: (key: string, value: string | string[]) =>
 		api.put<SystemConfig>(`/admin/config/${key}`, { value }),
 
 	delete: (key: string) => api.delete<void>(`/admin/config/${key}`),

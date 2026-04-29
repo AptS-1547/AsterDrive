@@ -271,14 +271,16 @@
 
 `public_site_url` 的数据库 key 保持单数，但值语义是“公开站点来源列表”：
 
-```text
-https://drive.example.com
-https://panel.example.com
+```json
+{
+  "key": "public_site_url",
+  "value": ["https://drive.example.com", "https://panel.example.com"]
+}
 ```
 
 实现约束：
 
-- 输入兼容旧的逗号分隔和新的换行分隔；规范化后保存为换行分隔
+- `value_type` 是 `string_array`，管理 API 写入时必须传字符串数组；数据库中保存为规范化后的 JSON 数组字符串
 - 每一项必须是精确 HTTP(S) origin，只包含协议、host 和可选端口
 - 不接受路径、查询、片段、通配符、`*` 或非 HTTP(S) scheme
 - 第一项是无请求上下文时的默认回退来源

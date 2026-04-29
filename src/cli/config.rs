@@ -10,7 +10,7 @@ use crate::config::system_config as shared_system_config;
 use crate::db::repository::config_repo;
 use crate::entities::system_config;
 use crate::errors::{AsterError, Result};
-use crate::services::config_service::SystemConfig;
+use crate::services::config_service::{SystemConfig, SystemConfigValue};
 use crate::types::{SystemConfigSource, SystemConfigValueType};
 use chrono::Utc;
 use clap::{Args, Subcommand};
@@ -134,6 +134,12 @@ impl ConfigCommandReport {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct ImportItem {
     key: String,
+    value: SystemConfigValue,
+}
+
+#[derive(Debug, Clone)]
+struct NormalizedImportItem {
+    key: String,
     value: String,
 }
 
@@ -175,7 +181,7 @@ pub async fn execute_config_command(
                 build_value_lookup(&config_repo::find_all(&db).await?),
                 &[ImportItem {
                     key: args.key.clone(),
-                    value: args.value.clone(),
+                    value: parse_cli_config_value(&args.key, &args.value)?,
                 }],
             )?;
             let normalized_item = normalized
@@ -308,18 +314,20 @@ fn render_config_list_human(
 
 fn format_config_list_value(config: &SystemConfig, palette: &CliTerminalPalette) -> String {
     if config.is_sensitive {
-        return if config.value.trim().is_empty() {
+        return if config.value.is_empty() {
             palette.dim("[empty sensitive value]")
         } else {
             palette.warn("[hidden sensitive value]")
         };
     }
 
-    if config.value_type.is_multiline() || config.value.contains('\n') {
-        return palette.dim(&summarize_multiline_value(&config.value));
+    if let SystemConfigValue::String(value) = &config.value
+        && (config.value_type.is_multiline() || value.contains('\n'))
+    {
+        return palette.dim(&summarize_multiline_value(value));
     }
 
-    config.value.clone()
+    format_config_value(&config.value)
 }
 
 fn summarize_multiline_value(value: &str) -> String {
@@ -353,7 +361,11 @@ fn render_config_entry_human(
         palette.title(config_entry_title(kind)),
         palette.dim("--------------------------------------------------"),
         format!("{} {}", human_key("Key", palette), payload.key),
-        format!("{} {}", human_key("Value", palette), payload.value),
+        format!(
+            "{} {}",
+            human_key("Value", palette),
+            format_config_value(&payload.value)
+        ),
         format!("{} {}", human_key("Type", palette), payload.value_type),
         format!(
             "{} {} {}",
@@ -486,8 +498,10 @@ fn build_value_lookup(models: &[system_config::Model]) -> HashMap<String, String
 fn normalize_entries(
     mut current_lookup: HashMap<String, String>,
     entries: &[ImportItem],
-) -> Result<Vec<ImportItem>> {
+) -> Result<Vec<NormalizedImportItem>> {
     let mut seen_keys = BTreeSet::new();
+    let mut storage_entries = Vec::with_capacity(entries.len());
+
     for entry in entries {
         if !seen_keys.insert(entry.key.clone()) {
             return Err(AsterError::validation_error(format!(
@@ -495,16 +509,24 @@ fn normalize_entries(
                 entry.key
             )));
         }
-        current_lookup.insert(entry.key.clone(), entry.value.clone());
+        let value_type = shared_system_config::get_definition(&entry.key)
+            .map(|def| def.value_type)
+            .unwrap_or(SystemConfigValueType::String);
+        let value = entry.value.to_storage_for_type(value_type)?;
+        current_lookup.insert(entry.key.clone(), value.clone());
+        storage_entries.push(NormalizedImportItem {
+            key: entry.key.clone(),
+            value,
+        });
     }
 
-    for entry in entries {
+    for entry in &storage_entries {
         if let Some(def) = shared_system_config::get_definition(&entry.key) {
             shared_system_config::validate_value_type(def.value_type, &entry.value)?;
         }
     }
 
-    entries
+    storage_entries
         .iter()
         .map(|entry| {
             let value = if shared_system_config::get_definition(&entry.key).is_some() {
@@ -517,7 +539,7 @@ fn normalize_entries(
                 entry.value.clone()
             };
 
-            Ok(ImportItem {
+            Ok(NormalizedImportItem {
                 key: entry.key.clone(),
                 value,
             })
@@ -530,7 +552,7 @@ fn resolve_validate_entries(args: &ValidateArgs) -> Result<Vec<ImportItem>> {
         (Some(path), None, None) => read_import_items(path),
         (None, Some(key), Some(value)) => Ok(vec![ImportItem {
             key: key.clone(),
-            value: value.clone(),
+            value: parse_cli_config_value(key, value)?,
         }]),
         (Some(_), Some(_), _) | (Some(_), _, Some(_)) => Err(AsterError::validation_error(
             "validate accepts either ASTER_CLI_INPUT_FILE or ASTER_CLI_CONFIG_KEY + ASTER_CLI_CONFIG_VALUE",
@@ -538,6 +560,30 @@ fn resolve_validate_entries(args: &ValidateArgs) -> Result<Vec<ImportItem>> {
         _ => Err(AsterError::validation_error(
             "validate requires ASTER_CLI_INPUT_FILE or ASTER_CLI_CONFIG_KEY + ASTER_CLI_CONFIG_VALUE",
         )),
+    }
+}
+
+fn parse_cli_config_value(key: &str, value: &str) -> Result<SystemConfigValue> {
+    if !shared_system_config::get_definition(key)
+        .map(|def| def.value_type.is_string_array())
+        .unwrap_or(false)
+    {
+        return Ok(SystemConfigValue::String(value.to_string()));
+    }
+
+    let values = serde_json::from_str::<Vec<String>>(value).map_err(|error| {
+        AsterError::validation_error(format!(
+            "config key '{key}' expects a JSON array of strings: {error}"
+        ))
+    })?;
+    Ok(SystemConfigValue::StringArray(values))
+}
+
+fn format_config_value(value: &SystemConfigValue) -> String {
+    match value {
+        SystemConfigValue::String(value) => value.clone(),
+        SystemConfigValue::StringArray(values) => serde_json::to_string(values)
+            .unwrap_or_else(|_| "<invalid string_array value>".to_string()),
     }
 }
 

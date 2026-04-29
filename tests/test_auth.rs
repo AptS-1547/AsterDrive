@@ -409,7 +409,7 @@ async fn test_cookie_authenticated_write_accepts_trusted_same_site_public_origin
     let state = common::setup().await;
     state.runtime_config.apply(common::system_config_model(
         aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
-        "https://api.example.com\nhttps://panel.example.com",
+        r#"["https://api.example.com","https://panel.example.com"]"#,
     ));
     let app = create_test_app!(state);
 

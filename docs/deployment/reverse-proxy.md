@@ -16,7 +16,7 @@ AsterDrive 不内置 TLS 终端。
 
 ## 上线前先对齐这几个值
 
-- `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 填成真实的 `https://` 来源，一行一个，例如 `https://drive.example.com`
+- `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 填成真实的 `https://` 来源，多个公开域名逐项添加，例如 `https://drive.example.com`
 - 静态引导项 `auth.bootstrap_insecure_cookies` 只在纯 HTTP 首次引导时临时设成 `true`
 - 正式切到 HTTPS 后，把 `auth.bootstrap_insecure_cookies` 去掉，并确认运行时 `auth_cookie_secure` 已恢复为开启
 - 代理层至少给浏览器页面补上一条可用的基线 `Content-Security-Policy`，别只做 HTTPS
@@ -328,7 +328,7 @@ frame-src 'self';
 
 如果你接的是 OnlyOffice、Collabora 或其他 WOPI 服务，再多确认两件事：
 
-- `public_site_url` 必须包含 WOPI 宿主能回连到的真实 HTTPS 来源；如果有多个入口，把它们逐行填进 `公开站点地址`
+- `public_site_url` 必须包含 WOPI 宿主能回连到的真实 HTTPS 来源；如果有多个入口，把它们逐项填进 `公开站点地址`
 - 外部 Office 服务必须能访问到 `https://你的域名/api/v1/wopi/...`
 
 最常见的错误现象就是：

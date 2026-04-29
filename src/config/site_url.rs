@@ -2,19 +2,37 @@
 
 use crate::config::RuntimeConfig;
 use crate::config::cors;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 
 pub use crate::config::definitions::PUBLIC_SITE_URL_KEY;
 
 pub fn normalize_public_site_url_config_value(value: &str) -> Result<String> {
-    Ok(parse_public_site_url_value(value)?.join("\n"))
+    let origins = parse_public_site_url_value(value)?;
+    serde_json::to_string(&origins).map_aster_err_ctx(
+        "failed to serialize public_site_url origins",
+        AsterError::internal_error,
+    )
 }
 
-fn public_site_url_entries(value: &str) -> impl Iterator<Item = &str> {
-    value
-        .split([',', '\n', '\r'])
-        .map(str::trim)
+fn parse_public_site_url_entries(value: &str) -> Result<Vec<String>> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(AsterError::validation_error(
+            "public_site_url must be a JSON array of origins",
+        ));
+    }
+
+    let entries = serde_json::from_str::<Vec<String>>(trimmed).map_err(|err| {
+        AsterError::validation_error(format!(
+            "public_site_url must be a JSON array of origins: {err}"
+        ))
+    })?;
+
+    Ok(entries
+        .into_iter()
+        .map(|origin| origin.trim().to_string())
         .filter(|origin| !origin.is_empty())
+        .collect())
 }
 
 fn parse_public_site_url_origin(origin: &str) -> Result<String> {
@@ -34,13 +52,9 @@ fn parse_public_site_url_origin(origin: &str) -> Result<String> {
 
 pub fn parse_public_site_url_value(value: &str) -> Result<Vec<String>> {
     let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-
     let mut origins = Vec::new();
-    for origin in public_site_url_entries(trimmed) {
-        let normalized = parse_public_site_url_origin(origin)?;
+    for origin in parse_public_site_url_entries(trimmed)? {
+        let normalized = parse_public_site_url_origin(&origin)?;
         if !origins.contains(&normalized) {
             origins.push(normalized);
         }
@@ -61,9 +75,21 @@ pub fn public_site_urls(runtime_config: &RuntimeConfig) -> Vec<String> {
         return Vec::new();
     };
 
+    let entries = match parse_public_site_url_entries(&value) {
+        Ok(entries) => entries,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                key = PUBLIC_SITE_URL_KEY,
+                "invalid runtime public_site_url config; ignoring configured public origins"
+            );
+            return Vec::new();
+        }
+    };
+
     let mut origins = Vec::new();
-    for origin in public_site_url_entries(&value) {
-        match parse_public_site_url_origin(origin) {
+    for origin in entries {
+        match parse_public_site_url_origin(&origin) {
             Ok(normalized) => {
                 if !origins.contains(&normalized) {
                     origins.push(normalized);
@@ -176,14 +202,14 @@ mod tests {
 
     #[test]
     fn normalize_public_site_url_accepts_empty_and_valid_origins() {
-        assert_eq!(normalize_public_site_url_config_value("   ").unwrap(), "");
+        assert!(normalize_public_site_url_config_value("   ").is_err());
         assert_eq!(
-            normalize_public_site_url_config_value(" HTTPS://Drive.EXAMPLE.com/ ").unwrap(),
-            "https://drive.example.com"
+            normalize_public_site_url_config_value(r#"[" HTTPS://Drive.EXAMPLE.com/ "]"#).unwrap(),
+            r#"["https://drive.example.com"]"#
         );
         assert_eq!(
-            normalize_public_site_url_config_value("http://drive.example.com:8080").unwrap(),
-            "http://drive.example.com:8080"
+            normalize_public_site_url_config_value(r#"["http://drive.example.com:8080"]"#).unwrap(),
+            r#"["http://drive.example.com:8080"]"#
         );
     }
 
@@ -191,21 +217,23 @@ mod tests {
     fn normalize_public_site_url_accepts_ordered_origin_lists() {
         assert_eq!(
             normalize_public_site_url_config_value(
-                " HTTPS://Drive.EXAMPLE.com/ , https://Panel.example.com, https://drive.example.com "
+                r#"[" HTTPS://Drive.EXAMPLE.com/ ","https://Panel.example.com","https://drive.example.com"]"#
             )
             .unwrap(),
-            "https://drive.example.com\nhttps://panel.example.com"
+            r#"["https://drive.example.com","https://panel.example.com"]"#
         );
         assert_eq!(
             normalize_public_site_url_config_value(
-                "https://drive.example.com\nhttps://panel.example.com"
+                r#"["https://drive.example.com","https://panel.example.com"]"#
             )
             .unwrap(),
-            "https://drive.example.com\nhttps://panel.example.com"
+            r#"["https://drive.example.com","https://panel.example.com"]"#
         );
         assert_eq!(
-            parse_public_site_url_value("https://drive.example.com,,https://api.example.com")
-                .unwrap(),
+            parse_public_site_url_value(
+                r#"["https://drive.example.com","","https://api.example.com"]"#
+            )
+            .unwrap(),
             vec![
                 "https://drive.example.com".to_string(),
                 "https://api.example.com".to_string()
@@ -215,10 +243,13 @@ mod tests {
 
     #[test]
     fn normalize_public_site_url_rejects_paths_and_non_http_schemes() {
-        assert!(normalize_public_site_url_config_value("https://drive.example.com/app").is_err());
-        assert!(normalize_public_site_url_config_value("ftp://drive.example.com").is_err());
-        assert!(normalize_public_site_url_config_value("*.example.com").is_err());
-        assert!(normalize_public_site_url_config_value("*").is_err());
+        assert!(
+            normalize_public_site_url_config_value(r#"["https://drive.example.com/app"]"#).is_err()
+        );
+        assert!(normalize_public_site_url_config_value(r#"["ftp://drive.example.com"]"#).is_err());
+        assert!(normalize_public_site_url_config_value(r#"["*.example.com"]"#).is_err());
+        assert!(normalize_public_site_url_config_value(r#"["*"]"#).is_err());
+        assert!(normalize_public_site_url_config_value(r#""https://drive.example.com""#).is_err());
     }
 
     #[test]
@@ -226,7 +257,7 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(
             PUBLIC_SITE_URL_KEY,
-            "https://drive.example.com",
+            r#"["https://drive.example.com"]"#,
         ));
 
         assert_eq!(
@@ -248,7 +279,7 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(
             PUBLIC_SITE_URL_KEY,
-            "https://drive.example.com,https://panel.example.com",
+            r#"["https://drive.example.com","https://panel.example.com"]"#,
         ));
 
         assert_eq!(
@@ -271,7 +302,7 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(
             PUBLIC_SITE_URL_KEY,
-            "https://drive.example.com\nhttps://panel.example.com/app\nhttps://api.example.com",
+            r#"["https://drive.example.com","https://panel.example.com/app","https://api.example.com"]"#,
         ));
 
         assert_eq!(

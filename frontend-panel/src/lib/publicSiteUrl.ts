@@ -1,41 +1,45 @@
 let publicSiteUrls: string[] = [];
 
 export function normalizePublicSiteUrl(value: string | null | undefined) {
-	return normalizePublicSiteUrls(value)[0] ?? null;
+	const normalized = value?.trim();
+	if (!normalized) return null;
+	try {
+		const resolved = new URL(normalized);
+		const validOrigin =
+			(resolved.protocol === "http:" || resolved.protocol === "https:") &&
+			(resolved.pathname === "" || resolved.pathname === "/") &&
+			resolved.search === "" &&
+			resolved.hash === "" &&
+			resolved.username === "" &&
+			resolved.password === "";
+		if (!validOrigin) {
+			return null;
+		}
+		return resolved.origin;
+	} catch {
+		return null;
+	}
 }
 
-export function normalizePublicSiteUrls(value: string | null | undefined) {
-	const normalized = value?.trim();
-	if (!normalized) return [];
-
+export function normalizePublicSiteUrls(
+	value: readonly string[] | null | undefined,
+) {
+	if (!value) return [];
 	const origins: string[] = [];
-	for (const part of normalized.split(/\r\n|[,\r\n]/)) {
-		const candidate = part.trim();
-		if (!candidate) continue;
-		try {
-			const resolved = new URL(candidate);
-			const validOrigin =
-				(resolved.protocol === "http:" || resolved.protocol === "https:") &&
-				(resolved.pathname === "" || resolved.pathname === "/") &&
-				resolved.search === "" &&
-				resolved.hash === "" &&
-				resolved.username === "" &&
-				resolved.password === "";
-			if (!validOrigin) {
-				return [];
-			}
-			if (!origins.includes(resolved.origin)) {
-				origins.push(resolved.origin);
-			}
-		} catch {
+	for (const candidate of value) {
+		const origin = normalizePublicSiteUrl(candidate);
+		if (!origin) {
 			return [];
+		}
+		if (!origins.includes(origin)) {
+			origins.push(origin);
 		}
 	}
 
 	return origins;
 }
 
-export function setPublicSiteUrl(value: string | null | undefined) {
+export function setPublicSiteUrls(value: readonly string[] | null | undefined) {
 	publicSiteUrls = normalizePublicSiteUrls(value);
 	return publicSiteUrls[0] ?? null;
 }

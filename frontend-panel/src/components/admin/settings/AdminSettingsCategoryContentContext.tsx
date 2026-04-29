@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { createContext, useContext } from "react";
 import type {
+	ConfigDraftValue,
 	NewCustomDraft,
 	SizeDisplayUnitValue,
 	SystemSubcategoryGroup,
@@ -24,7 +25,7 @@ export interface AdminSettingsCategoryContentProps {
 	expandedTemplateGroups: Record<string, boolean>;
 	getCategoryDescription: (category: string) => string | undefined;
 	getCategoryLabel: (category: string) => string;
-	getDraftValue: (config: SystemConfig) => string;
+	getDraftValue: (config: SystemConfig) => ConfigDraftValue;
 	getMailTemplateGroupLabel: (groupId: string) => string;
 	getSubcategoryDescription: (
 		category: string,
@@ -58,7 +59,7 @@ export interface AdminSettingsCategoryContentProps {
 	tabDirection: "forward" | "backward";
 	toggleSubcategoryGroup: (groupKey: string, nextExpanded: boolean) => void;
 	toggleTemplateGroup: (groupKey: string, nextExpanded: boolean) => void;
-	updateDraftValue: (key: string, value: string) => void;
+	updateDraftValue: (key: string, value: ConfigDraftValue) => void;
 	updateNewCustomRow: (
 		id: string,
 		field: keyof Omit<NewCustomDraft, "id">,

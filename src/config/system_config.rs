@@ -72,6 +72,13 @@ pub fn validate_value_type(value_type: SystemConfigValueType, value: &str) -> Re
                 ));
             }
         }
+        SystemConfigValueType::StringArray => {
+            serde_json::from_str::<Vec<String>>(trimmed).map_err(|err| {
+                AsterError::validation_error(format!(
+                    "string_array config must be a JSON array of strings: {err}"
+                ))
+            })?;
+        }
         SystemConfigValueType::String | SystemConfigValueType::Multiline => {}
     }
     Ok(())
@@ -254,15 +261,15 @@ mod tests {
     fn apply_definition_overlays_schema_metadata_for_system_rows() {
         let config = apply_definition(model(
             "public_site_url",
-            "https://drive.example.com",
+            r#"["https://drive.example.com"]"#,
             SystemConfigSource::System,
         ));
-        assert_eq!(config.value_type, SystemConfigValueType::String);
+        assert_eq!(config.value_type, SystemConfigValueType::StringArray);
         assert_eq!(config.category, "general");
         assert!(
             config
                 .description
-                .contains("share, preview, and callback URLs")
+                .contains("share, preview, WebDAV, WOPI, and callback URLs")
         );
 
         let custom = apply_definition(model("custom.demo", "value", SystemConfigSource::Custom));

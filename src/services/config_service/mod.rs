@@ -16,4 +16,6 @@ pub use schema::{
     ConfigSchemaItem, TemplateVariableGroup, TemplateVariableItem, get_schema,
     list_template_variable_groups,
 };
-pub use system::{SystemConfig, delete, get_by_key, list_paginated, set, set_with_audit};
+pub use system::{
+    SystemConfig, SystemConfigValue, delete, get_by_key, list_paginated, set, set_with_audit,
+};

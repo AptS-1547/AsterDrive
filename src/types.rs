@@ -756,6 +756,8 @@ pub enum SystemConfigValueType {
     String,
     #[sea_orm(string_value = "multiline")]
     Multiline,
+    #[sea_orm(string_value = "string_array")]
+    StringArray,
     #[sea_orm(string_value = "number")]
     Number,
     #[sea_orm(string_value = "boolean")]
@@ -767,6 +769,7 @@ impl SystemConfigValueType {
         match self {
             Self::String => "string",
             Self::Multiline => "multiline",
+            Self::StringArray => "string_array",
             Self::Number => "number",
             Self::Boolean => "boolean",
         }
@@ -776,6 +779,7 @@ impl SystemConfigValueType {
         match value {
             "string" => Some(Self::String),
             "multiline" => Some(Self::Multiline),
+            "string_array" => Some(Self::StringArray),
             "number" => Some(Self::Number),
             "boolean" => Some(Self::Boolean),
             _ => None,
@@ -784,6 +788,10 @@ impl SystemConfigValueType {
 
     pub const fn is_multiline(self) -> bool {
         matches!(self, Self::Multiline)
+    }
+
+    pub const fn is_string_array(self) -> bool {
+        matches!(self, Self::StringArray)
     }
 }
 

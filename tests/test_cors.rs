@@ -902,7 +902,12 @@ async fn test_runtime_cors_public_site_url_does_not_bypass_empty_whitelist() {
     let (token, _) = register_and_login!(app);
     enable_cors!(app, token);
 
-    let resp = set_config!(app, token, "public_site_url", "https://drive.example.com");
+    let resp = set_config!(
+        app,
+        token,
+        "public_site_url",
+        serde_json::json!(["https://drive.example.com"])
+    );
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get()
@@ -927,7 +932,12 @@ async fn test_runtime_cors_public_site_url_still_requires_whitelist_match() {
     let (token, _) = register_and_login!(app);
     enable_cors!(app, token);
 
-    let resp = set_config!(app, token, "public_site_url", "https://drive.example.com");
+    let resp = set_config!(
+        app,
+        token,
+        "public_site_url",
+        serde_json::json!(["https://drive.example.com"])
+    );
     assert_eq!(resp.status(), 200);
     let resp = set_config!(
         app,
@@ -955,7 +965,12 @@ async fn test_runtime_cors_public_site_url_is_not_added_to_passthrough_response(
     let (token, _) = register_and_login!(app);
     enable_cors!(app, token);
 
-    let resp = set_config!(app, token, "public_site_url", "https://drive.example.com");
+    let resp = set_config!(
+        app,
+        token,
+        "public_site_url",
+        serde_json::json!(["https://drive.example.com"])
+    );
     assert_eq!(resp.status(), 200);
 
     let req = test::TestRequest::get().uri("/health").to_request();

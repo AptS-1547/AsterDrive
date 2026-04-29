@@ -25,8 +25,7 @@
     "favicon_url": "/favicon.svg",
     "wordmark_dark_url": "/static/asterdrive/asterdrive-dark.svg",
     "wordmark_light_url": "/static/asterdrive/asterdrive-light.svg",
-    "site_url": "https://drive.example.com",
-    "site_url_raw": "https://drive.example.com\nhttps://panel.example.com",
+    "site_urls": ["https://drive.example.com", "https://panel.example.com"],
     "allow_user_registration": true
   }
 }
@@ -37,13 +36,12 @@
 - `title` / `description`：公开页面展示文案
 - `favicon_url`：站点图标
 - `wordmark_dark_url` / `wordmark_light_url`：亮暗背景下使用的品牌字标
-- `site_url`：当前对外公开站点地址的第一条规范化来源；未配置时可能为 `null`
-- `site_url_raw`：原始 `public_site_url` 配置值；配置多来源时这里返回换行字符串，供前端维护完整列表
+- `site_urls`：当前对外公开站点来源列表；未配置时为空数组
 - `allow_user_registration`：匿名页是否应展示注册入口
 
 当前前端登录页和公开入口会先拉这条接口，再决定匿名态 UI，而不是把这些值硬编码进前端构建产物。
 
-`site_url` / `site_url_raw` 对应运行时配置 key 仍然是 `public_site_url`。服务端接受逗号或换行分隔作为兼容输入，保存后按换行列表暴露给前端。每一项必须是精确 HTTP(S) origin，不能包含路径、通配符或非 HTTP(S) scheme。
+`site_urls` 对应运行时配置 key 仍然是 `public_site_url`。管理接口把它作为 `string_array` 暴露，写入时必须传 JSON 字符串数组；服务端保存前会规范化每一项。每一项必须是精确 HTTP(S) origin，不能包含路径、通配符或非 HTTP(S) scheme。
 
 ## `GET /public/preview-apps`
 

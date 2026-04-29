@@ -485,7 +485,7 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(
             crate::config::site_url::PUBLIC_SITE_URL_KEY,
-            "https://drive.example.com",
+            r#"["https://drive.example.com"]"#,
         ));
 
         assert_eq!(
@@ -499,7 +499,7 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(
             crate::config::site_url::PUBLIC_SITE_URL_KEY,
-            "https://drive.example.com,https://panel.example.com",
+            r#"["https://drive.example.com","https://panel.example.com"]"#,
         ));
 
         assert_eq!(

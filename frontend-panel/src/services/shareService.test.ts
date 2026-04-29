@@ -25,8 +25,8 @@ describe("shareService", () => {
 		apiGet.mockReset();
 		apiPatch.mockReset();
 		apiPost.mockReset();
-		const { setPublicSiteUrl } = await import("@/lib/publicSiteUrl");
-		setPublicSiteUrl(null);
+		const { setPublicSiteUrls } = await import("@/lib/publicSiteUrl");
+		setPublicSiteUrls(null);
 	});
 
 	it("uses the expected authenticated share routes", () => {
@@ -160,15 +160,15 @@ describe("shareService", () => {
 
 	it("uses the configured public site URL for public share pages", async () => {
 		vi.resetModules();
-		const { setPublicSiteUrl } = await import("@/lib/publicSiteUrl");
+		const { setPublicSiteUrls } = await import("@/lib/publicSiteUrl");
 		const { createShareService } = await import("@/services/shareService");
 
-		setPublicSiteUrl("https://drive.example.com");
+		setPublicSiteUrls(["https://drive.example.com"]);
 
 		expect(createShareService(PERSONAL_WORKSPACE).pageUrl("token-1")).toBe(
 			"https://drive.example.com/s/token-1",
 		);
 
-		setPublicSiteUrl(null);
+		setPublicSiteUrls(null);
 	});
 });

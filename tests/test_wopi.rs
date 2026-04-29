@@ -134,7 +134,7 @@ fn apply_test_wopi_registry(
 fn configure_test_wopi_runtime(state: &aster_drive::runtime::PrimaryAppState) {
     state.runtime_config.apply(common::system_config_model(
         PUBLIC_SITE_URL_KEY,
-        "https://drive.example.com",
+        r#"["https://drive.example.com"]"#,
     ));
     apply_test_wopi_registry(
         &state.runtime_config,
@@ -283,7 +283,7 @@ async fn test_open_wopi_session_appends_wopisrc_when_action_url_has_no_placehold
     let state = common::setup().await;
     state.runtime_config.apply(common::system_config_model(
         PUBLIC_SITE_URL_KEY,
-        "https://drive.example.com",
+        r#"["https://drive.example.com"]"#,
     ));
     apply_test_wopi_registry(
         &state.runtime_config,

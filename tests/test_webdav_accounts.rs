@@ -90,7 +90,7 @@ async fn test_webdav_settings_returns_public_endpoint_when_configured() {
     let state = common::setup().await;
     state.runtime_config.apply(common::system_config_model(
         aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
-        "https://drive.example.com",
+        r#"["https://drive.example.com"]"#,
     ));
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -116,7 +116,7 @@ async fn test_webdav_settings_uses_matching_public_site_url_from_host() {
     let state = common::setup().await;
     state.runtime_config.apply(common::system_config_model(
         aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
-        "http://drive.example.com\nhttp://panel.example.com",
+        r#"["http://drive.example.com","http://panel.example.com"]"#,
     ));
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
