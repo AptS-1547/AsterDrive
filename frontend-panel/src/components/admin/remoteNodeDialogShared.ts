@@ -7,7 +7,6 @@ import type {
 export interface RemoteNodeFormData {
 	name: string;
 	base_url: string;
-	namespace: string;
 	is_enabled: boolean;
 }
 
@@ -15,7 +14,6 @@ export function getRemoteNodeForm(node: RemoteNodeInfo): RemoteNodeFormData {
 	return {
 		name: node.name,
 		base_url: node.base_url,
-		namespace: node.namespace,
 		is_enabled: node.is_enabled,
 	};
 }
@@ -26,7 +24,6 @@ export function buildCreateRemoteNodePayload(
 	return {
 		name: form.name,
 		base_url: form.base_url || undefined,
-		namespace: form.namespace,
 		is_enabled: form.is_enabled,
 	};
 }
@@ -37,7 +34,6 @@ export function buildUpdateRemoteNodePayload(
 	return {
 		name: form.name,
 		base_url: form.base_url,
-		namespace: form.namespace,
 		is_enabled: form.is_enabled,
 	};
 }
@@ -77,6 +73,5 @@ export function getRemoteNodeBaseUrlValidationMessage(
 export const emptyRemoteNodeForm: RemoteNodeFormData = {
 	name: "",
 	base_url: "",
-	namespace: "",
 	is_enabled: true,
 };

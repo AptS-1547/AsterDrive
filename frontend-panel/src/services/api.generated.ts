@@ -340,6 +340,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/remote-nodes/{id}/ingress-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_remote_node_ingress_profiles"];
+        put?: never;
+        post: operations["create_remote_node_ingress_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/remote-nodes/{id}/ingress-profiles/{profile_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_remote_node_ingress_profile"];
+        options?: never;
+        head?: never;
+        patch: operations["update_remote_node_ingress_profile"];
+        trace?: never;
+    };
     "/api/v1/admin/remote-nodes/{id}/test": {
         parameters: {
             query?: never;
@@ -2952,7 +2984,6 @@ export interface components {
                 ack_token: string;
                 is_enabled: boolean;
                 master_url: string;
-                namespace: string;
                 /** Format: int64 */
                 remote_node_id: number;
                 remote_node_name: string;
@@ -3295,7 +3326,6 @@ export interface components {
             base_url?: string | null;
             is_enabled?: boolean;
             name: string;
-            namespace: string;
         };
         /** @description Create a new share. */
         CreateShareReq: {
@@ -3679,7 +3709,6 @@ export interface components {
                 last_checked_at?: string | null;
                 last_error: string;
                 name: string;
-                namespace: string;
                 updated_at: string;
             }[];
             /** Format: int64 */
@@ -3978,7 +4007,6 @@ export interface components {
             base_url?: string | null;
             is_enabled?: boolean | null;
             name?: string | null;
-            namespace?: string | null;
         };
         /** @description Patch a team member's role. */
         PatchTeamMemberReq: {
@@ -4108,6 +4136,31 @@ export interface components {
             password: string;
             username: string;
         };
+        RemoteCreateIngressProfileRequest: (components["schemas"]["RemoteCreateLocalIngressProfileRequest"] & {
+            /** @enum {string} */
+            driver_type: "local";
+        }) | (components["schemas"]["RemoteCreateS3IngressProfileRequest"] & {
+            /** @enum {string} */
+            driver_type: "s3";
+        });
+        RemoteCreateLocalIngressProfileRequest: {
+            base_path: string;
+            is_default?: boolean;
+            /** Format: int64 */
+            max_file_size: number;
+            name: string;
+        };
+        RemoteCreateS3IngressProfileRequest: {
+            access_key: string;
+            base_path: string;
+            bucket: string;
+            endpoint: string;
+            is_default?: boolean;
+            /** Format: int64 */
+            max_file_size: number;
+            name: string;
+            secret_key: string;
+        };
         /**
          * @description Remote 下载传输策略（存储策略 options JSON）
          * @enum {string}
@@ -4118,7 +4171,6 @@ export interface components {
             ack_token: string;
             is_enabled: boolean;
             master_url: string;
-            namespace: string;
             /** Format: int64 */
             remote_node_id: number;
             remote_node_name: string;
@@ -4133,6 +4185,24 @@ export interface components {
             remote_node_name: string;
             token: string;
         };
+        RemoteIngressProfileInfo: {
+            /** Format: int64 */
+            applied_revision: number;
+            base_path: string;
+            bucket: string;
+            created_at: string;
+            /** Format: int64 */
+            desired_revision: number;
+            driver_type: components["schemas"]["DriverType"];
+            endpoint: string;
+            is_default: boolean;
+            last_error: string;
+            /** Format: int64 */
+            max_file_size: number;
+            name: string;
+            profile_key: string;
+            updated_at: string;
+        };
         RemoteNodeInfo: {
             base_url: string;
             capabilities: components["schemas"]["RemoteStorageCapabilities"];
@@ -4144,7 +4214,6 @@ export interface components {
             last_checked_at?: string | null;
             last_error: string;
             name: string;
-            namespace: string;
             updated_at: string;
         };
         RemoteStorageCapabilities: {
@@ -4152,6 +4221,18 @@ export interface components {
             supports_list: boolean;
             supports_range_read: boolean;
             supports_stream_upload: boolean;
+        };
+        RemoteUpdateIngressProfileRequest: {
+            access_key?: string | null;
+            base_path?: string | null;
+            bucket?: string | null;
+            driver_type?: null | components["schemas"]["DriverType"];
+            endpoint?: string | null;
+            is_default?: boolean | null;
+            /** Format: int64 */
+            max_file_size?: number | null;
+            name?: string | null;
+            secret_key?: string | null;
         };
         /**
          * @description Remote 上传传输策略（存储策略 options JSON）
@@ -6356,7 +6437,6 @@ export interface operations {
                                 last_checked_at?: string | null;
                                 last_error: string;
                                 name: string;
-                                namespace: string;
                                 updated_at: string;
                             }[];
                             /** Format: int64 */
@@ -6419,7 +6499,6 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
-                            namespace: string;
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -6529,7 +6608,6 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
-                            namespace: string;
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -6637,7 +6715,6 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
-                            namespace: string;
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -6712,6 +6789,286 @@ export interface operations {
             };
         };
     };
+    list_remote_node_ingress_profiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Remote node ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List remote node ingress profiles */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            applied_revision: number;
+                            base_path: string;
+                            bucket: string;
+                            created_at: string;
+                            /** Format: int64 */
+                            desired_revision: number;
+                            driver_type: components["schemas"]["DriverType"];
+                            endpoint: string;
+                            is_default: boolean;
+                            last_error: string;
+                            /** Format: int64 */
+                            max_file_size: number;
+                            name: string;
+                            profile_key: string;
+                            updated_at: string;
+                        }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remote node not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Managed ingress profiles require a single primary binding */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_remote_node_ingress_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Remote node ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoteCreateIngressProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Remote node ingress profile created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            applied_revision: number;
+                            base_path: string;
+                            bucket: string;
+                            created_at: string;
+                            /** Format: int64 */
+                            desired_revision: number;
+                            driver_type: components["schemas"]["DriverType"];
+                            endpoint: string;
+                            is_default: boolean;
+                            last_error: string;
+                            /** Format: int64 */
+                            max_file_size: number;
+                            name: string;
+                            profile_key: string;
+                            updated_at: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remote node not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Managed ingress profiles require a single primary binding */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_remote_node_ingress_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Remote node ID */
+                id: number;
+                /** @description Remote ingress profile key */
+                profile_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Remote node ingress profile deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remote node or ingress profile not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Managed ingress profiles require a single primary binding */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_remote_node_ingress_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Remote node ID */
+                id: number;
+                /** @description Remote ingress profile key */
+                profile_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoteUpdateIngressProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Remote node ingress profile updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            applied_revision: number;
+                            base_path: string;
+                            bucket: string;
+                            created_at: string;
+                            /** Format: int64 */
+                            desired_revision: number;
+                            driver_type: components["schemas"]["DriverType"];
+                            endpoint: string;
+                            is_default: boolean;
+                            last_error: string;
+                            /** Format: int64 */
+                            max_file_size: number;
+                            name: string;
+                            profile_key: string;
+                            updated_at: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remote node or ingress profile not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Managed ingress profiles require a single primary binding */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     test_remote_node_connection: {
         parameters: {
             query?: never;
@@ -6743,7 +7100,6 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
-                            namespace: string;
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];

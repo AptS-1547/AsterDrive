@@ -27,7 +27,6 @@ pub struct RemoteNodeInfo {
     pub id: i64,
     pub name: String,
     pub base_url: String,
-    pub namespace: String,
     pub is_enabled: bool,
     pub last_error: String,
     pub capabilities: RemoteStorageCapabilities,
@@ -44,7 +43,6 @@ impl From<managed_follower::Model> for RemoteNodeInfo {
             id: model.id,
             name: model.name,
             base_url: model.base_url,
-            namespace: model.namespace,
             is_enabled: model.is_enabled,
             last_error: model.last_error,
             capabilities: parse_capabilities(&model.last_capabilities),
@@ -59,7 +57,6 @@ impl From<managed_follower::Model> for RemoteNodeInfo {
 pub struct CreateRemoteNodeInput {
     pub name: String,
     pub base_url: String,
-    pub namespace: String,
     pub is_enabled: bool,
 }
 
@@ -67,7 +64,6 @@ pub struct CreateRemoteNodeInput {
 pub struct UpdateRemoteNodeInput {
     pub name: Option<String>,
     pub base_url: Option<String>,
-    pub namespace: Option<String>,
     pub is_enabled: Option<bool>,
 }
 
@@ -129,7 +125,6 @@ pub async fn create<S: PrimaryRuntimeState>(
         base_url: Set(normalized.base_url),
         access_key: Set(access_key),
         secret_key: Set(secret_key),
-        namespace: Set(normalized.namespace),
         is_enabled: Set(normalized.is_enabled),
         last_capabilities: Set("{}".to_string()),
         last_error: Set(String::new()),
@@ -160,9 +155,6 @@ pub async fn update<S: PrimaryRuntimeState>(
     }
     if let Some(value) = normalized.base_url {
         active.base_url = Set(value);
-    }
-    if let Some(value) = normalized.namespace {
-        active.namespace = Set(value);
     }
     if let Some(value) = normalized.is_enabled {
         active.is_enabled = Set(value);
@@ -316,7 +308,6 @@ fn normalize_create_input(input: CreateRemoteNodeInput) -> Result<CreateRemoteNo
     Ok(CreateRemoteNodeInput {
         name: normalize_non_blank("name", &input.name)?,
         base_url: normalize_remote_base_url(&input.base_url)?,
-        namespace: normalize_namespace(&input.namespace)?,
         is_enabled: input.is_enabled,
     })
 }
@@ -344,11 +335,6 @@ fn normalize_update_input(input: UpdateRemoteNodeInput) -> Result<UpdateRemoteNo
             .as_deref()
             .map(normalize_remote_base_url)
             .transpose()?,
-        namespace: input
-            .namespace
-            .as_deref()
-            .map(normalize_namespace)
-            .transpose()?,
         is_enabled: input.is_enabled,
     })
 }
@@ -359,22 +345,6 @@ fn normalize_non_blank(field: &str, value: &str) -> Result<String> {
         return Err(AsterError::validation_error(format!(
             "{field} cannot be blank"
         )));
-    }
-    Ok(trimmed.to_string())
-}
-
-fn normalize_namespace(value: &str) -> Result<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(AsterError::validation_error("namespace cannot be blank"));
-    }
-    if !trimmed
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-    {
-        return Err(AsterError::validation_error(
-            "namespace only allows ASCII letters, digits, '.', '_' and '-'",
-        ));
     }
     Ok(trimmed.to_string())
 }
@@ -398,7 +368,6 @@ async fn sync_remote_binding_config(node: &managed_follower::Model) -> Result<()
     client
         .sync_binding(&RemoteBindingSyncRequest {
             name: node.name.clone(),
-            namespace: node.namespace.clone(),
             is_enabled: node.is_enabled,
         })
         .await
@@ -444,14 +413,12 @@ mod tests {
         let normalized = normalize_create_input(CreateRemoteNodeInput {
             name: " Edge ".to_string(),
             base_url: " https://remote.example.com/ ".to_string(),
-            namespace: "tenant-a".to_string(),
             is_enabled: true,
         })
         .unwrap();
 
         assert_eq!(normalized.name, "Edge");
         assert_eq!(normalized.base_url, "https://remote.example.com");
-        assert_eq!(normalized.namespace, "tenant-a");
         assert!(normalized.is_enabled);
     }
 
@@ -470,7 +437,6 @@ mod tests {
         let normalized = normalize_update_input(UpdateRemoteNodeInput {
             name: Some(" Edge ".to_string()),
             base_url: Some(" https://remote.example.com/ ".to_string()),
-            namespace: Some("tenant-a".to_string()),
             is_enabled: Some(true),
         })
         .unwrap();
@@ -480,7 +446,6 @@ mod tests {
             normalized.base_url.as_deref(),
             Some("https://remote.example.com")
         );
-        assert_eq!(normalized.namespace.as_deref(), Some("tenant-a"));
         assert_eq!(normalized.is_enabled, Some(true));
     }
 }

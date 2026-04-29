@@ -81,6 +81,25 @@ describe("handleApiError", () => {
 		);
 	});
 
+	it("maps managed ingress precondition subcodes", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.PreconditionFailed,
+				"managed ingress required",
+				"managed_ingress.required",
+			),
+		);
+
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:managed_ingress_required",
+		);
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"translated:errors:managed_ingress_required",
+		);
+	});
+
 	it("prefers subcode translations over generic upload codes", async () => {
 		const { handleApiError } = await import("@/hooks/useApiError");
 
@@ -126,6 +145,22 @@ describe("handleApiError", () => {
 		handleApiError("unexpected");
 
 		expect(mockState.toastError).toHaveBeenNthCalledWith(1, "plain failure");
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			2,
+			"translated:errors:unexpected_error",
+		);
+	});
+
+	it("treats blank messages as unexpected errors", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(new mockState.ApiError(ErrorCode.Conflict, "   "));
+		handleApiError(new Error("\n\t"));
+
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			1,
+			"translated:errors:unexpected_error",
+		);
 		expect(mockState.toastError).toHaveBeenNthCalledWith(
 			2,
 			"translated:errors:unexpected_error",

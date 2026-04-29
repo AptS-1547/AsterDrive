@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { RemoteNodeManagedIngressSection } from "@/components/admin/admin-remote-nodes-page/RemoteNodeManagedIngressSection";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -16,7 +17,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import type { RemoteNodeInfo } from "@/types/api";
+import type {
+	RemoteCreateIngressProfileRequest,
+	RemoteIngressProfileInfo,
+	RemoteNodeInfo,
+	RemoteUpdateIngressProfileRequest,
+} from "@/types/api";
 import {
 	getRemoteNodeBaseUrlValidationMessage,
 	type RemoteNodeFormData,
@@ -31,7 +37,17 @@ interface RemoteNodeDialogProps {
 	createStepTouched: boolean;
 	editingNode: RemoteNodeInfo | null;
 	form: RemoteNodeFormData;
+	managedIngressProfiles?: RemoteIngressProfileInfo[];
+	managedIngressProfilesEnabled?: boolean;
+	managedIngressProfilesError?: string | null;
+	managedIngressProfilesLoading?: boolean;
 	mode: "create" | "edit";
+	onCreateManagedIngressProfile?: (
+		payload: RemoteCreateIngressProfileRequest,
+	) => Promise<void>;
+	onDeleteManagedIngressProfile?: (
+		profile: RemoteIngressProfileInfo,
+	) => Promise<void>;
 	onCreateBack: () => void;
 	onCreateNext: () => void;
 	onCreateStepChange: (step: number) => void;
@@ -42,6 +58,10 @@ interface RemoteNodeDialogProps {
 	onOpenChange: (open: boolean) => void;
 	onRunConnectionTest: () => Promise<boolean>;
 	onSubmit: () => void;
+	onUpdateManagedIngressProfile?: (
+		profileKey: string,
+		payload: RemoteUpdateIngressProfileRequest,
+	) => Promise<void>;
 	open: boolean;
 	submitting: boolean;
 }
@@ -51,7 +71,13 @@ export function RemoteNodeDialog({
 	createStepTouched,
 	editingNode,
 	form,
+	managedIngressProfiles = [],
+	managedIngressProfilesEnabled = false,
+	managedIngressProfilesError = null,
+	managedIngressProfilesLoading = false,
 	mode,
+	onCreateManagedIngressProfile,
+	onDeleteManagedIngressProfile,
 	onCreateBack,
 	onCreateNext,
 	onCreateStepChange,
@@ -59,6 +85,7 @@ export function RemoteNodeDialog({
 	onOpenChange,
 	onRunConnectionTest,
 	onSubmit,
+	onUpdateManagedIngressProfile,
 	open,
 	submitting,
 }: RemoteNodeDialogProps) {
@@ -117,26 +144,12 @@ export function RemoteNodeDialog({
 		Boolean(form.base_url.trim()) &&
 		!baseUrlValidationMessage;
 	const isSubmitDisabled =
-		submitting ||
-		!form.name.trim() ||
-		!form.namespace.trim() ||
-		Boolean(baseUrlValidationMessage);
+		submitting || !form.name.trim() || Boolean(baseUrlValidationMessage);
 	const createNameError =
 		isCreateMode && createStep === 0 && createStepTouched && !form.name.trim()
 			? t("remote_node_wizard_name_required")
 			: null;
-	const createNamespaceError =
-		isCreateMode &&
-		createStep === 0 &&
-		createStepTouched &&
-		!form.namespace.trim()
-			? t("remote_node_wizard_namespace_required")
-			: null;
 	const createSummaryItems = [
-		{
-			label: t("namespace"),
-			value: form.namespace || "—",
-		},
 		{
 			label: t("base_url"),
 			value: form.base_url || t("remote_node_base_url_empty"),
@@ -351,7 +364,7 @@ export function RemoteNodeDialog({
 																	t("remote_node_overview_title"),
 																	t("remote_node_wizard_step_identity_desc"),
 																)}
-																<div className="grid gap-4 md:grid-cols-2">
+																<div className="grid gap-4">
 																	<div className="space-y-2">
 																		<Label htmlFor="remote-node-name">
 																			{t("core:name")}
@@ -377,35 +390,6 @@ export function RemoteNodeDialog({
 																		{createNameError ? (
 																			<p className="text-xs text-destructive">
 																				{createNameError}
-																			</p>
-																		) : null}
-																	</div>
-																	<div className="space-y-2">
-																		<Label htmlFor="remote-node-namespace">
-																			{t("namespace")}
-																		</Label>
-																		<Input
-																			id="remote-node-namespace"
-																			value={form.namespace}
-																			onChange={(event) =>
-																				onFieldChange(
-																					"namespace",
-																					event.target.value,
-																				)
-																			}
-																			className={ADMIN_CONTROL_HEIGHT_CLASS}
-																			aria-invalid={
-																				createNamespaceError ? true : undefined
-																			}
-																			placeholder="tenant-a"
-																			required
-																		/>
-																		<p className="text-xs text-muted-foreground">
-																			{t("remote_node_namespace_hint")}
-																		</p>
-																		{createNamespaceError ? (
-																			<p className="text-xs text-destructive">
-																				{createNamespaceError}
 																			</p>
 																		) : null}
 																	</div>
@@ -571,24 +555,6 @@ export function RemoteNodeDialog({
 													{t("remote_node_name_hint")}
 												</p>
 											</div>
-											<div className="space-y-2">
-												<Label htmlFor="remote-node-namespace">
-													{t("namespace")}
-												</Label>
-												<Input
-													id="remote-node-namespace"
-													value={form.namespace}
-													onChange={(event) =>
-														onFieldChange("namespace", event.target.value)
-													}
-													className={ADMIN_CONTROL_HEIGHT_CLASS}
-													placeholder="tenant-a"
-													required
-												/>
-												<p className="text-xs text-muted-foreground">
-													{t("remote_node_namespace_hint")}
-												</p>
-											</div>
 											<div className="space-y-2 md:col-span-2">
 												<Label htmlFor="remote-node-base-url">
 													{t("base_url")}
@@ -628,6 +594,20 @@ export function RemoteNodeDialog({
 											</p>
 										</div>
 									</section>
+
+									{managedIngressProfilesEnabled &&
+									onCreateManagedIngressProfile &&
+									onUpdateManagedIngressProfile &&
+									onDeleteManagedIngressProfile ? (
+										<RemoteNodeManagedIngressSection
+											profiles={managedIngressProfiles}
+											loading={managedIngressProfilesLoading}
+											errorMessage={managedIngressProfilesError}
+											onCreateProfile={onCreateManagedIngressProfile}
+											onUpdateProfile={onUpdateManagedIngressProfile}
+											onDeleteProfile={onDeleteManagedIngressProfile}
+										/>
+									) : null}
 
 									<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
 										{renderSectionIntro(

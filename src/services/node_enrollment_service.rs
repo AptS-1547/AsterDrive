@@ -1,31 +1,27 @@
 //! 服务模块：`node_enrollment_service`。
 
-use crate::db::repository::{master_binding_repo, policy_repo};
-use crate::entities::{master_binding, storage_policy};
+use crate::db::repository::master_binding_repo;
+use crate::entities::master_binding;
 use crate::errors::{AsterError, Result};
 use crate::services::{managed_follower_enrollment_service, master_binding_service};
 use crate::storage::remote_protocol::normalize_remote_base_url;
-use crate::types::DriverType;
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
 
 pub const BOOTSTRAP_REMOTE_MASTER_URL_ENV: &str = "ASTER_BOOTSTRAP_REMOTE_MASTER_URL";
 pub const BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN_ENV: &str = "ASTER_BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN";
-pub const BOOTSTRAP_REMOTE_INGRESS_POLICY_ID_ENV: &str = "ASTER_BOOTSTRAP_REMOTE_INGRESS_POLICY_ID";
 pub const FOLLOWER_DEFAULT_SERVER_HOST: &str = "0.0.0.0";
 
 #[derive(Debug, Clone)]
 pub struct NodeEnrollmentInput {
     pub master_url: String,
     pub token: String,
-    pub ingress_policy_id: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
 pub struct NodeEnrollmentResult {
     pub action: &'static str,
     pub binding: master_binding::Model,
-    pub ingress_policy: storage_policy::Model,
 }
 
 #[derive(Debug, Clone)]
@@ -60,7 +56,6 @@ pub async fn enroll(
     input: NodeEnrollmentInput,
 ) -> Result<NodeEnrollmentResult> {
     let master_url = normalize_remote_base_url(&input.master_url)?;
-    let ingress_policy = resolve_ingress_policy(db, input.ingress_policy_id).await?;
     let bootstrap = redeem_enrollment(&master_url, &input.token).await?;
 
     let (binding, action) = crate::db::transaction::with_transaction(db, async |txn| {
@@ -71,8 +66,6 @@ pub async fn enroll(
                 master_url: bootstrap.master_url.clone(),
                 access_key: bootstrap.access_key.clone(),
                 secret_key: bootstrap.secret_key.clone(),
-                namespace: bootstrap.namespace.clone(),
-                ingress_policy_id: ingress_policy.id,
                 is_enabled: bootstrap.is_enabled,
             },
         )
@@ -82,11 +75,7 @@ pub async fn enroll(
 
     ack_enrollment(&master_url, &bootstrap.ack_token).await?;
 
-    Ok(NodeEnrollmentResult {
-        action,
-        binding,
-        ingress_policy,
-    })
+    Ok(NodeEnrollmentResult { action, binding })
 }
 
 pub async fn bootstrap_from_env_if_configured(
@@ -112,7 +101,6 @@ where
             tracing::info!(
                 master_url = result.binding.master_url,
                 binding_id = result.binding.id,
-                ingress_policy_id = result.ingress_policy.id,
                 "bootstrapped follower enrollment from environment"
             );
             Ok(NodeEnrollmentBootstrapOutcome::Enrolled {
@@ -156,9 +144,8 @@ where
 {
     let master_url = env_string(get_env, BOOTSTRAP_REMOTE_MASTER_URL_ENV);
     let token = env_string(get_env, BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN_ENV);
-    let ingress_policy_raw = env_string(get_env, BOOTSTRAP_REMOTE_INGRESS_POLICY_ID_ENV);
 
-    if master_url.is_none() && token.is_none() && ingress_policy_raw.is_none() {
+    if master_url.is_none() && token.is_none() {
         return Ok(None);
     }
 
@@ -169,29 +156,7 @@ where
         )));
     };
 
-    let ingress_policy_id = ingress_policy_raw
-        .map(|raw| {
-            raw.parse::<i64>().map_err(|_| {
-                AsterError::validation_error(format!(
-                    "{} must be a positive integer",
-                    BOOTSTRAP_REMOTE_INGRESS_POLICY_ID_ENV
-                ))
-            })
-        })
-        .transpose()?;
-
-    if ingress_policy_id.is_some_and(|value| value <= 0) {
-        return Err(AsterError::validation_error(format!(
-            "{} must be a positive integer",
-            BOOTSTRAP_REMOTE_INGRESS_POLICY_ID_ENV
-        )));
-    }
-
-    Ok(Some(NodeEnrollmentInput {
-        master_url,
-        token,
-        ingress_policy_id,
-    }))
+    Ok(Some(NodeEnrollmentInput { master_url, token }))
 }
 
 fn env_string<F>(get_env: &F, name: &str) -> Option<String>
@@ -305,29 +270,6 @@ async fn parse_empty_api_response(response: reqwest::Response, action: &str) -> 
     }
 
     Ok(())
-}
-
-async fn resolve_ingress_policy(
-    db: &DatabaseConnection,
-    ingress_policy_id: Option<i64>,
-) -> Result<storage_policy::Model> {
-    let policy = if let Some(policy_id) = ingress_policy_id {
-        policy_repo::find_by_id(db, policy_id).await?
-    } else {
-        policy_repo::find_default(db).await?.ok_or_else(|| {
-            AsterError::storage_policy_not_found(
-                "no default storage policy found; pass --ingress-policy-id explicitly",
-            )
-        })?
-    };
-
-    if policy.driver_type == DriverType::Remote {
-        return Err(AsterError::validation_error(
-            "ingress policy cannot use the remote driver",
-        ));
-    }
-
-    Ok(policy)
 }
 
 #[cfg(test)]
@@ -501,7 +443,6 @@ mod tests {
                     "master_url": "http://127.0.0.1:3000",
                     "access_key": "ak_test",
                     "secret_key": "sk_test",
-                    "namespace": "docker-space",
                     "is_enabled": true,
                     "ack_token": "enr_ack_mock"
                 }
@@ -530,13 +471,7 @@ mod tests {
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].name, "docker-follower");
         assert_eq!(stored[0].access_key, "ak_test");
-        assert_eq!(stored[0].namespace, "docker-space");
-
-        let default_policy = policy_repo::find_default(&db)
-            .await
-            .expect("default policy lookup should succeed")
-            .expect("default policy should exist");
-        assert_eq!(default_policy.name, "Local Default");
+        assert!(stored[0].storage_namespace.starts_with("mb_"));
 
         server.stop().await;
     }
@@ -555,17 +490,12 @@ mod tests {
             ack_count.clone(),
         )
         .await;
-        let default_policy = policy_repo::find_default(&db)
-            .await
-            .expect("default policy lookup should succeed")
-            .expect("default policy should exist");
         master_binding::ActiveModel {
             name: Set("docker-follower".to_string()),
             master_url: Set(server.base_url.clone()),
             access_key: Set("ak_existing".to_string()),
             secret_key: Set("sk_existing".to_string()),
-            namespace: Set("docker-space".to_string()),
-            ingress_policy_id: Set(default_policy.id),
+            storage_namespace: Set("mb_existing".to_string()),
             is_enabled: Set(true),
             created_at: Set(chrono::Utc::now()),
             updated_at: Set(chrono::Utc::now()),

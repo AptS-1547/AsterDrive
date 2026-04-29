@@ -148,6 +148,7 @@ fn infer_storage_error_kind(message: &str) -> StorageErrorKind {
             "presigned put not supported",
             "stream upload not supported",
             "ingress policy does not support",
+            "ingress target does not support",
         ],
     ) {
         return StorageErrorKind::Unsupported;
@@ -255,6 +256,20 @@ mod tests {
         assert_eq!(
             storage_driver_error_display_message(error.message()),
             "remote storage request failed: error sending request"
+        );
+    }
+
+    #[test]
+    fn ingress_target_unsupported_message_stays_stable() {
+        let error = AsterError::storage_driver_error("ingress target does not support");
+        assert_eq!(error.message(), "ingress target does not support");
+        assert_eq!(
+            error.to_string(),
+            "Storage Driver Error: ingress target does not support"
+        );
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Unsupported)
         );
     }
 

@@ -38,7 +38,6 @@ pub struct RemoteEnrollmentBootstrap {
     pub master_url: String,
     pub access_key: String,
     pub secret_key: String,
-    pub namespace: String,
     pub is_enabled: bool,
     pub ack_token: String,
 }
@@ -140,7 +139,6 @@ pub async fn redeem_enrollment_token<S: PrimaryRuntimeState>(
             master_url,
             access_key: remote_node.access_key,
             secret_key: remote_node.secret_key,
-            namespace: remote_node.namespace,
             is_enabled: remote_node.is_enabled,
             ack_token: format!("enr_ack_{}", &enrollment.ack_token_hash),
         })

@@ -206,9 +206,10 @@ describe("adminService", () => {
 		adminRemoteNodeService.create({
 			name: "Remote A",
 			base_url: "https://remote.example.com",
-			namespace: "tenant-a",
 		});
-		adminRemoteNodeService.update(6, { namespace: "tenant-b" });
+		adminRemoteNodeService.update(6, {
+			base_url: "https://remote-b.example.com",
+		});
 		adminRemoteNodeService.delete(6);
 		adminRemoteNodeService.testConnection(6);
 		adminRemoteNodeService.testParams({
@@ -283,13 +284,12 @@ describe("adminService", () => {
 		expect(mockState.post).toHaveBeenNthCalledWith(6, "/admin/remote-nodes", {
 			name: "Remote A",
 			base_url: "https://remote.example.com",
-			namespace: "tenant-a",
 		});
 		expect(mockState.patch).toHaveBeenNthCalledWith(
 			3,
 			"/admin/remote-nodes/6",
 			{
-				namespace: "tenant-b",
+				base_url: "https://remote-b.example.com",
 			},
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(
@@ -353,6 +353,54 @@ describe("adminService", () => {
 		expect(mockState.delete).toHaveBeenNthCalledWith(
 			8,
 			"/admin/config/mail.host",
+		);
+	});
+
+	it("uses the expected managed ingress profile endpoints", () => {
+		adminRemoteNodeService.listIngressProfiles(6);
+		adminRemoteNodeService.createIngressProfile(6, {
+			name: "Ingress A",
+			driver_type: "local" as never,
+			endpoint: "",
+			bucket: "",
+			access_key: "",
+			secret_key: "",
+			base_path: "tenant-a/incoming",
+			max_file_size: 2048,
+			is_default: true,
+		});
+		adminRemoteNodeService.updateIngressProfile(6, "igp_demo", {
+			name: "Ingress B",
+			is_default: false,
+		});
+		adminRemoteNodeService.deleteIngressProfile(6, "igp_demo");
+
+		expect(mockState.get).toHaveBeenCalledWith(
+			"/admin/remote-nodes/6/ingress-profiles",
+		);
+		expect(mockState.post).toHaveBeenCalledWith(
+			"/admin/remote-nodes/6/ingress-profiles",
+			{
+				name: "Ingress A",
+				driver_type: "local",
+				endpoint: "",
+				bucket: "",
+				access_key: "",
+				secret_key: "",
+				base_path: "tenant-a/incoming",
+				max_file_size: 2048,
+				is_default: true,
+			},
+		);
+		expect(mockState.patch).toHaveBeenCalledWith(
+			"/admin/remote-nodes/6/ingress-profiles/igp_demo",
+			{
+				name: "Ingress B",
+				is_default: false,
+			},
+		);
+		expect(mockState.delete).toHaveBeenCalledWith(
+			"/admin/remote-nodes/6/ingress-profiles/igp_demo",
 		);
 	});
 

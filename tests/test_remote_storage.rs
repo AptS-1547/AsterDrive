@@ -18,11 +18,12 @@ use aster_drive::db::repository::{
 };
 use aster_drive::entities::storage_policy;
 use aster_drive::services::{
-    auth_service, file_service, folder_service, managed_follower_service, master_binding_service,
-    policy_service, upload_service,
+    auth_service, file_service, folder_service, managed_follower_service,
+    managed_ingress_profile_service, master_binding_service, policy_service, upload_service,
 };
 use aster_drive::storage::remote_protocol::{
-    RemoteStorageClient, RemoteStorageComposeRequest, sign_internal_request, sign_presigned_request,
+    RemoteCreateIngressProfileRequest, RemoteCreateLocalIngressProfileRequest, RemoteStorageClient,
+    RemoteStorageComposeRequest, sign_internal_request, sign_presigned_request,
 };
 use aster_drive::types::{
     DriverType, NullablePatch, RemoteDownloadStrategy, RemoteUploadStrategy, StoragePolicyOptions,
@@ -221,6 +222,34 @@ async fn wait_for_remote_probe(
     unreachable!("remote probe retry loop should return or panic")
 }
 
+async fn create_managed_local_ingress_for_binding(
+    provider_state: &aster_drive::runtime::PrimaryAppState,
+    access_key: &str,
+    base_path: &str,
+) {
+    let binding = master_binding_repo::find_by_access_key(&provider_state.db, access_key)
+        .await
+        .expect("provider master binding lookup should succeed")
+        .expect("provider master binding should exist");
+    let max_file_size = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .map(|policy| policy.max_file_size)
+        .unwrap_or(0);
+    managed_ingress_profile_service::create(
+        &provider_state.follower_view(),
+        &binding,
+        RemoteCreateIngressProfileRequest::Local(RemoteCreateLocalIngressProfileRequest {
+            name: format!("Managed {base_path}"),
+            base_path: base_path.to_string(),
+            max_file_size,
+            is_default: true,
+        }),
+    )
+    .await
+    .expect("provider managed ingress profile should be created");
+}
+
 async fn write_temp_upload_file(
     state: &aster_drive::runtime::PrimaryAppState,
     name: &str,
@@ -395,16 +424,41 @@ fn snapshot_temp_roots(
 
 fn provider_object_path(
     ingress_base_path: &str,
-    namespace: &str,
+    storage_namespace: &str,
     remote_base_path: &str,
     storage_path: &str,
 ) -> PathBuf {
-    let mut relative = PathBuf::from(namespace.trim_matches('/'));
+    let mut relative = PathBuf::from(storage_namespace.trim_matches('/'));
     if !remote_base_path.trim_matches('/').is_empty() {
         relative.push(remote_base_path.trim_matches('/'));
     }
     relative.push(storage_path.trim_start_matches('/'));
     Path::new(ingress_base_path).join(relative)
+}
+
+fn managed_ingress_object_path(
+    provider_state: &aster_drive::runtime::PrimaryAppState,
+    profile_base_path: &str,
+    storage_namespace: &str,
+    remote_base_path: &str,
+    storage_path: &str,
+) -> PathBuf {
+    let ingress_base_path = Path::new(
+        &provider_state
+            .config
+            .server
+            .follower
+            .managed_ingress_local_root,
+    )
+    .join(profile_base_path);
+    provider_object_path(
+        ingress_base_path
+            .to_str()
+            .expect("managed ingress base path should be valid utf-8"),
+        storage_namespace,
+        remote_base_path,
+        storage_path,
+    )
 }
 
 fn path_and_query_from_url(url: &str) -> String {
@@ -442,22 +496,17 @@ struct BrowserPresignedCorsFixture {
 }
 
 async fn setup_browser_presigned_cors_fixture(
-    namespace: &str,
+    label: &str,
     master_url: &str,
 ) -> BrowserPresignedCorsFixture {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
 
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
-            name: format!("{namespace}-node"),
+            name: format!("{label}-node"),
             base_url: "http://provider.example.com".to_string(),
-            namespace: namespace.to_string(),
             is_enabled: true,
         },
     )
@@ -471,12 +520,10 @@ async fn setup_browser_presigned_cors_fixture(
     master_binding_service::upsert_from_enrollment(
         &provider_state.db,
         master_binding_service::UpsertMasterBindingInput {
-            name: format!("{namespace}-binding"),
+            name: format!("{label}-binding"),
             master_url: master_url.to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: namespace.to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -487,12 +534,18 @@ async fn setup_browser_presigned_cors_fixture(
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     let remote_policy = create_remote_policy_with_options(
         &consumer_state,
         consumer_node.id,
-        &format!("Remote Presigned {namespace} Policy"),
-        &format!("{namespace}-base"),
+        &format!("Remote Presigned {label} Policy"),
+        &format!("{label}-base"),
         StoragePolicyOptions {
             remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
             ..Default::default()
@@ -507,14 +560,9 @@ async fn setup_browser_presigned_cors_fixture(
         .await
         .expect("test user lookup should succeed")
         .expect("test user should exist");
-    let folder = folder_service::create(
-        &consumer_state,
-        user.id,
-        &format!("{namespace}-folder"),
-        None,
-    )
-    .await
-    .expect("remote folder should be created");
+    let folder = folder_service::create(&consumer_state, user.id, &format!("{label}-folder"), None)
+        .await
+        .expect("remote folder should be created");
     folder_service::update(
         &consumer_state,
         folder.id,
@@ -529,7 +577,7 @@ async fn setup_browser_presigned_cors_fixture(
     let init = upload_service::init_upload(
         &consumer_state,
         user.id,
-        &format!("{namespace}.bin"),
+        &format!("{label}.bin"),
         32,
         Some(folder.id),
         None,
@@ -547,26 +595,40 @@ async fn setup_browser_presigned_cors_fixture(
     }
 }
 
-#[actix_web::test]
-async fn test_internal_storage_presigned_put_rejects_payload_exceeding_ingress_limit() {
+#[tokio::test]
+async fn test_managed_ingress_profile_handles_remote_writes_without_legacy_binding_policy() {
     let provider_state = common::setup().await;
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
-    set_policy_max_file_size(&provider_state, &provider_ingress_policy, 8).await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+    let managed_root = PathBuf::from(
+        &provider_state
+            .config
+            .server
+            .follower
+            .managed_ingress_local_root,
+    );
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "managed-ingress-node".to_string(),
+            base_url: provider_server.base_url.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
 
-    let access_key = "limit-access-key";
-    let secret_key = "limit-secret-key";
-    master_binding_service::upsert_from_enrollment(
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
         &provider_state.db,
         master_binding_service::UpsertMasterBindingInput {
-            name: "limit-binding".to_string(),
+            name: "managed-ingress-binding".to_string(),
             master_url: "http://master.example.com".to_string(),
-            access_key: access_key.to_string(),
-            secret_key: secret_key.to_string(),
-            namespace: "provider-limit-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
             is_enabled: true,
         },
     )
@@ -577,6 +639,244 @@ async fn test_internal_storage_presigned_put_rejects_payload_exceeding_ingress_l
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
+
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    let profile = managed_ingress_profile_service::create_remote(
+        &consumer_state,
+        consumer_node.id,
+        RemoteCreateIngressProfileRequest::Local(RemoteCreateLocalIngressProfileRequest {
+            name: "Managed Local".to_string(),
+            base_path: "managed-a".to_string(),
+            max_file_size: 0,
+            is_default: true,
+        }),
+    )
+    .await
+    .expect("managed ingress profile should be created through primary");
+    assert!(profile.is_default);
+    assert_eq!(profile.applied_revision, profile.desired_revision);
+
+    let client = RemoteStorageClient::new(
+        &provider_server.base_url,
+        &consumer_node_model.access_key,
+        &consumer_node_model.secret_key,
+    )
+    .expect("managed ingress client should build");
+    client
+        .put_bytes("managed-ingress.bin", b"managed ingress payload")
+        .await
+        .expect("managed ingress write should not depend on legacy binding policy fields");
+
+    let stored_path = Path::new(
+        &provider_state
+            .config
+            .server
+            .follower
+            .managed_ingress_local_root,
+    )
+    .join("managed-a")
+    .join(provider_binding.storage_namespace)
+    .join("managed-ingress.bin");
+    let stored = tokio::fs::read(&stored_path)
+        .await
+        .expect("managed ingress payload should land under managed ingress root");
+    assert_eq!(stored, b"managed ingress payload");
+
+    provider_server.stop().await;
+    let _ = tokio::fs::remove_dir_all(managed_root.join("managed-a")).await;
+    let _ = tokio::fs::remove_dir(&managed_root).await;
+}
+
+#[tokio::test]
+async fn test_managed_ingress_profile_api_isolates_multiple_primary_bindings() {
+    let provider_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let (binding_a, _) = master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "primary-a".to_string(),
+            master_url: "http://primary-a.example.com".to_string(),
+            access_key: "managed-ak-a".to_string(),
+            secret_key: "managed-sk-a".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding a should be created");
+    let (binding_b, _) = master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "primary-b".to_string(),
+            master_url: "http://primary-b.example.com".to_string(),
+            access_key: "managed-ak-b".to_string(),
+            secret_key: "managed-sk-b".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding b should be created");
+    assert_ne!(binding_a.storage_namespace, binding_b.storage_namespace);
+
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let client_a =
+        RemoteStorageClient::new(&provider_server.base_url, "managed-ak-a", "managed-sk-a")
+            .expect("remote storage client should build");
+    let client_b =
+        RemoteStorageClient::new(&provider_server.base_url, "managed-ak-b", "managed-sk-b")
+            .expect("remote storage client should build");
+
+    for (client, name) in [(&client_a, "Managed A"), (&client_b, "Managed B")] {
+        let profile = client
+            .create_ingress_profile(&RemoteCreateIngressProfileRequest::Local(
+                RemoteCreateLocalIngressProfileRequest {
+                    name: name.to_string(),
+                    base_path: "shared-profile".to_string(),
+                    max_file_size: 0,
+                    is_default: true,
+                },
+            ))
+            .await
+            .expect("managed ingress profile should be created for its binding");
+        assert!(profile.is_default);
+        assert_eq!(profile.base_path, "shared-profile");
+    }
+
+    client_a
+        .put_bytes("same.bin", b"payload-from-a")
+        .await
+        .expect("binding a should write object");
+    client_b
+        .put_bytes("same.bin", b"payload-from-b")
+        .await
+        .expect("binding b should write object");
+
+    let path_a = managed_ingress_object_path(
+        &provider_state,
+        "shared-profile",
+        &binding_a.storage_namespace,
+        "",
+        "same.bin",
+    );
+    let path_b = managed_ingress_object_path(
+        &provider_state,
+        "shared-profile",
+        &binding_b.storage_namespace,
+        "",
+        "same.bin",
+    );
+    assert_eq!(
+        tokio::fs::read(&path_a)
+            .await
+            .expect("binding a object should exist"),
+        b"payload-from-a"
+    );
+    assert_eq!(
+        tokio::fs::read(&path_b)
+            .await
+            .expect("binding b object should exist"),
+        b"payload-from-b"
+    );
+    assert_eq!(
+        client_a
+            .get_bytes("same.bin")
+            .await
+            .expect("binding a should read its object"),
+        b"payload-from-a"
+    );
+    assert_eq!(
+        client_b
+            .get_bytes("same.bin")
+            .await
+            .expect("binding b should read its object"),
+        b"payload-from-b"
+    );
+    assert_eq!(
+        client_a
+            .list_paths(None)
+            .await
+            .expect("binding a list should succeed"),
+        vec!["same.bin".to_string()]
+    );
+    assert_eq!(
+        client_a
+            .list_paths(Some("."))
+            .await
+            .expect("binding a root prefix list should succeed"),
+        vec!["same.bin".to_string()]
+    );
+    assert_eq!(
+        client_b
+            .list_paths(None)
+            .await
+            .expect("binding b list should succeed"),
+        vec!["same.bin".to_string()]
+    );
+
+    let profile_a = managed_ingress_profile_service::create(
+        &provider_state.follower_view(),
+        &binding_a,
+        RemoteCreateIngressProfileRequest::Local(RemoteCreateLocalIngressProfileRequest {
+            name: "Second A".to_string(),
+            base_path: "secondary-a".to_string(),
+            max_file_size: 0,
+            is_default: false,
+        }),
+    )
+    .await
+    .expect("binding a should allow additional scoped profiles");
+    let profiles_b = client_b
+        .list_ingress_profiles()
+        .await
+        .expect("binding b profiles should list");
+    assert_eq!(profile_a.base_path, "secondary-a");
+    assert_eq!(profiles_b.len(), 1);
+    assert_eq!(profiles_b[0].base_path, "shared-profile");
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_internal_storage_presigned_put_rejects_payload_exceeding_ingress_limit() {
+    let provider_state = common::setup().await;
+    let provider_default_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+    set_policy_max_file_size(&provider_state, &provider_default_policy, 8).await;
+
+    let access_key = "limit-access-key";
+    let secret_key = "limit-secret-key";
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "limit-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(&provider_state, access_key, access_key).await;
 
     let follower_app = test::init_service(
         App::new()
@@ -615,10 +915,6 @@ async fn test_internal_storage_presigned_put_rejects_payload_exceeding_ingress_l
 #[actix_web::test]
 async fn test_internal_storage_presigned_put_ignores_bytes_beyond_declared_content_length() {
     let provider_state = common::setup().await;
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
 
     let access_key = "declared-length-access-key";
     let secret_key = "declared-length-secret-key";
@@ -629,8 +925,6 @@ async fn test_internal_storage_presigned_put_ignores_bytes_beyond_declared_conte
             master_url: "http://master.example.com".to_string(),
             access_key: access_key.to_string(),
             secret_key: secret_key.to_string(),
-            namespace: "provider-declared-length-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -641,6 +935,7 @@ async fn test_internal_storage_presigned_put_ignores_bytes_beyond_declared_conte
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(&provider_state, access_key, access_key).await;
     let binding = master_binding_repo::find_by_access_key(&provider_state.db, access_key)
         .await
         .expect("provider binding lookup should succeed")
@@ -680,21 +975,21 @@ async fn test_internal_storage_presigned_put_ignores_bytes_beyond_declared_conte
         "connection-close request should not emit a second HTTP response"
     );
 
-    let driver = provider_state
-        .driver_registry
-        .get_driver(&provider_ingress_policy)
-        .expect("provider ingress driver should resolve");
-    let storage_path = master_binding_service::provider_storage_path(&binding, object_key);
-    let stored = driver
-        .get(&storage_path)
+    let storage_path = managed_ingress_object_path(
+        &provider_state,
+        access_key,
+        &binding.storage_namespace,
+        "",
+        object_key,
+    );
+    let stored = tokio::fs::read(&storage_path)
         .await
         .expect("provider should store presigned upload object");
     assert_eq!(stored, b"test");
-    let metadata = driver
-        .metadata(&storage_path)
+    let metadata = tokio::fs::metadata(&storage_path)
         .await
         .expect("provider object metadata should be readable");
-    assert_eq!(metadata.size, 4);
+    assert_eq!(metadata.len(), 4);
 
     provider_server.stop().await;
 }
@@ -702,11 +997,11 @@ async fn test_internal_storage_presigned_put_ignores_bytes_beyond_declared_conte
 #[actix_web::test]
 async fn test_internal_storage_compose_rejects_expected_size_exceeding_ingress_limit() {
     let provider_state = common::setup().await;
-    let provider_ingress_policy = provider_state
+    let provider_default_policy = provider_state
         .policy_snapshot
         .system_default_policy()
         .expect("provider default ingress policy should exist");
-    set_policy_max_file_size(&provider_state, &provider_ingress_policy, 8).await;
+    set_policy_max_file_size(&provider_state, &provider_default_policy, 8).await;
 
     let access_key = "compose-limit-access-key";
     let secret_key = "compose-limit-secret-key";
@@ -717,8 +1012,6 @@ async fn test_internal_storage_compose_rejects_expected_size_exceeding_ingress_l
             master_url: "http://master.example.com".to_string(),
             access_key: access_key.to_string(),
             secret_key: secret_key.to_string(),
-            namespace: "provider-compose-limit-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -729,6 +1022,7 @@ async fn test_internal_storage_compose_rejects_expected_size_exceeding_ingress_l
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(&provider_state, access_key, access_key).await;
 
     let follower_app = test::init_service(
         App::new()
@@ -788,7 +1082,6 @@ async fn test_remote_node_connection_failure_returns_error_and_persists_last_err
         managed_follower_service::CreateRemoteNodeInput {
             name: "broken-remote".to_string(),
             base_url: "http://127.0.0.1:9".to_string(),
-            namespace: "broken-space".to_string(),
             is_enabled: true,
         },
     )
@@ -807,22 +1100,69 @@ async fn test_remote_node_connection_failure_returns_error_and_persists_last_err
 }
 
 #[actix_web::test]
+async fn test_internal_storage_capabilities_probe_does_not_require_ingress_profile() {
+    let provider_state = common::setup().await;
+    let access_key = "capabilities-no-ingress-access-key";
+    let secret_key = "capabilities-no-ingress-secret-key";
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "capabilities-no-ingress-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let path = "/api/v1/internal/storage/capabilities";
+    let timestamp = Utc::now().timestamp();
+    let nonce = "capabilities-no-ingress-test";
+    let signature = sign_internal_request(secret_key, "GET", path, timestamp, nonce, None);
+    let req = test::TestRequest::get()
+        .uri(path)
+        .insert_header(("x-aster-access-key", access_key))
+        .insert_header(("x-aster-timestamp", timestamp.to_string()))
+        .insert_header(("x-aster-nonce", nonce))
+        .insert_header(("x-aster-signature", signature))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["protocol_version"], "v1");
+    assert_eq!(body["data"]["supports_range_read"], true);
+}
+
+#[actix_web::test]
 async fn test_remote_storage_end_to_end_via_internal_api() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
     let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
-
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
 
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            namespace: "provider-space".to_string(),
             is_enabled: true,
         },
     )
@@ -840,8 +1180,6 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
             master_url: "http://master.example.com".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -852,6 +1190,12 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.access_key,
+    )
+    .await;
 
     let probed = wait_for_remote_probe(&consumer_state, consumer_node.id).await;
     assert_eq!(probed.capabilities.protocol_version, "v1");
@@ -945,9 +1289,10 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
         "remote list should include uploaded blob path"
     );
 
-    let provider_uploaded_path = provider_object_path(
-        &provider_ingress_policy.base_path,
-        &provider_binding.namespace,
+    let provider_uploaded_path = managed_ingress_object_path(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.storage_namespace,
         &remote_policy.base_path,
         &created_blob.storage_path,
     );
@@ -1006,9 +1351,10 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
             .expect("remote HEAD for empty blob should succeed")
     );
 
-    let provider_empty_path = provider_object_path(
-        &provider_ingress_policy.base_path,
-        &provider_binding.namespace,
+    let provider_empty_path = managed_ingress_object_path(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.storage_namespace,
         &remote_policy.base_path,
         &empty_blob.storage_path,
     );
@@ -1034,17 +1380,11 @@ async fn test_remote_presigned_download_redirects_to_follower() {
     let consumer_state = common::setup().await;
     let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
 
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
-
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            namespace: "provider-presigned-download-space".to_string(),
             is_enabled: true,
         },
     )
@@ -1062,8 +1402,6 @@ async fn test_remote_presigned_download_redirects_to_follower() {
             master_url: "http://master.example.com".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-presigned-download-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -1074,6 +1412,12 @@ async fn test_remote_presigned_download_redirects_to_follower() {
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     wait_for_remote_probe(&consumer_state, consumer_node.id).await;
 
@@ -1165,10 +1509,35 @@ async fn test_remote_presigned_download_redirects_to_follower() {
         "presigned URL should preserve cache-control"
     );
 
-    let response = reqwest::get(&location)
+    let response = reqwest::Client::new()
+        .get(&location)
+        .header(reqwest::header::ORIGIN, "http://master.example.com")
+        .send()
         .await
         .expect("presigned remote download request should succeed");
     assert!(response.status().is_success());
+    assert_eq!(
+        response
+            .headers()
+            .get(reqwest::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://master.example.com")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(reqwest::header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .and_then(|value| value.to_str().ok()),
+        Some("true")
+    );
+    assert!(
+        response
+            .headers()
+            .get(reqwest::header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .and_then(|value| value.to_str().ok())
+            .expect("presigned remote download should expose response headers")
+            .contains("Content-Disposition")
+    );
     assert_eq!(
         response
             .headers()
@@ -1201,17 +1570,11 @@ async fn test_disabling_remote_node_syncs_follower_binding_and_blocks_remote_use
     let consumer_state = common::setup().await;
     let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
 
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
-
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            namespace: "provider-disable-space".to_string(),
             is_enabled: true,
         },
     )
@@ -1229,8 +1592,6 @@ async fn test_disabling_remote_node_syncs_follower_binding_and_blocks_remote_use
             master_url: "http://master.example.com".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-disable-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -1241,6 +1602,12 @@ async fn test_disabling_remote_node_syncs_follower_binding_and_blocks_remote_use
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     wait_for_remote_probe(&consumer_state, consumer_node.id).await;
 
@@ -1326,17 +1693,11 @@ async fn test_saved_remote_node_connection_endpoint_returns_precondition_failed_
     let consumer_state = common::setup().await;
     let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
 
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
-
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            namespace: "provider-endpoint-space".to_string(),
             is_enabled: true,
         },
     )
@@ -1354,8 +1715,6 @@ async fn test_saved_remote_node_connection_endpoint_returns_precondition_failed_
             master_url: "http://master.example.com".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-endpoint-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -1366,6 +1725,12 @@ async fn test_saved_remote_node_connection_endpoint_returns_precondition_failed_
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     wait_for_remote_probe(&consumer_state, consumer_node.id).await;
 
@@ -1374,7 +1739,6 @@ async fn test_saved_remote_node_connection_endpoint_returns_precondition_failed_
         &consumer_node_model.access_key,
         master_binding_service::SyncMasterBindingInput {
             name: "consumer-access".to_string(),
-            namespace: "provider-endpoint-space".to_string(),
             is_enabled: false,
         },
     )
@@ -1417,7 +1781,6 @@ async fn test_disabled_remote_nodes_skip_network_during_health_checks() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "disabled-health-check-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            namespace: "disabled-health-check-space".to_string(),
             is_enabled: false,
         },
     )
@@ -1455,17 +1818,11 @@ async fn test_health_checks_only_touch_enabled_remote_nodes_in_mixed_sets() {
     let (disabled_server, disabled_request_count) =
         spawn_counting_internal_storage_server(provider_state.follower_view()).await;
 
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
-
     let enabled_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "enabled-health-check-target".to_string(),
             base_url: enabled_server.base_url.clone(),
-            namespace: "mixed-health-check-enabled-space".to_string(),
             is_enabled: true,
         },
     )
@@ -1482,8 +1839,6 @@ async fn test_health_checks_only_touch_enabled_remote_nodes_in_mixed_sets() {
             master_url: "http://master.example.com".to_string(),
             access_key: enabled_node_model.access_key.clone(),
             secret_key: enabled_node_model.secret_key.clone(),
-            namespace: "mixed-health-check-enabled-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -1494,13 +1849,18 @@ async fn test_health_checks_only_touch_enabled_remote_nodes_in_mixed_sets() {
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &enabled_node_model.access_key,
+        &enabled_node_model.access_key,
+    )
+    .await;
 
     let disabled_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "disabled-health-check-target".to_string(),
             base_url: disabled_server.base_url.clone(),
-            namespace: "mixed-health-check-disabled-space".to_string(),
             is_enabled: false,
         },
     )
@@ -1546,17 +1906,11 @@ async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_di
     let consumer_state = common::setup().await;
     let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
 
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
-
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            namespace: "provider-thumb-space".to_string(),
             is_enabled: true,
         },
     )
@@ -1574,8 +1928,6 @@ async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_di
             master_url: "http://master.example.com".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-thumb-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -1586,6 +1938,12 @@ async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_di
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     wait_for_remote_probe(&consumer_state, consumer_node.id).await;
 
@@ -1686,17 +2044,11 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
     let consumer_state = common::setup().await;
     let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
 
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
-
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            namespace: "provider-chunked-space".to_string(),
             is_enabled: true,
         },
     )
@@ -1707,15 +2059,13 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
             .await
             .expect("consumer remote node should be queryable");
 
-    master_binding_service::upsert_from_enrollment(
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
         &provider_state.db,
         master_binding_service::UpsertMasterBindingInput {
             name: "consumer-access".to_string(),
             master_url: "http://master.example.com".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-chunked-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -1726,6 +2076,12 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     wait_for_remote_probe(&consumer_state, consumer_node.id).await;
 
@@ -1795,9 +2151,10 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
         .s3_temp_key
         .clone()
         .expect("remote presigned temp key should exist");
-    let uploaded_temp_path = provider_object_path(
-        &provider_ingress_policy.base_path,
-        &consumer_node.namespace,
+    let uploaded_temp_path = managed_ingress_object_path(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &provider_binding.storage_namespace,
         "",
         &format!("{}/{}", remote_policy.base_path.trim_matches('/'), temp_key),
     );
@@ -1839,9 +2196,10 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
         .await
         .expect("uploaded blob should be queryable");
 
-    let stored_path = provider_object_path(
-        &provider_ingress_policy.base_path,
-        &consumer_node.namespace,
+    let stored_path = managed_ingress_object_path(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &provider_binding.storage_namespace,
         &remote_policy.base_path,
         &created_blob.storage_path,
     );
@@ -1859,17 +2217,11 @@ async fn test_remote_relay_stream_direct_upload_e2e() {
     let consumer_state = common::setup().await;
     let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
 
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
-
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            namespace: "provider-relay-direct-space".to_string(),
             is_enabled: true,
         },
     )
@@ -1880,15 +2232,13 @@ async fn test_remote_relay_stream_direct_upload_e2e() {
             .await
             .expect("consumer remote node should be queryable");
 
-    master_binding_service::upsert_from_enrollment(
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
         &provider_state.db,
         master_binding_service::UpsertMasterBindingInput {
             name: "consumer-access".to_string(),
             master_url: "http://master.example.com".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-relay-direct-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -1899,6 +2249,12 @@ async fn test_remote_relay_stream_direct_upload_e2e() {
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     wait_for_remote_probe(&consumer_state, consumer_node.id).await;
 
@@ -1999,9 +2355,10 @@ async fn test_remote_relay_stream_direct_upload_e2e() {
     assert!(created_blob.hash.starts_with("remote-"));
     assert!(created_blob.storage_path.starts_with("files/"));
 
-    let provider_path = provider_object_path(
-        &provider_ingress_policy.base_path,
-        &consumer_node.namespace,
+    let provider_path = managed_ingress_object_path(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &provider_binding.storage_namespace,
         &remote_policy.base_path,
         &created_blob.storage_path,
     );
@@ -2017,17 +2374,12 @@ async fn test_remote_relay_stream_direct_upload_e2e() {
 async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
 
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: "http://provider.example.com".to_string(),
-            namespace: "provider-browser-cors-space".to_string(),
             is_enabled: true,
         },
     )
@@ -2045,8 +2397,6 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
             master_url: "http://localhost:3000".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-browser-cors-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -2057,6 +2407,12 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     let remote_policy = create_remote_policy_with_options(
         &consumer_state,
@@ -2133,15 +2489,21 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
     );
     assert_eq!(
         resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .and_then(|value| value.to_str().ok()),
+        Some("true")
+    );
+    assert_eq!(
+        resp.headers()
             .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_METHODS)
             .and_then(|value| value.to_str().ok()),
-        Some("PUT, OPTIONS")
+        Some("GET, PUT, OPTIONS")
     );
     assert_eq!(
         resp.headers()
             .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_HEADERS)
             .and_then(|value| value.to_str().ok()),
-        Some("content-type")
+        Some("content-type, range")
     );
     let vary = resp
         .headers()
@@ -2238,22 +2600,16 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
 }
 
 #[actix_web::test]
-async fn test_remote_relay_stream_chunked_upload_e2e() {
+async fn test_remote_presigned_download_browser_cors_allows_get() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
     let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
-
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
 
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            namespace: "provider-relay-chunked-space".to_string(),
             is_enabled: true,
         },
     )
@@ -2268,11 +2624,9 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
         &provider_state.db,
         master_binding_service::UpsertMasterBindingInput {
             name: "consumer-access".to_string(),
-            master_url: "http://master.example.com".to_string(),
+            master_url: "http://localhost:3000".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-relay-chunked-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -2283,6 +2637,300 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Presigned Browser Download CORS Policy",
+        "browser-download-cors-base",
+        StoragePolicyOptions {
+            remote_download_strategy: Some(RemoteDownloadStrategy::Presigned),
+            ..Default::default()
+        },
+        1024,
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let _ = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+    let folder = folder_service::create(
+        &consumer_state,
+        user.id,
+        "remote-browser-download-cors",
+        None,
+    )
+    .await
+    .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let body = b"presigned-download-browser-cors".to_vec();
+    let upload_path = write_temp_upload_file(
+        &consumer_state,
+        &format!(
+            "remote-presigned-browser-download-cors-{}.txt",
+            uuid::Uuid::new_v4()
+        ),
+        &body,
+    )
+    .await;
+    let upload_path_string = upload_path.to_string_lossy().into_owned();
+    let created = file_service::store_from_temp(
+        &consumer_state,
+        user.id,
+        file_service::StoreFromTempRequest::new(
+            Some(folder.id),
+            "presigned-browser-download.txt",
+            &upload_path_string,
+            i64::try_from(body.len()).expect("body length should fit i64"),
+        ),
+    )
+    .await
+    .expect("remote file upload should succeed");
+    aster_drive::utils::cleanup_temp_file(&upload_path_string).await;
+
+    let download_result = file_service::download(&consumer_state, created.id, user.id, None)
+        .await
+        .expect("remote presigned download should resolve");
+    let presigned_path = match download_result {
+        file_service::DownloadOutcome::PresignedRedirect { url, .. } => {
+            path_and_query_from_url(&url)
+        }
+        other => panic!("expected remote presigned download, got {other:?}"),
+    };
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header(("Access-Control-Request-Method", "GET"))
+        .insert_header(("Access-Control-Request-Headers", "range"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::NO_CONTENT);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .and_then(|value| value.to_str().ok()),
+        Some("true")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_METHODS)
+            .and_then(|value| value.to_str().ok()),
+        Some("GET, PUT, OPTIONS")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_HEADERS)
+            .and_then(|value| value.to_str().ok()),
+        Some("content-type, range")
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .and_then(|value| value.to_str().ok()),
+        Some("true")
+    );
+    let exposed_headers = resp
+        .headers()
+        .get(actix_web::http::header::ACCESS_CONTROL_EXPOSE_HEADERS)
+        .and_then(|value| value.to_str().ok())
+        .expect("actual GET response should expose download headers");
+    assert!(exposed_headers.contains("Content-Disposition"));
+    assert!(exposed_headers.contains("Content-Length"));
+    assert!(exposed_headers.contains("Content-Range"));
+    assert!(exposed_headers.contains("Content-Type"));
+    let vary = resp
+        .headers()
+        .get(actix_web::http::header::VARY)
+        .and_then(|value| value.to_str().ok())
+        .expect("actual GET response should include Vary");
+    assert!(vary.contains("Origin"));
+    let downloaded = test::read_body(resp).await;
+    assert_eq!(downloaded.as_ref(), body);
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_internal_storage_get_honors_range_header() {
+    let provider_state = common::setup().await;
+    let access_key = "range-header-access-key";
+    let secret_key = "range-header-secret-key";
+    let object_key = "range-header.bin";
+    let body = b"0123456789abcdef";
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "range-header-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(&provider_state, access_key, access_key).await;
+    let binding = master_binding_repo::find_by_access_key(&provider_state.db, access_key)
+        .await
+        .expect("provider binding lookup should succeed")
+        .expect("provider binding should exist");
+    let storage_path = managed_ingress_object_path(
+        &provider_state,
+        access_key,
+        &binding.storage_namespace,
+        "",
+        object_key,
+    );
+    tokio::fs::create_dir_all(
+        storage_path
+            .parent()
+            .expect("provider object path should have parent"),
+    )
+    .await
+    .expect("provider object parent should be created");
+    tokio::fs::write(&storage_path, body)
+        .await
+        .expect("provider object should be written");
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let path = format!("/api/v1/internal/storage/objects/{object_key}");
+    let timestamp = Utc::now().timestamp();
+    let nonce = "range-header-test";
+    let signature = sign_internal_request(secret_key, "GET", &path, timestamp, nonce, None);
+    let req = test::TestRequest::get()
+        .uri(&path)
+        .insert_header((actix_web::http::header::RANGE, "bytes=4-8"))
+        .insert_header(("x-aster-access-key", access_key))
+        .insert_header(("x-aster-timestamp", timestamp.to_string()))
+        .insert_header(("x-aster-nonce", nonce))
+        .insert_header(("x-aster-signature", signature))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::CONTENT_RANGE)
+            .and_then(|value| value.to_str().ok()),
+        Some("bytes 4-8/16")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok()),
+        Some("5")
+    );
+    let downloaded = test::read_body(resp).await;
+    assert_eq!(downloaded.as_ref(), b"45678");
+}
+
+#[actix_web::test]
+async fn test_remote_relay_stream_chunked_upload_e2e() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     wait_for_remote_probe(&consumer_state, consumer_node.id).await;
 
@@ -2436,9 +3084,10 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
         .expect("uploaded blob should be queryable");
     assert_eq!(created_blob.storage_path, format!("files/{upload_id}"));
 
-    let stored_path = provider_object_path(
-        &provider_ingress_policy.base_path,
-        &consumer_node.namespace,
+    let stored_path = managed_ingress_object_path(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &provider_binding.storage_namespace,
         &remote_policy.base_path,
         &created_blob.storage_path,
     );
@@ -2460,9 +3109,10 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
         "remote relay multipart should never create local assembled temp file"
     );
 
-    let first_part_path = provider_object_path(
-        &provider_ingress_policy.base_path,
-        &consumer_node.namespace,
+    let first_part_path = managed_ingress_object_path(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &provider_binding.storage_namespace,
         &remote_policy.base_path,
         &format!("uploads/{remote_multipart_id}/parts/1"),
     );
@@ -2480,17 +3130,12 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
 async fn test_remote_presigned_upload_browser_cors_accepts_master_url_with_path_and_port() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
 
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: "http://provider.example.com".to_string(),
-            namespace: "provider-browser-origin-path-space".to_string(),
             is_enabled: true,
         },
     )
@@ -2508,8 +3153,6 @@ async fn test_remote_presigned_upload_browser_cors_accepts_master_url_with_path_
             master_url: "http://localhost:3000/admin/settings/general".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-browser-origin-path-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -2520,6 +3163,12 @@ async fn test_remote_presigned_upload_browser_cors_accepts_master_url_with_path_
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     let remote_policy = create_remote_policy_with_options(
         &consumer_state,
@@ -2601,17 +3250,12 @@ async fn test_remote_presigned_upload_browser_cors_accepts_master_url_with_path_
 async fn test_remote_presigned_upload_browser_cors_rejects_disabled_binding() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
 
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: "http://provider.example.com".to_string(),
-            namespace: "provider-browser-disabled-binding-space".to_string(),
             is_enabled: true,
         },
     )
@@ -2629,8 +3273,6 @@ async fn test_remote_presigned_upload_browser_cors_rejects_disabled_binding() {
             master_url: "http://localhost:3000".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-browser-disabled-binding-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -2642,6 +3284,12 @@ async fn test_remote_presigned_upload_browser_cors_rejects_disabled_binding() {
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &binding.access_key,
+        &binding.access_key,
+    )
+    .await;
 
     let remote_policy = create_remote_policy_with_options(
         &consumer_state,
@@ -2703,7 +3351,6 @@ async fn test_remote_presigned_upload_browser_cors_rejects_disabled_binding() {
         &binding.access_key,
         master_binding_service::SyncMasterBindingInput {
             name: binding.name.clone(),
-            namespace: binding.namespace.clone(),
             is_enabled: false,
         },
     )
@@ -3050,17 +3697,11 @@ async fn test_remote_presigned_multipart_upload_composes_on_provider_without_ass
     let consumer_state = common::setup().await;
     let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
 
-    let provider_ingress_policy = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .expect("provider default ingress policy should exist");
-
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            namespace: "provider-presigned-multipart-space".to_string(),
             is_enabled: true,
         },
     )
@@ -3071,15 +3712,13 @@ async fn test_remote_presigned_multipart_upload_composes_on_provider_without_ass
             .await
             .expect("consumer remote node should be queryable");
 
-    master_binding_service::upsert_from_enrollment(
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
         &provider_state.db,
         master_binding_service::UpsertMasterBindingInput {
             name: "consumer-access".to_string(),
             master_url: "http://master.example.com".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
-            namespace: "provider-presigned-multipart-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
             is_enabled: true,
         },
     )
@@ -3090,6 +3729,12 @@ async fn test_remote_presigned_multipart_upload_composes_on_provider_without_ass
         .reload_master_bindings(&provider_state.db)
         .await
         .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
 
     wait_for_remote_probe(&consumer_state, consumer_node.id).await;
 
@@ -3238,9 +3883,10 @@ async fn test_remote_presigned_multipart_upload_composes_on_provider_without_ass
         .await
         .expect("uploaded blob should be queryable");
 
-    let stored_path = provider_object_path(
-        &provider_ingress_policy.base_path,
-        &consumer_node.namespace,
+    let stored_path = managed_ingress_object_path(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &provider_binding.storage_namespace,
         &remote_policy.base_path,
         &created_blob.storage_path,
     );
@@ -3249,9 +3895,10 @@ async fn test_remote_presigned_multipart_upload_composes_on_provider_without_ass
         .expect("provider should receive composed multipart upload");
     assert_eq!(stored, body);
 
-    let first_part_path = provider_object_path(
-        &provider_ingress_policy.base_path,
-        &consumer_node.namespace,
+    let first_part_path = managed_ingress_object_path(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &provider_binding.storage_namespace,
         &remote_policy.base_path,
         &format!("uploads/{remote_multipart_id}/parts/1"),
     );

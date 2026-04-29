@@ -138,6 +138,7 @@ pub async fn upload_chunk(
 pub async fn complete_upload(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<UploadIdPath>,
     body: Option<web::Json<CompleteUploadReq>>,
 ) -> Result<HttpResponse> {
@@ -149,8 +150,15 @@ pub async fn complete_upload(
                 .map(|part| (part.part_number, part.etag))
                 .collect()
         });
-    let file =
-        upload_service::complete_upload(&state, &path.upload_id, claims.user_id, parts).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    let file = upload_service::complete_upload_with_audit(
+        &state,
+        &path.upload_id,
+        claims.user_id,
+        parts,
+        &ctx,
+    )
+    .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 
@@ -361,6 +369,7 @@ pub(crate) async fn team_upload_chunk(
 pub(crate) async fn team_complete_upload(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, String)>,
     body: Option<web::Json<CompleteUploadReq>>,
 ) -> Result<HttpResponse> {
@@ -373,12 +382,14 @@ pub(crate) async fn team_complete_upload(
                 .map(|part| (part.part_number, part.etag))
                 .collect()
         });
-    let file = upload_service::complete_upload_for_team(
+    let ctx = AuditContext::from_request(&req, &claims);
+    let file = upload_service::complete_upload_for_team_with_audit(
         &state,
         team_id,
         &upload_id,
         claims.user_id,
         parts,
+        &ctx,
     )
     .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))

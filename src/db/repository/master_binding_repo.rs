@@ -3,8 +3,8 @@
 use crate::entities::master_binding::{self, Entity as MasterBinding};
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, SqlErr,
+    TryInsertResult,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<master_binding::Model> {
@@ -26,6 +26,17 @@ pub async fn find_by_access_key<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_by_storage_namespace<C: ConnectionTrait>(
+    db: &C,
+    storage_namespace: &str,
+) -> Result<Option<master_binding::Model>> {
+    MasterBinding::find()
+        .filter(master_binding::Column::StorageNamespace.eq(storage_namespace))
+        .one(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<master_binding::Model>> {
     MasterBinding::find()
         .order_by_desc(master_binding::Column::CreatedAt)
@@ -42,20 +53,30 @@ pub async fn create<C: ConnectionTrait>(
     model.insert(db).await.map_err(AsterError::from)
 }
 
+pub async fn create_ignoring_storage_namespace_conflict<C: ConnectionTrait>(
+    db: &C,
+    model: master_binding::ActiveModel,
+) -> Result<Option<master_binding::Model>> {
+    match MasterBinding::insert(model)
+        .on_conflict_do_nothing_on([master_binding::Column::StorageNamespace])
+        .exec(db)
+        .await
+    {
+        Ok(TryInsertResult::Inserted(result)) => {
+            find_by_id(db, result.last_insert_id).await.map(Some)
+        }
+        Ok(TryInsertResult::Conflicted) => Ok(None),
+        Ok(TryInsertResult::Empty) => Err(AsterError::internal_error(
+            "master binding insert produced empty result",
+        )),
+        Err(err) if matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) => Ok(None),
+        Err(err) => Err(AsterError::from(err)),
+    }
+}
+
 pub async fn update<C: ConnectionTrait>(
     db: &C,
     model: master_binding::ActiveModel,
 ) -> Result<master_binding::Model> {
     model.update(db).await.map_err(AsterError::from)
-}
-
-pub async fn count_by_ingress_policy_id<C: ConnectionTrait>(
-    db: &C,
-    ingress_policy_id: i64,
-) -> Result<u64> {
-    MasterBinding::find()
-        .filter(master_binding::Column::IngressPolicyId.eq(ingress_policy_id))
-        .count(db)
-        .await
-        .map_err(AsterError::from)
 }

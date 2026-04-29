@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -20,7 +20,7 @@ import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { handleApiError } from "@/hooks/useApiError";
+import { getApiErrorMessage, handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -33,7 +33,13 @@ import {
 	parsePageSizeSearchParam,
 } from "@/lib/pagination";
 import { adminRemoteNodeService } from "@/services/adminService";
-import type { RemoteEnrollmentCommandInfo, RemoteNodeInfo } from "@/types/api";
+import type {
+	RemoteCreateIngressProfileRequest,
+	RemoteEnrollmentCommandInfo,
+	RemoteIngressProfileInfo,
+	RemoteNodeInfo,
+	RemoteUpdateIngressProfileRequest,
+} from "@/types/api";
 
 const REMOTE_NODE_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const DEFAULT_REMOTE_NODE_PAGE_SIZE = 20 as const;
@@ -81,6 +87,14 @@ export default function AdminRemoteNodesPage() {
 	const [submitting, setSubmitting] = useState(false);
 	const [createStep, setCreateStep] = useState(0);
 	const [createStepTouched, setCreateStepTouched] = useState(false);
+	const [managedIngressProfiles, setManagedIngressProfiles] = useState<
+		RemoteIngressProfileInfo[]
+	>([]);
+	const [managedIngressProfilesLoading, setManagedIngressProfilesLoading] =
+		useState(false);
+	const [managedIngressProfilesError, setManagedIngressProfilesError] =
+		useState<string | null>(null);
+	const managedIngressRequestIdRef = useRef(0);
 	const totalPages = Math.max(1, Math.ceil(total / pageSize));
 	const currentPage = Math.floor(offset / pageSize) + 1;
 	const prevPageDisabled = offset === 0;
@@ -115,12 +129,53 @@ export default function AdminRemoteNodesPage() {
 		setCreateStepTouched(false);
 	};
 
+	const resetManagedIngressState = () => {
+		managedIngressRequestIdRef.current += 1;
+		setManagedIngressProfiles([]);
+		setManagedIngressProfilesLoading(false);
+		setManagedIngressProfilesError(null);
+	};
+
+	const loadManagedIngressProfiles = async (
+		remoteNodeId: number,
+		{ showErrorToast = true }: { showErrorToast?: boolean } = {},
+	) => {
+		const requestId = managedIngressRequestIdRef.current + 1;
+		managedIngressRequestIdRef.current = requestId;
+		setManagedIngressProfilesLoading(true);
+		setManagedIngressProfilesError(null);
+
+		try {
+			const profiles =
+				await adminRemoteNodeService.listIngressProfiles(remoteNodeId);
+			if (managedIngressRequestIdRef.current !== requestId) {
+				return;
+			}
+			setManagedIngressProfiles(profiles);
+			setManagedIngressProfilesError(null);
+		} catch (error) {
+			if (managedIngressRequestIdRef.current !== requestId) {
+				return;
+			}
+			setManagedIngressProfiles([]);
+			setManagedIngressProfilesError(getApiErrorMessage(error));
+			if (showErrorToast) {
+				handleApiError(error);
+			}
+		} finally {
+			if (managedIngressRequestIdRef.current === requestId) {
+				setManagedIngressProfilesLoading(false);
+			}
+		}
+	};
+
 	const openCreate = () => {
 		setEditingId(null);
 		setEditingNode(null);
 		setForm({ ...emptyRemoteNodeForm });
 		setEnrollmentCommandCanTest(false);
 		resetDialogState();
+		resetManagedIngressState();
 		setDialogOpen(true);
 	};
 
@@ -129,6 +184,14 @@ export default function AdminRemoteNodesPage() {
 		setEditingNode(node);
 		setForm(getRemoteNodeForm(node));
 		resetDialogState();
+		resetManagedIngressState();
+		if (node.base_url.trim()) {
+			void loadManagedIngressProfiles(node.id);
+		} else {
+			setManagedIngressProfilesError(
+				t("remote_node_ingress_profiles_base_url_required"),
+			);
+		}
 		setDialogOpen(true);
 	};
 
@@ -136,6 +199,7 @@ export default function AdminRemoteNodesPage() {
 		setDialogOpen(open);
 		if (!open) {
 			resetDialogState();
+			resetManagedIngressState();
 		}
 	};
 
@@ -272,7 +336,7 @@ export default function AdminRemoteNodesPage() {
 
 		setCreateStepTouched(true);
 
-		if (createStep === 0 && (!form.name.trim() || !form.namespace.trim())) {
+		if (createStep === 0 && !form.name.trim()) {
 			return;
 		}
 		if (createStep === 1 && remoteNodeBaseUrlValidationMessage) {
@@ -377,6 +441,65 @@ export default function AdminRemoteNodesPage() {
 		}
 	};
 
+	const createManagedIngressProfile = async (
+		payload: RemoteCreateIngressProfileRequest,
+	) => {
+		if (editingId == null) {
+			return;
+		}
+
+		try {
+			await adminRemoteNodeService.createIngressProfile(editingId, payload);
+			toast.success(t("remote_node_ingress_profile_created"));
+			await loadManagedIngressProfiles(editingId, { showErrorToast: false });
+		} catch (error) {
+			handleApiError(error);
+			throw error;
+		}
+	};
+
+	const updateManagedIngressProfile = async (
+		profileKey: string,
+		payload: RemoteUpdateIngressProfileRequest,
+	) => {
+		if (editingId == null) {
+			return;
+		}
+
+		try {
+			await adminRemoteNodeService.updateIngressProfile(
+				editingId,
+				profileKey,
+				payload,
+			);
+			toast.success(t("remote_node_ingress_profile_updated"));
+			await loadManagedIngressProfiles(editingId, { showErrorToast: false });
+		} catch (error) {
+			handleApiError(error);
+			throw error;
+		}
+	};
+
+	const deleteManagedIngressProfile = async (
+		profile: RemoteIngressProfileInfo,
+	) => {
+		if (editingId == null) {
+			return;
+		}
+
+		try {
+			await adminRemoteNodeService.deleteIngressProfile(
+				editingId,
+				profile.profile_key,
+			);
+			toast.success(t("remote_node_ingress_profile_deleted"));
+			await loadManagedIngressProfiles(editingId, { showErrorToast: false });
+		} catch (error) {
+			handleApiError(error);
+			throw error;
+		}
+	};
+
 	return (
 		<AdminLayout>
 			<AdminPageShell>
@@ -449,6 +572,10 @@ export default function AdminRemoteNodesPage() {
 					submitting={submitting}
 					createStep={createStep}
 					createStepTouched={createStepTouched}
+					managedIngressProfilesEnabled={editingId !== null}
+					managedIngressProfiles={managedIngressProfiles}
+					managedIngressProfilesLoading={managedIngressProfilesLoading}
+					managedIngressProfilesError={managedIngressProfilesError}
 					onFieldChange={setField}
 					onOpenChange={handleDialogOpenChange}
 					onRunConnectionTest={() => runConnectionTest()}
@@ -456,6 +583,9 @@ export default function AdminRemoteNodesPage() {
 					onCreateBack={handleCreateBack}
 					onCreateNext={handleCreateNext}
 					onCreateStepChange={handleCreateStepChange}
+					onCreateManagedIngressProfile={createManagedIngressProfile}
+					onUpdateManagedIngressProfile={updateManagedIngressProfile}
+					onDeleteManagedIngressProfile={deleteManagedIngressProfile}
 				/>
 				<RemoteNodeEnrollmentDialog
 					open={enrollmentDialogOpen}

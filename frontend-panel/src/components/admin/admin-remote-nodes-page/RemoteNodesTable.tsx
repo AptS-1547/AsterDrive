@@ -53,7 +53,7 @@ export function RemoteNodesTable({
 		<AdminTableList
 			loading={loading}
 			items={items}
-			columns={6}
+			columns={5}
 			rows={6}
 			emptyTitle={t("no_remote_nodes")}
 			emptyDescription={t("no_remote_nodes_desc")}
@@ -62,7 +62,6 @@ export function RemoteNodesTable({
 					<TableRow>
 						<TableHead className="w-16">{t("id")}</TableHead>
 						<TableHead>{t("core:name")}</TableHead>
-						<TableHead>{t("namespace")}</TableHead>
 						<TableHead>{t("base_url")}</TableHead>
 						<TableHead>{t("remote_node_status")}</TableHead>
 						<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
@@ -98,13 +97,6 @@ export function RemoteNodesTable({
 									{node.name}
 								</div>
 							</div>
-						</div>
-					</TableCell>
-					<TableCell>
-						<div className={REMOTE_NODE_TEXT_CELL_CONTENT_CLASS}>
-							<span className="truncate text-xs font-mono text-muted-foreground">
-								{node.namespace}
-							</span>
 						</div>
 					</TableCell>
 					<TableCell>

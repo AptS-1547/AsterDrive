@@ -23,6 +23,7 @@ use crate::services::upload_service::shared::{
     find_file_by_session, run_upload_completion_stage, upload_completion_error_is_retryable,
 };
 use crate::services::{
+    audit_service::{self, AuditContext},
     workspace_models::FileInfo,
     workspace_storage_service::{self},
 };
@@ -134,6 +135,17 @@ pub async fn complete_upload(
         .map(FileInfo::from)
 }
 
+pub async fn complete_upload_with_audit(
+    state: &PrimaryAppState,
+    upload_id: &str,
+    user_id: i64,
+    parts: Option<Vec<(i32, String)>>,
+    audit_ctx: &AuditContext,
+) -> Result<FileInfo> {
+    let session = load_upload_session(state, personal_scope(user_id), upload_id).await?;
+    complete_upload_impl_with_audit(state, session, parts, audit_ctx).await
+}
+
 pub async fn complete_upload_for_team(
     state: &PrimaryAppState,
     team_id: i64,
@@ -145,6 +157,45 @@ pub async fn complete_upload_for_team(
     complete_upload_impl(state, session, parts)
         .await
         .map(FileInfo::from)
+}
+
+pub async fn complete_upload_for_team_with_audit(
+    state: &PrimaryAppState,
+    team_id: i64,
+    upload_id: &str,
+    user_id: i64,
+    parts: Option<Vec<(i32, String)>>,
+    audit_ctx: &AuditContext,
+) -> Result<FileInfo> {
+    let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
+    complete_upload_impl_with_audit(state, session, parts, audit_ctx).await
+}
+
+async fn complete_upload_impl_with_audit(
+    state: &PrimaryAppState,
+    session: upload_session::Model,
+    parts: Option<Vec<(i32, String)>>,
+    audit_ctx: &AuditContext,
+) -> Result<FileInfo> {
+    let should_log = should_log_upload_completion(&session);
+    let file = complete_upload_impl(state, session, parts).await?;
+    if should_log {
+        audit_service::log(
+            state,
+            audit_ctx,
+            audit_service::AuditAction::FileUpload,
+            Some("file"),
+            Some(file.id),
+            Some(&file.name),
+            None,
+        )
+        .await;
+    }
+    Ok(file.into())
+}
+
+fn should_log_upload_completion(session: &upload_session::Model) -> bool {
+    session.status != UploadSessionStatus::Completed
 }
 
 async fn ensure_uploaded_s3_object_size(
@@ -413,7 +464,7 @@ async fn complete_s3_relay_multipart(
 
 #[cfg(test)]
 mod tests {
-    use super::{CompletionPlan, determine_completion_plan};
+    use super::{CompletionPlan, determine_completion_plan, should_log_upload_completion};
     use crate::entities::upload_session;
     use crate::types::UploadSessionStatus;
 
@@ -477,5 +528,18 @@ mod tests {
         let plan =
             determine_completion_plan(&mock_session(UploadSessionStatus::Uploading), None).unwrap();
         assert!(matches!(plan, CompletionPlan::AssembleChunks));
+    }
+
+    #[test]
+    fn should_log_upload_completion_skips_completed_retry() {
+        assert!(!should_log_upload_completion(&mock_session(
+            UploadSessionStatus::Completed
+        )));
+        assert!(should_log_upload_completion(&mock_session(
+            UploadSessionStatus::Presigned
+        )));
+        assert!(should_log_upload_completion(&mock_session(
+            UploadSessionStatus::Uploading
+        )));
     }
 }

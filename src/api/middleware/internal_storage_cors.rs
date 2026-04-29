@@ -21,9 +21,10 @@ use crate::runtime::FollowerAppState;
 use crate::storage::remote_protocol::PRESIGNED_AUTH_ACCESS_KEY_QUERY;
 
 const PRESIGNED_OBJECTS_PATH_PREFIX: &str = "/api/v1/internal/storage/objects/";
-const PREFLIGHT_ALLOWED_METHOD: &str = "PUT";
-const PREFLIGHT_ALLOWED_HEADER: &str = "content-type";
-const ACTUAL_EXPOSE_HEADER: &str = "ETag";
+const PREFLIGHT_ALLOWED_METHODS: &str = "GET, PUT, OPTIONS";
+const PUT_ACTUAL_EXPOSE_HEADERS: &str = "ETag";
+const GET_ACTUAL_EXPOSE_HEADERS: &str =
+    "Cache-Control, Content-Disposition, Content-Length, Content-Range, Content-Type, ETag";
 
 pub struct PresignedInternalStorageCors;
 
@@ -91,10 +92,11 @@ where
                 return Ok(req.into_response(response).map_into_right_body());
             }
 
+            let request_method = req.method().clone();
             let mut response = svc.call(req).await?.map_into_left_body();
             apply_origin_headers(response.headers_mut(), &cors_context.origin)
                 .map_err(Into::<Error>::into)?;
-            apply_actual_headers(response.headers_mut());
+            apply_actual_headers(response.headers_mut(), &request_method);
             Ok(response)
         })
     }
@@ -110,7 +112,7 @@ fn resolve_presigned_cors_context(
     req: &ServiceRequest,
     state: &FollowerAppState,
 ) -> AsterResult<Option<PresignedCorsContext>> {
-    if !matches!(req.method(), &Method::PUT | &Method::OPTIONS) {
+    if !matches!(req.method(), &Method::GET | &Method::PUT | &Method::OPTIONS) {
         return Ok(None);
     }
     if !req.path().starts_with(PRESIGNED_OBJECTS_PATH_PREFIX) {
@@ -187,7 +189,7 @@ fn requested_method_is_allowed(req: &ServiceRequest) -> bool {
     req.headers()
         .get(header::ACCESS_CONTROL_REQUEST_METHOD)
         .and_then(|value| value.to_str().ok())
-        .map(|value| value.eq_ignore_ascii_case(PREFLIGHT_ALLOWED_METHOD))
+        .map(|value| value.eq_ignore_ascii_case("GET") || value.eq_ignore_ascii_case("PUT"))
         .unwrap_or(false)
 }
 
@@ -210,7 +212,7 @@ fn requested_headers_are_allowed(req: &ServiceRequest) -> AsterResult<bool> {
             AsterError::validation_error("invalid Access-Control-Request-Headers")
         })?;
 
-        if requested != PREFLIGHT_ALLOWED_HEADER {
+        if !matches!(requested.as_str(), "content-type" | "range") {
             return Ok(false);
         }
     }
@@ -225,6 +227,10 @@ fn apply_origin_headers(headers: &mut HeaderMap, origin: &str) -> AsterResult<()
             AsterError::internal_error("failed to serialize Access-Control-Allow-Origin")
         })?,
     );
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_CREDENTIALS,
+        HeaderValue::from_static("true"),
+    );
     ensure_vary(headers, "Origin")?;
     Ok(())
 }
@@ -232,11 +238,11 @@ fn apply_origin_headers(headers: &mut HeaderMap, origin: &str) -> AsterResult<()
 fn apply_preflight_headers(headers: &mut HeaderMap) {
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_METHODS,
-        HeaderValue::from_static("PUT, OPTIONS"),
+        HeaderValue::from_static(PREFLIGHT_ALLOWED_METHODS),
     );
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_HEADERS,
-        HeaderValue::from_static("content-type"),
+        HeaderValue::from_static("content-type, range"),
     );
     headers.insert(
         header::ACCESS_CONTROL_MAX_AGE,
@@ -247,10 +253,15 @@ fn apply_preflight_headers(headers: &mut HeaderMap) {
     let _ = ensure_vary(headers, "Access-Control-Request-Headers");
 }
 
-fn apply_actual_headers(headers: &mut HeaderMap) {
+fn apply_actual_headers(headers: &mut HeaderMap, method: &Method) {
+    let exposed = match *method {
+        Method::GET => GET_ACTUAL_EXPOSE_HEADERS,
+        Method::PUT => PUT_ACTUAL_EXPOSE_HEADERS,
+        _ => return,
+    };
     headers.insert(
         header::ACCESS_CONTROL_EXPOSE_HEADERS,
-        HeaderValue::from_static(ACTUAL_EXPOSE_HEADER),
+        HeaderValue::from_static(exposed),
     );
 }
 
@@ -289,7 +300,39 @@ fn forbidden(req: ServiceRequest) -> ServiceResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::browser_origin_from_master_url;
+    use super::{apply_actual_headers, browser_origin_from_master_url};
+    use actix_web::http::{
+        Method, header,
+        header::{HeaderMap, HeaderValue},
+    };
+
+    #[test]
+    fn apply_actual_headers_exposes_content_range_for_get() {
+        let mut headers = HeaderMap::new();
+        apply_actual_headers(&mut headers, &Method::GET);
+
+        let exposed = headers
+            .get(header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .and_then(|value| value.to_str().ok())
+            .expect("GET responses should expose download headers");
+        assert!(
+            exposed
+                .split(',')
+                .any(|header| header.trim() == "Content-Range"),
+            "GET expose headers should include Content-Range"
+        );
+    }
+
+    #[test]
+    fn apply_actual_headers_keeps_existing_put_expose_headers() {
+        let mut headers = HeaderMap::new();
+        apply_actual_headers(&mut headers, &Method::PUT);
+
+        assert_eq!(
+            headers.get(header::ACCESS_CONTROL_EXPOSE_HEADERS),
+            Some(&HeaderValue::from_static("ETag"))
+        );
+    }
 
     #[test]
     fn browser_origin_from_master_url_drops_default_https_port() {

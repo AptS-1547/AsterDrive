@@ -1,26 +1,34 @@
-//! SeaORM 实体定义：`managed_follower`。
+//! SeaORM 实体定义：`managed_ingress_profile`。
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+use crate::types::DriverType;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-#[sea_orm(table_name = "managed_followers")]
+#[sea_orm(table_name = "managed_ingress_profiles")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    pub master_binding_id: i64,
+    pub profile_key: String,
     pub name: String,
-    pub base_url: String,
+    pub driver_type: DriverType,
+    pub endpoint: String,
+    pub bucket: String,
+    #[serde(skip_serializing)]
     pub access_key: String,
     #[serde(skip_serializing)]
     pub secret_key: String,
-    pub is_enabled: bool,
-    pub last_capabilities: String,
+    pub base_path: String,
+    pub max_file_size: i64,
+    pub is_default: bool,
+    pub desired_revision: i64,
+    pub applied_revision: i64,
     pub last_error: String,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
-    pub last_checked_at: Option<DateTimeUtc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTimeUtc,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -29,21 +37,19 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::follower_enrollment_session::Entity")]
-    FollowerEnrollmentSessions,
-    #[sea_orm(has_many = "super::storage_policy::Entity")]
-    StoragePolicies,
+    #[sea_orm(
+        belongs_to = "super::master_binding::Entity",
+        from = "Column::MasterBindingId",
+        to = "super::master_binding::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    MasterBinding,
 }
 
-impl Related<super::follower_enrollment_session::Entity> for Entity {
+impl Related<super::master_binding::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::FollowerEnrollmentSessions.def()
-    }
-}
-
-impl Related<super::storage_policy::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::StoragePolicies.def()
+        Relation::MasterBinding.def()
     }
 }
 

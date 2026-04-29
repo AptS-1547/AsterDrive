@@ -1,9 +1,11 @@
 //! 服务模块：`master_binding_service`。
 
-use crate::db::repository::{master_binding_repo, policy_repo};
-use crate::entities::{master_binding, storage_policy};
+use crate::db::repository::master_binding_repo;
+use crate::entities::master_binding;
 use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
 use crate::runtime::FollowerRuntimeState;
+use crate::services::managed_ingress_profile_service;
+use crate::storage::driver::StorageDriver;
 use crate::storage::remote_protocol::{
     INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER, INTERNAL_AUTH_NONCE_TTL_SECS,
     INTERNAL_AUTH_SIGNATURE_HEADER, INTERNAL_AUTH_SKEW_SECS, INTERNAL_AUTH_TIMESTAMP_HEADER,
@@ -14,11 +16,15 @@ use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use sea_orm::{ConnectionTrait, Set};
 use sha2::Sha256;
+use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+const STORAGE_NAMESPACE_ALLOCATION_ATTEMPTS: usize = 8;
+
+#[derive(Clone)]
 pub struct AuthorizedMasterBinding {
     pub binding: master_binding::Model,
-    pub ingress_policy: storage_policy::Model,
+    pub ingress_driver: Arc<dyn StorageDriver>,
+    pub ingress_max_file_size: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -27,15 +33,12 @@ pub struct UpsertMasterBindingInput {
     pub master_url: String,
     pub access_key: String,
     pub secret_key: String,
-    pub namespace: String,
-    pub ingress_policy_id: i64,
     pub is_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct SyncMasterBindingInput {
     pub name: String,
-    pub namespace: String,
     pub is_enabled: bool,
 }
 
@@ -43,42 +46,75 @@ pub async fn upsert_from_enrollment<C: ConnectionTrait>(
     db: &C,
     input: UpsertMasterBindingInput,
 ) -> Result<(master_binding::Model, &'static str)> {
-    let normalized = normalize_upsert_input(db, input).await?;
+    let normalized = normalize_upsert_input(input)?;
     let now = Utc::now();
 
     match master_binding_repo::find_by_access_key(db, &normalized.access_key).await? {
-        Some(existing) => {
-            let mut active: master_binding::ActiveModel = existing.into();
-            active.name = Set(normalized.name);
-            active.master_url = Set(normalized.master_url);
-            active.secret_key = Set(normalized.secret_key);
-            active.namespace = Set(normalized.namespace);
-            active.ingress_policy_id = Set(normalized.ingress_policy_id);
-            active.is_enabled = Set(normalized.is_enabled);
-            active.updated_at = Set(now);
-            let updated = master_binding_repo::update(db, active).await?;
-            Ok((updated, "updated"))
-        }
+        Some(existing) => update_existing_from_enrollment(db, existing, &normalized, now).await,
         None => {
-            let created = master_binding_repo::create(
-                db,
-                master_binding::ActiveModel {
-                    name: Set(normalized.name),
-                    master_url: Set(normalized.master_url),
-                    access_key: Set(normalized.access_key),
-                    secret_key: Set(normalized.secret_key),
-                    namespace: Set(normalized.namespace),
-                    ingress_policy_id: Set(normalized.ingress_policy_id),
-                    is_enabled: Set(normalized.is_enabled),
-                    created_at: Set(now),
-                    updated_at: Set(now),
-                    ..Default::default()
-                },
-            )
-            .await?;
-            Ok((created, "created"))
+            let mut candidates = Vec::with_capacity(STORAGE_NAMESPACE_ALLOCATION_ATTEMPTS);
+            for _ in 0..STORAGE_NAMESPACE_ALLOCATION_ATTEMPTS {
+                let storage_namespace = new_storage_namespace();
+                let created = master_binding_repo::create_ignoring_storage_namespace_conflict(
+                    db,
+                    master_binding::ActiveModel {
+                        name: Set(normalized.name.clone()),
+                        master_url: Set(normalized.master_url.clone()),
+                        access_key: Set(normalized.access_key.clone()),
+                        secret_key: Set(normalized.secret_key.clone()),
+                        storage_namespace: Set(storage_namespace.clone()),
+                        is_enabled: Set(normalized.is_enabled),
+                        created_at: Set(now),
+                        updated_at: Set(now),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+
+                if let Some(created) = created {
+                    return Ok((created, "created"));
+                }
+
+                if let Some(existing) =
+                    master_binding_repo::find_by_access_key(db, &normalized.access_key).await?
+                {
+                    return update_existing_from_enrollment(db, existing, &normalized, now).await;
+                }
+
+                candidates.push(storage_namespace);
+            }
+
+            tracing::error!(
+                attempts = STORAGE_NAMESPACE_ALLOCATION_ATTEMPTS,
+                candidates = ?candidates,
+                "failed to allocate unique master binding storage namespace after crate::utils::id::new_short_token candidates conflicted during insert"
+            );
+            Err(AsterError::internal_error(
+                "failed to allocate unique master binding storage namespace",
+            ))
         }
     }
+}
+
+async fn update_existing_from_enrollment<C: ConnectionTrait>(
+    db: &C,
+    existing: master_binding::Model,
+    normalized: &UpsertMasterBindingInput,
+    now: chrono::DateTime<Utc>,
+) -> Result<(master_binding::Model, &'static str)> {
+    if existing.secret_key != normalized.secret_key {
+        return Err(AsterError::validation_error(
+            "master binding access_key already exists with different credentials",
+        ));
+    }
+    let mut active: master_binding::ActiveModel = existing.into();
+    active.name = Set(normalized.name.clone());
+    active.master_url = Set(normalized.master_url.clone());
+    active.secret_key = Set(normalized.secret_key.clone());
+    active.is_enabled = Set(normalized.is_enabled);
+    active.updated_at = Set(now);
+    let updated = master_binding_repo::update(db, active).await?;
+    Ok((updated, "updated"))
 }
 
 pub async fn authorize_internal_request<S: FollowerRuntimeState>(
@@ -86,20 +122,14 @@ pub async fn authorize_internal_request<S: FollowerRuntimeState>(
     req: &actix_web::HttpRequest,
 ) -> Result<AuthorizedMasterBinding> {
     let binding = authorize_binding_request(state, req, false).await?;
-    let ingress_policy = state
-        .policy_snapshot()
-        .get_policy_or_err(binding.ingress_policy_id)?;
-    if ingress_policy.driver_type == crate::types::DriverType::Remote {
-        return Err(precondition_failed_with_subcode(
-            "master_binding.remote_ingress_unsupported",
-            "master binding ingress policy cannot use remote driver",
-        ));
-    }
+    resolve_authorized_ingress(state, binding).await
+}
 
-    Ok(AuthorizedMasterBinding {
-        binding,
-        ingress_policy,
-    })
+pub async fn authorize_internal_binding_request<S: FollowerRuntimeState>(
+    state: &S,
+    req: &actix_web::HttpRequest,
+) -> Result<master_binding::Model> {
+    authorize_binding_request(state, req, false).await
 }
 
 pub async fn authorize_binding_sync_request<S: FollowerRuntimeState>(
@@ -120,20 +150,7 @@ pub async fn authorize_presigned_put_request<S: FollowerRuntimeState>(
     }
 
     let binding = authorize_presigned_binding_request(state, req).await?;
-    let ingress_policy = state
-        .policy_snapshot()
-        .get_policy_or_err(binding.ingress_policy_id)?;
-    if ingress_policy.driver_type == crate::types::DriverType::Remote {
-        return Err(precondition_failed_with_subcode(
-            "master_binding.remote_ingress_unsupported",
-            "master binding ingress policy cannot use remote driver",
-        ));
-    }
-
-    Ok(AuthorizedMasterBinding {
-        binding,
-        ingress_policy,
-    })
+    resolve_authorized_ingress(state, binding).await
 }
 
 pub async fn authorize_presigned_get_request<S: FollowerRuntimeState>(
@@ -147,20 +164,7 @@ pub async fn authorize_presigned_get_request<S: FollowerRuntimeState>(
     }
 
     let binding = authorize_presigned_binding_request(state, req).await?;
-    let ingress_policy = state
-        .policy_snapshot()
-        .get_policy_or_err(binding.ingress_policy_id)?;
-    if ingress_policy.driver_type == crate::types::DriverType::Remote {
-        return Err(precondition_failed_with_subcode(
-            "master_binding.remote_ingress_unsupported",
-            "master binding ingress policy cannot use remote driver",
-        ));
-    }
-
-    Ok(AuthorizedMasterBinding {
-        binding,
-        ingress_policy,
-    })
+    resolve_authorized_ingress(state, binding).await
 }
 
 pub async fn sync_from_primary<S: FollowerRuntimeState>(
@@ -175,7 +179,6 @@ pub async fn sync_from_primary<S: FollowerRuntimeState>(
 
     let mut active: master_binding::ActiveModel = existing.into();
     active.name = Set(normalized.name);
-    active.namespace = Set(normalized.namespace);
     active.is_enabled = Set(normalized.is_enabled);
     active.updated_at = Set(Utc::now());
 
@@ -303,12 +306,28 @@ async fn authorize_presigned_binding_request<S: FollowerRuntimeState>(
     Ok(binding)
 }
 
-pub fn provider_storage_path(binding: &master_binding::Model, object_key: &str) -> String {
-    let object_key = object_key.trim_start_matches('/');
-    if object_key.is_empty() {
-        binding.namespace.clone()
+pub fn provider_storage_path(binding: &master_binding::Model, object_key: &str) -> Result<String> {
+    let object_key = crate::storage::object_key::normalize_relative_key(object_key)?;
+    if object_key == "." || object_key.is_empty() {
+        return Err(AsterError::validation_error(
+            "object key cannot target the storage namespace root",
+        ));
+    }
+    Ok(crate::storage::object_key::join_key_prefix(
+        &binding.storage_namespace,
+        &object_key,
+    ))
+}
+
+pub fn provider_storage_prefix(binding: &master_binding::Model, prefix: &str) -> Result<String> {
+    let prefix = crate::storage::object_key::normalize_relative_key(prefix)?;
+    if prefix == "." || prefix.is_empty() {
+        Ok(binding.storage_namespace.clone())
     } else {
-        format!("{}/{}", binding.namespace.trim_matches('/'), object_key)
+        Ok(crate::storage::object_key::join_key_prefix(
+            &binding.storage_namespace,
+            &prefix,
+        ))
     }
 }
 
@@ -325,33 +344,30 @@ pub async fn assert_follower_ready<S: FollowerRuntimeState>(state: &S) -> Result
     }
 
     for binding in enabled_bindings {
-        let policy = state
-            .policy_snapshot()
-            .get_policy_or_err(binding.ingress_policy_id)?;
-        if policy.driver_type == crate::types::DriverType::Remote {
-            return Err(AsterError::storage_driver_error(format!(
-                "master binding #{} ingress policy cannot use remote driver",
-                binding.id
-            )));
-        }
-        let _ = state.driver_registry().get_driver(&policy)?;
+        let _ = managed_ingress_profile_service::resolve_effective_target(state, &binding).await?;
     }
-
     Ok(())
 }
 
-async fn normalize_upsert_input<C: ConnectionTrait>(
-    db: &C,
-    input: UpsertMasterBindingInput,
-) -> Result<UpsertMasterBindingInput> {
-    validate_ingress_policy(db, input.ingress_policy_id).await?;
+async fn resolve_authorized_ingress<S: FollowerRuntimeState>(
+    state: &S,
+    binding: master_binding::Model,
+) -> Result<AuthorizedMasterBinding> {
+    let target = managed_ingress_profile_service::resolve_effective_target(state, &binding).await?;
+
+    Ok(AuthorizedMasterBinding {
+        binding,
+        ingress_driver: target.driver,
+        ingress_max_file_size: target.max_file_size,
+    })
+}
+
+fn normalize_upsert_input(input: UpsertMasterBindingInput) -> Result<UpsertMasterBindingInput> {
     Ok(UpsertMasterBindingInput {
         name: normalize_non_blank("name", &input.name)?,
         master_url: normalize_remote_base_url(&input.master_url)?,
         access_key: normalize_non_blank("access_key", &input.access_key)?,
         secret_key: normalize_non_blank("secret_key", &input.secret_key)?,
-        namespace: normalize_namespace(&input.namespace)?,
-        ingress_policy_id: input.ingress_policy_id,
         is_enabled: input.is_enabled,
     })
 }
@@ -359,19 +375,8 @@ async fn normalize_upsert_input<C: ConnectionTrait>(
 fn normalize_sync_input(input: SyncMasterBindingInput) -> Result<SyncMasterBindingInput> {
     Ok(SyncMasterBindingInput {
         name: normalize_non_blank("name", &input.name)?,
-        namespace: normalize_namespace(&input.namespace)?,
         is_enabled: input.is_enabled,
     })
-}
-
-async fn validate_ingress_policy<C: ConnectionTrait>(db: &C, ingress_policy_id: i64) -> Result<()> {
-    let policy = policy_repo::find_by_id(db, ingress_policy_id).await?;
-    if policy.driver_type == crate::types::DriverType::Remote {
-        return Err(AsterError::validation_error(
-            "master binding ingress policy cannot use remote driver",
-        ));
-    }
-    Ok(())
 }
 
 fn verify_signature(
@@ -480,18 +485,58 @@ fn normalize_non_blank(field: &str, value: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-fn normalize_namespace(value: &str) -> Result<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(AsterError::validation_error("namespace cannot be blank"));
+fn new_storage_namespace() -> String {
+    format!("mb_{}", crate::utils::id::new_short_token())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn binding() -> master_binding::Model {
+        let now = Utc::now();
+        master_binding::Model {
+            id: 1,
+            name: "binding".to_string(),
+            master_url: "https://master.example.com".to_string(),
+            access_key: "ak".to_string(),
+            secret_key: "sk".to_string(),
+            storage_namespace: "mb_test".to_string(),
+            is_enabled: true,
+            created_at: now,
+            updated_at: now,
+        }
     }
-    if !trimmed
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-    {
-        return Err(AsterError::validation_error(
-            "namespace only allows ASCII letters, digits, '.', '_' and '-'",
-        ));
+
+    #[test]
+    fn provider_storage_path_scopes_safe_keys() {
+        assert_eq!(
+            provider_storage_path(&binding(), "folder/file.txt").unwrap(),
+            "mb_test/folder/file.txt"
+        );
     }
-    Ok(trimmed.to_string())
+
+    #[test]
+    fn provider_storage_path_rejects_namespace_root() {
+        assert!(provider_storage_path(&binding(), "").is_err());
+        assert!(provider_storage_path(&binding(), ".").is_err());
+        assert!(provider_storage_path(&binding(), "/").is_err());
+    }
+
+    #[test]
+    fn provider_storage_path_rejects_escape_attempts() {
+        assert!(provider_storage_path(&binding(), "../secret.txt").is_err());
+        assert!(provider_storage_path(&binding(), "folder\\..\\secret.txt").is_err());
+    }
+
+    #[test]
+    fn provider_storage_prefix_allows_namespace_root() {
+        assert_eq!(provider_storage_prefix(&binding(), "").unwrap(), "mb_test");
+        assert_eq!(provider_storage_prefix(&binding(), ".").unwrap(), "mb_test");
+        assert_eq!(provider_storage_prefix(&binding(), "/").unwrap(), "mb_test");
+        assert_eq!(
+            provider_storage_prefix(&binding(), "folder").unwrap(),
+            "mb_test/folder"
+        );
+    }
 }

@@ -95,7 +95,6 @@ fn handle_optional_follower_bootstrap<T>(result: Result<T>) {
             error = %error,
             master_url_env = crate::services::node_enrollment_service::BOOTSTRAP_REMOTE_MASTER_URL_ENV,
             token_env = crate::services::node_enrollment_service::BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN_ENV,
-            ingress_policy_env = crate::services::node_enrollment_service::BOOTSTRAP_REMOTE_INGRESS_POLICY_ID_ENV,
             "follower enrollment bootstrap from environment failed; continuing startup without applying bootstrap env"
         );
     }

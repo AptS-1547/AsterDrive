@@ -880,7 +880,6 @@ describe("AdminPoliciesPage", () => {
 			{
 				id: 7,
 				name: "Edge East",
-				namespace: "tenant-a",
 				base_url: "https://remote.example.com",
 			},
 		];
@@ -946,7 +945,6 @@ describe("AdminPoliciesPage", () => {
 			{
 				id: 9,
 				name: "Edge West",
-				namespace: "tenant-b",
 				base_url: "https://remote-west.example.com",
 			},
 		];
@@ -1001,7 +999,6 @@ describe("AdminPoliciesPage", () => {
 			{
 				id: 10,
 				name: "Edge Download",
-				namespace: "tenant-download",
 				base_url: "https://remote-download.example.com",
 			},
 		];

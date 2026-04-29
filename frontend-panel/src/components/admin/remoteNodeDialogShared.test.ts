@@ -14,7 +14,6 @@ describe("remoteNodeDialogShared", () => {
 				id: 4,
 				name: "Edge Alpha",
 				base_url: "https://remote.example.com",
-				namespace: "tenant-a",
 				is_enabled: true,
 				last_error: "",
 				last_checked_at: null,
@@ -30,7 +29,6 @@ describe("remoteNodeDialogShared", () => {
 		).toEqual({
 			name: "Edge Alpha",
 			base_url: "https://remote.example.com",
-			namespace: "tenant-a",
 			is_enabled: true,
 		});
 	});
@@ -40,13 +38,11 @@ describe("remoteNodeDialogShared", () => {
 			buildCreateRemoteNodePayload({
 				name: "Edge Alpha",
 				base_url: "https://remote.example.com",
-				namespace: "tenant-a",
 				is_enabled: true,
 			}),
 		).toEqual({
 			name: "Edge Alpha",
 			base_url: "https://remote.example.com",
-			namespace: "tenant-a",
 			is_enabled: true,
 		});
 	});
@@ -56,13 +52,11 @@ describe("remoteNodeDialogShared", () => {
 			buildUpdateRemoteNodePayload({
 				name: "Edge Alpha",
 				base_url: "",
-				namespace: "tenant-b",
 				is_enabled: false,
 			}),
 		).toEqual({
 			name: "Edge Alpha",
 			base_url: "",
-			namespace: "tenant-b",
 			is_enabled: false,
 		});
 	});

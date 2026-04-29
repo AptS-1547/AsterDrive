@@ -56,6 +56,7 @@ const COPY_TABLE_ORDER: &[&str] = &[
     "upload_session_parts",
     "contact_verification_tokens",
     "master_bindings",
+    "managed_ingress_profiles",
     "system_config",
     "audit_logs",
     "mail_outbox",

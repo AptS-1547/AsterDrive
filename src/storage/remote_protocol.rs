@@ -7,12 +7,14 @@ use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions};
 use crate::storage::error::{
     StorageErrorKind, storage_driver_error, storage_driver_error_with_subcode,
 };
+use crate::types::DriverType;
 use futures::TryStreamExt;
 use hmac::{Hmac, KeyInit, Mac};
 use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::fmt;
 use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::io::AsyncRead;
@@ -30,6 +32,7 @@ const STORAGE_KEY_ENCODE_SET: &AsciiSet = &CONTROLS
     .add(b']')
     .add(b'{')
     .add(b'}');
+const INGRESS_PROFILE_KEY_ENCODE_SET: &AsciiSet = &STORAGE_KEY_ENCODE_SET.add(b'/');
 
 const DEFAULT_REMOTE_CONNECT_TIMEOUT_SECS: u64 = 5;
 const DEFAULT_REMOTE_READ_TIMEOUT_SECS: u64 = 30;
@@ -93,8 +96,110 @@ pub struct RemoteStorageObjectMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemoteBindingSyncRequest {
     pub name: String,
-    pub namespace: String,
     pub is_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RemoteIngressProfileInfo {
+    pub profile_key: String,
+    pub name: String,
+    pub driver_type: DriverType,
+    pub endpoint: String,
+    pub bucket: String,
+    pub base_path: String,
+    pub max_file_size: i64,
+    pub is_default: bool,
+    pub desired_revision: i64,
+    pub applied_revision: i64,
+    pub last_error: String,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "driver_type", rename_all = "lowercase")]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub enum RemoteCreateIngressProfileRequest {
+    Local(RemoteCreateLocalIngressProfileRequest),
+    S3(RemoteCreateS3IngressProfileRequest),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RemoteCreateLocalIngressProfileRequest {
+    pub name: String,
+    pub base_path: String,
+    pub max_file_size: i64,
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RemoteCreateS3IngressProfileRequest {
+    pub name: String,
+    pub endpoint: String,
+    pub bucket: String,
+    pub access_key: String,
+    pub secret_key: String,
+    pub base_path: String,
+    pub max_file_size: i64,
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+impl fmt::Debug for RemoteCreateS3IngressProfileRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RemoteCreateS3IngressProfileRequest")
+            .field("name", &self.name)
+            .field("endpoint", &self.endpoint)
+            .field("bucket", &self.bucket)
+            .field("access_key", &"<redacted>")
+            .field("secret_key", &"<redacted>")
+            .field("base_path", &self.base_path)
+            .field("max_file_size", &self.max_file_size)
+            .field("is_default", &self.is_default)
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RemoteUpdateIngressProfileRequest {
+    pub name: Option<String>,
+    pub driver_type: Option<DriverType>,
+    pub endpoint: Option<String>,
+    pub bucket: Option<String>,
+    pub access_key: Option<String>,
+    pub secret_key: Option<String>,
+    pub base_path: Option<String>,
+    pub max_file_size: Option<i64>,
+    pub is_default: Option<bool>,
+}
+
+impl fmt::Debug for RemoteUpdateIngressProfileRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RemoteUpdateIngressProfileRequest")
+            .field("name", &self.name)
+            .field("driver_type", &self.driver_type)
+            .field("endpoint", &self.endpoint)
+            .field("bucket", &self.bucket)
+            .field(
+                "access_key",
+                &self.access_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "secret_key",
+                &self.secret_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field("base_path", &self.base_path)
+            .field("max_file_size", &self.max_file_size)
+            .field("is_default", &self.is_default)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -434,6 +539,100 @@ impl RemoteStorageClient {
         ensure_success_without_body(response, "sync remote binding state").await
     }
 
+    pub async fn list_ingress_profiles(&self) -> Result<Vec<RemoteIngressProfileInfo>> {
+        let url = self.url_for_path(&format!("{INTERNAL_STORAGE_BASE_PATH}/ingress-profiles"))?;
+        let response = self
+            .signed_request(Method::GET, url, None)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+        let body = ensure_success(response, "list remote ingress profiles").await?;
+        let envelope: ApiEnvelope<Vec<RemoteIngressProfileInfo>> = serde_json::from_slice(&body)
+            .map_err(|e| {
+                storage_driver_error(
+                    StorageErrorKind::Misconfigured,
+                    format!("decode remote ingress profile list response: {e}"),
+                )
+            })?;
+        if envelope.code != 0 {
+            return Err(storage_driver_error(
+                remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
+                format!("remote ingress profile list failed: {}", envelope.msg),
+            ));
+        }
+        envelope.data.ok_or_else(|| {
+            storage_driver_error(
+                StorageErrorKind::Misconfigured,
+                "list remote ingress profiles response missing data",
+            )
+        })
+    }
+
+    pub async fn create_ingress_profile(
+        &self,
+        profile: &RemoteCreateIngressProfileRequest,
+    ) -> Result<RemoteIngressProfileInfo> {
+        let url = self.url_for_path(&format!("{INTERNAL_STORAGE_BASE_PATH}/ingress-profiles"))?;
+        let body = serde_json::to_vec(profile).map_err(|e| {
+            storage_driver_error(
+                StorageErrorKind::Unknown,
+                format!("encode remote ingress profile create request: {e}"),
+            )
+        })?;
+        let content_length = u64::try_from(body.len()).map_err(|_| {
+            storage_driver_error(
+                StorageErrorKind::Precondition,
+                "remote ingress profile create body length overflow",
+            )
+        })?;
+        let response = self
+            .signed_request(Method::POST, url, Some(content_length))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+        parse_ingress_profile_response(response, "create remote ingress profile").await
+    }
+
+    pub async fn update_ingress_profile(
+        &self,
+        profile_key: &str,
+        profile: &RemoteUpdateIngressProfileRequest,
+    ) -> Result<RemoteIngressProfileInfo> {
+        let url = self.ingress_profile_url(profile_key)?;
+        let body = serde_json::to_vec(profile).map_err(|e| {
+            storage_driver_error(
+                StorageErrorKind::Unknown,
+                format!("encode remote ingress profile update request: {e}"),
+            )
+        })?;
+        let content_length = u64::try_from(body.len()).map_err(|_| {
+            storage_driver_error(
+                StorageErrorKind::Precondition,
+                "remote ingress profile update body length overflow",
+            )
+        })?;
+        let response = self
+            .signed_request(Method::PATCH, url, Some(content_length))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+        parse_ingress_profile_response(response, "update remote ingress profile").await
+    }
+
+    pub async fn delete_ingress_profile(&self, profile_key: &str) -> Result<()> {
+        let url = self.ingress_profile_url(profile_key)?;
+        let response = self
+            .signed_request(Method::DELETE, url, None)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+        ensure_success_without_body(response, "delete remote ingress profile").await
+    }
+
     pub fn presigned_put_url(&self, key: &str, expires: Duration) -> Result<String> {
         let mut url = self.object_url(key)?;
         let request_target = presigned_request_target(&url);
@@ -606,6 +805,17 @@ impl RemoteStorageClient {
             "{INTERNAL_STORAGE_BASE_PATH}/objects/{encoded_key}/metadata"
         ))
     }
+
+    fn ingress_profile_url(&self, profile_key: &str) -> Result<reqwest::Url> {
+        let encoded_key = percent_encode(
+            profile_key.trim().as_bytes(),
+            INGRESS_PROFILE_KEY_ENCODE_SET,
+        )
+        .to_string();
+        self.url_for_path(&format!(
+            "{INTERNAL_STORAGE_BASE_PATH}/ingress-profiles/{encoded_key}"
+        ))
+    }
 }
 
 fn remote_http_client() -> Result<reqwest::Client> {
@@ -694,6 +904,15 @@ async fn build_remote_status_error(
 ) -> AsterError {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
+    build_remote_status_error_from_parts(status, &body, context, not_found_as_record)
+}
+
+fn build_remote_status_error_from_parts(
+    status: reqwest::StatusCode,
+    body: &str,
+    context: &str,
+    not_found_as_record: bool,
+) -> AsterError {
     let envelope = serde_json::from_str::<ApiEnvelope<serde_json::Value>>(&body).ok();
     let remote_code = envelope.as_ref().map(|value| value.code);
     let remote_subcode = envelope
@@ -717,10 +936,19 @@ async fn build_remote_status_error(
     let kind = remote_code
         .and_then(remote_api_error_kind)
         .unwrap_or_else(|| remote_status_error_kind(status));
+    let is_not_found_remote_code = remote_code
+        .map(|code| {
+            [
+                ErrorCode::NotFound as i32,
+                ErrorCode::StorageObjectNotFound as i32,
+            ]
+            .contains(&code)
+        })
+        .unwrap_or(false);
 
     match status {
-        reqwest::StatusCode::NOT_FOUND if not_found_as_record => {
-            AsterError::record_not_found("remote storage object not found")
+        reqwest::StatusCode::NOT_FOUND if not_found_as_record || is_not_found_remote_code => {
+            AsterError::record_not_found(message)
         }
         reqwest::StatusCode::PRECONDITION_FAILED => remote_subcode
             .map(|subcode| precondition_failed_with_subcode(subcode, message.clone()))
@@ -729,6 +957,32 @@ async fn build_remote_status_error(
             .map(|subcode| storage_driver_error_with_subcode(kind, subcode, message.clone()))
             .unwrap_or_else(|| storage_driver_error(kind, message)),
     }
+}
+
+async fn parse_ingress_profile_response(
+    response: reqwest::Response,
+    context: &str,
+) -> Result<RemoteIngressProfileInfo> {
+    let body = ensure_success(response, context).await?;
+    let envelope: ApiEnvelope<RemoteIngressProfileInfo> =
+        serde_json::from_slice(&body).map_err(|e| {
+            storage_driver_error(
+                StorageErrorKind::Misconfigured,
+                format!("decode remote ingress profile response: {e}"),
+            )
+        })?;
+    if envelope.code != 0 {
+        return Err(storage_driver_error(
+            remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
+            format!("{context} failed: {}", envelope.msg),
+        ));
+    }
+    envelope.data.ok_or_else(|| {
+        storage_driver_error(
+            StorageErrorKind::Misconfigured,
+            format!("{context} response missing data"),
+        )
+    })
 }
 
 fn remote_api_error(code: i32, message: &str) -> Option<AsterError> {
@@ -860,5 +1114,84 @@ mod tests {
         .expect("quota error should map");
         assert!(matches!(err, AsterError::StorageQuotaExceeded(_)));
         assert_eq!(err.message(), "put remote storage object: quota exceeded");
+    }
+
+    #[test]
+    fn s3_ingress_profile_create_debug_redacts_credentials() {
+        let request = RemoteCreateS3IngressProfileRequest {
+            name: "s3".to_string(),
+            endpoint: "https://s3.example.com".to_string(),
+            bucket: "bucket-a".to_string(),
+            access_key: "plain-access-key".to_string(),
+            secret_key: "plain-secret-key".to_string(),
+            base_path: "ingress".to_string(),
+            max_file_size: 1024,
+            is_default: true,
+        };
+
+        let rendered = format!("{request:?}");
+        assert!(rendered.contains("access_key"));
+        assert!(rendered.contains("secret_key"));
+        assert!(rendered.contains("<redacted>"));
+        assert!(!rendered.contains("plain-access-key"));
+        assert!(!rendered.contains("plain-secret-key"));
+    }
+
+    #[test]
+    fn ingress_profile_update_debug_redacts_optional_credentials() {
+        let request = RemoteUpdateIngressProfileRequest {
+            name: Some("s3".to_string()),
+            driver_type: Some(DriverType::S3),
+            endpoint: Some("https://s3.example.com".to_string()),
+            bucket: Some("bucket-a".to_string()),
+            access_key: Some("plain-access-key".to_string()),
+            secret_key: Some("plain-secret-key".to_string()),
+            base_path: Some("ingress".to_string()),
+            max_file_size: Some(1024),
+            is_default: Some(true),
+        };
+
+        let rendered = format!("{request:?}");
+        assert!(rendered.contains("access_key"));
+        assert!(rendered.contains("secret_key"));
+        assert!(rendered.contains("<redacted>"));
+        assert!(!rendered.contains("plain-access-key"));
+        assert!(!rendered.contains("plain-secret-key"));
+    }
+
+    #[test]
+    fn ingress_profile_url_encodes_path_separators_inside_profile_key() {
+        let client = RemoteStorageClient::new("http://storage.example.com", "ak", "sk")
+            .expect("remote client should build");
+
+        let url = client
+            .ingress_profile_url(" a/b ")
+            .expect("profile URL should build");
+
+        assert_eq!(
+            url.path(),
+            "/api/v1/internal/storage/ingress-profiles/a%2Fb"
+        );
+    }
+
+    #[test]
+    fn not_found_record_error_uses_contextual_remote_message() {
+        let body = serde_json::json!({
+            "code": ErrorCode::NotFound as i32,
+            "msg": "managed_ingress_profile 'profile-a'",
+        })
+        .to_string();
+        let err = build_remote_status_error_from_parts(
+            reqwest::StatusCode::NOT_FOUND,
+            &body,
+            "update remote ingress profile",
+            false,
+        );
+
+        assert!(matches!(err, AsterError::RecordNotFound(_)));
+        assert_eq!(
+            err.message(),
+            "update remote ingress profile: managed_ingress_profile 'profile-a'"
+        );
     }
 }

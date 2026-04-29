@@ -12,6 +12,7 @@ pub mod folder;
 pub mod follower_enrollment_session;
 pub mod mail_outbox;
 pub mod managed_follower;
+pub mod managed_ingress_profile;
 pub mod master_binding;
 pub mod resource_lock;
 pub mod share;

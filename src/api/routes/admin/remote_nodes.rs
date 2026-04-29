@@ -8,7 +8,12 @@ use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::{managed_follower_enrollment_service, managed_follower_service};
+use crate::services::{
+    managed_follower_enrollment_service, managed_follower_service, managed_ingress_profile_service,
+};
+use crate::storage::remote_protocol::{
+    RemoteCreateIngressProfileRequest, RemoteUpdateIngressProfileRequest,
+};
 use actix_web::{HttpResponse, web};
 
 impl From<CreateRemoteNodeReq> for managed_follower_service::CreateRemoteNodeInput {
@@ -16,7 +21,6 @@ impl From<CreateRemoteNodeReq> for managed_follower_service::CreateRemoteNodeInp
         Self {
             name: value.name,
             base_url: value.base_url.unwrap_or_default(),
-            namespace: value.namespace,
             is_enabled: value.is_enabled,
         }
     }
@@ -27,7 +31,6 @@ impl From<PatchRemoteNodeReq> for managed_follower_service::UpdateRemoteNodeInpu
         Self {
             name: value.name,
             base_url: value.base_url,
-            namespace: value.namespace,
             is_enabled: value.is_enabled,
         }
     }
@@ -225,4 +228,111 @@ pub async fn create_remote_node_enrollment_token(
     let command =
         managed_follower_enrollment_service::create_enrollment_command(&state, *path).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(command)))
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/admin/remote-nodes/{id}/ingress-profiles",
+    tag = "admin",
+    operation_id = "list_remote_node_ingress_profiles",
+    params(("id" = i64, Path, description = "Remote node ID")),
+    responses(
+        (status = 200, description = "List remote node ingress profiles", body = inline(ApiResponse<Vec<crate::storage::remote_protocol::RemoteIngressProfileInfo>>)),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Remote node not found"),
+        (status = 412, description = "Managed ingress profiles require a single primary binding"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_remote_node_ingress_profiles(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let profiles = managed_ingress_profile_service::list_remote(&state, *path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(profiles)))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/admin/remote-nodes/{id}/ingress-profiles",
+    tag = "admin",
+    operation_id = "create_remote_node_ingress_profile",
+    params(("id" = i64, Path, description = "Remote node ID")),
+    request_body = RemoteCreateIngressProfileRequest,
+    responses(
+        (status = 201, description = "Remote node ingress profile created", body = inline(ApiResponse<crate::storage::remote_protocol::RemoteIngressProfileInfo>)),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Remote node not found"),
+        (status = 412, description = "Managed ingress profiles require a single primary binding"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn create_remote_node_ingress_profile(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<i64>,
+    body: web::Json<RemoteCreateIngressProfileRequest>,
+) -> Result<HttpResponse> {
+    let profile =
+        managed_ingress_profile_service::create_remote(&state, *path, body.into_inner()).await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(profile)))
+}
+
+#[api_docs_macros::path(
+    patch,
+    path = "/api/v1/admin/remote-nodes/{id}/ingress-profiles/{profile_key}",
+    tag = "admin",
+    operation_id = "update_remote_node_ingress_profile",
+    params(
+        ("id" = i64, Path, description = "Remote node ID"),
+        ("profile_key" = String, Path, description = "Remote ingress profile key")
+    ),
+    request_body = RemoteUpdateIngressProfileRequest,
+    responses(
+        (status = 200, description = "Remote node ingress profile updated", body = inline(ApiResponse<crate::storage::remote_protocol::RemoteIngressProfileInfo>)),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Remote node or ingress profile not found"),
+        (status = 412, description = "Managed ingress profiles require a single primary binding"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn update_remote_node_ingress_profile(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<(i64, String)>,
+    body: web::Json<RemoteUpdateIngressProfileRequest>,
+) -> Result<HttpResponse> {
+    let (id, profile_key) = path.into_inner();
+    let profile =
+        managed_ingress_profile_service::update_remote(&state, id, &profile_key, body.into_inner())
+            .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
+}
+
+#[api_docs_macros::path(
+    delete,
+    path = "/api/v1/admin/remote-nodes/{id}/ingress-profiles/{profile_key}",
+    tag = "admin",
+    operation_id = "delete_remote_node_ingress_profile",
+    params(
+        ("id" = i64, Path, description = "Remote node ID"),
+        ("profile_key" = String, Path, description = "Remote ingress profile key")
+    ),
+    responses(
+        (status = 200, description = "Remote node ingress profile deleted"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Remote node or ingress profile not found"),
+        (status = 412, description = "Managed ingress profiles require a single primary binding"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_remote_node_ingress_profile(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<(i64, String)>,
+) -> Result<HttpResponse> {
+    let (id, profile_key) = path.into_inner();
+    managed_ingress_profile_service::delete_remote(&state, id, &profile_key).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
