@@ -94,7 +94,6 @@ pub struct RemoteStorageObjectMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemoteBindingSyncRequest {
     pub name: String,
-    pub namespace: String,
     pub is_enabled: bool,
 }
 

@@ -1,8 +1,6 @@
 //! 服务模块：`managed_ingress_profile_service`。
 
-use crate::db::repository::{
-    managed_follower_repo, managed_ingress_profile_repo, master_binding_repo,
-};
+use crate::db::repository::{managed_follower_repo, managed_ingress_profile_repo};
 use crate::entities::{managed_ingress_profile, master_binding, storage_policy};
 use crate::errors::{
     AsterError, MapAsterErr, Result, precondition_failed_with_subcode,
@@ -51,30 +49,31 @@ impl From<managed_ingress_profile::Model> for RemoteIngressProfileInfo {
 
 pub async fn list<S: FollowerRuntimeState>(
     state: &S,
-    access_key: &str,
+    binding: &master_binding::Model,
 ) -> Result<Vec<RemoteIngressProfileInfo>> {
-    ensure_single_primary_binding(state.db(), access_key).await?;
-    Ok(managed_ingress_profile_repo::find_all(state.db())
-        .await?
-        .into_iter()
-        .map(Into::into)
-        .collect())
+    Ok(
+        managed_ingress_profile_repo::find_all_by_binding(state.db(), binding.id)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+    )
 }
 
 pub async fn create<S: FollowerRuntimeState>(
     state: &S,
-    access_key: &str,
+    binding: &master_binding::Model,
     input: RemoteCreateIngressProfileRequest,
 ) -> Result<RemoteIngressProfileInfo> {
-    ensure_single_primary_binding(state.db(), access_key).await?;
     let normalized = normalize_create_input(input)?;
     let profile_id = crate::db::transaction::with_transaction(state.db(), async |txn| {
         let should_set_default = normalized.is_default == Some(true)
-            || managed_ingress_profile_repo::count(txn).await? == 0;
+            || managed_ingress_profile_repo::count_by_binding(txn, binding.id).await? == 0;
         let now = Utc::now();
         let created = managed_ingress_profile_repo::create(
             txn,
             managed_ingress_profile::ActiveModel {
+                master_binding_id: Set(binding.id),
                 profile_key: Set(new_profile_key()),
                 name: Set(normalized.name),
                 driver_type: Set(normalized.driver_type),
@@ -95,7 +94,8 @@ pub async fn create<S: FollowerRuntimeState>(
         )
         .await?;
         if should_set_default {
-            managed_ingress_profile_repo::set_only_default(txn, created.id).await?;
+            managed_ingress_profile_repo::set_only_default_for_binding(txn, binding.id, created.id)
+                .await?;
         }
         Ok(created.id)
     })
@@ -106,12 +106,11 @@ pub async fn create<S: FollowerRuntimeState>(
 
 pub async fn update<S: FollowerRuntimeState>(
     state: &S,
-    access_key: &str,
+    binding: &master_binding::Model,
     profile_key: &str,
     input: RemoteUpdateIngressProfileRequest,
 ) -> Result<RemoteIngressProfileInfo> {
-    ensure_single_primary_binding(state.db(), access_key).await?;
-    let existing = find_profile_or_err(state, profile_key).await?;
+    let existing = find_profile_or_err(state, binding.id, profile_key).await?;
     let normalized = normalize_update_input(existing.clone(), input)?;
 
     if existing.is_default && normalized.is_default == Some(false) {
@@ -138,7 +137,8 @@ pub async fn update<S: FollowerRuntimeState>(
         active.updated_at = Set(Utc::now());
         let updated = managed_ingress_profile_repo::update(txn, active).await?;
         if normalized.is_default == Some(true) {
-            managed_ingress_profile_repo::set_only_default(txn, updated.id).await?;
+            managed_ingress_profile_repo::set_only_default_for_binding(txn, binding.id, updated.id)
+                .await?;
         }
         Ok(updated.id)
     })
@@ -149,26 +149,31 @@ pub async fn update<S: FollowerRuntimeState>(
 
 pub async fn delete<S: FollowerRuntimeState>(
     state: &S,
-    access_key: &str,
+    binding: &master_binding::Model,
     profile_key: &str,
 ) -> Result<()> {
-    ensure_single_primary_binding(state.db(), access_key).await?;
-    let existing = find_profile_or_err(state, profile_key).await?;
-    let count = managed_ingress_profile_repo::count(state.db()).await?;
+    let existing = find_profile_or_err(state, binding.id, profile_key).await?;
+    let count = managed_ingress_profile_repo::count_by_binding(state.db(), binding.id).await?;
     if existing.is_default && count > 1 {
         return Err(precondition_failed_with_subcode(
             "managed_ingress.default_delete_requires_replacement",
             "cannot delete the default managed ingress profile while other profiles still exist; set another profile as default first",
         ));
     }
-    managed_ingress_profile_repo::delete_by_profile_key(state.db(), &existing.profile_key).await
+    managed_ingress_profile_repo::delete_by_binding_and_profile_key(
+        state.db(),
+        binding.id,
+        &existing.profile_key,
+    )
+    .await
 }
 
 pub async fn resolve_effective_target<S: FollowerRuntimeState>(
     state: &S,
     binding: &master_binding::Model,
 ) -> Result<ResolvedIngressTarget> {
-    let profiles = managed_ingress_profile_repo::find_all(state.db()).await?;
+    let profiles =
+        managed_ingress_profile_repo::find_all_by_binding(state.db(), binding.id).await?;
     if profiles.is_empty() {
         return Err(precondition_failed_with_subcode(
             "managed_ingress.required",
@@ -176,8 +181,7 @@ pub async fn resolve_effective_target<S: FollowerRuntimeState>(
         ));
     }
 
-    ensure_single_primary_binding(state.db(), &binding.access_key).await?;
-    let profile = managed_ingress_profile_repo::find_default(state.db())
+    let profile = managed_ingress_profile_repo::find_default_by_binding(state.db(), binding.id)
         .await?
         .ok_or_else(|| {
             precondition_failed_with_subcode(
@@ -257,37 +261,16 @@ pub async fn delete_remote<S: PrimaryRuntimeState>(
 
 async fn find_profile_or_err<S: FollowerRuntimeState>(
     state: &S,
+    master_binding_id: i64,
     profile_key: &str,
 ) -> Result<managed_ingress_profile::Model> {
-    managed_ingress_profile_repo::find_by_profile_key(state.db(), profile_key)
-        .await?
-        .ok_or_else(|| {
-            AsterError::record_not_found(format!("managed_ingress_profile '{profile_key}'"))
-        })
-}
-
-async fn ensure_single_primary_binding<C: sea_orm::ConnectionTrait>(
-    db: &C,
-    access_key: &str,
-) -> Result<()> {
-    let bindings = master_binding_repo::find_all(db).await?;
-    let enabled_bindings: Vec<_> = bindings
-        .into_iter()
-        .filter(|binding| binding.is_enabled)
-        .collect();
-    if enabled_bindings.len() != 1 {
-        return Err(precondition_failed_with_subcode(
-            "managed_ingress.single_primary_required",
-            "managed ingress profiles require exactly one active master binding",
-        ));
-    }
-    if enabled_bindings[0].access_key != access_key {
-        return Err(precondition_failed_with_subcode(
-            "managed_ingress.binding_mismatch",
-            "managed ingress profile requests must come from the sole configured primary",
-        ));
-    }
-    Ok(())
+    managed_ingress_profile_repo::find_by_binding_and_profile_key(
+        state.db(),
+        master_binding_id,
+        profile_key,
+    )
+    .await?
+    .ok_or_else(|| AsterError::record_not_found(format!("managed_ingress_profile '{profile_key}'")))
 }
 
 fn normalize_create_input(

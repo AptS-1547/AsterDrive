@@ -295,10 +295,6 @@ export function StoragePolicyDialog({
 							t("policy_wizard_remote_node_unselected"),
 					},
 					{
-						label: t("namespace"),
-						value: selectedRemoteNode?.namespace ?? "—",
-					},
-					{
 						label: t("remote_download_strategy"),
 						value: remoteDownloadStrategyLabel,
 					},
@@ -453,7 +449,6 @@ export function StoragePolicyDialog({
 			{selectedRemoteNode ? (
 				<p className="text-xs text-muted-foreground">
 					{t("policy_wizard_remote_node_hint", {
-						namespace: selectedRemoteNode.namespace,
 						base_url:
 							selectedRemoteNode.base_url ||
 							t("policy_wizard_remote_base_url_empty"),

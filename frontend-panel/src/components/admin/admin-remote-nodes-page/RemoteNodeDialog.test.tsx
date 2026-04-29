@@ -151,7 +151,6 @@ const baseProps = {
 	editingNode: null,
 	form: {
 		name: "",
-		namespace: "",
 		base_url: "",
 		is_enabled: true,
 	},

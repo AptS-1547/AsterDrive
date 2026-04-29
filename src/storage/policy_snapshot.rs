@@ -369,7 +369,6 @@ mod tests {
                 base_url: Set("https://remote.example.com".to_string()),
                 access_key: Set(format!("ak_{name}")),
                 secret_key: Set(format!("sk_{name}")),
-                namespace: Set(format!("ns_{name}")),
                 is_enabled: Set(is_enabled),
                 last_capabilities: Set("{}".to_string()),
                 last_error: Set(String::new()),

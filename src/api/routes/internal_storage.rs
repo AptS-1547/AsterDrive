@@ -107,7 +107,6 @@ async fn sync_binding(
         &binding.access_key,
         master_binding_service::SyncMasterBindingInput {
             name: body.name.clone(),
-            namespace: body.namespace.clone(),
             is_enabled: body.is_enabled,
         },
     )
@@ -130,14 +129,14 @@ async fn list_objects(
         .prefix
         .as_deref()
         .map(|value| master_binding_service::provider_storage_path(&ctx.binding, value));
-    let root_prefix = format!("{}/", ctx.binding.namespace.trim_matches('/'));
+    let root_prefix = format!("{}/", ctx.binding.storage_namespace.trim_matches('/'));
     let items = list_driver
         .list_paths(prefix.as_deref())
         .await?
         .into_iter()
         .filter_map(|path| {
             path.strip_prefix(&root_prefix)
-                .or_else(|| (path == ctx.binding.namespace).then_some(""))
+                .or_else(|| (path == ctx.binding.storage_namespace).then_some(""))
                 .map(str::to_string)
         })
         .collect();
@@ -449,8 +448,7 @@ async fn list_ingress_profiles(
 ) -> Result<HttpResponse> {
     let binding =
         master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
-    let profiles =
-        managed_ingress_profile_service::list(state.get_ref(), &binding.access_key).await?;
+    let profiles = managed_ingress_profile_service::list(state.get_ref(), &binding).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(profiles)))
 }
 
@@ -461,12 +459,9 @@ async fn create_ingress_profile(
 ) -> Result<HttpResponse> {
     let binding =
         master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
-    let profile = managed_ingress_profile_service::create(
-        state.get_ref(),
-        &binding.access_key,
-        body.into_inner(),
-    )
-    .await?;
+    let profile =
+        managed_ingress_profile_service::create(state.get_ref(), &binding, body.into_inner())
+            .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(profile)))
 }
 
@@ -480,7 +475,7 @@ async fn update_ingress_profile(
         master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
     let profile = managed_ingress_profile_service::update(
         state.get_ref(),
-        &binding.access_key,
+        &binding,
         &path.into_inner(),
         body.into_inner(),
     )
@@ -495,11 +490,6 @@ async fn delete_ingress_profile(
 ) -> Result<HttpResponse> {
     let binding =
         master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
-    managed_ingress_profile_service::delete(
-        state.get_ref(),
-        &binding.access_key,
-        &path.into_inner(),
-    )
-    .await?;
+    managed_ingress_profile_service::delete(state.get_ref(), &binding, &path.into_inner()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

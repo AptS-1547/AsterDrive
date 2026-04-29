@@ -229,7 +229,6 @@ async fn create_dead_remote_policy(
             base_url: Set("http://127.0.0.1:9".to_string()),
             access_key: Set("dead-remote-ak".to_string()),
             secret_key: Set("dead-remote-sk".to_string()),
-            namespace: Set(format!("dead-remote-{}", uuid::Uuid::new_v4())),
             is_enabled: Set(true),
             last_capabilities: Set(
                 "{\"protocol_version\":\"v1\",\"supports_list\":true}".to_string()
@@ -2203,6 +2202,7 @@ async fn test_cancel_upload_keeps_remote_session_when_object_cleanup_is_unavaila
     upload_service::cancel_upload(&state, &upload_id, user.id)
         .await
         .unwrap();
+    let cancel_completed_at = chrono::Utc::now();
 
     let session = upload_session_repo::find_by_id(&state.db, &upload_id)
         .await
@@ -2213,7 +2213,7 @@ async fn test_cancel_upload_keeps_remote_session_when_object_cleanup_is_unavaila
         "cancel should defer cleanup instead of deleting the session when remote cleanup is blocked"
     );
     assert!(
-        session.expires_at <= canceled_at + chrono::Duration::seconds(20),
+        session.expires_at <= cancel_completed_at + chrono::Duration::seconds(20),
         "deferred cancel cleanup grace window should stay short"
     );
     assert!(

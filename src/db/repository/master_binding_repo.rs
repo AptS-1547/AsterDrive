@@ -25,6 +25,17 @@ pub async fn find_by_access_key<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_by_storage_namespace<C: ConnectionTrait>(
+    db: &C,
+    storage_namespace: &str,
+) -> Result<Option<master_binding::Model>> {
+    MasterBinding::find()
+        .filter(master_binding::Column::StorageNamespace.eq(storage_namespace))
+        .one(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<master_binding::Model>> {
     MasterBinding::find()
         .order_by_desc(master_binding::Column::CreatedAt)

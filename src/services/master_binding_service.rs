@@ -31,14 +31,12 @@ pub struct UpsertMasterBindingInput {
     pub master_url: String,
     pub access_key: String,
     pub secret_key: String,
-    pub namespace: String,
     pub is_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct SyncMasterBindingInput {
     pub name: String,
-    pub namespace: String,
     pub is_enabled: bool,
 }
 
@@ -51,17 +49,22 @@ pub async fn upsert_from_enrollment<C: ConnectionTrait>(
 
     match master_binding_repo::find_by_access_key(db, &normalized.access_key).await? {
         Some(existing) => {
+            if existing.secret_key != normalized.secret_key {
+                return Err(AsterError::validation_error(
+                    "master binding access_key already exists with different credentials",
+                ));
+            }
             let mut active: master_binding::ActiveModel = existing.into();
             active.name = Set(normalized.name);
             active.master_url = Set(normalized.master_url);
             active.secret_key = Set(normalized.secret_key);
-            active.namespace = Set(normalized.namespace);
             active.is_enabled = Set(normalized.is_enabled);
             active.updated_at = Set(now);
             let updated = master_binding_repo::update(db, active).await?;
             Ok((updated, "updated"))
         }
         None => {
+            let storage_namespace = new_storage_namespace(db).await?;
             let created = master_binding_repo::create(
                 db,
                 master_binding::ActiveModel {
@@ -69,7 +72,7 @@ pub async fn upsert_from_enrollment<C: ConnectionTrait>(
                     master_url: Set(normalized.master_url),
                     access_key: Set(normalized.access_key),
                     secret_key: Set(normalized.secret_key),
-                    namespace: Set(normalized.namespace),
+                    storage_namespace: Set(storage_namespace),
                     is_enabled: Set(normalized.is_enabled),
                     created_at: Set(now),
                     updated_at: Set(now),
@@ -137,7 +140,6 @@ pub async fn sync_from_primary<S: FollowerRuntimeState>(
 
     let mut active: master_binding::ActiveModel = existing.into();
     active.name = Set(normalized.name);
-    active.namespace = Set(normalized.namespace);
     active.is_enabled = Set(normalized.is_enabled);
     active.updated_at = Set(Utc::now());
 
@@ -268,9 +270,13 @@ async fn authorize_presigned_binding_request<S: FollowerRuntimeState>(
 pub fn provider_storage_path(binding: &master_binding::Model, object_key: &str) -> String {
     let object_key = object_key.trim_start_matches('/');
     if object_key.is_empty() {
-        binding.namespace.clone()
+        binding.storage_namespace.clone()
     } else {
-        format!("{}/{}", binding.namespace.trim_matches('/'), object_key)
+        format!(
+            "{}/{}",
+            binding.storage_namespace.trim_matches('/'),
+            object_key
+        )
     }
 }
 
@@ -286,15 +292,9 @@ pub async fn assert_follower_ready<S: FollowerRuntimeState>(state: &S) -> Result
         ));
     }
 
-    if enabled_bindings.len() != 1 {
-        return Err(precondition_failed_with_subcode(
-            "managed_ingress.single_primary_required",
-            "managed ingress profiles require exactly one active master binding",
-        ));
+    for binding in enabled_bindings {
+        let _ = managed_ingress_profile_service::resolve_effective_target(state, &binding).await?;
     }
-
-    let _ = managed_ingress_profile_service::resolve_effective_target(state, &enabled_bindings[0])
-        .await?;
     Ok(())
 }
 
@@ -317,7 +317,6 @@ fn normalize_upsert_input(input: UpsertMasterBindingInput) -> Result<UpsertMaste
         master_url: normalize_remote_base_url(&input.master_url)?,
         access_key: normalize_non_blank("access_key", &input.access_key)?,
         secret_key: normalize_non_blank("secret_key", &input.secret_key)?,
-        namespace: normalize_namespace(&input.namespace)?,
         is_enabled: input.is_enabled,
     })
 }
@@ -325,7 +324,6 @@ fn normalize_upsert_input(input: UpsertMasterBindingInput) -> Result<UpsertMaste
 fn normalize_sync_input(input: SyncMasterBindingInput) -> Result<SyncMasterBindingInput> {
     Ok(SyncMasterBindingInput {
         name: normalize_non_blank("name", &input.name)?,
-        namespace: normalize_namespace(&input.namespace)?,
         is_enabled: input.is_enabled,
     })
 }
@@ -436,18 +434,17 @@ fn normalize_non_blank(field: &str, value: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-fn normalize_namespace(value: &str) -> Result<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(AsterError::validation_error("namespace cannot be blank"));
+async fn new_storage_namespace<C: ConnectionTrait>(db: &C) -> Result<String> {
+    for _ in 0..8 {
+        let candidate = format!("mb_{}", crate::utils::id::new_short_token());
+        if master_binding_repo::find_by_storage_namespace(db, &candidate)
+            .await?
+            .is_none()
+        {
+            return Ok(candidate);
+        }
     }
-    if !trimmed
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-    {
-        return Err(AsterError::validation_error(
-            "namespace only allows ASCII letters, digits, '.', '_' and '-'",
-        ));
-    }
-    Ok(trimmed.to_string())
+    Err(AsterError::internal_error(
+        "failed to allocate unique master binding storage namespace",
+    ))
 }

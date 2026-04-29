@@ -336,7 +336,7 @@ export default function AdminRemoteNodesPage() {
 
 		setCreateStepTouched(true);
 
-		if (createStep === 0 && (!form.name.trim() || !form.namespace.trim())) {
+		if (createStep === 0 && !form.name.trim()) {
 			return;
 		}
 		if (createStep === 1 && remoteNodeBaseUrlValidationMessage) {

@@ -66,7 +66,6 @@ pub async fn enroll(
                 master_url: bootstrap.master_url.clone(),
                 access_key: bootstrap.access_key.clone(),
                 secret_key: bootstrap.secret_key.clone(),
-                namespace: bootstrap.namespace.clone(),
                 is_enabled: bootstrap.is_enabled,
             },
         )
@@ -444,7 +443,6 @@ mod tests {
                     "master_url": "http://127.0.0.1:3000",
                     "access_key": "ak_test",
                     "secret_key": "sk_test",
-                    "namespace": "docker-space",
                     "is_enabled": true,
                     "ack_token": "enr_ack_mock"
                 }
@@ -473,7 +471,7 @@ mod tests {
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].name, "docker-follower");
         assert_eq!(stored[0].access_key, "ak_test");
-        assert_eq!(stored[0].namespace, "docker-space");
+        assert!(stored[0].storage_namespace.starts_with("mb_"));
 
         server.stop().await;
     }
@@ -497,7 +495,7 @@ mod tests {
             master_url: Set(server.base_url.clone()),
             access_key: Set("ak_existing".to_string()),
             secret_key: Set("sk_existing".to_string()),
-            namespace: Set("docker-space".to_string()),
+            storage_namespace: Set("mb_existing".to_string()),
             is_enabled: Set(true),
             created_at: Set(chrono::Utc::now()),
             updated_at: Set(chrono::Utc::now()),

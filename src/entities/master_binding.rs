@@ -16,7 +16,7 @@ pub struct Model {
     pub access_key: String,
     #[serde(skip_serializing)]
     pub secret_key: String,
-    pub namespace: String,
+    pub storage_namespace: String,
     pub is_enabled: bool,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTimeUtc,
@@ -25,6 +25,15 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(has_many = "super::managed_ingress_profile::Entity")]
+    ManagedIngressProfiles,
+}
+
+impl Related<super::managed_ingress_profile::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ManagedIngressProfiles.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

@@ -19,19 +19,25 @@ pub async fn find_by_id<C: ConnectionTrait>(
         .ok_or_else(|| AsterError::record_not_found(format!("managed_ingress_profile #{id}")))
 }
 
-pub async fn find_by_profile_key<C: ConnectionTrait>(
+pub async fn find_by_binding_and_profile_key<C: ConnectionTrait>(
     db: &C,
+    master_binding_id: i64,
     profile_key: &str,
 ) -> Result<Option<managed_ingress_profile::Model>> {
     ManagedIngressProfile::find()
+        .filter(managed_ingress_profile::Column::MasterBindingId.eq(master_binding_id))
         .filter(managed_ingress_profile::Column::ProfileKey.eq(profile_key))
         .one(db)
         .await
         .map_err(AsterError::from)
 }
 
-pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<managed_ingress_profile::Model>> {
+pub async fn find_all_by_binding<C: ConnectionTrait>(
+    db: &C,
+    master_binding_id: i64,
+) -> Result<Vec<managed_ingress_profile::Model>> {
     ManagedIngressProfile::find()
+        .filter(managed_ingress_profile::Column::MasterBindingId.eq(master_binding_id))
         .order_by_desc(managed_ingress_profile::Column::IsDefault)
         .order_by_desc(managed_ingress_profile::Column::CreatedAt)
         .order_by_desc(managed_ingress_profile::Column::Id)
@@ -40,10 +46,12 @@ pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<managed_ingress_
         .map_err(AsterError::from)
 }
 
-pub async fn find_default<C: ConnectionTrait>(
+pub async fn find_default_by_binding<C: ConnectionTrait>(
     db: &C,
+    master_binding_id: i64,
 ) -> Result<Option<managed_ingress_profile::Model>> {
     ManagedIngressProfile::find()
+        .filter(managed_ingress_profile::Column::MasterBindingId.eq(master_binding_id))
         .filter(managed_ingress_profile::Column::IsDefault.eq(true))
         .order_by_desc(managed_ingress_profile::Column::UpdatedAt)
         .order_by_desc(managed_ingress_profile::Column::Id)
@@ -52,8 +60,9 @@ pub async fn find_default<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
-pub async fn count<C: ConnectionTrait>(db: &C) -> Result<u64> {
+pub async fn count_by_binding<C: ConnectionTrait>(db: &C, master_binding_id: i64) -> Result<u64> {
     ManagedIngressProfile::find()
+        .filter(managed_ingress_profile::Column::MasterBindingId.eq(master_binding_id))
         .count(db)
         .await
         .map_err(AsterError::from)
@@ -73,10 +82,16 @@ pub async fn update<C: ConnectionTrait>(
     model.update(db).await.map_err(AsterError::from)
 }
 
-pub async fn delete_by_profile_key<C: ConnectionTrait>(db: &C, profile_key: &str) -> Result<()> {
-    let model = find_by_profile_key(db, profile_key).await?.ok_or_else(|| {
-        AsterError::record_not_found(format!("managed_ingress_profile '{profile_key}'"))
-    })?;
+pub async fn delete_by_binding_and_profile_key<C: ConnectionTrait>(
+    db: &C,
+    master_binding_id: i64,
+    profile_key: &str,
+) -> Result<()> {
+    let model = find_by_binding_and_profile_key(db, master_binding_id, profile_key)
+        .await?
+        .ok_or_else(|| {
+            AsterError::record_not_found(format!("managed_ingress_profile '{profile_key}'"))
+        })?;
     ManagedIngressProfile::delete_by_id(model.id)
         .exec(db)
         .await
@@ -84,8 +99,13 @@ pub async fn delete_by_profile_key<C: ConnectionTrait>(db: &C, profile_key: &str
     Ok(())
 }
 
-pub async fn set_only_default<C: ConnectionTrait>(db: &C, profile_id: i64) -> Result<()> {
+pub async fn set_only_default_for_binding<C: ConnectionTrait>(
+    db: &C,
+    master_binding_id: i64,
+    profile_id: i64,
+) -> Result<()> {
     ManagedIngressProfile::update_many()
+        .filter(managed_ingress_profile::Column::MasterBindingId.eq(master_binding_id))
         .col_expr(
             managed_ingress_profile::Column::IsDefault,
             Expr::value(false),

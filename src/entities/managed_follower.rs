@@ -16,7 +16,6 @@ pub struct Model {
     pub access_key: String,
     #[serde(skip_serializing)]
     pub secret_key: String,
-    pub namespace: String,
     pub is_enabled: bool,
     pub last_capabilities: String,
     pub last_error: String,

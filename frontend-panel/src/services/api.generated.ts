@@ -2984,7 +2984,6 @@ export interface components {
                 ack_token: string;
                 is_enabled: boolean;
                 master_url: string;
-                namespace: string;
                 /** Format: int64 */
                 remote_node_id: number;
                 remote_node_name: string;
@@ -3327,7 +3326,6 @@ export interface components {
             base_url?: string | null;
             is_enabled?: boolean;
             name: string;
-            namespace: string;
         };
         /** @description Create a new share. */
         CreateShareReq: {
@@ -3711,7 +3709,6 @@ export interface components {
                 last_checked_at?: string | null;
                 last_error: string;
                 name: string;
-                namespace: string;
                 updated_at: string;
             }[];
             /** Format: int64 */
@@ -4010,7 +4007,6 @@ export interface components {
             base_url?: string | null;
             is_enabled?: boolean | null;
             name?: string | null;
-            namespace?: string | null;
         };
         /** @description Patch a team member's role. */
         PatchTeamMemberReq: {
@@ -4162,7 +4158,6 @@ export interface components {
             ack_token: string;
             is_enabled: boolean;
             master_url: string;
-            namespace: string;
             /** Format: int64 */
             remote_node_id: number;
             remote_node_name: string;
@@ -4206,7 +4201,6 @@ export interface components {
             last_checked_at?: string | null;
             last_error: string;
             name: string;
-            namespace: string;
             updated_at: string;
         };
         RemoteStorageCapabilities: {
@@ -6430,7 +6424,6 @@ export interface operations {
                                 last_checked_at?: string | null;
                                 last_error: string;
                                 name: string;
-                                namespace: string;
                                 updated_at: string;
                             }[];
                             /** Format: int64 */
@@ -6493,7 +6486,6 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
-                            namespace: string;
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -6603,7 +6595,6 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
-                            namespace: string;
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -6711,7 +6702,6 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
-                            namespace: string;
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -7097,7 +7087,6 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
-                            namespace: string;
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];

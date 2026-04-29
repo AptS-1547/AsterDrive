@@ -21,7 +21,6 @@ impl From<CreateRemoteNodeReq> for managed_follower_service::CreateRemoteNodeInp
         Self {
             name: value.name,
             base_url: value.base_url.unwrap_or_default(),
-            namespace: value.namespace,
             is_enabled: value.is_enabled,
         }
     }
@@ -32,7 +31,6 @@ impl From<PatchRemoteNodeReq> for managed_follower_service::UpdateRemoteNodeInpu
         Self {
             name: value.name,
             base_url: value.base_url,
-            namespace: value.namespace,
             is_enabled: value.is_enabled,
         }
     }

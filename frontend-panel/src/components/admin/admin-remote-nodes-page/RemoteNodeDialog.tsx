@@ -144,26 +144,12 @@ export function RemoteNodeDialog({
 		Boolean(form.base_url.trim()) &&
 		!baseUrlValidationMessage;
 	const isSubmitDisabled =
-		submitting ||
-		!form.name.trim() ||
-		!form.namespace.trim() ||
-		Boolean(baseUrlValidationMessage);
+		submitting || !form.name.trim() || Boolean(baseUrlValidationMessage);
 	const createNameError =
 		isCreateMode && createStep === 0 && createStepTouched && !form.name.trim()
 			? t("remote_node_wizard_name_required")
 			: null;
-	const createNamespaceError =
-		isCreateMode &&
-		createStep === 0 &&
-		createStepTouched &&
-		!form.namespace.trim()
-			? t("remote_node_wizard_namespace_required")
-			: null;
 	const createSummaryItems = [
-		{
-			label: t("namespace"),
-			value: form.namespace || "—",
-		},
 		{
 			label: t("base_url"),
 			value: form.base_url || t("remote_node_base_url_empty"),
@@ -378,7 +364,7 @@ export function RemoteNodeDialog({
 																	t("remote_node_overview_title"),
 																	t("remote_node_wizard_step_identity_desc"),
 																)}
-																<div className="grid gap-4 md:grid-cols-2">
+																<div className="grid gap-4">
 																	<div className="space-y-2">
 																		<Label htmlFor="remote-node-name">
 																			{t("core:name")}
@@ -404,35 +390,6 @@ export function RemoteNodeDialog({
 																		{createNameError ? (
 																			<p className="text-xs text-destructive">
 																				{createNameError}
-																			</p>
-																		) : null}
-																	</div>
-																	<div className="space-y-2">
-																		<Label htmlFor="remote-node-namespace">
-																			{t("namespace")}
-																		</Label>
-																		<Input
-																			id="remote-node-namespace"
-																			value={form.namespace}
-																			onChange={(event) =>
-																				onFieldChange(
-																					"namespace",
-																					event.target.value,
-																				)
-																			}
-																			className={ADMIN_CONTROL_HEIGHT_CLASS}
-																			aria-invalid={
-																				createNamespaceError ? true : undefined
-																			}
-																			placeholder="tenant-a"
-																			required
-																		/>
-																		<p className="text-xs text-muted-foreground">
-																			{t("remote_node_namespace_hint")}
-																		</p>
-																		{createNamespaceError ? (
-																			<p className="text-xs text-destructive">
-																				{createNamespaceError}
 																			</p>
 																		) : null}
 																	</div>
@@ -596,24 +553,6 @@ export function RemoteNodeDialog({
 												/>
 												<p className="text-xs text-muted-foreground">
 													{t("remote_node_name_hint")}
-												</p>
-											</div>
-											<div className="space-y-2">
-												<Label htmlFor="remote-node-namespace">
-													{t("namespace")}
-												</Label>
-												<Input
-													id="remote-node-namespace"
-													value={form.namespace}
-													onChange={(event) =>
-														onFieldChange("namespace", event.target.value)
-													}
-													className={ADMIN_CONTROL_HEIGHT_CLASS}
-													placeholder="tenant-a"
-													required
-												/>
-												<p className="text-xs text-muted-foreground">
-													{t("remote_node_namespace_hint")}
 												</p>
 											</div>
 											<div className="space-y-2 md:col-span-2">

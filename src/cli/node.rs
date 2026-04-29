@@ -32,7 +32,6 @@ pub struct NodeEnrollReport {
     binding_id: i64,
     binding_name: String,
     master_url: String,
-    namespace: String,
     access_key: String,
     config_path: String,
     server_host: String,
@@ -84,7 +83,6 @@ async fn execute_enroll(args: &NodeEnrollArgs) -> Result<NodeEnrollReport> {
         binding_id,
         binding_name: binding.name.clone(),
         master_url: binding.master_url.clone(),
-        namespace: binding.namespace.clone(),
         access_key: binding.access_key.clone(),
         config_path,
         server_host: config.server.host.clone(),
@@ -141,7 +139,6 @@ fn render_node_human(report: &NodeEnrollReport) -> String {
         .replace("#", "#")
         .replace(" )", ")"),
         format!("{}{}", human_key("Master URL", &palette), report.master_url),
-        format!("{}{}", human_key("Namespace", &palette), report.namespace),
         format!("{}{}", human_key("Access Key", &palette), report.access_key),
         format!("{}{}", human_key("Config", &palette), report.config_path),
         format!(
@@ -200,7 +197,6 @@ mod tests {
             binding_id: 7,
             binding_name: "node-a".to_string(),
             master_url: "http://localhost:3000".to_string(),
-            namespace: "team-alpha".to_string(),
             access_key: "ak_test".to_string(),
             config_path: "data/config.toml".to_string(),
             server_host: "127.0.0.1".to_string(),

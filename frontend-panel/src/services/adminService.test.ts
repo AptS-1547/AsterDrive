@@ -206,9 +206,10 @@ describe("adminService", () => {
 		adminRemoteNodeService.create({
 			name: "Remote A",
 			base_url: "https://remote.example.com",
-			namespace: "tenant-a",
 		});
-		adminRemoteNodeService.update(6, { namespace: "tenant-b" });
+		adminRemoteNodeService.update(6, {
+			base_url: "https://remote-b.example.com",
+		});
 		adminRemoteNodeService.delete(6);
 		adminRemoteNodeService.testConnection(6);
 		adminRemoteNodeService.testParams({
@@ -283,13 +284,12 @@ describe("adminService", () => {
 		expect(mockState.post).toHaveBeenNthCalledWith(6, "/admin/remote-nodes", {
 			name: "Remote A",
 			base_url: "https://remote.example.com",
-			namespace: "tenant-a",
 		});
 		expect(mockState.patch).toHaveBeenNthCalledWith(
 			3,
 			"/admin/remote-nodes/6",
 			{
-				namespace: "tenant-b",
+				base_url: "https://remote-b.example.com",
 			},
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(

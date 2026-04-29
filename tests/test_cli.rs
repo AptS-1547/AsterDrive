@@ -32,7 +32,7 @@ fn aster_drive_bin() -> &'static str {
 const MIGRATION_REMOTE_NODE_NAME: &str = "MigratedRemoteNode";
 const MIGRATION_REMOTE_POLICY_NAME: &str = "MigratedRemotePolicy";
 const MIGRATION_MASTER_BINDING_NAME: &str = "MigratedMasterBinding";
-const MIGRATION_REMOTE_NAMESPACE: &str = "migrate-remote-space";
+const MIGRATION_MASTER_STORAGE_NAMESPACE: &str = "mb_migrate_remote_space";
 
 async fn setup_database_url() -> String {
     let db_path =
@@ -157,7 +157,6 @@ async fn seed_remote_node_fixture(db: &DatabaseConnection) {
             base_url: Set("https://remote.example.com".to_string()),
             access_key: Set("migrate-remote-ak".to_string()),
             secret_key: Set("migrate-remote-sk".to_string()),
-            namespace: Set(MIGRATION_REMOTE_NAMESPACE.to_string()),
             is_enabled: Set(true),
             last_capabilities: Set(
                 "{\"protocol_version\":\"v1\",\"supports_list\":true}".to_string()
@@ -220,7 +219,7 @@ async fn seed_remote_node_fixture(db: &DatabaseConnection) {
             master_url: Set("https://primary.example.com".to_string()),
             access_key: Set("migrate-master-ak".to_string()),
             secret_key: Set("migrate-master-sk".to_string()),
-            namespace: Set(MIGRATION_REMOTE_NAMESPACE.to_string()),
+            storage_namespace: Set(MIGRATION_MASTER_STORAGE_NAMESPACE.to_string()),
             is_enabled: Set(true),
             created_at: Set(now),
             updated_at: Set(now),
@@ -339,19 +338,31 @@ async fn assert_migrated_fixture(
         &format!("SELECT name FROM files WHERE id = {file_id}"),
     )
     .await;
-    let remote_node_namespace = scalar_string(
+    let managed_followers_namespace_columns = scalar_i64(
         &target_db,
         target_backend,
         &format!(
-            "SELECT namespace FROM managed_followers WHERE name = '{MIGRATION_REMOTE_NODE_NAME}'"
+            "SELECT COUNT(*) FROM pragma_table_info('managed_followers') WHERE name = 'namespace'"
         ),
     )
     .await;
-    let master_binding_namespace = scalar_string(
+    let master_bindings_namespace_columns = scalar_i64(
+        &target_db,
+        target_backend,
+        "SELECT COUNT(*) FROM pragma_table_info('master_bindings') WHERE name = 'namespace'",
+    )
+    .await;
+    let master_bindings_storage_namespace_columns = scalar_i64(
+        &target_db,
+        target_backend,
+        "SELECT COUNT(*) FROM pragma_table_info('master_bindings') WHERE name = 'storage_namespace'",
+    )
+    .await;
+    let master_binding_storage_namespace = scalar_string(
         &target_db,
         target_backend,
         &format!(
-            "SELECT namespace FROM master_bindings WHERE name = '{MIGRATION_MASTER_BINDING_NAME}'"
+            "SELECT storage_namespace FROM master_bindings WHERE name = '{MIGRATION_MASTER_BINDING_NAME}'"
         ),
     )
     .await;
@@ -364,8 +375,13 @@ async fn assert_migrated_fixture(
     assert_eq!(master_bindings, 1);
     assert_eq!(remote_policies, 1);
     assert_eq!(file_name, "test-in-folder.txt");
-    assert_eq!(remote_node_namespace, MIGRATION_REMOTE_NAMESPACE);
-    assert_eq!(master_binding_namespace, MIGRATION_REMOTE_NAMESPACE);
+    assert_eq!(managed_followers_namespace_columns, 0);
+    assert_eq!(master_bindings_namespace_columns, 0);
+    assert_eq!(master_bindings_storage_namespace_columns, 1);
+    assert_eq!(
+        master_binding_storage_namespace,
+        MIGRATION_MASTER_STORAGE_NAMESPACE
+    );
 }
 
 #[test]

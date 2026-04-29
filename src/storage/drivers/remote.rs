@@ -21,12 +21,6 @@ impl RemoteDriver {
     const MULTIPART_UPLOADS_PREFIX: &str = "uploads";
 
     pub fn new(policy: &storage_policy::Model, follower: &managed_follower::Model) -> Result<Self> {
-        if follower.namespace.trim().is_empty() {
-            return Err(storage_driver_error(
-                StorageErrorKind::Misconfigured,
-                "remote node namespace cannot be empty",
-            ));
-        }
         Ok(Self {
             client: RemoteStorageClient::new(
                 &follower.base_url,
