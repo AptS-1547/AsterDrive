@@ -190,21 +190,21 @@ pub async fn resolve_effective_target<S: FollowerRuntimeState>(
                 "managed ingress profiles exist but no default profile is configured",
             )
         })?;
-    if profile.applied_revision < profile.desired_revision {
-        return Err(precondition_failed_with_subcode(
-            "managed_ingress.default_not_applied",
-            format!(
-                "managed ingress profile '{}' is pending apply",
-                profile.profile_key
-            ),
-        ));
-    }
     if !profile.last_error.trim().is_empty() {
         return Err(precondition_failed_with_subcode(
             "managed_ingress.default_error",
             format!(
                 "managed ingress profile '{}' is not ready: {}",
                 profile.profile_key, profile.last_error
+            ),
+        ));
+    }
+    if profile.applied_revision < profile.desired_revision {
+        return Err(precondition_failed_with_subcode(
+            "managed_ingress.default_not_applied",
+            format!(
+                "managed ingress profile '{}' is pending apply",
+                profile.profile_key
             ),
         ));
     }
@@ -283,17 +283,17 @@ fn normalize_create_input(
             base_path,
             max_file_size,
             is_default,
-        }) => normalize_profile_fields(
-            normalize_non_blank("name", &name)?,
-            DriverType::Local,
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
+        }) => normalize_profile_fields(IngressProfileFields {
+            name: normalize_non_blank("name", &name)?,
+            driver_type: DriverType::Local,
+            endpoint: String::new(),
+            bucket: String::new(),
+            access_key: String::new(),
+            secret_key: String::new(),
             base_path,
             max_file_size,
-            Some(is_default),
-        ),
+            is_default: Some(is_default),
+        }),
         RemoteCreateIngressProfileRequest::S3(RemoteCreateS3IngressProfileRequest {
             name,
             endpoint,
@@ -303,17 +303,17 @@ fn normalize_create_input(
             base_path,
             max_file_size,
             is_default,
-        }) => normalize_profile_fields(
-            normalize_non_blank("name", &name)?,
-            DriverType::S3,
+        }) => normalize_profile_fields(IngressProfileFields {
+            name: normalize_non_blank("name", &name)?,
+            driver_type: DriverType::S3,
             endpoint,
             bucket,
             access_key,
             secret_key,
             base_path,
             max_file_size,
-            Some(is_default),
-        ),
+            is_default: Some(is_default),
+        }),
     }
 }
 
@@ -323,65 +323,67 @@ fn normalize_update_input(
 ) -> Result<NormalizedIngressProfileInput> {
     let driver_type = input.driver_type.unwrap_or(existing.driver_type);
     let same_driver_type = driver_type == existing.driver_type;
-    normalize_profile_fields(
-        input
+    normalize_profile_fields(IngressProfileFields {
+        name: input
             .name
             .as_deref()
             .map(|value| normalize_non_blank("name", value))
             .transpose()?
             .unwrap_or(existing.name),
         driver_type,
-        input.endpoint.unwrap_or_else(|| {
+        endpoint: input.endpoint.unwrap_or_else(|| {
             if same_driver_type {
                 existing.endpoint.clone()
             } else {
                 String::new()
             }
         }),
-        input.bucket.unwrap_or_else(|| {
+        bucket: input.bucket.unwrap_or_else(|| {
             if same_driver_type {
                 existing.bucket.clone()
             } else {
                 String::new()
             }
         }),
-        input.access_key.unwrap_or_else(|| {
+        access_key: input.access_key.unwrap_or_else(|| {
             if same_driver_type {
                 existing.access_key.clone()
             } else {
                 String::new()
             }
         }),
-        input.secret_key.unwrap_or_else(|| {
+        secret_key: input.secret_key.unwrap_or_else(|| {
             if same_driver_type {
                 existing.secret_key.clone()
             } else {
                 String::new()
             }
         }),
-        input.base_path.unwrap_or_else(|| {
+        base_path: input.base_path.unwrap_or_else(|| {
             if same_driver_type {
                 existing.base_path.clone()
             } else {
                 ".".to_string()
             }
         }),
-        input.max_file_size.unwrap_or(existing.max_file_size),
-        input.is_default,
-    )
+        max_file_size: input.max_file_size.unwrap_or(existing.max_file_size),
+        is_default: input.is_default,
+    })
 }
 
-fn normalize_profile_fields(
-    name: String,
-    driver_type: DriverType,
-    endpoint: String,
-    bucket: String,
-    access_key: String,
-    secret_key: String,
-    base_path: String,
-    max_file_size: i64,
-    is_default: Option<bool>,
-) -> Result<NormalizedIngressProfileInput> {
+fn normalize_profile_fields(fields: IngressProfileFields) -> Result<NormalizedIngressProfileInput> {
+    let IngressProfileFields {
+        name,
+        driver_type,
+        endpoint,
+        bucket,
+        access_key,
+        secret_key,
+        base_path,
+        max_file_size,
+        is_default,
+    } = fields;
+
     if max_file_size < 0 {
         return Err(AsterError::validation_error(
             "max_file_size must be non-negative",
@@ -595,6 +597,18 @@ async fn remote_client_for_node<S: PrimaryRuntimeState>(
 }
 
 struct NormalizedIngressProfileInput {
+    name: String,
+    driver_type: DriverType,
+    endpoint: String,
+    bucket: String,
+    access_key: String,
+    secret_key: String,
+    base_path: String,
+    max_file_size: i64,
+    is_default: Option<bool>,
+}
+
+struct IngressProfileFields {
     name: String,
     driver_type: DriverType,
     endpoint: String,

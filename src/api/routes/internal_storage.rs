@@ -397,18 +397,13 @@ async fn get_object(
         master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner())?;
     let metadata = metadata_or_not_found(ctx.ingress_driver.as_ref(), &storage_path).await?;
     let partial_range = partial_content_range(metadata.size, query.offset, query.length)?;
-    let stream = match (query.offset, query.length) {
-        (Some(offset), length) => {
+    let stream = match partial_range.as_ref() {
+        Some(range) => {
             ctx.ingress_driver
-                .get_range(&storage_path, offset, length)
+                .get_range(&storage_path, range.start, Some(range.length))
                 .await?
         }
-        (None, Some(length)) => {
-            ctx.ingress_driver
-                .get_range(&storage_path, 0, Some(length))
-                .await?
-        }
-        (None, None) => ctx.ingress_driver.get_stream(&storage_path).await?,
+        None => ctx.ingress_driver.get_stream(&storage_path).await?,
     };
     let body = ReaderStream::with_capacity(stream, 64 * 1024);
 

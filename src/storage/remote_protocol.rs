@@ -521,7 +521,12 @@ impl RemoteStorageClient {
                 format!("remote ingress profile list failed: {}", envelope.msg),
             ));
         }
-        Ok(envelope.data.unwrap_or_default())
+        envelope.data.ok_or_else(|| {
+            storage_driver_error(
+                StorageErrorKind::Misconfigured,
+                "list remote ingress profiles response missing data",
+            )
+        })
     }
 
     pub async fn create_ingress_profile(

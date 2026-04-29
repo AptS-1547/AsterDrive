@@ -1,11 +1,11 @@
 //! 仓储模块：`managed_ingress_profile_repo`。
 
 use crate::entities::managed_ingress_profile::{self, Entity as ManagedIngressProfile};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, Result, validation_error_with_subcode};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Set,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(
@@ -101,15 +101,25 @@ pub async fn delete_by_binding_and_profile_key<C: ConnectionTrait>(
 
 /// Must be called inside a transaction, for example through `with_transaction`.
 ///
-/// This clears existing defaults with `update_many`, then loads the target via
-/// `find_by_id` and marks it with `update`; without transaction semantics,
-/// concurrent readers can observe a temporary no-default state and concurrent
-/// writers can create conflicting defaults.
-pub async fn set_only_default_for_binding<C: ConnectionTrait>(
-    db: &C,
+/// This loads and validates the target via `find_by_id`, clears existing
+/// defaults with `update_many`, then marks the target with `update`; without
+/// transaction semantics, concurrent readers can observe a temporary no-default
+/// state and concurrent writers can create conflicting defaults.
+pub async fn set_only_default_for_binding(
+    db: &DatabaseTransaction,
     master_binding_id: i64,
     profile_id: i64,
 ) -> Result<()> {
+    let existing = find_by_id(db, profile_id).await?;
+    if existing.master_binding_id != master_binding_id {
+        return Err(validation_error_with_subcode(
+            "managed_ingress.binding_mismatch",
+            format!(
+                "managed ingress profile #{profile_id} does not belong to master_binding #{master_binding_id}"
+            ),
+        ));
+    }
+
     ManagedIngressProfile::update_many()
         .filter(managed_ingress_profile::Column::MasterBindingId.eq(master_binding_id))
         .col_expr(
@@ -120,7 +130,6 @@ pub async fn set_only_default_for_binding<C: ConnectionTrait>(
         .await
         .map_err(AsterError::from)?;
 
-    let existing = find_by_id(db, profile_id).await?;
     let mut active: managed_ingress_profile::ActiveModel = existing.into();
     active.is_default = Set(true);
     active.updated_at = Set(chrono::Utc::now());

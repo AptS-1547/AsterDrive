@@ -150,4 +150,20 @@ describe("handleApiError", () => {
 			"translated:errors:unexpected_error",
 		);
 	});
+
+	it("treats blank messages as unexpected errors", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(new mockState.ApiError(ErrorCode.Conflict, "   "));
+		handleApiError(new Error("\n\t"));
+
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			1,
+			"translated:errors:unexpected_error",
+		);
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			2,
+			"translated:errors:unexpected_error",
+		);
+	});
 });

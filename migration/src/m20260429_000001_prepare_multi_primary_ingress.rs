@@ -140,6 +140,7 @@ async fn scope_managed_ingress_profiles(manager: &SchemaManager<'_>) -> Result<(
         .await?;
 
     backfill_ingress_profile_binding(manager).await?;
+    ensure_no_unbound_ingress_profile_bindings(manager).await?;
     require_big_integer_column(
         manager,
         ManagedIngressProfiles::Table,
@@ -399,12 +400,47 @@ async fn backfill_ingress_profile_binding(manager: &SchemaManager<'_>) -> Result
             .await?;
         }
         None => {
-            // Do not delete managed_ingress_profiles here: a missing
-            // master_bindings row means the database is in an unexpected state,
-            // and silently deleting ingress profiles would turn a migration
-            // repair problem into permanent data loss. A deliberate cleanup, if
-            // ever needed, should be documented as its own migration.
+            if managed_ingress_profiles_have_rows(manager).await? {
+                return Err(DbErr::Migration(
+                    "managed_ingress_profiles rows exist but master_bindings is empty; cannot backfill managed_ingress_profiles.master_binding_id".to_string(),
+                ));
+            }
         }
+    }
+
+    Ok(())
+}
+
+async fn managed_ingress_profiles_have_rows(manager: &SchemaManager<'_>) -> Result<bool, DbErr> {
+    let db = manager.get_connection();
+    let backend = db.get_database_backend();
+    Ok(db
+        .query_one_raw(Statement::from_string(
+            backend,
+            "SELECT 1 FROM managed_ingress_profiles LIMIT 1".to_string(),
+        ))
+        .await?
+        .is_some())
+}
+
+async fn ensure_no_unbound_ingress_profile_bindings(
+    manager: &SchemaManager<'_>,
+) -> Result<(), DbErr> {
+    let db = manager.get_connection();
+    let backend = db.get_database_backend();
+    let has_unbound = db
+        .query_one_raw(Statement::from_string(
+            backend,
+            "SELECT 1 FROM managed_ingress_profiles WHERE master_binding_id IS NULL LIMIT 1"
+                .to_string(),
+        ))
+        .await?
+        .is_some();
+
+    if has_unbound {
+        return Err(DbErr::Migration(
+            "managed_ingress_profiles contains rows with master_binding_id=NULL after backfill; cannot require managed_ingress_profiles.master_binding_id".to_string(),
+        ));
     }
 
     Ok(())

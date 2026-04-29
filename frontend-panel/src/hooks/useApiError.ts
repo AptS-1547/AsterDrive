@@ -160,11 +160,13 @@ export function getApiErrorMessage(error: unknown) {
 		if (key) {
 			return i18n.t(key);
 		}
-		return error.message || i18n.t("errors:unexpected_error");
+		const message = error.message.trim();
+		return message || i18n.t("errors:unexpected_error");
 	}
 
 	if (error instanceof Error) {
-		return error.message;
+		const message = error.message.trim();
+		return message || i18n.t("errors:unexpected_error");
 	}
 
 	return i18n.t("errors:unexpected_error");

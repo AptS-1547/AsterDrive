@@ -18,6 +18,8 @@ use sea_orm::{ConnectionTrait, Set};
 use sha2::Sha256;
 use std::sync::Arc;
 
+const STORAGE_NAMESPACE_ALLOCATION_ATTEMPTS: usize = 8;
+
 #[derive(Clone)]
 pub struct AuthorizedMasterBinding {
     pub binding: master_binding::Model,
@@ -48,41 +50,71 @@ pub async fn upsert_from_enrollment<C: ConnectionTrait>(
     let now = Utc::now();
 
     match master_binding_repo::find_by_access_key(db, &normalized.access_key).await? {
-        Some(existing) => {
-            if existing.secret_key != normalized.secret_key {
-                return Err(AsterError::validation_error(
-                    "master binding access_key already exists with different credentials",
-                ));
-            }
-            let mut active: master_binding::ActiveModel = existing.into();
-            active.name = Set(normalized.name);
-            active.master_url = Set(normalized.master_url);
-            active.secret_key = Set(normalized.secret_key);
-            active.is_enabled = Set(normalized.is_enabled);
-            active.updated_at = Set(now);
-            let updated = master_binding_repo::update(db, active).await?;
-            Ok((updated, "updated"))
-        }
+        Some(existing) => update_existing_from_enrollment(db, existing, &normalized, now).await,
         None => {
-            let storage_namespace = new_storage_namespace(db).await?;
-            let created = master_binding_repo::create(
-                db,
-                master_binding::ActiveModel {
-                    name: Set(normalized.name),
-                    master_url: Set(normalized.master_url),
-                    access_key: Set(normalized.access_key),
-                    secret_key: Set(normalized.secret_key),
-                    storage_namespace: Set(storage_namespace),
-                    is_enabled: Set(normalized.is_enabled),
-                    created_at: Set(now),
-                    updated_at: Set(now),
-                    ..Default::default()
-                },
-            )
-            .await?;
-            Ok((created, "created"))
+            let mut candidates = Vec::with_capacity(STORAGE_NAMESPACE_ALLOCATION_ATTEMPTS);
+            for _ in 0..STORAGE_NAMESPACE_ALLOCATION_ATTEMPTS {
+                let storage_namespace = new_storage_namespace();
+                let created = master_binding_repo::create_ignoring_storage_namespace_conflict(
+                    db,
+                    master_binding::ActiveModel {
+                        name: Set(normalized.name.clone()),
+                        master_url: Set(normalized.master_url.clone()),
+                        access_key: Set(normalized.access_key.clone()),
+                        secret_key: Set(normalized.secret_key.clone()),
+                        storage_namespace: Set(storage_namespace.clone()),
+                        is_enabled: Set(normalized.is_enabled),
+                        created_at: Set(now),
+                        updated_at: Set(now),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+
+                if let Some(created) = created {
+                    return Ok((created, "created"));
+                }
+
+                if let Some(existing) =
+                    master_binding_repo::find_by_access_key(db, &normalized.access_key).await?
+                {
+                    return update_existing_from_enrollment(db, existing, &normalized, now).await;
+                }
+
+                candidates.push(storage_namespace);
+            }
+
+            tracing::error!(
+                attempts = STORAGE_NAMESPACE_ALLOCATION_ATTEMPTS,
+                candidates = ?candidates,
+                "failed to allocate unique master binding storage namespace after crate::utils::id::new_short_token candidates conflicted during insert"
+            );
+            Err(AsterError::internal_error(
+                "failed to allocate unique master binding storage namespace",
+            ))
         }
     }
+}
+
+async fn update_existing_from_enrollment<C: ConnectionTrait>(
+    db: &C,
+    existing: master_binding::Model,
+    normalized: &UpsertMasterBindingInput,
+    now: chrono::DateTime<Utc>,
+) -> Result<(master_binding::Model, &'static str)> {
+    if existing.secret_key != normalized.secret_key {
+        return Err(AsterError::validation_error(
+            "master binding access_key already exists with different credentials",
+        ));
+    }
+    let mut active: master_binding::ActiveModel = existing.into();
+    active.name = Set(normalized.name.clone());
+    active.master_url = Set(normalized.master_url.clone());
+    active.secret_key = Set(normalized.secret_key.clone());
+    active.is_enabled = Set(normalized.is_enabled);
+    active.updated_at = Set(now);
+    let updated = master_binding_repo::update(db, active).await?;
+    Ok((updated, "updated"))
 }
 
 pub async fn authorize_internal_request<S: FollowerRuntimeState>(
@@ -433,26 +465,8 @@ fn normalize_non_blank(field: &str, value: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-async fn new_storage_namespace<C: ConnectionTrait>(db: &C) -> Result<String> {
-    let mut candidates = Vec::with_capacity(8);
-    for _ in 0..8 {
-        let candidate = format!("mb_{}", crate::utils::id::new_short_token());
-        if master_binding_repo::find_by_storage_namespace(db, &candidate)
-            .await?
-            .is_none()
-        {
-            return Ok(candidate);
-        }
-        candidates.push(candidate);
-    }
-    tracing::error!(
-        attempts = 8,
-        candidates = ?candidates,
-        "failed to allocate unique master binding storage namespace after crate::utils::id::new_short_token candidates collided in master_binding_repo::find_by_storage_namespace"
-    );
-    Err(AsterError::internal_error(
-        "failed to allocate unique master binding storage namespace",
-    ))
+fn new_storage_namespace() -> String {
+    format!("mb_{}", crate::utils::id::new_short_token())
 }
 
 #[cfg(test)]

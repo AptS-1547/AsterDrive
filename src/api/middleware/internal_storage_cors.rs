@@ -254,9 +254,9 @@ fn apply_preflight_headers(headers: &mut HeaderMap) {
 }
 
 fn apply_actual_headers(headers: &mut HeaderMap, method: &Method) {
-    let exposed = match method {
-        &Method::GET => GET_ACTUAL_EXPOSE_HEADERS,
-        &Method::PUT => PUT_ACTUAL_EXPOSE_HEADERS,
+    let exposed = match *method {
+        Method::GET => GET_ACTUAL_EXPOSE_HEADERS,
+        Method::PUT => PUT_ACTUAL_EXPOSE_HEADERS,
         _ => return,
     };
     headers.insert(
