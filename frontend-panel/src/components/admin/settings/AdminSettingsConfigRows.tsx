@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { MediaProcessingConfigEditor } from "@/components/admin/MediaProcessingConfigEditor";
 import { MEDIA_PROCESSING_CONFIG_KEY } from "@/components/admin/mediaProcessingConfigEditorShared";
 import { PreviewAppsConfigEditor } from "@/components/admin/PreviewAppsConfigEditor";
@@ -105,7 +106,7 @@ function splitPublicSiteUrlRows(value: string) {
 	if (!value) {
 		return [""];
 	}
-	return value.split(/[,\n\r]/);
+	return value.split(/\r\n|[,\r\n]/);
 }
 
 function serializePublicSiteUrlRows(rows: string[]) {
@@ -125,12 +126,22 @@ function PublicSiteUrlOriginsControl({
 }) {
 	const { t, updateDraftValue } = useAdminSettingsCategoryContent();
 	const rows = splitPublicSiteUrlRows(draftValue);
-	const rowOccurrences = new Map<string, number>();
-	const rowItems = rows.map((row) => {
-		const occurrence = rowOccurrences.get(row) ?? 0;
-		rowOccurrences.set(row, occurrence + 1);
+	const nextRowIdRef = useRef(0);
+	const rowIdsRef = useRef<string[]>([]);
+	const createRowId = () => {
+		const rowId = `public-site-url-origin-${nextRowIdRef.current}`;
+		nextRowIdRef.current += 1;
+		return rowId;
+	};
+	while (rowIdsRef.current.length < rows.length) {
+		rowIdsRef.current.push(createRowId());
+	}
+	if (rowIdsRef.current.length > rows.length) {
+		rowIdsRef.current = rowIdsRef.current.slice(0, rows.length);
+	}
+	const rowItems = rows.map((row, index) => {
 		return {
-			key: `${row}-${occurrence}`,
+			key: rowIdsRef.current[index],
 			value: row,
 		};
 	});
@@ -169,6 +180,7 @@ function PublicSiteUrlOriginsControl({
 							onClick={() => {
 								const nextRows = [...rows];
 								nextRows.splice(index + 1, 0, "");
+								rowIdsRef.current.splice(index + 1, 0, createRowId());
 								updateRows(nextRows);
 							}}
 						>
@@ -185,6 +197,7 @@ function PublicSiteUrlOriginsControl({
 									updateRows([""]);
 									return;
 								}
+								rowIdsRef.current.splice(index, 1);
 								updateRows(rows.filter((_, rowIndex) => rowIndex !== index));
 							}}
 						>

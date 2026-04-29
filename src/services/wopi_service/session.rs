@@ -91,6 +91,40 @@ pub(crate) struct RequestOrigin<'a> {
     pub(crate) host: &'a str,
 }
 
+fn require_public_origin(public_origin: Option<String>) -> Result<String> {
+    public_origin.ok_or_else(|| {
+        AsterError::validation_error("public_site_url is required for WOPI integration")
+    })
+}
+
+pub(crate) fn select_public_origin(
+    state: &PrimaryAppState,
+    request_origin: Option<RequestOrigin<'_>>,
+) -> Result<String> {
+    require_public_origin(
+        request_origin
+            .and_then(|origin| {
+                site_url::public_site_url_for_request(
+                    &state.runtime_config,
+                    origin.scheme,
+                    origin.host,
+                )
+            })
+            .or_else(|| site_url::public_site_url(&state.runtime_config)),
+    )
+}
+
+pub(crate) fn select_public_origin_from_preselected(
+    state: &PrimaryAppState,
+    request_public_origin: Option<&str>,
+) -> Result<String> {
+    require_public_origin(
+        request_public_origin
+            .map(str::to_owned)
+            .or_else(|| site_url::public_site_url(&state.runtime_config)),
+    )
+}
+
 pub(crate) fn build_public_wopi_src(
     state: &PrimaryAppState,
     file_id: i64,
@@ -101,16 +135,7 @@ pub(crate) fn build_public_wopi_src(
     // - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/checkfileinfo
     // - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/getfile
     // 这里与 `src/api/routes/wopi.rs`、PUT_RELATIVE 返回的新文件 URL 强耦合，改动时必须同步。
-    let base = request_origin
-        .and_then(|origin| {
-            site_url::public_site_url_for_request(&state.runtime_config, origin.scheme, origin.host)
-        })
-        .or_else(|| site_url::public_site_url(&state.runtime_config));
-    let Some(base) = base else {
-        return Err(AsterError::validation_error(
-            "public_site_url is required for WOPI integration",
-        ));
-    };
+    let base = select_public_origin(state, request_origin)?;
 
     Ok(format!("{base}/api/v1/wopi/files/{file_id}"))
 }

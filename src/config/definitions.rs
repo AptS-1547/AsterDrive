@@ -818,7 +818,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         requires_restart: false,
         is_sensitive: false,
         category: "general",
-        description: "Public HTTP(S) site origins used when generating share, preview, and callback URLs. Use one origin per line; the first origin is the fallback",
+        description: "Trusted public HTTP(S) frontend origins, one per line. They are used to generate share, preview, WebDAV, WOPI, and callback URLs, and they also extend exact-match trusted frontend origins for cookie-authenticated same-site CSRF checks. This is separate from CORS and mainly affects same-site subdomain deployments; do not add domains you do not control. The first origin is the fallback",
     },
     ConfigDef {
         key: BRANDING_TITLE_KEY,

@@ -451,7 +451,7 @@
 	"preview_apps_wopi_hint_desc": "这里的配置只负责声明 WOPI host 的解析方式。文件真正打开时，后端仍然负责创建启动会话、签发 access token，并决定锁语义。",
 	"preview_apps_wopi_hint_body": "这里可以填写固定的 action URL，或者提供 discovery URL。OnlyOffice 这类客户端最终使用的启动地址、token 时效和 WOPI 锁语义，仍然由后端统一处理。",
 	"site_url_mismatch_title": "当前站点配置不匹配",
-	"site_url_mismatch_description": "检测到当前访问地址为 {{current}}，但系统配置中的公开站点地址列表不包含它（当前配置：{{configured}}）。现在更新后，分享链接、Office 预览、WebDAV 地址和后续回调都会使用当前地址。是否立即更新？",
+	"site_url_mismatch_description": "检测到当前访问地址为 {{current}}，但系统配置中的公开站点地址列表不包含它（当前配置：{{configured}}）。现在将把 {{current}} 追加到公开站点地址列表，以允许分享链接、Office 预览、WebDAV 地址和后续回调使用该来源；当前默认站点和回退策略不会被更改。是否立即追加？",
 	"site_url_mismatch_confirm": "更新站点地址",
 	"site_url_mismatch_not_set": "未设置",
 	"settings_item_branding_title_label": "公开页面标题",

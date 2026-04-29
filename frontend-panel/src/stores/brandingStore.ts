@@ -35,7 +35,10 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
 				const branding = resolveBranding(publicBranding);
 				const allowUserRegistration =
 					publicBranding.allow_user_registration ?? true;
-				const siteUrl = setPublicSiteUrl(publicBranding.site_url);
+				const siteUrlConfig = publicBranding.site_url_raw;
+				const siteUrl = setPublicSiteUrl(
+					siteUrlConfig ?? publicBranding.site_url,
+				);
 				applyBranding(branding);
 				set({
 					allowUserRegistration,

@@ -19,7 +19,9 @@ use crate::services::{
 };
 use crate::utils::numbers::u64_to_i64;
 
-use super::session::{WopiAccessTokenPayload, create_access_token_for_file};
+use super::session::{
+    WopiAccessTokenPayload, create_access_token_for_file, select_public_origin_from_preselected,
+};
 use super::types::{WOPI_FILE_NAME_MAX_LEN, WopiPutRelativeResponse};
 
 #[derive(Debug, Clone)]
@@ -410,17 +412,12 @@ pub(crate) async fn build_put_relative_response(
     request_public_origin: Option<String>,
 ) -> Result<WopiPutRelativeResponse> {
     let access_token = create_access_token_for_file(state, payload, target_file_id).await?;
-    let fallback_origin = crate::config::site_url::public_site_url(&state.runtime_config);
-    let public_origin = request_public_origin
-        .as_deref()
-        .or(fallback_origin.as_deref());
-    let public_origin = public_origin.ok_or_else(|| {
-        AsterError::validation_error("public_site_url is required for WOPI integration")
-    })?;
+    let public_origin =
+        select_public_origin_from_preselected(state, request_public_origin.as_deref())?;
     let url = format!(
         "{}?access_token={}",
         crate::config::site_url::join_origin_and_path(
-            public_origin,
+            &public_origin,
             &format!("/api/v1/wopi/files/{target_file_id}"),
         ),
         urlencoding::encode(&access_token)

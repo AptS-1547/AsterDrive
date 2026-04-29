@@ -4076,6 +4076,7 @@ export interface components {
             description: string;
             favicon_url: string;
             site_url?: string | null;
+            site_url_raw?: string | null;
             title: string;
             wordmark_dark_url: string;
             wordmark_light_url: string;
@@ -11742,6 +11743,7 @@ export interface operations {
                             description: string;
                             favicon_url: string;
                             site_url?: string | null;
+                            site_url_raw?: string | null;
                             title: string;
                             wordmark_dark_url: string;
                             wordmark_light_url: string;

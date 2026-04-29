@@ -52,10 +52,13 @@ describe("brandingStore", () => {
 			wordmark_dark_url: "https://cdn.example.com/wordmark-dark.svg",
 			wordmark_light_url: "https://cdn.example.com/wordmark-light.svg",
 			site_url: "https://drive.example.com",
+			site_url_raw: "https://drive.example.com\nhttps://panel.example.com",
 		});
 
 		const { useBrandingStore } = await loadBrandingStoreModule();
-		const { getPublicSiteUrl } = await import("@/lib/publicSiteUrl");
+		const { getPublicSiteUrl, getPublicSiteUrls } = await import(
+			"@/lib/publicSiteUrl"
+		);
 
 		await useBrandingStore.getState().load();
 		await useBrandingStore.getState().load();
@@ -80,6 +83,10 @@ describe("brandingStore", () => {
 			siteUrl: "https://drive.example.com",
 		});
 		expect(getPublicSiteUrl()).toBe("https://drive.example.com");
+		expect(getPublicSiteUrls()).toEqual([
+			"https://drive.example.com",
+			"https://panel.example.com",
+		]);
 	});
 
 	it("falls back to defaults when the public endpoint fails", async () => {

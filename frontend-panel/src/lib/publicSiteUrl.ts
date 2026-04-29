@@ -9,15 +9,22 @@ export function normalizePublicSiteUrls(value: string | null | undefined) {
 	if (!normalized) return [];
 
 	const origins: string[] = [];
-	for (const part of normalized.split(/[,\n\r]/)) {
+	for (const part of normalized.split(/\r\n|[,\r\n]/)) {
 		const candidate = part.trim();
 		if (!candidate) continue;
 		try {
 			const resolved = new URL(candidate);
-			if (
+			const validOrigin =
 				(resolved.protocol === "http:" || resolved.protocol === "https:") &&
-				!origins.includes(resolved.origin)
-			) {
+				(resolved.pathname === "" || resolved.pathname === "/") &&
+				resolved.search === "" &&
+				resolved.hash === "" &&
+				resolved.username === "" &&
+				resolved.password === "";
+			if (!validOrigin) {
+				return [];
+			}
+			if (!origins.includes(resolved.origin)) {
 				origins.push(resolved.origin);
 			}
 		} catch {

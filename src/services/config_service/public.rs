@@ -18,18 +18,24 @@ pub struct PublicBranding {
     pub wordmark_dark_url: String,
     pub wordmark_light_url: String,
     pub site_url: Option<String>,
+    pub site_url_raw: Option<String>,
     pub allow_user_registration: bool,
 }
 
 pub fn get_public_branding(state: &PrimaryAppState) -> PublicBranding {
     let auth_policy = auth_runtime::RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    let site_url_raw = state
+        .runtime_config
+        .get(site_url::PUBLIC_SITE_URL_KEY)
+        .filter(|value| !value.trim().is_empty());
     PublicBranding {
         title: branding::title_or_default(&state.runtime_config),
         description: branding::description_or_default(&state.runtime_config),
         favicon_url: branding::favicon_url_or_default(&state.runtime_config),
         wordmark_dark_url: branding::wordmark_dark_url_or_default(&state.runtime_config),
         wordmark_light_url: branding::wordmark_light_url_or_default(&state.runtime_config),
-        site_url: site_url::public_site_url_config_value(&state.runtime_config),
+        site_url: site_url::public_site_url(&state.runtime_config),
+        site_url_raw,
         allow_user_registration: auth_policy.allow_user_registration,
     }
 }

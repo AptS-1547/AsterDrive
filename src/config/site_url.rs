@@ -10,6 +10,28 @@ pub fn normalize_public_site_url_config_value(value: &str) -> Result<String> {
     Ok(parse_public_site_url_value(value)?.join("\n"))
 }
 
+fn public_site_url_entries(value: &str) -> impl Iterator<Item = &str> {
+    value
+        .split([',', '\n', '\r'])
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+}
+
+fn parse_public_site_url_origin(origin: &str) -> Result<String> {
+    if origin == "*" {
+        return Err(AsterError::validation_error(
+            "public_site_url does not support wildcard origins",
+        ));
+    }
+
+    cors::normalize_origin(origin, false).map_err(|err| {
+        AsterError::validation_error(format!(
+            "invalid public_site_url origin '{origin}': {}",
+            err.message()
+        ))
+    })
+}
+
 pub fn parse_public_site_url_value(value: &str) -> Result<Vec<String>> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -17,23 +39,8 @@ pub fn parse_public_site_url_value(value: &str) -> Result<Vec<String>> {
     }
 
     let mut origins = Vec::new();
-    for raw_origin in trimmed.split([',', '\n', '\r']) {
-        let origin = raw_origin.trim();
-        if origin.is_empty() {
-            continue;
-        }
-        if origin == "*" {
-            return Err(AsterError::validation_error(
-                "public_site_url does not support wildcard origins",
-            ));
-        }
-
-        let normalized = cors::normalize_origin(origin, false).map_err(|err| {
-            AsterError::validation_error(format!(
-                "invalid public_site_url origin '{origin}': {}",
-                err.message()
-            ))
-        })?;
+    for origin in public_site_url_entries(trimmed) {
+        let normalized = parse_public_site_url_origin(origin)?;
         if !origins.contains(&normalized) {
             origins.push(normalized);
         }
@@ -50,20 +57,30 @@ pub fn public_site_url_config_value(runtime_config: &RuntimeConfig) -> Option<St
 }
 
 pub fn public_site_urls(runtime_config: &RuntimeConfig) -> Vec<String> {
-    public_site_url_config_value(runtime_config)
-        .map(|value| match parse_public_site_url_value(&value) {
-            Ok(origins) => origins,
+    let Some(value) = public_site_url_config_value(runtime_config) else {
+        return Vec::new();
+    };
+
+    let mut origins = Vec::new();
+    for origin in public_site_url_entries(&value) {
+        match parse_public_site_url_origin(origin) {
+            Ok(normalized) => {
+                if !origins.contains(&normalized) {
+                    origins.push(normalized);
+                }
+            }
             Err(err) => {
                 tracing::warn!(
                     error = %err,
                     key = PUBLIC_SITE_URL_KEY,
-                    value = %value,
-                    "invalid runtime public_site_url config; ignoring configured public origins"
+                    entry = %origin,
+                    "invalid runtime public_site_url origin; ignoring entry"
                 );
-                Vec::new()
             }
-        })
-        .unwrap_or_default()
+        }
+    }
+
+    origins
 }
 
 pub fn public_site_url(runtime_config: &RuntimeConfig) -> Option<String> {
@@ -246,6 +263,23 @@ mod tests {
             public_app_url_for_request(&runtime_config, "pv/token", "https", "panel.example.com")
                 .as_deref(),
             Some("https://panel.example.com/pv/token")
+        );
+    }
+
+    #[test]
+    fn public_site_urls_ignores_invalid_runtime_entries_individually() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(
+            PUBLIC_SITE_URL_KEY,
+            "https://drive.example.com\nhttps://panel.example.com/app\nhttps://api.example.com",
+        ));
+
+        assert_eq!(
+            public_site_urls(&runtime_config),
+            vec![
+                "https://drive.example.com".to_string(),
+                "https://api.example.com".to_string(),
+            ]
         );
     }
 }

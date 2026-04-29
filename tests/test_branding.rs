@@ -30,6 +30,7 @@ async fn test_public_branding_returns_defaults() {
         "/static/asterdrive/asterdrive-light.svg"
     );
     assert_eq!(body["data"]["site_url"], Value::Null);
+    assert_eq!(body["data"]["site_url_raw"], Value::Null);
     assert_eq!(body["data"]["allow_user_registration"], true);
 }
 
@@ -40,7 +41,10 @@ async fn test_public_branding_uses_admin_updated_values() {
     let (token, _) = register_and_login!(app);
 
     for (key, value) in [
-        ("public_site_url", "https://drive.example.com"),
+        (
+            "public_site_url",
+            "https://drive.example.com\nhttps://panel.example.com",
+        ),
         ("auth_allow_user_registration", "false"),
         ("branding_title", "Nebula Drive"),
         ("branding_description", "Team storage for the squad"),
@@ -89,6 +93,10 @@ async fn test_public_branding_uses_admin_updated_values() {
         "https://cdn.example.com/branding/wordmark-light.svg?v=2"
     );
     assert_eq!(body["data"]["site_url"], "https://drive.example.com");
+    assert_eq!(
+        body["data"]["site_url_raw"],
+        "https://drive.example.com\nhttps://panel.example.com"
+    );
     assert_eq!(body["data"]["allow_user_registration"], false);
 }
 
