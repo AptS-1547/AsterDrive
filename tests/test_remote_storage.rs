@@ -444,8 +444,14 @@ fn managed_ingress_object_path(
     remote_base_path: &str,
     storage_path: &str,
 ) -> PathBuf {
-    let ingress_base_path =
-        Path::new(&provider_state.config.server.managed_ingress_local_root).join(profile_base_path);
+    let ingress_base_path = Path::new(
+        &provider_state
+            .config
+            .server
+            .follower
+            .managed_ingress_local_root,
+    )
+    .join(profile_base_path);
     provider_object_path(
         ingress_base_path
             .to_str()
@@ -602,7 +608,13 @@ async fn test_managed_ingress_profile_handles_remote_writes_without_legacy_bindi
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
     let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
-    let managed_root = PathBuf::from(&provider_state.config.server.managed_ingress_local_root);
+    let managed_root = PathBuf::from(
+        &provider_state
+            .config
+            .server
+            .follower
+            .managed_ingress_local_root,
+    );
     let consumer_node = managed_follower_service::create(
         &consumer_state,
         managed_follower_service::CreateRemoteNodeInput {
@@ -677,10 +689,16 @@ async fn test_managed_ingress_profile_handles_remote_writes_without_legacy_bindi
         .await
         .expect("managed ingress write should not depend on legacy binding policy fields");
 
-    let stored_path = Path::new(&provider_state.config.server.managed_ingress_local_root)
-        .join("managed-a")
-        .join("managed-ingress-space")
-        .join("managed-ingress.bin");
+    let stored_path = Path::new(
+        &provider_state
+            .config
+            .server
+            .follower
+            .managed_ingress_local_root,
+    )
+    .join("managed-a")
+    .join("managed-ingress-space")
+    .join("managed-ingress.bin");
     let stored = tokio::fs::read(&stored_path)
         .await
         .expect("managed ingress payload should land under managed ingress root");
@@ -1363,10 +1381,35 @@ async fn test_remote_presigned_download_redirects_to_follower() {
         "presigned URL should preserve cache-control"
     );
 
-    let response = reqwest::get(&location)
+    let response = reqwest::Client::new()
+        .get(&location)
+        .header(reqwest::header::ORIGIN, "http://master.example.com")
+        .send()
         .await
         .expect("presigned remote download request should succeed");
     assert!(response.status().is_success());
+    assert_eq!(
+        response
+            .headers()
+            .get(reqwest::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://master.example.com")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(reqwest::header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .and_then(|value| value.to_str().ok()),
+        Some("true")
+    );
+    assert!(
+        response
+            .headers()
+            .get(reqwest::header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .and_then(|value| value.to_str().ok())
+            .expect("presigned remote download should expose response headers")
+            .contains("Content-Disposition")
+    );
     assert_eq!(
         response
             .headers()
@@ -2335,15 +2378,21 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
     );
     assert_eq!(
         resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .and_then(|value| value.to_str().ok()),
+        Some("true")
+    );
+    assert_eq!(
+        resp.headers()
             .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_METHODS)
             .and_then(|value| value.to_str().ok()),
-        Some("PUT, OPTIONS")
+        Some("GET, PUT, OPTIONS")
     );
     assert_eq!(
         resp.headers()
             .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_HEADERS)
             .and_then(|value| value.to_str().ok()),
-        Some("content-type")
+        Some("content-type, range")
     );
     let vary = resp
         .headers()
@@ -2437,6 +2486,207 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
         resp.headers().contains_key(actix_web::http::header::ETAG),
         "browser PUT should expose ETag header"
     );
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_download_browser_cors_allows_get() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            namespace: "provider-browser-download-cors-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://localhost:3000".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-browser-download-cors-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Presigned Browser Download CORS Policy",
+        "browser-download-cors-base",
+        StoragePolicyOptions {
+            remote_download_strategy: Some(RemoteDownloadStrategy::Presigned),
+            ..Default::default()
+        },
+        1024,
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let _ = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+    let folder = folder_service::create(
+        &consumer_state,
+        user.id,
+        "remote-browser-download-cors",
+        None,
+    )
+    .await
+    .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let body = b"presigned-download-browser-cors".to_vec();
+    let upload_path = write_temp_upload_file(
+        &consumer_state,
+        &format!(
+            "remote-presigned-browser-download-cors-{}.txt",
+            uuid::Uuid::new_v4()
+        ),
+        &body,
+    )
+    .await;
+    let upload_path_string = upload_path.to_string_lossy().into_owned();
+    let created = file_service::store_from_temp(
+        &consumer_state,
+        user.id,
+        file_service::StoreFromTempRequest::new(
+            Some(folder.id),
+            "presigned-browser-download.txt",
+            &upload_path_string,
+            i64::try_from(body.len()).expect("body length should fit i64"),
+        ),
+    )
+    .await
+    .expect("remote file upload should succeed");
+    aster_drive::utils::cleanup_temp_file(&upload_path_string).await;
+
+    let download_result = file_service::download(&consumer_state, created.id, user.id, None)
+        .await
+        .expect("remote presigned download should resolve");
+    let presigned_path = match download_result {
+        file_service::DownloadOutcome::PresignedRedirect { url, .. } => {
+            path_and_query_from_url(&url)
+        }
+        other => panic!("expected remote presigned download, got {other:?}"),
+    };
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header(("Access-Control-Request-Method", "GET"))
+        .insert_header(("Access-Control-Request-Headers", "range"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::NO_CONTENT);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .and_then(|value| value.to_str().ok()),
+        Some("true")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_METHODS)
+            .and_then(|value| value.to_str().ok()),
+        Some("GET, PUT, OPTIONS")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_HEADERS)
+            .and_then(|value| value.to_str().ok()),
+        Some("content-type, range")
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_CREDENTIALS)
+            .and_then(|value| value.to_str().ok()),
+        Some("true")
+    );
+    let exposed_headers = resp
+        .headers()
+        .get(actix_web::http::header::ACCESS_CONTROL_EXPOSE_HEADERS)
+        .and_then(|value| value.to_str().ok())
+        .expect("actual GET response should expose download headers");
+    assert!(exposed_headers.contains("Content-Disposition"));
+    assert!(exposed_headers.contains("Content-Length"));
+    assert!(exposed_headers.contains("Content-Type"));
+    let vary = resp
+        .headers()
+        .get(actix_web::http::header::VARY)
+        .and_then(|value| value.to_str().ok())
+        .expect("actual GET response should include Vary");
+    assert!(vary.contains("Origin"));
+    let downloaded = test::read_body(resp).await;
+    assert_eq!(downloaded.as_ref(), body);
+
+    provider_server.stop().await;
 }
 
 #[actix_web::test]

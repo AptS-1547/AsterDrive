@@ -477,7 +477,7 @@ fn build_policy_model<S: FollowerRuntimeState>(
 ) -> Result<storage_policy::Model> {
     let base_path = match profile.driver_type {
         DriverType::Local => resolve_managed_local_path(
-            &state.config().server.managed_ingress_local_root,
+            &state.config().server.follower.managed_ingress_local_root,
             &profile.base_path,
         )?
         .to_string_lossy()
@@ -510,7 +510,7 @@ fn resolve_managed_local_path(root: &str, relative: &str) -> Result<PathBuf> {
     let trimmed_root = root.trim();
     if trimmed_root.is_empty() {
         return Err(AsterError::config_error(
-            "server.managed_ingress_local_root cannot be empty",
+            "server.follower.managed_ingress_local_root cannot be empty",
         ));
     }
     let normalized = normalize_relative_local_path(relative)?;
@@ -539,7 +539,7 @@ fn normalize_relative_local_path(value: &str) -> Result<String> {
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
                 return Err(validation_error_with_subcode(
                     "managed_ingress.local_path_invalid",
-                    "local ingress base_path must stay within managed_ingress_local_root",
+                    "local ingress base_path must stay within server.follower.managed_ingress_local_root",
                 ));
             }
         }
@@ -599,6 +599,10 @@ mod tests {
     #[test]
     fn normalize_relative_local_path_rejects_escape_attempts() {
         let error = normalize_relative_local_path("../secret").unwrap_err();
-        assert!(error.message().contains("managed_ingress_local_root"));
+        assert!(
+            error
+                .message()
+                .contains("server.follower.managed_ingress_local_root")
+        );
     }
 }

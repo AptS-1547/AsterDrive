@@ -48,6 +48,7 @@ fn load_from_dir(
     }
 
     let raw = builder.build().map_aster_err(AsterError::config_error)?;
+    reject_deprecated_config_keys(&raw)?;
 
     let mut cfg = raw
         .try_deserialize::<Config>()
@@ -60,6 +61,15 @@ fn load_from_dir(
         config_path.display()
     );
     Ok(cfg)
+}
+
+fn reject_deprecated_config_keys(raw: &RawConfig) -> Result<()> {
+    if raw.get_string("server.managed_ingress_local_root").is_ok() {
+        return Err(AsterError::config_error(
+            "server.managed_ingress_local_root has moved to server.follower.managed_ingress_local_root",
+        ));
+    }
+    Ok(())
 }
 
 fn ensure_default_config_exists(config_path: &Path, default: &Config) -> Result<()> {
@@ -107,8 +117,11 @@ fn resolve_loaded_paths(base_dir: &Path, config_path: &Path, cfg: &mut Config) -
     cfg.server.temp_dir = resolve_config_relative_path(base_dir, config_dir, &cfg.server.temp_dir)?;
     cfg.server.upload_temp_dir =
         resolve_config_relative_path(base_dir, config_dir, &cfg.server.upload_temp_dir)?;
-    cfg.server.managed_ingress_local_root =
-        resolve_config_relative_path(base_dir, config_dir, &cfg.server.managed_ingress_local_root)?;
+    cfg.server.follower.managed_ingress_local_root = resolve_config_relative_path(
+        base_dir,
+        config_dir,
+        &cfg.server.follower.managed_ingress_local_root,
+    )?;
     cfg.database.url = resolve_config_relative_sqlite_url(base_dir, config_dir, &cfg.database.url)?;
     Ok(())
 }
@@ -151,7 +164,7 @@ mod tests {
         assert_eq!(cfg.server.temp_dir, DEFAULT_TEMP_DIR);
         assert_eq!(cfg.server.upload_temp_dir, DEFAULT_UPLOAD_TEMP_DIR);
         assert_eq!(
-            cfg.server.managed_ingress_local_root,
+            cfg.server.follower.managed_ingress_local_root,
             "data/managed-ingress"
         );
         assert!(dir.join(DEFAULT_CONFIG_PATH).exists());
@@ -160,6 +173,7 @@ mod tests {
         assert!(generated.contains(r#"url = "sqlite://asterdrive.db?mode=rwc""#));
         assert!(generated.contains(r#"temp_dir = ".tmp""#));
         assert!(generated.contains(r#"upload_temp_dir = ".uploads""#));
+        assert!(generated.contains("[server.follower]"));
         assert!(generated.contains(r#"managed_ingress_local_root = "managed-ingress""#));
 
         let _ = std::fs::remove_dir_all(dir);
@@ -224,6 +238,8 @@ url = "sqlite://data/asterdrive.db?mode=rwc"
 [server]
 temp_dir = "data/.tmp"
 upload_temp_dir = "data/.uploads"
+
+[server.follower]
 managed_ingress_local_root = "data/managed-ingress"
 "#,
         );
@@ -234,8 +250,28 @@ managed_ingress_local_root = "data/managed-ingress"
         assert_eq!(cfg.server.temp_dir, DEFAULT_TEMP_DIR);
         assert_eq!(cfg.server.upload_temp_dir, DEFAULT_UPLOAD_TEMP_DIR);
         assert_eq!(
-            cfg.server.managed_ingress_local_root,
+            cfg.server.follower.managed_ingress_local_root,
             "data/managed-ingress"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_rejects_deprecated_server_managed_ingress_root() {
+        let dir = make_temp_dir("deprecated-managed-ingress-root");
+        write(
+            &dir.join(DEFAULT_CONFIG_PATH),
+            br#"[server]
+managed_ingress_local_root = "custom-managed-ingress"
+"#,
+        );
+
+        let error = load_from_dir(&dir, None, false).unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("server.follower.managed_ingress_local_root")
         );
 
         let _ = std::fs::remove_dir_all(dir);

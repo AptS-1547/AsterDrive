@@ -20,7 +20,7 @@ pub mod wopi;
 pub use runtime_config::RuntimeConfig;
 pub use schema::{
     AuthConfig, CacheConfig, Config, DatabaseConfig, LoggingConfig, RateLimitConfig, RateLimitTier,
-    ServerConfig, WebDavConfig,
+    ServerConfig, ServerFollowerConfig, WebDavConfig,
 };
 
 use std::sync::Arc;
