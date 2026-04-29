@@ -167,11 +167,21 @@ docker exec -it asterdrive sh
   --value https://drive.example.com
 ```
 
+`public_site_url` 支持多个公开来源，一行一个。命令行里可以用 shell 的换行字符串：
+
+```bash
+./aster_drive config \
+  --database-url "sqlite:///var/lib/asterdrive/data/asterdrive.db?mode=rwc" \
+  set \
+  --key public_site_url \
+  --value $'https://drive.example.com\nhttps://panel.example.com'
+```
+
 批量导入时，输入文件可以是下面两种 JSON 之一：
 
 ```json
 [
-  { "key": "public_site_url", "value": "https://drive.example.com" },
+  { "key": "public_site_url", "value": "https://drive.example.com\nhttps://panel.example.com" },
   { "key": "auth_cookie_secure", "value": "true" }
 ]
 ```
@@ -179,7 +189,7 @@ docker exec -it asterdrive sh
 ```json
 {
   "configs": [
-    { "key": "public_site_url", "value": "https://drive.example.com" },
+    { "key": "public_site_url", "value": "https://drive.example.com\nhttps://panel.example.com" },
     { "key": "auth_cookie_secure", "value": "true" }
   ]
 }

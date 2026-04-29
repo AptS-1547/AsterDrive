@@ -284,6 +284,8 @@ primary 周期任务由 `src/runtime/tasks.rs` 注册，间隔来自运行时配
 - `blob_reconcile_interval_secs`
 - `remote_node_health_test_interval_secs`
 
+`public_site_url` 是一个历史上保持单数 key 的列表配置。值里保存一组公开 HTTP(S) origins，规范化后用换行分隔。生成绝对 URL 时，有请求上下文的路径会优先用当前请求 scheme/Host 在列表里做精确匹配；没有请求上下文或未命中时使用第一项作为回退。这个配置也参与 Cookie 认证写操作的 same-site CSRF 来源判断，但不参与 CORS 放行。
+
 ## 改动应该落在哪一层
 
 | 你要改的东西 | 优先落点 |

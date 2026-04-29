@@ -16,13 +16,14 @@ AsterDrive 不内置 TLS 终端。
 
 ## 上线前先对齐这几个值
 
-- `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 填成真实的 `https://` 域名，例如 `https://drive.example.com`
+- `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 填成真实的 `https://` 来源，一行一个，例如 `https://drive.example.com`
 - 静态引导项 `auth.bootstrap_insecure_cookies` 只在纯 HTTP 首次引导时临时设成 `true`
 - 正式切到 HTTPS 后，把 `auth.bootstrap_insecure_cookies` 去掉，并确认运行时 `auth_cookie_secure` 已恢复为开启
 - 代理层至少给浏览器页面补上一条可用的基线 `Content-Security-Policy`，别只做 HTTPS
 - 不要把站点自己的基线 CSP 直接改成全站 `sandbox`
 - 代理层不要拦掉 WebDAV 的 `PROPFIND`、`MOVE`、`COPY`、`LOCK`、`UNLOCK`
 - 代理层不要覆盖缩略图接口返回的 `ETag` / `Cache-Control`
+- 代理层必须保留真实 `Host`，并正确传递公网协议。AsterDrive 会用请求 Host 在 `公开站点地址` 列表里做精确匹配，生成对应域名的分享、WebDAV 和 WOPI URL
 
 本文默认：
 
@@ -31,6 +32,20 @@ AsterDrive 不内置 TLS 终端。
 - 域名是 `drive.example.com`
 
 如果你改了监听地址、域名或 WebDAV 前缀，把下面配置里的对应值一起改掉。
+
+### 多域名入口
+
+同一个实例可以有多个公开入口，例如：
+
+```text
+https://drive.example.com
+https://panel.example.com
+https://intranet-drive.example.net
+```
+
+后台里仍然只改 `公开站点地址` 这一项，但每个来源单独一行。系统只接受精确 HTTP(S) 来源；不要带路径、不要写 `*`、不要填不受你控制的域名。第一行是默认回退来源。
+
+当请求从 `panel.example.com` 进来，并且这一行已经在列表里时，系统会生成 `https://panel.example.com/...` 形式的 WebDAV、分享和 WOPI URL。未匹配到的 Host 不会被直接信任，系统会回退第一行，避免任意 Host 污染对外链接。
 
 ## 关键路径速查
 
@@ -313,7 +328,7 @@ frame-src 'self';
 
 如果你接的是 OnlyOffice、Collabora 或其他 WOPI 服务，再多确认两件事：
 
-- `public_site_url` 必须是用户真实访问的 HTTPS 域名
+- `public_site_url` 必须包含 WOPI 宿主能回连到的真实 HTTPS 来源；如果有多个入口，把它们逐行填进 `公开站点地址`
 - 外部 Office 服务必须能访问到 `https://你的域名/api/v1/wopi/...`
 
 最常见的错误现象就是：
@@ -344,7 +359,7 @@ AsterDrive 的缩略图接口已经返回了：
 
 1. 浏览器能通过 `https://你的域名/` 正常登录
 2. 首页响应头里已经能看到页面基线 `Content-Security-Policy`
-3. `管理 -> 系统设置 -> 公开站点地址` 显示的是 `https://` 域名
+3. `管理 -> 系统设置 -> 公开站点地址` 里每一行都是真实 `https://` 来源；如果有多个公开域名，分别从每个域名登录一次，确认 WebDAV 地址和分享链接使用当前域名
 4. 上传一个大文件，确认不会被代理层截断
 5. 打开两个浏览器标签页，确认文件变更能通过 SSE 刷新出来
 6. 如果启用了 WebDAV，用真实客户端连一次

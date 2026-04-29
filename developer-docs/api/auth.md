@@ -84,6 +84,17 @@
 
 如果用户状态是 `disabled`，登录会直接失败。
 
+### Cookie 写操作的 CSRF 来源判断
+
+使用 Cookie 鉴权执行不安全方法时，服务端同时检查双提交 CSRF token 和请求来源：
+
+- `same-origin` 请求允许继续做 CSRF token 校验
+- `same-site` 请求必须带可信 `Origin` 或 `Referer`
+- 可信来源必须精确匹配当前请求来源，或命中 `public_site_url` 列表中的某个 HTTP(S) origin
+- `cross-site`、非法 `Sec-Fetch-Site`、不可信 `Origin` / `Referer`、以及缺少可信来源的 `same-site` 请求都会被拒绝
+
+这里的 `public_site_url` 是运行时配置里的公开站点来源列表，不是 CORS 白名单。它的作用是声明哪些同站公开入口属于本实例，避免把浏览器层面的 `same-site` 直接等同于可信。
+
 ## 当前用户资料、密码与偏好
 
 - `PUT /auth/password`：修改当前用户密码，请求体如下：

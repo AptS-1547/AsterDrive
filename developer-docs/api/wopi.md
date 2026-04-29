@@ -41,7 +41,7 @@ WOPI 相关能力分成两层：
 当前语义：
 
 - `app_key` 必须命中 `/public/preview-apps` 里启用中的 `provider = "wopi"` 应用
-- 系统必须配置 `public_site_url`，因为服务端要生成绝对的 `WOPISrc`
+- 系统必须配置 `public_site_url`，因为服务端要生成绝对的 `WOPISrc`。多来源配置下，服务端会优先使用当前请求 Host 在 `public_site_url` 列表里的精确命中项；没有命中时回退第一项
 - 如果预览器配置了 `config.action_url`，会直接展开 / 追加 `WOPISrc`
 - 如果没配 `action_url` 但配了 `config.discovery_url`，服务端会拉取 discovery XML，并按“扩展名 -> MIME -> 通配”顺序解析可用 action URL
 - `access_token_ttl` 按 WOPI 规范返回“过期时间的 Unix 毫秒时间戳”，不是“TTL 秒数”
