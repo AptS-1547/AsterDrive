@@ -99,6 +99,12 @@ pub async fn delete_by_binding_and_profile_key<C: ConnectionTrait>(
     Ok(())
 }
 
+/// Must be called inside a transaction, for example through `with_transaction`.
+///
+/// This clears existing defaults with `update_many`, then loads the target via
+/// `find_by_id` and marks it with `update`; without transaction semantics,
+/// concurrent readers can observe a temporary no-default state and concurrent
+/// writers can create conflicting defaults.
 pub async fn set_only_default_for_binding<C: ConnectionTrait>(
     db: &C,
     master_binding_id: i64,

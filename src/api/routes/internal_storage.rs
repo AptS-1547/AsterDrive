@@ -6,12 +6,14 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::FollowerAppState;
 use crate::services::{managed_ingress_profile_service, master_binding_service};
 use crate::storage::driver::{BlobMetadata, StorageDriver};
+use crate::storage::object_key;
 use crate::storage::remote_protocol::{
     INTERNAL_AUTH_SIGNATURE_HEADER, PRESIGNED_AUTH_ACCESS_KEY_QUERY, RemoteBindingSyncRequest,
     RemoteCreateIngressProfileRequest, RemoteStorageCapabilities, RemoteStorageComposeRequest,
     RemoteStorageComposeResponse, RemoteStorageListResponse, RemoteStorageObjectMetadata,
     RemoteUpdateIngressProfileRequest,
 };
+use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, dev::HttpServiceFactory, web};
 use futures::StreamExt;
 use serde::Deserialize;
@@ -87,6 +89,49 @@ async fn metadata_or_not_found(
     }
 }
 
+struct PartialContentRange {
+    start: u64,
+    end: u64,
+    length: u64,
+}
+
+fn partial_content_range(
+    total_size: u64,
+    offset: Option<u64>,
+    length: Option<u64>,
+) -> Result<Option<PartialContentRange>> {
+    if offset.is_none() && length.is_none() {
+        return Ok(None);
+    }
+    if length == Some(0) {
+        return Err(AsterError::validation_error(
+            "range length must be greater than zero",
+        ));
+    }
+    if total_size == 0 {
+        return Err(AsterError::validation_error(
+            "range cannot be requested for empty object",
+        ));
+    }
+
+    let start = offset.unwrap_or(0);
+    if start >= total_size {
+        return Err(AsterError::validation_error(
+            "range offset exceeds object size",
+        ));
+    }
+
+    let end = match length {
+        Some(length) => start
+            .saturating_add(length)
+            .saturating_sub(1)
+            .min(total_size - 1),
+        None => total_size - 1,
+    };
+    let length = end.saturating_sub(start).saturating_add(1);
+    Ok(Some(PartialContentRange { start, end, length }))
+}
+
 async fn get_capabilities(
     state: web::Data<FollowerAppState>,
     req: HttpRequest,
@@ -128,16 +173,14 @@ async fn list_objects(
     let prefix = query
         .prefix
         .as_deref()
-        .map(|value| master_binding_service::provider_storage_path(&ctx.binding, value));
-    let root_prefix = format!("{}/", ctx.binding.storage_namespace.trim_matches('/'));
+        .map(|value| master_binding_service::provider_storage_path(&ctx.binding, value))
+        .transpose()?;
     let items = list_driver
         .list_paths(prefix.as_deref())
         .await?
         .into_iter()
         .filter_map(|path| {
-            path.strip_prefix(&root_prefix)
-                .or_else(|| (path == ctx.binding.storage_namespace).then_some(""))
-                .map(str::to_string)
+            object_key::strip_key_prefix(&ctx.binding.storage_namespace, &path).map(str::to_string)
         })
         .collect();
 
@@ -158,7 +201,7 @@ async fn put_object(
         master_binding_service::authorize_presigned_put_request(state.get_ref(), &req).await?
     };
     let storage_path =
-        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner());
+        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner())?;
     let content_length = req
         .headers()
         .get(actix_web::http::header::CONTENT_LENGTH)
@@ -242,12 +285,13 @@ async fn compose_objects(
         AsterError::storage_driver_error("ingress target does not support stream upload")
     })?;
     let target_storage_path =
-        master_binding_service::provider_storage_path(&ctx.binding, &body.target_key);
+        master_binding_service::provider_storage_path(&ctx.binding, &body.target_key)?;
     let part_storage_paths: Vec<String> = body
         .part_keys
         .iter()
         .map(|key| master_binding_service::provider_storage_path(&ctx.binding, key))
-        .collect();
+        .collect::<Result<_>>()?;
+    let cleanup_part_storage_paths = part_storage_paths.clone();
     let expected_size = body.expected_size;
     let expected_size_u64 = u64::try_from(expected_size)
         .map_err(|_| AsterError::validation_error("compose expected_size exceeds u64 range"))?;
@@ -318,8 +362,7 @@ async fn compose_objects(
         )));
     }
 
-    for part_key in &body.part_keys {
-        let storage_path = master_binding_service::provider_storage_path(&ctx.binding, part_key);
+    for storage_path in cleanup_part_storage_paths {
         if let Err(error) = driver.delete(&storage_path).await {
             tracing::warn!(storage_path = %storage_path, "failed to cleanup composed part: {error}");
         }
@@ -351,8 +394,9 @@ async fn get_object(
         master_binding_service::authorize_internal_request(state.get_ref(), &req).await?
     };
     let storage_path =
-        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner());
+        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner())?;
     let metadata = metadata_or_not_found(ctx.ingress_driver.as_ref(), &storage_path).await?;
+    let partial_range = partial_content_range(metadata.size, query.offset, query.length)?;
     let stream = match (query.offset, query.length) {
         (Some(offset), length) => {
             ctx.ingress_driver
@@ -368,7 +412,11 @@ async fn get_object(
     };
     let body = ReaderStream::with_capacity(stream, 64 * 1024);
 
-    let mut response = HttpResponse::Ok();
+    let mut response = if partial_range.is_some() {
+        HttpResponse::build(StatusCode::PARTIAL_CONTENT)
+    } else {
+        HttpResponse::Ok()
+    };
     response.insert_header((
         actix_web::http::header::CONTENT_TYPE,
         query
@@ -379,8 +427,18 @@ async fn get_object(
     ));
     response.insert_header((
         actix_web::http::header::CONTENT_LENGTH,
-        metadata.size.to_string(),
+        partial_range
+            .as_ref()
+            .map(|range| range.length)
+            .unwrap_or(metadata.size)
+            .to_string(),
     ));
+    if let Some(range) = partial_range {
+        response.insert_header((
+            actix_web::http::header::CONTENT_RANGE,
+            format!("bytes {}-{}/{}", range.start, range.end, metadata.size),
+        ));
+    }
     response.insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"));
     if let Some(content_disposition) = query.response_content_disposition.as_deref() {
         response.insert_header((
@@ -401,7 +459,7 @@ async fn head_object(
 ) -> Result<HttpResponse> {
     let ctx = master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
     let storage_path =
-        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner());
+        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner())?;
     let metadata = metadata_or_not_found(ctx.ingress_driver.as_ref(), &storage_path).await?;
 
     let mut response = HttpResponse::Ok();
@@ -419,7 +477,7 @@ async fn get_object_metadata(
 ) -> Result<HttpResponse> {
     let ctx = master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
     let storage_path =
-        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner());
+        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner())?;
     let metadata = metadata_or_not_found(ctx.ingress_driver.as_ref(), &storage_path).await?;
 
     Ok(
@@ -437,7 +495,7 @@ async fn delete_object(
 ) -> Result<HttpResponse> {
     let ctx = master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
     let storage_path =
-        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner());
+        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner())?;
     ctx.ingress_driver.delete(&storage_path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

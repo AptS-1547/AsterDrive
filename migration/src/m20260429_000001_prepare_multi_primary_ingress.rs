@@ -327,22 +327,45 @@ async fn backfill_storage_namespaces(manager: &SchemaManager<'_>) -> Result<(), 
         ))
         .await?;
 
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let mut values = Vec::with_capacity(rows.len() * 2);
+    let mut cases = Vec::with_capacity(rows.len());
+    let mut ids = Vec::with_capacity(rows.len());
     for row in rows {
         let id = row
             .try_get_by_index::<i64>(0)
             .map_err(|error| DbErr::Migration(format!("read master_bindings.id: {error}")))?;
         let namespace = new_storage_namespace();
-        let namespace_bind = bind_param(backend, 1)?;
-        let id_bind = bind_param(backend, 2)?;
-        db.execute_raw(Statement::from_sql_and_values(
-            backend,
-            format!(
-                "UPDATE master_bindings SET storage_namespace = {namespace_bind} WHERE id = {id_bind}"
-            ),
-            vec![namespace.into(), id.into()],
-        ))
-        .await?;
+        let case_id_bind = bind_param(backend, values.len() + 1)?;
+        values.push(id.into());
+        let namespace_bind = bind_param(backend, values.len() + 1)?;
+        values.push(namespace.into());
+        cases.push(format!("WHEN {case_id_bind} THEN {namespace_bind}"));
+        ids.push(id);
     }
+
+    let mut id_binds = Vec::with_capacity(ids.len());
+    for id in ids {
+        let bind = bind_param(backend, values.len() + 1)?;
+        values.push(id.into());
+        id_binds.push(bind);
+    }
+
+    db.execute_raw(Statement::from_sql_and_values(
+        backend,
+        format!(
+            "UPDATE master_bindings \
+             SET storage_namespace = CASE id {} END \
+             WHERE id IN ({})",
+            cases.join(" "),
+            id_binds.join(", ")
+        ),
+        values,
+    ))
+    .await?;
 
     Ok(())
 }
@@ -376,8 +399,11 @@ async fn backfill_ingress_profile_binding(manager: &SchemaManager<'_>) -> Result
             .await?;
         }
         None => {
-            db.execute_unprepared("DELETE FROM managed_ingress_profiles")
-                .await?;
+            // Do not delete managed_ingress_profiles here: a missing
+            // master_bindings row means the database is in an unexpected state,
+            // and silently deleting ingress profiles would turn a migration
+            // repair problem into permanent data loss. A deliberate cleanup, if
+            // ever needed, should be documented as its own migration.
         }
     }
 

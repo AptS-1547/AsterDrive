@@ -157,7 +157,10 @@ export function getApiErrorMessage(error: unknown) {
 		const key =
 			(error.subcode ? errorSubcodeKeys[error.subcode] : undefined) ??
 			errorMessageKeys[error.code];
-		return key ? i18n.t(key) : error.message;
+		if (key) {
+			return i18n.t(key);
+		}
+		return error.message || i18n.t("errors:unexpected_error");
 	}
 
 	if (error instanceof Error) {

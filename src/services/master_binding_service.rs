@@ -267,16 +267,15 @@ async fn authorize_presigned_binding_request<S: FollowerRuntimeState>(
     Ok(binding)
 }
 
-pub fn provider_storage_path(binding: &master_binding::Model, object_key: &str) -> String {
-    let object_key = object_key.trim_start_matches('/');
-    if object_key.is_empty() {
-        binding.storage_namespace.clone()
+pub fn provider_storage_path(binding: &master_binding::Model, object_key: &str) -> Result<String> {
+    let object_key = crate::storage::object_key::normalize_relative_key(object_key)?;
+    if object_key == "." {
+        Ok(binding.storage_namespace.clone())
     } else {
-        format!(
-            "{}/{}",
-            binding.storage_namespace.trim_matches('/'),
-            object_key
-        )
+        Ok(crate::storage::object_key::join_key_prefix(
+            &binding.storage_namespace,
+            &object_key,
+        ))
     }
 }
 
@@ -435,6 +434,7 @@ fn normalize_non_blank(field: &str, value: &str) -> Result<String> {
 }
 
 async fn new_storage_namespace<C: ConnectionTrait>(db: &C) -> Result<String> {
+    let mut candidates = Vec::with_capacity(8);
     for _ in 0..8 {
         let candidate = format!("mb_{}", crate::utils::id::new_short_token());
         if master_binding_repo::find_by_storage_namespace(db, &candidate)
@@ -443,8 +443,49 @@ async fn new_storage_namespace<C: ConnectionTrait>(db: &C) -> Result<String> {
         {
             return Ok(candidate);
         }
+        candidates.push(candidate);
     }
+    tracing::error!(
+        attempts = 8,
+        candidates = ?candidates,
+        "failed to allocate unique master binding storage namespace after crate::utils::id::new_short_token candidates collided in master_binding_repo::find_by_storage_namespace"
+    );
     Err(AsterError::internal_error(
         "failed to allocate unique master binding storage namespace",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn binding() -> master_binding::Model {
+        let now = Utc::now();
+        master_binding::Model {
+            id: 1,
+            name: "binding".to_string(),
+            master_url: "https://master.example.com".to_string(),
+            access_key: "ak".to_string(),
+            secret_key: "sk".to_string(),
+            storage_namespace: "mb_test".to_string(),
+            is_enabled: true,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn provider_storage_path_scopes_safe_keys() {
+        assert_eq!(
+            provider_storage_path(&binding(), "folder/file.txt").unwrap(),
+            "mb_test/folder/file.txt"
+        );
+        assert_eq!(provider_storage_path(&binding(), "").unwrap(), "mb_test");
+    }
+
+    #[test]
+    fn provider_storage_path_rejects_escape_attempts() {
+        assert!(provider_storage_path(&binding(), "../secret.txt").is_err());
+        assert!(provider_storage_path(&binding(), "folder\\..\\secret.txt").is_err());
+    }
 }

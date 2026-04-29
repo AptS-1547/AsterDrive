@@ -22,8 +22,8 @@ use aster_drive::services::{
     managed_ingress_profile_service, master_binding_service, policy_service, upload_service,
 };
 use aster_drive::storage::remote_protocol::{
-    RemoteCreateIngressProfileRequest, RemoteStorageClient, RemoteStorageComposeRequest,
-    sign_internal_request, sign_presigned_request,
+    RemoteCreateIngressProfileRequest, RemoteCreateLocalIngressProfileRequest, RemoteStorageClient,
+    RemoteStorageComposeRequest, sign_internal_request, sign_presigned_request,
 };
 use aster_drive::types::{
     DriverType, NullablePatch, RemoteDownloadStrategy, RemoteUploadStrategy, StoragePolicyOptions,
@@ -239,17 +239,12 @@ async fn create_managed_local_ingress_for_binding(
     managed_ingress_profile_service::create(
         &provider_state.follower_view(),
         &binding,
-        RemoteCreateIngressProfileRequest {
+        RemoteCreateIngressProfileRequest::Local(RemoteCreateLocalIngressProfileRequest {
             name: format!("Managed {base_path}"),
-            driver_type: DriverType::Local,
-            endpoint: String::new(),
-            bucket: String::new(),
-            access_key: String::new(),
-            secret_key: String::new(),
             base_path: base_path.to_string(),
             max_file_size,
             is_default: true,
-        },
+        }),
     )
     .await
     .expect("provider managed ingress profile should be created");
@@ -656,17 +651,12 @@ async fn test_managed_ingress_profile_handles_remote_writes_without_legacy_bindi
     let profile = managed_ingress_profile_service::create_remote(
         &consumer_state,
         consumer_node.id,
-        RemoteCreateIngressProfileRequest {
+        RemoteCreateIngressProfileRequest::Local(RemoteCreateLocalIngressProfileRequest {
             name: "Managed Local".to_string(),
-            driver_type: DriverType::Local,
-            endpoint: String::new(),
-            bucket: String::new(),
-            access_key: String::new(),
-            secret_key: String::new(),
             base_path: "managed-a".to_string(),
             max_file_size: 0,
             is_default: true,
-        },
+        }),
     )
     .await
     .expect("managed ingress profile should be created through primary");
@@ -750,17 +740,14 @@ async fn test_managed_ingress_profile_api_isolates_multiple_primary_bindings() {
 
     for (client, name) in [(&client_a, "Managed A"), (&client_b, "Managed B")] {
         let profile = client
-            .create_ingress_profile(&RemoteCreateIngressProfileRequest {
-                name: name.to_string(),
-                driver_type: DriverType::Local,
-                endpoint: String::new(),
-                bucket: String::new(),
-                access_key: String::new(),
-                secret_key: String::new(),
-                base_path: "shared-profile".to_string(),
-                max_file_size: 0,
-                is_default: true,
-            })
+            .create_ingress_profile(&RemoteCreateIngressProfileRequest::Local(
+                RemoteCreateLocalIngressProfileRequest {
+                    name: name.to_string(),
+                    base_path: "shared-profile".to_string(),
+                    max_file_size: 0,
+                    is_default: true,
+                },
+            ))
             .await
             .expect("managed ingress profile should be created for its binding");
         assert!(profile.is_default);
@@ -834,17 +821,12 @@ async fn test_managed_ingress_profile_api_isolates_multiple_primary_bindings() {
     let profile_a = managed_ingress_profile_service::create(
         &provider_state.follower_view(),
         &binding_a,
-        RemoteCreateIngressProfileRequest {
+        RemoteCreateIngressProfileRequest::Local(RemoteCreateLocalIngressProfileRequest {
             name: "Second A".to_string(),
-            driver_type: DriverType::Local,
-            endpoint: String::new(),
-            bucket: String::new(),
-            access_key: String::new(),
-            secret_key: String::new(),
             base_path: "secondary-a".to_string(),
             max_file_size: 0,
             is_default: false,
-        },
+        }),
     )
     .await
     .expect("binding a should allow additional scoped profiles");

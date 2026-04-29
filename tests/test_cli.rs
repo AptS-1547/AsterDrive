@@ -121,6 +121,37 @@ async fn scalar_string(db: &DatabaseConnection, backend: DbBackend, sql: &str) -
         .unwrap()
 }
 
+async fn column_exists(
+    db: &DatabaseConnection,
+    backend: DbBackend,
+    table: &str,
+    column: &str,
+) -> bool {
+    let sql = match backend {
+        DbBackend::Sqlite => {
+            format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'")
+        }
+        DbBackend::Postgres => {
+            format!(
+                "SELECT COUNT(*) FROM information_schema.columns \
+                 WHERE table_schema = 'public' \
+                   AND table_name = '{table}' \
+                   AND column_name = '{column}'"
+            )
+        }
+        DbBackend::MySql => {
+            format!(
+                "SELECT COUNT(*) FROM information_schema.columns \
+                 WHERE table_schema = DATABASE() \
+                   AND table_name = '{table}' \
+                   AND column_name = '{column}'"
+            )
+        }
+        backend => panic!("unsupported test database backend: {backend:?}"),
+    };
+    scalar_i64(db, backend, &sql).await > 0
+}
+
 async fn seed_migration_fixture(database_url: &str) -> i64 {
     let state = common::setup_with_database_url(database_url).await;
     let app = create_test_app!(state.clone());
@@ -338,24 +369,15 @@ async fn assert_migrated_fixture(
         &format!("SELECT name FROM files WHERE id = {file_id}"),
     )
     .await;
-    let managed_followers_namespace_columns = scalar_i64(
+    let managed_followers_has_namespace =
+        column_exists(&target_db, target_backend, "managed_followers", "namespace").await;
+    let master_bindings_has_namespace =
+        column_exists(&target_db, target_backend, "master_bindings", "namespace").await;
+    let master_bindings_has_storage_namespace = column_exists(
         &target_db,
         target_backend,
-        &format!(
-            "SELECT COUNT(*) FROM pragma_table_info('managed_followers') WHERE name = 'namespace'"
-        ),
-    )
-    .await;
-    let master_bindings_namespace_columns = scalar_i64(
-        &target_db,
-        target_backend,
-        "SELECT COUNT(*) FROM pragma_table_info('master_bindings') WHERE name = 'namespace'",
-    )
-    .await;
-    let master_bindings_storage_namespace_columns = scalar_i64(
-        &target_db,
-        target_backend,
-        "SELECT COUNT(*) FROM pragma_table_info('master_bindings') WHERE name = 'storage_namespace'",
+        "master_bindings",
+        "storage_namespace",
     )
     .await;
     let master_binding_storage_namespace = scalar_string(
@@ -375,9 +397,9 @@ async fn assert_migrated_fixture(
     assert_eq!(master_bindings, 1);
     assert_eq!(remote_policies, 1);
     assert_eq!(file_name, "test-in-folder.txt");
-    assert_eq!(managed_followers_namespace_columns, 0);
-    assert_eq!(master_bindings_namespace_columns, 0);
-    assert_eq!(master_bindings_storage_namespace_columns, 1);
+    assert!(!managed_followers_has_namespace);
+    assert!(!master_bindings_has_namespace);
+    assert!(master_bindings_has_storage_namespace);
     assert_eq!(
         master_binding_storage_namespace,
         MIGRATION_MASTER_STORAGE_NAMESPACE

@@ -12,7 +12,8 @@ use crate::storage::drivers::{
     local::LocalDriver, s3::S3Driver, s3_config::normalize_s3_endpoint_and_bucket,
 };
 use crate::storage::remote_protocol::{
-    RemoteCreateIngressProfileRequest, RemoteIngressProfileInfo, RemoteStorageClient,
+    RemoteCreateIngressProfileRequest, RemoteCreateLocalIngressProfileRequest,
+    RemoteCreateS3IngressProfileRequest, RemoteIngressProfileInfo, RemoteStorageClient,
     RemoteUpdateIngressProfileRequest,
 };
 use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
@@ -276,29 +277,44 @@ async fn find_profile_or_err<S: FollowerRuntimeState>(
 fn normalize_create_input(
     input: RemoteCreateIngressProfileRequest,
 ) -> Result<NormalizedIngressProfileInput> {
-    let RemoteCreateIngressProfileRequest {
-        name,
-        driver_type,
-        endpoint,
-        bucket,
-        access_key,
-        secret_key,
-        base_path,
-        max_file_size,
-        is_default,
-    } = input;
-
-    normalize_profile_fields(
-        normalize_non_blank("name", &name)?,
-        driver_type,
-        endpoint,
-        bucket,
-        access_key,
-        secret_key,
-        base_path,
-        max_file_size,
-        Some(is_default),
-    )
+    match input {
+        RemoteCreateIngressProfileRequest::Local(RemoteCreateLocalIngressProfileRequest {
+            name,
+            base_path,
+            max_file_size,
+            is_default,
+        }) => normalize_profile_fields(
+            normalize_non_blank("name", &name)?,
+            DriverType::Local,
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            base_path,
+            max_file_size,
+            Some(is_default),
+        ),
+        RemoteCreateIngressProfileRequest::S3(RemoteCreateS3IngressProfileRequest {
+            name,
+            endpoint,
+            bucket,
+            access_key,
+            secret_key,
+            base_path,
+            max_file_size,
+            is_default,
+        }) => normalize_profile_fields(
+            normalize_non_blank("name", &name)?,
+            DriverType::S3,
+            endpoint,
+            bucket,
+            access_key,
+            secret_key,
+            base_path,
+            max_file_size,
+            Some(is_default),
+        ),
+    }
 }
 
 fn normalize_update_input(
@@ -411,10 +427,7 @@ async fn reconcile_profile<S: FollowerRuntimeState>(
     state: &S,
     profile: managed_ingress_profile::Model,
 ) -> Result<managed_ingress_profile::Model> {
-    let apply_result = (|| -> Result<()> {
-        let _ = build_driver_from_profile(state, &profile)?;
-        Ok(())
-    })();
+    let apply_result = validate_driver_from_profile(state, &profile);
 
     let mut active: managed_ingress_profile::ActiveModel = profile.clone().into();
     match apply_result {
@@ -428,6 +441,29 @@ async fn reconcile_profile<S: FollowerRuntimeState>(
     }
     active.updated_at = Set(Utc::now());
     managed_ingress_profile_repo::update(state.db(), active).await
+}
+
+fn validate_driver_from_profile<S: FollowerRuntimeState>(
+    state: &S,
+    profile: &managed_ingress_profile::Model,
+) -> Result<()> {
+    let policy = build_policy_model(state, profile)?;
+    match policy.driver_type {
+        DriverType::Local => {
+            let base_path = Path::new(&policy.base_path);
+            std::fs::create_dir_all(base_path).map_aster_err_ctx(
+                &format!(
+                    "create managed ingress local path '{}'",
+                    base_path.display()
+                ),
+                AsterError::storage_driver_error,
+            )
+        }
+        DriverType::S3 => S3Driver::validate_policy(&policy),
+        DriverType::Remote => Err(AsterError::validation_error(
+            "managed ingress profiles do not support the remote driver",
+        )),
+    }
 }
 
 fn build_driver_from_profile<S: FollowerRuntimeState>(
@@ -513,7 +549,8 @@ fn normalize_relative_local_path(value: &str) -> Result<String> {
         ));
     }
 
-    let candidate = Path::new(trimmed);
+    let safe_value = trimmed.replace('\\', "/");
+    let candidate = Path::new(&safe_value);
     let mut normalized = PathBuf::new();
     for component in candidate.components() {
         match component {
@@ -582,6 +619,16 @@ mod tests {
     #[test]
     fn normalize_relative_local_path_rejects_escape_attempts() {
         let error = normalize_relative_local_path("../secret").unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("server.follower.managed_ingress_local_root")
+        );
+    }
+
+    #[test]
+    fn normalize_relative_local_path_rejects_backslash_escape_attempts() {
+        let error = normalize_relative_local_path("..\\secret").unwrap_err();
         assert!(
             error
                 .message()

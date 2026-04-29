@@ -260,6 +260,20 @@ mod tests {
     }
 
     #[test]
+    fn ingress_target_unsupported_message_stays_stable() {
+        let error = AsterError::storage_driver_error("ingress target does not support");
+        assert_eq!(error.message(), "ingress target does not support");
+        assert_eq!(
+            error.to_string(),
+            "Storage Driver Error: ingress target does not support"
+        );
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Unsupported)
+        );
+    }
+
+    #[test]
     fn tagged_storage_error_preserves_nested_api_subcode() {
         let error = storage_driver_error_with_subcode(
             StorageErrorKind::Transient,

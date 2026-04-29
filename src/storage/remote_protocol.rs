@@ -118,16 +118,34 @@ pub struct RemoteIngressProfileInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "driver_type", rename_all = "lowercase")]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct RemoteCreateIngressProfileRequest {
+pub enum RemoteCreateIngressProfileRequest {
+    Local(RemoteCreateLocalIngressProfileRequest),
+    S3(RemoteCreateS3IngressProfileRequest),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RemoteCreateLocalIngressProfileRequest {
     pub name: String,
-    pub driver_type: DriverType,
+    pub base_path: String,
+    pub max_file_size: i64,
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RemoteCreateS3IngressProfileRequest {
+    pub name: String,
     pub endpoint: String,
     pub bucket: String,
     pub access_key: String,
     pub secret_key: String,
     pub base_path: String,
     pub max_file_size: i64,
+    #[serde(default)]
     pub is_default: bool,
 }
 
@@ -862,17 +880,18 @@ async fn build_remote_status_error(
     let kind = remote_code
         .and_then(remote_api_error_kind)
         .unwrap_or_else(|| remote_status_error_kind(status));
+    let is_not_found_remote_code = remote_code
+        .map(|code| {
+            [
+                ErrorCode::NotFound as i32,
+                ErrorCode::StorageObjectNotFound as i32,
+            ]
+            .contains(&code)
+        })
+        .unwrap_or(false);
 
     match status {
-        reqwest::StatusCode::NOT_FOUND
-            if not_found_as_record
-                || matches!(
-                    remote_code,
-                    Some(code)
-                        if code == ErrorCode::NotFound as i32
-                            || code == ErrorCode::StorageObjectNotFound as i32
-                ) =>
-        {
+        reqwest::StatusCode::NOT_FOUND if not_found_as_record || is_not_found_remote_code => {
             AsterError::record_not_found("remote storage object not found")
         }
         reqwest::StatusCode::PRECONDITION_FAILED => remote_subcode

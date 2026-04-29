@@ -6,6 +6,7 @@ use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions, StorageDriv
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::extensions::{ListStorageDriver, PresignedStorageDriver, StreamUploadDriver};
 use crate::storage::multipart::MultipartStorageDriver;
+use crate::storage::object_key;
 use crate::storage::remote_protocol::RemoteStorageClient;
 use async_trait::async_trait;
 use std::path::Path;
@@ -32,25 +33,11 @@ impl RemoteDriver {
     }
 
     fn object_key(&self, path: &str) -> String {
-        let path = path.trim_start_matches('/');
-        if self.base_path.is_empty() {
-            path.to_string()
-        } else if path.is_empty() {
-            self.base_path.clone()
-        } else {
-            format!("{}/{}", self.base_path, path)
-        }
+        object_key::join_key_prefix(&self.base_path, path)
     }
 
     fn strip_base_path<'a>(&self, object_key: &'a str) -> Option<&'a str> {
-        if self.base_path.is_empty() {
-            return Some(object_key.trim_start_matches('/'));
-        }
-
-        object_key
-            .strip_prefix(&self.base_path)
-            .map(|suffix| suffix.trim_start_matches('/'))
-            .or_else(|| (object_key == self.base_path).then_some(""))
+        object_key::strip_key_prefix(&self.base_path, object_key)
     }
 
     fn multipart_parts_prefix(upload_id: &str) -> String {

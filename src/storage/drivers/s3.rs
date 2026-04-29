@@ -7,6 +7,7 @@ use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions, StorageDriv
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::extensions::{ListStorageDriver, PresignedStorageDriver, StreamUploadDriver};
 use crate::storage::multipart::MultipartStorageDriver;
+use crate::storage::object_key;
 use crate::utils::numbers;
 use async_trait::async_trait;
 use aws_credential_types::Credentials;
@@ -157,7 +158,26 @@ impl S3Driver {
         storage_driver_error(StorageErrorKind::Misconfigured, err.message().to_string())
     }
 
+    pub fn validate_policy(policy: &storage_policy::Model) -> Result<()> {
+        normalize_s3_endpoint_and_bucket(&policy.endpoint, &policy.bucket)
+            .map_err(Self::rewrap_message_as_storage_error)?;
+        if policy.access_key.trim().is_empty() {
+            return Err(storage_driver_error(
+                StorageErrorKind::Auth,
+                "access_key cannot be empty",
+            ));
+        }
+        if policy.secret_key.trim().is_empty() {
+            return Err(storage_driver_error(
+                StorageErrorKind::Auth,
+                "secret_key cannot be empty",
+            ));
+        }
+        Ok(())
+    }
+
     pub fn new(policy: &storage_policy::Model) -> Result<Self> {
+        Self::validate_policy(policy)?;
         let normalized = normalize_s3_endpoint_and_bucket(&policy.endpoint, &policy.bucket)
             .map_err(Self::rewrap_message_as_storage_error)?;
         let options = crate::types::parse_storage_policy_options(policy.options.as_ref());
@@ -199,25 +219,11 @@ impl S3Driver {
     }
 
     fn full_key(&self, path: &str) -> String {
-        if self.base_path.is_empty() {
-            path.trim_start_matches('/').to_string()
-        } else {
-            format!(
-                "{}/{}",
-                self.base_path.trim_end_matches('/'),
-                path.trim_start_matches('/')
-            )
-        }
+        object_key::join_key_prefix(&self.base_path, path)
     }
 
-    fn relative_key(&self, key: &str) -> String {
-        if self.base_path.is_empty() {
-            return key.trim_start_matches('/').to_string();
-        }
-
-        key.trim_start_matches(self.base_path.trim_end_matches('/'))
-            .trim_start_matches('/')
-            .to_string()
+    fn relative_key<'a>(&self, key: &'a str) -> Option<&'a str> {
+        object_key::strip_key_prefix(&self.base_path, key)
     }
 
     fn normalize_multipart_etag(etag: &str) -> String {
@@ -697,7 +703,9 @@ impl ListStorageDriver for S3Driver {
                 let Some(key) = object.key() else {
                     continue;
                 };
-                paths.push(self.relative_key(key));
+                if let Some(path) = self.relative_key(key) {
+                    paths.push(path.to_string());
+                }
             }
 
             let truncated = response.is_truncated().unwrap_or(false);
@@ -739,7 +747,9 @@ impl ListStorageDriver for S3Driver {
                 let Some(key) = object.key() else {
                     continue;
                 };
-                visitor.visit_path(self.relative_key(key))?;
+                if let Some(path) = self.relative_key(key) {
+                    visitor.visit_path(path.to_string())?;
+                }
             }
 
             let truncated = response.is_truncated().unwrap_or(false);

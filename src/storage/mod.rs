@@ -5,6 +5,7 @@ pub mod drivers;
 pub mod error;
 pub mod extensions;
 pub mod multipart;
+pub mod object_key;
 pub mod policy_snapshot;
 pub mod registry;
 pub mod remote_protocol;

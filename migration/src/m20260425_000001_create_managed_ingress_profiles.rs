@@ -41,7 +41,6 @@ impl MigrationTrait for Migration {
             .create_table(
                 Table::create()
                     .table(ManagedIngressProfiles::Table)
-                    .if_not_exists()
                     .col(
                         ColumnDef::new(ManagedIngressProfiles::Id)
                             .big_integer()

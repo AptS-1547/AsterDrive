@@ -4136,13 +4136,26 @@ export interface components {
             password: string;
             username: string;
         };
-        RemoteCreateIngressProfileRequest: {
+        RemoteCreateIngressProfileRequest: (components["schemas"]["RemoteCreateLocalIngressProfileRequest"] & {
+            /** @enum {string} */
+            driver_type: "local";
+        }) | (components["schemas"]["RemoteCreateS3IngressProfileRequest"] & {
+            /** @enum {string} */
+            driver_type: "s3";
+        });
+        RemoteCreateLocalIngressProfileRequest: {
+            base_path: string;
+            is_default?: boolean;
+            /** Format: int64 */
+            max_file_size: number;
+            name: string;
+        };
+        RemoteCreateS3IngressProfileRequest: {
             access_key: string;
             base_path: string;
             bucket: string;
-            driver_type: components["schemas"]["DriverType"];
             endpoint: string;
-            is_default: boolean;
+            is_default?: boolean;
             /** Format: int64 */
             max_file_size: number;
             name: string;
