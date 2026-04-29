@@ -22,10 +22,13 @@ import type {
 	LockPage,
 	MigratePolicyGroupUsersRequest,
 	PolicyGroupUserMigrationResult,
+	RemoteCreateIngressProfileRequest,
 	RemoteEnrollmentCommandInfo,
+	RemoteIngressProfileInfo,
 	RemoteNodeInfo,
 	RemoteNodePage,
 	RemoteStorageCapabilities,
+	RemoteUpdateIngressProfileRequest,
 	RemovedCountResponse,
 	ResetUserPasswordRequest,
 	ShareInfo,
@@ -265,6 +268,32 @@ export const adminRemoteNodeService = {
 	createEnrollmentCommand: (id: number) =>
 		api.post<RemoteEnrollmentCommandInfo>(
 			`/admin/remote-nodes/${id}/enrollment-token`,
+		),
+
+	listIngressProfiles: (id: number) =>
+		api.get<RemoteIngressProfileInfo[]>(
+			`/admin/remote-nodes/${id}/ingress-profiles`,
+		),
+
+	createIngressProfile: (id: number, data: RemoteCreateIngressProfileRequest) =>
+		api.post<RemoteIngressProfileInfo>(
+			`/admin/remote-nodes/${id}/ingress-profiles`,
+			data,
+		),
+
+	updateIngressProfile: (
+		id: number,
+		profileKey: string,
+		data: RemoteUpdateIngressProfileRequest,
+	) =>
+		api.patch<RemoteIngressProfileInfo>(
+			`/admin/remote-nodes/${id}/ingress-profiles/${encodeURIComponent(profileKey)}`,
+			data,
+		),
+
+	deleteIngressProfile: (id: number, profileKey: string) =>
+		api.delete<void>(
+			`/admin/remote-nodes/${id}/ingress-profiles/${encodeURIComponent(profileKey)}`,
 		),
 };
 

@@ -1,9 +1,11 @@
 //! 服务模块：`master_binding_service`。
 
-use crate::db::repository::{master_binding_repo, policy_repo};
-use crate::entities::{master_binding, storage_policy};
+use crate::db::repository::master_binding_repo;
+use crate::entities::master_binding;
 use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
 use crate::runtime::FollowerRuntimeState;
+use crate::services::managed_ingress_profile_service;
+use crate::storage::driver::StorageDriver;
 use crate::storage::remote_protocol::{
     INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER, INTERNAL_AUTH_NONCE_TTL_SECS,
     INTERNAL_AUTH_SIGNATURE_HEADER, INTERNAL_AUTH_SKEW_SECS, INTERNAL_AUTH_TIMESTAMP_HEADER,
@@ -14,11 +16,13 @@ use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use sea_orm::{ConnectionTrait, Set};
 use sha2::Sha256;
+use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AuthorizedMasterBinding {
     pub binding: master_binding::Model,
-    pub ingress_policy: storage_policy::Model,
+    pub ingress_driver: Arc<dyn StorageDriver>,
+    pub ingress_max_file_size: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -28,7 +32,6 @@ pub struct UpsertMasterBindingInput {
     pub access_key: String,
     pub secret_key: String,
     pub namespace: String,
-    pub ingress_policy_id: i64,
     pub is_enabled: bool,
 }
 
@@ -43,7 +46,7 @@ pub async fn upsert_from_enrollment<C: ConnectionTrait>(
     db: &C,
     input: UpsertMasterBindingInput,
 ) -> Result<(master_binding::Model, &'static str)> {
-    let normalized = normalize_upsert_input(db, input).await?;
+    let normalized = normalize_upsert_input(input)?;
     let now = Utc::now();
 
     match master_binding_repo::find_by_access_key(db, &normalized.access_key).await? {
@@ -53,7 +56,6 @@ pub async fn upsert_from_enrollment<C: ConnectionTrait>(
             active.master_url = Set(normalized.master_url);
             active.secret_key = Set(normalized.secret_key);
             active.namespace = Set(normalized.namespace);
-            active.ingress_policy_id = Set(normalized.ingress_policy_id);
             active.is_enabled = Set(normalized.is_enabled);
             active.updated_at = Set(now);
             let updated = master_binding_repo::update(db, active).await?;
@@ -68,7 +70,6 @@ pub async fn upsert_from_enrollment<C: ConnectionTrait>(
                     access_key: Set(normalized.access_key),
                     secret_key: Set(normalized.secret_key),
                     namespace: Set(normalized.namespace),
-                    ingress_policy_id: Set(normalized.ingress_policy_id),
                     is_enabled: Set(normalized.is_enabled),
                     created_at: Set(now),
                     updated_at: Set(now),
@@ -86,20 +87,7 @@ pub async fn authorize_internal_request<S: FollowerRuntimeState>(
     req: &actix_web::HttpRequest,
 ) -> Result<AuthorizedMasterBinding> {
     let binding = authorize_binding_request(state, req, false).await?;
-    let ingress_policy = state
-        .policy_snapshot()
-        .get_policy_or_err(binding.ingress_policy_id)?;
-    if ingress_policy.driver_type == crate::types::DriverType::Remote {
-        return Err(precondition_failed_with_subcode(
-            "master_binding.remote_ingress_unsupported",
-            "master binding ingress policy cannot use remote driver",
-        ));
-    }
-
-    Ok(AuthorizedMasterBinding {
-        binding,
-        ingress_policy,
-    })
+    resolve_authorized_ingress(state, binding).await
 }
 
 pub async fn authorize_binding_sync_request<S: FollowerRuntimeState>(
@@ -120,20 +108,7 @@ pub async fn authorize_presigned_put_request<S: FollowerRuntimeState>(
     }
 
     let binding = authorize_presigned_binding_request(state, req).await?;
-    let ingress_policy = state
-        .policy_snapshot()
-        .get_policy_or_err(binding.ingress_policy_id)?;
-    if ingress_policy.driver_type == crate::types::DriverType::Remote {
-        return Err(precondition_failed_with_subcode(
-            "master_binding.remote_ingress_unsupported",
-            "master binding ingress policy cannot use remote driver",
-        ));
-    }
-
-    Ok(AuthorizedMasterBinding {
-        binding,
-        ingress_policy,
-    })
+    resolve_authorized_ingress(state, binding).await
 }
 
 pub async fn authorize_presigned_get_request<S: FollowerRuntimeState>(
@@ -147,20 +122,7 @@ pub async fn authorize_presigned_get_request<S: FollowerRuntimeState>(
     }
 
     let binding = authorize_presigned_binding_request(state, req).await?;
-    let ingress_policy = state
-        .policy_snapshot()
-        .get_policy_or_err(binding.ingress_policy_id)?;
-    if ingress_policy.driver_type == crate::types::DriverType::Remote {
-        return Err(precondition_failed_with_subcode(
-            "master_binding.remote_ingress_unsupported",
-            "master binding ingress policy cannot use remote driver",
-        ));
-    }
-
-    Ok(AuthorizedMasterBinding {
-        binding,
-        ingress_policy,
-    })
+    resolve_authorized_ingress(state, binding).await
 }
 
 pub async fn sync_from_primary<S: FollowerRuntimeState>(
@@ -324,34 +286,38 @@ pub async fn assert_follower_ready<S: FollowerRuntimeState>(state: &S) -> Result
         ));
     }
 
-    for binding in enabled_bindings {
-        let policy = state
-            .policy_snapshot()
-            .get_policy_or_err(binding.ingress_policy_id)?;
-        if policy.driver_type == crate::types::DriverType::Remote {
-            return Err(AsterError::storage_driver_error(format!(
-                "master binding #{} ingress policy cannot use remote driver",
-                binding.id
-            )));
-        }
-        let _ = state.driver_registry().get_driver(&policy)?;
+    if enabled_bindings.len() != 1 {
+        return Err(precondition_failed_with_subcode(
+            "managed_ingress.single_primary_required",
+            "managed ingress profiles require exactly one active master binding",
+        ));
     }
 
+    let _ = managed_ingress_profile_service::resolve_effective_target(state, &enabled_bindings[0])
+        .await?;
     Ok(())
 }
 
-async fn normalize_upsert_input<C: ConnectionTrait>(
-    db: &C,
-    input: UpsertMasterBindingInput,
-) -> Result<UpsertMasterBindingInput> {
-    validate_ingress_policy(db, input.ingress_policy_id).await?;
+async fn resolve_authorized_ingress<S: FollowerRuntimeState>(
+    state: &S,
+    binding: master_binding::Model,
+) -> Result<AuthorizedMasterBinding> {
+    let target = managed_ingress_profile_service::resolve_effective_target(state, &binding).await?;
+
+    Ok(AuthorizedMasterBinding {
+        binding,
+        ingress_driver: target.driver,
+        ingress_max_file_size: target.max_file_size,
+    })
+}
+
+fn normalize_upsert_input(input: UpsertMasterBindingInput) -> Result<UpsertMasterBindingInput> {
     Ok(UpsertMasterBindingInput {
         name: normalize_non_blank("name", &input.name)?,
         master_url: normalize_remote_base_url(&input.master_url)?,
         access_key: normalize_non_blank("access_key", &input.access_key)?,
         secret_key: normalize_non_blank("secret_key", &input.secret_key)?,
         namespace: normalize_namespace(&input.namespace)?,
-        ingress_policy_id: input.ingress_policy_id,
         is_enabled: input.is_enabled,
     })
 }
@@ -362,16 +328,6 @@ fn normalize_sync_input(input: SyncMasterBindingInput) -> Result<SyncMasterBindi
         namespace: normalize_namespace(&input.namespace)?,
         is_enabled: input.is_enabled,
     })
-}
-
-async fn validate_ingress_policy<C: ConnectionTrait>(db: &C, ingress_policy_id: i64) -> Result<()> {
-    let policy = policy_repo::find_by_id(db, ingress_policy_id).await?;
-    if policy.driver_type == crate::types::DriverType::Remote {
-        return Err(AsterError::validation_error(
-            "master binding ingress policy cannot use remote driver",
-        ));
-    }
-    Ok(())
 }
 
 fn verify_signature(

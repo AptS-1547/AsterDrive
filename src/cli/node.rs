@@ -24,8 +24,6 @@ pub struct NodeEnrollArgs {
     pub token: String,
     #[arg(long, env = "ASTER_CLI_DATABASE_URL")]
     pub database_url: Option<String>,
-    #[arg(long, env = "ASTER_CLI_INGRESS_POLICY_ID")]
-    pub ingress_policy_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -36,8 +34,6 @@ pub struct NodeEnrollReport {
     master_url: String,
     namespace: String,
     access_key: String,
-    ingress_policy_id: i64,
-    ingress_policy_name: String,
     config_path: String,
     server_host: String,
     server_port: u16,
@@ -77,12 +73,10 @@ async fn execute_enroll(args: &NodeEnrollArgs) -> Result<NodeEnrollReport> {
         crate::services::node_enrollment_service::NodeEnrollmentInput {
             master_url: args.master_url.clone(),
             token: args.token.clone(),
-            ingress_policy_id: args.ingress_policy_id,
         },
     )
     .await?;
     let binding = result.binding;
-    let ingress_policy = result.ingress_policy;
     let binding_id = binding.id;
 
     Ok(NodeEnrollReport {
@@ -92,8 +86,6 @@ async fn execute_enroll(args: &NodeEnrollArgs) -> Result<NodeEnrollReport> {
         master_url: binding.master_url.clone(),
         namespace: binding.namespace.clone(),
         access_key: binding.access_key.clone(),
-        ingress_policy_id: ingress_policy.id,
-        ingress_policy_name: ingress_policy.name,
         config_path,
         server_host: config.server.host.clone(),
         server_port: config.server.port,
@@ -151,14 +143,6 @@ fn render_node_human(report: &NodeEnrollReport) -> String {
         format!("{}{}", human_key("Master URL", &palette), report.master_url),
         format!("{}{}", human_key("Namespace", &palette), report.namespace),
         format!("{}{}", human_key("Access Key", &palette), report.access_key),
-        format!(
-            "{}{} (#{} )",
-            human_key("Ingress", &palette),
-            report.ingress_policy_name,
-            report.ingress_policy_id
-        )
-        .replace("#", "#")
-        .replace(" )", ")"),
         format!("{}{}", human_key("Config", &palette), report.config_path),
         format!(
             "{}{}:{}",
@@ -218,8 +202,6 @@ mod tests {
             master_url: "http://localhost:3000".to_string(),
             namespace: "team-alpha".to_string(),
             access_key: "ak_test".to_string(),
-            ingress_policy_id: 3,
-            ingress_policy_name: "Local Default".to_string(),
             config_path: "data/config.toml".to_string(),
             server_host: "127.0.0.1".to_string(),
             server_port: 3000,

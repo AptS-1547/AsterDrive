@@ -129,8 +129,22 @@ const errorSubcodeKeys: Partial<Record<string, string>> = {
 	"avatar.render_failed": "errors:avatar_render_failed",
 	"avatar.output_invalid": "errors:avatar_output_invalid",
 	"master_binding.disabled": "errors:master_binding_disabled",
-	"master_binding.remote_ingress_unsupported":
-		"errors:master_binding_remote_ingress_unsupported",
+	"managed_ingress.binding_mismatch": "errors:managed_ingress_binding_mismatch",
+	"managed_ingress.default_delete_requires_replacement":
+		"errors:managed_ingress_default_delete_requires_replacement",
+	"managed_ingress.default_error": "errors:managed_ingress_default_error",
+	"managed_ingress.default_missing": "errors:managed_ingress_default_missing",
+	"managed_ingress.default_not_applied":
+		"errors:managed_ingress_default_not_applied",
+	"managed_ingress.required": "errors:managed_ingress_required",
+	"managed_ingress.default_update_requires_replacement":
+		"errors:managed_ingress_default_update_requires_replacement",
+	"managed_ingress.driver_unsupported":
+		"errors:managed_ingress_driver_unsupported",
+	"managed_ingress.local_path_invalid":
+		"errors:managed_ingress_local_path_invalid",
+	"managed_ingress.single_primary_required":
+		"errors:managed_ingress_single_primary_required",
 	"remote_node.disabled": "errors:remote_node_disabled",
 	"team.member_exists": "errors:team_member_exists",
 	"webdav.username_exists": "errors:webdav_username_exists",
@@ -138,16 +152,21 @@ const errorSubcodeKeys: Partial<Record<string, string>> = {
 	"remote_node.unique_conflict": "errors:remote_node_unique_conflict",
 };
 
-export function handleApiError(error: unknown) {
+export function getApiErrorMessage(error: unknown) {
 	if (error instanceof ApiError) {
 		const key =
 			(error.subcode ? errorSubcodeKeys[error.subcode] : undefined) ??
 			errorMessageKeys[error.code];
-		const message = key ? i18n.t(key) : error.message;
-		toast.error(message);
-	} else if (error instanceof Error) {
-		toast.error(error.message);
-	} else {
-		toast.error(i18n.t("errors:unexpected_error"));
+		return key ? i18n.t(key) : error.message;
 	}
+
+	if (error instanceof Error) {
+		return error.message;
+	}
+
+	return i18n.t("errors:unexpected_error");
+}
+
+export function handleApiError(error: unknown) {
+	toast.error(getApiErrorMessage(error));
 }

@@ -3,8 +3,7 @@
 use crate::entities::master_binding::{self, Entity as MasterBinding};
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<master_binding::Model> {
@@ -47,15 +46,4 @@ pub async fn update<C: ConnectionTrait>(
     model: master_binding::ActiveModel,
 ) -> Result<master_binding::Model> {
     model.update(db).await.map_err(AsterError::from)
-}
-
-pub async fn count_by_ingress_policy_id<C: ConnectionTrait>(
-    db: &C,
-    ingress_policy_id: i64,
-) -> Result<u64> {
-    MasterBinding::find()
-        .filter(master_binding::Column::IngressPolicyId.eq(ingress_policy_id))
-        .count(db)
-        .await
-        .map_err(AsterError::from)
 }

@@ -58,6 +58,8 @@ mod m20260420_000001_create_auth_sessions;
 mod m20260420_000002_create_remote_nodes;
 mod m20260424_000001_normalize_thumbnail_metadata;
 mod m20260424_000002_normalize_beta_compat_data;
+mod m20260425_000001_create_managed_ingress_profiles;
+mod m20260427_000001_drop_master_binding_ingress_policy_id;
 mod search_acceleration;
 mod time;
 
@@ -121,6 +123,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260420_000002_create_remote_nodes::Migration),
             Box::new(m20260424_000001_normalize_thumbnail_metadata::Migration),
             Box::new(m20260424_000002_normalize_beta_compat_data::Migration),
+            Box::new(m20260425_000001_create_managed_ingress_profiles::Migration),
+            Box::new(m20260427_000001_drop_master_binding_ingress_policy_id::Migration),
         ]
     }
 }

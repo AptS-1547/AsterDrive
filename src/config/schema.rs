@@ -34,6 +34,10 @@ pub struct ServerConfig {
     pub temp_dir: String,
     #[serde(default = "ServerConfig::default_upload_temp_dir")]
     pub upload_temp_dir: String,
+    /// follower 受 primary 托管的 local ingress profile 根目录。
+    /// primary 下发的本地落点只能在这个根目录下使用相对路径。
+    #[serde(default = "ServerConfig::default_managed_ingress_local_root")]
+    pub managed_ingress_local_root: String,
     /// 节点静态启动角色。改动后需要重启进程。
     #[serde(default)]
     pub start_mode: crate::config::node_mode::NodeRuntimeMode,
@@ -47,6 +51,7 @@ impl Default for ServerConfig {
             workers: 0,
             temp_dir: Self::default_temp_dir(),
             upload_temp_dir: Self::default_upload_temp_dir(),
+            managed_ingress_local_root: Self::default_managed_ingress_local_root(),
             start_mode: crate::config::node_mode::NodeRuntimeMode::Primary,
         }
     }
@@ -64,6 +69,9 @@ impl ServerConfig {
     }
     fn default_upload_temp_dir() -> String {
         crate::utils::paths::DEFAULT_CONFIG_UPLOAD_TEMP_DIR.to_string()
+    }
+    fn default_managed_ingress_local_root() -> String {
+        "managed-ingress".to_string()
     }
 }
 

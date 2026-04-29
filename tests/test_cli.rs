@@ -148,10 +148,6 @@ async fn seed_migration_fixture(database_url: &str) -> i64 {
 }
 
 async fn seed_remote_node_fixture(db: &DatabaseConnection) {
-    let default_policy = policy_repo::find_default(db)
-        .await
-        .unwrap()
-        .expect("default policy should exist");
     let now = Utc::now();
 
     let remote_node = managed_follower_repo::create(
@@ -225,7 +221,6 @@ async fn seed_remote_node_fixture(db: &DatabaseConnection) {
             access_key: Set("migrate-master-ak".to_string()),
             secret_key: Set("migrate-master-sk".to_string()),
             namespace: Set(MIGRATION_REMOTE_NAMESPACE.to_string()),
-            ingress_policy_id: Set(default_policy.id),
             is_enabled: Set(true),
             created_at: Set(now),
             updated_at: Set(now),

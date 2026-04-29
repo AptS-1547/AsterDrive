@@ -4,9 +4,7 @@ use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::{
-    managed_follower_repo, master_binding_repo, policy_group_repo, policy_repo,
-};
+use crate::db::repository::{managed_follower_repo, policy_group_repo, policy_repo};
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::{PrimaryAppState, PrimaryRuntimeState};
@@ -169,14 +167,6 @@ pub async fn delete(state: &PrimaryAppState, id: i64) -> Result<()> {
     if group_ref_count > 0 {
         return Err(AsterError::validation_error(format!(
             "cannot delete policy: {group_ref_count} policy group item(s) still reference it"
-        )));
-    }
-
-    let master_binding_refs =
-        master_binding_repo::count_by_ingress_policy_id(&state.db, id).await?;
-    if master_binding_refs > 0 {
-        return Err(AsterError::validation_error(format!(
-            "cannot delete policy: {master_binding_refs} master binding(s) still reference it"
         )));
     }
 

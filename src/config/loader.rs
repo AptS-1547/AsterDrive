@@ -107,6 +107,8 @@ fn resolve_loaded_paths(base_dir: &Path, config_path: &Path, cfg: &mut Config) -
     cfg.server.temp_dir = resolve_config_relative_path(base_dir, config_dir, &cfg.server.temp_dir)?;
     cfg.server.upload_temp_dir =
         resolve_config_relative_path(base_dir, config_dir, &cfg.server.upload_temp_dir)?;
+    cfg.server.managed_ingress_local_root =
+        resolve_config_relative_path(base_dir, config_dir, &cfg.server.managed_ingress_local_root)?;
     cfg.database.url = resolve_config_relative_sqlite_url(base_dir, config_dir, &cfg.database.url)?;
     Ok(())
 }
@@ -148,12 +150,17 @@ mod tests {
         assert_eq!(cfg.server.start_mode, NodeRuntimeMode::Primary);
         assert_eq!(cfg.server.temp_dir, DEFAULT_TEMP_DIR);
         assert_eq!(cfg.server.upload_temp_dir, DEFAULT_UPLOAD_TEMP_DIR);
+        assert_eq!(
+            cfg.server.managed_ingress_local_root,
+            "data/managed-ingress"
+        );
         assert!(dir.join(DEFAULT_CONFIG_PATH).exists());
         assert!(generated.contains("[server]"));
         assert!(generated.contains(r#"start_mode = "primary""#));
         assert!(generated.contains(r#"url = "sqlite://asterdrive.db?mode=rwc""#));
         assert!(generated.contains(r#"temp_dir = ".tmp""#));
         assert!(generated.contains(r#"upload_temp_dir = ".uploads""#));
+        assert!(generated.contains(r#"managed_ingress_local_root = "managed-ingress""#));
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -217,6 +224,7 @@ url = "sqlite://data/asterdrive.db?mode=rwc"
 [server]
 temp_dir = "data/.tmp"
 upload_temp_dir = "data/.uploads"
+managed_ingress_local_root = "data/managed-ingress"
 "#,
         );
 
@@ -225,6 +233,10 @@ upload_temp_dir = "data/.uploads"
         assert_eq!(cfg.database.url, DEFAULT_SQLITE_DATABASE_URL);
         assert_eq!(cfg.server.temp_dir, DEFAULT_TEMP_DIR);
         assert_eq!(cfg.server.upload_temp_dir, DEFAULT_UPLOAD_TEMP_DIR);
+        assert_eq!(
+            cfg.server.managed_ingress_local_root,
+            "data/managed-ingress"
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }

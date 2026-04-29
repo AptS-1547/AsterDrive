@@ -240,6 +240,10 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::admin::remote_nodes::test_remote_node,
         crate::api::routes::admin::remote_nodes::test_remote_node_params,
         crate::api::routes::admin::remote_nodes::create_remote_node_enrollment_token,
+        crate::api::routes::admin::remote_nodes::list_remote_node_ingress_profiles,
+        crate::api::routes::admin::remote_nodes::create_remote_node_ingress_profile,
+        crate::api::routes::admin::remote_nodes::update_remote_node_ingress_profile,
+        crate::api::routes::admin::remote_nodes::delete_remote_node_ingress_profile,
 
         // admin::users：后台用户列表、资料维护、会话回收和强制删除。
         crate::api::routes::admin::users::list_users,
@@ -443,6 +447,9 @@ use utoipa::{Modify, OpenApi};
             crate::services::policy_service::StoragePolicyGroupItemInput,
             crate::services::policy_service::PolicyGroupUserMigrationResult,
             crate::services::managed_follower_service::RemoteNodeInfo,
+            crate::storage::remote_protocol::RemoteIngressProfileInfo,
+            crate::storage::remote_protocol::RemoteCreateIngressProfileRequest,
+            crate::storage::remote_protocol::RemoteUpdateIngressProfileRequest,
             crate::storage::remote_protocol::RemoteStorageCapabilities,
             crate::types::DriverType,
             crate::types::RemoteDownloadStrategy,

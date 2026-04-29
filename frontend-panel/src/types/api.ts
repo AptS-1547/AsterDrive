@@ -94,12 +94,18 @@ export type CreateRemoteNodeRequest =
 export type DriverType = components["schemas"]["DriverType"];
 export type MediaProcessorKind = components["schemas"]["MediaProcessorKind"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
+export type RemoteCreateIngressProfileRequest =
+	components["schemas"]["RemoteCreateIngressProfileRequest"];
 export type RemoteEnrollmentCommandInfo =
 	components["schemas"]["RemoteEnrollmentCommandInfo"];
+export type RemoteIngressProfileInfo =
+	components["schemas"]["RemoteIngressProfileInfo"];
 export type RemoteNodeInfo = components["schemas"]["RemoteNodeInfo"];
 export type RemoteNodePage = components["schemas"]["OffsetPage_RemoteNodeInfo"];
 export type RemoteStorageCapabilities =
 	components["schemas"]["RemoteStorageCapabilities"];
+export type RemoteUpdateIngressProfileRequest =
+	components["schemas"]["RemoteUpdateIngressProfileRequest"];
 export type RemoteDownloadStrategy =
 	components["schemas"]["RemoteDownloadStrategy"];
 export type RemoteUploadStrategy =

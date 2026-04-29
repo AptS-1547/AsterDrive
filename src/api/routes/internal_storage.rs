@@ -4,12 +4,13 @@ use crate::api::middleware::internal_storage_cors::PresignedInternalStorageCors;
 use crate::api::response::ApiResponse;
 use crate::errors::{AsterError, Result};
 use crate::runtime::FollowerAppState;
-use crate::services::master_binding_service;
+use crate::services::{managed_ingress_profile_service, master_binding_service};
 use crate::storage::driver::{BlobMetadata, StorageDriver};
 use crate::storage::remote_protocol::{
     INTERNAL_AUTH_SIGNATURE_HEADER, PRESIGNED_AUTH_ACCESS_KEY_QUERY, RemoteBindingSyncRequest,
-    RemoteStorageCapabilities, RemoteStorageComposeRequest, RemoteStorageComposeResponse,
-    RemoteStorageListResponse, RemoteStorageObjectMetadata,
+    RemoteCreateIngressProfileRequest, RemoteStorageCapabilities, RemoteStorageComposeRequest,
+    RemoteStorageComposeResponse, RemoteStorageListResponse, RemoteStorageObjectMetadata,
+    RemoteUpdateIngressProfileRequest,
 };
 use actix_web::{HttpRequest, HttpResponse, dev::HttpServiceFactory, web};
 use futures::StreamExt;
@@ -23,6 +24,16 @@ pub fn routes() -> impl HttpServiceFactory {
         .wrap(PresignedInternalStorageCors)
         .route("/capabilities", web::get().to(get_capabilities))
         .route("/binding", web::put().to(sync_binding))
+        .route("/ingress-profiles", web::get().to(list_ingress_profiles))
+        .route("/ingress-profiles", web::post().to(create_ingress_profile))
+        .route(
+            "/ingress-profiles/{profile_key}",
+            web::patch().to(update_ingress_profile),
+        )
+        .route(
+            "/ingress-profiles/{profile_key}",
+            web::delete().to(delete_ingress_profile),
+        )
         .route("/compose", web::post().to(compose_objects))
         .route("/objects", web::get().to(list_objects))
         .route(
@@ -110,10 +121,10 @@ async fn list_objects(
     query: web::Query<ObjectQuery>,
 ) -> Result<HttpResponse> {
     let ctx = master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
-    let driver = state.driver_registry.get_driver(&ctx.ingress_policy)?;
-    let list_driver = driver
+    let list_driver = ctx
+        .ingress_driver
         .as_list()
-        .ok_or_else(|| AsterError::storage_driver_error("ingress policy does not support list"))?;
+        .ok_or_else(|| AsterError::storage_driver_error("ingress target does not support list"))?;
 
     let prefix = query
         .prefix
@@ -160,11 +171,10 @@ async fn put_object(
             "content-length must be non-negative",
         ));
     }
-    validate_ingress_object_size(content_length, ctx.ingress_policy.max_file_size, "object")?;
+    validate_ingress_object_size(content_length, ctx.ingress_max_file_size, "object")?;
 
-    let driver = state.driver_registry.get_driver(&ctx.ingress_policy)?;
-    let stream_driver = driver.as_stream_upload().ok_or_else(|| {
-        AsterError::storage_driver_error("ingress policy does not support stream upload")
+    let stream_driver = ctx.ingress_driver.as_stream_upload().ok_or_else(|| {
+        AsterError::storage_driver_error("ingress target does not support stream upload")
     })?;
     let (writer, reader) = tokio::io::duplex(RELAY_UPLOAD_BUFFER_SIZE);
     let (upload_result, relay_result) = tokio::task::LocalSet::new()
@@ -224,13 +234,13 @@ async fn compose_objects(
     }
     validate_ingress_object_size(
         body.expected_size,
-        ctx.ingress_policy.max_file_size,
+        ctx.ingress_max_file_size,
         "composed object",
     )?;
 
-    let driver = state.driver_registry.get_driver(&ctx.ingress_policy)?;
+    let driver = ctx.ingress_driver.clone();
     let stream_driver = driver.as_stream_upload().ok_or_else(|| {
-        AsterError::storage_driver_error("ingress policy does not support stream upload")
+        AsterError::storage_driver_error("ingress target does not support stream upload")
     })?;
     let target_storage_path =
         master_binding_service::provider_storage_path(&ctx.binding, &body.target_key);
@@ -343,12 +353,19 @@ async fn get_object(
     };
     let storage_path =
         master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner());
-    let driver = state.driver_registry.get_driver(&ctx.ingress_policy)?;
-    let metadata = metadata_or_not_found(driver.as_ref(), &storage_path).await?;
+    let metadata = metadata_or_not_found(ctx.ingress_driver.as_ref(), &storage_path).await?;
     let stream = match (query.offset, query.length) {
-        (Some(offset), length) => driver.get_range(&storage_path, offset, length).await?,
-        (None, Some(length)) => driver.get_range(&storage_path, 0, Some(length)).await?,
-        (None, None) => driver.get_stream(&storage_path).await?,
+        (Some(offset), length) => {
+            ctx.ingress_driver
+                .get_range(&storage_path, offset, length)
+                .await?
+        }
+        (None, Some(length)) => {
+            ctx.ingress_driver
+                .get_range(&storage_path, 0, Some(length))
+                .await?
+        }
+        (None, None) => ctx.ingress_driver.get_stream(&storage_path).await?,
     };
     let body = ReaderStream::with_capacity(stream, 64 * 1024);
 
@@ -386,8 +403,7 @@ async fn head_object(
     let ctx = master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
     let storage_path =
         master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner());
-    let driver = state.driver_registry.get_driver(&ctx.ingress_policy)?;
-    let metadata = metadata_or_not_found(driver.as_ref(), &storage_path).await?;
+    let metadata = metadata_or_not_found(ctx.ingress_driver.as_ref(), &storage_path).await?;
 
     let mut response = HttpResponse::Ok();
     response.no_chunking(metadata.size);
@@ -405,8 +421,7 @@ async fn get_object_metadata(
     let ctx = master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
     let storage_path =
         master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner());
-    let driver = state.driver_registry.get_driver(&ctx.ingress_policy)?;
-    let metadata = metadata_or_not_found(driver.as_ref(), &storage_path).await?;
+    let metadata = metadata_or_not_found(ctx.ingress_driver.as_ref(), &storage_path).await?;
 
     Ok(
         HttpResponse::Ok().json(ApiResponse::ok(RemoteStorageObjectMetadata {
@@ -424,7 +439,67 @@ async fn delete_object(
     let ctx = master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
     let storage_path =
         master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner());
-    let driver = state.driver_registry.get_driver(&ctx.ingress_policy)?;
-    driver.delete(&storage_path).await?;
+    ctx.ingress_driver.delete(&storage_path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+async fn list_ingress_profiles(
+    state: web::Data<FollowerAppState>,
+    req: HttpRequest,
+) -> Result<HttpResponse> {
+    let binding =
+        master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
+    let profiles =
+        managed_ingress_profile_service::list(state.get_ref(), &binding.access_key).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(profiles)))
+}
+
+async fn create_ingress_profile(
+    state: web::Data<FollowerAppState>,
+    req: HttpRequest,
+    body: web::Json<RemoteCreateIngressProfileRequest>,
+) -> Result<HttpResponse> {
+    let binding =
+        master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
+    let profile = managed_ingress_profile_service::create(
+        state.get_ref(),
+        &binding.access_key,
+        body.into_inner(),
+    )
+    .await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(profile)))
+}
+
+async fn update_ingress_profile(
+    state: web::Data<FollowerAppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+    body: web::Json<RemoteUpdateIngressProfileRequest>,
+) -> Result<HttpResponse> {
+    let binding =
+        master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
+    let profile = managed_ingress_profile_service::update(
+        state.get_ref(),
+        &binding.access_key,
+        &path.into_inner(),
+        body.into_inner(),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
+}
+
+async fn delete_ingress_profile(
+    state: web::Data<FollowerAppState>,
+    req: HttpRequest,
+    path: web::Path<String>,
+) -> Result<HttpResponse> {
+    let binding =
+        master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
+    managed_ingress_profile_service::delete(
+        state.get_ref(),
+        &binding.access_key,
+        &path.into_inner(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

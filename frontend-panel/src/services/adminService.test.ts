@@ -356,6 +356,54 @@ describe("adminService", () => {
 		);
 	});
 
+	it("uses the expected managed ingress profile endpoints", () => {
+		adminRemoteNodeService.listIngressProfiles(6);
+		adminRemoteNodeService.createIngressProfile(6, {
+			name: "Ingress A",
+			driver_type: "local" as never,
+			endpoint: "",
+			bucket: "",
+			access_key: "",
+			secret_key: "",
+			base_path: "tenant-a/incoming",
+			max_file_size: 2048,
+			is_default: true,
+		});
+		adminRemoteNodeService.updateIngressProfile(6, "igp_demo", {
+			name: "Ingress B",
+			is_default: false,
+		});
+		adminRemoteNodeService.deleteIngressProfile(6, "igp_demo");
+
+		expect(mockState.get).toHaveBeenCalledWith(
+			"/admin/remote-nodes/6/ingress-profiles",
+		);
+		expect(mockState.post).toHaveBeenCalledWith(
+			"/admin/remote-nodes/6/ingress-profiles",
+			{
+				name: "Ingress A",
+				driver_type: "local",
+				endpoint: "",
+				bucket: "",
+				access_key: "",
+				secret_key: "",
+				base_path: "tenant-a/incoming",
+				max_file_size: 2048,
+				is_default: true,
+			},
+		);
+		expect(mockState.patch).toHaveBeenCalledWith(
+			"/admin/remote-nodes/6/ingress-profiles/igp_demo",
+			{
+				name: "Ingress B",
+				is_default: false,
+			},
+		);
+		expect(mockState.delete).toHaveBeenCalledWith(
+			"/admin/remote-nodes/6/ingress-profiles/igp_demo",
+		);
+	});
+
 	it("omits null policy_group_id values from update user payloads", () => {
 		adminUserService.update(5, {
 			role: "admin" as never,

@@ -148,6 +148,7 @@ fn infer_storage_error_kind(message: &str) -> StorageErrorKind {
             "presigned put not supported",
             "stream upload not supported",
             "ingress policy does not support",
+            "ingress target does not support",
         ],
     ) {
         return StorageErrorKind::Unsupported;
