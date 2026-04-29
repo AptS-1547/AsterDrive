@@ -57,6 +57,12 @@ struct ReservedUse {
     ttl_secs: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct RequestOrigin<'a> {
+    pub scheme: &'a str,
+    pub host: &'a str,
+}
+
 enum ResolvedPreviewTarget {
     File {
         payload: PreviewTokenPayload,
@@ -68,14 +74,15 @@ enum ResolvedPreviewTarget {
     },
 }
 
-pub(crate) async fn create_token_for_file_in_scope(
+pub(crate) async fn create_token_for_file_in_scope_for_origin(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
+    request_origin: RequestOrigin<'_>,
 ) -> Result<PreviewLinkInfo> {
     let file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
     let payload = build_payload(PreviewSubject::File { file_id: file.id });
-    build_link_for_file(state, &file, &payload)
+    build_link_for_file(state, &file, &payload, Some(request_origin))
 }
 
 pub async fn create_token_for_shared_file(
@@ -86,7 +93,19 @@ pub async fn create_token_for_shared_file(
     let payload = build_payload(PreviewSubject::ShareFile {
         share_token: share.token.clone(),
     });
-    build_link_for_shared_file(state, &share, &file, &payload)
+    build_link_for_shared_file(state, &share, &file, &payload, None)
+}
+
+pub async fn create_token_for_shared_file_for_origin(
+    state: &PrimaryAppState,
+    share_token: &str,
+    request_origin: RequestOrigin<'_>,
+) -> Result<PreviewLinkInfo> {
+    let (share, file) = share_service::load_preview_shared_file(state, share_token).await?;
+    let payload = build_payload(PreviewSubject::ShareFile {
+        share_token: share.token.clone(),
+    });
+    build_link_for_shared_file(state, &share, &file, &payload, Some(request_origin))
 }
 
 pub async fn create_token_for_shared_folder_file(
@@ -100,7 +119,22 @@ pub async fn create_token_for_shared_folder_file(
         share_token: share.token.clone(),
         file_id: file.id,
     });
-    build_link_for_shared_file(state, &share, &file, &payload)
+    build_link_for_shared_file(state, &share, &file, &payload, None)
+}
+
+pub async fn create_token_for_shared_folder_file_for_origin(
+    state: &PrimaryAppState,
+    share_token: &str,
+    file_id: i64,
+    request_origin: RequestOrigin<'_>,
+) -> Result<PreviewLinkInfo> {
+    let (share, file) =
+        share_service::load_preview_shared_folder_file(state, share_token, file_id).await?;
+    let payload = build_payload(PreviewSubject::ShareFolderFile {
+        share_token: share.token.clone(),
+        file_id: file.id,
+    });
+    build_link_for_shared_file(state, &share, &file, &payload, Some(request_origin))
 }
 
 pub async fn download_file(
@@ -161,10 +195,11 @@ fn build_link_for_file(
     state: &PrimaryAppState,
     file: &file::Model,
     payload: &PreviewTokenPayload,
+    request_origin: Option<RequestOrigin<'_>>,
 ) -> Result<PreviewLinkInfo> {
     let token = encode_file_token(file, payload, &state.config.auth.jwt_secret)?;
     Ok(PreviewLinkInfo {
-        path: preview_path(&state.runtime_config, &token, &file.name),
+        path: preview_path(&state.runtime_config, &token, &file.name, request_origin),
         expires_at: decode_expiry(payload.exp)?,
         max_uses: payload.max_uses,
     })
@@ -175,10 +210,11 @@ fn build_link_for_shared_file(
     share: &share::Model,
     file: &file::Model,
     payload: &PreviewTokenPayload,
+    request_origin: Option<RequestOrigin<'_>>,
 ) -> Result<PreviewLinkInfo> {
     let token = encode_shared_token(share, file, payload, &state.config.auth.jwt_secret)?;
     Ok(PreviewLinkInfo {
-        path: preview_path(&state.runtime_config, &token, &file.name),
+        path: preview_path(&state.runtime_config, &token, &file.name, request_origin),
         expires_at: decode_expiry(payload.exp)?,
         max_uses: payload.max_uses,
     })
@@ -188,9 +224,14 @@ fn preview_path(
     runtime_config: &crate::config::RuntimeConfig,
     token: &str,
     file_name: &str,
+    request_origin: Option<RequestOrigin<'_>>,
 ) -> String {
     let path = format!("/pv/{token}/{}", urlencoding::encode(file_name));
-    site_url::public_app_url_or_path(runtime_config, &path)
+    request_origin
+        .and_then(|origin| {
+            site_url::public_app_url_for_request(runtime_config, &path, origin.scheme, origin.host)
+        })
+        .unwrap_or_else(|| site_url::public_app_url_or_path(runtime_config, &path))
 }
 
 fn encode_file_token(
@@ -408,7 +449,7 @@ fn preview_cache_key(token: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_payload, preview_path, split_token};
+    use super::{RequestOrigin, decode_payload, preview_path, split_token};
     use crate::config::RuntimeConfig;
     use crate::entities::system_config;
     use chrono::Utc;
@@ -434,7 +475,7 @@ mod tests {
     fn preview_path_encodes_file_name() {
         let runtime_config = RuntimeConfig::new();
         assert_eq!(
-            preview_path(&runtime_config, "abc", "deck final.pptx"),
+            preview_path(&runtime_config, "abc", "deck final.pptx", None),
             "/pv/abc/deck%20final.pptx"
         );
     }
@@ -448,7 +489,41 @@ mod tests {
         ));
 
         assert_eq!(
-            preview_path(&runtime_config, "abc", "deck final.pptx"),
+            preview_path(&runtime_config, "abc", "deck final.pptx", None),
+            "https://drive.example.com/pv/abc/deck%20final.pptx"
+        );
+    }
+
+    #[test]
+    fn preview_path_uses_matching_request_origin_from_public_site_url_list() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(
+            crate::config::site_url::PUBLIC_SITE_URL_KEY,
+            "https://drive.example.com,https://panel.example.com",
+        ));
+
+        assert_eq!(
+            preview_path(
+                &runtime_config,
+                "abc",
+                "deck final.pptx",
+                Some(RequestOrigin {
+                    scheme: "https",
+                    host: "panel.example.com",
+                }),
+            ),
+            "https://panel.example.com/pv/abc/deck%20final.pptx"
+        );
+        assert_eq!(
+            preview_path(
+                &runtime_config,
+                "abc",
+                "deck final.pptx",
+                Some(RequestOrigin {
+                    scheme: "https",
+                    host: "evil.example.com",
+                }),
+            ),
             "https://drive.example.com/pv/abc/deck%20final.pptx"
         );
     }

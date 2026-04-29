@@ -112,6 +112,29 @@ async fn test_webdav_settings_returns_public_endpoint_when_configured() {
 }
 
 #[actix_web::test]
+async fn test_webdav_settings_uses_matching_public_site_url_from_host() {
+    let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
+        "http://drive.example.com\nhttp://panel.example.com",
+    ));
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/webdav-accounts/settings")
+        .insert_header(("Host", "panel.example.com"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+
+    assert_eq!(body["data"]["endpoint"], "http://panel.example.com/webdav/");
+}
+
+#[actix_web::test]
 async fn test_webdav_settings_falls_back_to_relative_endpoint_without_public_site_url() {
     let state = common::setup().await;
     let app = create_test_app!(state);

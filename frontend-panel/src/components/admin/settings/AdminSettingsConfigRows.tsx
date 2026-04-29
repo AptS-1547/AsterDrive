@@ -29,6 +29,7 @@ import {
 	UrlAssetPreview,
 } from "@/components/admin/settings/adminSettingsContentShared";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
 	Select,
@@ -40,6 +41,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { SystemConfig } from "@/types/api";
+
+const PUBLIC_SITE_URL_KEY = "public_site_url";
 
 function FieldMeta({ config }: { config: SystemConfig }) {
 	const {
@@ -94,6 +97,102 @@ function FieldMeta({ config }: { config: SystemConfig }) {
 					{t("mail_template_variable_link")}
 				</button>
 			) : null}
+		</div>
+	);
+}
+
+function splitPublicSiteUrlRows(value: string) {
+	if (!value) {
+		return [""];
+	}
+	return value.split(/[,\n\r]/);
+}
+
+function serializePublicSiteUrlRows(rows: string[]) {
+	return rows.join("\n");
+}
+
+function PublicSiteUrlOriginsControl({
+	config,
+	draftValue,
+	fullWidth,
+	hasError,
+}: {
+	config: SystemConfig;
+	draftValue: string;
+	fullWidth?: boolean;
+	hasError?: boolean;
+}) {
+	const { t, updateDraftValue } = useAdminSettingsCategoryContent();
+	const rows = splitPublicSiteUrlRows(draftValue);
+	const rowOccurrences = new Map<string, number>();
+	const rowItems = rows.map((row) => {
+		const occurrence = rowOccurrences.get(row) ?? 0;
+		rowOccurrences.set(row, occurrence + 1);
+		return {
+			key: `${row}-${occurrence}`,
+			value: row,
+		};
+	});
+
+	const updateRows = (nextRows: string[]) => {
+		updateDraftValue(config.key, serializePublicSiteUrlRows(nextRows));
+	};
+
+	return (
+		<div
+			className={cn("space-y-2", fullWidth ? "w-full max-w-3xl" : "max-w-3xl")}
+		>
+			{rowItems.map((item, index) => {
+				return (
+					<div key={item.key} className="flex items-center gap-2">
+						<Input
+							type="url"
+							inputMode="url"
+							className="min-w-0 flex-1"
+							value={item.value}
+							aria-label={`${t("public_site_url_origin_label")} ${index + 1}`}
+							aria-invalid={hasError ? true : undefined}
+							onChange={(event) => {
+								const nextRows = [...rows];
+								nextRows[index] = event.target.value;
+								updateRows(nextRows);
+							}}
+							placeholder="https://drive.example.com"
+						/>
+						<Button
+							type="button"
+							variant="outline"
+							size="icon"
+							aria-label={t("public_site_url_add_origin")}
+							title={t("public_site_url_add_origin")}
+							onClick={() => {
+								const nextRows = [...rows];
+								nextRows.splice(index + 1, 0, "");
+								updateRows(nextRows);
+							}}
+						>
+							<Icon name="Plus" className="h-4 w-4" />
+						</Button>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon"
+							aria-label={t("public_site_url_remove_origin")}
+							title={t("public_site_url_remove_origin")}
+							onClick={() => {
+								if (rows.length <= 1) {
+									updateRows([""]);
+									return;
+								}
+								updateRows(rows.filter((_, rowIndex) => rowIndex !== index));
+							}}
+						>
+							<Icon name="Trash" className="h-4 w-4" />
+						</Button>
+					</div>
+				);
+			})}
 		</div>
 	);
 }
@@ -273,6 +372,17 @@ function ConfigInputControl({
 				onTestVipsCliCommand={handleTestVipsCliCommand}
 				value={draftValue}
 				onChange={(nextValue) => updateDraftValue(config.key, nextValue)}
+			/>
+		);
+	}
+
+	if (config.key === PUBLIC_SITE_URL_KEY) {
+		return (
+			<PublicSiteUrlOriginsControl
+				config={config}
+				draftValue={draftValue}
+				fullWidth={fullWidth}
+				hasError={hasError}
 			/>
 		);
 	}

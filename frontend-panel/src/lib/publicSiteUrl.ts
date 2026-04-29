@@ -1,28 +1,49 @@
-let publicSiteUrl: string | null = null;
+let publicSiteUrls: string[] = [];
 
 export function normalizePublicSiteUrl(value: string | null | undefined) {
-	const normalized = value?.trim();
-	if (!normalized) return null;
+	return normalizePublicSiteUrls(value)[0] ?? null;
+}
 
-	try {
-		const resolved = new URL(normalized);
-		if (resolved.protocol === "http:" || resolved.protocol === "https:") {
-			return resolved.origin;
+export function normalizePublicSiteUrls(value: string | null | undefined) {
+	const normalized = value?.trim();
+	if (!normalized) return [];
+
+	const origins: string[] = [];
+	for (const part of normalized.split(/[,\n\r]/)) {
+		const candidate = part.trim();
+		if (!candidate) continue;
+		try {
+			const resolved = new URL(candidate);
+			if (
+				(resolved.protocol === "http:" || resolved.protocol === "https:") &&
+				!origins.includes(resolved.origin)
+			) {
+				origins.push(resolved.origin);
+			}
+		} catch {
+			return [];
 		}
-	} catch {
-		return null;
 	}
 
-	return null;
+	return origins;
 }
 
 export function setPublicSiteUrl(value: string | null | undefined) {
-	publicSiteUrl = normalizePublicSiteUrl(value);
-	return publicSiteUrl;
+	publicSiteUrls = normalizePublicSiteUrls(value);
+	return publicSiteUrls[0] ?? null;
 }
 
 export function getPublicSiteUrl() {
-	return publicSiteUrl;
+	return publicSiteUrls[0] ?? null;
+}
+
+export function getPublicSiteUrls() {
+	return publicSiteUrls;
+}
+
+export function publicSiteUrlMatches(value: string | null | undefined) {
+	const origin = normalizePublicSiteUrl(value);
+	return Boolean(origin && publicSiteUrls.includes(origin));
 }
 
 export function absoluteAppUrl(path: string) {

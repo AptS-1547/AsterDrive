@@ -126,6 +126,7 @@ pub struct WopiRequestSource<'a> {
     pub proof_old: Option<&'a str>,
     pub timestamp: Option<&'a str>,
     pub public_url: Option<String>,
+    pub public_origin: Option<String>,
 }
 
 pub struct WopiPutRelativeRequest<'a> {

@@ -15,7 +15,7 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{auth_service::Claims, webdav_account_service};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api, &rl.trusted_proxies);
@@ -42,16 +42,25 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     ),
     security(("bearer" = [])),
 )]
-pub async fn get_settings(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
+pub async fn get_settings(
+    state: web::Data<PrimaryAppState>,
+    req: HttpRequest,
+) -> Result<HttpResponse> {
     let endpoint_path = if state.config.webdav.prefix == "/" {
         "/".to_string()
     } else {
         format!("{}/", state.config.webdav.prefix.trim_end_matches('/'))
     };
+    let conn = req.connection_info();
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(WebdavSettingsInfo {
         prefix: state.config.webdav.prefix.clone(),
-        endpoint: site_url::public_app_url_or_path(&state.runtime_config, &endpoint_path),
+        endpoint: site_url::public_app_url_or_path_for_request(
+            &state.runtime_config,
+            &endpoint_path,
+            conn.scheme(),
+            conn.host(),
+        ),
     })))
 }
 

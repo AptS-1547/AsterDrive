@@ -151,6 +151,7 @@ pub async fn put_relative_file(
         content_length,
         request_source,
     } = req;
+    let request_public_origin = request_source.public_origin.clone();
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
     let declared_size = parse_wopi_size_header(size_header)?.or(content_length);
     let request = parse_put_relative_request(
@@ -257,9 +258,14 @@ pub async fn put_relative_file(
         }
     };
 
-    let response =
-        build_put_relative_response(state, &resolved.payload, &target_file.name, target_file.id)
-            .await?;
+    let response = build_put_relative_response(
+        state,
+        &resolved.payload,
+        &target_file.name,
+        target_file.id,
+        request_public_origin,
+    )
+    .await?;
     Ok(WopiPutRelativeResult::Success(response))
 }
 

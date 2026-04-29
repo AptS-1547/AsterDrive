@@ -2,46 +2,139 @@
 
 use crate::config::RuntimeConfig;
 use crate::config::cors;
-use crate::errors::Result;
+use crate::errors::{AsterError, Result};
 
 pub use crate::config::definitions::PUBLIC_SITE_URL_KEY;
 
 pub fn normalize_public_site_url_config_value(value: &str) -> Result<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Ok(String::new());
-    }
-
-    cors::normalize_origin(trimmed, false)
+    Ok(parse_public_site_url_value(value)?.join("\n"))
 }
 
-pub fn public_site_url(runtime_config: &RuntimeConfig) -> Option<String> {
+pub fn parse_public_site_url_value(value: &str) -> Result<Vec<String>> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut origins = Vec::new();
+    for raw_origin in trimmed.split([',', '\n', '\r']) {
+        let origin = raw_origin.trim();
+        if origin.is_empty() {
+            continue;
+        }
+        if origin == "*" {
+            return Err(AsterError::validation_error(
+                "public_site_url does not support wildcard origins",
+            ));
+        }
+
+        let normalized = cors::normalize_origin(origin, false).map_err(|err| {
+            AsterError::validation_error(format!(
+                "invalid public_site_url origin '{origin}': {}",
+                err.message()
+            ))
+        })?;
+        if !origins.contains(&normalized) {
+            origins.push(normalized);
+        }
+    }
+
+    Ok(origins)
+}
+
+pub fn public_site_url_config_value(runtime_config: &RuntimeConfig) -> Option<String> {
     runtime_config
         .get(PUBLIC_SITE_URL_KEY)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
 }
 
+pub fn public_site_urls(runtime_config: &RuntimeConfig) -> Vec<String> {
+    public_site_url_config_value(runtime_config)
+        .map(|value| match parse_public_site_url_value(&value) {
+            Ok(origins) => origins,
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    key = PUBLIC_SITE_URL_KEY,
+                    value = %value,
+                    "invalid runtime public_site_url config; ignoring configured public origins"
+                );
+                Vec::new()
+            }
+        })
+        .unwrap_or_default()
+}
+
+pub fn public_site_url(runtime_config: &RuntimeConfig) -> Option<String> {
+    public_site_urls(runtime_config).into_iter().next()
+}
+
+pub fn public_site_url_for_request(
+    runtime_config: &RuntimeConfig,
+    scheme: &str,
+    host: &str,
+) -> Option<String> {
+    let origins = public_site_urls(runtime_config);
+    if origins.is_empty() {
+        return None;
+    }
+
+    let request_origin = cors::normalize_origin(&format!("{scheme}://{host}"), false).ok();
+    if let Some(request_origin) = request_origin
+        && origins.iter().any(|origin| origin == &request_origin)
+    {
+        return Some(request_origin);
+    }
+
+    origins.into_iter().next()
+}
+
 pub fn public_app_url(runtime_config: &RuntimeConfig, path: &str) -> Option<String> {
     let base = public_site_url(runtime_config)?;
-    let normalized_path = if path.starts_with('/') {
-        path.to_string()
-    } else {
-        format!("/{path}")
-    };
+    Some(join_origin_and_path(&base, path))
+}
 
-    Some(format!("{base}{normalized_path}"))
+pub fn public_app_url_for_request(
+    runtime_config: &RuntimeConfig,
+    path: &str,
+    scheme: &str,
+    host: &str,
+) -> Option<String> {
+    let base = public_site_url_for_request(runtime_config, scheme, host)?;
+    Some(join_origin_and_path(&base, path))
 }
 
 pub fn public_app_url_or_path(runtime_config: &RuntimeConfig, path: &str) -> String {
     public_app_url(runtime_config, path).unwrap_or_else(|| path.to_string())
 }
 
+pub fn public_app_url_or_path_for_request(
+    runtime_config: &RuntimeConfig,
+    path: &str,
+    scheme: &str,
+    host: &str,
+) -> String {
+    public_app_url_for_request(runtime_config, path, scheme, host)
+        .unwrap_or_else(|| path.to_string())
+}
+
+pub fn join_origin_and_path(base: &str, path: &str) -> String {
+    let normalized_path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
+
+    format!("{base}{normalized_path}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        PUBLIC_SITE_URL_KEY, normalize_public_site_url_config_value, public_app_url,
-        public_site_url,
+        PUBLIC_SITE_URL_KEY, normalize_public_site_url_config_value, parse_public_site_url_value,
+        public_app_url, public_app_url_for_request, public_site_url, public_site_url_for_request,
+        public_site_urls,
     };
     use crate::config::RuntimeConfig;
     use crate::entities::system_config;
@@ -78,9 +171,37 @@ mod tests {
     }
 
     #[test]
+    fn normalize_public_site_url_accepts_ordered_origin_lists() {
+        assert_eq!(
+            normalize_public_site_url_config_value(
+                " HTTPS://Drive.EXAMPLE.com/ , https://Panel.example.com, https://drive.example.com "
+            )
+            .unwrap(),
+            "https://drive.example.com\nhttps://panel.example.com"
+        );
+        assert_eq!(
+            normalize_public_site_url_config_value(
+                "https://drive.example.com\nhttps://panel.example.com"
+            )
+            .unwrap(),
+            "https://drive.example.com\nhttps://panel.example.com"
+        );
+        assert_eq!(
+            parse_public_site_url_value("https://drive.example.com,,https://api.example.com")
+                .unwrap(),
+            vec![
+                "https://drive.example.com".to_string(),
+                "https://api.example.com".to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn normalize_public_site_url_rejects_paths_and_non_http_schemes() {
         assert!(normalize_public_site_url_config_value("https://drive.example.com/app").is_err());
         assert!(normalize_public_site_url_config_value("ftp://drive.example.com").is_err());
+        assert!(normalize_public_site_url_config_value("*.example.com").is_err());
+        assert!(normalize_public_site_url_config_value("*").is_err());
     }
 
     #[test]
@@ -96,8 +217,35 @@ mod tests {
             Some("https://drive.example.com")
         );
         assert_eq!(
+            public_site_urls(&runtime_config),
+            vec!["https://drive.example.com".to_string()]
+        );
+        assert_eq!(
             public_app_url(&runtime_config, "/pv/token/report.docx").as_deref(),
             Some("https://drive.example.com/pv/token/report.docx")
+        );
+    }
+
+    #[test]
+    fn public_site_url_for_request_uses_matching_configured_origin_only() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(
+            PUBLIC_SITE_URL_KEY,
+            "https://drive.example.com,https://panel.example.com",
+        ));
+
+        assert_eq!(
+            public_site_url_for_request(&runtime_config, "https", "panel.example.com").as_deref(),
+            Some("https://panel.example.com")
+        );
+        assert_eq!(
+            public_site_url_for_request(&runtime_config, "https", "evil.example.com").as_deref(),
+            Some("https://drive.example.com")
+        );
+        assert_eq!(
+            public_app_url_for_request(&runtime_config, "pv/token", "https", "panel.example.com")
+                .as_deref(),
+            Some("https://panel.example.com/pv/token")
         );
     }
 }

@@ -20,7 +20,7 @@ pub use operations::{
     put_user_info, rename_file,
 };
 pub use session::cleanup_expired;
-pub(crate) use session::create_launch_session_in_scope;
+pub(crate) use session::{RequestOrigin, create_launch_session_in_scope};
 pub use types::{
     DiscoveredWopiPreviewApp, WopiCheckFileInfo, WopiConflict, WopiGetLockResult,
     WopiLaunchSession, WopiLockOperationResult, WopiPutFileResult, WopiPutRelativeConflict,

@@ -15,7 +15,7 @@ fn accepts_same_origin_and_public_site_origin() {
             None,
             Some("same-origin"),
             "http://localhost",
-            Some("https://drive.example.com"),
+            &["https://drive.example.com".to_string()],
             RequestSourceMode::Required,
         )
         .is_ok()
@@ -27,7 +27,7 @@ fn accepts_same_origin_and_public_site_origin() {
             None,
             Some("same-origin"),
             "http://127.0.0.1:3000",
-            Some("https://drive.example.com"),
+            &["https://drive.example.com".to_string()],
             RequestSourceMode::Required,
         )
         .is_ok()
@@ -35,14 +35,58 @@ fn accepts_same_origin_and_public_site_origin() {
 }
 
 #[test]
+fn same_site_fetch_metadata_requires_trusted_origin_or_referer() {
+    assert!(
+        ensure_headers_allowed(
+            Some("https://panel.example.com"),
+            None,
+            Some("same-site"),
+            "https://api.example.com",
+            &[
+                "https://api.example.com".to_string(),
+                "https://panel.example.com".to_string()
+            ],
+            RequestSourceMode::OptionalWhenPresent,
+        )
+        .is_ok()
+    );
+
+    assert!(
+        ensure_headers_allowed(
+            None,
+            Some("https://panel.example.com/files"),
+            Some("same-site"),
+            "https://api.example.com",
+            &[
+                "https://api.example.com".to_string(),
+                "https://panel.example.com".to_string()
+            ],
+            RequestSourceMode::OptionalWhenPresent,
+        )
+        .is_ok()
+    );
+
+    let err = ensure_headers_allowed(
+        None,
+        None,
+        Some("same-site"),
+        "https://api.example.com",
+        &["https://api.example.com".to_string()],
+        RequestSourceMode::OptionalWhenPresent,
+    )
+    .unwrap_err();
+    assert!(err.message().contains("missing trusted request source"));
+}
+
+#[test]
 fn rejects_untrusted_fetch_metadata_values() {
-    for fetch_site in ["same-site", "cross-site", "none"] {
+    for fetch_site in ["cross-site", "none"] {
         let err = ensure_headers_allowed(
             None,
             None,
             Some(fetch_site),
             "https://drive.example.com",
-            None,
+            &[],
             RequestSourceMode::OptionalWhenPresent,
         )
         .unwrap_err();
@@ -57,7 +101,7 @@ fn rejects_untrusted_origin_and_missing_required_source() {
         None,
         None,
         "https://drive.example.com",
-        None,
+        &[],
         RequestSourceMode::OptionalWhenPresent,
     )
     .unwrap_err();
@@ -68,7 +112,7 @@ fn rejects_untrusted_origin_and_missing_required_source() {
         None,
         None,
         "https://drive.example.com",
-        None,
+        &[],
         RequestSourceMode::Required,
     )
     .unwrap_err();
@@ -83,7 +127,7 @@ fn accepts_missing_optional_source() {
             None,
             None,
             "https://drive.example.com",
-            None,
+            &[],
             RequestSourceMode::OptionalWhenPresent,
         )
         .is_ok()

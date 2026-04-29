@@ -12,6 +12,11 @@ use crate::services::{
 };
 use actix_web::{HttpRequest, HttpResponse, web};
 
+fn request_origin_parts(req: &HttpRequest) -> (String, String) {
+    let conn = req.connection_info();
+    (conn.scheme().to_string(), conn.host().to_string())
+}
+
 #[api_docs_macros::path(
     get,
     path = "/api/v1/files/{id}",
@@ -84,10 +89,12 @@ pub async fn get_direct_link(
 pub async fn get_preview_link(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     preview_link_response(
         &state,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -113,11 +120,13 @@ pub async fn get_preview_link(
 pub async fn open_wopi(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<OpenWopiRequest>,
 ) -> Result<HttpResponse> {
     open_wopi_response(
         &state,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -265,10 +274,11 @@ pub(crate) async fn team_get_direct_link(
 pub(crate) async fn team_get_preview_link(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
-    preview_link_response(&state, team_scope(team_id, claims.user_id), file_id).await
+    preview_link_response(&state, &req, team_scope(team_id, claims.user_id), file_id).await
 }
 
 #[api_docs_macros::path(
@@ -292,12 +302,14 @@ pub(crate) async fn team_get_preview_link(
 pub(crate) async fn team_open_wopi(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, i64)>,
     body: web::Json<OpenWopiRequest>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     open_wopi_response(
         &state,
+        &req,
         team_scope(team_id, claims.user_id),
         file_id,
         &body.app_key,
@@ -391,21 +403,43 @@ pub(crate) async fn direct_link_response(
 
 pub(crate) async fn preview_link_response(
     state: &PrimaryAppState,
+    req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<HttpResponse> {
-    let link = preview_link_service::create_token_for_file_in_scope(state, scope, file_id).await?;
+    let (scheme, host) = request_origin_parts(req);
+    let link = preview_link_service::create_token_for_file_in_scope_for_origin(
+        state,
+        scope,
+        file_id,
+        preview_link_service::RequestOrigin {
+            scheme: &scheme,
+            host: &host,
+        },
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
 }
 
 pub(crate) async fn open_wopi_response(
     state: &PrimaryAppState,
+    req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,
     app_key: &str,
 ) -> Result<HttpResponse> {
-    let session =
-        wopi_service::create_launch_session_in_scope(state, scope, file_id, app_key).await?;
+    let (scheme, host) = request_origin_parts(req);
+    let session = wopi_service::create_launch_session_in_scope(
+        state,
+        scope,
+        file_id,
+        app_key,
+        Some(wopi_service::RequestOrigin {
+            scheme: &scheme,
+            host: &host,
+        }),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(session)))
 }
 
