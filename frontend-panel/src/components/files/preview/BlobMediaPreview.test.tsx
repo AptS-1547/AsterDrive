@@ -111,6 +111,24 @@ describe("BlobMediaPreview", () => {
 		expect(image.parentElement).not.toHaveClass("w-fit");
 	});
 
+	it("lets expanded image previews fill the available preview surface", () => {
+		render(
+			<BlobMediaPreview
+				file={file}
+				fillContainer
+				mode="image"
+				path="/files/expanded"
+			/>,
+		);
+
+		const image = screen.getByRole("img", { name: "preview.png" });
+
+		expect(image).toHaveClass("block", "h-full", "w-full", "object-contain");
+		expect(image).not.toHaveClass("max-h-[min(70vh,48rem)]");
+		expect(image.parentElement).toHaveClass("h-full", "w-full", "p-4");
+		expect(image.parentElement).not.toHaveClass("w-fit");
+	});
+
 	it("renders video and audio previews for their media modes", () => {
 		const video = render(
 			<BlobMediaPreview

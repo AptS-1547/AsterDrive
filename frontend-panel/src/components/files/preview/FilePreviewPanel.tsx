@@ -105,7 +105,7 @@ export function FilePreviewPanel({
 			{usesInnerScroll ? (
 				<div
 					className={cn(
-						"bg-muted/20 p-3",
+						"w-full bg-muted/20 p-3",
 						(fillsViewportHeight || isExpanded) && "min-h-0 flex-1",
 					)}
 				>
@@ -114,7 +114,7 @@ export function FilePreviewPanel({
 			) : (
 				<ScrollArea
 					className={cn(
-						"bg-muted/20",
+						"w-full bg-muted/20",
 						(fillsViewportHeight || isExpanded) && "min-h-0 flex-1",
 					)}
 				>

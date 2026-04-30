@@ -1,4 +1,14 @@
-import { type DragEvent, useEffect, useMemo, useState } from "react";
+import {
+	type CSSProperties,
+	type DragEvent,
+	type KeyboardEvent as ReactKeyboardEvent,
+	type PointerEvent as ReactPointerEvent,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { FolderTree } from "@/components/folders/FolderTree";
@@ -6,7 +16,11 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { STORAGE_KEYS } from "@/config/app";
 import {
+	USER_SIDEBAR_DEFAULT_WIDTH_PX,
+	USER_SIDEBAR_MAX_WIDTH_PX,
+	USER_SIDEBAR_MIN_WIDTH_PX,
 	USER_SIDEBAR_WIDTH_CLASS,
 	USER_TOPBAR_OFFSET_CLASS,
 } from "@/lib/constants";
@@ -29,6 +43,9 @@ import { useAuthStore } from "@/stores/authStore";
 import { useTeamStore } from "@/stores/teamStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
+const SIDEBAR_KEYBOARD_RESIZE_STEP_PX = 16;
+type SidebarResizeHandleElement = HTMLHRElement;
+
 interface SidebarProps {
 	mobileOpen: boolean;
 	onMobileClose: () => void;
@@ -38,6 +55,46 @@ interface SidebarProps {
 		folderIds: number[],
 		targetFolderId: number | null,
 	) => Promise<void> | void;
+}
+
+function clampSidebarWidth(width: number) {
+	return Math.min(
+		USER_SIDEBAR_MAX_WIDTH_PX,
+		Math.max(USER_SIDEBAR_MIN_WIDTH_PX, Math.round(width)),
+	);
+}
+
+function readStoredSidebarWidth() {
+	if (typeof localStorage === "undefined") {
+		return USER_SIDEBAR_DEFAULT_WIDTH_PX;
+	}
+
+	const raw = localStorage.getItem(STORAGE_KEYS.userSidebarWidth);
+	if (raw == null) {
+		return USER_SIDEBAR_DEFAULT_WIDTH_PX;
+	}
+
+	const parsed = Number(raw);
+	if (!Number.isFinite(parsed)) {
+		return USER_SIDEBAR_DEFAULT_WIDTH_PX;
+	}
+
+	return clampSidebarWidth(parsed);
+}
+
+function storeSidebarWidth(width: number) {
+	if (typeof localStorage === "undefined") {
+		return;
+	}
+
+	try {
+		localStorage.setItem(
+			STORAGE_KEYS.userSidebarWidth,
+			String(clampSidebarWidth(width)),
+		);
+	} catch {
+		// localStorage can be unavailable or full; resizing should still work.
+	}
 }
 
 export function Sidebar({
@@ -53,7 +110,14 @@ export function Sidebar({
 	const teams = useTeamStore((s) => s.teams);
 	const loadingTeams = useTeamStore((s) => s.loading);
 	const ensureTeamsLoaded = useTeamStore((s) => s.ensureLoaded);
+	const resizeStateRef = useRef<{
+		startWidth: number;
+		startX: number;
+		width: number;
+	} | null>(null);
 	const [trashDragOver, setTrashDragOver] = useState(false);
+	const [sidebarWidth, setSidebarWidth] = useState(readStoredSidebarWidth);
+	const [sidebarResizing, setSidebarResizing] = useState(false);
 	const activeTeam = isTeamWorkspace(workspace)
 		? (teams.find((team) => team.id === workspace.teamId) ?? null)
 		: null;
@@ -61,6 +125,109 @@ export function Sidebar({
 	useEffect(() => {
 		void ensureTeamsLoaded(user?.id ?? null).catch(() => undefined);
 	}, [ensureTeamsLoaded, user?.id]);
+
+	useEffect(() => {
+		if (!sidebarResizing) {
+			return;
+		}
+
+		const body = typeof document !== "undefined" ? document.body : null;
+		const previousCursor = body?.style.cursor;
+		const previousUserSelect = body?.style.userSelect;
+
+		if (body) {
+			body.style.cursor = "col-resize";
+			body.style.userSelect = "none";
+		}
+
+		function handlePointerMove(event: PointerEvent) {
+			const state = resizeStateRef.current;
+			if (!state) {
+				return;
+			}
+
+			const nextWidth = clampSidebarWidth(
+				state.startWidth + event.clientX - state.startX,
+			);
+			state.width = nextWidth;
+			setSidebarWidth(nextWidth);
+		}
+
+		function handlePointerEnd() {
+			const width = resizeStateRef.current?.width;
+			resizeStateRef.current = null;
+			setSidebarResizing(false);
+			if (width != null) {
+				storeSidebarWidth(width);
+			}
+		}
+
+		window.addEventListener("pointermove", handlePointerMove);
+		window.addEventListener("pointerup", handlePointerEnd);
+		window.addEventListener("pointercancel", handlePointerEnd);
+
+		return () => {
+			window.removeEventListener("pointermove", handlePointerMove);
+			window.removeEventListener("pointerup", handlePointerEnd);
+			window.removeEventListener("pointercancel", handlePointerEnd);
+
+			if (body) {
+				body.style.cursor = previousCursor ?? "";
+				body.style.userSelect = previousUserSelect ?? "";
+			}
+		};
+	}, [sidebarResizing]);
+
+	const sidebarStyle: CSSProperties & { "--user-sidebar-width": string } = {
+		"--user-sidebar-width": `${sidebarWidth}px`,
+	};
+
+	const commitSidebarWidth = useCallback((width: number) => {
+		const nextWidth = clampSidebarWidth(width);
+		setSidebarWidth(nextWidth);
+		storeSidebarWidth(nextWidth);
+	}, []);
+
+	const handleSidebarResizePointerDown = useCallback(
+		(event: ReactPointerEvent<SidebarResizeHandleElement>) => {
+			if (event.button !== 0) {
+				return;
+			}
+
+			event.preventDefault();
+			resizeStateRef.current = {
+				startWidth: sidebarWidth,
+				startX: event.clientX,
+				width: sidebarWidth,
+			};
+			setSidebarResizing(true);
+		},
+		[sidebarWidth],
+	);
+
+	const handleSidebarResizeKeyDown = useCallback(
+		(event: ReactKeyboardEvent<SidebarResizeHandleElement>) => {
+			let nextWidth: number | null = null;
+
+			if (event.key === "ArrowLeft") {
+				nextWidth = sidebarWidth - SIDEBAR_KEYBOARD_RESIZE_STEP_PX;
+			} else if (event.key === "ArrowRight") {
+				nextWidth = sidebarWidth + SIDEBAR_KEYBOARD_RESIZE_STEP_PX;
+			} else if (event.key === "Home") {
+				nextWidth = USER_SIDEBAR_MIN_WIDTH_PX;
+			} else if (event.key === "End") {
+				nextWidth = USER_SIDEBAR_MAX_WIDTH_PX;
+			}
+
+			if (nextWidth == null) {
+				return;
+			}
+
+			event.preventDefault();
+			commitSidebarWidth(nextWidth);
+		},
+		[commitSidebarWidth, sidebarWidth],
+	);
 
 	const navLinks: { to: string; icon: IconName; label: string }[] =
 		useMemo(() => {
@@ -256,10 +423,11 @@ export function Sidebar({
 			{/* Sidebar - desktop inline, mobile overlay */}
 			<aside
 				data-theme-surface="chrome"
+				style={sidebarStyle}
 				className={cn(
 					"border-r bg-background transition-transform duration-200 ease-out motion-reduce:transition-none",
 					USER_SIDEBAR_WIDTH_CLASS,
-					"fixed left-0 z-50 flex flex-col md:relative md:left-auto md:top-auto md:bottom-auto md:z-auto md:translate-x-0",
+					"fixed left-0 z-50 flex shrink-0 flex-col md:relative md:left-auto md:top-auto md:bottom-auto md:z-auto md:translate-x-0",
 					USER_TOPBAR_OFFSET_CLASS,
 					mobileOpen
 						? "translate-x-0 shadow-lg md:shadow-none"
@@ -267,6 +435,20 @@ export function Sidebar({
 				)}
 			>
 				{sidebarContent}
+				<hr
+					aria-label={t("resize_sidebar")}
+					aria-orientation="vertical"
+					aria-valuemax={USER_SIDEBAR_MAX_WIDTH_PX}
+					aria-valuemin={USER_SIDEBAR_MIN_WIDTH_PX}
+					aria-valuenow={sidebarWidth}
+					tabIndex={0}
+					className={cn(
+						"absolute inset-y-0 -right-1 z-20 hidden h-auto w-2 cursor-col-resize touch-none border-0 bg-transparent transition-colors md:block focus-visible:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring hover:bg-primary/15",
+						sidebarResizing && "bg-primary/25",
+					)}
+					onPointerDown={handleSidebarResizePointerDown}
+					onKeyDown={handleSidebarResizeKeyDown}
+				/>
 			</aside>
 		</>
 	);

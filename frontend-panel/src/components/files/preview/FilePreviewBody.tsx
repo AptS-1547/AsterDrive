@@ -61,6 +61,7 @@ interface FilePreviewBodyProps {
 	onDirtyChange: (dirty: boolean) => void;
 	editable: boolean;
 	formattedCategory: "json" | "xml";
+	isExpanded: boolean;
 }
 
 export function FilePreviewBody({
@@ -76,6 +77,7 @@ export function FilePreviewBody({
 	onDirtyChange,
 	editable,
 	formattedCategory,
+	isExpanded,
 }: FilePreviewBodyProps) {
 	const { t } = useTranslation(["files"]);
 	const previewLoadingState = (
@@ -104,6 +106,7 @@ export function FilePreviewBody({
 		return (
 			<BlobMediaPreview
 				file={file}
+				fillContainer={isExpanded}
 				mode={activeOption.mode}
 				path={downloadPath}
 			/>

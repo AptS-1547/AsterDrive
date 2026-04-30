@@ -513,14 +513,6 @@ export function RemoteNodeDialog({
 																currentCreateStep.description,
 															)}
 															{renderCreateDocsCard()}
-															<section className="rounded-3xl border border-border/70 bg-background/85 p-5">
-																<h3 className="text-sm font-semibold">
-																	{t("remote_node_enrollment_command_title")}
-																</h3>
-																<p className="mt-1 text-xs leading-5 text-muted-foreground">
-																	{t("remote_node_wizard_review_helper_desc")}
-																</p>
-															</section>
 														</div>
 													</div>
 												)}

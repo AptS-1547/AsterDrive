@@ -350,6 +350,7 @@ export function FilePreviewDialog({
 									onFileUpdated={onFileUpdated}
 									onDirtyChange={setIsDirty}
 									editable={editable}
+									isExpanded={isExpanded}
 									formattedCategory={
 										profile?.category === "xml" ||
 										getFileExtension(file) === "xml"

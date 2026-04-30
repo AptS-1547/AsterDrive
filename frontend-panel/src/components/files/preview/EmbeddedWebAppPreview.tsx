@@ -31,7 +31,7 @@ export function EmbeddedWebAppPreview({
 	title,
 }: EmbeddedWebAppPreviewProps) {
 	return (
-		<div className="flex h-full min-h-[70vh] flex-col gap-3">
+		<div className="flex h-full min-h-[70vh] w-full flex-col gap-3">
 			{headerStart || actions ? (
 				<div className="flex flex-wrap items-center gap-2">
 					{headerStart}

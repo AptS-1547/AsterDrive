@@ -6,6 +6,7 @@ import type { PreviewableFileLike } from "./types";
 
 interface BlobMediaPreviewProps {
 	file: PreviewableFileLike;
+	fillContainer?: boolean;
 	mode: "image" | "video" | "audio";
 	path: string;
 }
@@ -17,7 +18,12 @@ function isSvgPreview(file: PreviewableFileLike) {
 	);
 }
 
-export function BlobMediaPreview({ file, mode, path }: BlobMediaPreviewProps) {
+export function BlobMediaPreview({
+	file,
+	fillContainer = false,
+	mode,
+	path,
+}: BlobMediaPreviewProps) {
 	const { t } = useTranslation("files");
 	const { blobUrl, error, loading, retry } = useBlobUrl(path);
 
@@ -37,18 +43,22 @@ export function BlobMediaPreview({ file, mode, path }: BlobMediaPreviewProps) {
 		return (
 			<div
 				className={
-					isSvg
-						? "flex w-full items-center justify-center p-4"
-						: "mx-auto flex w-fit max-w-full min-w-0 items-center justify-center p-4"
+					fillContainer
+						? "flex h-full min-h-0 w-full items-center justify-center p-4"
+						: isSvg
+							? "flex w-full items-center justify-center p-4"
+							: "mx-auto flex w-fit max-w-full min-w-0 items-center justify-center p-4"
 				}
 			>
 				<img
 					src={blobUrl}
 					alt={file.name}
 					className={
-						isSvg
-							? "block h-auto w-full max-h-[min(70vh,48rem)] max-w-[min(70vw,48rem)] min-w-0 object-contain"
-							: "block max-h-[min(70vh,48rem)] max-w-full min-w-0 object-contain"
+						fillContainer
+							? "block h-full w-full min-w-0 object-contain"
+							: isSvg
+								? "block h-auto w-full max-h-[min(70vh,48rem)] max-w-[min(70vw,48rem)] min-w-0 object-contain"
+								: "block max-h-[min(70vh,48rem)] max-w-full min-w-0 object-contain"
 					}
 				/>
 			</div>

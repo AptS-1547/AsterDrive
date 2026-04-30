@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { STORAGE_KEYS } from "@/config/app";
 
 const mockState = vi.hoisted(() => ({
 	pathname: "/",
@@ -111,6 +112,7 @@ vi.mock("@/lib/dragDrop", () => ({
 
 describe("Sidebar", () => {
 	beforeEach(() => {
+		localStorage.clear();
 		mockState.pathname = "/";
 		mockState.auth.user = {
 			storage_quota: 100,
@@ -234,5 +236,48 @@ describe("Sidebar", () => {
 			screen.getByRole("button", { name: "translated:close_sidebar" })
 				.className,
 		).toContain("top-16");
+	});
+
+	it("resizes the desktop sidebar by dragging the divider and persists the width", () => {
+		const { container } = render(
+			<Sidebar mobileOpen={false} onMobileClose={vi.fn()} />,
+		);
+
+		const aside = container.querySelector("aside");
+		const resizer = screen.getByRole("separator", {
+			name: "translated:resize_sidebar",
+		});
+
+		expect(aside).toHaveStyle("--user-sidebar-width: 240px");
+
+		fireEvent.pointerDown(resizer, { button: 0, clientX: 240 });
+		fireEvent.pointerMove(window, { clientX: 320 });
+
+		expect(aside).toHaveStyle("--user-sidebar-width: 320px");
+		expect(document.body.style.cursor).toBe("col-resize");
+
+		fireEvent.pointerUp(window);
+
+		expect(localStorage.getItem(STORAGE_KEYS.userSidebarWidth)).toBe("320");
+		expect(document.body.style.cursor).toBe("");
+	});
+
+	it("supports keyboard resizing for the desktop sidebar divider", () => {
+		const { container } = render(
+			<Sidebar mobileOpen={false} onMobileClose={vi.fn()} />,
+		);
+
+		const aside = container.querySelector("aside");
+		const resizer = screen.getByRole("separator", {
+			name: "translated:resize_sidebar",
+		});
+
+		fireEvent.keyDown(resizer, { key: "End" });
+		expect(aside).toHaveStyle("--user-sidebar-width: 420px");
+		expect(localStorage.getItem(STORAGE_KEYS.userSidebarWidth)).toBe("420");
+
+		fireEvent.keyDown(resizer, { key: "Home" });
+		expect(aside).toHaveStyle("--user-sidebar-width: 220px");
+		expect(localStorage.getItem(STORAGE_KEYS.userSidebarWidth)).toBe("220");
 	});
 });

@@ -10,7 +10,10 @@ export const ADMIN_TOPBAR_HEIGHT_CLASS = "h-16";
 export const ADMIN_TOPBAR_OFFSET_CLASS = "top-16 bottom-0";
 
 /** 侧栏宽度 */
-export const USER_SIDEBAR_WIDTH_CLASS = "w-60";
+export const USER_SIDEBAR_WIDTH_CLASS = "w-60 md:w-[var(--user-sidebar-width)]";
+export const USER_SIDEBAR_DEFAULT_WIDTH_PX = 240;
+export const USER_SIDEBAR_MIN_WIDTH_PX = 220;
+export const USER_SIDEBAR_MAX_WIDTH_PX = 420;
 export const ADMIN_SIDEBAR_WIDTH_CLASS = "w-60";
 
 /** Admin 页面密度 */

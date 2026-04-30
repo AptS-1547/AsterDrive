@@ -135,9 +135,15 @@ vi.mock("@/stores/previewAppStore", () => ({
 }));
 
 vi.mock("@/components/files/preview/BlobMediaPreview", () => ({
-	BlobMediaPreview: ({ mode, path }: { mode: string; path: string }) => (
-		<div>{`blob:${mode}:${path}`}</div>
-	),
+	BlobMediaPreview: ({
+		fillContainer,
+		mode,
+		path,
+	}: {
+		fillContainer?: boolean;
+		mode: string;
+		path: string;
+	}) => <div>{`blob:${mode}:${path}:${String(Boolean(fillContainer))}`}</div>,
 }));
 
 vi.mock("@/components/files/preview/UrlTemplatePreview", () => ({
@@ -621,10 +627,49 @@ describe("FilePreviewDialog", () => {
 			} as never,
 		});
 
-		await screen.findByText("blob:image:/files/7/download");
+		await screen.findByText("blob:image:/files/7/download:false");
 		expect(
 			screen.getByTestId("dialog-content").className.split(/\s+/),
 		).not.toContain("h-[90vh]");
+	});
+
+	it("expands image previews into a full-width preview surface", async () => {
+		mockState.profile = {
+			category: "image",
+			defaultMode: "builtin.image",
+			isBlobPreview: true,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{
+					icon: "Eye",
+					key: "builtin.image",
+					labelKey: "open_with_image",
+					mode: "image",
+				},
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type: "image/png",
+				name: "wide-image.png",
+				size: 2048,
+			} as never,
+		});
+
+		await screen.findByText("blob:image:/files/7/download:false");
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "files:preview_enter_fullscreen",
+			}),
+		);
+
+		expect(
+			await screen.findByText("blob:image:/files/7/download:true"),
+		).toBeInTheDocument();
 	});
 
 	it("auto-opens hybrid svg previews directly and still allows switching modes", async () => {
@@ -662,7 +707,7 @@ describe("FilePreviewDialog", () => {
 		expect(
 			screen.queryByRole("heading", { name: "files:choose_open_method" }),
 		).not.toBeInTheDocument();
-		await screen.findByText("blob:image:/files/7/download");
+		await screen.findByText("blob:image:/files/7/download:false");
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "files:choose_open_method" }),

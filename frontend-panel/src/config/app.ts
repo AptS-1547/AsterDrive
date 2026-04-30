@@ -26,6 +26,7 @@ export const STORAGE_KEYS = {
 	viewMode: "aster-view-mode",
 	browserOpenMode: "aster-browser-open-mode",
 	trashViewMode: "aster-trash-view-mode",
+	userSidebarWidth: "aster-user-sidebar-width",
 	sortBy: "aster-sort-by",
 	sortOrder: "aster-sort-order",
 } as const;
