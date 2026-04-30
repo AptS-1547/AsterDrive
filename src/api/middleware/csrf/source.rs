@@ -35,7 +35,7 @@ pub fn ensure_request_source_allowed(
         header_value(req, header::REFERER),
         header_value(req, header::HeaderName::from_static("sec-fetch-site")),
         &request_origin,
-        site_url::public_site_url(runtime_config).as_deref(),
+        &site_url::public_site_urls(runtime_config),
         mode,
     )
 }
@@ -55,7 +55,7 @@ pub fn ensure_service_request_source_allowed(
             header::HeaderName::from_static("sec-fetch-site"),
         ),
         &request_origin,
-        site_url::public_site_url(runtime_config).as_deref(),
+        &site_url::public_site_urls(runtime_config),
         mode,
     )
 }
@@ -65,17 +65,19 @@ pub(super) fn ensure_headers_allowed(
     referer: Option<&str>,
     sec_fetch_site: Option<&str>,
     request_origin: &str,
-    public_site_origin: Option<&str>,
+    public_site_origins: &[String],
     mode: RequestSourceMode,
 ) -> Result<()> {
-    if let Some(fetch_site) = sec_fetch_site
+    let fetch_site = sec_fetch_site
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(|value| value.to_ascii_lowercase())
-    {
-        match fetch_site.as_str() {
+        .map(|value| value.to_ascii_lowercase());
+
+    if let Some(fetch_site) = fetch_site.as_deref() {
+        match fetch_site {
             "same-origin" => {}
-            "same-site" | "cross-site" | "none" => {
+            "same-site" => {}
+            "cross-site" | "none" => {
                 return Err(AsterError::auth_forbidden(
                     "untrusted request source for cookie-authenticated action",
                 ));
@@ -83,6 +85,7 @@ pub(super) fn ensure_headers_allowed(
             _ => {}
         }
     }
+    let same_site_fetch = fetch_site.as_deref() == Some("same-site");
 
     if let Some(origin) = origin
         .map(str::trim)
@@ -91,7 +94,7 @@ pub(super) fn ensure_headers_allowed(
         .transpose()
         .map_aster_err_with(|| AsterError::validation_error("invalid Origin header"))?
     {
-        if origin_is_trusted(&origin, request_origin, public_site_origin) {
+        if origin_is_trusted(&origin, request_origin, public_site_origins) {
             return Ok(());
         }
         return Err(AsterError::auth_forbidden(
@@ -102,11 +105,17 @@ pub(super) fn ensure_headers_allowed(
     if let Some(referer) = referer.map(str::trim).filter(|value| !value.is_empty()) {
         let referer_origin = origin_from_url(referer)
             .ok_or_else(|| AsterError::validation_error("invalid Referer header"))?;
-        if origin_is_trusted(&referer_origin, request_origin, public_site_origin) {
+        if origin_is_trusted(&referer_origin, request_origin, public_site_origins) {
             return Ok(());
         }
         return Err(AsterError::auth_forbidden(
             "untrusted request referer for cookie-authenticated action",
+        ));
+    }
+
+    if same_site_fetch {
+        return Err(AsterError::auth_forbidden(
+            "missing trusted request source for same-site cookie-authenticated action",
         ));
     }
 
@@ -129,8 +138,8 @@ fn request_origin(scheme: &str, host: &str) -> Result<String> {
         .map_aster_err_with(|| AsterError::validation_error("invalid request host"))
 }
 
-fn origin_is_trusted(origin: &str, request_origin: &str, public_site_origin: Option<&str>) -> bool {
-    origin == request_origin || public_site_origin.is_some_and(|allowed| allowed == origin)
+fn origin_is_trusted(origin: &str, request_origin: &str, public_site_origins: &[String]) -> bool {
+    origin == request_origin || public_site_origins.iter().any(|allowed| allowed == origin)
 }
 
 fn origin_from_url(url: &str) -> Option<String> {

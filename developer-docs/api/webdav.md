@@ -23,7 +23,7 @@ WebDAV 相关内容可以分成三块：账号、挂载入口、协议能力。
 - `/toggle` 没有请求体，每调用一次就在启用 / 停用之间切换
 - `/settings` 会返回两个字段：
   - `prefix`：服务端当前实际启用的挂载前缀
-  - `endpoint`：面向客户端的可访问地址；如果配置了 `public_site_url`，这里会是绝对 URL，否则返回相对路径
+  - `endpoint`：面向客户端的可访问地址；如果配置了 `public_site_url`，这里会是绝对 URL，否则返回相对路径。多来源配置下，服务端会用当前请求 Origin（scheme + host[:port]）精确匹配 `public_site_url` 列表。命中时返回对应来源下的 WebDAV 地址，未命中时回退第一项。
 - `/test` 用来先验账号密码，不必真的挂载客户端
 - `GET /webdav-accounts` 是分页接口，支持 `limit` 和 `offset`
 

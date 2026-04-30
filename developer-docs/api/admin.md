@@ -267,6 +267,27 @@
 - `wopi_discovery_cache_ttl_secs`
 - `frontend_preview_apps_json`
 
+### `public_site_url`
+
+`public_site_url` 的数据库 key 保持单数，但值语义是“公开站点来源列表”：
+
+```json
+{
+  "key": "public_site_url",
+  "value": ["https://drive.example.com", "https://panel.example.com"]
+}
+```
+
+实现约束：
+
+- `value_type` 是 `string_array`，管理 API 写入时必须传字符串数组；数据库中保存为规范化后的 JSON 数组字符串
+- 每一项必须是精确 HTTP(S) origin，只包含协议、host 和可选端口
+- 不接受路径、查询、片段、通配符、`*` 或非 HTTP(S) scheme
+- 第一项是无请求上下文时的默认回退来源
+- 有请求上下文时，服务端会用当前请求的 scheme/Host 在列表里做精确匹配，命中后用对应来源生成 WebDAV、分享、预览和 WOPI URL
+- 这个列表不是 CORS 白名单；浏览器跨域访问仍然由 `cors_allowed_origins` 控制
+- 这个列表会参与 Cookie 认证写操作的 same-site CSRF 来源信任判断
+
 `GET /admin/config` 当前也支持：
 
 - `limit`

@@ -29,7 +29,7 @@ async fn test_public_branding_returns_defaults() {
         body["data"]["wordmark_light_url"],
         "/static/asterdrive/asterdrive-light.svg"
     );
-    assert_eq!(body["data"]["site_url"], Value::Null);
+    assert_eq!(body["data"]["site_urls"], Value::Array(vec![]));
     assert_eq!(body["data"]["allow_user_registration"], true);
 }
 
@@ -40,21 +40,27 @@ async fn test_public_branding_uses_admin_updated_values() {
     let (token, _) = register_and_login!(app);
 
     for (key, value) in [
-        ("public_site_url", "https://drive.example.com"),
-        ("auth_allow_user_registration", "false"),
-        ("branding_title", "Nebula Drive"),
-        ("branding_description", "Team storage for the squad"),
+        (
+            "public_site_url",
+            serde_json::json!(["https://drive.example.com", "https://panel.example.com"]),
+        ),
+        ("auth_allow_user_registration", serde_json::json!("false")),
+        ("branding_title", serde_json::json!("Nebula Drive")),
+        (
+            "branding_description",
+            serde_json::json!("Team storage for the squad"),
+        ),
         (
             "branding_favicon_url",
-            "https://cdn.example.com/branding/favicon.png?v=2",
+            serde_json::json!("https://cdn.example.com/branding/favicon.png?v=2"),
         ),
         (
             "branding_wordmark_dark_url",
-            "https://cdn.example.com/branding/wordmark-dark.svg?v=2",
+            serde_json::json!("https://cdn.example.com/branding/wordmark-dark.svg?v=2"),
         ),
         (
             "branding_wordmark_light_url",
-            "https://cdn.example.com/branding/wordmark-light.svg?v=2",
+            serde_json::json!("https://cdn.example.com/branding/wordmark-light.svg?v=2"),
         ),
     ] {
         let req = test::TestRequest::put()
@@ -88,7 +94,10 @@ async fn test_public_branding_uses_admin_updated_values() {
         body["data"]["wordmark_light_url"],
         "https://cdn.example.com/branding/wordmark-light.svg?v=2"
     );
-    assert_eq!(body["data"]["site_url"], "https://drive.example.com");
+    assert_eq!(
+        body["data"]["site_urls"],
+        serde_json::json!(["https://drive.example.com", "https://panel.example.com"])
+    );
     assert_eq!(body["data"]["allow_user_registration"], false);
 }
 

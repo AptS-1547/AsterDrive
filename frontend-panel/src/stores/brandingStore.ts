@@ -6,7 +6,7 @@ import {
 	resolveBranding,
 } from "@/lib/branding";
 import { logger } from "@/lib/logger";
-import { setPublicSiteUrl } from "@/lib/publicSiteUrl";
+import { setPublicSiteUrls } from "@/lib/publicSiteUrl";
 import { brandingService } from "@/services/brandingService";
 
 let inFlightLoad: Promise<void> | null = null;
@@ -35,7 +35,7 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
 				const branding = resolveBranding(publicBranding);
 				const allowUserRegistration =
 					publicBranding.allow_user_registration ?? true;
-				const siteUrl = setPublicSiteUrl(publicBranding.site_url);
+				const siteUrl = setPublicSiteUrls(publicBranding.site_urls);
 				applyBranding(branding);
 				set({
 					allowUserRegistration,
@@ -45,7 +45,7 @@ export const useBrandingStore = create<BrandingState>((set, get) => ({
 				});
 			} catch (error) {
 				const fallbackBranding = resolveBranding(null);
-				setPublicSiteUrl(null);
+				setPublicSiteUrls(null);
 				logger.warn("branding bootstrap failed, using defaults", error);
 				applyBranding(fallbackBranding);
 				set({

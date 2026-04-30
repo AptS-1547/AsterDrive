@@ -405,6 +405,33 @@ async fn test_cookie_authenticated_write_rejects_same_site_request_source() {
 }
 
 #[actix_web::test]
+async fn test_cookie_authenticated_write_accepts_trusted_same_site_public_origin() {
+    let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
+        r#"["https://api.example.com","https://panel.example.com"]"#,
+    ));
+    let app = create_test_app!(state);
+
+    let (access, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
+        .insert_header(("Origin", "https://panel.example.com"))
+        .insert_header(("Sec-Fetch-Site", "same-site"))
+        .set_json(serde_json::json!({
+            "display_name": "Trusted Panel"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["display_name"], "Trusted Panel");
+}
+
+#[actix_web::test]
 async fn test_cookie_authenticated_write_rejects_fetch_metadata_none_request_source() {
     let state = common::setup().await;
     let app = create_test_app!(state);

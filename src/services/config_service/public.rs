@@ -17,7 +17,7 @@ pub struct PublicBranding {
     pub favicon_url: String,
     pub wordmark_dark_url: String,
     pub wordmark_light_url: String,
-    pub site_url: Option<String>,
+    pub site_urls: Vec<String>,
     pub allow_user_registration: bool,
 }
 
@@ -29,7 +29,7 @@ pub fn get_public_branding(state: &PrimaryAppState) -> PublicBranding {
         favicon_url: branding::favicon_url_or_default(&state.runtime_config),
         wordmark_dark_url: branding::wordmark_dark_url_or_default(&state.runtime_config),
         wordmark_light_url: branding::wordmark_light_url_or_default(&state.runtime_config),
-        site_url: site_url::public_site_url(&state.runtime_config),
+        site_urls: site_url::public_site_urls(&state.runtime_config),
         allow_user_registration: auth_policy.allow_user_registration,
     }
 }

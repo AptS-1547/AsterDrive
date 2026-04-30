@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminSiteUrlMismatchPrompt } from "@/components/layout/AdminSiteUrlMismatchPrompt";
-import { setPublicSiteUrl } from "@/lib/publicSiteUrl";
+import { setPublicSiteUrls } from "@/lib/publicSiteUrl";
 
 const mockState = vi.hoisted(() => ({
 	brandingLoaded: false,
@@ -99,9 +99,9 @@ describe("AdminSiteUrlMismatchPrompt", () => {
 		mockState.toastSuccess.mockReset();
 		mockState.setConfig.mockResolvedValue({
 			key: "public_site_url",
-			value: window.location.origin,
+			value: [window.location.origin],
 		});
-		setPublicSiteUrl(null);
+		setPublicSiteUrls(null);
 	});
 
 	it("does not reopen while the admin route shell stays mounted", () => {
@@ -156,10 +156,9 @@ describe("AdminSiteUrlMismatchPrompt", () => {
 		);
 
 		await waitFor(() => {
-			expect(mockState.setConfig).toHaveBeenCalledWith(
-				"public_site_url",
+			expect(mockState.setConfig).toHaveBeenCalledWith("public_site_url", [
 				window.location.origin,
-			);
+			]);
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
 			"translated:settings_saved",

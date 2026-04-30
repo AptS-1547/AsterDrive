@@ -15,9 +15,14 @@ use crate::services::{
 };
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 
 const SHARE_COOKIE_PREFIX: &str = "aster_share_";
+
+fn request_origin_parts(req: &HttpRequest) -> (String, String) {
+    let conn = req.connection_info();
+    (conn.scheme().to_string(), conn.host().to_string())
+}
 
 fn share_cookie_name(token: &str) -> String {
     format!("{SHARE_COOKIE_PREFIX}{token}")
@@ -175,7 +180,16 @@ pub async fn create_preview_link(
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
-    let link = preview_link_service::create_token_for_shared_file(&state, &token).await?;
+    let (scheme, host) = request_origin_parts(&req);
+    let link = preview_link_service::create_token_for_shared_file_for_origin(
+        &state,
+        &token,
+        preview_link_service::RequestOrigin {
+            scheme: &scheme,
+            host: &host,
+        },
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
 }
 
@@ -308,8 +322,17 @@ pub async fn create_folder_file_preview_link(
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
-    let link =
-        preview_link_service::create_token_for_shared_folder_file(&state, &token, file_id).await?;
+    let (scheme, host) = request_origin_parts(&req);
+    let link = preview_link_service::create_token_for_shared_folder_file_for_origin(
+        &state,
+        &token,
+        file_id,
+        preview_link_service::RequestOrigin {
+            scheme: &scheme,
+            host: &host,
+        },
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
 }
 

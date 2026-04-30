@@ -3,14 +3,19 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { handleApiError } from "@/hooks/useApiError";
-import { normalizePublicSiteUrl, setPublicSiteUrl } from "@/lib/publicSiteUrl";
+import {
+	getPublicSiteUrls,
+	normalizePublicSiteUrl,
+	publicSiteUrlMatches,
+	setPublicSiteUrls,
+} from "@/lib/publicSiteUrl";
 import { adminConfigService } from "@/services/adminService";
 import { useBrandingStore } from "@/stores/brandingStore";
 
 const PUBLIC_SITE_URL_KEY = "public_site_url";
 
-function syncPublicSiteUrlRuntime(value: string | null | undefined) {
-	const siteUrl = setPublicSiteUrl(value);
+function syncPublicSiteUrlRuntime(value: string[] | null | undefined) {
+	const siteUrl = setPublicSiteUrls(value);
 	useBrandingStore.setState({ siteUrl });
 }
 
@@ -23,6 +28,11 @@ export function AdminSiteUrlMismatchPrompt() {
 		useState(false);
 	const [siteUrlMismatchCurrentOrigin, setSiteUrlMismatchCurrentOrigin] =
 		useState<string | null>(null);
+	const configuredSiteUrlList = getPublicSiteUrls();
+	const configuredSiteUrlDescription =
+		configuredSiteUrlList.length > 0
+			? configuredSiteUrlList.join(", ")
+			: configuredSiteUrl;
 
 	useEffect(() => {
 		if (
@@ -36,13 +46,13 @@ export function AdminSiteUrlMismatchPrompt() {
 		siteUrlPromptCheckedRef.current = true;
 
 		const currentOrigin = normalizePublicSiteUrl(window.location.origin);
-		if (!currentOrigin || configuredSiteUrl === currentOrigin) {
+		if (!currentOrigin || publicSiteUrlMatches(currentOrigin)) {
 			return;
 		}
 
 		setSiteUrlMismatchCurrentOrigin(currentOrigin);
 		setSiteUrlMismatchDialogOpen(true);
-	}, [configuredSiteUrl, isBrandingLoaded]);
+	}, [isBrandingLoaded]);
 
 	const handleUpdatePublicSiteUrl = useCallback(async () => {
 		if (!siteUrlMismatchCurrentOrigin) {
@@ -50,11 +60,19 @@ export function AdminSiteUrlMismatchPrompt() {
 		}
 
 		try {
+			const nextValue = [
+				...getPublicSiteUrls().filter(
+					(origin) => origin !== siteUrlMismatchCurrentOrigin,
+				),
+				siteUrlMismatchCurrentOrigin,
+			];
 			const savedConfig = await adminConfigService.set(
 				PUBLIC_SITE_URL_KEY,
-				siteUrlMismatchCurrentOrigin,
+				nextValue,
 			);
-			syncPublicSiteUrlRuntime(savedConfig.value);
+			syncPublicSiteUrlRuntime(
+				Array.isArray(savedConfig.value) ? savedConfig.value : [],
+			);
 			toast.success(t("settings_saved"));
 		} catch (error) {
 			handleApiError(error);
@@ -69,7 +87,8 @@ export function AdminSiteUrlMismatchPrompt() {
 			description={
 				siteUrlMismatchCurrentOrigin
 					? t("site_url_mismatch_description", {
-							configured: configuredSiteUrl ?? t("site_url_mismatch_not_set"),
+							configured:
+								configuredSiteUrlDescription ?? t("site_url_mismatch_not_set"),
 							current: siteUrlMismatchCurrentOrigin,
 						})
 					: undefined

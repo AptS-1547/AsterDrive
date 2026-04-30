@@ -267,7 +267,7 @@ fn ensure_vary_deduplicates_values() {
 async fn middleware_does_not_allow_public_site_origin_preflight_without_whitelist() {
     let state = test_state(&[
         ("cors_enabled", "true"),
-        ("public_site_url", "https://drive.example.com"),
+        ("public_site_url", r#"["https://drive.example.com"]"#),
     ])
     .await;
     let app = actix_test::init_service(
@@ -303,7 +303,7 @@ async fn middleware_does_not_add_public_site_origin_to_passthrough_response_with
 {
     let state = test_state(&[
         ("cors_enabled", "true"),
-        ("public_site_url", "https://drive.example.com"),
+        ("public_site_url", r#"["https://drive.example.com"]"#),
     ])
     .await;
     let app = actix_test::init_service(
@@ -332,7 +332,7 @@ async fn middleware_does_not_add_public_site_origin_to_passthrough_response_with
 async fn middleware_preserves_existing_allow_origin_header() {
     let state = test_state(&[
         ("cors_enabled", "true"),
-        ("public_site_url", "https://drive.example.com"),
+        ("public_site_url", r#"["https://drive.example.com"]"#),
     ])
     .await;
     let app = actix_test::init_service(

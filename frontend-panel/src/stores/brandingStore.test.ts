@@ -39,8 +39,8 @@ describe("brandingStore", () => {
 		mockState.applyBranding.mockReset();
 		mockState.getBranding.mockReset();
 		mockState.loggerWarn.mockReset();
-		const { setPublicSiteUrl } = await import("@/lib/publicSiteUrl");
-		setPublicSiteUrl(null);
+		const { setPublicSiteUrls } = await import("@/lib/publicSiteUrl");
+		setPublicSiteUrls(null);
 	});
 
 	it("loads public branding once and applies it", async () => {
@@ -51,11 +51,13 @@ describe("brandingStore", () => {
 			favicon_url: "https://cdn.example.com/icon.png",
 			wordmark_dark_url: "https://cdn.example.com/wordmark-dark.svg",
 			wordmark_light_url: "https://cdn.example.com/wordmark-light.svg",
-			site_url: "https://drive.example.com",
+			site_urls: ["https://drive.example.com", "https://panel.example.com"],
 		});
 
 		const { useBrandingStore } = await loadBrandingStoreModule();
-		const { getPublicSiteUrl } = await import("@/lib/publicSiteUrl");
+		const { getPublicSiteUrl, getPublicSiteUrls } = await import(
+			"@/lib/publicSiteUrl"
+		);
 
 		await useBrandingStore.getState().load();
 		await useBrandingStore.getState().load();
@@ -80,6 +82,10 @@ describe("brandingStore", () => {
 			siteUrl: "https://drive.example.com",
 		});
 		expect(getPublicSiteUrl()).toBe("https://drive.example.com");
+		expect(getPublicSiteUrls()).toEqual([
+			"https://drive.example.com",
+			"https://panel.example.com",
+		]);
 	});
 
 	it("falls back to defaults when the public endpoint fails", async () => {

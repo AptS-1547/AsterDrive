@@ -3830,7 +3830,7 @@ export interface components {
                 updated_at: string;
                 /** Format: int64 */
                 updated_by?: number | null;
-                value: string;
+                value: components["schemas"]["SystemConfigValue"];
                 value_type: components["schemas"]["SystemConfigValueType"];
             }[];
             /** Format: int64 */
@@ -4075,7 +4075,7 @@ export interface components {
             allow_user_registration: boolean;
             description: string;
             favicon_url: string;
-            site_url?: string | null;
+            site_urls: string[];
             title: string;
             wordmark_dark_url: string;
             wordmark_light_url: string;
@@ -4346,7 +4346,7 @@ export interface components {
         };
         /** @description Set a system configuration value. */
         SetConfigReq: {
-            value: string;
+            value: components["schemas"]["SystemConfigValue"];
         };
         /** @description Lock or unlock a file. */
         SetLockReq: {
@@ -4534,7 +4534,7 @@ export interface components {
             updated_at: string;
             /** Format: int64 */
             updated_by?: number | null;
-            value: string;
+            value: components["schemas"]["SystemConfigValue"];
             value_type: components["schemas"]["SystemConfigValueType"];
         };
         /**
@@ -4542,11 +4542,12 @@ export interface components {
          * @enum {string}
          */
         SystemConfigSource: "system" | "custom";
+        SystemConfigValue: string | string[];
         /**
          * @description 运行时配置值类型
          * @enum {string}
          */
-        SystemConfigValueType: "string" | "multiline" | "number" | "boolean";
+        SystemConfigValueType: "string" | "multiline" | "string_array" | "number" | "boolean";
         TaskInfo: {
             /** Format: int32 */
             attempt_count: number;
@@ -5130,7 +5131,7 @@ export interface operations {
                                 updated_at: string;
                                 /** Format: int64 */
                                 updated_by?: number | null;
-                                value: string;
+                                value: components["schemas"]["SystemConfigValue"];
                                 value_type: components["schemas"]["SystemConfigValueType"];
                             }[];
                             /** Format: int64 */
@@ -5262,7 +5263,7 @@ export interface operations {
                             updated_at: string;
                             /** Format: int64 */
                             updated_by?: number | null;
-                            value: string;
+                            value: components["schemas"]["SystemConfigValue"];
                             value_type: components["schemas"]["SystemConfigValueType"];
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -5330,7 +5331,7 @@ export interface operations {
                             updated_at: string;
                             /** Format: int64 */
                             updated_by?: number | null;
-                            value: string;
+                            value: components["schemas"]["SystemConfigValue"];
                             value_type: components["schemas"]["SystemConfigValueType"];
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -11741,7 +11742,7 @@ export interface operations {
                             allow_user_registration: boolean;
                             description: string;
                             favicon_url: string;
-                            site_url?: string | null;
+                            site_urls: string[];
                             title: string;
                             wordmark_dark_url: string;
                             wordmark_light_url: string;

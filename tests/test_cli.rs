@@ -490,7 +490,7 @@ async fn test_root_binary_config_set_and_get_round_trip() {
         "--key",
         "public_site_url",
         "--value",
-        " HTTPS://Drive.EXAMPLE.com/ ",
+        r#"[" HTTPS://Drive.EXAMPLE.com/ "]"#,
     ]);
     assert!(
         set_output.status.success(),
@@ -499,7 +499,10 @@ async fn test_root_binary_config_set_and_get_round_trip() {
     );
     let set_json: Value = serde_json::from_slice(&set_output.stdout).expect("set output json");
     assert_eq!(set_json["ok"], true);
-    assert_eq!(set_json["data"]["value"], "https://drive.example.com");
+    assert_eq!(
+        set_json["data"]["value"],
+        serde_json::json!(["https://drive.example.com"])
+    );
 
     let get_output = run_aster_drive(&[
         "config",
@@ -517,7 +520,10 @@ async fn test_root_binary_config_set_and_get_round_trip() {
     let get_json: Value = serde_json::from_slice(&get_output.stdout).expect("get output json");
     assert_eq!(get_json["ok"], true);
     assert_eq!(get_json["data"]["key"], "public_site_url");
-    assert_eq!(get_json["data"]["value"], "https://drive.example.com");
+    assert_eq!(
+        get_json["data"]["value"],
+        serde_json::json!(["https://drive.example.com"])
+    );
 }
 
 #[tokio::test]
@@ -532,7 +538,7 @@ async fn test_root_binary_config_get_human_output_is_readable() {
         "--key",
         "public_site_url",
         "--value",
-        " HTTPS://Drive.EXAMPLE.com/ ",
+        r#"[" HTTPS://Drive.EXAMPLE.com/ "]"#,
     ]);
     assert!(
         set_output.status.success(),
@@ -759,7 +765,7 @@ async fn test_root_binary_doctor_warns_when_public_site_url_uses_http() {
         "--key",
         "public_site_url",
         "--value",
-        "http://drive.example.com",
+        r#"["http://drive.example.com"]"#,
     ]);
     assert!(
         set_output.status.success(),
@@ -792,9 +798,9 @@ async fn test_root_binary_doctor_warns_when_public_site_url_uses_http() {
     assert!(
         public_site_url_check["details"]
             .as_array()
-            .is_some_and(|details| details
-                .iter()
-                .any(|detail| detail.as_str() == Some("configured=http://drive.example.com")))
+            .is_some_and(|details| details.iter().any(
+                |detail| detail.as_str() == Some(r#"configured=["http://drive.example.com"]"#)
+            ))
     );
 }
 

@@ -10,6 +10,8 @@ import {
 } from "@/components/admin/previewAppsConfigEditorShared";
 import {
 	buildDraftValues,
+	configDraftValuesEqual,
+	configValueToString,
 	type DraftValues,
 	formatSubcategoryLabel,
 	getConfigDescription,
@@ -44,7 +46,7 @@ type TranslationFn = (key: string, options?: Record<string, unknown>) => string;
 
 interface UseAdminSettingsDataProps {
 	currentUserEmail: string;
-	onPublicSiteUrlChanged: (value: string | null | undefined) => void;
+	onPublicSiteUrlChanged: (value: string[] | null | undefined) => void;
 	t: TranslationFn;
 }
 
@@ -417,7 +419,10 @@ export function useAdminSettingsData({
 				if (deletedCustomKeySet.has(config.key)) {
 					return false;
 				}
-				return (draftValues[config.key] ?? config.value) !== config.value;
+				return !configDraftValuesEqual(
+					draftValues[config.key] ?? (config.value as DraftValues[string]),
+					config.value as DraftValues[string],
+				);
 			}),
 		[configs, deletedCustomKeySet, draftValues],
 	);
@@ -429,7 +434,9 @@ export function useAdminSettingsData({
 		}
 
 		return getPreviewAppsConfigIssuesFromString(
-			draftValues[config.key] ?? config.value,
+			configValueToString(
+				draftValues[config.key] ?? (config.value as DraftValues[string]),
+			),
 		);
 	}, [configs, draftValues]);
 
@@ -442,7 +449,9 @@ export function useAdminSettingsData({
 		}
 
 		return getMediaProcessingConfigIssuesFromString(
-			draftValues[config.key] ?? config.value,
+			configValueToString(
+				draftValues[config.key] ?? (config.value as DraftValues[string]),
+			),
 		);
 	}, [configs, draftValues]);
 
@@ -451,16 +460,16 @@ export function useAdminSettingsData({
 		const configsByKey = new Map(
 			configs.map((config) => [config.key, config] as const),
 		);
-		const allowedOrigins = (
+		const allowedOrigins = configValueToString(
 			draftValues[CORS_ALLOWED_ORIGINS_KEY] ??
-			configsByKey.get(CORS_ALLOWED_ORIGINS_KEY)?.value ??
-			""
+				(configsByKey.get(CORS_ALLOWED_ORIGINS_KEY)
+					?.value as DraftValues[string]),
 		).trim();
 		const allowCredentials =
-			(
+			configValueToString(
 				draftValues[CORS_ALLOW_CREDENTIALS_KEY] ??
-				configsByKey.get(CORS_ALLOW_CREDENTIALS_KEY)?.value ??
-				""
+					(configsByKey.get(CORS_ALLOW_CREDENTIALS_KEY)
+						?.value as DraftValues[string]),
 			).trim() === "true";
 
 		if (allowCredentials && allowedOrigins === "*") {
@@ -494,13 +503,17 @@ export function useAdminSettingsData({
 					: undefined);
 
 	const getDraftValue = useCallback(
-		(config: SystemConfig) => draftValues[config.key] ?? config.value,
+		(config: SystemConfig) =>
+			draftValues[config.key] ?? (config.value as DraftValues[string]),
 		[draftValues],
 	);
 
-	const updateDraftValue = useCallback((key: string, value: string) => {
-		setDraftValues((previous) => ({ ...previous, [key]: value }));
-	}, []);
+	const updateDraftValue = useCallback(
+		(key: string, value: DraftValues[string]) => {
+			setDraftValues((previous) => ({ ...previous, [key]: value }));
+		},
+		[],
+	);
 
 	const toggleSubcategoryGroup = useCallback(
 		(groupKey: string, nextExpanded: boolean) => {
@@ -612,7 +625,7 @@ export function useAdminSettingsData({
 			setConfigs(nextConfigs);
 			const nextPublicSiteUrl =
 				nextConfigsByKey.get(PUBLIC_SITE_URL_KEY)?.value;
-			if (nextPublicSiteUrl !== undefined) {
+			if (Array.isArray(nextPublicSiteUrl)) {
 				onPublicSiteUrlChanged(nextPublicSiteUrl);
 			}
 			if (previewAppsChanged) {

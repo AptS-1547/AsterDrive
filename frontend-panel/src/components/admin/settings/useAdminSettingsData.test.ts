@@ -100,8 +100,8 @@ function createConfig(overrides: Partial<SystemConfig> = {}): SystemConfig {
 		source: "system",
 		updated_at: "2026-04-15T00:00:00Z",
 		updated_by: null,
-		value: "https://old.example.com",
-		value_type: "string",
+		value: ["https://old.example.com"],
+		value_type: "string_array",
 		...overrides,
 	};
 }
@@ -214,6 +214,7 @@ function getMockConfigSource(key: string): SystemConfigSource {
 }
 
 function getMockConfigValueType(key: string): SystemConfigValueType {
+	if (key === "public_site_url") return "string_array";
 	return key === PREVIEW_APPS_CONFIG_KEY || key === MEDIA_PROCESSING_CONFIG_KEY
 		? "multiline"
 		: "string";
@@ -259,16 +260,17 @@ describe("useAdminSettingsData", () => {
 		mockState.previewLoad.mockResolvedValue(undefined);
 		mockState.thumbnailSupportLoad.mockResolvedValue(undefined);
 		mockState.deleteConfig.mockResolvedValue(undefined);
-		mockState.setConfig.mockImplementation((key: string, value: string) =>
-			Promise.resolve(
-				createConfig({
-					category: getConfigCategory(key),
-					key,
-					source: getMockConfigSource(key),
-					value,
-					value_type: getMockConfigValueType(key),
-				}),
-			),
+		mockState.setConfig.mockImplementation(
+			(key: string, value: string | string[]) =>
+				Promise.resolve(
+					createConfig({
+						category: getConfigCategory(key),
+						key,
+						source: getMockConfigSource(key),
+						value,
+						value_type: getMockConfigValueType(key),
+					}),
+				),
 		);
 	});
 
@@ -481,10 +483,9 @@ describe("useAdminSettingsData", () => {
 		});
 
 		act(() => {
-			result.current.updateDraftValue(
-				"public_site_url",
+			result.current.updateDraftValue("public_site_url", [
 				"https://next.example.com",
-			);
+			]);
 			result.current.updateDraftValue(
 				PREVIEW_APPS_CONFIG_KEY,
 				nextPreviewValue,
@@ -510,10 +511,9 @@ describe("useAdminSettingsData", () => {
 		});
 
 		expect(mockState.deleteConfig).toHaveBeenCalledWith("custom.theme");
-		expect(mockState.setConfig).toHaveBeenCalledWith(
-			"public_site_url",
+		expect(mockState.setConfig).toHaveBeenCalledWith("public_site_url", [
 			"https://next.example.com",
-		);
+		]);
 		expect(mockState.setConfig).toHaveBeenCalledWith(
 			PREVIEW_APPS_CONFIG_KEY,
 			nextPreviewValue,
@@ -523,9 +523,9 @@ describe("useAdminSettingsData", () => {
 			nextMediaProcessingValue,
 		);
 		expect(mockState.setConfig).toHaveBeenCalledWith("custom.accent", "sunset");
-		expect(onPublicSiteUrlChanged).toHaveBeenCalledWith(
+		expect(onPublicSiteUrlChanged).toHaveBeenCalledWith([
 			"https://next.example.com",
-		);
+		]);
 		expect(mockState.previewInvalidate).toHaveBeenCalledTimes(1);
 		expect(mockState.previewLoad).toHaveBeenCalledWith({ force: true });
 		expect(mockState.thumbnailSupportInvalidate).toHaveBeenCalledTimes(1);
@@ -549,23 +549,21 @@ describe("useAdminSettingsData", () => {
 		await waitFor(() => expect(result.current.loading).toBe(false));
 
 		act(() => {
-			result.current.updateDraftValue(
-				"public_site_url",
+			result.current.updateDraftValue("public_site_url", [
 				"https://only-public.example.com",
-			);
+			]);
 		});
 
 		await act(async () => {
 			await result.current.handleSaveAll();
 		});
 
-		expect(mockState.setConfig).toHaveBeenCalledWith(
-			"public_site_url",
+		expect(mockState.setConfig).toHaveBeenCalledWith("public_site_url", [
 			"https://only-public.example.com",
-		);
-		expect(onPublicSiteUrlChanged).toHaveBeenCalledWith(
+		]);
+		expect(onPublicSiteUrlChanged).toHaveBeenCalledWith([
 			"https://only-public.example.com",
-		);
+		]);
 		expect(mockState.previewInvalidate).not.toHaveBeenCalled();
 		expect(mockState.previewLoad).not.toHaveBeenCalled();
 		expect(mockState.thumbnailSupportInvalidate).not.toHaveBeenCalled();
@@ -581,10 +579,9 @@ describe("useAdminSettingsData", () => {
 		await waitFor(() => expect(result.current.loading).toBe(false));
 
 		act(() => {
-			result.current.updateDraftValue(
-				"public_site_url",
+			result.current.updateDraftValue("public_site_url", [
 				"https://broken.example.com",
-			);
+			]);
 		});
 
 		await act(async () => {

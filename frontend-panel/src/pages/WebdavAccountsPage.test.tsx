@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { setPublicSiteUrl } from "@/lib/publicSiteUrl";
+import { setPublicSiteUrls } from "@/lib/publicSiteUrl";
 import WebdavAccountsPage from "@/pages/WebdavAccountsPage";
 
 const mockState = vi.hoisted(() => ({
@@ -302,7 +302,7 @@ describe("WebdavAccountsPage", () => {
 		mockState.testConnection.mockResolvedValue(undefined);
 		mockState.toggle.mockResolvedValue(undefined);
 		mockState.writeText.mockResolvedValue(undefined);
-		setPublicSiteUrl(null);
+		setPublicSiteUrls(null);
 
 		Object.defineProperty(navigator, "clipboard", {
 			configurable: true,
@@ -343,7 +343,7 @@ describe("WebdavAccountsPage", () => {
 	});
 
 	it("uses the configured public site URL when copying the WebDAV endpoint", async () => {
-		setPublicSiteUrl("https://drive.example.com");
+		setPublicSiteUrls(["https://drive.example.com"]);
 
 		render(<WebdavAccountsPage />);
 		await screen.findByDisplayValue("https://drive.example.com/dav/");

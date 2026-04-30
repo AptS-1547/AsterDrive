@@ -44,6 +44,7 @@ pub(crate) async fn create_launch_session_in_scope(
     scope: WorkspaceStorageScope,
     file_id: i64,
     app_key: &str,
+    request_origin: Option<RequestOrigin<'_>>,
 ) -> Result<WopiLaunchSession> {
     // launch 阶段做的是“把内部 file 访问权翻译成外部 WOPI app 可用的 action_url +
     // access_token”，并不是立刻打开文档。
@@ -56,7 +57,7 @@ pub(crate) async fn create_launch_session_in_scope(
         .ok_or_else(|| AsterError::record_not_found(format!("preview app '{app_key}'")))?;
     let app_config = parse_wopi_app_config(&app)?;
 
-    let wopi_src = build_public_wopi_src(state, file.id)?;
+    let wopi_src = build_public_wopi_src(state, file.id, request_origin)?;
     let action_url = resolve_action_url(state, &app_config, &file, &wopi_src).await?;
     let expires_at = Utc::now()
         + Duration::seconds(crate::config::wopi::access_token_ttl_secs(
@@ -84,17 +85,57 @@ pub(crate) async fn create_launch_session_in_scope(
     })
 }
 
-pub(crate) fn build_public_wopi_src(state: &PrimaryAppState, file_id: i64) -> Result<String> {
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RequestOrigin<'a> {
+    pub(crate) scheme: &'a str,
+    pub(crate) host: &'a str,
+}
+
+fn require_public_origin(public_origin: Option<String>) -> Result<String> {
+    public_origin.ok_or_else(|| {
+        AsterError::validation_error("public_site_url is required for WOPI integration")
+    })
+}
+
+pub(crate) fn select_public_origin(
+    state: &PrimaryAppState,
+    request_origin: Option<RequestOrigin<'_>>,
+) -> Result<String> {
+    require_public_origin(
+        request_origin
+            .and_then(|origin| {
+                site_url::public_site_url_for_request(
+                    &state.runtime_config,
+                    origin.scheme,
+                    origin.host,
+                )
+            })
+            .or_else(|| site_url::public_site_url(&state.runtime_config)),
+    )
+}
+
+pub(crate) fn select_public_origin_from_preselected(
+    state: &PrimaryAppState,
+    request_public_origin: Option<&str>,
+) -> Result<String> {
+    require_public_origin(
+        request_public_origin
+            .map(str::to_owned)
+            .or_else(|| site_url::public_site_url(&state.runtime_config)),
+    )
+}
+
+pub(crate) fn build_public_wopi_src(
+    state: &PrimaryAppState,
+    file_id: i64,
+    request_origin: Option<RequestOrigin<'_>>,
+) -> Result<String> {
     // WOPISrc 指向的是 CheckFileInfo 端点，而不是 `/contents`。
     // 官方路径定义见：
     // - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/checkfileinfo
     // - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/getfile
     // 这里与 `src/api/routes/wopi.rs`、PUT_RELATIVE 返回的新文件 URL 强耦合，改动时必须同步。
-    let Some(base) = site_url::public_site_url(&state.runtime_config) else {
-        return Err(AsterError::validation_error(
-            "public_site_url is required for WOPI integration",
-        ));
-    };
+    let base = select_public_origin(state, request_origin)?;
 
     Ok(format!("{base}/api/v1/wopi/files/{file_id}"))
 }

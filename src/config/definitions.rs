@@ -107,6 +107,10 @@ pub const AUDIT_LOG_RETENTION_DAYS_KEY: &str = "audit_log_retention_days";
 // ── WebDAV keys ──────────────────────────────────────────────────────────────
 pub const WEBDAV_ENABLED_KEY: &str = "webdav_enabled";
 
+fn empty_string_array_default() -> String {
+    "[]".to_string()
+}
+
 /// 单条配置定义
 pub struct ConfigDef {
     /// 配置键（数据库 unique key）
@@ -813,12 +817,12 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         key: PUBLIC_SITE_URL_KEY,
         label_i18n_key: "settings_item_public_site_url_label",
         description_i18n_key: "settings_item_public_site_url_desc",
-        value_type: SystemConfigValueType::String,
-        default_fn: String::new,
+        value_type: SystemConfigValueType::StringArray,
+        default_fn: empty_string_array_default,
         requires_restart: false,
         is_sensitive: false,
         category: "general",
-        description: "Public HTTP(S) site origin used when generating share, preview, and callback URLs",
+        description: "Trusted public HTTP(S) frontend origins as a JSON string array. They are used to generate share, preview, WebDAV, WOPI, and callback URLs, and they also extend exact-match trusted frontend origins for cookie-authenticated same-site CSRF checks. This is separate from CORS and mainly affects same-site subdomain deployments; do not add domains you do not control. The first origin is the fallback",
     },
     ConfigDef {
         key: BRANDING_TITLE_KEY,

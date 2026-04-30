@@ -414,7 +414,7 @@ async fn test_file_preview_link_uses_configured_public_site_url() {
     let state = common::setup().await;
     state.runtime_config.apply(common::system_config_model(
         aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
-        "https://drive.example.com",
+        r#"["https://drive.example.com"]"#,
     ));
     let app = create_test_app!(state);
 

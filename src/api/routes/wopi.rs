@@ -19,6 +19,7 @@
 
 use crate::api::dto::validate_request;
 use crate::api::dto::wopi::WopiAccessQuery;
+use crate::config::site_url;
 use crate::runtime::PrimaryAppState;
 use crate::services::{file_service, wopi_service};
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -343,14 +344,24 @@ fn request_source<'a>(
     state: &PrimaryAppState,
     req: &'a HttpRequest,
 ) -> wopi_service::WopiRequestSource<'a> {
+    let conn = req.connection_info();
     wopi_service::WopiRequestSource {
         origin: optional_header_value(req, "Origin"),
         referer: optional_header_value(req, "Referer"),
         proof: optional_header_value(req, "X-WOPI-Proof"),
         proof_old: optional_header_value(req, "X-WOPI-ProofOld"),
         timestamp: optional_header_value(req, "X-WOPI-TimeStamp"),
-        public_url: crate::config::site_url::public_site_url(&state.runtime_config)
-            .map(|base| format!("{base}{}", req.uri())),
+        public_url: site_url::public_app_url_for_request(
+            &state.runtime_config,
+            &req.uri().to_string(),
+            conn.scheme(),
+            conn.host(),
+        ),
+        public_origin: site_url::public_site_url_for_request(
+            &state.runtime_config,
+            conn.scheme(),
+            conn.host(),
+        ),
     }
 }
 

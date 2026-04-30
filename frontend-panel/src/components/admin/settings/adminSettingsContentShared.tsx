@@ -57,7 +57,8 @@ const BRANDING_ASSET_PREVIEW_APPEARANCES: Record<
 	},
 };
 
-export type DraftValues = Record<string, string>;
+export type ConfigDraftValue = string | string[];
+export type DraftValues = Record<string, ConfigDraftValue>;
 
 type TimeConfigBaseUnit = "seconds" | "hours" | "days";
 export type TimeDisplayUnitValue =
@@ -202,6 +203,35 @@ export function isNumberType(valueType: SystemConfigValueType) {
 
 export function isMultilineType(valueType: SystemConfigValueType) {
 	return valueType === "multiline";
+}
+
+export function isStringArrayType(valueType: SystemConfigValueType) {
+	return valueType === "string_array";
+}
+
+export function configValueToString(value: ConfigDraftValue | undefined) {
+	return typeof value === "string" ? value : "";
+}
+
+export function configValueToStringArray(value: ConfigDraftValue | undefined) {
+	return Array.isArray(value) ? value : [];
+}
+
+export function configDraftValuesEqual(
+	left: ConfigDraftValue | undefined,
+	right: ConfigDraftValue | undefined,
+) {
+	if (Array.isArray(left) || Array.isArray(right)) {
+		if (!Array.isArray(left) || !Array.isArray(right)) {
+			return false;
+		}
+		return (
+			left.length === right.length &&
+			left.every((value, index) => value === right[index])
+		);
+	}
+
+	return (left ?? "") === (right ?? "");
 }
 
 export function isSystemConfigSource(source: SystemConfigSource) {
@@ -658,6 +688,9 @@ export function sortConfigsByKey(a: SystemConfig, b: SystemConfig) {
 
 export function buildDraftValues(configs: SystemConfig[]) {
 	return Object.fromEntries(
-		configs.map((config) => [config.key, config.value]),
+		configs.map((config) => [
+			config.key,
+			Array.isArray(config.value) ? [...config.value] : config.value,
+		]),
 	) as DraftValues;
 }

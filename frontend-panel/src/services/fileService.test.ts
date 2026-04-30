@@ -41,8 +41,8 @@ describe("fileService", () => {
 		mockState.get.mockReset();
 		mockState.patch.mockReset();
 		mockState.post.mockReset();
-		const { setPublicSiteUrl } = await import("@/lib/publicSiteUrl");
-		setPublicSiteUrl(null);
+		const { setPublicSiteUrls } = await import("@/lib/publicSiteUrl");
+		setPublicSiteUrls(null);
 	});
 
 	it("uses the expected file and folder endpoints", async () => {
@@ -275,10 +275,10 @@ describe("fileService", () => {
 	});
 
 	it("uses the configured public site URL for direct absolute links", async () => {
-		const { setPublicSiteUrl } = await import("@/lib/publicSiteUrl");
+		const { setPublicSiteUrls } = await import("@/lib/publicSiteUrl");
 		const { fileService } = await import("@/services/fileService");
 
-		setPublicSiteUrl("https://drive.example.com");
+		setPublicSiteUrls(["https://drive.example.com"]);
 
 		expect(fileService.directUrl("token-1", "clip 1.mp4")).toBe(
 			"https://drive.example.com/d/token-1/clip%201.mp4",
@@ -287,6 +287,6 @@ describe("fileService", () => {
 			"https://drive.example.com/d/token-1/clip%201.mp4?download=1",
 		);
 
-		setPublicSiteUrl(null);
+		setPublicSiteUrls(null);
 	});
 });

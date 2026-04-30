@@ -629,16 +629,34 @@ fn doctor_public_site_url_check(runtime_config: &crate::config::RuntimeConfig) -
         };
     }
 
-    match crate::config::site_url::normalize_public_site_url_config_value(&raw_value) {
-        Ok(normalized) => {
-            if normalized.starts_with("http://") {
+    match crate::config::site_url::parse_public_site_url_value(&raw_value) {
+        Ok(origins) => {
+            let configured = serde_json::to_string(&origins)
+                .unwrap_or_else(|_| "<invalid public_site_url origins>".to_string());
+            if origins.is_empty() {
+                return DoctorCheck {
+                    name: "public_site_url",
+                    label: "Public site URL",
+                    status: DoctorStatus::Warn,
+                    summary: "public_site_url is empty".to_string(),
+                    details: vec![
+                        "share, preview, and callback URLs will not have a stable public origin"
+                            .to_string(),
+                    ],
+                    suggestion: Some(
+                        "Set config public_site_url to at least one externally reachable HTTP(S) origin."
+                            .to_string(),
+                    ),
+                };
+            }
+            if origins.iter().any(|origin| origin.starts_with("http://")) {
                 return DoctorCheck {
                     name: "public_site_url",
                     label: "Public site URL",
                     status: DoctorStatus::Warn,
                     summary: "public_site_url uses insecure HTTP".to_string(),
                     details: vec![
-                        format!("configured={normalized}"),
+                        format!("configured={configured}"),
                         "production deployments should terminate TLS at a reverse proxy"
                             .to_string(),
                     ],
@@ -653,7 +671,7 @@ fn doctor_public_site_url_check(runtime_config: &crate::config::RuntimeConfig) -
                 name: "public_site_url",
                 label: "Public site URL",
                 status: DoctorStatus::Ok,
-                summary: format!("configured as {normalized}"),
+                summary: format!("configured as {configured}"),
                 details: Vec::new(),
                 suggestion: None,
             }
@@ -810,11 +828,7 @@ fn doctor_preview_apps_check(runtime_config: &crate::config::RuntimeConfig) -> D
         format!("wopi_enabled={wopi_apps}"),
     ];
 
-    if wopi_apps > 0
-        && runtime_config
-            .get(crate::config::site_url::PUBLIC_SITE_URL_KEY)
-            .is_none_or(|value| value.trim().is_empty())
-    {
+    if wopi_apps > 0 && crate::config::site_url::public_site_urls(runtime_config).is_empty() {
         return DoctorCheck {
             name: "preview_apps",
             label: "Preview app registry",
@@ -1156,7 +1170,7 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(
             PUBLIC_SITE_URL_KEY,
-            "http://drive.example.com",
+            r#"["http://drive.example.com"]"#,
         ));
 
         let check = doctor_public_site_url_check(&runtime_config);
@@ -1167,7 +1181,7 @@ mod tests {
             check
                 .details
                 .iter()
-                .any(|detail| { detail == "configured=http://drive.example.com" })
+                .any(|detail| { detail == r#"configured=["http://drive.example.com"]"# })
         );
         assert!(
             check
@@ -1182,12 +1196,15 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(
             PUBLIC_SITE_URL_KEY,
-            "https://drive.example.com",
+            r#"["https://drive.example.com"]"#,
         ));
 
         let check = doctor_public_site_url_check(&runtime_config);
 
         assert_eq!(check.status, DoctorStatus::Ok);
-        assert_eq!(check.summary, "configured as https://drive.example.com");
+        assert_eq!(
+            check.summary,
+            r#"configured as ["https://drive.example.com"]"#
+        );
     }
 }
