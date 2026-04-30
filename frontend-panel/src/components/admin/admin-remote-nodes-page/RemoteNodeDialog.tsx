@@ -222,7 +222,7 @@ export function RemoteNodeDialog({
 		<section className="rounded-3xl border border-border/70 bg-background/85 p-5">
 			<div className="flex items-start gap-3">
 				<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted/20 text-primary">
-					<Icon name="Globe" className="h-5 w-5" />
+					<Icon name="Docker" className="h-5 w-5" />
 				</div>
 				<div className="min-w-0">
 					<h3 className="text-sm font-semibold">

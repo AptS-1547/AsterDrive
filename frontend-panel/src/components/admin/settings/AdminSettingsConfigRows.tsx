@@ -143,7 +143,10 @@ function PublicSiteUrlOriginsControl({
 	});
 
 	const updateRows = (nextRows: string[]) => {
-		updateDraftValue(config.key, nextRows);
+		updateDraftValue(
+			config.key,
+			nextRows.some((row) => row.trim()) ? nextRows : [],
+		);
 	};
 
 	return (
@@ -195,7 +198,7 @@ function PublicSiteUrlOriginsControl({
 							title={t("public_site_url_remove_origin")}
 							onClick={() => {
 								if (rows.length <= 1) {
-									updateRows([""]);
+									updateRows([]);
 									return;
 								}
 								rowIdsRef.current.splice(index, 1);

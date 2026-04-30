@@ -1,4 +1,5 @@
 import type { ComponentProps, ComponentType } from "react";
+import { FaDocker } from "react-icons/fa6";
 import {
 	PiArrowClockwise,
 	PiArrowCounterClockwise,
@@ -96,6 +97,7 @@ export type IconName =
 	| "Clock"
 	| "Cloud"
 	| "Copy"
+	| "Docker"
 	| "DotsThree"
 	| "Download"
 	| "EnvelopeSimple"
@@ -171,6 +173,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Clock: PiClockCounterClockwise,
 	Cloud: PiCloud,
 	Copy: PiCopy,
+	Docker: FaDocker,
 	DotsThree: PiDotsThree,
 	Download: PiDownloadSimple,
 	EnvelopeSimple: PiEnvelopeSimple,

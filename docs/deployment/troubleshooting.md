@@ -170,7 +170,7 @@ WebDAV 走自己的账号系统，**不是普通登录账号**。在个人空间
 
 最常见的是 **WOPI 服务无法回连 AsterDrive**。
 
-WOPI 协议要求预览服务从 AsterDrive 拉文件内容，所以预览服务那一侧必须能访问到你配置的公开站点来源（Origin）。如果配置了多个来源，确保至少第一项或当前请求 Host 命中的那一项能被 WOPI 服务访问：
+WOPI 协议要求预览服务从 AsterDrive 拉文件内容，所以预览服务那一侧必须能访问到你配置的公开站点来源（Origin）。生成 WOPI 地址时，AsterDrive 会先按当前请求 Origin（scheme + host[:port]）精确匹配；命中用该来源，未命中时回退第一项。确保这个最终选中的来源能被 WOPI 服务访问：
 
 - 预览服务和 AsterDrive 都在 Docker 里：用 Docker network，公开站点来源用对方能解析的域名
 - 预览服务在外网：公开站点来源必须是公网可达的 HTTPS
