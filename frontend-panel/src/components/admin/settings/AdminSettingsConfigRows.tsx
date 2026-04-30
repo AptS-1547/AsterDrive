@@ -498,7 +498,6 @@ export function CustomConfigRow({ config }: { config: SystemConfig }) {
 	const { getDraftValue, markCustomDeleted, t } =
 		useAdminSettingsCategoryContent();
 	const draftValue = getDraftValue(config);
-	const draftStringValue = configValueToString(draftValue);
 	const valueType = getConfigValueType(config);
 	const draftChanged = !configDraftValuesEqual(
 		draftValue,
@@ -533,11 +532,7 @@ export function CustomConfigRow({ config }: { config: SystemConfig }) {
 						: "flex flex-col gap-3 sm:flex-row sm:items-center"
 				}
 			>
-				<ConfigInputControl
-					config={config}
-					draftValue={draftStringValue}
-					fullWidth
-				/>
+				<ConfigInputControl config={config} draftValue={draftValue} fullWidth />
 				<Button
 					variant="ghost"
 					size="sm"

@@ -61,7 +61,7 @@ const SAVE_BAR_EXIT_DURATION_MS = 140;
 
 export type AdminSettingsTab = (typeof CATEGORY_ORDER)[number];
 
-function syncPublicSiteUrlRuntime(value: string[] | null | undefined) {
+function syncPublicSiteUrlsRuntime(value: string[] | null | undefined) {
 	const siteUrl = setPublicSiteUrls(value);
 	useBrandingStore.setState({ siteUrl });
 }
@@ -186,7 +186,7 @@ export default function AdminSettingsPage({
 		visibleCustomConfigs,
 	} = useAdminSettingsData({
 		currentUserEmail,
-		onPublicSiteUrlChanged: syncPublicSiteUrlRuntime,
+		onPublicSiteUrlChanged: syncPublicSiteUrlsRuntime,
 		t,
 	});
 

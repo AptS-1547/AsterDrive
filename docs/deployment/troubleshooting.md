@@ -106,7 +106,7 @@ session 默认 24 小时过期。
 - 图片 / 视频 / 代码：浏览器原生预览，看浏览器控制台是否有 CSP / MIME 报错
 - Office 文件：取决于你接的预览方式
   - 如果走外部预览器，先在 `管理 -> 系统设置 -> 站点配置 -> 预览应用` 里看绑定是否正确
-  - 如果走 WOPI（Collabora / OnlyOffice），需要确认 WOPI 服务能反向访问到 AsterDrive 的 `公开站点地址`
+  - 如果走 WOPI（Collabora / OnlyOffice），需要确认 WOPI 服务能反向访问到 AsterDrive 的公开站点来源（Origin）
 
 WOPI 接入细节见 [文件编辑](../guide/editing)。
 
@@ -170,7 +170,7 @@ WebDAV 走自己的账号系统，**不是普通登录账号**。在个人空间
 
 最常见的是 **WOPI 服务无法回连 AsterDrive**。
 
-WOPI 协议要求预览服务从 AsterDrive 拉文件内容，所以预览服务那一侧必须能访问到你配的 `公开站点地址`。如果配置了多个来源，确保至少第一行或当前请求 Host 命中的那一行能被 WOPI 服务访问：
+WOPI 协议要求预览服务从 AsterDrive 拉文件内容，所以预览服务那一侧必须能访问到你配置的公开站点来源（Origin）。如果配置了多个来源，确保至少第一项或当前请求 Host 命中的那一项能被 WOPI 服务访问：
 
 - 预览服务和 AsterDrive 都在 Docker 里：用 Docker network，公开站点来源用对方能解析的域名
 - 预览服务在外网：公开站点来源必须是公网可达的 HTTPS

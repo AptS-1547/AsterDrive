@@ -688,6 +688,9 @@ export function sortConfigsByKey(a: SystemConfig, b: SystemConfig) {
 
 export function buildDraftValues(configs: SystemConfig[]) {
 	return Object.fromEntries(
-		configs.map((config) => [config.key, config.value as ConfigDraftValue]),
+		configs.map((config) => [
+			config.key,
+			Array.isArray(config.value) ? [...config.value] : config.value,
+		]),
 	) as DraftValues;
 }
