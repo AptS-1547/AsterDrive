@@ -27,7 +27,12 @@ import {
 	getRemoteNodeBaseUrlValidationMessage,
 	type RemoteNodeFormData,
 } from "../remoteNodeDialogShared";
-import { formatLastChecked, TestConnectionButton } from "./shared";
+import {
+	formatLastChecked,
+	getRemoteNodeEnrollmentStatusLabel,
+	getRemoteNodeEnrollmentStatusTone,
+	TestConnectionButton,
+} from "./shared";
 
 const DOCKER_FOLLOWER_DOCS_URL =
 	"https://asterdrive.docs.esap.cc/deployment/docker-follower";
@@ -154,10 +159,22 @@ export function RemoteNodeDialog({
 			label: t("base_url"),
 			value: form.base_url || t("remote_node_base_url_empty"),
 		},
-		{
-			label: t("remote_node_wizard_followup_label"),
-			value: t("remote_node_wizard_followup_value"),
-		},
+		...(editingNode
+			? [
+					{
+						label: t("remote_node_enrollment_status"),
+						value: getRemoteNodeEnrollmentStatusLabel(
+							t,
+							editingNode.enrollment_status,
+						),
+					},
+				]
+			: [
+					{
+						label: t("remote_node_wizard_followup_label"),
+						value: t("remote_node_wizard_followup_value"),
+					},
+				]),
 		{
 			label: t("remote_node_status"),
 			value: form.is_enabled
@@ -199,6 +216,19 @@ export function RemoteNodeDialog({
 				<Badge variant="outline" className={modeToneClass}>
 					{remoteNodeModeLabel}
 				</Badge>
+				{editingNode ? (
+					<Badge
+						variant="outline"
+						className={getRemoteNodeEnrollmentStatusTone(
+							editingNode.enrollment_status,
+						)}
+					>
+						{getRemoteNodeEnrollmentStatusLabel(
+							t,
+							editingNode.enrollment_status,
+						)}
+					</Badge>
+				) : null}
 				<Badge variant="outline" className={enabledToneClass}>
 					{form.is_enabled
 						? t("remote_node_status_enabled")
@@ -640,6 +670,24 @@ export function RemoteNodeDialog({
 												{t("remote_node_diagnostics_desc")}
 											</p>
 											<dl className="mt-4 space-y-3 text-sm">
+												<div>
+													<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+														{t("remote_node_enrollment_status")}
+													</dt>
+													<dd className="mt-1">
+														<Badge
+															variant="outline"
+															className={getRemoteNodeEnrollmentStatusTone(
+																editingNode.enrollment_status,
+															)}
+														>
+															{getRemoteNodeEnrollmentStatusLabel(
+																t,
+																editingNode.enrollment_status,
+															)}
+														</Badge>
+													</dd>
+												</div>
 												<div>
 													<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
 														{t("remote_node_last_checked")}

@@ -6,6 +6,7 @@ import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination"
 import { RemoteNodeDialog } from "@/components/admin/admin-remote-nodes-page/RemoteNodeDialog";
 import { RemoteNodeEnrollmentDialog } from "@/components/admin/admin-remote-nodes-page/RemoteNodeEnrollmentDialog";
 import { RemoteNodesTable } from "@/components/admin/admin-remote-nodes-page/RemoteNodesTable";
+import { hasCompletedRemoteNodeEnrollment } from "@/components/admin/admin-remote-nodes-page/shared";
 import {
 	buildCreateRemoteNodePayload,
 	buildUpdateRemoteNodePayload,
@@ -424,6 +425,11 @@ export default function AdminRemoteNodesPage() {
 	};
 
 	const handleGenerateEnrollmentCommand = async (node: RemoteNodeInfo) => {
+		if (hasCompletedRemoteNodeEnrollment(node)) {
+			toast.info(t("remote_node_enrollment_completed_action_disabled"));
+			return;
+		}
+
 		setGeneratingEnrollmentId(node.id);
 		try {
 			const command = await adminRemoteNodeService.createEnrollmentCommand(

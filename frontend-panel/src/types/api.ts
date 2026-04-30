@@ -100,6 +100,8 @@ export type RemoteEnrollmentCommandInfo =
 	components["schemas"]["RemoteEnrollmentCommandInfo"];
 export type RemoteIngressProfileInfo =
 	components["schemas"]["RemoteIngressProfileInfo"];
+export type RemoteNodeEnrollmentStatus =
+	components["schemas"]["RemoteNodeEnrollmentStatus"];
 export type RemoteNodeInfo = components["schemas"]["RemoteNodeInfo"];
 export type RemoteNodePage = components["schemas"]["OffsetPage_RemoteNodeInfo"];
 export type RemoteStorageCapabilities =

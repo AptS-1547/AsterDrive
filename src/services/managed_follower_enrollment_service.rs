@@ -17,6 +17,8 @@ pub const ENROLLMENT_TOKEN_REPLACED_MESSAGE: &str =
     "enrollment token has been replaced by a newer session";
 pub const ENROLLMENT_TOKEN_COMPLETED_MESSAGE: &str = "enrollment token has already been completed";
 pub const ENROLLMENT_TOKEN_EXPIRED_MESSAGE: &str = "enrollment token has expired";
+pub const REMOTE_NODE_ENROLLMENT_ALREADY_COMPLETED_MESSAGE: &str =
+    "remote node enrollment has already been completed";
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -46,12 +48,23 @@ pub async fn create_enrollment_command<S: PrimaryRuntimeState>(
     state: &S,
     remote_node_id: i64,
 ) -> Result<RemoteEnrollmentCommandInfo> {
+    let remote_node = managed_follower_repo::find_by_id(state.db(), remote_node_id).await?;
+    if follower_enrollment_session_repo::has_completed_for_managed_follower(
+        state.db(),
+        remote_node_id,
+    )
+    .await?
+    {
+        return Err(AsterError::validation_error(
+            REMOTE_NODE_ENROLLMENT_ALREADY_COMPLETED_MESSAGE,
+        ));
+    }
+
     let master_url = site_url::public_site_url(state.runtime_config()).ok_or_else(|| {
         AsterError::validation_error(
             "public_site_url must be configured before generating enrollment commands",
         )
     })?;
-    let remote_node = managed_follower_repo::find_by_id(state.db(), remote_node_id).await?;
     let token = format!("enr_{}", crate::utils::id::new_short_token());
     let ack_token = format!("enr_ack_{}", crate::utils::id::new_short_token());
     let token_hash = crate::utils::hash::sha256_hex(token.as_bytes());

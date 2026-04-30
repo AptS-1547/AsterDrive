@@ -3702,6 +3702,7 @@ export interface components {
                 base_url: string;
                 capabilities: components["schemas"]["RemoteStorageCapabilities"];
                 created_at: string;
+                enrollment_status: components["schemas"]["RemoteNodeEnrollmentStatus"];
                 /** Format: int64 */
                 id: number;
                 is_enabled: boolean;
@@ -4203,10 +4204,13 @@ export interface components {
             profile_key: string;
             updated_at: string;
         };
+        /** @enum {string} */
+        RemoteNodeEnrollmentStatus: "not_started" | "pending" | "redeemed" | "completed" | "expired";
         RemoteNodeInfo: {
             base_url: string;
             capabilities: components["schemas"]["RemoteStorageCapabilities"];
             created_at: string;
+            enrollment_status: components["schemas"]["RemoteNodeEnrollmentStatus"];
             /** Format: int64 */
             id: number;
             is_enabled: boolean;
@@ -6431,6 +6435,7 @@ export interface operations {
                                 base_url: string;
                                 capabilities: components["schemas"]["RemoteStorageCapabilities"];
                                 created_at: string;
+                                enrollment_status: components["schemas"]["RemoteNodeEnrollmentStatus"];
                                 /** Format: int64 */
                                 id: number;
                                 is_enabled: boolean;
@@ -6493,6 +6498,7 @@ export interface operations {
                             base_url: string;
                             capabilities: components["schemas"]["RemoteStorageCapabilities"];
                             created_at: string;
+                            enrollment_status: components["schemas"]["RemoteNodeEnrollmentStatus"];
                             /** Format: int64 */
                             id: number;
                             is_enabled: boolean;
@@ -6602,6 +6608,7 @@ export interface operations {
                             base_url: string;
                             capabilities: components["schemas"]["RemoteStorageCapabilities"];
                             created_at: string;
+                            enrollment_status: components["schemas"]["RemoteNodeEnrollmentStatus"];
                             /** Format: int64 */
                             id: number;
                             is_enabled: boolean;
@@ -6709,6 +6716,7 @@ export interface operations {
                             base_url: string;
                             capabilities: components["schemas"]["RemoteStorageCapabilities"];
                             created_at: string;
+                            enrollment_status: components["schemas"]["RemoteNodeEnrollmentStatus"];
                             /** Format: int64 */
                             id: number;
                             is_enabled: boolean;
@@ -7094,6 +7102,7 @@ export interface operations {
                             base_url: string;
                             capabilities: components["schemas"]["RemoteStorageCapabilities"];
                             created_at: string;
+                            enrollment_status: components["schemas"]["RemoteNodeEnrollmentStatus"];
                             /** Format: int64 */
                             id: number;
                             is_enabled: boolean;

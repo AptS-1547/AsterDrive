@@ -1,8 +1,8 @@
 //! 服务模块：`managed_follower_service`。
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::{managed_follower_repo, policy_repo};
-use crate::entities::managed_follower;
+use crate::db::repository::{follower_enrollment_session_repo, managed_follower_repo, policy_repo};
+use crate::entities::{follower_enrollment_session, managed_follower};
 use crate::errors::{AsterError, Result, validation_error_with_subcode};
 use crate::runtime::PrimaryRuntimeState;
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
@@ -21,6 +21,17 @@ use utoipa::ToSchema;
 const REMOTE_BINDING_SYNC_TIMEOUT: Duration = Duration::from_secs(5);
 const REMOTE_NODE_HEALTH_TEST_CONCURRENCY: usize = 4;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteNodeEnrollmentStatus {
+    NotStarted,
+    Pending,
+    Redeemed,
+    Completed,
+    Expired,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct RemoteNodeInfo {
@@ -28,6 +39,7 @@ pub struct RemoteNodeInfo {
     pub name: String,
     pub base_url: String,
     pub is_enabled: bool,
+    pub enrollment_status: RemoteNodeEnrollmentStatus,
     pub last_error: String,
     pub capabilities: RemoteStorageCapabilities,
     pub last_checked_at: Option<chrono::DateTime<Utc>>,
@@ -37,13 +49,17 @@ pub struct RemoteNodeInfo {
     pub updated_at: chrono::DateTime<Utc>,
 }
 
-impl From<managed_follower::Model> for RemoteNodeInfo {
-    fn from(model: managed_follower::Model) -> Self {
+impl RemoteNodeInfo {
+    fn from_model(
+        model: managed_follower::Model,
+        enrollment_status: RemoteNodeEnrollmentStatus,
+    ) -> Self {
         Self {
             id: model.id,
             name: model.name,
             base_url: model.base_url,
             is_enabled: model.is_enabled,
+            enrollment_status,
             last_error: model.last_error,
             capabilities: parse_capabilities(&model.last_capabilities),
             last_checked_at: model.last_checked_at,
@@ -99,18 +115,22 @@ pub async fn list_paginated<S: PrimaryRuntimeState>(
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<RemoteNodeInfo>> {
-    load_offset_page(limit, offset, 100, |limit, offset| async move {
+    let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) =
             managed_follower_repo::find_paginated(state.db(), limit, offset).await?;
-        Ok((items.into_iter().map(Into::into).collect(), total))
+        Ok((items, total))
     })
-    .await
+    .await?;
+    let mut items = Vec::with_capacity(page.items.len());
+    for model in page.items {
+        items.push(remote_node_info(state, model).await?);
+    }
+    Ok(OffsetPage::new(items, page.total, page.limit, page.offset))
 }
 
 pub async fn get<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<RemoteNodeInfo> {
-    managed_follower_repo::find_by_id(state.db(), id)
-        .await
-        .map(Into::into)
+    let model = managed_follower_repo::find_by_id(state.db(), id).await?;
+    remote_node_info(state, model).await
 }
 
 pub async fn create<S: PrimaryRuntimeState>(
@@ -138,7 +158,7 @@ pub async fn create<S: PrimaryRuntimeState>(
     .map_err(map_remote_node_db_err)?;
 
     refresh_registry(state).await?;
-    Ok(created.into())
+    remote_node_info(state, created).await
 }
 
 pub async fn update<S: PrimaryRuntimeState>(
@@ -174,7 +194,7 @@ pub async fn update<S: PrimaryRuntimeState>(
             "failed to sync remote binding config to follower: {error}"
         );
     }
-    Ok(updated.into())
+    remote_node_info(state, updated).await
 }
 
 pub async fn delete<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<()> {
@@ -195,13 +215,64 @@ pub async fn test_connection<S: PrimaryRuntimeState>(state: &S, id: i64) -> Resu
     if let Some(error) = probed.probe_error {
         return Err(error);
     }
-    Ok(probed.model.into())
+    remote_node_info(state, probed.model).await
 }
 
 pub async fn test_connection_params(
     input: TestRemoteNodeInput,
 ) -> Result<RemoteStorageCapabilities> {
     probe_connection(&input).await
+}
+
+async fn remote_node_info<S: PrimaryRuntimeState>(
+    state: &S,
+    model: managed_follower::Model,
+) -> Result<RemoteNodeInfo> {
+    let enrollment_status = enrollment_status_for_node(state, model.id).await?;
+    Ok(RemoteNodeInfo::from_model(model, enrollment_status))
+}
+
+async fn enrollment_status_for_node<S: PrimaryRuntimeState>(
+    state: &S,
+    node_id: i64,
+) -> Result<RemoteNodeEnrollmentStatus> {
+    if follower_enrollment_session_repo::has_completed_for_managed_follower(state.db(), node_id)
+        .await?
+    {
+        return Ok(RemoteNodeEnrollmentStatus::Completed);
+    }
+
+    let latest =
+        follower_enrollment_session_repo::find_latest_for_managed_follower(state.db(), node_id)
+            .await?;
+    Ok(enrollment_status_from_latest(latest.as_ref(), Utc::now()))
+}
+
+fn enrollment_status_from_latest(
+    latest: Option<&follower_enrollment_session::Model>,
+    now: chrono::DateTime<Utc>,
+) -> RemoteNodeEnrollmentStatus {
+    let Some(latest) = latest else {
+        return RemoteNodeEnrollmentStatus::NotStarted;
+    };
+
+    if latest.acked_at.is_some() {
+        return RemoteNodeEnrollmentStatus::Completed;
+    }
+
+    if latest.invalidated_at.is_some() {
+        return RemoteNodeEnrollmentStatus::NotStarted;
+    }
+
+    if latest.expires_at <= now {
+        return RemoteNodeEnrollmentStatus::Expired;
+    }
+
+    if latest.redeemed_at.is_some() {
+        return RemoteNodeEnrollmentStatus::Redeemed;
+    }
+
+    RemoteNodeEnrollmentStatus::Pending
 }
 
 pub async fn run_health_tests<S: PrimaryRuntimeState>(
