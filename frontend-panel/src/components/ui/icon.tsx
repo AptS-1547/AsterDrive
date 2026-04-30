@@ -29,6 +29,7 @@ import {
 	PiFile,
 	PiFileAudio,
 	PiFileCode,
+	PiFileImage,
 	PiFilePlus,
 	PiFileText,
 	PiFileVideo,
@@ -106,6 +107,7 @@ export type IconName =
 	| "File"
 	| "FileAudio"
 	| "FileCode"
+	| "FileImage"
 	| "FilePlus"
 	| "FileText"
 	| "FileVideo"
@@ -182,6 +184,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	File: PiFile,
 	FileAudio: PiFileAudio,
 	FileCode: PiFileCode,
+	FileImage: PiFileImage,
 	FilePlus: PiFilePlus,
 	FileText: PiFileText,
 	FileVideo: PiFileVideo,

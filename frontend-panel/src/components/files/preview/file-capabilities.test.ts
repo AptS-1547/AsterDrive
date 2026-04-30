@@ -92,7 +92,16 @@ describe("file preview capabilities", () => {
 			getFileTypeInfo({ name: "photo.svg", mime_type: "image/svg+xml" }),
 		).toMatchObject({
 			category: "image",
-			icon: "FileText",
+			icon: "FileImage",
+		});
+		expect(
+			getFileTypeInfo({
+				name: "photo.jpg",
+				mime_type: "application/octet-stream",
+			}),
+		).toMatchObject({
+			category: "image",
+			icon: "FileImage",
 		});
 		expect(
 			getFileTypeInfo({ name: "notes.txt", mime_type: "text/xml" }),

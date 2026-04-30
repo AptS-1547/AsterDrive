@@ -8,12 +8,22 @@ import {
 	loadLanguageIcons,
 } from "@/components/ui/language-icon";
 import { cn } from "@/lib/utils";
+import type { FileTypeInfo } from "./preview/types";
 
 interface FileTypeIconProps {
 	mimeType: string;
 	fileName?: string;
 	className?: string;
 }
+
+const LANGUAGE_ICON_CATEGORIES = new Set<FileTypeInfo["category"]>([
+	"csv",
+	"json",
+	"markdown",
+	"text",
+	"tsv",
+	"xml",
+]);
 
 export function FileTypeIcon({
 	mimeType,
@@ -39,13 +49,19 @@ export function FileTypeIcon({
 		};
 	}, [loaded]);
 
-	if (loaded && hasLanguageIcon(name)) {
-		return <LanguageIcon name={name} className={className} />;
-	}
-
-	const { icon, color } = getFileTypeInfo({
+	const typeInfo = getFileTypeInfo({
 		mime_type: mimeType,
 		name,
 	});
+
+	if (
+		LANGUAGE_ICON_CATEGORIES.has(typeInfo.category) &&
+		loaded &&
+		hasLanguageIcon(name)
+	) {
+		return <LanguageIcon name={name} className={className} />;
+	}
+
+	const { icon, color } = typeInfo;
 	return <Icon name={icon} className={cn(color, className)} />;
 }

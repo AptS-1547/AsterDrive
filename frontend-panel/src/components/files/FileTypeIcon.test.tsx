@@ -2,11 +2,16 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FileTypeIcon } from "@/components/files/FileTypeIcon";
 
-vi.mock("@/components/files/preview/file-capabilities", () => ({
-	getFileTypeInfo: vi.fn(() => ({
+const mockState = vi.hoisted(() => ({
+	fileTypeInfo: {
+		category: "text",
 		icon: "FileText",
 		color: "text-blue-500",
-	})),
+	},
+}));
+
+vi.mock("@/components/files/preview/file-capabilities", () => ({
+	getFileTypeInfo: vi.fn(() => mockState.fileTypeInfo),
 }));
 
 vi.mock("@/components/ui/icon", () => ({
@@ -34,6 +39,11 @@ beforeEach(() => {
 	mockIsIconMapLoaded.mockReset();
 	mockIsIconMapLoaded.mockReturnValue(true);
 	mockLoadLanguageIcons.mockClear();
+	mockState.fileTypeInfo = {
+		category: "text",
+		icon: "FileText",
+		color: "text-blue-500",
+	};
 });
 
 describe("FileTypeIcon", () => {
@@ -71,5 +81,28 @@ describe("FileTypeIcon", () => {
 		);
 		expect(screen.getByTestId("language-icon")).toHaveClass("h-4", "w-4");
 		expect(screen.queryByTestId("icon")).not.toBeInTheDocument();
+	});
+
+	it("does not replace image file icons with language icons", () => {
+		mockHasLanguageIcon.mockReturnValue(true);
+		mockState.fileTypeInfo = {
+			category: "image",
+			icon: "FileImage",
+			color: "text-sky-500",
+		};
+
+		render(
+			<FileTypeIcon
+				mimeType="image/svg+xml"
+				fileName="diagram.svg"
+				className="h-4 w-4"
+			/>,
+		);
+
+		expect(screen.getByTestId("icon")).toHaveAttribute(
+			"data-name",
+			"FileImage",
+		);
+		expect(screen.queryByTestId("language-icon")).not.toBeInTheDocument();
 	});
 });

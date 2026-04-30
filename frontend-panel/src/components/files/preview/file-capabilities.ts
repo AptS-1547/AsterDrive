@@ -130,6 +130,24 @@ const TEXT_EXTENSIONS = new Set([
 	"patch",
 ]);
 
+const IMAGE_EXTENSIONS = new Set([
+	"avif",
+	"bmp",
+	"gif",
+	"heic",
+	"heif",
+	"ico",
+	"jfif",
+	"jpe",
+	"jpeg",
+	"jpg",
+	"png",
+	"svg",
+	"tif",
+	"tiff",
+	"webp",
+]);
+
 const SPECIAL_TEXT_FILENAMES = new Map<string, string>([
 	["dockerfile", "dockerfile"],
 	["makefile", "plaintext"],
@@ -294,7 +312,7 @@ const PREFIX_TYPE_INFO: Array<
 			color: "text-orange-500",
 		},
 	],
-	["image/", { category: "image", icon: "FileText", color: "text-sky-500" }],
+	["image/", { category: "image", icon: "FileImage", color: "text-sky-500" }],
 	[
 		"video/",
 		{ category: "video", icon: "FileVideo", color: "text-purple-500" },
@@ -598,8 +616,8 @@ export function getFileTypeInfo(file: PreviewableFileLike): FileTypeInfo {
 	if (ext === "json") {
 		return { category: "json", icon: "BracketsCurly", color: "text-amber-500" };
 	}
-	if (ext === "svg") {
-		return { category: "image", icon: "FileText", color: "text-sky-500" };
+	if (IMAGE_EXTENSIONS.has(ext)) {
+		return { category: "image", icon: "FileImage", color: "text-sky-500" };
 	}
 	if (ext === "doc" || ext === "docx" || ext === "odt") {
 		return { category: "document", icon: "FileText", color: "text-blue-500" };
