@@ -5,6 +5,144 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.25] - 2026-04-30
+
+### Release Highlights
+
+- **Managed ingress 架构落地** — 远程 follower 写入入口改为由 primary 托管的 ingress profile，支持 local / S3 落点与默认 profile 管理
+- **多主控入口迁移准备完成** — master binding 引入 `storage_namespace` 隔离，支持多个 primary 绑定同一 follower 时避免对象 key 冲突
+- **公开站点 URL 支持多来源** — `public_site_url` 从单一 origin 升级为来源列表，分享、预览、WebDAV 与 WOPI 链接可按当前请求来源匹配生成
+- **远程存储下载能力增强** — remote 存储支持预签名下载、Range 读取与下载响应头透传
+- **远程节点管理体验升级** — 管理后台新增接入状态展示、重复接入拦截与 managed ingress profile 管理区
+- **上传审计日志补齐** — 文件上传完成时记录审计事件，并避免完成重试重复写日志
+- **对象 key 与来源校验加固** — 统一 object key 规范化，修复路径逃逸、prefix 边界、CSRF same-site 与分享密码校验等安全边界问题
+
+### Added
+
+- **Managed ingress**
+  - 新增 `managed_ingress_profiles` 表，用于 follower 侧维护由 primary 托管的写入落点配置
+  - 新增 managed ingress profile 服务、仓储、实体与 Admin API，支持创建、更新、删除、查询和设置默认 profile
+  - 支持 local 与 S3 managed ingress profile；显式拒绝 remote driver 作为 managed ingress 目标
+  - local managed ingress 强制限制在 `server.follower.managed_ingress_local_root` 下，避免 primary 下发路径逃逸
+  - follower 内部写入前会校验默认 profile 是否存在、是否已应用、是否存在错误，并返回明确的 precondition 错误
+- **多主控入口隔离**
+  - `master_bindings` 引入 `storage_namespace`，用于隔离不同 primary 的远程对象路径
+  - managed ingress profile 的唯一约束从全局 `profile_key` 调整为 `master_binding_id + profile_key`
+  - 新增多主控入口迁移，处理 master binding、managed ingress profile 和 namespace 兼容数据
+- **远程节点管理**
+  - 远程节点列表新增接入状态展示，覆盖 `not_started`、`pending`、`redeemed`、`completed`、`expired`
+  - 已完成接入的远程节点不再允许再次生成 enrollment command
+  - 远程节点详情新增 managed ingress profile 管理区，支持查看 ready / pending / error 状态、revision 与错误信息
+  - 管理后台支持创建、编辑、删除 local / S3 ingress profile，并切换默认 profile
+- **公开站点 URL 多来源**
+  - `public_site_url` 配置类型升级为 `string_array`，支持配置多个可信 HTTP(S) origin
+  - public branding API 新增 `site_urls`，前端启动阶段可读取全部公开来源
+  - 新增请求来源匹配逻辑，分享、预览、WebDAV 与 WOPI URL 可根据当前请求 origin 选择公开来源
+- **远程下载与内部对象接口**
+  - remote 存储驱动实现预签名下载能力
+  - 内部对象接口支持 `Range: bytes=...` 与 `offset` / `length` 查询参数
+  - 远程预签名 GET 支持透传 `response-cache-control`、`response-content-disposition`、`response-content-type`
+- **上传与审计**
+  - 文件上传完成后新增 `FileUpload` 审计日志，覆盖个人空间与团队空间
+  - 上传完成重试如果 session 已是 `Completed`，不会重复记录审计日志
+- **前端体验**
+  - 用户侧边栏支持拖拽和键盘调整宽度，并持久化到 localStorage
+  - 文件类型图标逻辑优化，图片类扩展名统一显示图片图标，避免非代码文件误用 language icon
+
+### Changed
+
+- **远程节点 enrollment**
+  - `node enroll` 不再要求或接受 ingress policy，follower 接入只负责建立 master binding
+  - 删除 enrollment bootstrap 中的 namespace、ingress policy id 和 ingress policy name 返回信息
+  - 实际远程写入落点改由 primary 侧 managed ingress profile 管理
+- **远程写入目标解析**
+  - follower 内部存储请求不再使用 master binding 上的 `ingress_policy_id`
+  - 远程 PUT / compose / list / get / delete 统一通过 `storage_namespace + object_key` 计算 provider path
+  - follower ready 检查会确认启用的 master binding 是否具备可用默认 managed ingress profile
+- **配置系统**
+  - 系统配置 API 与 CLI 从纯字符串值升级为 `SystemConfigValue`
+  - CLI `config set` / `import` / `validate` 支持 `string_array` 类型的 JSON array 解析与校验
+  - 敏感配置在 API 响应与审计日志中继续脱敏
+- **公开 URL 生成**
+  - 分享、预览、WebDAV、WOPI 相关 URL 不再固定使用单一 public origin
+  - 如果当前请求来源匹配 `public_site_url` 列表，则生成对应来源的绝对 URL；否则回退到第一个配置来源
+- **内部存储 CORS**
+  - 远程预签名内部对象接口 CORS 从仅支持 PUT 扩展为 GET / PUT / OPTIONS
+  - 预检允许 `content-type` 与 `range`
+  - GET 响应暴露 `Cache-Control`、`Content-Disposition`、`Content-Length`、`Content-Range`、`Content-Type`、`ETag`
+- **依赖与版本**
+  - Rust crate 版本升级到 `0.0.1-alpha.25`
+  - 前端依赖更新包括 `i18next`、`react-i18next`、`shadcn`、`@typescript/native-preview`、`jsdom`、`msw`
+
+### Fixed
+
+- **对象 key 与路径安全**
+  - 新增统一 object key helper，规范化重复 slash、`.`、反斜杠并拒绝 `..` 路径逃逸
+  - 禁止远程对象操作直接指向 storage namespace 根
+  - prefix strip 改为只在完整路径段边界匹配，避免 `base` 错误匹配 `baseball/...`
+  - 本地存储驱动增强相对路径清洗，拒绝父目录逃逸
+- **CSRF 来源校验**
+  - CSRF 来源校验支持多个 `public_site_url` origin
+  - `Origin` / `Referer` 可精确匹配 request origin 或任一配置的 public origin
+  - `Sec-Fetch-Site: same-site` 不再无条件放行；缺少可信 `Origin` / `Referer` 时会拒绝 cookie-authenticated action
+- **分享访问限制**
+  - 分享密码 cookie 校验改为加载有效分享记录，确保过期时间和下载次数限制在密码校验阶段也生效
+- **Range 与下载**
+  - follower 内部对象 GET 增加严格 Range 解析，拒绝多段 range、非法单位、非法边界、空 range 和越界 offset
+  - 空对象不允许请求 range
+  - S3 presigned download 透传响应 header override，修复远程 / S3 下载场景下文件名、content type、cache control 不一致的问题
+- **远程节点接入**
+  - 已完成接入的远程节点不允许再次生成 enrollment command
+  - 新增 completed enrollment 查询与集成测试覆盖
+- **任务与缩略图并发**
+  - task drain 在没有新 claim 但仍有 processing 任务时不再提前退出
+  - 缩略图读取遇到并发 worker 导致缓存对象瞬时变化时，按 cache miss 处理而不是暴露瞬时 500
+
+### Breaking Changes
+
+- **数据库迁移（必须执行）**
+  - `m20260425_000001_create_managed_ingress_profiles`：新增 managed ingress profile 表
+  - `m20260427_000001_drop_master_binding_ingress_policy_id`：移除 master binding 上的 ingress policy 绑定
+  - `m20260429_000001_prepare_multi_primary_ingress`：迁移 master binding namespace，并调整 managed ingress profile 的作用域约束
+- **远程节点升级风险**
+  - 本版本重构 follower 写入入口与多主控 namespace 绑定模型，升级后旧远程节点的历史写入路径可能无法自动映射到新的 `storage_namespace + managed ingress profile`
+  - 如果旧远程节点使用过旧版 ingress policy / namespace 绑定，升级后可能出现远程节点文件不可见或疑似丢失
+  - 升级前必须备份数据库与远程节点存储目录；升级后请检查每个远程节点的 managed ingress profile、默认 profile 和文件访问状态
+  - 如远程节点无法恢复到正确写入路径，可能需要删除并重新添加远程节点，再重新配置 managed ingress profile
+- **`public_site_url` 配置格式**
+  - `public_site_url` 从字符串变为 JSON 字符串数组
+  - 旧格式：`https://drive.example.com`
+  - 新格式：`["https://drive.example.com"]`
+  - 不支持 wildcard origin；origin 必须是纯 HTTP(S) origin，不允许 path、query、fragment、username 或 password
+  - public branding 响应字段从 `site_url` 改为 `site_urls`
+- **follower 接入模型**
+  - `node enroll` 删除 `--ingress-policy-id`
+  - 删除 `ASTER_BOOTSTRAP_REMOTE_INGRESS_POLICY_ID`
+  - `master_bindings.ingress_policy_id` 数据库列被删除
+  - 迁移后需要在 primary 侧为 remote node 配置 managed ingress profile，follower 才能接受远程写入
+- **namespace 字段迁移**
+  - `master_bindings.namespace` 迁移为 `master_bindings.storage_namespace`
+  - `managed_followers.namespace` 被移除
+  - 存储隔离 namespace 不再由 primary 创建 remote node 时显式传入，而是在 follower master binding 上分配
+- **managed ingress 本地根目录配置**
+  - 新增配置项 `server.follower.managed_ingress_local_root`
+  - 默认值为 `managed-ingress`
+  - 旧配置键 `server.managed_ingress_local_root` 会被拒绝，需要迁移到 `server.follower.managed_ingress_local_root`
+
+### Notes
+
+- 远程节点用户请谨慎升级：本版本可能导致旧远程节点文件不可见或需要重新添加远程节点。升级前务必备份数据库和 follower 存储目录
+- 多主控 ingress 迁移中，如果已有 `managed_ingress_profiles` 数据且 `master_bindings` 多于 1 条，迁移无法自动判断旧 profile 应绑定到哪个 master binding，会中止并要求人工处理
+- managed ingress profile 的默认 profile 不能直接取消默认，也不能在仍有其他 profile 时直接删除；需要先切换默认 profile
+- `public_site_url` 空字符串不再是合法 normalize 输入；应配置为空数组或至少一个 HTTP(S) origin
+- 反向代理如果需要支持 remote presigned download，需要放行 `Range` 请求头，并正确转发下载响应头
+
+---
+
+**统计数据**：
+- 167 files changed, 8,806 insertions(+), 1,625 deletions(-)
+- 22 commits
+
 ## [v0.0.1-alpha.24] - 2026-04-24
 
 ### Release Highlights
@@ -2171,7 +2309,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.24...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.25...HEAD
+[v0.0.1-alpha.25]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.24...v0.0.1-alpha.25
 [v0.0.1-alpha.24]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.23...v0.0.1-alpha.24
 [v0.0.1-alpha.23]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.22...v0.0.1-alpha.23
 [v0.0.1-alpha.22]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.21...v0.0.1-alpha.22
