@@ -65,7 +65,7 @@ follower 不提供普通用户 API、WebDAV 或前端页面，只注册：
 - 健康检查：`/health*`
 - 内部对象存储协议：`/api/v1/internal/storage/*`
 
-这条内部协议当前用于主节点和受管远端节点之间的对象写入、对象拼接、对象列举与绑定同步。
+这条内部协议当前用于主节点和受管远端节点之间的对象写入、对象拼接、对象列举、绑定同步与受管 ingress profile 控制面。
 
 ## 一个请求如何流转
 
@@ -166,7 +166,7 @@ WebDAV 不走 `src/api/routes/**`，而是：
 | `src/api/routes/auth/mod.rs` | 认证、会话、偏好、头像、SSE |
 | `src/api/routes/files/` | 文件读写、上传、缩略图、版本、WOPI 启动 |
 | `src/api/routes/folders.rs` | 文件夹接口和团队空间聚合入口；团队 `files` 路由挂在这里 |
-| `src/api/routes/admin/` | 管理后台接口，包括策略、远端节点、用户、团队、配置、锁、审计 |
+| `src/api/routes/admin/` | 管理后台接口，包括策略、远端节点、用户、团队、分享审计、后台任务、配置、锁、审计 |
 | `src/api/routes/share_public.rs` | 公开分享页 API、`/d` 直链、`/pv` 预览直链 |
 | `src/api/routes/internal_storage.rs` | follower 内部对象存储协议 |
 | `src/services/` | 业务规则集中层 |
@@ -280,9 +280,16 @@ primary 周期任务由 `src/runtime/tasks.rs` 注册，间隔来自运行时配
 - `cors_*`
 - `mail_outbox_dispatch_interval_secs`
 - `background_task_dispatch_interval_secs`
+- `background_task_max_concurrency`
+- `background_task_max_attempts`
 - `maintenance_cleanup_interval_secs`
 - `blob_reconcile_interval_secs`
 - `remote_node_health_test_interval_secs`
+- `task_retention_hours`
+- `archive_extract_max_staging_bytes`
+- `thumbnail_max_source_bytes`
+- `media_processing_registry_json`
+- `wopi_*`
 
 `public_site_url` 是一个历史上保持单数 key 的列表配置。配置类型是 `string_array`，管理 API 暴露为字符串数组，数据库值保存为规范化后的 JSON 数组字符串。生成绝对 URL 时，有请求上下文的路径会优先用当前请求 scheme/Host 在列表里做精确匹配；没有请求上下文或未命中时使用第一项作为回退。这个配置也参与 Cookie 认证写操作的 same-site CSRF 来源判断，但不参与 CORS 放行。
 

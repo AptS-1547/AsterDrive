@@ -32,6 +32,10 @@
 | --- | --- | --- |
 | `GET` | `/capabilities` | 读取 follower 声明的协议能力 |
 | `PUT` | `/binding` | 同步主节点维护的远端节点绑定信息 |
+| `GET` | `/ingress-profiles` | 列出当前绑定可用的受管 ingress profile |
+| `POST` | `/ingress-profiles` | 创建受管 ingress profile |
+| `PATCH` | `/ingress-profiles/{profile_key}` | 更新受管 ingress profile |
+| `DELETE` | `/ingress-profiles/{profile_key}` | 删除受管 ingress profile |
 | `POST` | `/compose` | 把多个 part 对象拼成目标对象 |
 | `GET` | `/objects` | 按前缀列举对象 key |
 | `GET` | `/objects/{tail}/metadata` | 读取对象元信息 |
@@ -56,10 +60,43 @@
 主节点会用这条接口把 follower 绑定信息同步过去，请求体字段包括：
 
 - `name`
-- `namespace`
 - `is_enabled`
 
-这条接口只更新绑定元信息，不直接搬运对象数据。
+这条接口只更新绑定元信息，不直接搬运对象数据。对象命名空间来自 follower 本地保存的 master binding，不由这条请求体传入。
+
+## Ingress Profile 管理
+
+这组接口用于 primary 管理 follower 侧的受管 ingress profile，控制后续对象写入实际落到 follower 本地还是 follower 管理的 S3。
+
+创建本地 profile 的请求体形态：
+
+```json
+{
+  "driver_type": "local",
+  "name": "local-default",
+  "base_path": "data/storage",
+  "max_file_size": 0,
+  "is_default": true
+}
+```
+
+创建 S3 profile 的请求体形态：
+
+```json
+{
+  "driver_type": "s3",
+  "name": "edge-s3",
+  "endpoint": "https://s3.example.com",
+  "bucket": "aster-edge",
+  "access_key": "AKIA...",
+  "secret_key": "...",
+  "base_path": "objects/",
+  "max_file_size": 0,
+  "is_default": false
+}
+```
+
+更新接口使用扁平字段，支持修改 `name`、`driver_type`、连接参数、`base_path`、`max_file_size` 和 `is_default`。这些控制面接口只接受主节点签名头，不使用预签名 query。
 
 ## `POST /compose`
 
@@ -89,7 +126,7 @@
 - `response-content-disposition`
 - `response-content-type`
 
-也就是说，这条接口既支持整对象读取，也支持范围读取和响应头覆写。
+也就是说，这条接口既支持整对象读取，也支持范围读取和响应头覆写。范围读取也可以通过标准 `Range: bytes=...` 请求头触发；返回部分内容时使用 `206 Partial Content`。
 
 ### `HEAD /objects/{tail}`
 

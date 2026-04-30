@@ -118,7 +118,7 @@
 - [后台任务 API](./tasks.md)
 - [WOPI](./wopi.md)
 
-只有两条团队特有语义需要额外记住：
+有几条团队特有语义需要额外记住：
 
 - 团队分享的公开 REST 访问仍然走 `/api/v1/s/{token}`，前端公开页面仍然是 `/s/:token`，不是 `/teams/{team_id}/s/{token}`
 - 文件写入时会优先使用目录级 `policy_id`；没有目录覆盖时，再按 `teams.policy_group_id` 的规则解析实际存储策略

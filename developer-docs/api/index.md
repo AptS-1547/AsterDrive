@@ -156,7 +156,7 @@
 - 公开分享：见 [分享](./shares.md)
 - Office / WOPI 预览与回调：见 [WOPI](./wopi.md)
 - WebDAV 协议、账号与 DeltaV：见 [WebDAV](./webdav.md)
-- 登录页、匿名页与远端节点注册握手：见 [公共接口](./public.md)
+- 登录页、匿名页、缩略图能力与远端节点注册握手：见 [公共接口](./public.md)
 - 主从节点内部对象协议：见 [内部存储协议（follower）](./internal-storage.md)
 - 后台策略、远端节点、锁、运行时配置与审计：见 [管理](./admin.md)
 

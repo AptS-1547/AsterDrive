@@ -90,7 +90,7 @@
 - `POST /files/{id}/preview-link`：返回一个短期预览链接；真正读取内容走根路径 `/pv/{token}/{filename}`
 - `POST /files/{id}/wopi/open`：为配置成 `provider = "wopi"` 的预览器创建一次 WOPI 启动会话
 - `GET /files/{id}/download`：下载文件；默认是流式响应，若命中的 S3 / Remote 策略把下载策略设为 `presigned`，则会在鉴权后返回 `302` 重定向到短时效的对象存储 GET URL；支持 `If-None-Match`，命中时返回 `304`
-- `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
+- `GET /files/{id}/thumbnail`：读取缩略图（仅服务端当前支持的类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
 - `POST /files/{id}/extract`：把 ZIP 等受支持归档文件解包成后台任务，结果会出现在 `/tasks`
 - `PATCH /files/{id}`：改名或移动
@@ -126,7 +126,9 @@
 
 ### 缩略图
 
-当前缩略图只对支持的图片类型生成，统一返回 WebP，并按 Blob 复用缓存。
+当前缩略图能力来自运行时的 media processing registry，并由 `/public/thumbnail-support` 暴露给匿名态前端。默认内置 `images` 处理器覆盖常见图片格式；如果启用且运行环境可找到 `vips_cli` / `ffmpeg_cli`，缩略图支持列表也会包含对应配置里的扩展名。
+
+接口统一返回 WebP，并按 Blob、processor 和 processor version 复用缓存。
 
 ### `GET /files/{id}/direct-link`
 

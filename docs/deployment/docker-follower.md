@@ -76,8 +76,8 @@
 - `master_url`
 - `token`
 
-如果你不打算显式指定入站策略，就不用额外准备别的参数。  
-空数据库首次启动时，follower 默认会有一条本地策略 `Local Default`，直接拿它接收入站对象就够了。
+当前版本里，follower 接收对象的落点由主控端在远程节点详情里下发。  
+也就是说，Docker bootstrap 只负责完成主从身份绑定；真正写到 follower 本地目录还是 S3，后面回主控后台创建**接收落点**。
 
 ## 2. 准备 follower 的数据目录
 
@@ -107,8 +107,6 @@ services:
       ASTER__DATABASE__URL: sqlite:///data/asterdrive.db?mode=rwc
       ASTER_BOOTSTRAP_REMOTE_MASTER_URL: https://drive.example.com
       ASTER_BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN: enr_replace_me
-      # 可选：只有想覆盖 follower 默认落点时才传
-      # ASTER_BOOTSTRAP_REMOTE_INGRESS_POLICY_ID: "1"
     volumes:
       - ./data:/data
       - /etc/localtime:/etc/localtime:ro
@@ -122,30 +120,8 @@ services:
 - `ASTER_BOOTSTRAP_REMOTE_*`
   这是**一次性 bootstrap 输入**，首次 enroll 成功后建议移除
 
-大多数情况下，这里**不用**传 `ASTER_BOOTSTRAP_REMOTE_INGRESS_POLICY_ID`。
-
-不传时，follower 会直接使用自己的**默认存储策略**作为入站落点。  
-只有当你明确想覆盖这个默认落点时，才需要加：
-
-```yaml
-ASTER_BOOTSTRAP_REMOTE_INGRESS_POLICY_ID: "1"
-```
-
-这个值的真正含义是：
-
-- 指定“主控写进这个 follower 的对象，最后落到 follower 的哪条本地策略”
-
-它不是给主控端远程策略用的，也不是 enrollment token 的一部分。  
-它只影响 follower 自己怎么接收入站对象。
-
-所以最常见的两种情况是：
-
-- follower 只有一条默认 `Local Default`
-  那就留空，完全不用管
-- follower 上有多条本地 / S3 策略，而且你希望远程对象固定落到其中一条非默认策略
-  这时才传 `ASTER_BOOTSTRAP_REMOTE_INGRESS_POLICY_ID`
-
-这个策略必须是 follower 本地可落地的策略，例如 `local` 或 `s3`，不能再套一层 `remote`。
+接收落点不放在 bootstrap ENV 里。  
+现在的做法是：follower 先完成 enroll，主控端再通过 follower API 下发接收落点。这个入口在 `管理 -> 远程节点`，更适合后续查看、修改和排错。
 
 ## 4. 首次启动
 
@@ -196,7 +172,18 @@ curl http://127.0.0.1:3001/health/ready
 管理 -> 远程节点
 ```
 
-点击“测试连接”。通过后，再去：
+点击“测试连接”。通过后，先打开这台 follower 的远程节点详情，创建一个**默认接收落点**。
+
+第一次建议选：
+
+- 驱动：`local`
+- 基础路径：`default` 这类相对路径
+- 勾选“设为默认接收落点”
+
+local 接收落点的路径会被限制在 follower 的 `server.follower.managed_ingress_local_root` 下面。  
+如果你要让 follower 再写到 S3 / MinIO，也是在这里创建 `s3` 接收落点，而不是在 bootstrap ENV 里传。
+
+接收落点应用成功后，再去：
 
 ```text
 管理 -> 存储策略
@@ -206,11 +193,10 @@ curl http://127.0.0.1:3001/health/ready
 
 ## 6. 首次成功后，把一次性 bootstrap ENV 移掉
 
-确认 follower 已经 ready、主控测试连接也通过后，把这几个 ENV 从 Compose 里删掉：
+确认 follower 已经 ready、主控测试连接通过、默认接收落点也已应用后，把这几个 ENV 从 Compose 里删掉：
 
 - `ASTER_BOOTSTRAP_REMOTE_MASTER_URL`
 - `ASTER_BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN`
-- `ASTER_BOOTSTRAP_REMOTE_INGRESS_POLICY_ID`（如果你用了）
 
 然后重新执行：
 

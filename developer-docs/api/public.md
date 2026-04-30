@@ -2,12 +2,13 @@
 
 这组路径都相对于 `/api/v1`，且不需要认证。
 
-其中前两条主要给匿名页面启动用，后两条用于 primary 和 follower 之间的远端节点 enrollment 握手。
+其中前三条主要给匿名页面启动用，后两条用于 primary 和 follower 之间的远端节点 enrollment 握手。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/public/branding` | 读取登录页、公开页和匿名入口需要的品牌配置 |
 | `GET` | `/public/preview-apps` | 读取匿名态可见的预览应用注册表 |
+| `GET` | `/public/thumbnail-support` | 读取当前匿名态可见的缩略图扩展名能力 |
 | `POST` | `/public/remote-enrollment/redeem` | follower 用 enrollment token 兑换远端节点绑定信息 |
 | `POST` | `/public/remote-enrollment/ack` | follower 确认 enrollment 已完成 |
 
@@ -80,6 +81,28 @@
   - `wopi` 预览器常见字段有 `mode`、`action` / `action_url` / `action_url_template`、`discovery_url`
 - 前端文件预览、公开分享预览和 WOPI 集成入口都会依赖这份注册表，而不是把预览器信息硬编码在前端里
 - 管理员当前可以通过 `/api/v1/admin/config/frontend_preview_apps_json` 维护这份注册表
+
+## `GET /public/thumbnail-support`
+
+这条接口返回当前服务端实际可生成缩略图的公开能力，前端用它决定文件列表里哪些扩展名应该尝试显示缩略图：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "version": 1,
+    "extensions": ["bmp", "gif", "jpe", "jpeg", "jpg", "png", "tif", "tiff", "webp"]
+  }
+}
+```
+
+要点：
+
+- `extensions` 已经做过规范化，统一是不带点的小写扩展名
+- 内置图片处理器启用时会暴露常见图片格式
+- `vips_cli` / `ffmpeg_cli` 只有在对应命令可用且处理器启用时，才会把配置里的扩展名暴露出去；因此它可能包含图片以外的文档或视频扩展名
+- 这份能力来自运行时配置 `media_processing_registry_json`
 
 ## `POST /public/remote-enrollment/redeem`
 

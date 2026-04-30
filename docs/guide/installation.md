@@ -117,6 +117,9 @@ bootstrap_insecure_cookies = true
 - Access Key / Secret Key
 - 如果要使用浏览器直传，再准备对象存储的浏览器上传放行规则（CORS）
 
+如果文件要写到另一台 AsterDrive follower，先别急着改存储策略。  
+远程节点要先完成 enroll，再在主控后台给 follower 创建默认接收落点，最后才把远程存储策略放进策略组。
+
 ## Docker 部署
 
 Docker 最适合首次试跑和日常维护。

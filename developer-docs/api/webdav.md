@@ -58,9 +58,11 @@ http://localhost:3000/webdav
 当前已覆盖常见 WebDAV 方法：
 
 - `PROPFIND`
+- `PROPPATCH`
 - `MKCOL`
 - `PUT`
 - `GET`
+- `HEAD`
 - `DELETE`
 - `COPY`
 - `MOVE`

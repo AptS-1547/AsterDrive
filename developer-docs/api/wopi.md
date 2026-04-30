@@ -78,6 +78,7 @@ WOPI 相关能力分成两层：
 - `ReadOnly`
 - `SupportsGetLock`
 - `SupportsLocks`
+- `SupportsExtendedLockLength`
 - `SupportsRename`
 - `SupportsUserInfo`
 - `SupportsUpdate`
@@ -88,6 +89,7 @@ WOPI 相关能力分成两层：
 - `UserCanNotWriteRelative = false`
 - `UserCanRename = true`
 - `SupportsLocks = true`
+- `SupportsExtendedLockLength = true`
 - `SupportsUpdate = true`
 - `SupportsGetLock = true`
 - `SupportsRename = true`
@@ -194,6 +196,7 @@ WOPI 相关能力分成两层：
 
 - 默认按 inline 方式返回
 - 支持 `If-None-Match`
+- 支持可选请求头 `X-WOPI-MaxExpectedSize`；文件大于该值时返回 precondition failed
 
 ## `POST /wopi/files/{id}/contents`
 

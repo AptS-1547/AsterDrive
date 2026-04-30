@@ -8,10 +8,12 @@
 
 - `/admin/policies`
 - `/admin/policy-groups`
+- `/admin/remote-nodes`
 - `/admin/users`
 - `/admin/teams`
-- `/admin/teams/{team_id}/members`
+- `/admin/teams/{id}/members`
 - `/admin/shares`
+- `/admin/tasks`
 - `/admin/config`
 - `/admin/locks`
 - `/admin/audit-logs`
@@ -50,8 +52,46 @@
 - 创建和更新都会采用请求里的 `chunk_size`
 - `options` 当前主要承载 S3 上传 / 下载策略，例如 `{"s3_upload_strategy":"presigned","s3_download_strategy":"presigned"}`
 - 旧配置 `{"presigned_upload":true}` 仍兼容
-- REST 仍然不能管理 `allowed_types`
+- REST 已经可以通过 `allowed_types` 管理策略允许的 MIME / 类型列表；不传时创建会使用空列表，更新会保持原值
+- `driver_type = "remote"` 时需要绑定 `remote_node_id`，远端节点本身通过 `/admin/remote-nodes` 管理
 - 当前 `PATCH` 不能修改 `driver_type`
+
+## 远端节点
+
+远端节点是 primary 管理的 follower 存储节点，主要给 `driver_type = "remote"` 的存储策略使用。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/admin/remote-nodes` | 分页列出受管 follower 节点 |
+| `POST` | `/admin/remote-nodes` | 创建远端节点记录 |
+| `GET` | `/admin/remote-nodes/{id}` | 读取远端节点详情 |
+| `PATCH` | `/admin/remote-nodes/{id}` | 更新名称、地址或启用状态 |
+| `DELETE` | `/admin/remote-nodes/{id}` | 删除远端节点；仍被策略引用时会拒绝 |
+| `POST` | `/admin/remote-nodes/{id}/test` | 测试已保存远端节点连接 |
+| `POST` | `/admin/remote-nodes/test` | 用临时参数测试远端节点连接 |
+| `POST` | `/admin/remote-nodes/{id}/enrollment-token` | 生成 follower enrollment 命令 |
+| `GET` | `/admin/remote-nodes/{id}/ingress-profiles` | 列出 follower 侧受管 ingress profile |
+| `POST` | `/admin/remote-nodes/{id}/ingress-profiles` | 创建 follower 侧受管 ingress profile |
+| `PATCH` | `/admin/remote-nodes/{id}/ingress-profiles/{profile_key}` | 更新 follower 侧受管 ingress profile |
+| `DELETE` | `/admin/remote-nodes/{id}/ingress-profiles/{profile_key}` | 删除 follower 侧受管 ingress profile |
+
+创建远端节点示例：
+
+```json
+{
+  "name": "edge-sh-01",
+  "base_url": "",
+  "is_enabled": true
+}
+```
+
+当前实现注意点：
+
+- `base_url` 为空时通常走 enrollment 流程，由 follower 兑换绑定信息后再完成实际接入
+- `/enrollment-token` 返回给 CLI 使用的命令信息；follower 会再调用公开 enrollment 接口完成 redeem / ack
+- `GET /admin/remote-nodes` 支持 `limit` 和 `offset`
+- 远端节点详情会返回 `enrollment_status`、`last_error`、`capabilities` 和 `last_checked_at`
+- ingress profile 的请求体和 follower 内部协议一致，见 [内部存储协议](./internal-storage.md)
 
 ## 策略组
 
@@ -222,6 +262,37 @@
 - 团队成员列表支持 `keyword`、`role`、`status`、`limit`、`offset`
 - 团队审计接口支持 `user_id`、`action`、`after`、`before`、`limit`、`offset`
 
+## 后台任务
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/admin/tasks` | 分页查看全站后台任务和系统运行任务 |
+| `POST` | `/admin/tasks/cleanup` | 按条件清理已结束任务记录 |
+
+`GET /admin/tasks` 支持：
+
+- `limit`
+- `offset`
+- `kind`
+- `status`
+
+清理请求体：
+
+```json
+{
+  "finished_before": "2026-03-31T12:00:00Z",
+  "kind": "archive_extract",
+  "status": "succeeded"
+}
+```
+
+当前实现注意点：
+
+- `finished_before` 必填
+- `kind` 和 `status` 不传时表示不按该字段过滤
+- `status` 只能清理终态值：`succeeded`、`failed`、`canceled`
+- 清理接口只删除终态任务，响应返回 `{ "removed": 3 }`
+
 ## 系统运行时配置
 
 | 方法 | 路径 | 说明 |
@@ -255,13 +326,18 @@
 - `gravatar_base_url`
 - `mail_outbox_dispatch_interval_secs`
 - `background_task_dispatch_interval_secs`
+- `background_task_max_concurrency`
+- `background_task_max_attempts`
 - `maintenance_cleanup_interval_secs`
 - `blob_reconcile_interval_secs`
+- `remote_node_health_test_interval_secs`
 - `team_member_list_max_limit`
 - `task_list_max_limit`
 - `task_retention_hours`
+- `archive_extract_max_staging_bytes`
 - `avatar_max_upload_size_bytes`
 - `thumbnail_max_source_bytes`
+- `media_processing_registry_json`
 - `wopi_access_token_ttl_secs`
 - `wopi_lock_ttl_secs`
 - `wopi_discovery_cache_ttl_secs`

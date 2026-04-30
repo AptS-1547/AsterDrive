@@ -17,6 +17,9 @@
 | `POST` | `/auth/refresh` | 使用 refresh Cookie 轮换 access/refresh token |
 | `POST` | `/auth/logout` | 清除认证 Cookie |
 | `GET` | `/auth/me` | 读取当前登录用户信息 |
+| `GET` | `/auth/sessions` | 列出当前用户的活跃登录会话 |
+| `DELETE` | `/auth/sessions/others` | 吊销除当前 refresh session 外的其他会话 |
+| `DELETE` | `/auth/sessions/{id}` | 吊销指定登录会话 |
 | `PUT` | `/auth/password` | 修改当前用户密码 |
 | `POST` | `/auth/email/change` | 请求变更当前登录用户邮箱 |
 | `POST` | `/auth/email/change/resend` | 重发邮箱变更确认邮件 |
@@ -81,6 +84,9 @@
 - `POST /auth/refresh`：读取 refresh Cookie，原子消费旧 refresh token，签发新的 access/refresh token；旧 refresh token 再次使用会被视为复用攻击并撤销该用户全部会话
 - `POST /auth/logout`：清除两个认证 Cookie，并吊销当前 refresh token
 - `GET /auth/me`：既支持 Cookie，也支持 `Authorization: Bearer <jwt>`
+- `GET /auth/sessions`：列出当前用户的活跃登录设备 / 会话；如果请求带当前 refresh Cookie，会标记当前会话
+- `DELETE /auth/sessions/others`：要求当前请求能定位到 refresh session，只吊销其他会话
+- `DELETE /auth/sessions/{id}`：吊销指定会话；如果删的是当前会话，响应会同时清理认证 Cookie
 
 如果用户状态是 `disabled`，登录会直接失败。
 

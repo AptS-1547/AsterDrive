@@ -114,7 +114,7 @@ services:
 - 默认策略组是否已经创建
 - 如果启用了外部 Office / WOPI 打开方式，至少用一个真实 Office 文件试开并保存一次
 - 如果以后要走 S3 / MinIO，是否已经计划好对象存储浏览器上传放行规则和密钥管理
-- 如果这台实例实际要跑成 `follower`，是否已经按 [Docker 部署从节点](/deployment/docker-follower) 配好长期 `start_mode` 和一次性 bootstrap ENV
+- 如果这台实例实际要跑成 `follower`，是否已经按 [Docker 部署从节点](/deployment/docker-follower) 配好长期 `start_mode`、一次性 bootstrap ENV，并在主控端创建默认接收落点
 
 ## 查看运行状态
 

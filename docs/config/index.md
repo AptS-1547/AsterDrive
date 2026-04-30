@@ -1,31 +1,33 @@
 # 配置总览
 
 ::: tip 这一篇先帮你分清"在哪改"
-AsterDrive 的配置散在 5 个地方。先把这 5 层分清楚，之后就不会把"部署问题"塞到后台里，也不会把"用户规则"硬塞回 `config.toml`。
+AsterDrive 的配置散在几个地方。先把这些层分清楚，之后就不会把"部署问题"塞到后台里，也不会把"用户规则"硬塞回 `config.toml`。
 找到对应分层后，再翻具体页面就行，本页不需要从头读到尾。
 :::
 
 ## 一共有哪几层
 
-- **`config.toml`** —— 决定服务怎么启动：监听地址、数据库、日志、WebDAV 前缀、限流
-- **`管理 -> 系统设置`** —— 全站规则：公开站点地址、品牌、注册登录、邮件、跨域、任务调度、回收站、版本历史、WOPI、WebDAV 开关、审计日志
+- **`config.toml`** —— 决定服务怎么启动：监听地址、节点模式、数据库、日志、WebDAV 前缀、限流
+- **`管理 -> 系统设置`** —— 全站规则：公开站点地址、品牌、注册登录、邮件、跨域、任务调度、媒体处理、回收站、版本历史、WOPI、WebDAV 开关、审计日志
 - **`管理 -> 存储策略`** —— 文件真正存到哪里、用哪种上传方式
 - **`管理 -> 策略组`** —— 不同用户、团队、文件大小走哪条存储路线
+- **`管理 -> 远程节点`** —— 主控怎么接 follower，以及 follower 的默认接收落点在哪里
 - **反向代理 / 对象存储自己的配置** —— HTTPS、大文件上传、WebDAV 透传、S3 直传
 
-前两层是 AsterDrive 自己的配置；后三层一半在后台、一半在外部组件里。
+前面几层是 AsterDrive 自己的配置；最后一层属于反向代理、对象存储和外部网络环境。
 
 ## 我想做这件事，去哪改
 
 | 你想做什么 | 去哪里改 |
 | --- | --- |
-| 改监听地址、端口、线程数、临时目录 | [服务器](/config/server) |
+| 改监听地址、端口、线程数、临时目录、primary / follower 模式 | [服务器](/config/server) |
 | 改数据库地址、连接池、启动重试 | [数据库](/config/database) |
 | 固定登录签名密钥、第一次纯 HTTP 引导 | [登录与会话](/config/auth) |
 | 公开站点地址、品牌、注册、Cookie、Token、调度、回收站、版本、配额、WOPI、WebDAV、审计 | [系统设置](/config/runtime) |
 | 配 SMTP、发测试邮件、改邮件模版 | [邮件](/config/mail) |
 | 文件存哪里、上传/下载怎么走 | [存储策略](/config/storage) |
 | 不同用户/团队走哪条存储路线 | [存储策略](/config/storage) |
+| 接远程 follower，配置默认接收落点 | [远程节点](/guide/remote-nodes) |
 | 改 WebDAV 路径或 WebDAV 上传硬上限 | [WebDAV](/config/webdav) |
 | 给公网入口加访问限流 | [访问限流](/config/rate-limit) |
 | 改缓存或日志输出方式 | [缓存](/config/cache) / [日志](/config/logging) |
@@ -56,7 +58,7 @@ ASTER__WEBDAV__PREFIX=/dav
 
 | 分区 | 作用 |
 | --- | --- |
-| [server](/config/server) | 监听地址、端口、线程数、临时目录 |
+| [server](/config/server) | 监听地址、端口、线程数、临时目录、节点模式、follower 接收根目录 |
 | [database](/config/database) | 数据库连接、连接池、启动重试 |
 | [auth](/config/auth) | 登录签名密钥、首次纯 HTTP 引导 |
 | [cache](/config/cache) | 内存缓存 / Redis / 关闭缓存 |
@@ -85,7 +87,9 @@ ASTER__WEBDAV__PREFIX=/dav
 - 准备开放注册、找回密码或邮箱改绑前，先把邮件发通
 - 纯 HTTP 测试环境才临时关闭 Cookie 的 HTTPS 要求
 - 容量紧张时，缩短回收站、历史版本、任务产物保留时间
+- 缩略图不符合预期时，检查 `存储与保留 -> 媒体处理`
 - 需要 OnlyOffice 一类在线预览时，去 `站点配置 -> 预览应用` 调整
+- 接远程节点时，enroll 成功后还要在远程节点详情里创建默认接收落点
 :::
 
 详情见 [系统设置](/config/runtime) 和 [邮件](/config/mail)。

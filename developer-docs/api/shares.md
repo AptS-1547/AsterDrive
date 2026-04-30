@@ -18,8 +18,10 @@
 
 ```json
 {
-  "file_id": 1,
-  "folder_id": null,
+  "target": {
+    "type": "file",
+    "id": 1
+  },
   "password": "123456",
   "expires_at": "2026-03-31T12:00:00Z",
   "max_downloads": 10
@@ -28,7 +30,8 @@
 
 要点：
 
-- `file_id` 和 `folder_id` 至少一个非空；实际使用时只传一个更清楚
+- `target.type` 只能是 `file` 或 `folder`，`target.id` 是对应资源 ID
+- 当前请求体已经不再接受旧的顶层 `file_id` / `folder_id`
 - 同一资源同一时间只允许一个活跃分享
 - `max_downloads = 0` 表示不限次数
 - 空密码等价于不设密码
@@ -95,8 +98,8 @@
 - `/folders/{folder_id}/content` 用于继续浏览分享目录树中的子目录
 - `/files/{file_id}/download` 用于下载分享文件夹树中的子文件
 - `/files/{file_id}/preview-link` 用于分享目录树里子文件的短期预览
-- `/thumbnail` 只适用于图片文件分享
-- `/files/{file_id}/thumbnail` 只适用于分享目录树中的图片文件
+- `/thumbnail` 只适用于服务端当前支持生成缩略图的文件分享
+- `/files/{file_id}/thumbnail` 只适用于分享目录树中服务端当前支持生成缩略图的文件
 - `/avatar/{size}` 只返回分享拥有者“已上传头像”的二进制资源，当前支持 `512` 和 `1024`
 
 文件夹分享的两个内容接口还支持和普通目录列表一致的参数：
