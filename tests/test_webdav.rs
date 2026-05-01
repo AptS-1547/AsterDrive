@@ -172,6 +172,82 @@ async fn test_webdav_put_get_delete() {
 }
 
 #[actix_web::test]
+async fn test_webdav_empty_put_creates_and_overwrites_file() {
+    let app = setup_with_webdav!();
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/empty.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Length", "0"))
+        .set_payload(Vec::<u8>::new())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "empty PUT should create the file");
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/empty.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "GET after empty PUT should find the file"
+    );
+    let body = test::read_body(resp).await;
+    assert!(body.is_empty(), "empty PUT should store zero bytes");
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/empty.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "text/plain"))
+        .set_payload("non-empty")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 204, "PUT should overwrite the existing file");
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/empty.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Length", "0"))
+        .set_payload(Vec::<u8>::new())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        204,
+        "empty PUT should overwrite the existing file"
+    );
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::HEAD)
+        .uri("/webdav/empty.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "HEAD should find the overwritten file");
+    assert_eq!(
+        resp.headers()
+            .get("Content-Length")
+            .and_then(|value| value.to_str().ok()),
+        Some("0"),
+        "empty overwrite should update the stored size"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/empty.txt")
+        .insert_header(("Authorization", auth))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "GET should still find exact path");
+    let body = test::read_body(resp).await;
+    assert!(body.is_empty(), "empty overwrite should store zero bytes");
+}
+
+#[actix_web::test]
 async fn test_webdav_get_and_head_do_not_create_runtime_temp_files() {
     let state = common::setup().await;
     let runtime_temp_dir =

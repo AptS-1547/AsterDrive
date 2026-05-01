@@ -18,8 +18,15 @@ use crate::services::upload_service::shared::{
     expected_chunk_size_for_upload, upload_session_chunk_unavailable_error,
 };
 use crate::types::UploadSessionStatus;
-use crate::utils::numbers::usize_to_i64;
+use crate::utils::numbers::{i64_to_u64, usize_to_i64};
 use crate::utils::paths;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExistingLocalChunk {
+    Missing,
+    Complete,
+    RemovedCorrupt,
+}
 
 async fn increment_session_received_count<C: sea_orm::ConnectionTrait>(
     db: &C,
@@ -35,6 +42,160 @@ async fn increment_session_received_count<C: sea_orm::ConnectionTrait>(
         Ok(session) => Err(upload_session_chunk_unavailable_error(&session)),
         Err(error) => Err(error),
     }
+}
+
+async fn remove_local_chunk_file(path: &str, upload_id: &str, chunk_number: i32, reason: &str) {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            tracing::warn!(
+                upload_id,
+                chunk_number,
+                path,
+                "failed to remove local chunk file after {reason}: {error}"
+            );
+        }
+    }
+}
+
+async fn inspect_existing_local_chunk(
+    chunk_path: &str,
+    expected_size: i64,
+    upload_id: &str,
+    chunk_number: i32,
+) -> Result<ExistingLocalChunk> {
+    let metadata = match tokio::fs::metadata(chunk_path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(ExistingLocalChunk::Missing);
+        }
+        Err(error) => {
+            return Err(chunk_upload_error_with_subcode(
+                "upload.chunk_persist_failed",
+                format!("stat existing chunk file: {error}"),
+            ));
+        }
+    };
+
+    let expected_size = i64_to_u64(expected_size, "expected chunk size")?;
+    if metadata.is_file() && metadata.len() == expected_size {
+        return Ok(ExistingLocalChunk::Complete);
+    }
+
+    tracing::warn!(
+        upload_id,
+        chunk_number,
+        chunk_path,
+        actual_size = metadata.len(),
+        expected_size,
+        is_file = metadata.is_file(),
+        "removing corrupt local upload chunk"
+    );
+    remove_local_chunk_file(chunk_path, upload_id, chunk_number, "corrupt local chunk").await;
+    Ok(ExistingLocalChunk::RemovedCorrupt)
+}
+
+async fn write_local_chunk_temp(
+    temp_path: &str,
+    data: &[u8],
+    upload_id: &str,
+    chunk_number: i32,
+) -> Result<()> {
+    use tokio::fs::OpenOptions;
+    use tokio::io::AsyncWriteExt;
+
+    let write_result = async {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(temp_path)
+            .await
+            .map_err(|error| {
+                chunk_upload_error_with_subcode(
+                    "upload.chunk_persist_failed",
+                    format!("create temp chunk file: {error}"),
+                )
+            })?;
+
+        file.write_all(data)
+            .await
+            .map_aster_err_ctx("write chunk", |message| {
+                chunk_upload_error_with_subcode("upload.chunk_persist_failed", message)
+            })?;
+        file.flush()
+            .await
+            .map_aster_err_ctx("flush chunk", |message| {
+                chunk_upload_error_with_subcode("upload.chunk_persist_failed", message)
+            })?;
+        Ok::<(), AsterError>(())
+    }
+    .await;
+
+    if write_result.is_err() {
+        remove_local_chunk_file(temp_path, upload_id, chunk_number, "temp chunk write error").await;
+    }
+
+    write_result
+}
+
+async fn publish_local_chunk_temp(
+    temp_path: &str,
+    chunk_path: &str,
+    expected_size: i64,
+    upload_id: &str,
+    chunk_number: i32,
+) -> Result<bool> {
+    for _ in 0..2 {
+        match tokio::fs::hard_link(temp_path, chunk_path).await {
+            Ok(()) => {
+                remove_local_chunk_file(temp_path, upload_id, chunk_number, "chunk publish").await;
+                return Ok(true);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                match inspect_existing_local_chunk(
+                    chunk_path,
+                    expected_size,
+                    upload_id,
+                    chunk_number,
+                )
+                .await?
+                {
+                    ExistingLocalChunk::Complete => {
+                        remove_local_chunk_file(
+                            temp_path,
+                            upload_id,
+                            chunk_number,
+                            "duplicate chunk publish",
+                        )
+                        .await;
+                        return Ok(false);
+                    }
+                    ExistingLocalChunk::Missing | ExistingLocalChunk::RemovedCorrupt => continue,
+                }
+            }
+            Err(error) => {
+                remove_local_chunk_file(temp_path, upload_id, chunk_number, "chunk publish error")
+                    .await;
+                return Err(chunk_upload_error_with_subcode(
+                    "upload.chunk_persist_failed",
+                    format!("publish chunk file: {error}"),
+                ));
+            }
+        }
+    }
+
+    remove_local_chunk_file(
+        temp_path,
+        upload_id,
+        chunk_number,
+        "chunk publish retry exhausted",
+    )
+    .await;
+    Err(chunk_upload_error_with_subcode(
+        "upload.chunk_persist_failed",
+        "publish chunk file: existing chunk stayed unavailable",
+    ))
 }
 
 async fn upload_chunk_impl(
@@ -174,45 +335,59 @@ async fn upload_chunk_impl(
         chunk_number,
     );
 
-    use tokio::fs::OpenOptions;
-    use tokio::io::AsyncWriteExt;
-    match OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&chunk_path)
-        .await
+    if inspect_existing_local_chunk(&chunk_path, expected_size, upload_id, chunk_number).await?
+        == ExistingLocalChunk::Complete
     {
-        Ok(mut file) => {
-            file.write_all(data)
-                .await
-                .map_aster_err_ctx("write chunk", |message| {
-                    chunk_upload_error_with_subcode("upload.chunk_persist_failed", message)
-                })?;
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            let updated = upload_session_repo::find_by_id(db, upload_id).await?;
-            tracing::debug!(
-                upload_id,
-                chunk_number,
-                received_count = updated.received_count,
-                total_chunks = updated.total_chunks,
-                "skipping already uploaded chunk"
-            );
-            return Ok(ChunkUploadResponse {
-                received_count: updated.received_count,
-                total_chunks: updated.total_chunks,
-            });
-        }
-        Err(error) => {
-            return Err(chunk_upload_error_with_subcode(
-                "upload.chunk_persist_failed",
-                format!("create chunk file: {error}"),
-            ));
-        }
+        let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+        tracing::debug!(
+            upload_id,
+            chunk_number,
+            received_count = updated.received_count,
+            total_chunks = updated.total_chunks,
+            "skipping already uploaded chunk"
+        );
+        return Ok(ChunkUploadResponse {
+            received_count: updated.received_count,
+            total_chunks: updated.total_chunks,
+        });
     }
 
-    // 本地 chunk 模式的幂等语义靠 `create_new(true)` 保证：同一块重复上传不会覆盖旧文件，
-    // 而是直接回读 session 进度返回给客户端。
+    let chunk_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
+    let temp_chunk_path = paths::temp_file_path(
+        &chunk_dir,
+        &format!(
+            ".chunk_{chunk_number}.{}.partial",
+            crate::utils::id::new_uuid()
+        ),
+    );
+
+    write_local_chunk_temp(&temp_chunk_path, data, upload_id, chunk_number).await?;
+
+    if !publish_local_chunk_temp(
+        &temp_chunk_path,
+        &chunk_path,
+        expected_size,
+        upload_id,
+        chunk_number,
+    )
+    .await?
+    {
+        let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+        tracing::debug!(
+            upload_id,
+            chunk_number,
+            received_count = updated.received_count,
+            total_chunks = updated.total_chunks,
+            "skipping already uploaded chunk"
+        );
+        return Ok(ChunkUploadResponse {
+            received_count: updated.received_count,
+            total_chunks: updated.total_chunks,
+        });
+    }
+
+    // 本地 chunk 模式的幂等语义靠最终 chunk 路径的无覆盖发布保证：
+    // 同一块重复上传不会覆盖旧文件，而是直接回读 session 进度返回给客户端。
     increment_session_received_count(db, upload_id).await?;
 
     let updated = upload_session_repo::find_by_id(db, upload_id).await?;

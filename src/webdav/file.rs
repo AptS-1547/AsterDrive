@@ -444,10 +444,6 @@ impl DavFile for AsterDavFile {
                 } => {
                     file.flush().await.map_err(|_| FsError::GeneralFailure)?;
 
-                    if *written == 0 {
-                        return Ok(());
-                    }
-
                     let written_size = written_size_i64(*written)?;
                     let precomputed_hash = hasher
                         .take()
@@ -492,10 +488,6 @@ impl DavFile for AsterDavFile {
                     written,
                     ..
                 } => {
-                    if *written == 0 {
-                        return Ok(());
-                    }
-
                     writer
                         .take()
                         .ok_or(FsError::GeneralFailure)?

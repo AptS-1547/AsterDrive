@@ -1415,6 +1415,54 @@ async fn test_concurrent_chunk_upload_idempotent() {
 }
 
 #[tokio::test]
+async fn test_upload_chunk_replaces_stale_partial_local_chunk() {
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "stalechunk", "stale-chunk@test.com", "password123")
+        .await
+        .unwrap();
+    let upload_id = new_test_upload_id();
+    create_upload_session(
+        &state,
+        user.id,
+        UploadSessionSpec::new(
+            &upload_id,
+            aster_drive::types::UploadSessionStatus::Uploading,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(2, 0),
+    )
+    .await;
+
+    let chunk_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+    );
+    tokio::fs::create_dir_all(&chunk_dir).await.unwrap();
+    let chunk_path = aster_drive::utils::paths::upload_chunk_path(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+        0,
+    );
+    tokio::fs::write(&chunk_path, b"bad").await.unwrap();
+
+    let response = upload_service::upload_chunk(&state, &upload_id, 0, user.id, b"12345")
+        .await
+        .unwrap();
+    assert_eq!(response.received_count, 1);
+
+    let stored = tokio::fs::read(&chunk_path).await.unwrap();
+    assert_eq!(stored, b"12345");
+
+    let progress = upload_service::get_progress(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(progress.received_count, 1);
+    assert_eq!(progress.chunks_on_disk, vec![0]);
+}
+
+#[tokio::test]
 async fn test_upload_session_part_upsert_updates_existing_row_without_duplicates() {
     use aster_drive::db::repository::{upload_session_part_repo, upload_session_repo};
     use aster_drive::services::auth_service;
