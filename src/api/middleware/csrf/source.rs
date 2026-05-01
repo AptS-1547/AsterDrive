@@ -5,10 +5,15 @@ use actix_web::{
     dev::ServiceRequest,
     http::{Method, header},
 };
-use http::Uri;
 
 use crate::config::{RuntimeConfig, cors, site_url};
 use crate::errors::{AsterError, MapAsterErr, Result};
+
+const MAX_REQUEST_SCHEME_LEN: usize = 16;
+const MAX_REQUEST_HOST_LEN: usize = 512;
+const MAX_REFERER_AUTHORITY_LEN: usize = MAX_REQUEST_HOST_LEN + 16;
+const MAX_SOURCE_HEADER_LEN: usize = 2048;
+const MAX_SEC_FETCH_SITE_LEN: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestSourceMode {
@@ -68,9 +73,7 @@ pub(super) fn ensure_headers_allowed(
     public_site_origins: &[String],
     mode: RequestSourceMode,
 ) -> Result<()> {
-    let fetch_site = sec_fetch_site
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    let fetch_site = source_header_value(sec_fetch_site, MAX_SEC_FETCH_SITE_LEN, "Sec-Fetch-Site")?
         .map(|value| value.to_ascii_lowercase());
 
     if let Some(fetch_site) = fetch_site.as_deref() {
@@ -87,9 +90,7 @@ pub(super) fn ensure_headers_allowed(
     }
     let same_site_fetch = fetch_site.as_deref() == Some("same-site");
 
-    if let Some(origin) = origin
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    if let Some(origin) = source_header_value(origin, MAX_SOURCE_HEADER_LEN, "Origin")?
         .map(|value| cors::normalize_origin(value, false))
         .transpose()
         .map_aster_err_with(|| AsterError::validation_error("invalid Origin header"))?
@@ -102,9 +103,8 @@ pub(super) fn ensure_headers_allowed(
         ));
     }
 
-    if let Some(referer) = referer.map(str::trim).filter(|value| !value.is_empty()) {
-        let referer_origin = origin_from_url(referer)
-            .ok_or_else(|| AsterError::validation_error("invalid Referer header"))?;
+    if let Some(referer) = trimmed_header_value(referer) {
+        let referer_origin = origin_from_url(referer)?;
         if origin_is_trusted(&referer_origin, request_origin, public_site_origins) {
             return Ok(());
         }
@@ -134,6 +134,8 @@ fn header_value(req: &HttpRequest, name: header::HeaderName) -> Option<&str> {
 }
 
 fn request_origin(scheme: &str, host: &str) -> Result<String> {
+    ensure_value_len(scheme, MAX_REQUEST_SCHEME_LEN, "request scheme")?;
+    ensure_value_len(host, MAX_REQUEST_HOST_LEN, "request host")?;
     cors::normalize_origin(&format!("{scheme}://{host}"), false)
         .map_aster_err_with(|| AsterError::validation_error("invalid request host"))
 }
@@ -142,13 +144,50 @@ fn origin_is_trusted(origin: &str, request_origin: &str, public_site_origins: &[
     origin == request_origin || public_site_origins.iter().any(|allowed| allowed == origin)
 }
 
-fn origin_from_url(url: &str) -> Option<String> {
-    let uri: Uri = url.parse().ok()?;
-    let scheme = uri.scheme_str()?.to_ascii_lowercase();
-    let host = uri.host()?.to_ascii_lowercase();
-    let port = uri
-        .port_u16()
-        .map(|value| format!(":{value}"))
-        .unwrap_or_default();
-    cors::normalize_origin(&format!("{scheme}://{host}{port}"), false).ok()
+fn source_header_value<'a>(
+    value: Option<&'a str>,
+    max_len: usize,
+    label: &str,
+) -> Result<Option<&'a str>> {
+    let Some(value) = trimmed_header_value(value) else {
+        return Ok(None);
+    };
+    ensure_value_len(value, max_len, label)?;
+    Ok(Some(value))
+}
+
+fn trimmed_header_value(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn ensure_value_len(value: &str, max_len: usize, label: &str) -> Result<()> {
+    if value.len() > max_len {
+        return Err(AsterError::validation_error(format!(
+            "{label} exceeds {max_len} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn origin_from_url(url: &str) -> Result<String> {
+    let scheme_end = url
+        .find("://")
+        .ok_or_else(|| AsterError::validation_error("invalid Referer header"))?;
+    let scheme = &url[..scheme_end];
+    ensure_value_len(scheme, MAX_REQUEST_SCHEME_LEN, "Referer scheme")?;
+
+    let authority_start = scheme_end + 3;
+    let authority_tail = &url[authority_start..];
+    let authority_end = authority_tail
+        .char_indices()
+        .find_map(|(idx, ch)| matches!(ch, '/' | '?' | '#').then_some(authority_start + idx))
+        .unwrap_or(url.len());
+    let authority = &url[authority_start..authority_end];
+    ensure_value_len(authority, MAX_REFERER_AUTHORITY_LEN, "Referer authority")?;
+
+    cors::normalize_origin(
+        &format!("{}://{}", scheme.to_ascii_lowercase(), authority),
+        false,
+    )
+    .map_aster_err_with(|| AsterError::validation_error("invalid Referer header"))
 }

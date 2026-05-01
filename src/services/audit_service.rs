@@ -18,6 +18,8 @@ use crate::types::{TeamMemberRole, UserRole, UserStatus};
 use std::collections::{HashMap, HashSet};
 
 const DEFAULT_RETENTION_DAYS: i64 = 90;
+const MAX_AUDIT_IP_ADDRESS_LEN: usize = 45;
+const MAX_AUDIT_USER_AGENT_LEN: usize = 512;
 
 /// 从 HttpRequest 提取的审计上下文
 pub struct AuditContext {
@@ -292,12 +294,12 @@ impl AuditRequestInfo {
             ip_address: req
                 .connection_info()
                 .realip_remote_addr()
-                .map(|s| s.to_string()),
+                .map(|s| bounded_audit_value(s, MAX_AUDIT_IP_ADDRESS_LEN)),
             user_agent: req
                 .headers()
                 .get("user-agent")
                 .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string()),
+                .map(|s| bounded_audit_value(s, MAX_AUDIT_USER_AGENT_LEN)),
         }
     }
 
@@ -308,6 +310,18 @@ impl AuditRequestInfo {
             user_agent: self.user_agent.clone(),
         }
     }
+}
+
+fn bounded_audit_value(value: &str, max_len: usize) -> String {
+    if value.len() <= max_len {
+        return value.to_string();
+    }
+
+    let mut end = max_len;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_string()
 }
 
 /// Fire-and-forget 审计日志。DB 错误只 warn 不传播。
@@ -486,7 +500,40 @@ pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::AuditAction;
+    use actix_web::test as actix_test;
+
+    use super::{
+        AuditAction, AuditRequestInfo, MAX_AUDIT_IP_ADDRESS_LEN, MAX_AUDIT_USER_AGENT_LEN,
+        bounded_audit_value,
+    };
+
+    #[test]
+    fn bounded_audit_value_truncates_without_splitting_utf8() {
+        assert_eq!(bounded_audit_value("abcdef", 3), "abc");
+        assert_eq!(bounded_audit_value("猫猫猫", 4), "猫");
+    }
+
+    #[test]
+    fn request_audit_info_truncates_user_controlled_headers() {
+        let long_ip = "1".repeat(MAX_AUDIT_IP_ADDRESS_LEN + 32);
+        let long_user_agent = "a".repeat(MAX_AUDIT_USER_AGENT_LEN + 32);
+        let req = actix_test::TestRequest::default()
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .insert_header(("X-Forwarded-For", long_ip.as_str()))
+            .insert_header(("User-Agent", long_user_agent.as_str()))
+            .to_http_request();
+
+        let info = AuditRequestInfo::from_request(&req);
+
+        assert_eq!(
+            info.ip_address.as_deref(),
+            Some(&long_ip[..MAX_AUDIT_IP_ADDRESS_LEN])
+        );
+        assert_eq!(
+            info.user_agent.as_deref(),
+            Some(&long_user_agent[..MAX_AUDIT_USER_AGENT_LEN])
+        );
+    }
 
     #[test]
     fn audit_action_strings_match_existing_contract() {

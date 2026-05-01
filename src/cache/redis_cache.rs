@@ -2,7 +2,7 @@
 
 use super::CacheBackend;
 use async_trait::async_trait;
-use redis::AsyncCommands;
+use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 
 pub struct RedisCache {
     conn: redis::aio::ConnectionManager,
@@ -29,6 +29,24 @@ impl CacheBackend for RedisCache {
         let mut conn = self.conn.clone();
         if let Err(error) = conn.set_ex::<_, _, ()>(key, value, ttl).await {
             tracing::warn!(ttl_secs = ttl, "redis cache set failed: {error}");
+        }
+    }
+
+    async fn set_bytes_if_absent(&self, key: &str, value: Vec<u8>, ttl_secs: Option<u64>) -> bool {
+        let ttl = ttl_secs.unwrap_or(self.default_ttl);
+        let options = SetOptions::default()
+            .conditional_set(ExistenceCheck::NX)
+            .with_expiration(SetExpiry::EX(ttl));
+        let mut conn = self.conn.clone();
+        let result: redis::RedisResult<Option<String>> =
+            conn.set_options(key, value, options).await;
+        match result {
+            Ok(Some(_)) => true,
+            Ok(None) => false,
+            Err(error) => {
+                tracing::warn!(ttl_secs = ttl, "redis cache set-if-absent failed: {error}");
+                false
+            }
         }
     }
 

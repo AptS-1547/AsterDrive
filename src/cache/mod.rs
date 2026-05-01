@@ -28,6 +28,7 @@ fn redis_backend_target(redis_url: &str) -> String {
 pub trait CacheBackend: Send + Sync {
     async fn get_bytes(&self, key: &str) -> Option<Vec<u8>>;
     async fn set_bytes(&self, key: &str, value: Vec<u8>, ttl_secs: Option<u64>);
+    async fn set_bytes_if_absent(&self, key: &str, value: Vec<u8>, ttl_secs: Option<u64>) -> bool;
     async fn delete(&self, key: &str);
     async fn invalidate_prefix(&self, prefix: &str);
 }
@@ -64,7 +65,7 @@ impl CacheExt for dyn CacheBackend {
 pub async fn create_cache(config: &CacheConfig) -> Arc<dyn CacheBackend> {
     if !config.enabled {
         tracing::info!("cache disabled");
-        return Arc::new(noop::NoopCache);
+        return Arc::new(noop::NoopCache::new(config.default_ttl));
     }
 
     match config.backend.as_str() {

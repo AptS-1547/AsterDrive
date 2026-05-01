@@ -14,7 +14,7 @@ pub(super) fn avatar_variant_file_path(prefix: &Path, size: u32) -> PathBuf {
     prefix.join(format!("{size}.webp"))
 }
 
-fn user_avatar_prefix(user_id: i64, version: i32) -> String {
+pub(super) fn user_avatar_prefix(user_id: i64, version: i32) -> String {
     format!("user/{user_id}/v{version}")
 }
 
@@ -43,6 +43,46 @@ fn normalize_absolute_path(path: &Path) -> Option<PathBuf> {
     }
 
     Some(normalized)
+}
+
+fn normalized_avatar_root(root_dir: &Path) -> Option<PathBuf> {
+    normalize_absolute_path(root_dir)
+}
+
+fn expected_user_avatar_prefix_path(user_id: i64, version: i32) -> PathBuf {
+    PathBuf::from(user_avatar_prefix(user_id, version))
+}
+
+pub(super) fn resolve_stored_avatar_prefix_path(
+    root_dir: &Path,
+    profile: &user_profile::Model,
+) -> Option<PathBuf> {
+    let stored_prefix = stored_avatar_prefix(Some(profile))?;
+    let expected_relative =
+        expected_user_avatar_prefix_path(profile.user_id, profile.avatar_version);
+    let normalized_root = normalized_avatar_root(root_dir)?;
+    let stored_path = Path::new(stored_prefix);
+
+    if stored_path.is_absolute() {
+        let normalized_stored = normalize_absolute_path(stored_path)?;
+        let stored_relative = normalized_stored.strip_prefix(&normalized_root).ok()?;
+        if stored_relative != expected_relative {
+            return None;
+        }
+    } else if stored_path != expected_relative {
+        return None;
+    }
+
+    Some(normalized_root.join(expected_relative))
+}
+
+pub(super) fn resolve_stored_avatar_variant_path(
+    root_dir: &Path,
+    profile: &user_profile::Model,
+    size: u32,
+) -> Option<PathBuf> {
+    resolve_stored_avatar_prefix_path(root_dir, profile)
+        .map(|prefix| avatar_variant_file_path(&prefix, size))
 }
 
 async fn cleanup_empty_avatar_dirs(prefix_dir: &Path, root_dir: &Path) {
@@ -109,20 +149,96 @@ pub(super) async fn delete_upload_objects(state: &PrimaryAppState, profile: &use
         return;
     }
 
-    let Some(prefix) = stored_avatar_prefix(Some(profile)) else {
+    if stored_avatar_prefix(Some(profile)).is_none() {
         return;
-    };
-
-    let prefix = Path::new(prefix);
-    delete_local_avatar_files(prefix).await;
+    }
 
     match avatar::resolve_local_avatar_root_dir(&state.runtime_config) {
-        Ok(root_dir) => cleanup_empty_avatar_dirs(prefix, &root_dir).await,
+        Ok(root_dir) => {
+            let Some(prefix_path) = resolve_stored_avatar_prefix_path(&root_dir, profile) else {
+                tracing::warn!(
+                    user_id = profile.user_id,
+                    avatar_version = profile.avatar_version,
+                    "skip avatar cleanup for invalid stored avatar key"
+                );
+                return;
+            };
+
+            delete_local_avatar_files(&prefix_path).await;
+            cleanup_empty_avatar_dirs(&prefix_path, &root_dir).await;
+        }
         Err(e) => {
             tracing::warn!(
-                "failed to resolve avatar root for local avatar cleanup {}: {e}",
-                prefix.display()
+                user_id = profile.user_id,
+                avatar_version = profile.avatar_version,
+                "failed to resolve avatar root for local avatar cleanup: {e}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+
+    use super::*;
+
+    fn profile_with_key(user_id: i64, version: i32, avatar_key: &str) -> user_profile::Model {
+        user_profile::Model {
+            user_id,
+            display_name: None,
+            wopi_user_info: None,
+            avatar_source: AvatarSource::Upload,
+            avatar_key: Some(avatar_key.to_string()),
+            avatar_version: version,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn avatar_test_root() -> PathBuf {
+        std::env::temp_dir().join("asterdrive-avatar")
+    }
+
+    #[test]
+    fn resolve_stored_avatar_prefix_accepts_expected_relative_key() {
+        let root = avatar_test_root();
+        let profile = profile_with_key(42, 3, "user/42/v3");
+
+        assert_eq!(
+            resolve_stored_avatar_prefix_path(&root, &profile),
+            Some(root.join("user/42/v3"))
+        );
+    }
+
+    #[test]
+    fn resolve_stored_avatar_prefix_accepts_legacy_absolute_key_under_root() {
+        let root = avatar_test_root();
+        let avatar_prefix = root.join("user/42/v3");
+        let profile = profile_with_key(42, 3, &avatar_prefix.to_string_lossy());
+
+        assert_eq!(
+            resolve_stored_avatar_prefix_path(&root, &profile),
+            Some(avatar_prefix)
+        );
+    }
+
+    #[test]
+    fn resolve_stored_avatar_prefix_rejects_key_outside_root() {
+        let root = avatar_test_root();
+        let outside_prefix = std::env::temp_dir().join("other-avatar/user/42/v3");
+        let profile = profile_with_key(42, 3, &outside_prefix.to_string_lossy());
+
+        assert!(resolve_stored_avatar_prefix_path(&root, &profile).is_none());
+    }
+
+    #[test]
+    fn resolve_stored_avatar_prefix_rejects_wrong_user_or_version() {
+        let root = avatar_test_root();
+        let wrong_user = profile_with_key(42, 3, "user/43/v3");
+        let wrong_version = profile_with_key(42, 3, "user/42/v4");
+
+        assert!(resolve_stored_avatar_prefix_path(&root, &wrong_user).is_none());
+        assert!(resolve_stored_avatar_prefix_path(&root, &wrong_version).is_none());
     }
 }

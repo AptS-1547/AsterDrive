@@ -39,6 +39,15 @@ impl CacheBackend for MemoryCache {
         self.cache.insert(key.to_string(), value).await;
     }
 
+    async fn set_bytes_if_absent(&self, key: &str, value: Vec<u8>, _ttl_secs: Option<u64>) -> bool {
+        // moka entry API 对同一个 key 的并发插入会合并，is_fresh 只会有一个 true。
+        self.cache
+            .entry(key.to_string())
+            .or_insert(value)
+            .await
+            .is_fresh()
+    }
+
     async fn delete(&self, key: &str) {
         self.cache.remove(key).await;
     }
@@ -58,7 +67,8 @@ impl CacheBackend for MemoryCache {
 
 #[cfg(test)]
 mod tests {
-    use super::entry_weight;
+    use super::{CacheBackend, MemoryCache, entry_weight};
+    use std::sync::Arc;
 
     #[test]
     fn entry_weight_counts_key_and_value_bytes() {
@@ -68,5 +78,28 @@ mod tests {
     #[test]
     fn entry_weight_saturates_at_u32_max() {
         assert_eq!(entry_weight(usize::MAX, usize::MAX), u32::MAX);
+    }
+
+    #[tokio::test]
+    async fn set_bytes_if_absent_allows_one_concurrent_insert() {
+        let cache = Arc::new(MemoryCache::new(60));
+        let mut tasks = Vec::new();
+        for _ in 0..16 {
+            let cache = cache.clone();
+            tasks.push(tokio::spawn(async move {
+                cache
+                    .set_bytes_if_absent("nonce", Vec::new(), Some(60))
+                    .await
+            }));
+        }
+
+        let successes = futures::future::join_all(tasks)
+            .await
+            .into_iter()
+            .map(|result| result.expect("reservation task should not panic"))
+            .filter(|inserted| *inserted)
+            .count();
+
+        assert_eq!(successes, 1);
     }
 }

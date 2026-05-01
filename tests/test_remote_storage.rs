@@ -31,6 +31,7 @@ use aster_drive::types::{
 };
 use chrono::Utc;
 use futures::TryStreamExt;
+use futures::future::join_all;
 use sea_orm::{ActiveModelTrait, Set};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1099,6 +1100,47 @@ async fn test_remote_node_connection_failure_returns_error_and_persists_last_err
     assert!(!stored.last_error.is_empty());
 }
 
+async fn create_internal_hmac_binding(
+    provider_state: &aster_drive::runtime::PrimaryAppState,
+    label: &str,
+) -> (String, String) {
+    let access_key = format!("{label}-access-key");
+    let secret_key = format!("{label}-secret-key");
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: format!("{label}-binding"),
+            master_url: "http://master.example.com".to_string(),
+            access_key: access_key.clone(),
+            secret_key: secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    (access_key, secret_key)
+}
+
+async fn setup_internal_hmac_binding_state(
+    label: &str,
+) -> (aster_drive::runtime::PrimaryAppState, String, String) {
+    let mut provider_state = common::setup().await;
+    provider_state.cache = aster_drive::cache::create_cache(&aster_drive::config::CacheConfig {
+        enabled: true,
+        backend: "memory".to_string(),
+        redis_url: String::new(),
+        default_ttl: 60,
+    })
+    .await;
+    let (access_key, secret_key) = create_internal_hmac_binding(&provider_state, label).await;
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+    (provider_state, access_key, secret_key)
+}
+
 #[actix_web::test]
 async fn test_internal_storage_capabilities_probe_does_not_require_ingress_profile() {
     let provider_state = common::setup().await;
@@ -1150,6 +1192,199 @@ async fn test_internal_storage_capabilities_probe_does_not_require_ingress_profi
     assert_eq!(body["code"], 0);
     assert_eq!(body["data"]["protocol_version"], "v1");
     assert_eq!(body["data"]["supports_range_read"], true);
+}
+
+#[actix_web::test]
+async fn test_internal_storage_rejects_replayed_hmac_nonce() {
+    let (provider_state, access_key, secret_key) =
+        setup_internal_hmac_binding_state("capabilities-replay").await;
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let path = "/api/v1/internal/storage/capabilities";
+    let timestamp = Utc::now().timestamp();
+    let nonce = "capabilities-replay-test";
+    let signature = sign_internal_request(&secret_key, "GET", path, timestamp, nonce, None);
+    let signed_request = || {
+        test::TestRequest::get()
+            .uri(path)
+            .insert_header(("x-aster-access-key", access_key.as_str()))
+            .insert_header(("x-aster-timestamp", timestamp.to_string()))
+            .insert_header(("x-aster-nonce", nonce))
+            .insert_header(("x-aster-signature", signature.as_str()))
+            .to_request()
+    };
+
+    let first = test::call_service(&follower_app, signed_request()).await;
+    assert_eq!(first.status(), actix_web::http::StatusCode::OK);
+
+    let replay = test::call_service(&follower_app, signed_request()).await;
+    assert_eq!(replay.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+    let body: serde_json::Value = test::read_body_json(replay).await;
+    assert_eq!(body["code"], 2002);
+    assert_eq!(body["msg"], "internal auth nonce has already been used");
+}
+
+#[actix_web::test]
+async fn test_internal_storage_invalid_signature_does_not_consume_hmac_nonce() {
+    let (provider_state, access_key, secret_key) =
+        setup_internal_hmac_binding_state("capabilities-bad-signature").await;
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let path = "/api/v1/internal/storage/capabilities";
+    let timestamp = Utc::now().timestamp();
+    let nonce = "capabilities-bad-signature-test";
+    let bad_req = test::TestRequest::get()
+        .uri(path)
+        .insert_header(("x-aster-access-key", access_key.as_str()))
+        .insert_header(("x-aster-timestamp", timestamp.to_string()))
+        .insert_header(("x-aster-nonce", nonce))
+        .insert_header(("x-aster-signature", "00"))
+        .to_request();
+    let bad_resp = test::call_service(&follower_app, bad_req).await;
+
+    assert_eq!(bad_resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+    let body: serde_json::Value = test::read_body_json(bad_resp).await;
+    assert_eq!(body["code"], 2000);
+    assert_eq!(body["msg"], "internal auth signature mismatch");
+
+    let signature = sign_internal_request(&secret_key, "GET", path, timestamp, nonce, None);
+    let valid_req = test::TestRequest::get()
+        .uri(path)
+        .insert_header(("x-aster-access-key", access_key.as_str()))
+        .insert_header(("x-aster-timestamp", timestamp.to_string()))
+        .insert_header(("x-aster-nonce", nonce))
+        .insert_header(("x-aster-signature", signature))
+        .to_request();
+    let valid_resp = test::call_service(&follower_app, valid_req).await;
+
+    assert_eq!(valid_resp.status(), actix_web::http::StatusCode::OK);
+}
+
+#[actix_web::test]
+async fn test_internal_storage_hmac_nonce_is_scoped_by_access_key() {
+    let (provider_state, access_key_a, secret_key_a) =
+        setup_internal_hmac_binding_state("capabilities-nonce-scope-a").await;
+    let (access_key_b, secret_key_b) =
+        create_internal_hmac_binding(&provider_state, "capabilities-nonce-scope-b").await;
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let path = "/api/v1/internal/storage/capabilities";
+    let timestamp = Utc::now().timestamp();
+    let nonce = "capabilities-shared-nonce-test";
+    let signature_a = sign_internal_request(&secret_key_a, "GET", path, timestamp, nonce, None);
+    let signature_b = sign_internal_request(&secret_key_b, "GET", path, timestamp, nonce, None);
+    let request = |access_key: &str, signature: &str| {
+        test::TestRequest::get()
+            .uri(path)
+            .insert_header(("x-aster-access-key", access_key))
+            .insert_header(("x-aster-timestamp", timestamp.to_string()))
+            .insert_header(("x-aster-nonce", nonce))
+            .insert_header(("x-aster-signature", signature))
+            .to_request()
+    };
+
+    let first_a = test::call_service(&follower_app, request(&access_key_a, &signature_a)).await;
+    assert_eq!(first_a.status(), actix_web::http::StatusCode::OK);
+
+    let first_b = test::call_service(&follower_app, request(&access_key_b, &signature_b)).await;
+    assert_eq!(first_b.status(), actix_web::http::StatusCode::OK);
+
+    let replay_a = test::call_service(&follower_app, request(&access_key_a, &signature_a)).await;
+    assert_eq!(replay_a.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+}
+
+#[actix_web::test]
+async fn test_internal_storage_rejects_concurrent_replayed_hmac_nonce() {
+    let (provider_state, access_key, secret_key) =
+        setup_internal_hmac_binding_state("capabilities-concurrent-replay").await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let path = "/api/v1/internal/storage/capabilities";
+    let url = Arc::new(format!("{}{}", provider_server.base_url, path));
+    let timestamp = Utc::now().timestamp();
+    let timestamp_header = Arc::new(timestamp.to_string());
+    let nonce = Arc::new("capabilities-concurrent-replay-test".to_string());
+    let signature = Arc::new(sign_internal_request(
+        &secret_key,
+        "GET",
+        path,
+        timestamp,
+        nonce.as_str(),
+        None,
+    ));
+    let access_key = Arc::new(access_key);
+    let client = reqwest::Client::new();
+
+    let responses = join_all((0..8).map(|_| {
+        let client = client.clone();
+        let url = url.clone();
+        let access_key = access_key.clone();
+        let timestamp_header = timestamp_header.clone();
+        let nonce = nonce.clone();
+        let signature = signature.clone();
+        async move {
+            client
+                .get(url.as_str())
+                .header("x-aster-access-key", access_key.as_str())
+                .header("x-aster-timestamp", timestamp_header.as_str())
+                .header("x-aster-nonce", nonce.as_str())
+                .header("x-aster-signature", signature.as_str())
+                .send()
+                .await
+        }
+    }))
+    .await;
+    provider_server.stop().await;
+
+    let statuses: Vec<_> = responses
+        .into_iter()
+        .map(|result| {
+            result
+                .expect("concurrent internal request should complete")
+                .status()
+        })
+        .collect();
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|status| **status == reqwest::StatusCode::OK)
+            .count(),
+        1
+    );
+    assert_eq!(
+        statuses
+            .iter()
+            .filter(|status| **status == reqwest::StatusCode::UNAUTHORIZED)
+            .count(),
+        7
+    );
 }
 
 #[actix_web::test]

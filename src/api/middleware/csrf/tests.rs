@@ -2,10 +2,17 @@
 
 use actix_web::cookie::Cookie;
 
-use super::source::ensure_headers_allowed;
+use crate::config::RuntimeConfig;
+
+use super::source::{ensure_headers_allowed, ensure_request_source_allowed};
 use super::{
     CSRF_COOKIE, CSRF_HEADER, RequestSourceMode, build_csrf_token, ensure_double_submit_token,
 };
+
+fn host_with_len(len: usize) -> String {
+    let suffix = ".example.com";
+    format!("{}{}", "a".repeat(len - suffix.len()), suffix)
+}
 
 #[test]
 fn accepts_same_origin_and_public_site_origin() {
@@ -117,6 +124,148 @@ fn rejects_untrusted_origin_and_missing_required_source() {
     )
     .unwrap_err();
     assert!(err.message().contains("missing request source"));
+}
+
+#[test]
+fn rejects_oversized_request_source_values_before_normalization() {
+    let max_host = host_with_len(512);
+    let req = actix_web::test::TestRequest::post()
+        .insert_header(("Host", max_host.as_str()))
+        .insert_header(("Origin", format!("http://{max_host}")))
+        .to_http_request();
+    assert!(
+        ensure_request_source_allowed(&req, &RuntimeConfig::new(), RequestSourceMode::Required)
+            .is_ok()
+    );
+
+    let long_host = host_with_len(513);
+    let req = actix_web::test::TestRequest::post()
+        .insert_header(("Host", long_host))
+        .insert_header(("Origin", "https://drive.example.com"))
+        .to_http_request();
+    let err =
+        ensure_request_source_allowed(&req, &RuntimeConfig::new(), RequestSourceMode::Required)
+            .unwrap_err();
+    assert!(err.message().contains("request host"));
+
+    let req = actix_web::test::TestRequest::post()
+        .insert_header(("Host", "drive.example.com"))
+        .insert_header(("X-Forwarded-Proto", "x".repeat(17)))
+        .insert_header(("Origin", "https://drive.example.com"))
+        .to_http_request();
+    let err =
+        ensure_request_source_allowed(&req, &RuntimeConfig::new(), RequestSourceMode::Required)
+            .unwrap_err();
+    assert!(err.message().contains("request scheme"));
+
+    let max_origin = format!("https://{}", host_with_len(2040));
+    assert_eq!(max_origin.len(), 2048);
+    assert!(
+        ensure_headers_allowed(
+            Some(&max_origin),
+            None,
+            None,
+            "https://drive.example.com",
+            std::slice::from_ref(&max_origin),
+            RequestSourceMode::OptionalWhenPresent,
+        )
+        .is_ok()
+    );
+
+    let long_origin = format!("https://{}", host_with_len(2041));
+    assert_eq!(long_origin.len(), 2049);
+    let err = ensure_headers_allowed(
+        Some(&long_origin),
+        None,
+        None,
+        "https://drive.example.com",
+        &[],
+        RequestSourceMode::OptionalWhenPresent,
+    )
+    .unwrap_err();
+    assert!(err.message().contains("Origin"));
+
+    let max_referer_authority = host_with_len(528);
+    let max_referer_origin = format!("https://{max_referer_authority}");
+    let max_referer = format!("{max_referer_origin}/files");
+    assert!(
+        ensure_headers_allowed(
+            None,
+            Some(&max_referer),
+            None,
+            "https://drive.example.com",
+            &[max_referer_origin],
+            RequestSourceMode::OptionalWhenPresent,
+        )
+        .is_ok()
+    );
+
+    let long_referer_authority = format!("https://{}.example.com/files", "a".repeat(600));
+    let err = ensure_headers_allowed(
+        None,
+        Some(&long_referer_authority),
+        None,
+        "https://drive.example.com",
+        &[],
+        RequestSourceMode::OptionalWhenPresent,
+    )
+    .unwrap_err();
+    assert!(err.message().contains("Referer authority"));
+
+    let max_fetch_site = "x".repeat(64);
+    assert!(
+        ensure_headers_allowed(
+            None,
+            None,
+            Some(&max_fetch_site),
+            "https://drive.example.com",
+            &[],
+            RequestSourceMode::OptionalWhenPresent,
+        )
+        .is_ok()
+    );
+
+    let long_fetch_site = "x".repeat(65);
+    let err = ensure_headers_allowed(
+        None,
+        None,
+        Some(&long_fetch_site),
+        "https://drive.example.com",
+        &[],
+        RequestSourceMode::OptionalWhenPresent,
+    )
+    .unwrap_err();
+    assert!(err.message().contains("Sec-Fetch-Site"));
+}
+
+#[test]
+fn accepts_ipv6_request_host_origin_match() {
+    let req = actix_web::test::TestRequest::post()
+        .insert_header(("Host", "[2001:db8::1]:8443"))
+        .insert_header(("Origin", "http://[2001:db8::1]:8443"))
+        .to_http_request();
+
+    assert!(
+        ensure_request_source_allowed(&req, &RuntimeConfig::new(), RequestSourceMode::Required)
+            .is_ok()
+    );
+}
+
+#[test]
+fn referer_source_check_ignores_long_path_after_bounded_origin() {
+    let long_referer = format!("https://drive.example.com/files/{}", "a".repeat(10_000));
+
+    assert!(
+        ensure_headers_allowed(
+            None,
+            Some(&long_referer),
+            Some("same-origin"),
+            "https://drive.example.com",
+            &[],
+            RequestSourceMode::Required,
+        )
+        .is_ok()
+    );
 }
 
 #[test]

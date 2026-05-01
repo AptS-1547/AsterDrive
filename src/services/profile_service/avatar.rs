@@ -16,7 +16,8 @@ use crate::types::AvatarSource;
 
 use super::avatar_image::read_avatar_upload;
 use super::avatar_storage::{
-    avatar_variant_file_path, cleanup_local_avatar_prefix, delete_upload_objects, user_avatar_dir,
+    avatar_variant_file_path, cleanup_local_avatar_prefix, delete_upload_objects,
+    resolve_stored_avatar_variant_path, user_avatar_dir, user_avatar_prefix,
 };
 use super::info::{AvatarAudience, UserProfileInfo, build_profile_info, resolve_gravatar_base_url};
 use super::shared::{
@@ -74,8 +75,8 @@ pub async fn upload_avatar(
         .map(|profile| profile.avatar_version.saturating_add(1))
         .unwrap_or(1);
     let avatar_root_dir = avatar::resolve_local_avatar_root_dir(&state.runtime_config)?;
+    let prefix_key = user_avatar_prefix(user_id, version);
     let prefix = user_avatar_dir(&avatar_root_dir, user_id, version);
-    let prefix_value = prefix.to_string_lossy().into_owned();
     let small_path = avatar_variant_file_path(&prefix, AVATAR_SIZE_SM);
     let large_path = avatar_variant_file_path(&prefix, AVATAR_SIZE_LG);
 
@@ -90,7 +91,7 @@ pub async fn upload_avatar(
         Some(current) => {
             let mut active: user_profile::ActiveModel = current.into();
             active.avatar_source = Set(AvatarSource::Upload);
-            active.avatar_key = Set(Some(prefix_value.clone()));
+            active.avatar_key = Set(Some(prefix_key.clone()));
             active.avatar_version = Set(version);
             active.updated_at = Set(now);
             user_profile_repo::update(&state.db, active).await
@@ -98,7 +99,7 @@ pub async fn upload_avatar(
         None => {
             let mut active = default_profile_active_model(user_id, now);
             active.avatar_source = Set(AvatarSource::Upload);
-            active.avatar_key = Set(Some(prefix_value.clone()));
+            active.avatar_key = Set(Some(prefix_key.clone()));
             active.avatar_version = Set(version);
             user_profile_repo::create(&state.db, active).await
         }
@@ -201,9 +202,18 @@ pub async fn get_avatar_bytes(state: &PrimaryAppState, user_id: i64, size: u32) 
         )));
     }
 
-    let prefix = stored_avatar_prefix(Some(&profile))
+    stored_avatar_prefix(Some(&profile))
         .ok_or_else(|| AsterError::record_not_found("avatar key missing"))?;
-    let path = avatar_variant_file_path(std::path::Path::new(prefix), size);
+    let avatar_root_dir = avatar::resolve_local_avatar_root_dir(&state.runtime_config)?;
+    let path =
+        resolve_stored_avatar_variant_path(&avatar_root_dir, &profile, size).ok_or_else(|| {
+            tracing::warn!(
+                user_id = profile.user_id,
+                avatar_version = profile.avatar_version,
+                "reject invalid stored avatar key"
+            );
+            AsterError::record_not_found("avatar key invalid")
+        })?;
     tokio::fs::read(&path).await.map_aster_err_with(|| {
         AsterError::record_not_found(format!("avatar object {}", path.display()))
     })

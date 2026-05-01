@@ -3070,6 +3070,69 @@ async fn test_avatar_upload_and_source_switch() {
 }
 
 #[actix_web::test]
+async fn test_avatar_read_rejects_tampered_stored_key() {
+    use aster_drive::entities::user_profile;
+    use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let avatar_base_path = state
+        .runtime_config
+        .get(aster_drive::config::avatar::AVATAR_DIR_KEY)
+        .expect("avatar_dir should exist");
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let outside_dir = std::path::PathBuf::from(&avatar_base_path)
+        .parent()
+        .expect("avatar_dir should have parent")
+        .join("outside-avatar");
+    std::fs::create_dir_all(&outside_dir).unwrap();
+    std::fs::write(outside_dir.join("512.webp"), b"not this user's avatar").unwrap();
+
+    let profile = user_profile::Entity::find_by_id(user_id)
+        .one(&db)
+        .await
+        .unwrap()
+        .expect("profile should exist after avatar upload");
+    let mut active = profile.into_active_model();
+    active.avatar_key = Set(Some(outside_dir.to_string_lossy().into_owned()));
+    active.update(&db).await.unwrap();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/profile/avatar/512")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
+}
+
+#[actix_web::test]
 async fn test_avatar_reupload_replaces_previous_objects() {
     let state = common::setup().await;
     let avatar_base_path = state
