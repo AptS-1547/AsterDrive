@@ -91,6 +91,67 @@ describe("useThemeStore", () => {
 		expect(document.documentElement.classList.contains("dark")).toBe(false);
 	});
 
+	it("falls back to defaults when stored theme preferences are invalid", async () => {
+		localStorage.setItem("aster-theme-mode", "solarized");
+		localStorage.setItem("aster-color-preset", "pink");
+		mockMatchMedia(false);
+
+		const { useThemeStore } = await loadThemeStore();
+
+		expect(useThemeStore.getState()).toMatchObject({
+			mode: "system",
+			colorPreset: "blue",
+			resolvedTheme: "light",
+		});
+	});
+
+	it("falls back to defaults when localStorage theme reads fail", async () => {
+		const getItem = vi
+			.spyOn(Storage.prototype, "getItem")
+			.mockImplementation(() => {
+				throw new Error("storage blocked");
+			});
+		mockMatchMedia(false);
+
+		try {
+			const { useThemeStore } = await loadThemeStore();
+
+			expect(useThemeStore.getState()).toMatchObject({
+				mode: "system",
+				colorPreset: "blue",
+				resolvedTheme: "light",
+			});
+		} finally {
+			getItem.mockRestore();
+		}
+	});
+
+	it("keeps theme updates in memory when localStorage writes fail", async () => {
+		const setItem = vi
+			.spyOn(Storage.prototype, "setItem")
+			.mockImplementation(() => {
+				throw new Error("quota exceeded");
+			});
+		mockMatchMedia(false);
+
+		try {
+			const { useThemeStore } = await loadThemeStore();
+
+			expect(() => useThemeStore.getState().setMode("dark")).not.toThrow();
+
+			expect(useThemeStore.getState()).toMatchObject({
+				mode: "dark",
+				resolvedTheme: "dark",
+			});
+			expect(document.documentElement.classList.contains("dark")).toBe(true);
+			expect(mockState.queuePreferenceSync).toHaveBeenCalledWith({
+				theme_mode: "dark",
+			});
+		} finally {
+			setItem.mockRestore();
+		}
+	});
+
 	it("applies server preferences and persists them locally", async () => {
 		mockMatchMedia(false);
 		const { useThemeStore } = await loadThemeStore();
@@ -108,6 +169,25 @@ describe("useThemeStore", () => {
 		expect(localStorage.getItem("aster-theme-mode")).toBe("light");
 		expect(localStorage.getItem("aster-color-preset")).toBe("orange");
 		expect(document.documentElement.getAttribute("data-theme")).toBe("orange");
+	});
+
+	it("normalizes invalid server theme preferences before applying them", async () => {
+		mockMatchMedia(false);
+		const { useThemeStore } = await loadThemeStore();
+
+		useThemeStore.getState()._applyFromServer({
+			mode: "solarized",
+			colorPreset: "pink",
+		});
+
+		expect(useThemeStore.getState()).toMatchObject({
+			mode: "system",
+			colorPreset: "blue",
+			resolvedTheme: "light",
+		});
+		expect(localStorage.getItem("aster-theme-mode")).toBe("system");
+		expect(localStorage.getItem("aster-color-preset")).toBe("blue");
+		expect(document.documentElement.getAttribute("data-theme")).toBe("blue");
 	});
 
 	it("derives the initial resolved theme from stored system preference", async () => {

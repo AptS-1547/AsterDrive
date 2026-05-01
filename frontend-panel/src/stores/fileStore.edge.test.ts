@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { STORAGE_KEYS } from "@/config/app";
 
 const mockState = vi.hoisted(() => ({
 	batchCopy: vi.fn(),
@@ -101,6 +102,64 @@ describe("useFileStore edge cases", () => {
 		});
 		expect(useFileStore.getState().selectedFileIds.size).toBe(0);
 		expect(useFileStore.getState().selectedFolderIds).toEqual(new Set([8]));
+	});
+
+	it("falls back to default preferences when stored values are invalid", async () => {
+		localStorage.setItem(STORAGE_KEYS.viewMode, "tiles");
+		localStorage.setItem(STORAGE_KEYS.browserOpenMode, "hover");
+		localStorage.setItem(STORAGE_KEYS.sortBy, "owner");
+		localStorage.setItem(STORAGE_KEYS.sortOrder, "random");
+
+		const { useFileStore } = await loadStore();
+
+		expect(useFileStore.getState()).toMatchObject({
+			viewMode: "list",
+			browserOpenMode: "single_click",
+			sortBy: "name",
+			sortOrder: "asc",
+		});
+	});
+
+	it("falls back to default preferences when localStorage reads fail", async () => {
+		const getItem = vi
+			.spyOn(Storage.prototype, "getItem")
+			.mockImplementation(() => {
+				throw new Error("storage blocked");
+			});
+
+		try {
+			const { useFileStore } = await loadStore();
+
+			expect(useFileStore.getState()).toMatchObject({
+				viewMode: "list",
+				browserOpenMode: "single_click",
+				sortBy: "name",
+				sortOrder: "asc",
+			});
+		} finally {
+			getItem.mockRestore();
+		}
+	});
+
+	it("keeps preference updates in memory when localStorage writes fail", async () => {
+		const setItem = vi
+			.spyOn(Storage.prototype, "setItem")
+			.mockImplementation(() => {
+				throw new Error("quota exceeded");
+			});
+
+		try {
+			const { useFileStore } = await loadStore();
+
+			expect(() => useFileStore.getState().setViewMode("grid")).not.toThrow();
+
+			expect(useFileStore.getState().viewMode).toBe("grid");
+			expect(mockState.queuePreferenceSync).toHaveBeenCalledWith({
+				view_mode: "grid",
+			});
+		} finally {
+			setItem.mockRestore();
+		}
 	});
 
 	it("populates and clears search results", async () => {

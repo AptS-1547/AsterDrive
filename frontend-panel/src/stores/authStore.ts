@@ -5,15 +5,8 @@ import { logger } from "@/lib/logger";
 import { cancelPreferenceSync } from "@/lib/preferenceSync";
 import { authService } from "@/services/authService";
 import { useDisplayTimeZoneStore } from "@/stores/displayTimeZoneStore";
-import type {
-	BrowserOpenMode,
-	SortBy,
-	SortOrder,
-	ViewMode,
-} from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useTeamStore } from "@/stores/teamStore";
-import type { ColorPreset, ThemeMode } from "@/stores/themeStore";
 import { useThemeStore } from "@/stores/themeStore";
 import type { MeResponse, UserPreferences } from "@/types/api";
 
@@ -94,15 +87,14 @@ function applyServerPreferences(prefs: UserPreferences): void {
 	const displayTimeZoneStore = useDisplayTimeZoneStore.getState();
 
 	themeStore._applyFromServer({
-		mode: (prefs.theme_mode as ThemeMode) ?? themeStore.mode,
-		colorPreset: (prefs.color_preset as ColorPreset) ?? themeStore.colorPreset,
+		mode: prefs.theme_mode ?? themeStore.mode,
+		colorPreset: prefs.color_preset ?? themeStore.colorPreset,
 	});
 	fileStore._applyFromServer({
-		viewMode: (prefs.view_mode as ViewMode) ?? fileStore.viewMode,
-		browserOpenMode:
-			(prefs.browser_open_mode as BrowserOpenMode) ?? fileStore.browserOpenMode,
-		sortBy: (prefs.sort_by as SortBy) ?? fileStore.sortBy,
-		sortOrder: (prefs.sort_order as SortOrder) ?? fileStore.sortOrder,
+		viewMode: prefs.view_mode ?? fileStore.viewMode,
+		browserOpenMode: prefs.browser_open_mode ?? fileStore.browserOpenMode,
+		sortBy: prefs.sort_by ?? fileStore.sortBy,
+		sortOrder: prefs.sort_order ?? fileStore.sortOrder,
 	});
 	displayTimeZoneStore._applyFromServer(prefs.display_time_zone);
 	if (prefs.language) void i18n.changeLanguage(prefs.language);

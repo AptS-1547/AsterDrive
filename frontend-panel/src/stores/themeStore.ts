@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { STORAGE_KEYS } from "@/config/app";
 import { queuePreferenceSync } from "@/lib/preferenceSync";
+import { readLocalStorage, writeLocalStorage } from "@/lib/storage";
 
 const THEME_MODES = {
 	light: "light",
@@ -19,6 +20,9 @@ type ThemeMode = (typeof THEME_MODES)[keyof typeof THEME_MODES];
 type ColorPreset = (typeof COLOR_PRESETS)[keyof typeof COLOR_PRESETS];
 type ResolvedTheme = "light" | "dark";
 
+const THEME_MODE_VALUES = Object.values(THEME_MODES);
+const COLOR_PRESET_VALUES = Object.values(COLOR_PRESETS);
+
 const FALLBACK_THEME_TRANSITION_CLASS = "theme-switching";
 const FALLBACK_THEME_TRANSITION_DURATION_MS = 220;
 
@@ -31,15 +35,39 @@ interface ThemeState {
 	setMode: (mode: ThemeMode) => void;
 	setColorPreset: (preset: ColorPreset) => void;
 	init: () => void;
-	_applyFromServer: (prefs: {
-		mode: ThemeMode;
-		colorPreset: ColorPreset;
-	}) => void;
+	_applyFromServer: (prefs: { mode?: unknown; colorPreset?: unknown }) => void;
 }
 
-function getStoredValue<T extends string>(key: string, fallback: T): T {
-	if (typeof localStorage === "undefined") return fallback;
-	return (localStorage.getItem(key) as T) ?? fallback;
+function isThemeMode(value: unknown): value is ThemeMode {
+	return (
+		typeof value === "string" && THEME_MODE_VALUES.includes(value as ThemeMode)
+	);
+}
+
+function isColorPreset(value: unknown): value is ColorPreset {
+	return (
+		typeof value === "string" &&
+		COLOR_PRESET_VALUES.includes(value as ColorPreset)
+	);
+}
+
+function normalizeThemeMode(value: unknown, fallback: ThemeMode): ThemeMode {
+	return isThemeMode(value) ? value : fallback;
+}
+
+function normalizeColorPreset(
+	value: unknown,
+	fallback: ColorPreset,
+): ColorPreset {
+	return isColorPreset(value) ? value : fallback;
+}
+
+function getStoredThemeMode(key: string, fallback: ThemeMode): ThemeMode {
+	return normalizeThemeMode(readLocalStorage(key), fallback);
+}
+
+function getStoredColorPreset(key: string, fallback: ColorPreset): ColorPreset {
+	return normalizeColorPreset(readLocalStorage(key), fallback);
 }
 
 function prefersDarkMode() {
@@ -114,8 +142,11 @@ function applyTheme(
 export type { ColorPreset, ThemeMode };
 export { COLOR_PRESETS, THEME_MODES };
 
-const initialMode = getStoredValue(STORAGE_KEYS.themeMode, "system");
-const initialColorPreset = getStoredValue(STORAGE_KEYS.colorPreset, "blue");
+const initialMode = getStoredThemeMode(STORAGE_KEYS.themeMode, "system");
+const initialColorPreset = getStoredColorPreset(
+	STORAGE_KEYS.colorPreset,
+	"blue",
+);
 const initialResolvedTheme = resolveTheme(initialMode);
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
@@ -124,17 +155,21 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 	resolvedTheme: initialResolvedTheme,
 
 	setMode: (mode) => {
-		localStorage.setItem(STORAGE_KEYS.themeMode, mode);
-		const resolved = applyTheme(mode, get().colorPreset, { animate: true });
-		set({ mode, resolvedTheme: resolved });
-		queuePreferenceSync({ theme_mode: mode });
+		const nextMode = normalizeThemeMode(mode, get().mode);
+		if (nextMode !== mode) return;
+		writeLocalStorage(STORAGE_KEYS.themeMode, nextMode);
+		const resolved = applyTheme(nextMode, get().colorPreset, { animate: true });
+		set({ mode: nextMode, resolvedTheme: resolved });
+		queuePreferenceSync({ theme_mode: nextMode });
 	},
 
 	setColorPreset: (preset) => {
-		localStorage.setItem(STORAGE_KEYS.colorPreset, preset);
-		applyTheme(get().mode, preset, { animate: true });
-		set({ colorPreset: preset });
-		queuePreferenceSync({ color_preset: preset });
+		const nextPreset = normalizeColorPreset(preset, get().colorPreset);
+		if (nextPreset !== preset) return;
+		writeLocalStorage(STORAGE_KEYS.colorPreset, nextPreset);
+		applyTheme(get().mode, nextPreset, { animate: true });
+		set({ colorPreset: nextPreset });
+		queuePreferenceSync({ color_preset: nextPreset });
 	},
 
 	init: () => {
@@ -155,9 +190,18 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 	},
 
 	_applyFromServer: ({ mode, colorPreset }) => {
-		localStorage.setItem(STORAGE_KEYS.themeMode, mode);
-		localStorage.setItem(STORAGE_KEYS.colorPreset, colorPreset);
-		const resolved = applyTheme(mode, colorPreset);
-		set({ mode, colorPreset, resolvedTheme: resolved });
+		const nextMode = normalizeThemeMode(mode, get().mode);
+		const nextColorPreset = normalizeColorPreset(
+			colorPreset,
+			get().colorPreset,
+		);
+		writeLocalStorage(STORAGE_KEYS.themeMode, nextMode);
+		writeLocalStorage(STORAGE_KEYS.colorPreset, nextColorPreset);
+		const resolved = applyTheme(nextMode, nextColorPreset);
+		set({
+			mode: nextMode,
+			colorPreset: nextColorPreset,
+			resolvedTheme: resolved,
+		});
 	},
 }));

@@ -17,10 +17,69 @@ export interface Clipboard {
 	mode: "copy" | "cut";
 }
 
-export type ViewMode = "grid" | "list";
-export type BrowserOpenMode = "single_click" | "double_click";
-export type SortBy = "name" | "size" | "created_at" | "updated_at" | "type";
-export type SortOrder = "asc" | "desc";
+export const VIEW_MODES = ["grid", "list"] as const;
+export const BROWSER_OPEN_MODES = ["single_click", "double_click"] as const;
+export const SORT_BY_VALUES = [
+	"name",
+	"size",
+	"created_at",
+	"updated_at",
+	"type",
+] as const;
+export const SORT_ORDER_VALUES = ["asc", "desc"] as const;
+
+export type ViewMode = (typeof VIEW_MODES)[number];
+export type BrowserOpenMode = (typeof BROWSER_OPEN_MODES)[number];
+export type SortBy = (typeof SORT_BY_VALUES)[number];
+export type SortOrder = (typeof SORT_ORDER_VALUES)[number];
+
+function isStringUnionValue<T extends string>(
+	value: unknown,
+	values: readonly T[],
+): value is T {
+	return typeof value === "string" && values.includes(value as T);
+}
+
+export function isViewMode(value: unknown): value is ViewMode {
+	return isStringUnionValue(value, VIEW_MODES);
+}
+
+export function isBrowserOpenMode(value: unknown): value is BrowserOpenMode {
+	return isStringUnionValue(value, BROWSER_OPEN_MODES);
+}
+
+export function isSortBy(value: unknown): value is SortBy {
+	return isStringUnionValue(value, SORT_BY_VALUES);
+}
+
+export function isSortOrder(value: unknown): value is SortOrder {
+	return isStringUnionValue(value, SORT_ORDER_VALUES);
+}
+
+export function normalizeViewMode(
+	value: unknown,
+	fallback: ViewMode,
+): ViewMode {
+	return isViewMode(value) ? value : fallback;
+}
+
+export function normalizeBrowserOpenMode(
+	value: unknown,
+	fallback: BrowserOpenMode,
+): BrowserOpenMode {
+	return isBrowserOpenMode(value) ? value : fallback;
+}
+
+export function normalizeSortBy(value: unknown, fallback: SortBy): SortBy {
+	return isSortBy(value) ? value : fallback;
+}
+
+export function normalizeSortOrder(
+	value: unknown,
+	fallback: SortOrder,
+): SortOrder {
+	return isSortOrder(value) ? value : fallback;
+}
 
 export interface RequestSlice {
 	resetWorkspaceState: () => void;
@@ -68,10 +127,10 @@ export interface PreferencesSlice {
 	setSortBy: (sortBy: SortBy) => void;
 	setSortOrder: (sortOrder: SortOrder) => void;
 	_applyFromServer: (prefs: {
-		viewMode: ViewMode;
-		browserOpenMode: BrowserOpenMode;
-		sortBy: SortBy;
-		sortOrder: SortOrder;
+		viewMode?: unknown;
+		browserOpenMode?: unknown;
+		sortBy?: unknown;
+		sortOrder?: unknown;
 	}) => void;
 }
 

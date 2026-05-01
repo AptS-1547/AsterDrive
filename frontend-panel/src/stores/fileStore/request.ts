@@ -1,4 +1,5 @@
 import { FILE_PAGE_SIZE, FOLDER_LIMIT } from "@/lib/constants";
+import { readLocalStorage, writeLocalStorage } from "@/lib/storage";
 import type { FolderListParams } from "@/services/fileService";
 import { fileService } from "@/services/fileService";
 import { isRequestCanceled } from "@/services/http";
@@ -20,9 +21,16 @@ interface WorkspaceRequestHandle {
 	signal: AbortSignal;
 }
 
-export function getStored<T extends string>(key: string, fallback: T): T {
-	if (typeof window === "undefined") return fallback;
-	return (localStorage.getItem(key) as T) ?? fallback;
+export function getStored<T extends string>(
+	key: string,
+	fallback: T,
+	normalize: (value: unknown, fallback: T) => T,
+): T {
+	return normalize(readLocalStorage(key), fallback);
+}
+
+export function setStored(key: string, value: string): void {
+	writeLocalStorage(key, value);
 }
 
 export function getInitialPageParams(

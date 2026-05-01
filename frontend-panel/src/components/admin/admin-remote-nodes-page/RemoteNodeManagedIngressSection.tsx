@@ -238,6 +238,16 @@ export function RemoteNodeManagedIngressSection({
 			? (profiles.find((profile) => profile.profile_key === deleteProfileKey) ??
 				null)
 			: null;
+	const driverTypeOptions = [
+		{
+			label: t("remote_node_ingress_profile_driver_local"),
+			value: "local",
+		},
+		{
+			label: t("remote_node_ingress_profile_driver_s3"),
+			value: "s3",
+		},
+	] as const;
 
 	return (
 		<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
@@ -313,6 +323,7 @@ export function RemoteNodeManagedIngressSection({
 						<div className="space-y-2">
 							<Label htmlFor="managed-ingress-driver">{t("driver_type")}</Label>
 							<Select
+								items={driverTypeOptions}
 								value={form.driver_type}
 								onValueChange={(value) => {
 									if (value === "local" || value === "s3") {
@@ -327,12 +338,11 @@ export function RemoteNodeManagedIngressSection({
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="local">
-										{t("remote_node_ingress_profile_driver_local")}
-									</SelectItem>
-									<SelectItem value="s3">
-										{t("remote_node_ingress_profile_driver_s3")}
-									</SelectItem>
+									{driverTypeOptions.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 						</div>

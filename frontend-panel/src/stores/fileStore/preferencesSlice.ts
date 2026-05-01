@@ -8,6 +8,7 @@ import {
 	getInitialPageParams,
 	getStored,
 	isRequestCanceled,
+	setStored,
 } from "./request";
 import type {
 	FileStoreGet,
@@ -17,7 +18,13 @@ import type {
 	SortBy,
 	SortOrder,
 } from "./types";
-import { createWorkspaceContentReset } from "./types";
+import {
+	createWorkspaceContentReset,
+	normalizeBrowserOpenMode,
+	normalizeSortBy,
+	normalizeSortOrder,
+	normalizeViewMode,
+} from "./types";
 
 function reloadSortedFolder(
 	set: FileStoreSet,
@@ -55,48 +62,76 @@ export const createPreferencesSlice: FileStoreSlice<PreferencesSlice> = (
 	set,
 	get,
 ) => ({
-	viewMode: getStored(STORAGE_KEYS.viewMode, "list"),
-	browserOpenMode: getStored(STORAGE_KEYS.browserOpenMode, "single_click"),
-	sortBy: getStored(STORAGE_KEYS.sortBy, "name"),
-	sortOrder: getStored(STORAGE_KEYS.sortOrder, "asc"),
+	viewMode: getStored(STORAGE_KEYS.viewMode, "list", normalizeViewMode),
+	browserOpenMode: getStored(
+		STORAGE_KEYS.browserOpenMode,
+		"single_click",
+		normalizeBrowserOpenMode,
+	),
+	sortBy: getStored(STORAGE_KEYS.sortBy, "name", normalizeSortBy),
+	sortOrder: getStored(STORAGE_KEYS.sortOrder, "asc", normalizeSortOrder),
 
 	setViewMode: (mode) => {
-		localStorage.setItem(STORAGE_KEYS.viewMode, mode);
+		const viewMode = normalizeViewMode(mode, get().viewMode);
+		if (viewMode !== mode) return;
+		setStored(STORAGE_KEYS.viewMode, viewMode);
 		set({ viewMode: mode });
-		queuePreferenceSync({ view_mode: mode });
+		queuePreferenceSync({ view_mode: viewMode });
 	},
 
 	setBrowserOpenMode: (mode) => {
-		localStorage.setItem(STORAGE_KEYS.browserOpenMode, mode);
-		set({ browserOpenMode: mode });
-		queuePreferenceSync({ browser_open_mode: mode });
+		const browserOpenMode = normalizeBrowserOpenMode(
+			mode,
+			get().browserOpenMode,
+		);
+		if (browserOpenMode !== mode) return;
+		setStored(STORAGE_KEYS.browserOpenMode, browserOpenMode);
+		set({ browserOpenMode });
+		queuePreferenceSync({ browser_open_mode: browserOpenMode });
 	},
 
 	setSortBy: (sortBy) => {
-		localStorage.setItem(STORAGE_KEYS.sortBy, sortBy);
-		queuePreferenceSync({ sort_by: sortBy });
+		const nextSortBy = normalizeSortBy(sortBy, get().sortBy);
+		if (nextSortBy !== sortBy) return;
+		setStored(STORAGE_KEYS.sortBy, nextSortBy);
+		queuePreferenceSync({ sort_by: nextSortBy });
 		set({
-			sortBy,
+			sortBy: nextSortBy,
 			...createWorkspaceContentReset(),
 		});
-		reloadSortedFolder(set, get, sortBy, get().sortOrder);
+		reloadSortedFolder(set, get, nextSortBy, get().sortOrder);
 	},
 
 	setSortOrder: (sortOrder) => {
-		localStorage.setItem(STORAGE_KEYS.sortOrder, sortOrder);
-		queuePreferenceSync({ sort_order: sortOrder });
+		const nextSortOrder = normalizeSortOrder(sortOrder, get().sortOrder);
+		if (nextSortOrder !== sortOrder) return;
+		setStored(STORAGE_KEYS.sortOrder, nextSortOrder);
+		queuePreferenceSync({ sort_order: nextSortOrder });
 		set({
-			sortOrder,
+			sortOrder: nextSortOrder,
 			...createWorkspaceContentReset(),
 		});
-		reloadSortedFolder(set, get, get().sortBy, sortOrder);
+		reloadSortedFolder(set, get, get().sortBy, nextSortOrder);
 	},
 
 	_applyFromServer: ({ viewMode, browserOpenMode, sortBy, sortOrder }) => {
-		localStorage.setItem(STORAGE_KEYS.viewMode, viewMode);
-		localStorage.setItem(STORAGE_KEYS.browserOpenMode, browserOpenMode);
-		localStorage.setItem(STORAGE_KEYS.sortBy, sortBy);
-		localStorage.setItem(STORAGE_KEYS.sortOrder, sortOrder);
-		set({ viewMode, browserOpenMode, sortBy, sortOrder });
+		const nextViewMode = normalizeViewMode(viewMode, get().viewMode);
+		const nextBrowserOpenMode = normalizeBrowserOpenMode(
+			browserOpenMode,
+			get().browserOpenMode,
+		);
+		const nextSortBy = normalizeSortBy(sortBy, get().sortBy);
+		const nextSortOrder = normalizeSortOrder(sortOrder, get().sortOrder);
+
+		setStored(STORAGE_KEYS.viewMode, nextViewMode);
+		setStored(STORAGE_KEYS.browserOpenMode, nextBrowserOpenMode);
+		setStored(STORAGE_KEYS.sortBy, nextSortBy);
+		setStored(STORAGE_KEYS.sortOrder, nextSortOrder);
+		set({
+			viewMode: nextViewMode,
+			browserOpenMode: nextBrowserOpenMode,
+			sortBy: nextSortBy,
+			sortOrder: nextSortOrder,
+		});
 	},
 });

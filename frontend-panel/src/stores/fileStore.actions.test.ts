@@ -300,6 +300,30 @@ describe("useFileStore actions", () => {
 		expect(mockState.queuePreferenceSync).not.toHaveBeenCalled();
 	});
 
+	it("normalizes invalid server preferences before updating state", async () => {
+		const { useFileStore } = await loadStore();
+
+		useFileStore.getState()._applyFromServer({
+			viewMode: "tiles",
+			browserOpenMode: "hover",
+			sortBy: "owner",
+			sortOrder: "random",
+		});
+
+		expect(useFileStore.getState()).toMatchObject({
+			viewMode: "list",
+			browserOpenMode: "single_click",
+			sortBy: "name",
+			sortOrder: "asc",
+		});
+		expect(localStorage.getItem(STORAGE_KEYS.viewMode)).toBe("list");
+		expect(localStorage.getItem(STORAGE_KEYS.browserOpenMode)).toBe(
+			"single_click",
+		);
+		expect(localStorage.getItem(STORAGE_KEYS.sortBy)).toBe("name");
+		expect(localStorage.getItem(STORAGE_KEYS.sortOrder)).toBe("asc");
+	});
+
 	it("creates files in the current folder and refreshes auth state", async () => {
 		mockState.createEmptyFile.mockResolvedValue(undefined);
 		mockState.listFolder.mockResolvedValue(
