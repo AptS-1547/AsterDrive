@@ -3,6 +3,7 @@
 mod memory;
 mod noop;
 mod redis_cache;
+mod reservation;
 
 use crate::config::CacheConfig;
 use async_trait::async_trait;

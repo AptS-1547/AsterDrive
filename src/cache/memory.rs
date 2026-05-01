@@ -1,6 +1,6 @@
 //! 缓存实现：`memory`。
 
-use super::CacheBackend;
+use super::{CacheBackend, reservation::ReservationSet};
 use async_trait::async_trait;
 use moka::future::Cache;
 use std::sync::Arc;
@@ -10,6 +10,7 @@ const MEMORY_CACHE_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
 pub struct MemoryCache {
     cache: Cache<String, Vec<u8>>,
+    reservations: ReservationSet,
 }
 
 impl MemoryCache {
@@ -19,7 +20,10 @@ impl MemoryCache {
             .weigher(|key: &String, value: &Vec<u8>| entry_weight(key.len(), value.len()))
             .time_to_live(Duration::from_secs(default_ttl))
             .build();
-        Self { cache }
+        Self {
+            cache,
+            reservations: ReservationSet::new(default_ttl),
+        }
     }
 }
 
@@ -39,20 +43,28 @@ impl CacheBackend for MemoryCache {
         self.cache.insert(key.to_string(), value).await;
     }
 
-    async fn set_bytes_if_absent(&self, key: &str, value: Vec<u8>, _ttl_secs: Option<u64>) -> bool {
-        // moka entry API 对同一个 key 的并发插入会合并，is_fresh 只会有一个 true。
-        self.cache
-            .entry(key.to_string())
-            .or_insert(value)
-            .await
-            .is_fresh()
+    async fn set_bytes_if_absent(&self, key: &str, value: Vec<u8>, ttl_secs: Option<u64>) -> bool {
+        if self.cache.get(key).await.is_some() {
+            return false;
+        }
+        if !self.reservations.reserve(key, ttl_secs) {
+            return false;
+        }
+        if self.cache.get(key).await.is_some() {
+            return false;
+        }
+
+        self.cache.insert(key.to_string(), value).await;
+        true
     }
 
     async fn delete(&self, key: &str) {
+        self.reservations.remove(key);
         self.cache.remove(key).await;
     }
 
     async fn invalidate_prefix(&self, prefix: &str) {
+        self.reservations.invalidate_prefix(prefix);
         let keys: Vec<Arc<String>> = self
             .cache
             .iter()
@@ -101,5 +113,19 @@ mod tests {
             .count();
 
         assert_eq!(successes, 1);
+    }
+
+    #[tokio::test]
+    async fn set_bytes_if_absent_respects_existing_set_value() {
+        let cache = MemoryCache::new(60);
+
+        cache.set_bytes("nonce", b"first".to_vec(), Some(60)).await;
+
+        assert!(
+            !cache
+                .set_bytes_if_absent("nonce", b"second".to_vec(), Some(60))
+                .await
+        );
+        assert_eq!(cache.get_bytes("nonce").await, Some(b"first".to_vec()));
     }
 }
