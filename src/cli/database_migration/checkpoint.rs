@@ -5,12 +5,11 @@
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 
+use crate::cli::db_shared::{quote_ident, quote_literal, redact_database_url};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::utils::hash::sha256_hex;
 
-use super::helpers::{
-    now_ms, nullable_sql_string, quote_ident, quote_literal, redact_database_url,
-};
+use super::helpers::{now_ms, nullable_sql_string};
 use super::schema::{ensure_target_empty, total_source_rows};
 use super::{CHECKPOINT_TABLE, DatabaseMigrateArgs, MigrationCheckpoint, MigrationMode, TablePlan};
 

@@ -17,10 +17,11 @@ use super::checkpoint::{
     ensure_checkpoint_table, initialize_checkpoint, mark_checkpoint_failed, resume_message,
     update_checkpoint,
 };
-use super::helpers::{join_strings, now_ms};
-use super::schema::{pending_migrations, refresh_target_rows, total_source_rows};
+use super::helpers::now_ms;
+use super::schema::{refresh_target_rows, total_source_rows};
 use super::verify::{verification_message, verification_ready, verify_target};
 use super::{ApplyExecution, ApplyModeContext, MigrationCheckpoint};
+use crate::cli::db_shared::{join_strings, pending_migrations};
 
 /// Applies migrations, copies data with resume support, then verifies the target.
 pub(super) async fn execute_apply_mode(ctx: ApplyModeContext<'_>) -> Result<ApplyExecution> {

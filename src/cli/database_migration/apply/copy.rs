@@ -7,11 +7,12 @@ use std::collections::BTreeMap;
 use sea_orm::sea_query::{Alias, Query};
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, TransactionTrait, Value};
 
+use crate::cli::db_shared::{quote_ident, quote_literal, scalar_i64};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::utils::numbers::{i64_to_usize, usize_to_i64};
 
 use super::super::checkpoint::update_checkpoint;
-use super::super::helpers::{now_ms, quote_ident, quote_literal, scalar_i64};
+use super::super::helpers::now_ms;
 use super::super::schema::{binding_kind_from_raw_type, load_column_type_rows};
 use super::super::{
     BindingKind, COPY_BATCH_SIZE_ENV, DEFAULT_COPY_BATCH_SIZE, FAIL_AFTER_BATCHES_ENV,

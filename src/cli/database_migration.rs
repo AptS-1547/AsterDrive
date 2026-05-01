@@ -22,12 +22,15 @@ use crate::errors::{AsterError, Result};
 use crate::utils::numbers::{i64_to_usize, usize_to_i64};
 
 use self::ui::ProgressReporter;
+use crate::cli::db_shared::{
+    backend_name, join_strings, migration_names, pending_migrations, redact_database_url,
+};
 use apply::execute_apply_mode;
 use checkpoint::update_checkpoint;
-use helpers::{join_strings, now_ms, redact_database_url};
+use helpers::now_ms;
 use schema::{
-    backend_name, connect_database, load_source_plans, migration_names, pending_migrations,
-    plans_to_reports, refresh_target_rows, total_source_rows, validate_backends,
+    connect_database, load_source_plans, plans_to_reports, refresh_target_rows, total_source_rows,
+    validate_backends,
 };
 use verify::{verification_message, verification_ready, verify_target};
 

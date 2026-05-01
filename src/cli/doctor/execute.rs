@@ -5,13 +5,16 @@
 
 use sea_orm::{DatabaseConnection, DbBackend};
 
+use crate::cli::db_shared::{
+    backend_name, migration_names, pending_migrations, redact_database_url,
+};
+
 use super::{
-    DoctorArgs, DoctorCheck, DoctorDeepScope, DoctorReport, DoctorStatus, backend_name,
+    DoctorArgs, DoctorCheck, DoctorDeepScope, DoctorReport, DoctorStatus,
     doctor_blob_ref_count_check, doctor_check, doctor_folder_tree_check, doctor_mail_check,
-    doctor_pending_migrations, doctor_preview_apps_check, doctor_public_site_url_check,
-    doctor_scope_enabled, doctor_sqlite_search_check, doctor_storage_policy_check,
-    doctor_storage_scan_checks, doctor_storage_usage_check, effective_deep_scopes,
-    redact_database_url,
+    doctor_preview_apps_check, doctor_public_site_url_check, doctor_scope_enabled,
+    doctor_sqlite_search_check, doctor_storage_policy_check, doctor_storage_scan_checks,
+    doctor_storage_usage_check, effective_deep_scopes,
 };
 
 /// Executes the full doctor flow and assembles the final report payload.
@@ -107,7 +110,8 @@ async fn inspect_doctor_migrations(
     db_backend: DbBackend,
     checks: &mut Vec<DoctorCheck>,
 ) -> Option<Vec<String>> {
-    match doctor_pending_migrations(db, db_backend).await {
+    let expected_migrations = migration_names();
+    match pending_migrations(db, db_backend, &expected_migrations).await {
         Ok(pending) => {
             checks.push(if pending.is_empty() {
                 doctor_check(

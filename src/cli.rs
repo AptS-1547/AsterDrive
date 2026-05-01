@@ -5,6 +5,7 @@
 
 mod config;
 mod database_migration;
+mod db_shared;
 mod doctor;
 mod node;
 mod shared;

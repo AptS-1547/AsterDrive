@@ -3,15 +3,15 @@
 //! 这里负责连接数据库、识别后端、校验源库表集合，并把源表元数据整理成
 //! 可执行的复制计划。
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
-use migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 
+use crate::cli::db_shared::{backend_name, join_strings, quote_literal, quote_sqlite_literal};
 use crate::db;
 use crate::errors::{AsterError, MapAsterErr, Result};
 
-use super::helpers::{count_rows, join_strings, quote_ident, quote_literal, quote_sqlite_literal};
+use super::helpers::count_rows;
 use super::{
     BindingKind, CHECKPOINT_TABLE, COPY_TABLE_ORDER, ColumnSchema, MIGRATION_TABLE, TablePlan,
     TableReport,
@@ -43,51 +43,6 @@ pub(super) fn validate_backends(
     }
 
     Ok(())
-}
-
-pub(super) fn backend_name(backend: DbBackend) -> &'static str {
-    match backend {
-        DbBackend::MySql => "mysql",
-        DbBackend::Postgres => "postgres",
-        DbBackend::Sqlite => "sqlite",
-        _ => "unknown",
-    }
-}
-
-pub(super) fn migration_names() -> Vec<String> {
-    Migrator::migrations()
-        .into_iter()
-        .map(|migration| migration.name().to_string())
-        .collect()
-}
-
-pub(super) async fn pending_migrations<C>(
-    db: &C,
-    backend: DbBackend,
-    expected: &[String],
-) -> Result<Vec<String>>
-where
-    C: ConnectionTrait,
-{
-    let applied = applied_migrations(db, backend).await?;
-    let applied_lookup: HashSet<&str> = applied.iter().map(String::as_str).collect();
-    let unknown_applied: Vec<String> = applied
-        .iter()
-        .filter(|name| !expected.iter().any(|expected_name| expected_name == *name))
-        .cloned()
-        .collect();
-    if !unknown_applied.is_empty() {
-        return Err(AsterError::validation_error(format!(
-            "database contains unknown migration versions: {}",
-            join_strings(&unknown_applied)
-        )));
-    }
-
-    Ok(expected
-        .iter()
-        .filter(|name| !applied_lookup.contains(name.as_str()))
-        .cloned()
-        .collect())
 }
 
 /// Loads the ordered source table plans that drive copy and verification stages.
@@ -287,64 +242,6 @@ pub(super) fn binding_kind_from_raw_type(backend: DbBackend, raw_type: &str) -> 
 
 pub(super) fn total_source_rows(plans: &[TablePlan]) -> i64 {
     plans.iter().map(|plan| plan.source_rows).sum()
-}
-
-async fn applied_migrations<C>(db: &C, backend: DbBackend) -> Result<Vec<String>>
-where
-    C: ConnectionTrait,
-{
-    if !table_exists(db, backend, MIGRATION_TABLE).await? {
-        return Ok(Vec::new());
-    }
-
-    let sql = format!(
-        "SELECT {} FROM {} ORDER BY {}",
-        quote_ident(backend, "version"),
-        quote_ident(backend, MIGRATION_TABLE),
-        quote_ident(backend, "version")
-    );
-    let rows = db
-        .query_all_raw(Statement::from_string(backend, sql))
-        .await
-        .map_aster_err(AsterError::database_operation)?;
-
-    rows.into_iter()
-        .map(|row| {
-            row.try_get_by_index::<String>(0)
-                .map_aster_err(AsterError::database_operation)
-        })
-        .collect()
-}
-
-async fn table_exists<C>(db: &C, backend: DbBackend, table_name: &str) -> Result<bool>
-where
-    C: ConnectionTrait,
-{
-    let sql = match backend {
-        DbBackend::Sqlite => format!(
-            "SELECT CASE WHEN EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = {}) THEN 1 ELSE 0 END",
-            quote_literal(table_name)
-        ),
-        DbBackend::Postgres => format!(
-            "SELECT CASE WHEN EXISTS(SELECT 1 FROM information_schema.tables \
-             WHERE table_schema = current_schema() AND table_name = {}) THEN 1 ELSE 0 END",
-            quote_literal(table_name)
-        ),
-        DbBackend::MySql => format!(
-            "SELECT CASE WHEN EXISTS(SELECT 1 FROM information_schema.tables \
-             WHERE table_schema = DATABASE() AND table_name = {}) THEN 1 ELSE 0 END",
-            quote_literal(table_name)
-        ),
-        _ => {
-            return Err(AsterError::validation_error(
-                "unsupported database backend for table existence checks",
-            ));
-        }
-    };
-
-    super::helpers::scalar_i64(db, backend, &sql)
-        .await
-        .map(|value| value != 0)
 }
 
 async fn source_table_names<C>(source: &C, backend: DbBackend) -> Result<Vec<String>>

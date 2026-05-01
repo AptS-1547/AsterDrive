@@ -6,9 +6,9 @@ use std::collections::BTreeSet;
 
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 
+use crate::cli::db_shared::{quote_ident, quote_literal, quote_sqlite_literal, scalar_i64};
 use crate::errors::{AsterError, MapAsterErr, Result};
 
-use super::helpers::{quote_ident, quote_literal, quote_sqlite_literal, scalar_i64};
 use super::{COPY_TABLE_ORDER, ConstraintCheck, CountMismatch, TablePlan, VerificationReport};
 
 #[derive(Debug)]
