@@ -21,7 +21,7 @@ use aster_drive::types::{
     VerificationPurpose,
 };
 use chrono::{Duration, Utc};
-use migration::{Migrator, MigratorTrait};
+use migration::Migrator;
 use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbBackend, Set, Statement};
 use serde_json::Value;
 
@@ -49,6 +49,20 @@ async fn setup_database_url() -> String {
     url
 }
 
+async fn setup_empty_database_url(prefix: &str) -> String {
+    let db_path = std::env::temp_dir().join(format!("{prefix}-{}.db", uuid::Uuid::new_v4()));
+    let url = format!("sqlite://{}?mode=rwc", db_path.display());
+    let db = db::connect(&DatabaseConfig {
+        url: url.clone(),
+        pool_size: 1,
+        retry_count: 0,
+    })
+    .await
+    .unwrap();
+    db.close().await.unwrap();
+    url
+}
+
 async fn setup_ready_database_url() -> String {
     let db_path = std::env::temp_dir().join(format!(
         "asterdrive-cli-ready-test-{}.db",
@@ -57,6 +71,38 @@ async fn setup_ready_database_url() -> String {
     let url = format!("sqlite://{}?mode=rwc", db_path.display());
     let _state = common::setup_with_database_url(&url).await;
     url
+}
+
+async fn setup_alpha25_database_url() -> String {
+    let database_url = setup_empty_database_url("asterdrive-cli-alpha25-test").await;
+    let db = db::connect(&DatabaseConfig {
+        url: database_url.clone(),
+        pool_size: 1,
+        retry_count: 0,
+    })
+    .await
+    .unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    rewrite_migration_history(&db, &migration::alpha25_migration_names()).await;
+    db.close().await.unwrap();
+    database_url
+}
+
+async fn rewrite_migration_history(db: &DatabaseConnection, versions: &[String]) {
+    let backend = db.get_database_backend();
+    db.execute_unprepared("DELETE FROM seaql_migrations")
+        .await
+        .unwrap();
+
+    for version in versions {
+        db.execute_raw(Statement::from_sql_and_values(
+            backend,
+            "INSERT INTO seaql_migrations (version, applied_at) VALUES (?, ?)",
+            [version.clone().into(), 1_i64.into()],
+        ))
+        .await
+        .unwrap();
+    }
 }
 
 fn run_aster_drive(args: &[&str]) -> std::process::Output {
@@ -150,6 +196,79 @@ async fn column_exists(
         backend => panic!("unsupported test database backend: {backend:?}"),
     };
     scalar_i64(db, backend, &sql).await > 0
+}
+
+async fn applied_migration_versions(db: &DatabaseConnection, backend: DbBackend) -> Vec<String> {
+    db.query_all_raw(Statement::from_string(
+        backend,
+        "SELECT version FROM seaql_migrations ORDER BY version",
+    ))
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|row| row.try_get_by_index::<String>(0).unwrap())
+    .collect()
+}
+
+async fn sqlite_schema_object_keys(db: &DatabaseConnection) -> Vec<String> {
+    let mut rows: Vec<String> = db
+        .query_all_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "SELECT type, name, tbl_name \
+             FROM sqlite_master \
+             WHERE name NOT LIKE 'sqlite_%' \
+               AND name <> 'seaql_migrations' \
+             ORDER BY type, name",
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            let object_type: String = row.try_get_by_index(0).unwrap();
+            let name: String = row.try_get_by_index(1).unwrap();
+            let table_name: String = row.try_get_by_index(2).unwrap();
+            format!("{object_type}|{name}|{table_name}")
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+async fn sqlite_schema_columns(db: &DatabaseConnection) -> Vec<String> {
+    let table_names = db
+        .query_all_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "SELECT name \
+             FROM sqlite_master \
+             WHERE type = 'table' \
+               AND name NOT LIKE 'sqlite_%' \
+               AND name <> 'seaql_migrations' \
+             ORDER BY name",
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.try_get_by_index::<String>(0).unwrap())
+        .collect::<Vec<_>>();
+
+    let mut columns = Vec::new();
+    for table_name in table_names {
+        let pragma = format!("PRAGMA table_info({})", quote_sqlite_ident(&table_name));
+        let rows = db
+            .query_all_raw(Statement::from_string(DbBackend::Sqlite, pragma))
+            .await
+            .unwrap();
+        for row in rows {
+            let column_name: String = row.try_get_by_index(1).unwrap();
+            columns.push(format!("{table_name}|{column_name}"));
+        }
+    }
+    columns.sort();
+    columns
+}
+
+fn quote_sqlite_ident(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
 async fn seed_migration_fixture(database_url: &str) -> i64 {
@@ -836,6 +955,132 @@ async fn test_root_binary_doctor_reports_sqlite_search_acceleration_ready() {
             .is_some_and(|details| details.iter().any(|detail| detail
                 .as_str()
                 .is_some_and(|detail| detail.starts_with("sqlite_version="))))
+    );
+}
+
+#[tokio::test]
+async fn test_rebased_migrations_use_baseline_for_fresh_install() {
+    let database_url = setup_empty_database_url("asterdrive-cli-fresh-baseline-test").await;
+    let db = db::connect(&DatabaseConfig {
+        url: database_url.clone(),
+        pool_size: 1,
+        retry_count: 0,
+    })
+    .await
+    .unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    let versions = applied_migration_versions(&db, DbBackend::Sqlite).await;
+    assert_eq!(
+        versions,
+        vec![migration::BASELINE_MIGRATION_NAME.to_string()],
+        "fresh install should only stamp the rebased baseline migration"
+    );
+}
+
+#[tokio::test]
+async fn test_rebased_migrations_rewrite_complete_alpha25_history() {
+    let database_url = setup_alpha25_database_url().await;
+    let db = db::connect(&DatabaseConfig {
+        url: database_url.clone(),
+        pool_size: 1,
+        retry_count: 0,
+    })
+    .await
+    .unwrap();
+    let alpha25_versions = applied_migration_versions(&db, DbBackend::Sqlite).await;
+    assert!(
+        alpha25_versions.len() > 1,
+        "alpha.25 fixture should start with historical migration rows"
+    );
+    db.close().await.unwrap();
+
+    let db = db::connect(&DatabaseConfig {
+        url: database_url,
+        pool_size: 1,
+        retry_count: 0,
+    })
+    .await
+    .unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    let versions = applied_migration_versions(&db, DbBackend::Sqlite).await;
+    assert_eq!(
+        versions,
+        vec![migration::BASELINE_MIGRATION_NAME.to_string()],
+        "complete alpha.25 history should be replaced by the rebased baseline stamp"
+    );
+}
+
+#[tokio::test]
+async fn test_rebased_migrations_reject_incomplete_alpha25_history() {
+    let database_url = setup_alpha25_database_url().await;
+    let db = db::connect(&DatabaseConfig {
+        url: database_url.clone(),
+        pool_size: 1,
+        retry_count: 0,
+    })
+    .await
+    .unwrap();
+    db.execute_unprepared(
+        "DELETE FROM seaql_migrations WHERE version = 'm20260429_000001_prepare_multi_primary_ingress'",
+    )
+    .await
+    .unwrap();
+    db.close().await.unwrap();
+
+    let db = db::connect(&DatabaseConfig {
+        url: database_url,
+        pool_size: 1,
+        retry_count: 0,
+    })
+    .await
+    .unwrap();
+    let error = Migrator::up(&db, None)
+        .await
+        .expect_err("incomplete alpha25 history should be rejected");
+    let stderr = error.to_string();
+    assert!(
+        stderr.contains("v0.0.1-alpha.25"),
+        "error should tell operators to upgrade to alpha.25 first: {stderr}"
+    );
+    assert!(
+        stderr.contains("m20260429_000001_prepare_multi_primary_ingress"),
+        "error should include the missing migration name: {stderr}"
+    );
+}
+
+#[tokio::test]
+async fn test_rebased_baseline_matches_alpha25_sqlite_schema_shape() {
+    let alpha25_url = setup_alpha25_database_url().await;
+    let baseline_url = setup_empty_database_url("asterdrive-cli-baseline-schema-test").await;
+
+    let alpha25_db = db::connect(&DatabaseConfig {
+        url: alpha25_url,
+        pool_size: 1,
+        retry_count: 0,
+    })
+    .await
+    .unwrap();
+    let alpha25_objects = sqlite_schema_object_keys(&alpha25_db).await;
+    let alpha25_columns = sqlite_schema_columns(&alpha25_db).await;
+
+    let baseline_db = db::connect(&DatabaseConfig {
+        url: baseline_url,
+        pool_size: 1,
+        retry_count: 0,
+    })
+    .await
+    .unwrap();
+    Migrator::up(&baseline_db, None).await.unwrap();
+    let baseline_objects = sqlite_schema_object_keys(&baseline_db).await;
+    let baseline_columns = sqlite_schema_columns(&baseline_db).await;
+
+    assert_eq!(
+        baseline_objects, alpha25_objects,
+        "rebased baseline schema must keep the same SQLite object set as fully-applied alpha.25"
+    );
+    assert_eq!(
+        baseline_columns, alpha25_columns,
+        "rebased baseline schema must keep the same SQLite table columns as fully-applied alpha.25"
     );
 }
 

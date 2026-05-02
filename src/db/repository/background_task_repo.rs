@@ -668,7 +668,7 @@ mod tests {
         BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskSteps,
     };
     use chrono::{Duration, Utc};
-    use migration::{Migrator, MigratorTrait};
+    use migration::Migrator;
     use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
     async fn build_test_db() -> sea_orm::DatabaseConnection {

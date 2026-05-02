@@ -30,22 +30,6 @@ where
     column
 }
 
-pub fn mysql_datetime_definition(nullable: bool) -> &'static str {
-    if nullable {
-        "DATETIME(6) NULL"
-    } else {
-        "DATETIME(6) NOT NULL"
-    }
-}
-
-pub fn mysql_timestamp_definition(nullable: bool) -> &'static str {
-    if nullable {
-        "TIMESTAMP NULL"
-    } else {
-        "TIMESTAMP NOT NULL"
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

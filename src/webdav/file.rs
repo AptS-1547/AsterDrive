@@ -574,7 +574,7 @@ mod tests {
     use async_trait::async_trait;
     use bytes::Bytes;
     use chrono::Utc;
-    use migration::{Migrator, MigratorTrait};
+    use migration::Migrator;
     use sea_orm::{ActiveModelTrait, Set};
     use std::collections::{BTreeMap, HashMap};
     use std::path::Path;

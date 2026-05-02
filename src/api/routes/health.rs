@@ -172,7 +172,7 @@ mod tests {
     use actix_web::{body, http::StatusCode, web};
     use async_trait::async_trait;
     use chrono::Utc;
-    use migration::{Migrator, MigratorTrait};
+    use migration::Migrator;
     use sea_orm::{ActiveModelTrait, Set};
     use std::sync::{
         Arc,

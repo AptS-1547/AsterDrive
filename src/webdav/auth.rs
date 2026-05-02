@@ -93,7 +93,7 @@ mod tests {
     use actix_web::http::header::{self, HeaderMap, HeaderValue};
     use base64::Engine;
     use chrono::Utc;
-    use migration::{Migrator, MigratorTrait};
+    use migration::Migrator;
     use sea_orm::{ActiveModelTrait, Set};
     use std::sync::Arc;
 

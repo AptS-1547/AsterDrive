@@ -142,11 +142,13 @@ PostgreSQL 和 SQLite 不受这个限制。
 
 ## 关于 migration squash
 
-AsterDrive 在后续版本会做一次 migration baseline 整理（[#89](https://github.com/AptS-1547/AsterDrive/issues/89)），把历史 migration 合并为更少、更清晰的基线。
+AsterDrive 已在 alpha 阶段引入 migration baseline 整理（[#89](https://github.com/AptS-1547/AsterDrive/issues/89)），把历史 migration 合并为新的基线。
 
-这次合并会：
+这次合并采用 **hard cutover** 策略：
 
-- **不影响已部署实例的升级路径** —— 已经跑过旧 migration 的数据库会被识别并跳过新 baseline
-- **简化 fresh install** —— 新部署的实例只需要执行新 baseline，不再执行历史 migration
+- **新部署** —— 空数据库直接执行新的 baseline migration，不再执行历史 migration 链
+- **已有部署** —— 必须先升级并运行到 `v0.0.1-alpha.25`，确认旧 migration 全部应用后，再升级到包含 rebase 的版本
+- **迁移记录重写** —— 如果数据库已经完整应用 `v0.0.1-alpha.25` 的旧 migration 链，启动时会在事务内清空 `seaql_migrations` 并写入新的 baseline migration 名称；业务表数据不会被清空
+- **不完整旧库** —— 如果 `seaql_migrations` 显示旧 migration 没跑完，服务会拒绝启动，并提示先回到 `v0.0.1-alpha.25` 完成迁移
 
-具体计划和升级步骤会在那个版本的 changelog 和这一页里同步说明。
+升级前请先备份数据库。不要手工修改 `seaql_migrations`，也不要对业务表执行 `TRUNCATE`；rebase 过程只会重写 migration 元数据。

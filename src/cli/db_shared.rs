@@ -3,10 +3,9 @@
 //! 这里放置和迁移、doctor 等命令都需要的数据库层小工具，避免每个子模块
 //! 各自维护后端命名、迁移历史、标识符转义和连接字符串脱敏逻辑。
 
-use std::collections::HashSet;
 use std::path::Path;
 
-use migration::{Migrator, MigratorTrait};
+use migration::{current_migration_names, inspect_migration_history};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 
 use crate::errors::{AsterError, MapAsterErr, Result};
@@ -25,39 +24,34 @@ pub(super) fn backend_name(backend: DbBackend) -> &'static str {
 }
 
 pub(super) fn migration_names() -> Vec<String> {
-    Migrator::migrations()
-        .into_iter()
-        .map(|migration| migration.name().to_string())
-        .collect()
+    current_migration_names()
 }
 
 pub(super) async fn pending_migrations<C>(
     db: &C,
-    backend: DbBackend,
-    expected: &[String],
+    _backend: DbBackend,
+    _expected: &[String],
 ) -> Result<Vec<String>>
 where
     C: ConnectionTrait,
 {
-    let applied = applied_migrations(db, backend).await?;
-    let applied_lookup: HashSet<&str> = applied.iter().map(String::as_str).collect();
-    let unknown_applied: Vec<String> = applied
-        .iter()
-        .filter(|name| !expected.iter().any(|expected_name| expected_name == *name))
-        .cloned()
-        .collect();
-    if !unknown_applied.is_empty() {
+    let history = inspect_migration_history(db)
+        .await
+        .map_aster_err(AsterError::database_operation)?;
+    if history.has_unknown_applied() {
         return Err(AsterError::validation_error(format!(
             "database contains unknown migration versions: {}",
-            join_strings(&unknown_applied)
+            join_strings(&history.unknown_applied)
         )));
     }
+    if history.has_inconsistent_baseline_stamp() {
+        return Err(AsterError::validation_error("database migration history mixes the rebased baseline with pre-rebase alpha migrations; restore a backup or contact maintainers before continuing".to_string()));
+    }
+    if history.track == migration::MigrationTrack::Alpha25Complete {
+        return Ok(Vec::new());
+    }
 
-    Ok(expected
-        .iter()
-        .filter(|name| !applied_lookup.contains(name.as_str()))
-        .cloned()
-        .collect())
+    Ok(history.effective_pending().to_vec())
 }
 
 pub(super) async fn scalar_i64<C>(db: &C, backend: DbBackend, sql: &str) -> Result<i64>
@@ -103,35 +97,6 @@ pub(super) fn quote_sqlite_literal(value: &str) -> String {
     quote_literal(value)
 }
 
-pub(super) async fn table_exists<C>(db: &C, backend: DbBackend, table_name: &str) -> Result<bool>
-where
-    C: ConnectionTrait,
-{
-    let sql = match backend {
-        DbBackend::Sqlite => format!(
-            "SELECT CASE WHEN EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = {}) THEN 1 ELSE 0 END",
-            quote_literal(table_name)
-        ),
-        DbBackend::Postgres => format!(
-            "SELECT CASE WHEN EXISTS(SELECT 1 FROM information_schema.tables \
-             WHERE table_schema = current_schema() AND table_name = {}) THEN 1 ELSE 0 END",
-            quote_literal(table_name)
-        ),
-        DbBackend::MySql => format!(
-            "SELECT CASE WHEN EXISTS(SELECT 1 FROM information_schema.tables \
-             WHERE table_schema = DATABASE() AND table_name = {}) THEN 1 ELSE 0 END",
-            quote_literal(table_name)
-        ),
-        _ => {
-            return Err(AsterError::validation_error(
-                "unsupported database backend for table existence checks",
-            ));
-        }
-    };
-
-    scalar_i64(db, backend, &sql).await.map(|value| value != 0)
-}
-
 pub(super) fn redact_database_url(database_url: &str) -> String {
     if database_url == "sqlite::memory:" {
         return database_url.to_string();
@@ -150,33 +115,6 @@ pub(super) fn redact_database_url(database_url: &str) -> String {
     };
 
     format!("{scheme}://***@{suffix}")
-}
-
-async fn applied_migrations<C>(db: &C, backend: DbBackend) -> Result<Vec<String>>
-where
-    C: ConnectionTrait,
-{
-    if !table_exists(db, backend, "seaql_migrations").await? {
-        return Ok(Vec::new());
-    }
-
-    let sql = format!(
-        "SELECT {} FROM {} ORDER BY {}",
-        quote_ident(backend, "version"),
-        quote_ident(backend, "seaql_migrations"),
-        quote_ident(backend, "version")
-    );
-    let rows = db
-        .query_all_raw(Statement::from_string(backend, sql))
-        .await
-        .map_aster_err(AsterError::database_operation)?;
-
-    rows.into_iter()
-        .map(|row| {
-            row.try_get_by_index::<String>(0)
-                .map_aster_err(AsterError::database_operation)
-        })
-        .collect()
 }
 
 fn redact_sqlite_database_url(database_url: &str) -> String {

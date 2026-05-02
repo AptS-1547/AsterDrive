@@ -52,7 +52,7 @@ fn snapshot_dir_tree(
 }
 
 #[actix_web::test]
-async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_content() {
+async fn test_aster_dav_file_write_mode_persists_empty_and_written_content() {
     use aster_drive::db::repository::file_repo;
     use aster_drive::services::auth_service;
     use aster_drive::webdav::file::AsterDavFile;
@@ -86,12 +86,12 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
     assert_eq!(empty_file.seek(SeekFrom::Start(0)).await.unwrap(), 0);
     empty_file.flush().await.unwrap();
 
-    assert!(
+    let empty_stored =
         file_repo::find_by_name_in_folder(&state.db, user.id, None, "empty-dav-file.txt")
             .await
             .unwrap()
-            .is_none()
-    );
+            .expect("empty WebDAV flush should create a zero-byte file record");
+    assert_eq!(empty_stored.size, 0);
 
     let mut written_file = AsterDavFile::for_write(
         state.clone(),

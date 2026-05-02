@@ -12,7 +12,7 @@ use crate::storage::{
 use crate::types::{DriverType, UserRole, UserStatus};
 use async_trait::async_trait;
 use chrono::Utc;
-use migration::{Migrator, MigratorTrait};
+use migration::Migrator;
 use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

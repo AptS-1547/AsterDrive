@@ -310,7 +310,7 @@ mod tests {
     use crate::db::repository::{managed_follower_repo, policy_group_repo, policy_repo, user_repo};
     use crate::types::{DriverType, UserRole, UserStatus};
     use chrono::Utc;
-    use migration::{Migrator, MigratorTrait};
+    use migration::Migrator;
     use sea_orm::{ActiveModelTrait, Set};
 
     async fn setup_db() -> sea_orm::DatabaseConnection {

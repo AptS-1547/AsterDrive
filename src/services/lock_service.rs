@@ -414,7 +414,7 @@ mod tests {
         DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions, UserRole,
         UserStatus,
     };
-    use migration::{Migrator, MigratorTrait};
+    use migration::Migrator;
     use sea_orm::{ActiveModelTrait, Set};
 
     fn sample_lock(owner_info: Option<StoredLockOwnerInfo>) -> resource_lock::Model {

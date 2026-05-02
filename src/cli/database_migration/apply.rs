@@ -6,7 +6,7 @@
 mod convert;
 mod copy;
 
-use migration::{Migrator, MigratorTrait};
+use migration::Migrator;
 use sea_orm::DatabaseConnection;
 
 use crate::errors::{AsterError, MapAsterErr, Result};

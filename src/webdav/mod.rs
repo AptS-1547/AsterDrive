@@ -1508,7 +1508,7 @@ mod tests {
     use actix_web::{FromRequest, web};
     use async_trait::async_trait;
     use chrono::Utc;
-    use migration::{Migrator, MigratorTrait};
+    use migration::Migrator;
     use quick_xml::Reader;
     use quick_xml::events::Event;
     use sea_orm::{ActiveModelTrait, Set};

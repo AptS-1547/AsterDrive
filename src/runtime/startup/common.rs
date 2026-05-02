@@ -4,7 +4,7 @@ use crate::config::node_mode::NodeRuntimeMode;
 use crate::db;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::DriverRegistry;
-use migration::{Migrator, MigratorTrait};
+use migration::Migrator;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::sync::Arc;
 

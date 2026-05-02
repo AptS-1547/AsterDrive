@@ -321,7 +321,7 @@ mod tests {
     use super::*;
     use crate::config::DatabaseConfig;
     use crate::db;
-    use migration::{Migrator, MigratorTrait};
+    use migration::Migrator;
 
     async fn setup_db() -> sea_orm::DatabaseConnection {
         let db = db::connect(&DatabaseConfig {

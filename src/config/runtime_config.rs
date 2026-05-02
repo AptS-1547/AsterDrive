@@ -105,7 +105,7 @@ mod tests {
     use crate::entities::system_config;
     use crate::types::{SystemConfigSource, SystemConfigValueType};
     use chrono::Utc;
-    use migration::{Migrator, MigratorTrait};
+    use migration::Migrator;
 
     async fn setup_db() -> sea_orm::DatabaseConnection {
         let db = db::connect(&DatabaseConfig {

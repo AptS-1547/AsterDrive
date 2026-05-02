@@ -6,7 +6,7 @@ use std::sync::{
 use actix_web::body;
 use async_trait::async_trait;
 use chrono::Utc;
-use migration::{Migrator, MigratorTrait};
+use migration::Migrator;
 use sea_orm::{ActiveModelTrait, Set};
 use tokio::io::{AsyncRead, AsyncWriteExt};
 
