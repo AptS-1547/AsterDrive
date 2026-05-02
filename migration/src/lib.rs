@@ -418,7 +418,7 @@ where
         .await?;
 
     rows.into_iter()
-        .map(|row| row.try_get_by_index::<String>(0).map_err(DbErr::from))
+        .map(|row| row.try_get_by_index::<String>(0))
         .collect()
 }
 
