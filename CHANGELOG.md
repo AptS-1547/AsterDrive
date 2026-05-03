@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.26] - 2026-05-03
+
+### Release Highlights
+
+- **迁移架构硬切换落地** — 将 23 个历史 migration 合并为 baseline 基线，简化新部署的升级路径与维护成本
+- **分块上传持久化重构** — 重写本地分块上传的 session 持久化逻辑，增强幂等性与可靠性，修复 WebDAV 空文件写入失败
+- **头像路径安全加固** — 修复头像存储路径校验漏洞，阻断路径穿越攻击
+- **偏好设置健壮性提升** — 增强前端偏好设置的防御性，拒绝并清理无效值
+- **CLI 与缓存模块提取** — 提取 db_shared 模块消除重复，ReservationSet 统一管理缓存预留逻辑
+
+### Changed
+
+- **数据库迁移**
+  - 将历史 23 个 migration 文件合并为单一 baseline 基线，新部署无需逐步执行历史迁移
+  - 引入 hard cutover 升级策略，支持从旧架构直接切换到新迁移系统
+  - 清理 migration 模块依赖，统一 base64 版本
+- **分块上传**
+  - 重构本地分块上传的持久化逻辑，session 状态与 chunk 元数据更可靠
+  - 增强幂等性处理，重复上传同一 chunk 不再导致状态混乱
+- **CLI 重构**
+  - 提取 `db_shared` 模块，消除数据库辅助函数的重复实现
+- **缓存优化**
+  - 提取 `ReservationSet` 结构，统一管理缓存预留逻辑
+
+### Fixed
+
+- **安全修复**
+  - 修复头像存储路径校验漏洞，防止通过构造特殊文件名实现路径穿越攻击
+- **WebDAV 写入**
+  - 修复空文件写入失败的问题
+- **偏好设置**
+  - 增强前端偏好设置存储的健壮性，防御无效值写入
+
+### Notes
+
+- 本次升级迁移系统采用 hard cutover 策略，新环境将直接基于 baseline 创建表结构
+- 现有生产环境升级时需确保当前数据库版本已达到历史最新状态（v0.0.1-alpha.25）
+
+---
+
+**统计数据**：
+- 148 files changed, 6,461 insertions(+), 9,427 deletions(-)
+- 9 commits
+
 ## [v0.0.1-alpha.25] - 2026-04-30
 
 ### Release Highlights
@@ -2309,7 +2353,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.25...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.26...HEAD
+[v0.0.1-alpha.26]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.25...v0.0.1-alpha.26
 [v0.0.1-alpha.25]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.24...v0.0.1-alpha.25
 [v0.0.1-alpha.24]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.23...v0.0.1-alpha.24
 [v0.0.1-alpha.23]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.22...v0.0.1-alpha.23
