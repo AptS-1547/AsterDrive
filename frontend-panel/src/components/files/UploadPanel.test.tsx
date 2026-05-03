@@ -137,11 +137,78 @@ describe("UploadPanel", () => {
 
 		fireEvent.click(screen.getByText("Retry failed"));
 		fireEvent.click(screen.getByText("Clear completed"));
-		fireEvent.click(screen.getAllByRole("button")[0]);
+		fireEvent.click(
+			screen.getByRole("button", { name: "upload_panel_collapse" }),
+		);
 
 		expect(onRetryFailed).toHaveBeenCalledTimes(1);
 		expect(onClearCompleted).toHaveBeenCalledTimes(1);
 		expect(onToggle).toHaveBeenCalledTimes(1);
+	});
+
+	it("exposes upload settings controls", () => {
+		const onConcurrencyChange = vi.fn();
+		const onAutoClearCompletedChange = vi.fn();
+
+		render(
+			<UploadPanel
+				open
+				onToggle={vi.fn()}
+				title="Uploads"
+				summary="1 task"
+				tasks={[]}
+				emptyText="No tasks"
+				concurrency={2}
+				autoClearCompleted={false}
+				onConcurrencyChange={onConcurrencyChange}
+				onAutoClearCompletedChange={onAutoClearCompletedChange}
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "upload_settings" }));
+
+		expect(screen.getByText("upload_concurrency")).toBeInTheDocument();
+		expect(screen.getByText("upload_concurrency_desc")).toBeInTheDocument();
+		expect(screen.getByText("upload_auto_clear_completed")).toBeInTheDocument();
+		expect(
+			screen.getByText("upload_auto_clear_completed_desc"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "upload_concurrency_increase" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "upload_concurrency_decrease" }),
+		);
+		fireEvent.click(
+			screen.getByRole("switch", { name: "upload_auto_clear_completed" }),
+		);
+
+		expect(onConcurrencyChange).toHaveBeenNthCalledWith(1, 3);
+		expect(onConcurrencyChange).toHaveBeenNthCalledWith(2, 1);
+		expect(onAutoClearCompletedChange).toHaveBeenCalledWith(true);
+	});
+
+	it("opens the upload panel when settings are requested while collapsed", () => {
+		const onToggle = vi.fn();
+
+		render(
+			<UploadPanel
+				open={false}
+				onToggle={onToggle}
+				title="Uploads"
+				summary="1 task"
+				tasks={[]}
+				emptyText="No tasks"
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "upload_settings" }));
+
+		expect(onToggle).toHaveBeenCalledTimes(1);
+		expect(
+			screen.getByRole("button", { name: "upload_settings" }),
+		).toHaveAttribute("aria-expanded", "true");
 	});
 
 	it("hides progress chrome when all uploads are completed", () => {

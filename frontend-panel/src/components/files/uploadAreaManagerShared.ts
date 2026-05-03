@@ -48,7 +48,6 @@ export const CONCURRENCY_ACTIVE_STATUSES: UploadStatus[] = [
 	"processing",
 ];
 
-export const MAX_FILE_CONCURRENT = 2;
 export const CHUNK_CONCURRENT = 3;
 export const CHUNK_MAX_RETRIES = 3;
 export const PROGRESS_FLUSH_INTERVAL = 500;

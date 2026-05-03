@@ -9,6 +9,12 @@ import {
 	leaveStorageRefreshGate,
 } from "@/lib/storageRefreshGate";
 import { loadSessions } from "@/lib/uploadPersistence";
+import {
+	normalizeUploadConcurrency,
+	readUploadSettings,
+	writeUploadAutoClearCompleted,
+	writeUploadConcurrency,
+} from "@/lib/uploadSettings";
 import type { Workspace } from "@/lib/workspace";
 import {
 	extractFilesFromDrop,
@@ -20,7 +26,6 @@ import {
 	ACTIVE_QUEUE_STATUSES,
 	CONCURRENCY_ACTIVE_STATUSES,
 	createQueuedUploadTask,
-	MAX_FILE_CONCURRENT,
 	PROGRESS_FLUSH_INTERVAL,
 	type UploadStatus,
 	type UploadTask,
@@ -54,6 +59,7 @@ export function useUploadAreaManager({
 	const [isDragging, setIsDragging] = useState(false);
 	const dragCounter = useRef(0);
 	const [uploadPanelOpen, setUploadPanelOpen] = useState(true);
+	const [uploadSettings, setUploadSettings] = useState(readUploadSettings);
 	const [tasks, setTasks] = useState<UploadTask[]>([]);
 	const tasksRef = useRef<UploadTask[]>([]);
 	const abortFlagsRef = useRef(new Map<string, boolean>());
@@ -97,6 +103,10 @@ export function useUploadAreaManager({
 	const patchTask = useCallback(
 		(taskId: string, patch: Partial<UploadTask>) => {
 			const terminalStatuses: UploadStatus[] = ["completed", "cancelled"];
+			if (uploadSettings.autoClearCompleted && patch.status === "completed") {
+				setTasks((prev) => prev.filter((task) => task.id !== taskId));
+				return;
+			}
 			const finalPatch =
 				patch.status && terminalStatuses.includes(patch.status)
 					? { ...patch, file: null }
@@ -107,7 +117,7 @@ export function useUploadAreaManager({
 				),
 			);
 		},
-		[],
+		[uploadSettings.autoClearCompleted],
 	);
 
 	const flushProgress = useCallback(() => {
@@ -188,6 +198,31 @@ export function useUploadAreaManager({
 	const clearCompletedTasks = useCallback(() => {
 		setTasks((prev) => prev.filter((task) => task.status !== "completed"));
 	}, []);
+
+	const setUploadConcurrency = useCallback((value: number) => {
+		const concurrency = normalizeUploadConcurrency(value);
+		writeUploadConcurrency(concurrency);
+		setUploadSettings((prev) => {
+			return {
+				...prev,
+				concurrency,
+			};
+		});
+	}, []);
+
+	const setUploadAutoClearCompleted = useCallback(
+		(value: boolean) => {
+			writeUploadAutoClearCompleted(value);
+			setUploadSettings((prev) => ({
+				...prev,
+				autoClearCompleted: value,
+			}));
+			if (value) {
+				clearCompletedTasks();
+			}
+		},
+		[clearCompletedTasks],
+	);
 
 	const attachFileToTask = useCallback(
 		(taskId: string, file: File) => {
@@ -285,16 +320,17 @@ export function useUploadAreaManager({
 		const activeCount = tasks.filter((task) =>
 			CONCURRENCY_ACTIVE_STATUSES.includes(task.status),
 		).length;
-		if (activeCount >= MAX_FILE_CONCURRENT) return;
+		const concurrency = uploadSettings.concurrency;
+		if (activeCount >= concurrency) return;
 
 		const queued = tasks.filter((task) => task.status === "queued");
 		if (queued.length === 0) return;
 
-		const nextTasks = queued.slice(0, MAX_FILE_CONCURRENT - activeCount);
+		const nextTasks = queued.slice(0, concurrency - activeCount);
 		for (const task of nextTasks) {
 			void runTask(task.id);
 		}
-	}, [runTask, tasks]);
+	}, [runTask, tasks, uploadSettings.concurrency]);
 
 	const retryFailedTasks = useCallback(() => {
 		const failedTaskIds = tasksRef.current
@@ -432,8 +468,12 @@ export function useUploadAreaManager({
 		overallProgress,
 		retryFailedTasks,
 		setUploadPanelOpen,
+		setUploadAutoClearCompleted,
+		setUploadConcurrency,
 		successCount,
 		totalCount,
+		uploadAutoClearCompleted: uploadSettings.autoClearCompleted,
+		uploadConcurrency: uploadSettings.concurrency,
 		uploadPanelOpen,
 		uploadTasks,
 	};

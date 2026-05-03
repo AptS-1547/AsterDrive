@@ -138,26 +138,8 @@ vi.mock("@/services/http", () => ({
 }));
 
 async function uploadOneFile() {
-	const { UploadArea } = await import("@/components/files/UploadArea");
 	const file = new File(["hello"], "hello.txt", { type: "text/plain" });
-
-	const view = render(
-		<UploadArea>
-			<div>content</div>
-		</UploadArea>,
-	);
-
-	const fileInput = view.container.querySelectorAll('input[type="file"]')[0] as
-		| HTMLInputElement
-		| undefined;
-
-	if (!fileInput) {
-		throw new Error("file input not found");
-	}
-
-	fireEvent.change(fileInput, {
-		target: { files: [file] },
-	});
+	await renderUploadAreaWithFiles([file]);
 
 	await waitFor(() => {
 		expect(initUpload).toHaveBeenCalledWith({
@@ -171,7 +153,7 @@ async function uploadOneFile() {
 	return file;
 }
 
-async function uploadFiles(files: File[]) {
+async function renderUploadAreaWithFiles(files: File[]) {
 	const { UploadArea } = await import("@/components/files/UploadArea");
 
 	const view = render(
@@ -191,6 +173,12 @@ async function uploadFiles(files: File[]) {
 	fireEvent.change(fileInput, {
 		target: { files },
 	});
+
+	return view;
+}
+
+async function uploadFiles(files: File[]) {
+	await renderUploadAreaWithFiles(files);
 
 	await waitFor(() => {
 		expect(initUpload).toHaveBeenCalledTimes(files.length);
@@ -301,6 +289,62 @@ describe("UploadArea", () => {
 
 		expect(refresh).not.toHaveBeenCalled();
 		expect(refreshUser).not.toHaveBeenCalled();
+	});
+
+	it("uses the stored file upload concurrency setting", async () => {
+		window.localStorage.setItem("aster-upload-concurrency", "1");
+		const firstUpload = createDeferred<unknown>();
+		const secondUpload = createDeferred<unknown>();
+		const firstFile = new File(["hello"], "first.txt", { type: "text/plain" });
+		const secondFile = new File(["world"], "second.txt", {
+			type: "text/plain",
+		});
+
+		initUpload.mockResolvedValue({ mode: "direct" });
+		apiClientPost
+			.mockReturnValueOnce(firstUpload.promise)
+			.mockReturnValueOnce(secondUpload.promise);
+
+		await renderUploadAreaWithFiles([firstFile, secondFile]);
+
+		await waitFor(() => {
+			expect(apiClientPost).toHaveBeenCalledTimes(1);
+		});
+		expect(initUpload).toHaveBeenCalledTimes(1);
+		expect(apiClientPost.mock.calls[0]?.[0]).toBe(
+			"/files/upload?folder_id=42&declared_size=5",
+		);
+
+		firstUpload.resolve({});
+
+		await waitFor(() => {
+			expect(apiClientPost).toHaveBeenCalledTimes(2);
+		});
+		expect(initUpload).toHaveBeenCalledTimes(2);
+
+		secondUpload.resolve({});
+		await screen.findByText("second.txt:Direct:files:upload_success");
+	});
+
+	it("auto-removes completed tasks when the setting is enabled", async () => {
+		window.localStorage.setItem("aster-upload-auto-clear-completed", "true");
+		const file = new File(["hello"], "hello.txt", { type: "text/plain" });
+
+		initUpload.mockResolvedValue({ mode: "direct" });
+		apiClientPost.mockResolvedValue({});
+
+		await renderUploadAreaWithFiles([file]);
+
+		await waitFor(() => {
+			expect(apiClientPost).toHaveBeenCalledTimes(1);
+		});
+		await waitFor(() => {
+			expect(screen.queryByTestId("upload-panel")).not.toBeInTheDocument();
+		});
+		await waitFor(() => {
+			expect(refresh).toHaveBeenCalledTimes(1);
+			expect(refreshUser).toHaveBeenCalledTimes(1);
+		});
 	});
 
 	it("handles chunked uploads and persists resumable sessions", async () => {

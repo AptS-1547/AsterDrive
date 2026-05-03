@@ -27,6 +27,8 @@ export const STORAGE_KEYS = {
 	browserOpenMode: "aster-browser-open-mode",
 	trashViewMode: "aster-trash-view-mode",
 	userSidebarWidth: "aster-user-sidebar-width",
+	uploadAutoClearCompleted: "aster-upload-auto-clear-completed",
+	uploadConcurrency: "aster-upload-concurrency",
 	sortBy: "aster-sort-by",
 	sortOrder: "aster-sort-order",
 } as const;

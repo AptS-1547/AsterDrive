@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useMemo, useRef } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { UploadTaskItem } from "@/components/files/UploadTaskItem";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,12 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import {
+	DEFAULT_UPLOAD_CONCURRENCY,
+	MAX_UPLOAD_CONCURRENCY,
+	MIN_UPLOAD_CONCURRENCY,
+} from "@/lib/uploadSettings";
 import { cn } from "@/lib/utils";
 
 export interface UploadTaskView {
@@ -46,6 +52,10 @@ interface UploadPanelProps {
 	failedCount?: number;
 	activeCount?: number;
 	overallProgress?: number;
+	concurrency?: number;
+	autoClearCompleted?: boolean;
+	onConcurrencyChange?: (value: number) => void;
+	onAutoClearCompletedChange?: (value: boolean) => void;
 	onRetryFailed?: () => void;
 	retryFailedLabel?: string;
 	onClearCompleted?: () => void;
@@ -91,6 +101,10 @@ export function UploadPanel({
 	failedCount = 0,
 	activeCount = 0,
 	overallProgress = 0,
+	concurrency = DEFAULT_UPLOAD_CONCURRENCY,
+	autoClearCompleted = false,
+	onConcurrencyChange,
+	onAutoClearCompletedChange,
 	onRetryFailed,
 	retryFailedLabel,
 	onClearCompleted,
@@ -158,6 +172,21 @@ export function UploadPanel({
 		onClearCompleted && clearCompletedLabel && successCount > 0,
 	);
 	const showOverallProgress = activeCount > 0;
+	const generatedSettingsPanelId = useId();
+	const settingsPanelId = `upload-panel-settings-${generatedSettingsPanelId}`;
+	const [settingsOpen, setSettingsOpen] = useState(false);
+	const canDecreaseConcurrency =
+		Boolean(onConcurrencyChange) && concurrency > MIN_UPLOAD_CONCURRENCY;
+	const canIncreaseConcurrency =
+		Boolean(onConcurrencyChange) && concurrency < MAX_UPLOAD_CONCURRENCY;
+	const handleSettingsToggle = () => {
+		if (!open) {
+			setSettingsOpen(true);
+			onToggle();
+			return;
+		}
+		setSettingsOpen((prev) => !prev);
+	};
 
 	return (
 		<div className="absolute right-4 bottom-4 z-40 w-[28rem] max-w-[calc(100vw-2rem)]">
@@ -176,9 +205,35 @@ export function UploadPanel({
 								{summary}
 							</div>
 						</div>
-						<Button variant="ghost" size="icon-xs" onClick={onToggle}>
-							<Icon name={open ? "CaretDown" : "CaretUp"} className="h-3 w-3" />
-						</Button>
+						<div className="flex shrink-0 items-center gap-1">
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								onClick={handleSettingsToggle}
+								aria-expanded={settingsOpen}
+								aria-controls={settingsPanelId}
+								aria-label={t("upload_settings")}
+								title={t("upload_settings")}
+							>
+								<Icon name="Gear" className="h-3 w-3" />
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								onClick={onToggle}
+								aria-label={
+									open ? t("upload_panel_collapse") : t("upload_panel_expand")
+								}
+								title={
+									open ? t("upload_panel_collapse") : t("upload_panel_expand")
+								}
+							>
+								<Icon
+									name={open ? "CaretDown" : "CaretUp"}
+									className="h-3 w-3"
+								/>
+							</Button>
+						</div>
 					</div>
 					{showOverallProgress ? (
 						<div className="mt-3 flex items-center gap-2">
@@ -199,6 +254,17 @@ export function UploadPanel({
 					)}
 				>
 					<div className="flex h-full min-h-0 flex-col">
+						<UploadSettingsPanel
+							autoClearCompleted={autoClearCompleted}
+							concurrency={concurrency}
+							canDecreaseConcurrency={canDecreaseConcurrency}
+							canIncreaseConcurrency={canIncreaseConcurrency}
+							open={settingsOpen}
+							panelId={settingsPanelId}
+							onAutoClearCompletedChange={onAutoClearCompletedChange}
+							onConcurrencyChange={onConcurrencyChange}
+							t={t}
+						/>
 						<CardContent className="min-h-0 flex-1 overflow-hidden bg-background/70 px-0 py-0 group-data-[size=sm]/card:px-0 dark:bg-background/20">
 							{tasks.length === 0 ? (
 								<div className="flex h-full min-h-[10rem] items-center justify-center px-6 py-8 text-center text-sm text-muted-foreground">
@@ -294,6 +360,94 @@ function GroupHeader({
 						? t("upload_batch_partial_failed")
 						: t("upload_batch_done")}
 			</span>
+		</div>
+	);
+}
+
+function UploadSettingsPanel({
+	autoClearCompleted,
+	canDecreaseConcurrency,
+	canIncreaseConcurrency,
+	concurrency,
+	open,
+	panelId,
+	onAutoClearCompletedChange,
+	onConcurrencyChange,
+	t,
+}: {
+	autoClearCompleted: boolean;
+	canDecreaseConcurrency: boolean;
+	canIncreaseConcurrency: boolean;
+	concurrency: number;
+	open: boolean;
+	panelId: string;
+	onAutoClearCompletedChange?: (value: boolean) => void;
+	onConcurrencyChange?: (value: number) => void;
+	t: (key: string, opts?: Record<string, unknown>) => string;
+}) {
+	return (
+		<div
+			id={panelId}
+			aria-hidden={!open}
+			inert={open ? undefined : true}
+			className={cn(
+				"overflow-hidden border-b border-border/60 bg-card/70 transition-[max-height,opacity] duration-150 ease-out dark:bg-card/50",
+				open ? "max-h-40 opacity-100" : "max-h-0 opacity-0",
+			)}
+		>
+			<div className="grid gap-3 px-4 py-3">
+				<div className="flex items-center justify-between gap-3">
+					<div className="min-w-0">
+						<div className="truncate text-xs font-medium text-foreground">
+							{t("upload_concurrency")}
+						</div>
+						<div className="truncate text-[11px] text-muted-foreground">
+							{t("upload_concurrency_desc")}
+						</div>
+					</div>
+					<div className="flex shrink-0 items-center rounded-lg border border-border/70 bg-background/70 p-0.5 dark:bg-background/25">
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							onClick={() => onConcurrencyChange?.(concurrency - 1)}
+							disabled={!canDecreaseConcurrency}
+							aria-label={t("upload_concurrency_decrease")}
+							title={t("upload_concurrency_decrease")}
+						>
+							<Icon name="Minus" className="h-3 w-3" />
+						</Button>
+						<span className="w-8 text-center text-xs font-medium tabular-nums">
+							{concurrency}
+						</span>
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							onClick={() => onConcurrencyChange?.(concurrency + 1)}
+							disabled={!canIncreaseConcurrency}
+							aria-label={t("upload_concurrency_increase")}
+							title={t("upload_concurrency_increase")}
+						>
+							<Icon name="Plus" className="h-3 w-3" />
+						</Button>
+					</div>
+				</div>
+				<div className="flex items-center justify-between gap-3">
+					<div className="min-w-0">
+						<div className="truncate text-xs font-medium text-foreground">
+							{t("upload_auto_clear_completed")}
+						</div>
+						<div className="truncate text-[11px] text-muted-foreground">
+							{t("upload_auto_clear_completed_desc")}
+						</div>
+					</div>
+					<Switch
+						size="sm"
+						checked={autoClearCompleted}
+						onCheckedChange={(value) => onAutoClearCompletedChange?.(value)}
+						aria-label={t("upload_auto_clear_completed")}
+					/>
+				</div>
+			</div>
 		</div>
 	);
 }

@@ -44,8 +44,12 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			overallProgress,
 			retryFailedTasks,
 			setUploadPanelOpen,
+			setUploadAutoClearCompleted,
+			setUploadConcurrency,
 			successCount,
 			totalCount,
+			uploadAutoClearCompleted,
+			uploadConcurrency,
 			uploadPanelOpen,
 			uploadTasks,
 		} = useUploadAreaManager({
@@ -128,6 +132,10 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							failedCount={failedCount}
 							activeCount={activeCount}
 							overallProgress={overallProgress}
+							concurrency={uploadConcurrency}
+							autoClearCompleted={uploadAutoClearCompleted}
+							onConcurrencyChange={setUploadConcurrency}
+							onAutoClearCompletedChange={setUploadAutoClearCompleted}
 							onRetryFailed={retryFailedTasks}
 							retryFailedLabel={t("files:upload_retry")}
 							onClearCompleted={clearCompletedTasks}
