@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.0-beta.1] - 2026-05-04
+
+### Release Highlights
+
+- **首个 Beta 预发布** — AsterDrive 从 alpha 阶段进入 beta 阶段，核心版本升级至 `0.1.0-beta.1`
+- **服务端上传恢复能力** — 新增可恢复上传 session 列表接口，覆盖个人空间与团队空间，为刷新后恢复上传提供后端依据
+- **上传面板体验升级** — 前端支持配置上传并发数与自动清除已完成任务，并重构上传任务展示与恢复流程
+- **并发安全与数据一致性增强** — 上传完成、文件覆盖、文件夹移动/删除、锁清理和后台任务接管增加原子转换与复核
+- **数据库批量化优化** — Blob 引用计数、版本清理、文件/文件夹批量操作减少串行查询，提升大批量操作效率
+- **Presigned 上传收口** — 单文件直传完成后统一迁移到最终对象 key，并清理临时对象，降低临时对象泄漏风险
+- **视觉系统打磨** — 全局色彩令牌、暗色模式、卡片/按钮/弹窗/上传面板视觉层级进一步统一
+
+### Added
+
+- **可恢复上传**
+  - 新增个人空间可恢复上传 session 列表接口
+  - 新增团队空间可恢复上传 session 列表接口
+  - 响应包含上传模式、目标文件夹、进度、已完成分片、过期时间和恢复所需元数据
+  - OpenAPI 与前端生成类型同步补齐恢复上传接口和 DTO
+- **上传设置**
+  - 前端新增上传并发数设置，支持 1-8 个并发任务
+  - 新增自动移除已完成任务设置，并持久化到 localStorage
+  - 上传恢复流程支持从服务端加载未完成 session，并与本地 pending file 状态衔接
+- **测试覆盖**
+  - 补充上传恢复、上传设置、PDF 预览、文件 store、远程存储与任务接管等测试场景
+
+### Changed
+
+- **版本阶段**
+  - Rust crate 版本升级到 `0.1.0-beta.1`
+  - 本版本为首个 beta 预发布版本，不是 stable release
+- **上传完成流程**
+  - 过期 session 不再进入组装阶段
+  - Presigned 单文件上传完成后会从临时对象复制到最终 `files/{uuid}` key，并尝试清理临时对象
+  - 上传进度响应与恢复响应补齐更多分片和 session 状态信息
+- **并发一致性**
+  - 文件覆盖、文件夹移动/删除、锁清理、后台任务认领等流程增加锁定、状态复核和原子条件更新
+  - 后台任务只接管显式 lease 已过期的 processing 任务，避免误抢仍在运行的任务
+- **批量操作性能**
+  - Blob 引用计数支持批量 CASE 更新和批量查询
+  - 文件删除、版本清理、移动和文件夹树处理减少重复查询与串行更新
+- **前端体验**
+  - 重构上传面板、上传任务项和恢复交互，减少状态混乱
+  - 全局设计系统更新，提升明暗模式对比度、控件层级和整体视觉一致性
+  - PDF 预览水平滚动和多种预览容器的布局表现更稳定
+- **文档**
+  - 全面同步用户文档、部署文档、API 文档和模块设计文档，补充错误说明、反代配置和上传恢复接口说明
+
+### Fixed
+
+- **上传可靠性**
+  - 修复过期上传 session 可能继续进入完成流程的问题
+  - 修复清理任务可能误处理 assembling 中上传 session 的问题
+  - 修复直传大文件受默认请求超时影响的问题
+- **文件与锁一致性**
+  - 修复并发覆盖时 blob / 文件记录可能被旧状态污染的边界
+  - 修复锁清理与并发重锁竞争导致状态不一致的边界
+  - 修复文件夹移动/删除并发下树结构复核不足的问题
+- **前端状态**
+  - 修复移动、剪切粘贴等操作后文件列表 loading / error 状态残留的问题
+  - 修复 PDF 放大后水平滚动范围不足的问题
+  - 修复上传恢复与任务项状态展示的若干边界问题
+- **安全与兼容**
+  - 收紧头像路径和任务认领相关兼容逻辑
+  - 修复 S3、远程存储、团队与任务测试覆盖到的若干一致性边界
+
+### Notes
+
+- 这是 AsterDrive 的第一个 beta 预发布版本，代表核心功能已从 alpha 探索阶段进入更稳定的验证阶段
+- 本版本仍不承诺 stable 级别的 API、配置和数据迁移长期兼容；生产环境升级前仍建议备份数据库和存储目录
+- 本次发布重点是上传恢复、并发一致性、批量性能和 UI 质感，为后续 stable 版本收口做准备
+- 未发现明确的配置或 API breaking change
+- 使用 presigned 上传的部署需要确认后端存储凭据具备对象 copy/delete 权限
+- 旧的 processing 后台任务如果没有 `lease_expires_at`，不会再仅凭 heartbeat 或 started_at 被自动接管
+
+---
+
+**统计数据**：
+- 164 files changed, 3,568 insertions(+), 1,017 deletions(-)
+- 10 commits
+
 ## [v0.0.1-alpha.26] - 2026-05-03
 
 ### Release Highlights
@@ -2353,7 +2434,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.26...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.1...HEAD
+[v0.1.0-beta.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.26...v0.1.0-beta.1
 [v0.0.1-alpha.26]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.25...v0.0.1-alpha.26
 [v0.0.1-alpha.25]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.24...v0.0.1-alpha.25
 [v0.0.1-alpha.24]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.23...v0.0.1-alpha.24
