@@ -69,7 +69,7 @@ bootstrap_insecure_cookies = false
 
 如果站点要对外访问，最好同时确认：
 
-- 反向代理已经给浏览器页面补上基线 `Content-Security-Policy` 响应头
+- 首页响应头里能看到 AsterDrive 返回的页面基线 `Content-Security-Policy`，代理层没有删掉或覆盖成不兼容的策略
 - `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 已经填成真实的 `https://` 来源；多个公开域名逐项添加
 - 如果要开放注册、找回密码或邮箱改绑，`管理 -> 系统设置 -> 邮件投递` 已经发通过测试邮件
 
@@ -87,7 +87,7 @@ bootstrap_insecure_cookies = false
 
 - `公开站点地址` 已经填成真实 `https://` 来源
 - `站点配置 -> 预览应用` 已经配置好对应打开方式
-- 如果外部 Office 服务和 AsterDrive 不在同一个来源，`网络访问` 已经放行对应域名
+- 外部 Office / WOPI 服务能访问到 `公开站点地址` 对应的 AsterDrive 地址；如果浏览器跨源调用 AsterDrive API 被拦，再到 `网络访问` 放行对应来源
 
 ### 存储位置
 

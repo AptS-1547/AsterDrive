@@ -96,6 +96,15 @@
 - `thumbnail_generate`
 - `system_runtime`
 
+当前 `BackgroundTaskStatus` 有六种：
+
+- `pending`
+- `processing`
+- `retry`
+- `succeeded`
+- `failed`
+- `canceled`
+
 对普通用户来说，最常见的是前两种：
 
 - `archive_extract`：解压归档文件到工作空间目录

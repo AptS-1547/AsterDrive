@@ -1,7 +1,7 @@
 # 运维 CLI
 
 ::: tip 这一篇覆盖什么
-`aster_drive` 可执行文件除了启动服务，还带一组命令行子命令：`doctor`（部署检查）、`config`（离线系统设置）、`database-migrate`（跨数据库迁移）。
+`aster_drive` 可执行文件除了启动服务，还带一组命令行子命令：`doctor`（部署检查）、`config`（离线系统设置）、`node`（远程节点接入）、`database-migrate`（跨数据库迁移）。
 **日常改设置优先走管理后台**——这一篇适合的是"后台进不去"、"想纳入脚本"、"要换数据库后端"这类场景。
 :::
 
@@ -9,6 +9,7 @@ AsterDrive 现在自带一组命令行工具，适合下面这些场景：
 
 - 服务已经部署好，但你想先离线检查一遍数据库和关键设置
 - 管理后台暂时进不去，需要直接查看或修改系统设置
+- 需要在从节点 shell 上完成 `node enroll`
 - 准备把 SQLite 迁到 PostgreSQL 或 MySQL，或者反过来迁回去
 - 想把检查结果交给脚本、CI 或运维平台处理
 
@@ -218,6 +219,36 @@ docker exec -it asterdrive sh
 
 如果你只是想确认某个值是否合法，优先用 `validate`，别上来就 `set`。
 
+## 远程节点接入：`node enroll`
+
+这个命令只给从节点用。主控后台生成 enroll token 后，在 follower 机器上执行：
+
+```bash
+./aster_drive node enroll \
+  --master-url https://drive.example.com \
+  --token enr_xxxxx
+```
+
+如果你没有显式传数据库地址，命令会读取当前 `data/config.toml` 里的 `[database].url`。也可以直接指定：
+
+```bash
+./aster_drive node enroll \
+  --master-url https://drive.example.com \
+  --token enr_xxxxx \
+  --database-url "sqlite:///var/lib/asterdrive/data/asterdrive.db?mode=rwc"
+```
+
+它会做这些事：
+
+- 确认当前配置是 `[server].start_mode = "follower"`
+- 当前目录还没有配置文件时，先按 follower 模式生成一份默认 `data/config.toml`
+- 用 token 向主控兑换本地绑定信息，并写入 follower 数据库
+- 输出当前监听地址、配置文件路径和下一步连通性检查提示
+
+命令本身不会替你创建主控端的默认接收落点，也不会启动 HTTP 服务。执行成功后，重启 follower 进程，再回主控后台创建或应用默认接收落点。
+
+Docker follower 更推荐用启动环境变量自动 enroll，不需要进容器手动跑这条命令，见 [Docker 部署从节点](/deployment/docker-follower)。
+
 ## 跨数据库迁移：`database-migrate`
 
 这个命令是给“换数据库后端”用的。  
@@ -280,5 +311,6 @@ docker exec -it asterdrive sh
 
 - 部署完成，但还没放心上线
 - 后台打不开，又急着查配置
+- 从节点已经拿到 enroll token，要在 shell 里完成接入
 - 准备从 SQLite 切到 PostgreSQL / MySQL
 - 想把检查动作做成脚本

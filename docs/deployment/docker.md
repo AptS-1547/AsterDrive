@@ -17,7 +17,7 @@ sudo chown -R 10001:10001 ./data
 如果你用 named volume（`docker volume create` 或 compose 里的 `volumes:` 段），Docker 会自动把卷的属主设成容器内运行用户，不需要手动 chown。
 
 容器把服务跑起来，不等于可以直接把 `3000` 端口长期暴露到公网。  
-正式上线时，前面还是应该接一层反向代理来处理 HTTPS、**浏览器页面基线** `Content-Security-Policy` 等安全响应头、上传限制、WebDAV 和 WOPI。不要把整站 CSP 直接改成全站 `sandbox`。
+正式上线时，前面还是应该接一层反向代理来处理 HTTPS、HSTS、上传限制、WebDAV 和 WOPI，并保留 AsterDrive 返回的**浏览器页面基线** `Content-Security-Policy`。不要把整站 CSP 直接改成全站 `sandbox`。
 
 ::: tip 如果这个容器要跑成从节点
 现在 follower 已经支持在启动时直接读取 bootstrap ENV 完成 enroll。  
@@ -107,7 +107,7 @@ services:
 - `auth.jwt_secret` 是否已经固定
 - 如果暂时是纯 HTTP 测试，是否只在首次引导时设置了 `bootstrap_insecure_cookies = true`
 - 切到 HTTPS 后，后台系统设置里的 Cookie 安全开关是否已经改回开启
-- 反向代理是否已经给浏览器页面补上基线 `Content-Security-Policy` 响应头
+- 首页响应头里是否能看到 AsterDrive 返回的页面基线 `Content-Security-Policy`，代理层有没有删掉或覆盖成不兼容的策略
 - 如果站点对外访问，`公开站点地址` 是否已经填成真实 `https://` 来源；多个公开域名逐项添加，主域名放在最前面
 - 如果要开放注册、找回密码或邮箱改绑，测试邮件是否已经发通
 - 数据库、上传目录和临时目录是否都落在 bind mount 的 `./data` 目录里，没有遗漏写到容器内层

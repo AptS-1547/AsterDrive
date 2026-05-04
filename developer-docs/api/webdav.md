@@ -2,6 +2,8 @@
 
 WebDAV 相关内容可以分成三块：账号、挂载入口、协议能力。
 
+当前 HTTP 协议层主要还在 `src/webdav/mod.rs`；`developer-docs/dev-plan-webdav-rewrite.md` 是尚未落地的拆分计划，不代表当前目录结构。
+
 ## 账号接口
 
 以下路径都相对于 `/api/v1`，且都需要认证。

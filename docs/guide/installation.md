@@ -55,7 +55,7 @@ AsterDrive 的部署目标很简单：
 
 ### 访问方式
 
-正式上线时，**必须**通过反向代理提供 HTTPS，并在代理层给站点页面补上一条可用的基线 `Content-Security-Policy`。不要把整站 CSP 直接改成全站 `sandbox`。同时保持：
+正式上线时，**必须**通过反向代理提供 HTTPS，并确认代理层保留了 AsterDrive 返回的页面基线 `Content-Security-Policy`。不要把整站 CSP 直接改成全站 `sandbox`。同时保持：
 
 ```toml
 [auth]
@@ -105,7 +105,7 @@ bootstrap_insecure_cookies = true
 
 - `公开站点地址` 是否已经填成真实 `https://` 来源
 - `站点配置 -> 预览应用` 是否已经配置好对应打开方式
-- 如果外部 Office 服务和 AsterDrive 不在同一个来源，`网络访问` 是否已经放行那个域名
+- 外部 Office / WOPI 服务是否能访问到 `公开站点地址` 对应的 AsterDrive 地址；只有在浏览器跨源调用 AsterDrive API 被拦时，才需要再动 `网络访问`
 
 ### 文件落点
 

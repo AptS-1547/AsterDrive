@@ -50,7 +50,7 @@
 当前实现注意点：
 
 - 创建和更新都会采用请求里的 `chunk_size`
-- `options` 当前主要承载 S3 上传 / 下载策略，例如 `{"s3_upload_strategy":"presigned","s3_download_strategy":"presigned"}`
+- `options` 当前主要承载 S3 / Remote 上传下载策略，例如 `{"s3_upload_strategy":"presigned","s3_download_strategy":"presigned","remote_upload_strategy":"presigned","remote_download_strategy":"presigned"}`
 - 旧配置 `{"presigned_upload":true}` 仍兼容
 - REST 已经可以通过 `allowed_types` 管理策略允许的 MIME / 类型列表；不传时创建会使用空列表，更新会保持原值
 - `driver_type = "remote"` 时需要绑定 `remote_node_id`，远端节点本身通过 `/admin/remote-nodes` 管理
@@ -149,7 +149,7 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/admin/overview` | 读取管理后台总览 PoC 所需的聚合数据 |
+| `GET` | `/admin/overview` | 读取管理后台总览所需的聚合数据 |
 
 当前返回内容包含：
 
@@ -158,6 +158,7 @@
 - 今日审计事件数、今日新增用户数、今日上传数、今日新分享数
 - 最近 N 天日报（默认 7）
 - 最近一批审计事件
+- 最近一批后台任务 / 系统运行任务
 
 支持这些查询参数：
 
@@ -374,11 +375,14 @@
 这个接口会返回：
 
 - `value_type`
-- `default_value`
+- `label_i18n_key`
+- `description_i18n_key`
 - `category`
 - `description`
 - `requires_restart`
 - `is_sensitive`
+
+`GET /admin/config` 返回的是实际配置项分页，字段还会包含 `id`、`key`、`value`、`source`、`namespace`、`updated_at` 和 `updated_by`。敏感配置项的 `value` 会被脱敏成 `***REDACTED***`。
 
 前端管理后台就是靠它动态渲染设置页，而不是写死每个配置项。
 

@@ -2,12 +2,13 @@
 
 ::: tip 这一篇覆盖 `[rate_limit]`
 默认关闭。打开后按访问来源 IP 对登录、公开访问、API、写操作分别限流。
-**反向代理后面慎用**——很容易把所有用户当成同一个来源，限流到自己。
+**反向代理后面可以用，但要配 `trusted_proxies`**——不配的话，应用只能看到代理 IP，很容易把所有用户当成同一个来源。
 :::
 
 ```toml
 [rate_limit]
 enabled = false
+trusted_proxies = []
 
 [rate_limit.auth]
 seconds_per_request = 2
@@ -65,10 +66,9 @@ burst_size = 5
 - 响应头带 `Retry-After`
 - 前端会显示"稍后再试"
 
-## 反向代理场景一定要注意
+## 反向代理后面怎么配
 
-::: warning 应用层限流看的是连接来源 IP
-当前版本的应用层限流，按 AsterDrive **实际看到的连接来源 IP** 工作。
+默认 `trusted_proxies = []` 是最安全的：AsterDrive 忽略 `X-Forwarded-For`，直接按实际连接来源 IP 限流。这样不会被伪造 XFF 绕过，但反代后通常只能看到代理地址。
 
 如果你的部署是：
 
@@ -76,16 +76,26 @@ burst_size = 5
 - Docker 网桥
 - 任何让所有请求都从同一个代理地址进入的网络拓扑
 
-那应用层限流很可能把所有用户都当成同一个来源——个用户触发，所有人一起被限。
-:::
+那就把你**自己控制的代理 IP / CIDR** 放进 `trusted_proxies`：
 
-这类部署里更稳的做法：
+```toml
+[rate_limit]
+enabled = true
+trusted_proxies = ["127.0.0.1", "172.16.0.0/12"]
+```
 
-- 关掉 AsterDrive 应用层限流，主要限流交给反向代理（Nginx `limit_req`、Caddy `rate_limit`、Traefik `RateLimit` 中间件）
-- 或者继续在应用层限，但把 `burst_size` 调得很宽
+规则很简单：
+
+- 只有连接来源 IP 命中 `trusted_proxies` 时，AsterDrive 才会读取 `X-Forwarded-For` 最左侧的客户端 IP
+- 连接来源不可信时，`X-Forwarded-For` 会被忽略，继续按实际连接 IP 限流
+- `trusted_proxies` 支持单 IP 和 CIDR，例如 `127.0.0.1`、`10.0.0.0/8`、`172.16.0.0/12`
+- 不要把不受你控制的公网段放进去，这等于相信别人帮你报真实 IP
+
+如果你不想在应用层处理这件事，也可以继续关掉 AsterDrive 限流，把限流交给反向代理（Nginx `limit_req`、Caddy `rate_limit`、Traefik `RateLimit` 中间件）。但别两边都配得很紧，不然排障时会很烦。
 
 ## 几条经验
 
 - 第一次启用保守一点，`burst_size` 别设太小
 - 对外开放公开分享页时，重点关注 `auth` 和 `public`
+- 反代后先确认 `trusted_proxies` 覆盖的是代理到 AsterDrive 的那一跳，不一定是公网入口 IP
 - 不确定时先在测试环境观察一段时间再上

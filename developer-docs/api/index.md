@@ -35,6 +35,7 @@
 - 直接下载链接：`/d/{token}/{filename}`
 - 预览下载链接：`/pv/{token}/{filename}`
 - WebDAV：默认 `/webdav`
+- 前端页面、公开分享页面和静态资源兜底：由 primary 最后注册
 
 ## 统一响应格式
 
@@ -73,15 +74,17 @@
 - Prometheus 指标
 - follower 内部对象读取流 `/api/v1/internal/storage/objects/{tail:.*}`
 
+公开 enrollment、公开品牌配置和公开预览应用配置虽然不需要登录，但仍然是普通 `/api/v1/public/*` JSON 接口。
+
 ## 错误码分域
 
 | 范围 | 含义 |
 | --- | --- |
 | `0` | 成功 |
-| `1000-1099` | 通用错误 |
-| `2000-2099` | 认证错误 |
-| `3000-3099` | 文件、上传、锁、缩略图错误 |
-| `4000-4099` | 存储策略与驱动错误 |
+| `1000-1099` | 通用、数据库、配置、限流、邮件、冲突错误 |
+| `2000-2099` | 认证、授权、激活、联系方式验证错误 |
+| `3000-3099` | 文件、上传 session、分片、锁、缩略图、条件请求错误 |
+| `4000-4099` | 存储策略、配额、驱动、对象存储错误 |
 | `5000-5099` | 文件夹错误 |
 | `6000-6099` | 分享错误 |
 
@@ -122,6 +125,7 @@
 /api/v1/teams/{team_id}/search
 /api/v1/teams/{team_id}/shares
 /api/v1/teams/{team_id}/trash
+/api/v1/teams/{team_id}/tasks
 ```
 
 也就是说，团队空间不是另一套业务模型，而是把同一套文件 / 文件夹 / 搜索 / 回收站语义切到团队作用域下执行。
@@ -166,6 +170,8 @@
 
 - `debug_assertions + openapi feature` 构建：访问 `/swagger-ui` 与 `/api-docs/openapi.json`
 - 任意构建：运行 `cargo test --features openapi --test generate_openapi` 导出静态规范到 `frontend-panel/generated/openapi.json`
+
+OpenAPI 注册列表维护在 `src/api/openapi.rs`。新增 route 时如果忘了补这里，运行时接口仍可能存在，但生成的 SDK / 静态规范会漏掉它。
 
 ## 继续阅读
 

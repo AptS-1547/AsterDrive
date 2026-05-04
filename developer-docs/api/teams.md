@@ -59,6 +59,7 @@
 | `POST` | `/teams/{team_id}/files/upload` | 团队空间 multipart 直传 |
 | `POST` | `/teams/{team_id}/files/new` | 在团队空间创建空文件 |
 | `POST` | `/teams/{team_id}/files/upload/init` | 协商团队上传模式 |
+| `GET` | `/teams/{team_id}/files/upload/sessions` | 列出团队空间可恢复上传 session |
 | `PUT` | `/teams/{team_id}/files/upload/{upload_id}/{chunk_number}` | 上传团队分片 |
 | `POST` | `/teams/{team_id}/files/upload/{upload_id}/presign-parts` | 批量申请团队 S3 multipart part URL |
 | `POST` | `/teams/{team_id}/files/upload/{upload_id}/complete` | 完成团队上传 |
@@ -124,6 +125,7 @@
 - 文件写入时会优先使用目录级 `policy_id`；没有目录覆盖时，再按 `teams.policy_group_id` 的规则解析实际存储策略
 - 团队文件的 WOPI 启动入口虽然是 `/teams/{team_id}/files/{id}/wopi/open`，但真正回调时仍然走统一的 `/api/v1/wopi/files/{id}`；团队作用域信息保存在 access token 里
 - 团队批量打包下载 ticket 只能在对应团队路由下消费，不能拿去个人 `/batch/archive-download/{token}` 复用
+- 团队 `GET /teams/{team_id}/files/upload/sessions` 和个人空间恢复接口返回相同结构，但只列出该团队作用域下当前用户发起、仍未过期且可恢复的 session
 - 团队 `POST /teams/{team_id}/files/{id}/extract` 语义和个人空间一致：创建 `archive_extract` 任务，不会同步阻塞到解包完成
 - 团队 `POST /teams/{team_id}/batch/archive-compress` 语义和个人空间一致：创建 `archive_compress` 任务，把打包结果写回团队工作空间
 

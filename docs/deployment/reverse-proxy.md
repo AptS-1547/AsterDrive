@@ -4,7 +4,7 @@ AsterDrive 不内置 TLS 终端。
 只要你准备把站点暴露到公网、开放 WebDAV，或者接外部 Office / WOPI 服务，前面就**必须**有一层反向代理来负责：
 
 - HTTPS 证书
-- 安全响应头（至少给站点页面补一条基线 `Content-Security-Policy`）
+- HTTPS 相关安全响应头，并保留 AsterDrive 返回的页面基线 `Content-Security-Policy`
 - HTTP 到 HTTPS 重定向
 - 大文件上传体积限制
 - SSE 长连接超时和缓冲
@@ -19,7 +19,7 @@ AsterDrive 不内置 TLS 终端。
 - `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 填成真实的 `https://` 来源，多个公开域名逐项添加，例如 `https://drive.example.com`
 - 静态引导项 `auth.bootstrap_insecure_cookies` 只在纯 HTTP 首次引导时临时设成 `true`
 - 正式切到 HTTPS 后，把 `auth.bootstrap_insecure_cookies` 去掉，并确认运行时 `auth_cookie_secure` 已恢复为开启
-- 代理层至少给浏览器页面补上一条可用的基线 `Content-Security-Policy`，别只做 HTTPS
+- 首页响应头里能看到 AsterDrive 返回的页面基线 `Content-Security-Policy`，代理层没有删掉或覆盖成不兼容的策略
 - 不要把站点自己的基线 CSP 直接改成全站 `sandbox`
 - 代理层不要拦掉 WebDAV 的 `PROPFIND`、`MOVE`、`COPY`、`LOCK`、`UNLOCK`
 - 代理层不要覆盖缩略图接口返回的 `ETag` / `Cache-Control`
@@ -74,10 +74,6 @@ drive.example.com {
     @embedded_static path /static/* /pdfjs/*
     header @embedded_static Cache-Control "public, max-age=86400"
 
-    header {
-        Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-src 'self';"
-    }
-
     reverse_proxy 127.0.0.1:3000 {
         # SSE 需要尽快 flush，不要让代理层攒着不发
         flush_interval -1
@@ -89,7 +85,7 @@ drive.example.com {
 
 - 自动 HTTPS
 - 自动 HTTP 到 HTTPS 跳转
-- 浏览器页面带基线 CSP
+- 浏览器页面保留 AsterDrive 返回的基线 CSP
 - SSE 立即刷出
 - WebDAV / WOPI / 普通 API 全站透传
 
@@ -163,7 +159,6 @@ server {
 
     location / {
         proxy_pass http://127.0.0.1:3000;
-        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-src 'self';" always;
     }
 }
 ```
@@ -233,7 +228,6 @@ services:
       - traefik.http.routers.asterdrive.entrypoints=websecure
       - traefik.http.routers.asterdrive.tls=true
       - traefik.http.routers.asterdrive.tls.certresolver=letsencrypt
-      - traefik.http.routers.asterdrive.middlewares=asterdrive-security
       - traefik.http.routers.asterdrive.service=asterdrive
 
       - traefik.http.routers.asterdrive-assets.rule=Host(`drive.example.com`) && (PathPrefix(`/assets/`) || PathPrefix(`/static/`) || PathPrefix(`/pdfjs/`))
@@ -245,7 +239,6 @@ services:
       - traefik.http.routers.asterdrive-assets.service=asterdrive
 
       - traefik.http.middlewares.asterdrive-static-cache.headers.customresponseheaders.Cache-Control=public, max-age=86400
-      - "traefik.http.middlewares.asterdrive-security.headers.contentSecurityPolicy=default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-src 'self';"
 
       - traefik.http.services.asterdrive.loadbalancer.server.port=3000
 ```
@@ -255,15 +248,15 @@ Traefik 默认会补上常见的 `X-Forwarded-*` 头。
 
 - `web` 要跳到 `websecure`
 - `websecure` 的超时别太短
-- 给页面入口对应的 router 挂上 headers middleware，别只给 `/assets/` 那个 router 配缓存
+- 不要用 headers middleware 把 AsterDrive 返回的页面 CSP 覆盖掉
 - 不要再给 WebDAV 或缩略图路由套一层会覆盖响应头的 middleware
 
 如果你想把 `/assets/` 做成更激进的 `immutable` 缓存，建议单独再拆一个 router；别顺手把所有 `/api/v1/*` 都改成强缓存，那是给自己找麻烦。
 
 ## CSP / 安全响应头
 
-AsterDrive 当前不会替你在 SPA 页面上自动补一套通用 CSP。  
-如果安全扫描报“无 `Content-Security-Policy` 响应头”，优先在反向代理或你自己的网关中间件层收口，不要指望靠前端构建产物自己解决。
+AsterDrive 现在会给前端 HTML 自动返回一条页面基线 `Content-Security-Policy`。
+反向代理要做的是**保留它**，而不是自己随手覆盖一条更窄的策略。安全扫描如果还报“无 CSP”，先看代理有没有把上游响应头删掉，或者只测到了静态资源 / API 路径。
 
 ### 先把两类 CSP 分清楚
 
@@ -277,38 +270,39 @@ AsterDrive 当前不会替你在 SPA 页面上自动补一套通用 CSP。
 
 所以部署时要按这个原则走：
 
-- 反向代理继续给站点页面补**基线 CSP**
+- 反向代理保留 AsterDrive 给站点页面返回的**基线 CSP**
 - 不要把全站 `Content-Security-Policy` 统一改写成 `sandbox`
 - 不要在代理层移除上游对危险 inline 文件返回的 `Content-Security-Policy`
 - 如果代理层和应用层都返回了 CSP，浏览器会**同时执行**这些策略；这是允许的，但策略会按更严格的结果生效
 
-推荐先从这条基线策略起步：
+当前页面基线策略长这样：
 
 ```text
 default-src 'self';
 base-uri 'self';
-form-action 'self';
-frame-ancestors 'self';
 object-src 'none';
-script-src 'self';
+frame-ancestors 'self';
+script-src 'self' 'unsafe-inline';
 style-src 'self' 'unsafe-inline';
-img-src 'self' data: blob:;
+img-src 'self' data: blob: http: https:;
 font-src 'self' data:;
-connect-src 'self';
+connect-src 'self' http: https: ws: wss:;
 media-src 'self' blob:;
-worker-src 'self';
+worker-src 'self' blob:;
+frame-src 'self' http: https:;
 manifest-src 'self';
-frame-src 'self';
 ```
 
 这条策略是按当前前端实际行为收出来的，别乱删：
 
+- `script-src 'unsafe-inline'` 现在要保留；自定义前端和占位符注入里仍可能出现内联脚本
 - `style-src 'unsafe-inline'` 现在要保留；前端里有运行时内联样式和动态 `<style>`，硬去掉会直接炸样式
-- `img-src 'self' data: blob:` 和 `media-src 'self' blob:` 要保留；缩略图、图片 / 视频预览、头像裁剪会用到对象 URL
-- `worker-src 'self'` 要保留；PDF 预览会从同源静态资源加载 worker
-- 如果启用了 Gravatar 或预览应用图标外链，把对应域名补到 `img-src`
-- 如果预览应用或 WOPI 用的是 `iframe` 且跑在其他域名，把那些域名补到 `frame-src`
-- 如果你把 API、静态资源或字体拆到别的源，再按实际情况补 `connect-src`、`script-src`、`style-src`、`font-src` 或 `worker-src`
+- `img-src 'self' data: blob: http: https:` 和 `media-src 'self' blob:` 要保留；缩略图、图片 / 视频预览、头像裁剪、外链图标会用到这些来源
+- `connect-src 'self' http: https: ws: wss:` 要保留；预签名上传 / 下载、远程 follower、实时推送都会用到
+- `worker-src 'self' blob:` 要保留；PDF 预览会用 worker，某些构建方式会走 blob worker
+- `frame-src 'self' http: https:` 要保留；外部预览应用和 WOPI 入口可能不是同源 iframe
+
+如果你一定要在网关层覆盖 CSP，至少先抄上面这条，再按你的真实部署往回收。别直接拿网上那种 `connect-src 'self'` 的模板套上去，预签名上传、外部预览或远程节点很容易被你自己拦掉。
 
 想继续收紧时，先用 `Content-Security-Policy-Report-Only` 跑一轮真实验收，再切强制模式。  
 至少测试一次登录、上传、PDF 预览、文本预览、分享页、头像、以及外部预览应用 / WOPI。
@@ -358,7 +352,7 @@ AsterDrive 的缩略图接口已经返回了：
 ## 上线后最少验收一次
 
 1. 浏览器能通过 `https://你的域名/` 正常登录
-2. 首页响应头里已经能看到页面基线 `Content-Security-Policy`
+2. 首页响应头里已经能看到 AsterDrive 返回的页面基线 `Content-Security-Policy`，代理层没有删掉或覆盖成不兼容的策略
 3. `管理 -> 系统设置 -> 公开站点地址` 里每一行都是真实 `https://` 来源；如果有多个公开域名，分别从每个域名登录一次，确认 WebDAV 地址和分享链接使用当前域名
 4. 上传一个大文件，确认不会被代理层截断
 5. 打开两个浏览器标签页，确认文件变更能通过 SSE 刷新出来

@@ -146,6 +146,7 @@ managed_ingress_local_root = "/data/managed-ingress"
 ```bash
 ASTER__SERVER__HOST=0.0.0.0
 ASTER__SERVER__PORT=3000
+ASTER__SERVER__WORKERS=0
 ASTER__SERVER__TEMP_DIR=/data/.tmp
 ASTER__SERVER__UPLOAD_TEMP_DIR=/data/.uploads
 ASTER__SERVER__START_MODE=follower

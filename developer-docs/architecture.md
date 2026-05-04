@@ -14,6 +14,7 @@
 - 后端主线仍然是：
   `src/api/routes/*` -> `src/services/*` -> `src/db/repository/*` / `src/storage/*`
 - WebDAV 不是普通 REST 路由的一个分支，而是独立挂载在 `src/webdav/`
+- 运行二进制默认启动 HTTP 服务；启用默认 `cli` feature 时，同一入口还提供 `doctor`、`config`、`database-migrate`、`node enroll` 等运维子命令
 - 前端代码在 `frontend-panel/`，生产产物由 primary 节点直接服务
 - 配置分两层：
   - 静态配置：`data/config.toml` + `ASTER__...` 环境变量
@@ -24,6 +25,7 @@
 | 你想回答的问题 | 先看哪里 | 为什么 |
 | --- | --- | --- |
 | 服务怎么启动、怎么区分 primary / follower | `src/main.rs`、`src/config/node_mode.rs`、`src/runtime/startup/` | 这里决定启动模式、运行时状态和节点职责 |
+| 运维 CLI 怎么执行 | `src/main.rs`、`src/cli/**` | `cli` feature 下的子命令在进入 HTTP 启动前分派 |
 | 主节点挂了哪些路由 | `src/api/primary.rs`、`src/api/routes/` | 这里决定 `/api/v1`、`/health`、`/d`、`/pv`、WebDAV 和前端兜底的注册顺序 |
 | 从节点到底暴露什么 | `src/api/follower.rs`、`src/api/routes/internal_storage.rs` | follower 只负责内部存储协议和健康检查 |
 | 一个 REST 接口怎么实现 | 对应 `src/api/routes/**` 文件 | route 层做参数解析、鉴权包装和响应适配 |
@@ -182,11 +184,12 @@ WebDAV 不走 `src/api/routes/**`，而是：
 
 1. 安装 panic hook
 2. 加载 `.env`
-3. 初始化静态配置
-4. 初始化日志
-5. 可选初始化 metrics
-6. 清理 runtime 临时目录
-7. 根据 `config.server.start_mode` 选择 `primary` 或 `follower`
+3. 如果启用了 `cli` feature 且传入了 CLI 子命令，先执行对应命令并直接退出
+4. 初始化静态配置
+5. 初始化日志
+6. 可选初始化 metrics
+7. 清理 runtime 临时目录
+8. 根据 `config.server.start_mode` 选择 `primary` 或 `follower`
 
 ### `prepare_common()`
 
@@ -199,7 +202,7 @@ WebDAV 不走 `src/api/routes/**`，而是：
 5. 仅 primary 模式下补种默认策略组
 6. 初始化 `auth_cookie_secure` 引导值
 7. 写入 `system_config` 默认值
-8. 清理废弃的 `node_runtime_mode` 运行时配置键
+8. 清理废弃的 `node_runtime_mode` 和旧 thumbnail 运行时配置键
 9. 重载 `PolicySnapshot`
 10. 根据节点模式重载 `DriverRegistry`
 11. 初始化缓存后端
@@ -247,6 +250,20 @@ primary 周期任务由 `src/runtime/tasks.rs` 注册，间隔来自运行时配
 
 这些周期任务每次执行后都会写成 `SystemRuntime` 风格的任务运行记录，供管理后台查看。
 
+## CLI 与离线运维入口
+
+`Cargo.toml` 里默认 feature 包含 `cli`，所以默认构建出来的 `aster_drive` 既能直接启动服务，也能执行离线运维子命令。`src/main.rs` 会在 HTTP 服务启动前先解析这些子命令：
+
+| 子命令 | 代码入口 | 当前职责 |
+| --- | --- | --- |
+| `serve` 或无子命令 | `src/main.rs` | 启动 primary / follower HTTP 服务 |
+| `doctor` | `src/cli/doctor.rs`、`src/cli/doctor/**` | 数据库、migration、运行时配置、存储策略和深度一致性审计 |
+| `config` | `src/cli/config.rs` | 离线读取、设置、导入、导出、校验 `system_config` |
+| `database-migrate` | `src/cli/database_migration.rs`、`src/cli/database_migration/**` | 跨数据库后端迁移，支持 dry-run、verify-only 和断点续传 |
+| `node enroll` | `src/cli/node.rs` | follower 用主节点签发的 enrollment token 写入本地 master binding |
+
+这些 CLI 通常直接连接数据库，不经过 HTTP route 层。改这类能力时先看 `src/cli/**` 和对应 service，而不是去 `src/api/routes/**` 里找。
+
 ## 配置分层
 
 ### 静态配置
@@ -263,6 +280,8 @@ primary 周期任务由 `src/runtime/tasks.rs` 注册，间隔来自运行时配
 - 数据库连接
 - WebDAV 前缀
 - 缓存和日志
+
+首次启动会自动创建 `data/config.toml`。配置文件里的相对路径默认相对于 `data/` 解析；兼容旧值时，已经写成 `data/...` 的相对路径会避免二次拼出 `data/data/...`。根目录下的旧 `config.toml` 不再是默认读取位置。
 
 ### 运行时配置
 

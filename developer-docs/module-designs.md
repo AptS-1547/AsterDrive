@@ -4,12 +4,13 @@
 
 这里描述的是当前仓库的实现设计，不是未来计划，也不是理想化重写方案。
 
-首批覆盖四块：
+当前覆盖五块：
 
 - 统一工作空间存储链路
 - 分享服务
 - 后台任务系统
 - `doctor` / 一致性审计
+- 跨数据库迁移 CLI
 
 如果你只是想知道“请求从哪里进来、代码应该改在哪一层”，先看 [`architecture.md`](./architecture.md)。如果你已经知道入口，但还不清楚模块内部为什么这么拆、边界为什么这样收，继续看本文。
 
@@ -331,7 +332,7 @@ dispatcher 会定期续心跳，数据库里同时记录：
 来决定进入：
 
 - `Failed`
-- `PendingRetry`
+- `Retry`
 - 或者被新 lease 接手继续处理
 
 也就是说，“失败”在这里不是单一语义，而是带重试预算和 lease 状态的结果。
@@ -367,6 +368,7 @@ dispatcher 会定期续心跳，数据库里同时记录：
 对应代码主要在：
 
 - `src/cli/doctor.rs`
+- `src/cli/doctor/execute.rs`
 - `src/services/integrity_service.rs`
 - `src/storage/driver.rs`
 
@@ -481,6 +483,95 @@ dispatcher 会定期续心跳，数据库里同时记录：
 - 清理任务或手工修复前的事实确认
 
 而不是替代平时的监控、日志和报警。
+
+## 5. 跨数据库迁移 CLI
+
+对应代码主要在：
+
+- `src/cli/database_migration.rs`
+- `src/cli/database_migration/apply.rs`
+- `src/cli/database_migration/checkpoint.rs`
+- `src/cli/database_migration/schema.rs`
+- `src/cli/database_migration/verify.rs`
+
+### 设计目标
+
+`database-migrate` 解决的是“把一个已经运行过的 AsterDrive 实例从一个数据库后端搬到另一个后端”的问题，例如 SQLite 迁到 PostgreSQL，或者 MySQL 迁到 PostgreSQL。
+
+它不是在线业务请求，也不是 SeaORM migration 的替代品。它做的是：
+
+- 连接源库和目标库
+- 校验两端数据库后端和 migration 状态
+- 在目标库准备 schema
+- 按固定表顺序复制业务数据
+- 维护断点续传检查点
+- 复制后做数量、唯一约束、外键约束校验
+
+### 为什么单独做 CLI
+
+跨库迁移需要长时间持有外部连接、展示进度、处理中断恢复，还需要在真实业务停机窗口内运行。把它塞进 HTTP Admin API 会带来几个不必要的问题：
+
+- HTTP 超时和反向代理限制会干扰长任务
+- 失败恢复需要额外设计远程控制面
+- 迁移期间本来就不适合让普通业务继续写入
+
+所以当前实现直接做成离线 CLI：命令行负责用户交互和报告，迁移逻辑负责确定性复制与校验。
+
+### 表复制顺序
+
+迁移不是简单按字母序 dump 表。`COPY_TABLE_ORDER` 固定了复制顺序，先复制被依赖的基础表，再复制引用它们的业务表，例如：
+
+- `managed_followers`
+- `storage_policies`
+- `storage_policy_groups`
+- `users`
+- `teams`
+- `folders`
+- `file_blobs`
+- `files`
+- `file_versions`
+- `shares`
+- `upload_sessions`
+- `background_tasks`
+- `resource_locks`
+- `wopi_sessions`
+
+这个顺序必须和外键关系一起维护。新增表时，别只加 migration 和 entity，还要评估它是否应该进入 `COPY_TABLE_ORDER`，以及应该插在哪个位置。
+
+### 断点续传模型
+
+迁移检查点存在目标库的 `aster_cli_database_migrations` 表里。
+
+这张表不是业务表，而是 CLI 自己的执行状态，用来记录：
+
+- 当前迁移 key
+- 当前阶段
+- 正在复制的表
+- 已复制到的游标 / 批次状态
+- 整体执行状态
+
+这样设计的原因很直接：跨库迁移可能因为网络、权限、磁盘、容器重启等原因中断。只要目标库还在，下一次运行可以基于检查点继续，而不是无脑从头拷。
+
+### 模式选择
+
+当前有三种运行模式：
+
+- 默认 apply：准备目标 schema、复制数据、执行校验
+- `--dry-run`：只做计划和预检，不写业务数据
+- `--verify-only`：只校验已有目标库数据，不执行复制
+
+另外可以用 `ASTER_CLI_PROGRESS` 控制进度输出，用 `ASTER_CLI_COPY_BATCH_SIZE` 调整复制批大小。测试里还保留了 `ASTER_CLI_FAIL_AFTER_BATCHES` 用于模拟中断恢复。
+
+### 校验边界
+
+复制后校验会关注：
+
+- 源表和目标表行数是否一致
+- 目标库唯一约束是否存在冲突
+- 目标库外键约束是否存在违反
+- 自增序列是否需要重置
+
+它不会替你判断业务层面的“是否应该迁移某些历史数据”。这条链路的目标是忠实复制当前数据库状态，而不是做清洗或重构。
 
 ## 什么时候应该继续扩展本文
 
