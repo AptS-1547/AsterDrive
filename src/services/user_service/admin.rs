@@ -221,9 +221,9 @@ pub async fn update_with_audit(
 /// 强制删除用户及其所有数据（不可逆）
 ///
 /// 级联清理顺序：
-/// 1. 永久删除所有文件（blob cleanup + 版本 + 缩略图 + 属性）
-/// 2. 删除所有文件夹（+ 属性）
-/// 3. 删除所有分享链接
+/// 1. 删除所有分享链接
+/// 2. 永久删除所有文件（blob cleanup + 版本 + 缩略图 + 属性）
+/// 3. 删除所有文件夹（+ 属性）
 /// 4. 删除所有 WebDAV 账号
 /// 5. 删除头像上传对象
 /// 6. 删除用户存储策略分配
@@ -255,6 +255,8 @@ pub async fn force_delete(
         user.username
     );
 
+    let share_count = share_repo::delete_all_by_user(db, target_user_id).await?;
+
     let all_files = file_repo::find_all_by_user(db, target_user_id).await?;
     let file_count = all_files.len();
     if let Err(error) =
@@ -274,7 +276,6 @@ pub async fn force_delete(
     .await?;
     folder_repo::delete_many(db, &folder_ids).await?;
 
-    let share_count = share_repo::delete_all_by_user(db, target_user_id).await?;
     let webdav_account_count = webdav_account_repo::delete_all_by_user(db, target_user_id).await?;
 
     if let Err(error) = profile_service::cleanup_avatar_upload(state, target_user_id).await {

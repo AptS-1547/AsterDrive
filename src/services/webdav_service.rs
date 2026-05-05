@@ -5,7 +5,7 @@ use std::pin::Pin;
 
 use chrono::Utc;
 
-use crate::db::repository::{file_repo, folder_repo};
+use crate::db::repository::{file_repo, folder_repo, share_repo};
 use crate::entities::folder;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
@@ -104,6 +104,7 @@ pub async fn recursive_purge_folder(
     )
     .await?;
 
+    share_repo::delete_by_folder_ids(&state.db, &all_folder_ids).await?;
     folder_repo::delete_many(&state.db, &all_folder_ids).await?;
 
     Ok(())

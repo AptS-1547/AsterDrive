@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use futures::{StreamExt, stream};
 
-use crate::db::repository::file_repo;
+use crate::db::repository::{file_repo, share_repo};
 use crate::entities::file;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
@@ -71,6 +71,7 @@ pub(crate) async fn batch_purge_in_scope(
     )
     .await?;
 
+    share_repo::delete_by_file_ids(&txn, &file_ids).await?;
     file_repo::delete_many(&txn, &file_ids).await?;
 
     let mut blob_decrements = BTreeMap::<i64, i64>::new();

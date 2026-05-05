@@ -322,6 +322,30 @@ pub async fn delete_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> 
     Ok(())
 }
 
+pub async fn delete_by_file_ids<C: ConnectionTrait>(db: &C, file_ids: &[i64]) -> Result<u64> {
+    if file_ids.is_empty() {
+        return Ok(0);
+    }
+    let res = Share::delete_many()
+        .filter(share::Column::FileId.is_in(file_ids.iter().copied()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(res.rows_affected)
+}
+
+pub async fn delete_by_folder_ids<C: ConnectionTrait>(db: &C, folder_ids: &[i64]) -> Result<u64> {
+    if folder_ids.is_empty() {
+        return Ok(0);
+    }
+    let res = Share::delete_many()
+        .filter(share::Column::FolderId.is_in(folder_ids.iter().copied()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(res.rows_affected)
+}
+
 /// 原子递增 view_count
 pub async fn increment_view_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Share::update_many()

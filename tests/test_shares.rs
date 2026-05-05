@@ -1322,6 +1322,138 @@ async fn test_my_shares_list_deleted_and_expired_status() {
 }
 
 #[actix_web::test]
+async fn test_purging_trash_removes_related_shares() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let standalone_file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Purge Shared Folder" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+    let nested_file_id = upload_test_file_to_folder!(app, token, folder_id);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "target": file_target(standalone_file_id) }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let standalone_share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "target": folder_target(folder_id) }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "target": file_target(nested_file_id) }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let nested_file_share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{standalone_file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/folders/{folder_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/shares?limit=10&offset=0")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 3);
+    let items = body["data"]["items"].as_array().unwrap();
+    for share_token in [
+        &standalone_share_token,
+        &folder_share_token,
+        &nested_file_share_token,
+    ] {
+        let item = items
+            .iter()
+            .find(|item| item["token"] == share_token.as_str())
+            .expect("share should remain while resource is only in trash");
+        assert_eq!(item["resource_deleted"], true);
+        assert_eq!(item["status"], "deleted");
+    }
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/trash/file/{standalone_file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/trash/folder/{folder_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/shares?limit=10&offset=0")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 0);
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 0);
+
+    for share_token in [
+        standalone_share_token,
+        folder_share_token,
+        nested_file_share_token,
+    ] {
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/s/{share_token}"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+    }
+}
+
+#[actix_web::test]
 async fn test_share_folder_deep_scope_and_outside_access() {
     let state = common::setup().await;
     let app = create_test_app!(state);
