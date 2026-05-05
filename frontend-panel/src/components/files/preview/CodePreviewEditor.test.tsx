@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { CodePreviewEditor } from "@/components/files/preview/CodePreviewEditor";
 
 describe("CodePreviewEditor", () => {
@@ -33,5 +33,54 @@ describe("CodePreviewEditor", () => {
 		);
 
 		expect(container.querySelector("pre")).toHaveStyle({ whiteSpace: "pre" });
+	});
+
+	it("does not intercept textarea keys while IME composition is active", () => {
+		const onChange = vi.fn();
+		render(
+			<CodePreviewEditor
+				language="plaintext"
+				theme="vs"
+				value="hello"
+				onChange={onChange}
+				options={{
+					readOnly: false,
+				}}
+			/>,
+		);
+
+		const textarea = screen.getByLabelText(
+			"Code editor",
+		) as HTMLTextAreaElement;
+		textarea.setSelectionRange(2, 2);
+
+		fireEvent.compositionStart(textarea);
+		fireEvent.keyDown(textarea, { key: "Tab" });
+
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it("treats keyCode 229 as IME composition for iPad Safari", () => {
+		const onChange = vi.fn();
+		render(
+			<CodePreviewEditor
+				language="plaintext"
+				theme="vs"
+				value="hello"
+				onChange={onChange}
+				options={{
+					readOnly: false,
+				}}
+			/>,
+		);
+
+		const textarea = screen.getByLabelText(
+			"Code editor",
+		) as HTMLTextAreaElement;
+		textarea.setSelectionRange(2, 2);
+
+		fireEvent.keyDown(textarea, { key: "Tab", keyCode: 229 });
+
+		expect(onChange).not.toHaveBeenCalled();
 	});
 });

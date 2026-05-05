@@ -19,6 +19,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
 import { formatBytes, formatDate } from "@/lib/format";
+import { isImeComposingKeyEvent } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import { workspaceFolderPath } from "@/lib/workspace";
 import { fileService } from "@/services/fileService";
@@ -160,6 +161,8 @@ export function GlobalSearchDialog({
 	const navigate = useNavigate();
 	const workspace = useWorkspaceStore((state) => state.workspace);
 	const inputRef = useRef<HTMLInputElement | null>(null);
+	const inputComposingRef = useRef(false);
+	const inputCompositionEndAtRef = useRef(0);
 	const resultListRef = useRef<HTMLDivElement | null>(null);
 	const loadMoreRef = useRef<HTMLDivElement | null>(null);
 	const controllerRef = useRef<AbortController | null>(null);
@@ -195,6 +198,8 @@ export function GlobalSearchDialog({
 
 	useEffect(() => {
 		if (!open) {
+			inputComposingRef.current = false;
+			inputCompositionEndAtRef.current = 0;
 			controllerRef.current?.abort();
 			controllerRef.current = null;
 			requestIdRef.current += 1;
@@ -421,6 +426,15 @@ export function GlobalSearchDialog({
 	};
 
 	const handleInputKeyDown = async (event: KeyboardEvent<HTMLInputElement>) => {
+		if (
+			inputComposingRef.current ||
+			isImeComposingKeyEvent(event, {
+				lastCompositionEndAt: inputCompositionEndAtRef.current,
+			})
+		) {
+			return;
+		}
+
 		if (event.key === "ArrowDown") {
 			if (resultEntries.length === 0) {
 				return;
@@ -472,6 +486,17 @@ export function GlobalSearchDialog({
 								ref={inputRef}
 								value={query}
 								onChange={(event) => setQuery(event.target.value)}
+								onCompositionStart={() => {
+									inputComposingRef.current = true;
+								}}
+								onCompositionEnd={(event) => {
+									inputComposingRef.current = false;
+									inputCompositionEndAtRef.current = Date.now();
+									setQuery(event.currentTarget.value);
+								}}
+								onBlur={() => {
+									inputComposingRef.current = false;
+								}}
 								onKeyDown={(event) => {
 									void handleInputKeyDown(event);
 								}}

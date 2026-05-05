@@ -90,4 +90,29 @@ describe("useSelectionShortcuts", () => {
 
 		expect(selectAll).not.toHaveBeenCalled();
 	});
+
+	it("ignores shortcuts while the browser is composing IME text", () => {
+		const clearSelection = vi.fn();
+		const selectAll = vi.fn();
+
+		renderHook(() =>
+			useSelectionShortcuts({
+				selectAll,
+				clearSelection,
+			}),
+		);
+
+		fireEvent.keyDown(document, {
+			ctrlKey: true,
+			key: "a",
+			keyCode: 229,
+		});
+		fireEvent.keyDown(document, {
+			key: "Escape",
+			keyCode: 229,
+		});
+
+		expect(selectAll).not.toHaveBeenCalled();
+		expect(clearSelection).not.toHaveBeenCalled();
+	});
 });

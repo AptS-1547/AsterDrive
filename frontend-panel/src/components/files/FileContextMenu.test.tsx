@@ -90,8 +90,8 @@ describe("FileContextMenu", () => {
 		fireEvent.click(screen.getByText("download"));
 		fireEvent.click(screen.getByText("tasks:archive_extract_action"));
 		fireEvent.click(screen.getByText("tasks:archive_compress_action"));
-		fireEvent.click(screen.getByText("share:share_mode_page"));
-		fireEvent.click(screen.getByText("share:share_mode_direct"));
+		fireEvent.click(screen.getByText("share"));
+		fireEvent.click(screen.getByText("share:share_direct_link_action"));
 		fireEvent.click(screen.getByText("copy"));
 		fireEvent.click(screen.getByText("move"));
 		fireEvent.click(screen.getByText("rename"));
@@ -130,9 +130,9 @@ describe("FileContextMenu", () => {
 		expect(
 			screen.getByText("tasks:archive_download_action"),
 		).toBeInTheDocument();
-		expect(screen.getByText("share:share_mode_page")).toBeInTheDocument();
+		expect(screen.getByText("share")).toBeInTheDocument();
 		expect(
-			screen.queryByText("share:share_mode_direct"),
+			screen.queryByText("share:share_direct_link_action"),
 		).not.toBeInTheDocument();
 		expect(screen.queryByText("open_with_action")).not.toBeInTheDocument();
 		expect(screen.queryByText("versions")).not.toBeInTheDocument();

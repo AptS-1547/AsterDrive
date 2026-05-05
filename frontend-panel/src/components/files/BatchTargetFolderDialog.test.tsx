@@ -347,6 +347,23 @@ describe("BatchTargetFolderDialog", () => {
 		).toBeInTheDocument();
 	});
 
+	it("does not submit the inline folder form while IME composition is active", async () => {
+		renderDialog();
+
+		await screen.findByText("empty");
+		fireEvent.click(screen.getByRole("button", { name: "create-folder" }));
+
+		const input = screen.getByPlaceholderText("folder-name");
+		fireEvent.change(input, {
+			target: { value: "bao" },
+		});
+		fireEvent.compositionStart(input);
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		expect(mockState.createFolder).not.toHaveBeenCalled();
+		expect(screen.getByPlaceholderText("folder-name")).toBeInTheDocument();
+	});
+
 	it("reports load failures and falls back to the empty state", async () => {
 		const error = new Error("load failed");
 		mockState.listRoot.mockRejectedValueOnce(error);

@@ -107,12 +107,12 @@ export function FileContextMenu({
 				)}
 				<ContextMenuItem onClick={onPageShare}>
 					<Icon name="Link" className="h-4 w-4 mr-2" />
-					{t("share:share_mode_page")}
+					{t("share")}
 				</ContextMenuItem>
 				{!isFolder && onDirectShare && (
 					<ContextMenuItem onClick={onDirectShare}>
 						<Icon name="LinkSimple" className="h-4 w-4 mr-2" />
-						{t("share:share_mode_direct")}
+						{t("share:share_direct_link_action")}
 					</ContextMenuItem>
 				)}
 				<ContextMenuItem onClick={onCopy}>

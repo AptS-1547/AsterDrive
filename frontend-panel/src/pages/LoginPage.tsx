@@ -584,7 +584,6 @@ export default function LoginPage() {
 		}
 		if (showPasswordResetRequest) return t("password_reset_request_desc");
 		if (mode === "setup") return t("setup_desc");
-		if (registrationClosed) return t("registration_closed_desc");
 		if (mode === "register") return t("create_new_account");
 		if (mode === "login") return t("enter_password");
 		return t("sign_in_to_account");

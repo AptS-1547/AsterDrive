@@ -8,6 +8,7 @@ import {
 } from "@/hooks/useSelectionShortcuts";
 import type { BatchOperation } from "@/lib/formatBatchToast";
 import { formatBatchToast } from "@/lib/formatBatchToast";
+import { isImeComposingKeyEvent } from "@/lib/keyboard";
 import { useFileStore } from "@/stores/fileStore";
 
 export function useKeyboardShortcuts() {
@@ -19,7 +20,9 @@ export function useKeyboardShortcuts() {
 
 	useEffect(() => {
 		function handleKeyDown(e: KeyboardEvent) {
-			if (shouldIgnoreKeyboardTarget(e.target)) return;
+			if (shouldIgnoreKeyboardTarget(e.target) || isImeComposingKeyEvent(e)) {
+				return;
+			}
 
 			const mod = e.metaKey || e.ctrlKey;
 			const key = e.key.toLowerCase();

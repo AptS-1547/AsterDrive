@@ -158,6 +158,24 @@ describe("useKeyboardShortcuts", () => {
 		);
 	});
 
+	it("ignores shortcuts while IME composition is active", async () => {
+		const { useKeyboardShortcuts } = await import(
+			"@/hooks/useKeyboardShortcuts"
+		);
+		mockState.store.clipboardCopy = vi.fn(() => 2);
+
+		renderHook(() => useKeyboardShortcuts());
+
+		fireEvent.keyDown(document, {
+			ctrlKey: true,
+			key: "c",
+			keyCode: 229,
+		});
+
+		expect(mockState.store.clipboardCopy).not.toHaveBeenCalled();
+		expect(mockState.toastInfo).not.toHaveBeenCalled();
+	});
+
 	it("formats and displays paste results", async () => {
 		const { useKeyboardShortcuts } = await import(
 			"@/hooks/useKeyboardShortcuts"

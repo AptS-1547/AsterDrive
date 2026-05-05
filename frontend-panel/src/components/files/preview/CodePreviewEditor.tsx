@@ -13,6 +13,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { isImeComposingKeyEvent } from "@/lib/keyboard";
 import { withScopedPrismClassName } from "./prismClassNames";
 
 const KEY_CODE = {
@@ -403,6 +404,8 @@ export function CodePreviewEditor({
 	const gutterContentRef = useRef<HTMLDivElement | null>(null);
 	const onMountRef = useRef(onMount);
 	const overlayContentRef = useRef<HTMLDivElement | null>(null);
+	const textareaComposingRef = useRef(false);
+	const textareaCompositionEndAtRef = useRef(0);
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
 	const deferredValue = useDeferredValue(value);
@@ -611,7 +614,27 @@ export function CodePreviewEditor({
 							wrap={wrap ? "soft" : "off"}
 							value={value}
 							onChange={(event) => onChange?.(event.currentTarget.value)}
+							onCompositionStart={() => {
+								textareaComposingRef.current = true;
+							}}
+							onCompositionEnd={(event) => {
+								textareaComposingRef.current = false;
+								textareaCompositionEndAtRef.current = Date.now();
+								onChange?.(event.currentTarget.value);
+							}}
+							onBlur={() => {
+								textareaComposingRef.current = false;
+							}}
 							onKeyDown={(event) => {
+								if (
+									textareaComposingRef.current ||
+									isImeComposingKeyEvent(event, {
+										lastCompositionEndAt: textareaCompositionEndAtRef.current,
+									})
+								) {
+									return;
+								}
+
 								if (event.key === "Tab" && !event.shiftKey) {
 									event.preventDefault();
 									onChange?.(insertTabAtSelection(event.currentTarget));

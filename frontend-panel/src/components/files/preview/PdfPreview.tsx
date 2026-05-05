@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
+import { isImeComposingKeyEvent } from "@/lib/keyboard";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 
@@ -68,6 +69,8 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 	} | null>(null);
 	const [viewerWidth, setViewerWidth] = useState(0);
 	const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
+	const pageInputComposingRef = useRef(false);
+	const pageInputCompositionEndAtRef = useRef(0);
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 	const scrollFrameRef = useRef<number | null>(null);
 
@@ -203,6 +206,15 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 
 	const handlePageInputKeyDown = useCallback(
 		(event: KeyboardEvent<HTMLInputElement>) => {
+			if (
+				pageInputComposingRef.current ||
+				isImeComposingKeyEvent(event, {
+					lastCompositionEndAt: pageInputCompositionEndAtRef.current,
+				})
+			) {
+				return;
+			}
+
 			if (event.key !== "Enter") return;
 			event.preventDefault();
 			commitPageInput();
@@ -374,7 +386,19 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 								const nextValue = event.target.value.replace(/\D+/g, "");
 								setPageInputValue(nextValue);
 							}}
-							onBlur={commitPageInput}
+							onCompositionStart={() => {
+								pageInputComposingRef.current = true;
+							}}
+							onCompositionEnd={(event) => {
+								pageInputComposingRef.current = false;
+								pageInputCompositionEndAtRef.current = Date.now();
+								const nextValue = event.currentTarget.value.replace(/\D+/g, "");
+								setPageInputValue(nextValue);
+							}}
+							onBlur={() => {
+								pageInputComposingRef.current = false;
+								commitPageInput();
+							}}
 							onKeyDown={handlePageInputKeyDown}
 							inputMode="numeric"
 							className="h-6 w-12 rounded-md px-1 text-center text-xs tabular-nums"

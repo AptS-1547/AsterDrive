@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { shouldIgnoreKeyboardTarget } from "@/hooks/useSelectionShortcuts";
 import type { InternalDragData } from "@/lib/dragDrop";
+import { isImeComposingKeyEvent } from "@/lib/keyboard";
 
 interface AppLayoutProps {
 	children: ReactNode;
@@ -40,7 +41,10 @@ export function AppLayout({
 
 	useEffect(() => {
 		function handleKeyDown(event: KeyboardEvent) {
-			if (shouldIgnoreKeyboardTarget(event.target)) {
+			if (
+				shouldIgnoreKeyboardTarget(event.target) ||
+				isImeComposingKeyEvent(event)
+			) {
 				return;
 			}
 

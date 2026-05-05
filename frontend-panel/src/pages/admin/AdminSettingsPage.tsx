@@ -29,6 +29,7 @@ import {
 	ADMIN_SETTINGS_SAVE_BAR_MIN_RESERVED_HEIGHT_DESKTOP_PX,
 	ADMIN_SETTINGS_SAVE_BAR_MIN_RESERVED_HEIGHT_MOBILE_PX,
 } from "@/lib/constants";
+import { isImeComposingKeyEvent } from "@/lib/keyboard";
 import { setPublicSiteUrls } from "@/lib/publicSiteUrl";
 import { useAuthStore } from "@/stores/authStore";
 import { useBrandingStore } from "@/stores/brandingStore";
@@ -218,7 +219,11 @@ export default function AdminSettingsPage({
 
 	const handleSaveShortcut = useEffectEvent((event: KeyboardEvent) => {
 		const mod = event.metaKey || event.ctrlKey;
-		if (!mod || event.key.toLowerCase() !== "s") {
+		if (
+			!mod ||
+			event.key.toLowerCase() !== "s" ||
+			isImeComposingKeyEvent(event)
+		) {
 			return;
 		}
 

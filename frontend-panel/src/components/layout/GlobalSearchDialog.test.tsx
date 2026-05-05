@@ -366,6 +366,40 @@ describe("GlobalSearchDialog", () => {
 		});
 	});
 
+	it("leaves keyboard navigation to the IME while the search input is composing", async () => {
+		const onOpenChange = vi.fn();
+		const folder: FolderListItem = {
+			id: 3,
+			is_locked: false,
+			is_shared: false,
+			name: "Reports",
+			updated_at: "2026-04-15T12:00:00Z",
+		};
+		mockState.search.mockResolvedValue({
+			files: [],
+			folders: [folder],
+			total_files: 0,
+			total_folders: 1,
+		});
+
+		render(<GlobalSearchDialog open onOpenChange={onOpenChange} />);
+
+		const input = screen.getByPlaceholderText("search:placeholder");
+		fireEvent.change(input, {
+			target: { value: "bao" },
+		});
+		await waitForSearchDebounce();
+		expect(await screen.findByText("Reports")).toBeInTheDocument();
+
+		fireEvent.compositionStart(input);
+		fireEvent.keyDown(input, { key: "ArrowDown" });
+		fireEvent.keyDown(input, { key: "Enter" });
+		fireEvent.keyDown(input, { key: "Escape" });
+
+		expect(onOpenChange).not.toHaveBeenCalled();
+		expect(mockState.navigate).not.toHaveBeenCalled();
+	});
+
 	it("shows an empty state when a query has no matches", async () => {
 		mockState.search.mockResolvedValue({
 			files: [],

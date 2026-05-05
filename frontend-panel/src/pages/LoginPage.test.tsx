@@ -666,7 +666,7 @@ describe("LoginPage", () => {
 		).toBeInTheDocument();
 	});
 
-	it("falls back to sign-in mode and shows a hint when public registration is disabled", async () => {
+	it("falls back to the normal sign-in mode when public registration is disabled", async () => {
 		mockState.check.mockResolvedValueOnce({
 			has_users: true,
 			allow_user_registration: false,
@@ -685,7 +685,10 @@ describe("LoginPage", () => {
 		).not.toBeInTheDocument();
 		expect(screen.queryByLabelText("username")).not.toBeInTheDocument();
 		await waitFor(() => {
-			expect(screen.getByText("registration_closed_desc")).toBeInTheDocument();
+			expect(screen.getByText("enter_password")).toBeInTheDocument();
 		});
+		expect(
+			screen.queryByText("registration_closed_desc"),
+		).not.toBeInTheDocument();
 	});
 });

@@ -639,7 +639,7 @@
 	"team_details_title": "Team details",
 	"team_details_desc": "Review the team overview, storage usage, and update the name, description, and policy group binding.",
 	"team_no_description": "No description yet.",
-	"team_archived_at": "Archived",
+	"team_archived_at": "Archived on",
 	"team_status": "Team status",
 	"create_user": "Create user",
 	"create_user_desc": "Create a new account with the default quota and new-user default policy group.",

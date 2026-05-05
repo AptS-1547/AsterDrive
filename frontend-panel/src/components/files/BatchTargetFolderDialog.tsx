@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { SkeletonTree } from "@/components/common/SkeletonTree";
@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
 import { FOLDER_LIMIT } from "@/lib/constants";
+import { isImeComposingKeyEvent } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import type { BreadcrumbItem as FileBreadcrumbItem } from "@/stores/fileStore";
@@ -55,6 +56,8 @@ export function BatchTargetFolderDialog({
 	const [newFolderName, setNewFolderName] = useState("");
 	const [folders, setFolders] = useState<FolderListItem[]>([]);
 	const [activeFolderId, setActiveFolderId] = useState<number | null>(null);
+	const createFolderInputComposingRef = useRef(false);
+	const createFolderInputCompositionEndAtRef = useRef(0);
 	const [breadcrumb, setBreadcrumb] = useState<FileBreadcrumbItem[]>([
 		{ id: null, name: t("files:root") },
 	]);
@@ -91,6 +94,9 @@ export function BatchTargetFolderDialog({
 
 	useEffect(() => {
 		if (!open) return;
+
+		createFolderInputComposingRef.current = false;
+		createFolderInputCompositionEndAtRef.current = 0;
 
 		const normalizedBreadcrumb =
 			initialBreadcrumb.length > 0
@@ -183,7 +189,11 @@ export function BatchTargetFolderDialog({
 						<Button
 							variant="outline"
 							size="sm"
-							onClick={() => setShowCreateFolder((prev) => !prev)}
+							onClick={() => {
+								createFolderInputComposingRef.current = false;
+								createFolderInputCompositionEndAtRef.current = 0;
+								setShowCreateFolder((prev) => !prev);
+							}}
 							disabled={loading || submitting || creatingFolder}
 						>
 							<Icon name="FolderPlus" className="mr-1 h-3.5 w-3.5" />
@@ -207,7 +217,28 @@ export function BatchTargetFolderDialog({
 								placeholder={t("files:folder_name")}
 								value={newFolderName}
 								onChange={(e) => setNewFolderName(e.target.value)}
+								onCompositionStart={() => {
+									createFolderInputComposingRef.current = true;
+								}}
+								onCompositionEnd={(e) => {
+									createFolderInputComposingRef.current = false;
+									createFolderInputCompositionEndAtRef.current = Date.now();
+									setNewFolderName(e.currentTarget.value);
+								}}
+								onBlur={() => {
+									createFolderInputComposingRef.current = false;
+								}}
 								onKeyDown={(e) => {
+									if (
+										createFolderInputComposingRef.current ||
+										isImeComposingKeyEvent(e, {
+											lastCompositionEndAt:
+												createFolderInputCompositionEndAtRef.current,
+										})
+									) {
+										return;
+									}
+
 									if (e.key === "Enter") {
 										e.preventDefault();
 										handleCreateFolder();
@@ -220,6 +251,8 @@ export function BatchTargetFolderDialog({
 									variant="outline"
 									size="sm"
 									onClick={() => {
+										createFolderInputComposingRef.current = false;
+										createFolderInputCompositionEndAtRef.current = 0;
 										setShowCreateFolder(false);
 										setNewFolderName("");
 									}}

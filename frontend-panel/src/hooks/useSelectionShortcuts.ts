@@ -1,4 +1,8 @@
 import { useEffect } from "react";
+import {
+	isImeComposingKeyEvent,
+	shouldIgnoreKeyboardTarget,
+} from "@/lib/keyboard";
 
 interface UseSelectionShortcutsOptions {
 	selectAll: () => void;
@@ -6,16 +10,7 @@ interface UseSelectionShortcutsOptions {
 	enabled?: boolean;
 }
 
-export function shouldIgnoreKeyboardTarget(target: EventTarget | null) {
-	if (!(target instanceof HTMLElement)) return false;
-
-	return (
-		target.tagName === "INPUT" ||
-		target.tagName === "TEXTAREA" ||
-		target.tagName === "SELECT" ||
-		target.isContentEditable
-	);
-}
+export { shouldIgnoreKeyboardTarget } from "@/lib/keyboard";
 
 export function useSelectionShortcuts({
 	selectAll,
@@ -26,7 +21,9 @@ export function useSelectionShortcuts({
 		if (!enabled) return;
 
 		function handleKeyDown(e: KeyboardEvent) {
-			if (shouldIgnoreKeyboardTarget(e.target)) return;
+			if (shouldIgnoreKeyboardTarget(e.target) || isImeComposingKeyEvent(e)) {
+				return;
+			}
 
 			const mod = e.metaKey || e.ctrlKey;
 			if (mod && e.key.toLowerCase() === "a") {
