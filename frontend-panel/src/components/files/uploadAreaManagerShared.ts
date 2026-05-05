@@ -21,6 +21,7 @@ export interface UploadTask {
 	relativePath: string | null;
 	baseFolderId: number | null;
 	baseFolderName: string;
+	totalBytes: number;
 	mode: UploadMode | null;
 	status: UploadStatus;
 	progress: number;
@@ -127,6 +128,7 @@ export function createQueuedUploadTask({
 		relativePath,
 		baseFolderId,
 		baseFolderName,
+		totalBytes: file.size,
 		mode: null,
 		status: "queued",
 		progress: 0,

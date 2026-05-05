@@ -247,6 +247,7 @@ export function useUploadAreaManager({
 
 			patchTask(taskId, {
 				file,
+				totalBytes: file.size,
 				status: "queued",
 				error: null,
 				progress: 0,

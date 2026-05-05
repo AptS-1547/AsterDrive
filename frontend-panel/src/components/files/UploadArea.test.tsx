@@ -59,9 +59,11 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/components/files/UploadPanel", () => ({
 	UploadPanel: (props: {
+		overallProgress?: number;
 		tasks: Array<{
 			id: string;
 			mode: string;
+			progress: number;
 			status: string;
 			title: string;
 			actions?: Array<{ label: string; onClick: () => void }>;
@@ -70,8 +72,10 @@ vi.mock("@/components/files/UploadPanel", () => ({
 		uploadPanelSpy(props);
 		return (
 			<div data-testid="upload-panel">
+				<div>{`overall:${props.overallProgress ?? 0}`}</div>
 				{props.tasks.map((task) => (
 					<div key={task.id}>
+						<div>{`${task.title}:${task.mode}:${task.status}:${task.progress}`}</div>
 						<div>{`${task.title}:${task.mode}:${task.status}`}</div>
 						{task.actions?.map((action) => (
 							<button key={action.label} type="button" onClick={action.onClick}>
@@ -408,9 +412,107 @@ describe("UploadArea", () => {
 			"upload-chunked",
 			0,
 			expect.any(Blob),
+			expect.any(Function),
 		);
 		expect(completeUpload).toHaveBeenCalledWith("upload-chunked", undefined);
 		expect(removeSession).toHaveBeenCalledWith("upload-chunked");
+	});
+
+	it("reports chunked upload progress before a chunk completes", async () => {
+		const chunkUpload = createDeferred<unknown>();
+		initUpload.mockResolvedValue({
+			mode: "chunked",
+			upload_id: "upload-chunked",
+			chunk_size: 100,
+			total_chunks: 1,
+		});
+		uploadChunk.mockReturnValue(chunkUpload.promise);
+		completeUpload.mockResolvedValue({ id: 9001 });
+
+		await renderUploadAreaWithFiles([
+			new File(["x".repeat(100)], "chunk-progress.bin"),
+		]);
+
+		await waitFor(() => {
+			expect(uploadChunk).toHaveBeenCalledWith(
+				"upload-chunked",
+				0,
+				expect.any(Blob),
+				expect.any(Function),
+			);
+		});
+
+		const reportProgress = uploadChunk.mock.calls[0]?.[3] as
+			| ((loaded: number, total: number) => void)
+			| undefined;
+		reportProgress?.(50, 100);
+
+		await waitFor(() => {
+			expect(uploadPanelSpy).toHaveBeenLastCalledWith(
+				expect.objectContaining({
+					overallProgress: 48,
+					tasks: expect.arrayContaining([
+						expect.objectContaining({
+							progress: 48,
+							title: "chunk-progress.bin",
+						}),
+					]),
+				}),
+			);
+		});
+
+		chunkUpload.resolve({});
+		await screen.findByText("chunk-progress.bin:Chunked:files:upload_success");
+	});
+
+	it("weights the overall upload progress by file size", async () => {
+		window.localStorage.setItem("aster-upload-concurrency", "2");
+		const smallUpload = createDeferred<unknown>();
+		const largeUpload = createDeferred<unknown>();
+		initUpload.mockResolvedValue({
+			mode: "chunked",
+			upload_id: "upload-weighted",
+			chunk_size: 100,
+			total_chunks: 1,
+		});
+		uploadChunk
+			.mockReturnValueOnce(smallUpload.promise)
+			.mockReturnValueOnce(largeUpload.promise);
+
+		await renderUploadAreaWithFiles([
+			new File(["x".repeat(10)], "small.bin"),
+			new File(["x".repeat(100)], "large.bin"),
+		]);
+
+		await waitFor(() => {
+			expect(uploadChunk).toHaveBeenCalledTimes(2);
+		});
+
+		const reportSmallProgress = uploadChunk.mock.calls.find(
+			(call) => (call[2] as Blob).size === 10,
+		)?.[3] as ((loaded: number, total: number) => void) | undefined;
+		reportSmallProgress?.(10, 10);
+
+		await waitFor(() => {
+			expect(uploadPanelSpy).toHaveBeenLastCalledWith(
+				expect.objectContaining({
+					overallProgress: 9,
+					tasks: expect.arrayContaining([
+						expect.objectContaining({
+							progress: 95,
+							title: "small.bin",
+						}),
+						expect.objectContaining({
+							progress: 0,
+							title: "large.bin",
+						}),
+					]),
+				}),
+			);
+		});
+
+		smallUpload.resolve({});
+		largeUpload.resolve({});
 	});
 
 	it("handles single-request presigned uploads", async () => {
@@ -523,6 +625,7 @@ describe("UploadArea", () => {
 				"upload-resume",
 				1,
 				expect.any(Blob),
+				expect.any(Function),
 			);
 		});
 

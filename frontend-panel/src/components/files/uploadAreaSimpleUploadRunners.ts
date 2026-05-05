@@ -1,4 +1,7 @@
-import { getProcessingProgress } from "@/components/files/uploadResume";
+import {
+	getProcessingProgress,
+	S3_PROCESSING_PROGRESS,
+} from "@/components/files/uploadResume";
 import { api } from "@/services/http";
 import type { InitUploadResponse } from "@/services/uploadService";
 import { buildUploadPath, uploadService } from "@/services/uploadService";
@@ -109,7 +112,7 @@ export function createSimpleUploadRunners({
 				task.file,
 				(loaded, total) => {
 					patchTaskThrottled(task.id, {
-						progress: Math.round((loaded / total) * 90),
+						progress: Math.round((loaded / total) * S3_PROCESSING_PROGRESS),
 					});
 				},
 				(xhr) => {

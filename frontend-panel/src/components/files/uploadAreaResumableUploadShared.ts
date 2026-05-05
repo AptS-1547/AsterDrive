@@ -24,12 +24,18 @@ type ResumableUploadSharedContext = Pick<
 interface RunResumableTransferOptions<TItem> {
 	completeUpload: () => Promise<unknown>;
 	initialCompleted: number;
+	initialCompletedBytes?: number;
 	items: TItem[];
+	getItemSize?: (item: TItem) => number;
 	processingProgress: number;
 	progressScale: number;
 	task: UploadTask;
 	totalItems: number;
-	uploadItem: (item: TItem) => Promise<void>;
+	totalBytes?: number;
+	uploadItem: (
+		item: TItem,
+		reportProgress: (loaded: number) => void,
+	) => Promise<void>;
 	uploadId: string;
 	uploadingPatch: Partial<UploadTask>;
 }
@@ -41,6 +47,28 @@ function calculateProgress(
 ) {
 	if (totalItems <= 0) return 0;
 	return Math.round((completed / totalItems) * progressScale);
+}
+
+function calculateByteProgress(
+	completedBytes: number,
+	inFlightBytes: Iterable<number>,
+	totalBytes: number,
+	progressScale: number,
+) {
+	if (totalBytes <= 0) return 0;
+	let uploadedBytes = completedBytes;
+	for (const bytes of inFlightBytes) {
+		uploadedBytes += bytes;
+	}
+	const clampedBytes = Math.min(Math.max(uploadedBytes, 0), totalBytes);
+	return Math.min(
+		progressScale,
+		Math.round((clampedBytes / totalBytes) * progressScale),
+	);
+}
+
+function clampLoadedBytes(loaded: number, total: number) {
+	return Math.min(Math.max(loaded, 0), Math.max(total, 0));
 }
 
 export function createResumableUploadShared({
@@ -119,22 +147,40 @@ export function createResumableUploadShared({
 	const runResumableTransfer = async <TItem>({
 		completeUpload,
 		initialCompleted,
+		initialCompletedBytes,
 		items,
+		getItemSize,
 		processingProgress,
 		progressScale,
 		task,
 		totalItems,
+		totalBytes,
 		uploadId,
 		uploadItem,
 		uploadingPatch,
 	}: RunResumableTransferOptions<TItem>) => {
 		abortFlagsRef.current.set(task.id, false);
+		const useByteProgress = Boolean(
+			totalBytes && totalBytes > 0 && getItemSize,
+		);
+		let completed = initialCompleted;
+		let completedBytes = initialCompletedBytes ?? 0;
+		const inFlightBytes = new Map<TItem, number>();
+		const getCurrentProgress = () =>
+			useByteProgress && totalBytes
+				? calculateByteProgress(
+						completedBytes,
+						inFlightBytes.values(),
+						totalBytes,
+						progressScale,
+					)
+				: calculateProgress(completed, totalItems, progressScale);
+
 		patchTask(task.id, {
 			...uploadingPatch,
-			progress: calculateProgress(initialCompleted, totalItems, progressScale),
+			progress: getCurrentProgress(),
 		});
 
-		let completed = initialCompleted;
 		const queue = [...items];
 
 		const uploadOneItem = async () => {
@@ -143,11 +189,23 @@ export function createResumableUploadShared({
 				const item = queue.shift();
 				if (item === undefined) return;
 
-				await uploadItem(item);
+				const reportProgress = (loaded: number) => {
+					if (!useByteProgress || !getItemSize) return;
+					inFlightBytes.set(item, clampLoadedBytes(loaded, getItemSize(item)));
+					patchTaskThrottled(task.id, {
+						progress: getCurrentProgress(),
+					});
+				};
+
+				await uploadItem(item, reportProgress);
 				completed += 1;
+				if (useByteProgress && getItemSize) {
+					inFlightBytes.delete(item);
+					completedBytes += getItemSize(item);
+				}
 				patchTaskThrottled(task.id, {
 					completedChunks: completed,
-					progress: calculateProgress(completed, totalItems, progressScale),
+					progress: getCurrentProgress(),
 				});
 			}
 		};

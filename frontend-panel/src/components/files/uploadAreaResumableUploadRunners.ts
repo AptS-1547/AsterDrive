@@ -1,6 +1,7 @@
 import {
 	CHUNK_PROCESSING_PROGRESS,
 	getProcessingProgress,
+	S3_PROCESSING_PROGRESS,
 	type UploadMode,
 } from "@/components/files/uploadResume";
 import { appendCompletedPart, removeSession } from "@/lib/uploadPersistence";
@@ -134,17 +135,27 @@ export function createResumableUploadRunners({
 			{ length: totalChunks },
 			(_, index) => index,
 		).filter((index) => !alreadyReceived.includes(index));
+		const getChunkSize = (chunkNumber: number) => {
+			const start = chunkNumber * chunkSize;
+			return Math.max(0, Math.min(chunkSize, file.size - start));
+		};
 
 		await runResumableTransfer({
 			completeUpload: () => completeWithRetry(uploadId),
 			initialCompleted: alreadyReceived.length,
+			initialCompletedBytes: alreadyReceived.reduce(
+				(total, chunkNumber) => total + getChunkSize(chunkNumber),
+				0,
+			),
 			items: pendingChunkNumbers,
+			getItemSize: getChunkSize,
 			processingProgress: CHUNK_PROCESSING_PROGRESS,
 			progressScale: 95,
 			task,
 			totalItems: totalChunks,
+			totalBytes: file.size,
 			uploadId,
-			uploadItem: async (chunkNumber) => {
+			uploadItem: async (chunkNumber, reportProgress) => {
 				const start = chunkNumber * chunkSize;
 				const end = Math.min(start + chunkSize, file.size);
 				const blob = file.slice(start, end);
@@ -152,7 +163,12 @@ export function createResumableUploadRunners({
 				await runRetryableUploadOperation({
 					run: () =>
 						withTrackedMultipartRequest(task.id, () =>
-							uploadService.uploadChunk(uploadId, chunkNumber, blob),
+							uploadService.uploadChunk(
+								uploadId,
+								chunkNumber,
+								blob,
+								reportProgress,
+							),
 						),
 				});
 			},
@@ -178,6 +194,10 @@ export function createResumableUploadRunners({
 		const chunkSize = init.chunk_size as number;
 		const totalChunks = init.total_chunks as number;
 		abortFlagsRef.current.set(task.id, false);
+		const getPartSize = (partNumber: number) => {
+			const start = (partNumber - 1) * chunkSize;
+			return Math.max(0, Math.min(chunkSize, file.size - start));
+		};
 
 		const collectedParts: CompletedPart[] = [...alreadyCompleted];
 		const completedSet = new Set(
@@ -190,7 +210,9 @@ export function createResumableUploadRunners({
 			uploadId,
 			totalChunks,
 			completedChunks: completedSet.size,
-			progress: Math.round((completedSet.size / totalChunks) * 90),
+			progress: Math.round(
+				(completedSet.size / totalChunks) * S3_PROCESSING_PROGRESS,
+			),
 		});
 
 		const queue = Array.from(
@@ -215,13 +237,19 @@ export function createResumableUploadRunners({
 				await completeWithRetry(uploadId, collectedParts);
 			},
 			initialCompleted: completedSet.size,
+			initialCompletedBytes: [...completedSet].reduce(
+				(total, partNumber) => total + getPartSize(partNumber),
+				0,
+			),
 			items: queue,
+			getItemSize: getPartSize,
 			processingProgress: getProcessingProgress(task.mode),
-			progressScale: 90,
+			progressScale: S3_PROCESSING_PROGRESS,
 			task,
 			totalItems: totalChunks,
+			totalBytes: file.size,
 			uploadId,
-			uploadItem: async (partNumber) => {
+			uploadItem: async (partNumber, reportProgress) => {
 				const start = (partNumber - 1) * chunkSize;
 				const end = Math.min(start + chunkSize, file.size);
 				const blob = file.slice(start, end);
@@ -233,7 +261,7 @@ export function createResumableUploadRunners({
 					run: async () => {
 						const url = await getPartUrl(partNumber);
 						return withTrackedMultipartRequest(task.id, () =>
-							uploadService.presignedUpload(url, blob),
+							uploadService.presignedUpload(url, blob, reportProgress),
 						);
 					},
 				});
