@@ -130,6 +130,16 @@ pub struct WopiRequestSource<'a> {
     pub public_origin: Option<String>,
 }
 
+pub struct WopiPutFileRequest<'a> {
+    pub file_id: i64,
+    pub access_token: &'a str,
+    pub payload: &'a mut actix_web::web::Payload,
+    pub content_length: Option<i64>,
+    pub requested_lock: Option<&'a str>,
+    pub audit_info: &'a AuditRequestInfo,
+    pub request_source: WopiRequestSource<'a>,
+}
+
 pub struct WopiPutRelativeRequest<'a> {
     pub file_id: i64,
     pub access_token: &'a str,

@@ -23,7 +23,7 @@ pub use session::cleanup_expired;
 pub(crate) use session::{RequestOrigin, create_launch_session_in_scope};
 pub use types::{
     DiscoveredWopiPreviewApp, WopiCheckFileInfo, WopiConflict, WopiGetLockResult,
-    WopiLaunchSession, WopiLockOperationResult, WopiPutFileResult, WopiPutRelativeConflict,
-    WopiPutRelativeRequest, WopiPutRelativeResponse, WopiPutRelativeResult, WopiRenameFileResponse,
-    WopiRenameFileResult, WopiRequestSource,
+    WopiLaunchSession, WopiLockOperationResult, WopiPutFileRequest, WopiPutFileResult,
+    WopiPutRelativeConflict, WopiPutRelativeRequest, WopiPutRelativeResponse,
+    WopiPutRelativeResult, WopiRenameFileResponse, WopiRenameFileResult, WopiRequestSource,
 };

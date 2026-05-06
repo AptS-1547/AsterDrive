@@ -15,4 +15,4 @@ openapi = ["dep:utoipa"]
 [dependencies]
 proc-macro2 = "1"
 quote = "1"
-utoipa = { version = "5.4.0", features = ["chrono", "actix_extras", "repr"], optional = true }
+utoipa = { version = "5.5.0", features = ["chrono", "actix_extras", "repr"], optional = true }

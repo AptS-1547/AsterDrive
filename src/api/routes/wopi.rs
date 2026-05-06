@@ -126,13 +126,15 @@ pub async fn put_file_contents(
 
     match wopi_service::put_file_contents(
         &state,
-        *path,
-        &query.access_token,
-        &mut payload,
-        request_content_length(&req),
-        optional_header_value(&req, "X-WOPI-Lock"),
-        &audit_info,
-        request_source(&state, &req),
+        wopi_service::WopiPutFileRequest {
+            file_id: *path,
+            access_token: &query.access_token,
+            payload: &mut payload,
+            content_length: request_content_length(&req),
+            requested_lock: optional_header_value(&req, "X-WOPI-Lock"),
+            audit_info: &audit_info,
+            request_source: request_source(&state, &req),
+        },
     )
     .await
     {

@@ -27,9 +27,9 @@ use super::targets::{
     response_name_for_rename, store_relative_target_from_stream, suggest_available_relative_target,
 };
 use super::types::{
-    MAX_WOPI_USER_INFO_LEN, WOPI_FILE_NAME_MAX_LEN, WopiCheckFileInfo, WopiPutFileResult,
-    WopiPutRelativeRequest, WopiPutRelativeResult, WopiRenameFileResponse, WopiRenameFileResult,
-    WopiRequestSource,
+    MAX_WOPI_USER_INFO_LEN, WOPI_FILE_NAME_MAX_LEN, WopiCheckFileInfo, WopiPutFileRequest,
+    WopiPutFileResult, WopiPutRelativeRequest, WopiPutRelativeResult, WopiRenameFileResponse,
+    WopiRenameFileResult, WopiRequestSource,
 };
 
 /// WOPI GetFile 的服务层结果，包含文件流下载数据和协议专用的 item version header。
@@ -120,14 +120,17 @@ pub async fn get_file_contents(
 
 pub async fn put_file_contents(
     state: &PrimaryAppState,
-    file_id: i64,
-    access_token: &str,
-    payload: &mut actix_web::web::Payload,
-    content_length: Option<i64>,
-    requested_lock: Option<&str>,
-    request_info: &AuditRequestInfo,
-    request_source: WopiRequestSource<'_>,
+    req: WopiPutFileRequest<'_>,
 ) -> Result<WopiPutFileResult> {
+    let WopiPutFileRequest {
+        file_id,
+        access_token,
+        payload,
+        content_length,
+        requested_lock,
+        audit_info,
+        request_source,
+    } = req;
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
     // PutFile 有一个容易漏掉的协议细节：对现有文件，客户端必须先持有 lock。
     // 只有"未锁定且大小为 0 的新建文件"允许直接首写，这对应 editnew 的落盘流程。
@@ -146,7 +149,7 @@ pub async fn put_file_contents(
         None,
     )
     .await?;
-    let audit_ctx = request_info.to_context(resolved.payload.actor_user_id);
+    let audit_ctx = audit_info.to_context(resolved.payload.actor_user_id);
     audit_service::log(
         state,
         &audit_ctx,

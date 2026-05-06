@@ -201,15 +201,13 @@ pub async fn update<S: PrimaryRuntimeState>(
         .map_err(map_remote_node_db_err)?;
     refresh_registry(state).await?;
     if enrollment_status_for_node(state, updated.id).await? == RemoteNodeEnrollmentStatus::Completed
-    {
-        if let Err(error) =
+        && let Err(error) =
             sync_remote_binding_config_with_timeout(&updated, REMOTE_BINDING_SYNC_TIMEOUT).await
-        {
-            tracing::warn!(
-                remote_node_id = updated.id,
-                "failed to sync remote binding config to follower: {error}"
-            );
-        }
+    {
+        tracing::warn!(
+            remote_node_id = updated.id,
+            "failed to sync remote binding config to follower: {error}"
+        );
     }
     remote_node_info(state, updated).await
 }
