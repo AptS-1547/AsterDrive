@@ -233,16 +233,16 @@ async fn load_active_ids_from_database(
 ) -> Result<HashSet<i64>> {
     match (scope, kind) {
         (WorkspaceStorageScope::Personal { user_id }, ShareTargetKind::File) => {
-            share_repo::find_active_file_ids(&state.db, user_id, &ids).await
+            share_repo::find_active_file_ids(&state.db, user_id, ids).await
         }
         (WorkspaceStorageScope::Personal { user_id }, ShareTargetKind::Folder) => {
-            share_repo::find_active_folder_ids(&state.db, user_id, &ids).await
+            share_repo::find_active_folder_ids(&state.db, user_id, ids).await
         }
         (WorkspaceStorageScope::Team { team_id, .. }, ShareTargetKind::File) => {
-            share_repo::find_active_team_file_ids(&state.db, team_id, &ids).await
+            share_repo::find_active_team_file_ids(&state.db, team_id, ids).await
         }
         (WorkspaceStorageScope::Team { team_id, .. }, ShareTargetKind::Folder) => {
-            share_repo::find_active_team_folder_ids(&state.db, team_id, &ids).await
+            share_repo::find_active_team_folder_ids(&state.db, team_id, ids).await
         }
     }
 }

@@ -278,6 +278,64 @@ pub(crate) async fn require_team_management_access(
     Ok(())
 }
 
+pub(crate) async fn verify_folder_access(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<folder::Model> {
+    // 先校验当前 scope 还有效，再取实体做归属检查。
+    // 这样所有调用方都能拿到“存在 + 属于当前空间 + 未进回收站”的 folder。
+    require_scope_access(state, scope).await?;
+    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    ensure_active_folder_scope(&folder, scope)?;
+
+    Ok(folder)
+}
+
+pub(crate) async fn verify_file_access(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<file::Model> {
+    // 文件访问和文件夹访问保持同样语义：返回值一旦成功，就已经完成 scope
+    // 校验和 trash 过滤，上层不需要再手写重复判断。
+    require_scope_access(state, scope).await?;
+    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    ensure_active_file_scope(&file, scope)?;
+
+    Ok(file)
+}
+
+pub(crate) async fn list_files_in_folder(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+) -> Result<Vec<file::Model>> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            file_repo::find_by_folder(&state.db, user_id, folder_id).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            file_repo::find_by_team_folder(&state.db, team_id, folder_id).await
+        }
+    }
+}
+
+pub(crate) async fn list_folders_in_parent(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    parent_id: Option<i64>,
+) -> Result<Vec<folder::Model>> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            folder_repo::find_children(&state.db, user_id, parent_id).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            folder_repo::find_team_children(&state.db, team_id, parent_id).await
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{WorkspaceStorageScope, require_team_access, require_team_policy_group_id};
@@ -609,63 +667,5 @@ mod tests {
             error,
             crate::errors::AsterError::RecordNotFound(_)
         ));
-    }
-}
-
-pub(crate) async fn verify_folder_access(
-    state: &PrimaryAppState,
-    scope: WorkspaceStorageScope,
-    folder_id: i64,
-) -> Result<folder::Model> {
-    // 先校验当前 scope 还有效，再取实体做归属检查。
-    // 这样所有调用方都能拿到“存在 + 属于当前空间 + 未进回收站”的 folder。
-    require_scope_access(state, scope).await?;
-    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
-    ensure_active_folder_scope(&folder, scope)?;
-
-    Ok(folder)
-}
-
-pub(crate) async fn verify_file_access(
-    state: &PrimaryAppState,
-    scope: WorkspaceStorageScope,
-    file_id: i64,
-) -> Result<file::Model> {
-    // 文件访问和文件夹访问保持同样语义：返回值一旦成功，就已经完成 scope
-    // 校验和 trash 过滤，上层不需要再手写重复判断。
-    require_scope_access(state, scope).await?;
-    let file = file_repo::find_by_id(&state.db, file_id).await?;
-    ensure_active_file_scope(&file, scope)?;
-
-    Ok(file)
-}
-
-pub(crate) async fn list_files_in_folder(
-    state: &PrimaryAppState,
-    scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
-) -> Result<Vec<file::Model>> {
-    match scope {
-        WorkspaceStorageScope::Personal { user_id } => {
-            file_repo::find_by_folder(&state.db, user_id, folder_id).await
-        }
-        WorkspaceStorageScope::Team { team_id, .. } => {
-            file_repo::find_by_team_folder(&state.db, team_id, folder_id).await
-        }
-    }
-}
-
-pub(crate) async fn list_folders_in_parent(
-    state: &PrimaryAppState,
-    scope: WorkspaceStorageScope,
-    parent_id: Option<i64>,
-) -> Result<Vec<folder::Model>> {
-    match scope {
-        WorkspaceStorageScope::Personal { user_id } => {
-            folder_repo::find_children(&state.db, user_id, parent_id).await
-        }
-        WorkspaceStorageScope::Team { team_id, .. } => {
-            folder_repo::find_team_children(&state.db, team_id, parent_id).await
-        }
     }
 }
