@@ -163,10 +163,15 @@ fn validate_policy_upload_size(policy: &storage_policy::Model, total_size: i64) 
     Ok(())
 }
 
-pub(super) async fn persist_upload_session(
+pub(super) async fn try_persist_upload_session(
     db: &sea_orm::DatabaseConnection,
     params: UploadSessionRecordParams,
-) -> Result<()> {
+) -> Result<bool> {
+    let session = upload_session_active_model(params);
+    upload_session_repo::try_create(db, session).await
+}
+
+fn upload_session_active_model(params: UploadSessionRecordParams) -> upload_session::ActiveModel {
     let UploadSessionRecordParams {
         upload_id,
         scope,
@@ -183,7 +188,7 @@ pub(super) async fn persist_upload_session(
     } = params;
     let now = Utc::now();
 
-    let session = upload_session::ActiveModel {
+    upload_session::ActiveModel {
         id: Set(upload_id),
         user_id: Set(scope.actor_user_id()),
         team_id: Set(scope.team_id()),
@@ -201,9 +206,7 @@ pub(super) async fn persist_upload_session(
         created_at: Set(now),
         expires_at: Set(expires_at),
         updated_at: Set(now),
-    };
-    upload_session_repo::create(db, session).await?;
-    Ok(())
+    }
 }
 
 pub(super) fn direct_upload_response() -> InitUploadResponse {

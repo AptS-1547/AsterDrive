@@ -4,7 +4,11 @@ use crate::api::constants::HOUR_SECS;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::InitUploadResponse;
-use crate::services::upload_service::shared::generate_upload_id;
+use crate::services::upload_service::shared::{
+    UPLOAD_SESSION_ID_MAX_ATTEMPTS, abort_created_multipart_upload_after_init_error,
+    delete_upload_session_record_after_init_error, new_upload_id,
+    upload_id_collision_exhausted_error,
+};
 use crate::services::workspace_storage_service::{
     PolicyUploadTransport, resolve_policy_upload_transport,
 };
@@ -13,7 +17,7 @@ use crate::utils::numbers;
 
 use super::context::{
     InitUploadContext, UploadSessionRecordParams, chunked_upload_response, direct_upload_response,
-    persist_upload_session,
+    try_persist_upload_session,
 };
 
 pub(super) async fn init_s3_upload(
@@ -40,15 +44,45 @@ async fn init_presigned_s3_upload(
     transport: PolicyUploadTransport,
 ) -> Result<InitUploadResponse> {
     let driver = state.driver_registry.get_driver(&ctx.policy)?;
-    let upload_id = generate_upload_id(&state.db).await?;
-    let temp_key = format!("files/{upload_id}");
     let chunk_size = transport.effective_chunk_size(&ctx.policy);
 
     // 小文件 presigned：客户端直接 PUT 到最终 temp object，不经过服务端 relay，
     // 也不需要 chunk bookkeeping。
     if transport.resolve_init_mode(&ctx.policy, ctx.total_size) == UploadMode::Presigned {
-        let presigned_url = presigned_put_url(driver.as_ref(), &temp_key).await?;
-        persist_upload_session(
+        return init_presigned_s3_single_upload(state, ctx, driver.as_ref()).await;
+    }
+
+    // 大文件 presigned multipart：服务端仍然不接管数据流，但必须保留 session，
+    // 用来记录 multipart upload_id、分片总数以及后续 complete 阶段的收口点。
+    let multipart = state.driver_registry.get_multipart_driver(&ctx.policy)?;
+    let total_chunks =
+        numbers::calc_total_chunks(ctx.total_size, chunk_size, "presigned multipart upload")?;
+
+    init_s3_multipart_session_with_retry(
+        state,
+        ctx,
+        multipart.as_ref(),
+        MultipartSessionInitParams {
+            mode: UploadMode::PresignedMultipart,
+            status: UploadSessionStatus::Presigned,
+            chunk_size,
+            total_chunks,
+            expires_in: Duration::hours(24),
+            log_label: "presigned multipart",
+        },
+    )
+    .await
+}
+
+async fn init_presigned_s3_single_upload(
+    state: &PrimaryAppState,
+    ctx: &InitUploadContext,
+    driver: &dyn crate::storage::driver::StorageDriver,
+) -> Result<InitUploadResponse> {
+    for attempt in 1..=UPLOAD_SESSION_ID_MAX_ATTEMPTS {
+        let upload_id = new_upload_id();
+        let temp_key = format!("files/{upload_id}");
+        let inserted = try_persist_upload_session(
             &state.db,
             UploadSessionRecordParams {
                 upload_id: upload_id.clone(),
@@ -60,12 +94,29 @@ async fn init_presigned_s3_upload(
                 folder_id: ctx.target.folder_id,
                 policy_id: ctx.policy.id,
                 status: UploadSessionStatus::Presigned,
-                s3_temp_key: Some(temp_key),
+                s3_temp_key: Some(temp_key.clone()),
                 s3_multipart_id: None,
                 expires_at: Utc::now() + Duration::hours(1),
             },
         )
         .await?;
+        if !inserted {
+            tracing::warn!(upload_id, attempt, "upload_id collision, retrying");
+            continue;
+        }
+
+        let presigned_url = match presigned_put_url(driver, &temp_key).await {
+            Ok(url) => url,
+            Err(error) => {
+                delete_upload_session_record_after_init_error(
+                    &state.db,
+                    &upload_id,
+                    "presigned URL initialization error",
+                )
+                .await;
+                return Err(error);
+            }
+        };
 
         tracing::debug!(
             scope = ?ctx.scope,
@@ -85,49 +136,7 @@ async fn init_presigned_s3_upload(
         });
     }
 
-    // 大文件 presigned multipart：服务端仍然不接管数据流，但必须保留 session，
-    // 用来记录 multipart upload_id、分片总数以及后续 complete 阶段的收口点。
-    let multipart = state.driver_registry.get_multipart_driver(&ctx.policy)?;
-    let s3_upload_id = multipart.create_multipart_upload(&temp_key).await?;
-    let total_chunks =
-        numbers::calc_total_chunks(ctx.total_size, chunk_size, "presigned multipart upload")?;
-
-    persist_upload_session(
-        &state.db,
-        UploadSessionRecordParams {
-            upload_id: upload_id.clone(),
-            scope: ctx.scope,
-            filename: ctx.target.filename.clone(),
-            total_size: ctx.total_size,
-            chunk_size,
-            total_chunks,
-            folder_id: ctx.target.folder_id,
-            policy_id: ctx.policy.id,
-            status: UploadSessionStatus::Presigned,
-            s3_temp_key: Some(temp_key),
-            s3_multipart_id: Some(s3_upload_id),
-            expires_at: Utc::now() + Duration::hours(24),
-        },
-    )
-    .await?;
-
-    tracing::debug!(
-        scope = ?ctx.scope,
-        upload_id = %upload_id,
-        policy_id = ctx.policy.id,
-        mode = ?UploadMode::PresignedMultipart,
-        chunk_size,
-        total_chunks,
-        folder_id = ctx.target.folder_id,
-        "initialized presigned multipart upload session"
-    );
-
-    Ok(chunked_upload_response(
-        UploadMode::PresignedMultipart,
-        upload_id,
-        chunk_size,
-        total_chunks,
-    ))
+    Err(upload_id_collision_exhausted_error())
 }
 
 async fn init_relay_stream_s3_upload(
@@ -151,48 +160,125 @@ async fn init_relay_stream_s3_upload(
 
     // relay_stream + 大文件：客户端仍然分片传给服务端，服务端再逐片上传到 S3 multipart。
     let multipart = state.driver_registry.get_multipart_driver(&ctx.policy)?;
-    let upload_id = generate_upload_id(&state.db).await?;
-    let temp_key = format!("files/{upload_id}");
-    let s3_upload_id = multipart.create_multipart_upload(&temp_key).await?;
     let total_chunks =
         numbers::calc_total_chunks(ctx.total_size, chunk_size, "relay multipart upload")?;
 
-    persist_upload_session(
-        &state.db,
-        UploadSessionRecordParams {
-            upload_id: upload_id.clone(),
-            scope: ctx.scope,
-            filename: ctx.target.filename.clone(),
-            total_size: ctx.total_size,
+    init_s3_multipart_session_with_retry(
+        state,
+        ctx,
+        multipart.as_ref(),
+        MultipartSessionInitParams {
+            mode: UploadMode::Chunked,
+            status: UploadSessionStatus::Uploading,
             chunk_size,
             total_chunks,
-            folder_id: ctx.target.folder_id,
-            policy_id: ctx.policy.id,
-            status: UploadSessionStatus::Uploading,
-            s3_temp_key: Some(temp_key),
-            s3_multipart_id: Some(s3_upload_id),
-            expires_at: Utc::now() + Duration::hours(24),
+            expires_in: Duration::hours(24),
+            log_label: "relay multipart",
         },
     )
-    .await?;
+    .await
+}
 
-    tracing::debug!(
-        scope = ?ctx.scope,
-        upload_id = %upload_id,
-        policy_id = ctx.policy.id,
-        mode = ?UploadMode::Chunked,
+struct MultipartSessionInitParams {
+    mode: UploadMode,
+    status: UploadSessionStatus,
+    chunk_size: i64,
+    total_chunks: i32,
+    expires_in: Duration,
+    log_label: &'static str,
+}
+
+async fn init_s3_multipart_session_with_retry(
+    state: &PrimaryAppState,
+    ctx: &InitUploadContext,
+    multipart: &dyn crate::storage::multipart::MultipartStorageDriver,
+    params: MultipartSessionInitParams,
+) -> Result<InitUploadResponse> {
+    let MultipartSessionInitParams {
+        mode,
+        status,
         chunk_size,
         total_chunks,
-        folder_id = ctx.target.folder_id,
-        "initialized relay multipart upload session"
-    );
+        expires_in,
+        log_label,
+    } = params;
 
-    Ok(chunked_upload_response(
-        UploadMode::Chunked,
-        upload_id,
-        chunk_size,
-        total_chunks,
-    ))
+    for attempt in 1..=UPLOAD_SESSION_ID_MAX_ATTEMPTS {
+        let upload_id = new_upload_id();
+        let temp_key = format!("files/{upload_id}");
+        let s3_upload_id = multipart.create_multipart_upload(&temp_key).await?;
+        let inserted_result = try_persist_upload_session(
+            &state.db,
+            UploadSessionRecordParams {
+                upload_id: upload_id.clone(),
+                scope: ctx.scope,
+                filename: ctx.target.filename.clone(),
+                total_size: ctx.total_size,
+                chunk_size,
+                total_chunks,
+                folder_id: ctx.target.folder_id,
+                policy_id: ctx.policy.id,
+                status,
+                s3_temp_key: Some(temp_key.clone()),
+                s3_multipart_id: Some(s3_upload_id.clone()),
+                expires_at: Utc::now() + expires_in,
+            },
+        )
+        .await;
+
+        let inserted = match inserted_result {
+            Ok(inserted) => inserted,
+            Err(error) => {
+                let abort_result = abort_created_multipart_upload_after_init_error(
+                    multipart,
+                    &temp_key,
+                    &s3_upload_id,
+                    &upload_id,
+                    "upload session DB initialization error",
+                )
+                .await;
+                if let Err(abort_error) = abort_result {
+                    return Err(AsterError::storage_driver_error(format!(
+                        "failed to abort multipart upload after DB initialization error; init error={error}, abort error={abort_error}"
+                    )));
+                }
+                return Err(error);
+            }
+        };
+
+        if !inserted {
+            abort_created_multipart_upload_after_init_error(
+                multipart,
+                &temp_key,
+                &s3_upload_id,
+                &upload_id,
+                "upload session id collision",
+            )
+            .await?;
+            tracing::warn!(upload_id, attempt, "upload_id collision, retrying");
+            continue;
+        }
+
+        tracing::debug!(
+            scope = ?ctx.scope,
+            upload_id = %upload_id,
+            policy_id = ctx.policy.id,
+            mode = ?mode,
+            chunk_size,
+            total_chunks,
+            folder_id = ctx.target.folder_id,
+            "initialized {log_label} upload session"
+        );
+
+        return Ok(chunked_upload_response(
+            mode,
+            upload_id,
+            chunk_size,
+            total_chunks,
+        ));
+    }
+
+    Err(upload_id_collision_exhausted_error())
 }
 
 async fn presigned_put_url(

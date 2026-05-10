@@ -5,7 +5,7 @@ use crate::errors::{AsterError, Result};
 use crate::types::UploadSessionStatus;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, QuerySelect, sea_query::Expr,
+    QueryOrder, QuerySelect, TryInsertResult, sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: &str) -> Result<upload_session::Model> {
@@ -21,6 +21,24 @@ pub async fn create<C: ConnectionTrait>(
     model: upload_session::ActiveModel,
 ) -> Result<upload_session::Model> {
     model.insert(db).await.map_err(AsterError::from)
+}
+
+pub async fn try_create<C: ConnectionTrait>(
+    db: &C,
+    model: upload_session::ActiveModel,
+) -> Result<bool> {
+    match UploadSession::insert(model)
+        .on_conflict_do_nothing_on([upload_session::Column::Id])
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?
+    {
+        TryInsertResult::Inserted(_) => Ok(true),
+        TryInsertResult::Conflicted => Ok(false),
+        TryInsertResult::Empty => Err(AsterError::internal_error(
+            "upload session insert produced empty result",
+        )),
+    }
 }
 
 pub async fn update<C: ConnectionTrait>(

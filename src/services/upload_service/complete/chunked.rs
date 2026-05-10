@@ -309,20 +309,13 @@ async fn stage_assembled_blob_upload(
 ) -> Result<AssembledBlobPlan> {
     if let Some(file_hash) = assembled.file_hash.as_ref() {
         let storage_path = crate::utils::storage_path_from_blob_key(file_hash);
-
-        // exists() 作为冗余 PUT 的软短路：失败/返回 false 都会退化为一次 PUT，
-        // 语义等同；真正的并发安全由内容寻址 + find_or_create_blob 保证。
-        let already_stored = driver.exists(&storage_path).await.unwrap_or(false);
-        if already_stored {
-            crate::utils::cleanup_temp_file(&assembled.path).await;
-        } else {
-            let stream_driver = driver
-                .as_stream_upload()
-                .ok_or_else(|| AsterError::storage_driver_error("stream upload not supported"))?;
-            stream_driver
-                .put_file(&storage_path, &assembled.path)
-                .await?;
-        }
+        crate::storage::drivers::local::promote_local_file_if_absent(
+            driver,
+            &storage_path,
+            &assembled.path,
+            assembled.size,
+        )
+        .await?;
 
         return Ok(AssembledBlobPlan::Dedup {
             file_hash: file_hash.clone(),

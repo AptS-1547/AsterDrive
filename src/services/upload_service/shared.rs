@@ -13,8 +13,83 @@ use crate::errors::{
 };
 use crate::runtime::PrimaryAppState;
 use crate::storage::StorageErrorKind;
+use crate::storage::multipart::MultipartStorageDriver;
 use crate::types::UploadSessionStatus;
 use crate::utils::{id, paths};
+
+pub(super) const UPLOAD_SESSION_ID_MAX_ATTEMPTS: usize = 5;
+const INIT_MULTIPART_ABORT_MAX_ATTEMPTS: u32 = 3;
+const INIT_MULTIPART_ABORT_INITIAL_BACKOFF_MS: u64 = 50;
+
+pub(super) fn new_upload_id() -> String {
+    id::new_uuid()
+}
+
+pub(super) fn upload_id_collision_exhausted_error() -> AsterError {
+    AsterError::internal_error(format!(
+        "failed to create unique upload session after {UPLOAD_SESSION_ID_MAX_ATTEMPTS} attempts"
+    ))
+}
+
+pub(super) async fn delete_upload_session_record_after_init_error<C: ConnectionTrait>(
+    db: &C,
+    upload_id: &str,
+    context: &str,
+) {
+    if let Err(error) = upload_session_repo::delete(db, upload_id).await {
+        tracing::warn!(
+            upload_id,
+            "failed to delete upload session after {context}: {error}"
+        );
+    }
+}
+
+pub(super) async fn abort_created_multipart_upload_after_init_error(
+    multipart: &dyn MultipartStorageDriver,
+    temp_key: &str,
+    multipart_id: &str,
+    upload_id: &str,
+    context: &str,
+) -> Result<()> {
+    let mut last_error = None;
+    for attempt in 1..=INIT_MULTIPART_ABORT_MAX_ATTEMPTS {
+        match multipart
+            .abort_multipart_upload(temp_key, multipart_id)
+            .await
+        {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                if attempt == INIT_MULTIPART_ABORT_MAX_ATTEMPTS {
+                    last_error = Some(error);
+                    break;
+                }
+                let backoff_ms = INIT_MULTIPART_ABORT_INITIAL_BACKOFF_MS * (1_u64 << (attempt - 1));
+                tracing::warn!(
+                    upload_id,
+                    temp_key,
+                    multipart_id,
+                    attempt,
+                    max_attempts = INIT_MULTIPART_ABORT_MAX_ATTEMPTS,
+                    backoff_ms,
+                    "failed to abort multipart upload after {context}, retrying: {error}"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+            }
+        }
+    }
+
+    let error = last_error.unwrap_or_else(|| {
+        AsterError::storage_driver_error("multipart abort failed without an error")
+    });
+    tracing::warn!(
+        upload_id,
+        temp_key,
+        multipart_id,
+        max_attempts = INIT_MULTIPART_ABORT_MAX_ATTEMPTS,
+        "failed to abort multipart upload after {context}: {error}"
+    );
+    Err(error)
+}
 
 pub(super) fn upload_session_chunk_unavailable_error(
     session: &upload_session::Model,
@@ -69,24 +144,6 @@ pub(super) fn expected_chunk_size_for_upload(
         ));
     }
     Ok(expected)
-}
-
-/// 生成唯一的 upload_id（UUID v4），最多重试 5 次防止极低概率碰撞
-pub(super) async fn generate_upload_id<C: ConnectionTrait>(db: &C) -> Result<String> {
-    for _ in 0..5 {
-        let candidate = id::new_uuid();
-        match upload_session_repo::find_by_id(db, &candidate).await {
-            Err(AsterError::UploadSessionNotFound(_)) => return Ok(candidate),
-            Err(e) => return Err(e),
-            Ok(_) => {
-                tracing::warn!("upload_id collision: {candidate}, retrying");
-                continue;
-            }
-        }
-    }
-    Err(AsterError::internal_error(
-        "failed to generate unique upload_id after 5 attempts",
-    ))
 }
 
 pub(super) fn upload_session_status_label(status: UploadSessionStatus) -> &'static str {
