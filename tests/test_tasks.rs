@@ -681,7 +681,7 @@ async fn test_dispatch_due_fast_continues_thumbnail_lane() {
 }
 
 #[actix_web::test]
-async fn test_dispatch_due_fast_continues_archive_lane() {
+async fn test_dispatch_due_fast_continues_archive_lane_with_backlog() {
     let state = common::setup().await;
     state.runtime_config.apply(common::system_config_model(
         BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
@@ -692,7 +692,7 @@ async fn test_dispatch_due_fast_continues_archive_lane() {
         insert_pending_lane_task(
             &state,
             BackgroundTaskKind::ArchiveCompress,
-            &format!("archive-no-fast-continue-{index}"),
+            &format!("archive-fast-continue-backlog-{index}"),
             "{}",
         )
         .await;

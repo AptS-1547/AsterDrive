@@ -264,6 +264,65 @@ async fn test_upload_session_try_create_reports_id_conflict() {
     );
 }
 
+#[actix_web::test]
+async fn test_upload_session_try_create_preserves_non_id_unique_conflict() {
+    use aster_drive::db::repository::{policy_repo, upload_session_repo};
+    use sea_orm::{ConnectionTrait, Set};
+
+    let state = common::setup().await;
+    state
+        .db
+        .execute_unprepared(
+            "CREATE UNIQUE INDEX uq_upload_sessions_filename_test ON upload_sessions (filename)",
+        )
+        .await
+        .unwrap();
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "trycreateuniq",
+        "trycreateuniq@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let policy = policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist");
+    let filename = format!("try-create-unique-{}.bin", new_test_upload_id());
+    let now = chrono::Utc::now();
+
+    let build_model = |upload_id: String| aster_drive::entities::upload_session::ActiveModel {
+        id: Set(upload_id),
+        user_id: Set(user.id),
+        team_id: Set(None),
+        filename: Set(filename.clone()),
+        total_size: Set(1),
+        chunk_size: Set(1),
+        total_chunks: Set(1),
+        received_count: Set(0),
+        folder_id: Set(None),
+        policy_id: Set(policy.id),
+        status: Set(aster_drive::types::UploadSessionStatus::Uploading),
+        s3_temp_key: Set(None),
+        s3_multipart_id: Set(None),
+        file_id: Set(None),
+        created_at: Set(now),
+        expires_at: Set(now + chrono::Duration::hours(1)),
+        updated_at: Set(now),
+    };
+
+    assert!(
+        upload_session_repo::try_create(&state.db, build_model(new_test_upload_id()))
+            .await
+            .unwrap()
+    );
+    let err = upload_session_repo::try_create(&state.db, build_model(new_test_upload_id()))
+        .await
+        .expect_err("non-id unique conflict should not be treated as id retry");
+    assert_eq!(err.code(), "E002");
+}
+
 async fn create_dead_remote_policy(
     state: &aster_drive::runtime::PrimaryAppState,
 ) -> aster_drive::entities::storage_policy::Model {
