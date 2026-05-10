@@ -262,10 +262,6 @@ pub(crate) async fn store_preuploaded_nondedup(
     };
     let storage_delta = overwrite_ctx.as_ref().map_or(size, |_| size);
 
-    if storage_delta > 0 {
-        check_quota(db, scope, storage_delta).await?;
-    }
-
     let mime = mime_guess::from_path(&filename)
         .first_or_octet_stream()
         .to_string();

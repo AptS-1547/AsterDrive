@@ -144,7 +144,6 @@ async fn prepare_store_from_temp(
         precomputed_hash,
         actor_username,
     } = hints;
-    let db = &state.db;
 
     tracing::debug!(
         scope = ?scope,
@@ -188,8 +187,8 @@ async fn prepare_store_from_temp(
         load_overwrite_context(state, scope, existing_file_id, skip_lock_check).await?;
     let storage_delta = overwrite_ctx.as_ref().map_or(size, |_| size);
 
-    if storage_delta > 0 {
-        check_quota(db, scope, storage_delta).await?;
+    if storage_delta > 0 && matches!(blob_plan, TempBlobPlan::Preuploaded(_)) {
+        check_quota(&state.db, scope, storage_delta).await?;
     }
 
     if let TempBlobPlan::Preuploaded(preuploaded_blob) = &blob_plan {
