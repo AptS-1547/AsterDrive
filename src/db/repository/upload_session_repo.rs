@@ -5,7 +5,7 @@ use crate::errors::{AsterError, Result};
 use crate::types::UploadSessionStatus;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, QuerySelect, TryInsertResult, sea_query::Expr,
+    QueryOrder, QuerySelect, SqlErr, sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: &str) -> Result<upload_session::Model> {
@@ -28,17 +28,20 @@ pub async fn try_create<C: ConnectionTrait>(
     model: upload_session::ActiveModel,
 ) -> Result<bool> {
     match UploadSession::insert(model)
-        .on_conflict_do_nothing_on([upload_session::Column::Id])
-        .exec(db)
+        .exec_without_returning(db)
         .await
-        .map_err(AsterError::from)?
     {
-        TryInsertResult::Inserted(_) => Ok(true),
-        TryInsertResult::Conflicted => Ok(false),
-        TryInsertResult::Empty => Err(AsterError::internal_error(
-            "upload session insert produced empty result",
-        )),
+        Ok(1) => Ok(true),
+        Ok(rows) => Err(AsterError::internal_error(format!(
+            "upload session insert affected {rows} rows"
+        ))),
+        Err(err) if is_unique_conflict_db_err(&err) => Ok(false),
+        Err(err) => Err(AsterError::from(err)),
     }
+}
+
+fn is_unique_conflict_db_err(err: &sea_orm::DbErr) -> bool {
+    matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
 }
 
 pub async fn update<C: ConnectionTrait>(

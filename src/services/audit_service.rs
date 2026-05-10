@@ -41,6 +41,16 @@ struct AuditLogManager {
     shutdown_token: CancellationToken,
 }
 
+struct FlushPendingReset {
+    manager: Arc<AuditLogManager>,
+}
+
+impl Drop for FlushPendingReset {
+    fn drop(&mut self) {
+        self.manager.flush_pending.store(false, Ordering::Release);
+    }
+}
+
 pub fn init_global_audit_log_manager(db: DatabaseConnection) {
     let manager = Arc::new(AuditLogManager::new(db));
     match GLOBAL_AUDIT_LOG_MANAGER.set(manager.clone()) {
@@ -510,9 +520,11 @@ impl AuditLogManager {
 
         let manager = Arc::clone(self);
         drop(tokio::spawn(async move {
+            let _pending_reset = FlushPendingReset {
+                manager: Arc::clone(&manager),
+            };
             let _guard = manager.flush_lock.lock().await;
             manager.flush_buffer().await;
-            manager.flush_pending.store(false, Ordering::Release);
         }));
     }
 

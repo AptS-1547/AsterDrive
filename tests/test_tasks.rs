@@ -681,7 +681,7 @@ async fn test_dispatch_due_fast_continues_thumbnail_lane() {
 }
 
 #[actix_web::test]
-async fn test_dispatch_due_does_not_fast_continue_archive_lane() {
+async fn test_dispatch_due_fast_continues_archive_lane() {
     let state = common::setup().await;
     state.runtime_config.apply(common::system_config_model(
         BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
@@ -700,10 +700,10 @@ async fn test_dispatch_due_does_not_fast_continue_archive_lane() {
 
     let stats = task_service::dispatch_due(&state)
         .await
-        .expect("dispatch should only claim one archive batch");
+        .expect("dispatch should fast-continue archive lane");
 
-    assert_eq!(stats.claimed, 2);
-    assert_eq!(stats.failed, 2);
+    assert_eq!(stats.claimed, 3);
+    assert_eq!(stats.failed, 3);
     assert_eq!(stats.retried, 0);
     assert_eq!(stats.succeeded, 0);
 }

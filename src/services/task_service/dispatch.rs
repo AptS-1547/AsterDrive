@@ -609,7 +609,7 @@ fn task_lane_configs(state: &PrimaryAppState) -> Vec<TaskLaneConfig> {
                     operations::background_task_max_concurrency(&state.runtime_config)
                 }
             },
-            fast_continue: matches!(lane, TaskLane::Thumbnail),
+            fast_continue: matches!(lane, TaskLane::Archive | TaskLane::Thumbnail),
         })
         .collect()
 }

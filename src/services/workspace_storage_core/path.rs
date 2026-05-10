@@ -81,7 +81,10 @@ pub(crate) async fn ensure_upload_parent_path(
         let folder =
             ensure_folder_in_parent(&txn, scope, current_parent, segment, actor_username).await?;
         current_parent = Some(folder.id);
-        current_folder = Some((&folder).into());
+        current_folder = Some(match current_folder {
+            Some(parent_hint) => parent_hint.merge_child(&folder),
+            None => (&folder).into(),
+        });
     }
 
     crate::db::transaction::commit(txn).await?;

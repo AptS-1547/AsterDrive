@@ -39,6 +39,12 @@ impl VerifiedFolderPolicyHint {
     pub(crate) fn policy_id(&self) -> Option<i64> {
         self.policy_id
     }
+
+    pub(crate) fn merge_child(self, child: &folder::Model) -> Self {
+        Self {
+            policy_id: child.policy_id.or(self.policy_id),
+        }
+    }
 }
 
 impl From<&folder::Model> for VerifiedFolderPolicyHint {

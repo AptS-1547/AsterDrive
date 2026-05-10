@@ -35,7 +35,7 @@ use crate::utils::numbers::u64_to_i64;
 
 use self::chunked::complete_chunked_upload_with_actor_username;
 
-const MISSING_UPLOAD_ACTOR_USERNAME: &str = "<deleted_user>";
+const UNRESOLVED_UPLOAD_ACTOR_USERNAME: &str = "<unresolved>";
 
 #[derive(Clone, Copy, Default)]
 struct CompleteUploadHints<'a> {
@@ -188,7 +188,7 @@ async fn load_upload_actor_username_best_effort(
                 user_id = scope.actor_user_id(),
                 "failed to load actor_username for upload finalization, continuing without attribution: {error}"
             );
-            MISSING_UPLOAD_ACTOR_USERNAME.to_string()
+            UNRESOLVED_UPLOAD_ACTOR_USERNAME.to_string()
         }
     }
 }

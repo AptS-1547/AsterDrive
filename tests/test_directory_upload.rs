@@ -143,6 +143,14 @@ async fn test_init_upload_with_relative_path_uses_parent_folder_policy() {
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
+    let policy_base_path = std::env::temp_dir()
+        .join(format!(
+            "test-relative-path-folder-policy-{}",
+            uuid::Uuid::new_v4()
+        ))
+        .to_string_lossy()
+        .into_owned();
+
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
@@ -150,7 +158,7 @@ async fn test_init_upload_with_relative_path_uses_parent_folder_policy() {
         .set_json(serde_json::json!({
             "name": "Tiny Folder Policy",
             "driver_type": "local",
-            "base_path": "/tmp/test-relative-path-folder-policy",
+            "base_path": policy_base_path,
             "max_file_size": 8,
             "is_default": false
         }))
@@ -186,7 +194,7 @@ async fn test_init_upload_with_relative_path_uses_parent_folder_policy() {
         .set_json(serde_json::json!({
             "filename": "ignored.txt",
             "folder_id": folder_id,
-            "relative_path": "too-large.txt",
+            "relative_path": "nested/too-large.txt",
             "total_size": 9
         }))
         .to_request();

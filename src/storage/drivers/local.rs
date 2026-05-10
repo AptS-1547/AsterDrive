@@ -162,10 +162,16 @@ pub async fn promote_local_file_if_absent(
 
     let expected_size = numbers::i64_to_u64(expected_size, "local dedup blob size")?;
     match tokio::fs::hard_link(local_path, &target).await {
-        Ok(()) => {
-            crate::utils::cleanup_temp_file(local_path).await;
-            Ok(())
-        }
+        Ok(()) => match validate_existing_local_blob_size(&target, expected_size).await {
+            Ok(()) => {
+                crate::utils::cleanup_temp_file(local_path).await;
+                Ok(())
+            }
+            Err(error) => {
+                let _ = tokio::fs::remove_file(&target).await;
+                Err(error)
+            }
+        },
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             validate_existing_local_blob_size(&target, expected_size).await?;
             crate::utils::cleanup_temp_file(local_path).await;
@@ -716,6 +722,34 @@ mod tests {
         assert!(error.message().contains("size mismatch"));
         assert_eq!(tokio::fs::read(&target_full).await.unwrap(), b"old");
         assert!(source.exists());
+
+        let _ = tokio::fs::remove_dir_all(&base).await;
+    }
+
+    #[tokio::test]
+    async fn promote_local_file_if_absent_rolls_back_linked_size_mismatch() {
+        let base = std::env::temp_dir().join(format!(
+            "aster-local-promote-linked-mismatch-test-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        tokio::fs::create_dir_all(&base).await.unwrap();
+
+        let policy = build_policy(&base);
+        let driver = super::LocalDriver::new(&policy).unwrap();
+        let target = "ab/cd/new-target";
+        let target_full = driver.full_path(target).unwrap();
+
+        let source = base.join("source.bin");
+        tokio::fs::write(&source, b"short").await.unwrap();
+        let error =
+            super::promote_local_file_if_absent(&driver, target, source.to_str().unwrap(), 8)
+                .await
+                .expect_err("newly linked blob with different size must be rejected");
+
+        assert!(error.message().contains("size mismatch"));
+        assert!(source.exists());
+        assert!(!target_full.exists());
 
         let _ = tokio::fs::remove_dir_all(&base).await;
     }
