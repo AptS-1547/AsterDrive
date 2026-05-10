@@ -21,7 +21,7 @@ use crate::services::upload_service::shared::{
     upload_id_collision_exhausted_error,
 };
 use crate::services::workspace_storage_service::{
-    self, WorkspaceStorageScope, resolve_policy_upload_transport,
+    WorkspaceStorageScope, resolve_policy_upload_transport,
 };
 use crate::types::{UploadMode, UploadSessionStatus};
 use crate::utils::{numbers, paths};
@@ -48,24 +48,9 @@ async fn init_upload_for_scope(
         "initializing upload session"
     );
 
-    let actor_username = if relative_path
-        .map(|path| path.split('/').count() > 1)
-        .unwrap_or(false)
-    {
-        Some(workspace_storage_service::load_scope_actor_username_cached(state, scope).await?)
-    } else {
-        None
-    };
-    let ctx = resolve_init_upload_context(
-        state,
-        scope,
-        filename,
-        total_size,
-        folder_id,
-        relative_path,
-        actor_username.as_deref(),
-    )
-    .await?;
+    let ctx =
+        resolve_init_upload_context(state, scope, filename, total_size, folder_id, relative_path)
+            .await?;
     let transport = resolve_policy_upload_transport(&ctx.policy);
 
     if ctx.total_size == 0 {
@@ -109,6 +94,7 @@ async fn init_chunked_upload_session(
     // complete 阶段会把这些 chunk 组装成最终文件。
     let chunk_size = ctx.policy.chunk_size;
     let total_chunks = numbers::calc_total_chunks(ctx.total_size, chunk_size, "chunked upload")?;
+    let expires_at = Utc::now() + Duration::hours(24);
 
     for attempt in 1..=UPLOAD_SESSION_ID_MAX_ATTEMPTS {
         let upload_id = new_upload_id();
@@ -126,7 +112,7 @@ async fn init_chunked_upload_session(
                 status: UploadSessionStatus::Uploading,
                 s3_temp_key: None,
                 s3_multipart_id: None,
-                expires_at: Utc::now() + Duration::hours(24),
+                expires_at,
             },
         )
         .await?;

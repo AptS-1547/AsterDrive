@@ -291,10 +291,7 @@ fn read_positive_i32(runtime_config: &RuntimeConfig, key: &str, default: i32) ->
 fn read_concurrency(runtime_config: &RuntimeConfig, key: &str, default: usize) -> usize {
     let default_value = usize_to_u64(default, key).unwrap_or(u64::MAX);
     usize::try_from(read_positive_u64(runtime_config, key, default_value)).unwrap_or_else(|_| {
-        tracing::warn!(
-            key,
-            "background task concurrency config exceeds usize; using default"
-        );
+        tracing::warn!(key, "{key} exceeds usize; using default");
         default
     })
 }
@@ -460,6 +457,28 @@ mod tests {
         runtime_config.apply(config_model(
             BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
             "0",
+        ));
+        assert_eq!(
+            background_task_max_concurrency(&runtime_config),
+            DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY
+        );
+        assert_eq!(
+            background_task_archive_max_concurrency(&runtime_config),
+            DEFAULT_BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY
+        );
+        assert_eq!(
+            background_task_thumbnail_max_concurrency(&runtime_config),
+            DEFAULT_BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY
+        );
+
+        runtime_config.apply(config_model(BACKGROUND_TASK_MAX_CONCURRENCY_KEY, "abc"));
+        runtime_config.apply(config_model(
+            BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
+            "abc",
+        ));
+        runtime_config.apply(config_model(
+            BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+            "abc",
         ));
         assert_eq!(
             background_task_max_concurrency(&runtime_config),

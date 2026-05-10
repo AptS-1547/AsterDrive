@@ -9,6 +9,9 @@ use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 use serde_json::Value;
 use std::io::{Cursor, Read, Write};
 
+use aster_drive::config::operations::{
+    BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY, BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+};
 use aster_drive::db::repository::background_task_repo;
 use aster_drive::entities::background_task;
 use aster_drive::services::task_service::{self, RuntimeTaskRunOutcome};
@@ -652,6 +655,11 @@ async fn test_dispatch_due_reclaims_stale_processing_task_with_new_token() {
 #[actix_web::test]
 async fn test_dispatch_due_fast_continues_thumbnail_lane() {
     let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+        "5",
+    ));
+
     for index in 0..5 {
         insert_pending_lane_task(
             &state,
@@ -675,6 +683,11 @@ async fn test_dispatch_due_fast_continues_thumbnail_lane() {
 #[actix_web::test]
 async fn test_dispatch_due_does_not_fast_continue_archive_lane() {
     let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
+        "2",
+    ));
+
     for index in 0..3 {
         insert_pending_lane_task(
             &state,

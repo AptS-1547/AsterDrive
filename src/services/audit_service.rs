@@ -489,6 +489,7 @@ impl AuditLogManager {
                 capacity = AUDIT_LOG_QUEUE_CAPACITY,
                 "audit log buffer is full; falling back to direct write"
             );
+            self.schedule_flush();
             write_audit_model(&self.db, model).await;
             return;
         }
@@ -509,9 +510,8 @@ impl AuditLogManager {
 
         let manager = Arc::clone(self);
         drop(tokio::spawn(async move {
-            if let Ok(_guard) = manager.flush_lock.try_lock() {
-                manager.flush_buffer().await;
-            }
+            let _guard = manager.flush_lock.lock().await;
+            manager.flush_buffer().await;
             manager.flush_pending.store(false, Ordering::Release);
         }));
     }
@@ -1043,6 +1043,7 @@ mod tests {
 
     #[tokio::test]
     async fn log_writes_synchronously_without_global_manager() {
+        // This test assumes GLOBAL_AUDIT_LOG_MANAGER has not been initialized in this test binary.
         let db = in_memory_db().await;
 
         let runtime_config = std::sync::Arc::new(crate::config::RuntimeConfig::new());

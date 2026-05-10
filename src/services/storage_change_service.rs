@@ -7,6 +7,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
+use futures::future::join_all;
 use serde::Serialize;
 
 use crate::cache::CacheBackend;
@@ -140,9 +141,12 @@ fn invalidate_storage_change_caches(cache: Arc<dyn CacheBackend>, kind: StorageC
         return;
     };
     drop(handle.spawn(async move {
-        for prefix in prefixes {
-            schedule_cache_prefix_invalidation(cache.clone(), prefix).await;
-        }
+        join_all(
+            prefixes
+                .into_iter()
+                .map(|prefix| schedule_cache_prefix_invalidation(cache.clone(), prefix)),
+        )
+        .await;
     }));
 }
 
@@ -178,8 +182,8 @@ async fn schedule_cache_prefix_invalidation(cache: Arc<dyn CacheBackend>, prefix
     }
 
     tokio::time::sleep(CACHE_INVALIDATION_COALESCE_DELAY).await;
-    cache.delete(&reservation_key).await;
     cache.invalidate_prefix(prefix).await;
+    cache.delete(&reservation_key).await;
 }
 
 fn cache_invalidation_reservation_key(prefix: &str) -> String {
@@ -277,6 +281,20 @@ mod tests {
     #[test]
     fn folder_changes_also_invalidate_folder_path_prefix() {
         let prefixes = super::cache_invalidation_prefixes(StorageChangeKind::FolderUpdated);
+
+        assert_eq!(
+            prefixes,
+            vec![
+                crate::webdav::path_resolver::WEBDAV_PATH_CACHE_PREFIX,
+                crate::webdav::path_resolver::WEBDAV_PARENT_CACHE_PREFIX,
+                crate::services::folder_service::FOLDER_PATH_CACHE_PREFIX,
+            ]
+        );
+    }
+
+    #[test]
+    fn sync_required_includes_folder_path_prefix() {
+        let prefixes = super::cache_invalidation_prefixes(StorageChangeKind::SyncRequired);
 
         assert_eq!(
             prefixes,

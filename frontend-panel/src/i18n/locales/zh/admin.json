@@ -243,7 +243,7 @@
 	"settings_item_background_task_dispatch_interval_secs_label": "后台任务队列扫描间隔",
 	"settings_item_background_task_dispatch_interval_secs_desc": "系统每隔多久扫描一次待执行的后台任务队列，并把已经满足执行条件的任务交给 worker 开始处理，例如缩略图生成等异步工作。数值越小，排队任务启动越快，但轮询也会更频繁。",
 	"settings_item_background_task_max_concurrency_label": "后台任务并发上限",
-	"settings_item_background_task_max_concurrency_desc": "没有专用通道的后台任务类型会使用这个兜底并发上限。",
+	"settings_item_background_task_max_concurrency_desc": "保留的兜底并发上限；当前未被使用，等未来有任务类型接入 fallback lane 后再启用。",
 	"settings_item_background_task_archive_max_concurrency_label": "压缩解压任务并发上限",
 	"settings_item_background_task_archive_max_concurrency_desc": "系统同时最多允许执行多少个压缩和解压后台任务。数值越大，归档吞吐会更高，但 CPU、内存和 I/O 压力也会一起上来。",
 	"settings_item_background_task_thumbnail_max_concurrency_label": "缩略图任务并发上限",

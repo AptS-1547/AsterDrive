@@ -35,6 +35,8 @@ use crate::utils::numbers::u64_to_i64;
 
 use self::chunked::complete_chunked_upload_with_actor_username;
 
+const MISSING_UPLOAD_ACTOR_USERNAME: &str = "<deleted_user>";
+
 #[derive(Clone, Copy, Default)]
 struct CompleteUploadHints<'a> {
     actor_username: Option<&'a str>,
@@ -173,6 +175,24 @@ fn completion_plan_label(plan: &CompletionPlan) -> &'static str {
     }
 }
 
+async fn load_upload_actor_username_best_effort(
+    state: &PrimaryAppState,
+    scope: crate::services::workspace_storage_service::WorkspaceStorageScope,
+    upload_id: &str,
+) -> String {
+    match workspace_storage_service::load_scope_actor_username_cached(state, scope).await {
+        Ok(username) => username,
+        Err(error) => {
+            tracing::warn!(
+                upload_id,
+                user_id = scope.actor_user_id(),
+                "failed to load actor_username for upload finalization, continuing without attribution: {error}"
+            );
+            MISSING_UPLOAD_ACTOR_USERNAME.to_string()
+        }
+    }
+}
+
 pub async fn complete_upload(
     state: &PrimaryAppState,
     upload_id: &str,
@@ -199,17 +219,17 @@ pub async fn complete_upload_with_audit(
     parts: Option<Vec<(i32, String)>>,
     audit_ctx: &AuditContext,
 ) -> Result<FileInfo> {
+    let scope = personal_scope(user_id);
     let load_started_at = Instant::now();
-    let session = load_upload_session(state, personal_scope(user_id), upload_id).await?;
+    let session = load_upload_session(state, scope, upload_id).await?;
     tracing::debug!(
         upload_id,
         user_id,
         elapsed_ms = load_started_at.elapsed().as_millis(),
         "loaded upload session for audited completion"
     );
-    let scope = personal_scope(user_id);
     let actor_username = if should_log_upload_completion(&session) {
-        Some(workspace_storage_service::load_scope_actor_username_cached(state, scope).await?)
+        Some(load_upload_actor_username_best_effort(state, scope, &session.id).await)
     } else {
         None
     };
@@ -254,8 +274,9 @@ pub async fn complete_upload_for_team_with_audit(
     parts: Option<Vec<(i32, String)>>,
     audit_ctx: &AuditContext,
 ) -> Result<FileInfo> {
+    let scope = team_scope(team_id, user_id);
     let load_started_at = Instant::now();
-    let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
+    let session = load_upload_session(state, scope, upload_id).await?;
     tracing::debug!(
         upload_id,
         team_id,
@@ -263,9 +284,8 @@ pub async fn complete_upload_for_team_with_audit(
         elapsed_ms = load_started_at.elapsed().as_millis(),
         "loaded team upload session for audited completion"
     );
-    let scope = team_scope(team_id, user_id);
     let actor_username = if should_log_upload_completion(&session) {
-        Some(workspace_storage_service::load_scope_actor_username_cached(state, scope).await?)
+        Some(load_upload_actor_username_best_effort(state, scope, &session.id).await)
     } else {
         None
     };

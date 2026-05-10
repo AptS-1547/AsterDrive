@@ -359,6 +359,7 @@ async fn test_file_repo_resolve_unique_filename_falls_back_after_candidate_batch
         .expect("registered user should exist");
 
     upload_test_file_named!(app, token, "report.txt");
+    // 32 mirrors file_repo::query::UNIQUE_FILENAME_CANDIDATE_BATCH_SIZE; update both together.
     for index in 1..32 {
         upload_test_file_named!(app, token, &format!("report ({index}).txt"));
     }

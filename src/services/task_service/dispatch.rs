@@ -105,8 +105,13 @@ pub async fn dispatch_due(state: &PrimaryAppState) -> Result<DispatchStats> {
         }
     }
 
-    if let Some(error) = first_error {
-        return Err(error);
+    if let Some(first_error) = first_error {
+        tracing::warn!(
+            stats = ?stats,
+            error = %first_error,
+            "partial background task dispatch results due to lane error"
+        );
+        return Err(first_error);
     }
 
     Ok(stats)
@@ -223,6 +228,9 @@ async fn claim_due_for_lane(
             AsterError::internal_error("background task processing token overflow")
         })?;
         let claimed_at = Utc::now();
+        // TODO(#151): 压缩这里的热路径，减少每个候选任务都进事务的开销。
+        // 相关符号：background_task_repo::count_active_processing_by_kinds、
+        // config_repo::lock_by_key、background_task_repo::try_claim。
         // 这段事务锁住 system_config 里的 lane 配置行，让同一时间只有一个 dispatcher
         // 能为同一个 lane 做容量检查和 CAS claim。SQLite 单连接也会自然串行化这个事务。
         let claimed = transaction::with_transaction(&state.db, async |txn| {
@@ -755,6 +763,10 @@ mod tests {
         assert_eq!(
             task_lane(BackgroundTaskKind::ThumbnailGenerate),
             super::TaskLane::Thumbnail
+        );
+        assert_eq!(
+            task_lane(BackgroundTaskKind::SystemRuntime),
+            super::TaskLane::Fallback
         );
     }
 

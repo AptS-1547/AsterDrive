@@ -45,17 +45,8 @@ pub(super) async fn resolve_init_upload_context(
     total_size: i64,
     folder_id: Option<i64>,
     relative_path: Option<&str>,
-    actor_username: Option<&str>,
 ) -> Result<InitUploadContext> {
-    let target = resolve_upload_target(
-        state,
-        scope,
-        filename,
-        folder_id,
-        relative_path,
-        actor_username,
-    )
-    .await?;
+    let target = resolve_upload_target(state, scope, filename, folder_id, relative_path).await?;
 
     tracing::debug!(
         scope = ?scope,
@@ -89,7 +80,6 @@ async fn resolve_upload_target(
     filename: &str,
     folder_id: Option<i64>,
     relative_path: Option<&str>,
-    actor_username: Option<&str>,
 ) -> Result<ResolvedUploadTarget> {
     match relative_path {
         Some(path) => {
@@ -99,11 +89,19 @@ async fn resolve_upload_target(
                 state, scope, folder_id, path,
             )
             .await?;
+            let actor_username = if parsed.parent_segments.is_empty() {
+                None
+            } else {
+                Some(
+                    workspace_storage_service::load_scope_actor_username_cached(state, scope)
+                        .await?,
+                )
+            };
             let resolved_parent = workspace_storage_service::ensure_upload_parent_path(
                 state,
                 scope,
                 &parsed,
-                actor_username,
+                actor_username.as_deref(),
             )
             .await?;
             Ok(ResolvedUploadTarget {

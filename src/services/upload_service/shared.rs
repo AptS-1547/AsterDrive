@@ -58,6 +58,9 @@ pub(super) async fn abort_created_multipart_upload_after_init_error(
             .await
         {
             Ok(()) => return Ok(()),
+            Err(error) if error.storage_error_kind() == Some(StorageErrorKind::NotFound) => {
+                return Ok(());
+            }
             Err(error) => {
                 if attempt == INIT_MULTIPART_ABORT_MAX_ATTEMPTS {
                     last_error = Some(error);
@@ -413,6 +416,58 @@ pub(super) async fn mark_session_failed_with_expiration<C: ConnectionTrait>(
 mod tests {
     use super::*;
     use crate::types::UploadSessionStatus;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct NotFoundAbortMultipart {
+        abort_calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl MultipartStorageDriver for NotFoundAbortMultipart {
+        async fn create_multipart_upload(&self, _path: &str) -> Result<String> {
+            panic!("not used")
+        }
+
+        async fn presigned_upload_part_url(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _part_number: i32,
+            _expires: std::time::Duration,
+        ) -> Result<String> {
+            panic!("not used")
+        }
+
+        async fn complete_multipart_upload(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _parts: Vec<(i32, String)>,
+        ) -> Result<()> {
+            panic!("not used")
+        }
+
+        async fn upload_multipart_part(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _part_number: i32,
+            _data: &[u8],
+        ) -> Result<String> {
+            panic!("not used")
+        }
+
+        async fn abort_multipart_upload(&self, _path: &str, _upload_id: &str) -> Result<()> {
+            self.abort_calls.fetch_add(1, Ordering::SeqCst);
+            Err(AsterError::storage_driver_error(
+                "S3 abort_multipart_upload failed: NoSuchUpload",
+            ))
+        }
+
+        async fn list_uploaded_parts(&self, _path: &str, _upload_id: &str) -> Result<Vec<i32>> {
+            panic!("not used")
+        }
+    }
 
     fn mock_session(total_size: i64, chunk_size: i64, total_chunks: i32) -> upload_session::Model {
         upload_session::Model {
@@ -558,5 +613,24 @@ mod tests {
             classify_upload_storage_error(&error),
             UploadStorageErrorClass::NotFound
         );
+    }
+
+    #[tokio::test]
+    async fn abort_created_multipart_upload_treats_not_found_as_success() {
+        let multipart = NotFoundAbortMultipart {
+            abort_calls: AtomicUsize::new(0),
+        };
+
+        abort_created_multipart_upload_after_init_error(
+            &multipart,
+            "tmp/upload",
+            "multipart-1",
+            "upload-1",
+            "test cleanup",
+        )
+        .await
+        .expect("not found multipart abort should be treated as already cleaned up");
+
+        assert_eq!(multipart.abort_calls.load(Ordering::SeqCst), 1);
     }
 }

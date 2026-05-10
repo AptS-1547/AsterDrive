@@ -323,7 +323,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         requires_restart: false,
         is_sensitive: false,
         category: "operations.background_task",
-        description: "Fallback concurrency cap for background task kinds without a dedicated lane",
+        description: "Reserved fallback concurrency cap; currently unused until future task kinds are assigned to the fallback lane",
     },
     ConfigDef {
         key: BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,

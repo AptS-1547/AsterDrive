@@ -32,7 +32,13 @@ pub(crate) fn local_content_dedup_enabled(policy: &crate::entities::storage_poli
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VerifiedFolderPolicyHint {
-    pub policy_id: Option<i64>,
+    policy_id: Option<i64>,
+}
+
+impl VerifiedFolderPolicyHint {
+    pub(crate) fn policy_id(&self) -> Option<i64> {
+        self.policy_id
+    }
 }
 
 impl From<&folder::Model> for VerifiedFolderPolicyHint {
@@ -80,7 +86,7 @@ pub(crate) async fn resolve_policy_for_size_with_verified_folder(
     file_size: i64,
 ) -> Result<crate::entities::storage_policy::Model> {
     if let Some(folder) = folder
-        && let Some(policy_id) = folder.policy_id
+        && let Some(policy_id) = folder.policy_id()
     {
         return state.policy_snapshot.get_policy_or_err(policy_id);
     }
