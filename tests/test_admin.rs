@@ -122,6 +122,9 @@ async fn test_admin_scope_allows_admin_users() {
     assert!(keys.contains(&"auth_refresh_token_ttl_secs"));
     assert!(keys.contains(&"mail_outbox_dispatch_interval_secs"));
     assert!(keys.contains(&"background_task_dispatch_interval_secs"));
+    assert!(keys.contains(&"background_task_max_concurrency"));
+    assert!(keys.contains(&"background_task_archive_max_concurrency"));
+    assert!(keys.contains(&"background_task_thumbnail_max_concurrency"));
     assert!(keys.contains(&"maintenance_cleanup_interval_secs"));
     assert!(keys.contains(&"blob_reconcile_interval_secs"));
     assert!(keys.contains(&"background_task_max_attempts"));
@@ -1711,7 +1714,16 @@ async fn test_admin_config() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert!(body["data"].as_array().unwrap().iter().any(|item| {
-        item["key"] == "background_task_max_concurrency" && item["category"] == "operations"
+        item["key"] == "background_task_max_concurrency"
+            && item["category"] == "operations.background_task"
+    }));
+    assert!(body["data"].as_array().unwrap().iter().any(|item| {
+        item["key"] == "background_task_archive_max_concurrency"
+            && item["category"] == "operations.background_task"
+    }));
+    assert!(body["data"].as_array().unwrap().iter().any(|item| {
+        item["key"] == "background_task_thumbnail_max_concurrency"
+            && item["category"] == "operations.background_task"
     }));
 
     // 删除配置

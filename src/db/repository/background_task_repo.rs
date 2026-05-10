@@ -139,6 +139,22 @@ pub async fn count_processing<C: ConnectionTrait>(db: &C) -> Result<u64> {
         .map_err(AsterError::from)
 }
 
+pub async fn count_active_processing_by_kinds<C: ConnectionTrait>(
+    db: &C,
+    now: DateTime<Utc>,
+    kinds: &[BackgroundTaskKind],
+) -> Result<u64> {
+    if kinds.is_empty() {
+        return Ok(0);
+    }
+
+    BackgroundTask::find()
+        .filter(active_processing_by_kinds_condition(now, kinds))
+        .count(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_latest_by_kind_and_display_name<C: ConnectionTrait>(
     db: &C,
     kind: BackgroundTaskKind,
@@ -159,10 +175,25 @@ pub async fn list_claimable<C: ConnectionTrait>(
     stale_before: DateTime<Utc>,
     limit: u64,
 ) -> Result<Vec<background_task::Model>> {
-    BackgroundTask::find()
-        .filter(claimable_condition(now, stale_before))
-        .order_by_asc(background_task::Column::CreatedAt)
-        .limit(limit)
+    list_claimable_query(now, stale_before, limit)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn list_claimable_by_kinds<C: ConnectionTrait>(
+    db: &C,
+    now: DateTime<Utc>,
+    stale_before: DateTime<Utc>,
+    kinds: &[BackgroundTaskKind],
+    limit: u64,
+) -> Result<Vec<background_task::Model>> {
+    if kinds.is_empty() || limit == 0 {
+        return Ok(Vec::new());
+    }
+
+    list_claimable_query(now, stale_before, limit)
+        .filter(background_task::Column::Kind.is_in(kinds.iter().copied()))
         .all(db)
         .await
         .map_err(AsterError::from)
@@ -633,6 +664,29 @@ fn terminal_cleanup_condition(filters: &TerminalTaskCleanupFilters) -> Condition
     )
 }
 
+fn list_claimable_query(
+    now: DateTime<Utc>,
+    stale_before: DateTime<Utc>,
+    limit: u64,
+) -> Select<BackgroundTask> {
+    BackgroundTask::find()
+        .filter(claimable_condition(now, stale_before))
+        .order_by_asc(background_task::Column::CreatedAt)
+        .order_by_asc(background_task::Column::Id)
+        .limit(limit)
+}
+
+fn active_processing_by_kinds_condition(
+    now: DateTime<Utc>,
+    kinds: &[BackgroundTaskKind],
+) -> Condition {
+    Condition::all()
+        .add(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
+        .add(background_task::Column::LeaseExpiresAt.is_not_null())
+        .add(background_task::Column::LeaseExpiresAt.gt(now))
+        .add(background_task::Column::Kind.is_in(kinds.iter().copied()))
+}
+
 fn claimable_condition(now: DateTime<Utc>, _stale_before: DateTime<Utc>) -> Condition {
     // 可认领任务有两类：
     // 1. Pending / Retry 且 next_run_at 已到；
@@ -659,8 +713,8 @@ fn processing_stale_condition(now: DateTime<Utc>) -> Condition {
 #[cfg(test)]
 mod tests {
     use super::{
-        AdminTaskFilters, TerminalTaskCleanupFilters, delete_terminal_by_filters,
-        find_paginated_all_filtered,
+        AdminTaskFilters, TerminalTaskCleanupFilters, count_active_processing_by_kinds,
+        delete_terminal_by_filters, find_paginated_all_filtered, list_claimable_by_kinds,
     };
     use crate::config::DatabaseConfig;
     use crate::entities::background_task;
@@ -757,6 +811,19 @@ mod tests {
         .expect("background task test row should insert")
     }
 
+    async fn set_task_lease(
+        db: &sea_orm::DatabaseConnection,
+        task: background_task::Model,
+        lease_expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> background_task::Model {
+        let mut active: background_task::ActiveModel = task.into();
+        active.lease_expires_at = Set(Some(lease_expires_at));
+        active
+            .update(db)
+            .await
+            .expect("background task test lease should update")
+    }
+
     #[tokio::test]
     async fn find_paginated_all_filtered_applies_kind_and_status() {
         let db = build_test_db().await;
@@ -801,6 +868,107 @@ mod tests {
         assert_eq!(total, 1);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].id, wanted.id);
+    }
+
+    #[tokio::test]
+    async fn count_active_processing_by_kinds_only_counts_unexpired_leases() {
+        let db = build_test_db().await;
+        let now = Utc::now();
+        let active_archive = insert_task(
+            &db,
+            BackgroundTaskKind::ArchiveCompress,
+            BackgroundTaskStatus::Processing,
+            None,
+            now - Duration::minutes(5),
+        )
+        .await;
+        set_task_lease(&db, active_archive, now + Duration::seconds(30)).await;
+        let stale_archive = insert_task(
+            &db,
+            BackgroundTaskKind::ArchiveExtract,
+            BackgroundTaskStatus::Processing,
+            None,
+            now - Duration::minutes(4),
+        )
+        .await;
+        set_task_lease(&db, stale_archive, now - Duration::seconds(1)).await;
+        insert_task(
+            &db,
+            BackgroundTaskKind::ArchiveExtract,
+            BackgroundTaskStatus::Processing,
+            None,
+            now - Duration::minutes(3),
+        )
+        .await;
+        let active_thumbnail = insert_task(
+            &db,
+            BackgroundTaskKind::ThumbnailGenerate,
+            BackgroundTaskStatus::Processing,
+            None,
+            now - Duration::minutes(2),
+        )
+        .await;
+        set_task_lease(&db, active_thumbnail, now + Duration::seconds(30)).await;
+
+        let archive_active = count_active_processing_by_kinds(
+            &db,
+            now,
+            &[
+                BackgroundTaskKind::ArchiveCompress,
+                BackgroundTaskKind::ArchiveExtract,
+            ],
+        )
+        .await
+        .expect("archive active count should succeed");
+        let thumbnail_active =
+            count_active_processing_by_kinds(&db, now, &[BackgroundTaskKind::ThumbnailGenerate])
+                .await
+                .expect("thumbnail active count should succeed");
+
+        assert_eq!(archive_active, 1);
+        assert_eq!(thumbnail_active, 1);
+    }
+
+    #[tokio::test]
+    async fn list_claimable_by_kinds_filters_lane_kinds() {
+        let db = build_test_db().await;
+        let now = Utc::now();
+        let archive = insert_task(
+            &db,
+            BackgroundTaskKind::ArchiveExtract,
+            BackgroundTaskStatus::Pending,
+            None,
+            now - Duration::minutes(5),
+        )
+        .await;
+        let thumbnail = insert_task(
+            &db,
+            BackgroundTaskKind::ThumbnailGenerate,
+            BackgroundTaskStatus::Pending,
+            None,
+            now - Duration::minutes(4),
+        )
+        .await;
+
+        let claimable = list_claimable_by_kinds(
+            &db,
+            now,
+            now - Duration::seconds(60),
+            &[
+                BackgroundTaskKind::ArchiveCompress,
+                BackgroundTaskKind::ArchiveExtract,
+            ],
+            10,
+        )
+        .await
+        .expect("claimable kind filter should succeed");
+        let ids = claimable
+            .into_iter()
+            .map(|task| task.id)
+            .collect::<Vec<_>>();
+
+        assert!(ids.contains(&archive.id));
+        assert!(!ids.contains(&thumbnail.id));
     }
 
     #[tokio::test]
