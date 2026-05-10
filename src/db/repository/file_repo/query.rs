@@ -85,6 +85,25 @@ async fn find_by_folder_in_scope<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+async fn find_names_by_folder_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FileScope,
+    folder_id: Option<i64>,
+) -> Result<Vec<String>> {
+    File::find()
+        .select_only()
+        .column(file::Column::Name)
+        .filter(apply_folder_condition(
+            active_scope_condition(scope),
+            folder_id,
+        ))
+        .order_by_asc(file::Column::Name)
+        .into_tuple::<String>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file::Model> {
     File::find_by_id(id)
         .one(db)
@@ -446,6 +465,30 @@ async fn find_by_names_in_folder_in_scope<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+async fn find_names_by_names_in_folder_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FileScope,
+    folder_id: Option<i64>,
+    names: &[String],
+) -> Result<Vec<String>> {
+    if names.is_empty() {
+        return Ok(vec![]);
+    }
+
+    File::find()
+        .select_only()
+        .column(file::Column::Name)
+        .filter(apply_folder_condition(
+            active_scope_condition(scope),
+            folder_id,
+        ))
+        .filter(file::Column::Name.is_in(names.iter().cloned()))
+        .into_tuple::<String>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_by_name_in_folder<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
@@ -535,10 +578,10 @@ async fn resolve_unique_filename_in_scope<C: ConnectionTrait>(
     let candidates = build_unique_filename_candidates(&normalized_name)?;
     let query_names = add_normalization_query_variants(&candidates);
     let existing_candidate_names: HashSet<String> =
-        find_by_names_in_folder_in_scope(db, scope, folder_id, &query_names)
+        find_names_by_names_in_folder_in_scope(db, scope, folder_id, &query_names)
             .await?
             .into_iter()
-            .map(|file| crate::utils::normalize_name(&file.name))
+            .map(|name| crate::utils::normalize_name(&name))
             .collect();
 
     if let Some(candidate) = candidates
@@ -548,10 +591,10 @@ async fn resolve_unique_filename_in_scope<C: ConnectionTrait>(
         return Ok(candidate.clone());
     }
 
-    let existing_names: HashSet<String> = find_by_folder_in_scope(db, scope, folder_id)
+    let existing_names: HashSet<String> = find_names_by_folder_in_scope(db, scope, folder_id)
         .await?
         .into_iter()
-        .map(|file| crate::utils::normalize_name(&file.name))
+        .map(|name| crate::utils::normalize_name(&name))
         .collect();
 
     if !existing_names.contains(&normalized_name) {

@@ -12,6 +12,7 @@ use crate::types::{UploadMode, UploadSessionStatus};
 #[derive(Debug)]
 pub(super) struct ResolvedUploadTarget {
     pub(super) folder_id: Option<i64>,
+    pub(super) folder: Option<workspace_storage_service::VerifiedFolderPolicyHint>,
     pub(super) filename: String,
 }
 
@@ -44,8 +45,17 @@ pub(super) async fn resolve_init_upload_context(
     total_size: i64,
     folder_id: Option<i64>,
     relative_path: Option<&str>,
+    actor_username: Option<&str>,
 ) -> Result<InitUploadContext> {
-    let target = resolve_upload_target(state, scope, filename, folder_id, relative_path).await?;
+    let target = resolve_upload_target(
+        state,
+        scope,
+        filename,
+        folder_id,
+        relative_path,
+        actor_username,
+    )
+    .await?;
 
     tracing::debug!(
         scope = ?scope,
@@ -54,7 +64,7 @@ pub(super) async fn resolve_init_upload_context(
         "resolved upload session target"
     );
 
-    let policy = resolve_init_upload_policy(state, scope, target.folder_id, total_size).await?;
+    let policy = resolve_init_upload_policy(state, scope, target.folder, total_size).await?;
 
     tracing::debug!(
         scope = ?scope,
@@ -79,6 +89,7 @@ async fn resolve_upload_target(
     filename: &str,
     folder_id: Option<i64>,
     relative_path: Option<&str>,
+    actor_username: Option<&str>,
 ) -> Result<ResolvedUploadTarget> {
     match relative_path {
         Some(path) => {
@@ -88,20 +99,32 @@ async fn resolve_upload_target(
                 state, scope, folder_id, path,
             )
             .await?;
-            let resolved_folder_id =
-                workspace_storage_service::ensure_upload_parent_path(state, scope, &parsed).await?;
+            let resolved_parent = workspace_storage_service::ensure_upload_parent_path(
+                state,
+                scope,
+                &parsed,
+                actor_username,
+            )
+            .await?;
             Ok(ResolvedUploadTarget {
-                folder_id: resolved_folder_id,
+                folder_id: resolved_parent.folder_id,
+                folder: resolved_parent.folder,
                 filename: parsed.filename,
             })
         }
         None => {
             let filename = crate::utils::normalize_validate_name(filename)?;
-            if let Some(folder_id) = folder_id {
-                workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
-            }
+            let folder = match folder_id {
+                Some(folder_id) => Some(
+                    workspace_storage_service::verify_folder_access(state, scope, folder_id)
+                        .await?
+                        .into(),
+                ),
+                None => None,
+            };
             Ok(ResolvedUploadTarget {
                 folder_id,
+                folder,
                 filename,
             })
         }
@@ -111,7 +134,7 @@ async fn resolve_upload_target(
 async fn resolve_init_upload_policy(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
+    folder: Option<workspace_storage_service::VerifiedFolderPolicyHint>,
     total_size: i64,
 ) -> Result<storage_policy::Model> {
     if total_size < 0 {
@@ -121,9 +144,10 @@ async fn resolve_init_upload_policy(
     }
 
     // upload 模式协商建立在“最终会写到哪条策略”之上，而不是客户端自己传 mode。
-    let policy =
-        workspace_storage_service::resolve_policy_for_size(state, scope, folder_id, total_size)
-            .await?;
+    let policy = workspace_storage_service::resolve_policy_for_size_with_verified_folder(
+        state, scope, folder, total_size,
+    )
+    .await?;
     validate_policy_upload_size(&policy, total_size)?;
     workspace_storage_service::check_quota(&state.db, scope, total_size).await?;
     Ok(policy)

@@ -4,11 +4,13 @@
 mod common;
 
 use actix_web::test;
+use aster_drive::db::repository::folder_repo;
 use serde_json::Value;
 
 #[actix_web::test]
 async fn test_direct_upload_with_relative_path_creates_nested_folders() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -73,11 +75,17 @@ async fn test_direct_upload_with_relative_path_creates_nested_folders() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
     assert_eq!(body["data"]["files"][0]["name"], "hello.txt");
+
+    let docs = folder_repo::find_by_id(&db, docs_id).await.unwrap();
+    let guides = folder_repo::find_by_id(&db, guides_id).await.unwrap();
+    assert_eq!(docs.created_by_username, "testuser");
+    assert_eq!(guides.created_by_username, "testuser");
 }
 
 #[actix_web::test]
 async fn test_init_upload_with_relative_path_reuses_existing_directories() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -118,6 +126,74 @@ async fn test_init_upload_with_relative_path_reuses_existing_directories() {
     let child_folders = body["data"]["folders"].as_array().unwrap();
     assert_eq!(child_folders.len(), 1);
     assert_eq!(child_folders[0]["name"], "guides");
+
+    let docs = folder_repo::find_by_id(&db, docs_id).await.unwrap();
+    let guides_id = child_folders[0]["id"].as_i64().unwrap();
+    let guides = folder_repo::find_by_id(&db, guides_id).await.unwrap();
+    assert_eq!(docs.created_by_username, "testuser");
+    assert_eq!(guides.created_by_username, "testuser");
+}
+
+#[actix_web::test]
+async fn test_init_upload_with_relative_path_uses_parent_folder_policy() {
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Tiny Folder Policy",
+            "driver_type": "local",
+            "base_path": "/tmp/test-relative-path-folder-policy",
+            "max_file_size": 8,
+            "is_default": false
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "policy-root" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let mut folder: aster_drive::entities::folder::ActiveModel =
+        folder_repo::find_by_id(&db, folder_id)
+            .await
+            .unwrap()
+            .into();
+    folder.policy_id = Set(Some(policy_id));
+    folder.update(&db).await.unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload/init")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "filename": "ignored.txt",
+            "folder_id": folder_id,
+            "relative_path": "too-large.txt",
+            "total_size": 9
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "file size 9 exceeds limit 8");
 }
 
 #[actix_web::test]

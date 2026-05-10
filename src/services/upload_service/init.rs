@@ -18,7 +18,7 @@ use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::scope::{personal_scope, team_scope};
 use crate::services::upload_service::shared::generate_upload_id;
 use crate::services::workspace_storage_service::{
-    WorkspaceStorageScope, resolve_policy_upload_transport,
+    self, WorkspaceStorageScope, resolve_policy_upload_transport,
 };
 use crate::types::{UploadMode, UploadSessionStatus};
 use crate::utils::{numbers, paths};
@@ -45,9 +45,24 @@ async fn init_upload_for_scope(
         "initializing upload session"
     );
 
-    let ctx =
-        resolve_init_upload_context(state, scope, filename, total_size, folder_id, relative_path)
-            .await?;
+    let actor_username = if relative_path
+        .map(|path| path.split('/').count() > 1)
+        .unwrap_or(false)
+    {
+        Some(workspace_storage_service::load_scope_actor_username_cached(state, scope).await?)
+    } else {
+        None
+    };
+    let ctx = resolve_init_upload_context(
+        state,
+        scope,
+        filename,
+        total_size,
+        folder_id,
+        relative_path,
+        actor_username.as_deref(),
+    )
+    .await?;
     let transport = resolve_policy_upload_transport(&ctx.policy);
 
     if ctx.total_size == 0 {

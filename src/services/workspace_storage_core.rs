@@ -23,9 +23,10 @@ pub(crate) use finalize::{
     FinalizeUploadSessionFileParams, finalize_upload_session_blob, finalize_upload_session_file,
 };
 #[allow(unused_imports)]
-pub(crate) use path::ParsedUploadPath;
+pub(crate) use path::{ParsedUploadPath, ResolvedUploadParent};
 pub(crate) use path::{ensure_upload_parent_path, parse_relative_upload_path};
 pub(crate) use policy::{
-    load_storage_limits, local_content_dedup_enabled, resolve_policy_for_size,
+    VerifiedFolderPolicyHint, load_storage_limits, local_content_dedup_enabled,
+    resolve_policy_for_size, resolve_policy_for_size_with_verified_folder,
 };
 pub(crate) use quota::{check_quota, update_storage_used, update_storage_used_for_resource_scope};

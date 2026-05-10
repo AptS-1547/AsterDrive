@@ -1,4 +1,5 @@
 use crate::db::repository::{team_repo, user_repo};
+use crate::entities::folder;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_scope_service::{
@@ -29,6 +30,64 @@ pub(crate) fn local_content_dedup_enabled(policy: &crate::entities::storage_poli
             .unwrap_or(false)
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct VerifiedFolderPolicyHint {
+    pub policy_id: Option<i64>,
+}
+
+impl From<&folder::Model> for VerifiedFolderPolicyHint {
+    fn from(folder: &folder::Model) -> Self {
+        Self {
+            policy_id: folder.policy_id,
+        }
+    }
+}
+
+impl From<folder::Model> for VerifiedFolderPolicyHint {
+    fn from(folder: folder::Model) -> Self {
+        Self {
+            policy_id: folder.policy_id,
+        }
+    }
+}
+
+async fn resolve_scope_policy_for_size(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    file_size: i64,
+) -> Result<crate::entities::storage_policy::Model> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => state
+            .policy_snapshot
+            .resolve_user_policy_for_size(user_id, file_size),
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id,
+        } => {
+            let policy_group_id =
+                require_team_policy_group_id(state, team_id, actor_user_id).await?;
+            state
+                .policy_snapshot
+                .resolve_policy_in_group(policy_group_id, file_size)
+        }
+    }
+}
+
+pub(crate) async fn resolve_policy_for_size_with_verified_folder(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder: Option<VerifiedFolderPolicyHint>,
+    file_size: i64,
+) -> Result<crate::entities::storage_policy::Model> {
+    if let Some(folder) = folder
+        && let Some(policy_id) = folder.policy_id
+    {
+        return state.policy_snapshot.get_policy_or_err(policy_id);
+    }
+
+    resolve_scope_policy_for_size(state, scope, file_size).await
+}
+
 pub(crate) async fn resolve_policy_for_size(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
@@ -45,19 +104,5 @@ pub(crate) async fn resolve_policy_for_size(
         }
     }
 
-    match scope {
-        WorkspaceStorageScope::Personal { user_id } => state
-            .policy_snapshot
-            .resolve_user_policy_for_size(user_id, file_size),
-        WorkspaceStorageScope::Team {
-            team_id,
-            actor_user_id,
-        } => {
-            let policy_group_id =
-                require_team_policy_group_id(state, team_id, actor_user_id).await?;
-            state
-                .policy_snapshot
-                .resolve_policy_in_group(policy_group_id, file_size)
-        }
-    }
+    resolve_scope_policy_for_size(state, scope, file_size).await
 }
