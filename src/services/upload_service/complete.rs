@@ -10,6 +10,8 @@
 
 mod chunked;
 
+use std::time::Instant;
+
 use chrono::Utc;
 
 use crate::db::repository::upload_session_part_repo;
@@ -57,7 +59,12 @@ async fn complete_upload_impl(
         "completing upload session"
     );
 
-    match determine_completion_plan(&session, parts)? {
+    let upload_id = session.id.clone();
+    let completed_retry = session.status == UploadSessionStatus::Completed;
+    let complete_started_at = Instant::now();
+    let plan = determine_completion_plan(&session, parts)?;
+    let plan_label = completion_plan_label(&plan);
+    let result = match plan {
         CompletionPlan::ReturnCompleted => find_file_by_session(&state.db, &session).await,
         CompletionPlan::CompletePresigned => complete_presigned_upload(state, session).await,
         CompletionPlan::CompletePresignedMultipart { parts } => {
@@ -65,7 +72,16 @@ async fn complete_upload_impl(
         }
         CompletionPlan::CompleteRelayMultipart => complete_s3_relay_multipart(state, session).await,
         CompletionPlan::AssembleChunks => complete_chunked_upload(state, session).await,
-    }
+    };
+    tracing::debug!(
+        upload_id = %upload_id,
+        plan = plan_label,
+        completed_retry,
+        elapsed_ms = complete_started_at.elapsed().as_millis(),
+        success = result.is_ok(),
+        "upload completion plan finished"
+    );
+    result
 }
 
 fn determine_completion_plan(
@@ -127,13 +143,30 @@ fn determine_completion_plan(
     Ok(CompletionPlan::AssembleChunks)
 }
 
+fn completion_plan_label(plan: &CompletionPlan) -> &'static str {
+    match plan {
+        CompletionPlan::ReturnCompleted => "return_completed",
+        CompletionPlan::CompletePresigned => "complete_presigned",
+        CompletionPlan::CompletePresignedMultipart { .. } => "complete_presigned_multipart",
+        CompletionPlan::CompleteRelayMultipart => "complete_relay_multipart",
+        CompletionPlan::AssembleChunks => "assemble_chunks",
+    }
+}
+
 pub async fn complete_upload(
     state: &PrimaryAppState,
     upload_id: &str,
     user_id: i64,
     parts: Option<Vec<(i32, String)>>,
 ) -> Result<FileInfo> {
+    let load_started_at = Instant::now();
     let session = load_upload_session(state, personal_scope(user_id), upload_id).await?;
+    tracing::debug!(
+        upload_id,
+        user_id,
+        elapsed_ms = load_started_at.elapsed().as_millis(),
+        "loaded upload session for completion"
+    );
     complete_upload_impl(state, session, parts)
         .await
         .map(FileInfo::from)
@@ -146,7 +179,14 @@ pub async fn complete_upload_with_audit(
     parts: Option<Vec<(i32, String)>>,
     audit_ctx: &AuditContext,
 ) -> Result<FileInfo> {
+    let load_started_at = Instant::now();
     let session = load_upload_session(state, personal_scope(user_id), upload_id).await?;
+    tracing::debug!(
+        upload_id,
+        user_id,
+        elapsed_ms = load_started_at.elapsed().as_millis(),
+        "loaded upload session for audited completion"
+    );
     complete_upload_impl_with_audit(state, session, parts, audit_ctx).await
 }
 
@@ -157,7 +197,15 @@ pub async fn complete_upload_for_team(
     user_id: i64,
     parts: Option<Vec<(i32, String)>>,
 ) -> Result<FileInfo> {
+    let load_started_at = Instant::now();
     let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
+    tracing::debug!(
+        upload_id,
+        team_id,
+        user_id,
+        elapsed_ms = load_started_at.elapsed().as_millis(),
+        "loaded team upload session for completion"
+    );
     complete_upload_impl(state, session, parts)
         .await
         .map(FileInfo::from)
@@ -171,7 +219,15 @@ pub async fn complete_upload_for_team_with_audit(
     parts: Option<Vec<(i32, String)>>,
     audit_ctx: &AuditContext,
 ) -> Result<FileInfo> {
+    let load_started_at = Instant::now();
     let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
+    tracing::debug!(
+        upload_id,
+        team_id,
+        user_id,
+        elapsed_ms = load_started_at.elapsed().as_millis(),
+        "loaded team upload session for audited completion"
+    );
     complete_upload_impl_with_audit(state, session, parts, audit_ctx).await
 }
 
@@ -182,8 +238,12 @@ async fn complete_upload_impl_with_audit(
     audit_ctx: &AuditContext,
 ) -> Result<FileInfo> {
     let should_log = should_log_upload_completion(&session);
+    let upload_id = session.id.clone();
+    let complete_started_at = Instant::now();
     let file = complete_upload_impl(state, session, parts).await?;
+    let complete_elapsed_ms = complete_started_at.elapsed().as_millis();
     if should_log {
+        let audit_started_at = Instant::now();
         audit_service::log(
             state,
             audit_ctx,
@@ -194,6 +254,22 @@ async fn complete_upload_impl_with_audit(
             None,
         )
         .await;
+        tracing::debug!(
+            upload_id = %upload_id,
+            file_id = file.id,
+            complete_elapsed_ms,
+            audit_elapsed_ms = audit_started_at.elapsed().as_millis(),
+            total_elapsed_ms = complete_started_at.elapsed().as_millis(),
+            "audited upload completion finished"
+        );
+    } else {
+        tracing::debug!(
+            upload_id = %upload_id,
+            file_id = file.id,
+            complete_elapsed_ms,
+            total_elapsed_ms = complete_started_at.elapsed().as_millis(),
+            "upload completion returned completed session without audit"
+        );
     }
     Ok(file.into())
 }

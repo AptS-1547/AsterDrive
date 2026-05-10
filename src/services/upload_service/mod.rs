@@ -13,6 +13,8 @@ mod responses;
 mod scope;
 mod shared;
 
+use std::time::Instant;
+
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
@@ -50,15 +52,24 @@ pub(crate) async fn upload_in_scope_with_audit(
     params: UploadInScopeParams<'_>,
     audit_ctx: &AuditContext,
 ) -> Result<FileInfo> {
-    let file = workspace_storage_service::upload(
+    let upload_started_at = Instant::now();
+    let actor_username =
+        workspace_storage_service::load_scope_actor_username_cached(state, params.scope).await?;
+    let file = workspace_storage_service::upload_with_hints(
         state,
         params.scope,
         payload,
         params.folder_id,
         params.relative_path,
         params.declared_size,
+        workspace_storage_service::WorkspaceUploadHints {
+            actor_username: Some(&actor_username),
+        },
     )
     .await?;
+    let store_elapsed_ms = upload_started_at.elapsed().as_millis();
+
+    let audit_started_at = Instant::now();
     audit_service::log(
         state,
         audit_ctx,
@@ -69,5 +80,15 @@ pub(crate) async fn upload_in_scope_with_audit(
         None,
     )
     .await;
+    let audit_elapsed_ms = audit_started_at.elapsed().as_millis();
+    tracing::debug!(
+        scope = ?params.scope,
+        file_id = file.id,
+        size = file.size,
+        store_elapsed_ms,
+        audit_elapsed_ms,
+        total_elapsed_ms = upload_started_at.elapsed().as_millis(),
+        "direct upload completed"
+    );
     Ok(file.into())
 }

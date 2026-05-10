@@ -3,6 +3,7 @@
 use std::{
     collections::{BTreeSet, HashSet},
     sync::Arc,
+    time::Duration as StdDuration,
 };
 
 use chrono::{DateTime, Utc};
@@ -13,6 +14,9 @@ use crate::runtime::PrimaryRuntimeState;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 
 pub const STORAGE_CHANGE_CHANNEL_CAPACITY: usize = 1024;
+const CACHE_INVALIDATION_COALESCE_DELAY: StdDuration = StdDuration::from_millis(25);
+const CACHE_INVALIDATION_RESERVATION_TTL_SECS: u64 = 1;
+const CACHE_INVALIDATION_RESERVATION_PREFIX: &str = "storage_change_cache_invalidation:";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageChangeAudience {
@@ -126,44 +130,60 @@ pub fn publish<S: PrimaryRuntimeState>(state: &S, event: StorageChangeEvent) {
 }
 
 fn invalidate_storage_change_caches(cache: Arc<dyn CacheBackend>, kind: StorageChangeKind) {
-    match kind {
-        StorageChangeKind::FileCreated
-        | StorageChangeKind::FileUpdated
-        | StorageChangeKind::FileDeleted
-        | StorageChangeKind::FileRestored
-        | StorageChangeKind::FolderCreated
-        | StorageChangeKind::FolderUpdated
-        | StorageChangeKind::FolderDeleted
-        | StorageChangeKind::FolderRestored
-        | StorageChangeKind::SyncRequired => {
-            let Ok(handle) = tokio::runtime::Handle::try_current() else {
-                tracing::debug!("skip async cache invalidation without tokio runtime");
-                return;
-            };
-            drop(handle.spawn(async move {
-                cache
-                    .invalidate_prefix(crate::webdav::path_resolver::WEBDAV_PATH_CACHE_PREFIX)
-                    .await;
-                cache
-                    .invalidate_prefix(crate::webdav::path_resolver::WEBDAV_PARENT_CACHE_PREFIX)
-                    .await;
-                if matches!(
-                    kind,
-                    StorageChangeKind::FolderCreated
-                        | StorageChangeKind::FolderUpdated
-                        | StorageChangeKind::FolderDeleted
-                        | StorageChangeKind::FolderRestored
-                        | StorageChangeKind::SyncRequired
-                ) {
-                    cache
-                        .invalidate_prefix(
-                            crate::services::folder_service::FOLDER_PATH_CACHE_PREFIX,
-                        )
-                        .await;
-                }
-            }));
-        }
+    let prefixes = cache_invalidation_prefixes(kind);
+    if prefixes.is_empty() {
+        return;
     }
+
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        tracing::debug!("skip async cache invalidation without tokio runtime");
+        return;
+    };
+    drop(handle.spawn(async move {
+        for prefix in prefixes {
+            schedule_cache_prefix_invalidation(cache.clone(), prefix).await;
+        }
+    }));
+}
+
+fn cache_invalidation_prefixes(kind: StorageChangeKind) -> Vec<&'static str> {
+    let mut prefixes = vec![
+        crate::webdav::path_resolver::WEBDAV_PATH_CACHE_PREFIX,
+        crate::webdav::path_resolver::WEBDAV_PARENT_CACHE_PREFIX,
+    ];
+    if matches!(
+        kind,
+        StorageChangeKind::FolderCreated
+            | StorageChangeKind::FolderUpdated
+            | StorageChangeKind::FolderDeleted
+            | StorageChangeKind::FolderRestored
+            | StorageChangeKind::SyncRequired
+    ) {
+        prefixes.push(crate::services::folder_service::FOLDER_PATH_CACHE_PREFIX);
+    }
+    prefixes
+}
+
+async fn schedule_cache_prefix_invalidation(cache: Arc<dyn CacheBackend>, prefix: &'static str) {
+    let reservation_key = cache_invalidation_reservation_key(prefix);
+    if !cache
+        .set_bytes_if_absent(
+            &reservation_key,
+            Vec::new(),
+            Some(CACHE_INVALIDATION_RESERVATION_TTL_SECS),
+        )
+        .await
+    {
+        return;
+    }
+
+    tokio::time::sleep(CACHE_INVALIDATION_COALESCE_DELAY).await;
+    cache.delete(&reservation_key).await;
+    cache.invalidate_prefix(prefix).await;
+}
+
+fn cache_invalidation_reservation_key(prefix: &str) -> String {
+    format!("{CACHE_INVALIDATION_RESERVATION_PREFIX}{prefix}")
 }
 
 fn normalize_ids(ids: impl Iterator<Item = i64>) -> Vec<i64> {
@@ -239,5 +259,32 @@ mod tests {
         let visible_teams = HashSet::from([42]);
         assert!(team.is_visible_to(11, &visible_teams));
         assert!(!team.is_visible_to(11, &HashSet::new()));
+    }
+
+    #[test]
+    fn file_changes_only_invalidate_webdav_path_prefixes() {
+        let prefixes = super::cache_invalidation_prefixes(StorageChangeKind::FileCreated);
+
+        assert_eq!(
+            prefixes,
+            vec![
+                crate::webdav::path_resolver::WEBDAV_PATH_CACHE_PREFIX,
+                crate::webdav::path_resolver::WEBDAV_PARENT_CACHE_PREFIX,
+            ]
+        );
+    }
+
+    #[test]
+    fn folder_changes_also_invalidate_folder_path_prefix() {
+        let prefixes = super::cache_invalidation_prefixes(StorageChangeKind::FolderUpdated);
+
+        assert_eq!(
+            prefixes,
+            vec![
+                crate::webdav::path_resolver::WEBDAV_PATH_CACHE_PREFIX,
+                crate::webdav::path_resolver::WEBDAV_PARENT_CACHE_PREFIX,
+                crate::services::folder_service::FOLDER_PATH_CACHE_PREFIX,
+            ]
+        );
     }
 }

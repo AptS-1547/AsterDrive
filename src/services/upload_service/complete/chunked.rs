@@ -1,4 +1,5 @@
 use chrono::Utc;
+use std::time::Instant;
 
 use crate::db::repository::file_repo;
 use crate::entities::{file, storage_policy, upload_session};
@@ -61,13 +62,20 @@ async fn finalize_chunked_upload_session(
         return finalize_remote_chunked_upload_session(state, session, policy, driver).await;
     }
 
+    let assemble_started_at = Instant::now();
     let assembled = assemble_local_chunks_to_temp_file(
         state,
         session,
         workspace_storage_service::local_content_dedup_enabled(policy),
     )
     .await?;
+    let assemble_elapsed_ms = assemble_started_at.elapsed().as_millis();
+
+    let stage_started_at = Instant::now();
     let blob_plan = stage_assembled_blob_upload(driver, policy, &assembled).await?;
+    let stage_elapsed_ms = stage_started_at.elapsed().as_millis();
+
+    let persist_started_at = Instant::now();
     persist_assembled_upload(
         state,
         session,
@@ -77,6 +85,17 @@ async fn finalize_chunked_upload_session(
         &blob_plan,
     )
     .await
+    .inspect(|file| {
+        tracing::debug!(
+            upload_id = %session.id,
+            file_id = file.id,
+            size = assembled.size,
+            assemble_elapsed_ms,
+            stage_elapsed_ms,
+            persist_elapsed_ms = persist_started_at.elapsed().as_millis(),
+            "local chunked upload finalized"
+        );
+    })
 }
 
 async fn finalize_remote_chunked_upload_session(
@@ -97,6 +116,7 @@ async fn finalize_remote_chunked_upload_session(
         writer,
     ));
 
+    let upload_started_at = Instant::now();
     let upload_result = workspace_storage_service::upload_reader_to_prepared_blob(
         driver,
         &prepared,
@@ -104,6 +124,7 @@ async fn finalize_remote_chunked_upload_session(
         session.total_size,
     )
     .await;
+    let upload_elapsed_ms = upload_started_at.elapsed().as_millis();
 
     let relay_result = relay_task.await.map_err(|error| {
         upload_assembly_error_with_subcode(
@@ -123,7 +144,19 @@ async fn finalize_remote_chunked_upload_session(
         return Err(error);
     }
 
-    persist_preuploaded_chunked_upload(state, session, driver, &prepared).await
+    let persist_started_at = Instant::now();
+    persist_preuploaded_chunked_upload(state, session, driver, &prepared)
+        .await
+        .inspect(|file| {
+            tracing::debug!(
+                upload_id = %session.id,
+                file_id = file.id,
+                size = session.total_size,
+                upload_elapsed_ms,
+                persist_elapsed_ms = persist_started_at.elapsed().as_millis(),
+                "remote chunked upload finalized"
+            );
+        })
 }
 
 async fn stream_local_chunks_into_writer(

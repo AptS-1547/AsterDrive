@@ -378,6 +378,7 @@ pub(crate) async fn store_relative_target_from_stream(
             workspace_storage_service::StoreFromTempHints {
                 resolved_policy,
                 precomputed_hash: precomputed_hash.as_deref(),
+                actor_username: None,
             },
         )
         .await
@@ -396,6 +397,7 @@ pub(crate) async fn store_relative_target_from_stream(
             workspace_storage_service::StoreFromTempHints {
                 resolved_policy,
                 precomputed_hash: precomputed_hash.as_deref(),
+                actor_username: None,
             },
         )
         .await

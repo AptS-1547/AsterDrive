@@ -1,5 +1,6 @@
 use chrono::Utc;
 use sea_orm::ConnectionTrait;
+use std::time::Instant;
 
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, file_blob, upload_session};
@@ -21,12 +22,30 @@ pub(crate) async fn finalize_upload_session_blob<C: ConnectionTrait>(
     // 先建文件，再记配额，最后把 session 状态切到 completed。
     // 这样调用方只要看到 completed，就能推定文件记录已经可见且额度已落账。
     let scope = scope_from_session(session);
+    let started_at = Instant::now();
+    let create_started_at = Instant::now();
     let created =
         create_new_file_from_blob(db, scope, session.folder_id, &session.filename, blob, now)
             .await?;
+    let create_elapsed_ms = create_started_at.elapsed().as_millis();
 
+    let quota_started_at = Instant::now();
     update_storage_used(db, scope, blob.size).await?;
+    let quota_elapsed_ms = quota_started_at.elapsed().as_millis();
+
+    let complete_started_at = Instant::now();
     mark_upload_session_completed(db, &session.id, created.id).await?;
+    tracing::debug!(
+        upload_id = %session.id,
+        file_id = created.id,
+        blob_id = blob.id,
+        size = blob.size,
+        create_elapsed_ms,
+        quota_elapsed_ms,
+        complete_elapsed_ms = complete_started_at.elapsed().as_millis(),
+        total_elapsed_ms = started_at.elapsed().as_millis(),
+        "finalized upload session blob"
+    );
     Ok(created)
 }
 

@@ -26,6 +26,7 @@ pub async fn prepare_primary() -> Result<PreparedPrimaryRuntime> {
             common.database.clone(),
             rollback_queue_capacity,
         );
+    crate::services::audit_service::init_global_audit_log_manager(common.database.clone());
 
     tracing::info!(
         mode = NodeRuntimeMode::Primary.as_str(),

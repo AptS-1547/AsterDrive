@@ -7,10 +7,10 @@ use crate::api::routes::team_scope;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{
-    audit_service::AuditContext, auth_service::Claims, upload_service,
+    audit_service::AuditContext, auth_service::Claims, upload_service, workspace_models::FileInfo,
     workspace_storage_service::WorkspaceStorageScope,
 };
-use actix_web::{HttpRequest, HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, http::header, web};
 
 #[derive(Clone, Copy)]
 pub(crate) struct UploadResponseParams<'a> {
@@ -18,6 +18,12 @@ pub(crate) struct UploadResponseParams<'a> {
     pub folder_id: Option<i64>,
     pub relative_path: Option<&'a str>,
     pub declared_size: Option<i64>,
+}
+
+fn upload_file_created_response(file: FileInfo) -> HttpResponse {
+    HttpResponse::Created()
+        .insert_header(header::ContentEncoding::Identity)
+        .json(ApiResponse::ok(file))
 }
 
 #[api_docs_macros::path(
@@ -178,7 +184,7 @@ pub async fn complete_upload(
         &ctx,
     )
     .await?;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+    Ok(upload_file_created_response(file))
 }
 
 #[api_docs_macros::path(
@@ -450,7 +456,7 @@ pub(crate) async fn team_complete_upload(
         &ctx,
     )
     .await?;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+    Ok(upload_file_created_response(file))
 }
 
 #[api_docs_macros::path(
@@ -580,5 +586,5 @@ pub(crate) async fn upload_response(
         &ctx,
     )
     .await?;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+    Ok(upload_file_created_response(file))
 }

@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{ConnectionTrait, Set};
 use std::future::Future;
+use std::time::Instant;
 
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, upload_session};
@@ -151,22 +152,41 @@ where
     Fut: Future<Output = Result<file::Model>>,
 {
     let upload_id = session.id.as_str();
+    let stage_started_at = Instant::now();
+    let transition_started_at = Instant::now();
     transition_upload_session_to_assembling(db, upload_id, session.status, expected_status).await?;
+    let transition_elapsed_ms = transition_started_at.elapsed().as_millis();
 
+    let completion_started_at = Instant::now();
     match completion_future.await {
         Ok(file) => {
+            let completion_elapsed_ms = completion_started_at.elapsed().as_millis();
+            let total_elapsed_ms = stage_started_at.elapsed().as_millis();
             tracing::debug!(
                 upload_id,
                 file_id = file.id,
                 blob_id = file.blob_id,
                 size = file.size,
+                transition_elapsed_ms,
+                completion_elapsed_ms,
+                total_elapsed_ms,
                 "{}",
                 success_log_message
             );
             Ok(file)
         }
         Err(error) => {
+            let completion_elapsed_ms = completion_started_at.elapsed().as_millis();
             handle_completion_error(db, upload_id, expected_status, &error).await;
+            tracing::debug!(
+                upload_id,
+                expected_status = ?expected_status,
+                transition_elapsed_ms,
+                completion_elapsed_ms,
+                total_elapsed_ms = stage_started_at.elapsed().as_millis(),
+                error_code = error.code(),
+                "upload completion stage failed"
+            );
             Err(error)
         }
     }

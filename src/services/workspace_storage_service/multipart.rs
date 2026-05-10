@@ -16,8 +16,8 @@ use super::{
     StoreFromTempHints, StoreFromTempParams, StorePreuploadedNondedupParams, WorkspaceStorageScope,
     check_quota, cleanup_preuploaded_blob_upload, create_empty, ensure_upload_parent_path,
     local_content_dedup_enabled, parse_relative_upload_path, prepare_non_dedup_blob_upload,
-    resolve_policy_for_size, store_from_temp, store_from_temp_with_hints,
-    store_preuploaded_nondedup, streaming_direct_upload_eligible, verify_folder_access,
+    resolve_policy_for_size, store_from_temp_with_hints, store_preuploaded_nondedup,
+    streaming_direct_upload_eligible, verify_folder_access,
 };
 use crate::utils::numbers::usize_to_i64;
 
@@ -29,6 +29,12 @@ struct DirectUploadParams<'a> {
     resolved_filename: &'a str,
     policy: &'a crate::entities::storage_policy::Model,
     declared_size: i64,
+    actor_username: Option<&'a str>,
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct WorkspaceUploadHints<'a> {
+    pub actor_username: Option<&'a str>,
 }
 
 fn upload_field_read_failed(message: String) -> AsterError {
@@ -102,6 +108,7 @@ async fn upload_local_direct(
         resolved_filename,
         policy,
         declared_size,
+        actor_username,
     } = params;
     let should_dedup = local_content_dedup_enabled(policy);
 
@@ -196,6 +203,7 @@ async fn upload_local_direct(
                 StoreFromTempHints {
                     resolved_policy,
                     precomputed_hash: precomputed_hash.as_deref(),
+                    actor_username,
                 },
             )
             .await;
@@ -220,6 +228,7 @@ async fn upload_streaming_direct(
         resolved_filename,
         policy,
         declared_size,
+        actor_username,
     } = params;
     const RELAY_DIRECT_BUFFER_SIZE: usize = 64 * 1024;
 
@@ -318,6 +327,7 @@ async fn upload_streaming_direct(
                     skip_lock_check: false,
                     policy,
                     preuploaded_blob: prepared_upload,
+                    actor_username,
                 },
             )
             .await
@@ -338,6 +348,27 @@ pub(crate) async fn upload(
     folder_id: Option<i64>,
     relative_path: Option<&str>,
     declared_size: Option<i64>,
+) -> Result<file::Model> {
+    upload_with_hints(
+        state,
+        scope,
+        payload,
+        folder_id,
+        relative_path,
+        declared_size,
+        WorkspaceUploadHints::default(),
+    )
+    .await
+}
+
+pub(crate) async fn upload_with_hints(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    payload: &mut Multipart,
+    folder_id: Option<i64>,
+    relative_path: Option<&str>,
+    declared_size: Option<i64>,
+    hints: WorkspaceUploadHints<'_>,
 ) -> Result<file::Model> {
     tracing::debug!(
         scope = ?scope,
@@ -408,6 +439,7 @@ pub(crate) async fn upload(
                     resolved_filename: &resolved_filename,
                     policy: &policy,
                     declared_size,
+                    actor_username: hints.actor_username,
                 },
             )
             .await;
@@ -443,6 +475,7 @@ pub(crate) async fn upload(
                     resolved_filename: &resolved_filename,
                     policy: &policy,
                     declared_size,
+                    actor_username: hints.actor_username,
                 },
             )
             .await;
@@ -530,9 +563,13 @@ pub(crate) async fn upload(
         return create_empty(state, scope, effective_folder_id, &filename).await;
     }
 
-    let result = store_from_temp(
+    let result = store_from_temp_with_hints(
         state,
         StoreFromTempParams::new(scope, effective_folder_id, &filename, &temp_path, size),
+        StoreFromTempHints {
+            actor_username: hints.actor_username,
+            ..Default::default()
+        },
     )
     .await;
 

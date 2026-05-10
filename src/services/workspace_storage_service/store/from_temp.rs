@@ -17,9 +17,11 @@ use crate::storage::driver::StorageDriver;
 use super::{
     HASH_BUF_SIZE, NewFileMode, PreparedNonDedupBlobUpload, StoreFromTempHints,
     StoreFromTempParams, WorkspaceStorageScope, check_quota, cleanup_preuploaded_blob_upload,
-    create_exact_file_from_blob, create_new_file_from_blob, local_content_dedup_enabled,
-    persist_preuploaded_blob, prepare_non_dedup_blob_upload, resolve_policy_for_size,
-    update_storage_used, upload_temp_file_to_prepared_blob, verify_file_access,
+    create_exact_file_from_blob, create_exact_file_from_blob_with_actor_username,
+    create_new_file_from_blob, create_new_file_from_blob_with_actor_username,
+    local_content_dedup_enabled, persist_preuploaded_blob, prepare_non_dedup_blob_upload,
+    resolve_policy_for_size, update_storage_used, upload_temp_file_to_prepared_blob,
+    verify_file_access,
 };
 
 #[derive(Clone)]
@@ -54,6 +56,7 @@ struct PreparedStoreFromTemp {
     storage_delta: i64,
     mime: String,
     now: chrono::DateTime<Utc>,
+    actor_username: Option<String>,
 }
 
 struct WriteFileRecordFromTempParams<'a> {
@@ -66,6 +69,7 @@ struct WriteFileRecordFromTempParams<'a> {
     now: chrono::DateTime<Utc>,
     storage_delta: i64,
     new_file_mode: NewFileMode,
+    actor_username: Option<&'a str>,
 }
 
 fn upload_hash_temp_open_failed(message: String) -> AsterError {
@@ -138,6 +142,7 @@ async fn prepare_store_from_temp(
     let StoreFromTempHints {
         resolved_policy,
         precomputed_hash,
+        actor_username,
     } = hints;
     let db = &state.db;
 
@@ -207,6 +212,7 @@ async fn prepare_store_from_temp(
             .first_or_octet_stream()
             .to_string(),
         now: Utc::now(),
+        actor_username: actor_username.map(ToOwned::to_owned),
     })
 }
 
@@ -310,6 +316,7 @@ async fn persist_temp_store(
         storage_delta,
         mime,
         now,
+        actor_username,
     } = prepared;
     let cleanup_blob_plan = blob_plan.clone();
 
@@ -340,6 +347,7 @@ async fn persist_temp_store(
                 now,
                 storage_delta,
                 new_file_mode,
+                actor_username: actor_username.as_deref(),
             },
         )
         .await?;
@@ -413,6 +421,7 @@ async fn write_file_record_from_temp<C: ConnectionTrait>(
         now,
         storage_delta,
         new_file_mode,
+        actor_username,
     } = params;
     let result = if let Some(OverwriteContext {
         old_file,
@@ -449,12 +458,28 @@ async fn write_file_record_from_temp<C: ConnectionTrait>(
         updated
     } else {
         match new_file_mode {
-            NewFileMode::ResolveUnique => {
-                create_new_file_from_blob(txn, scope, folder_id, filename, blob, now).await?
-            }
-            NewFileMode::Exact => {
-                create_exact_file_from_blob(txn, scope, folder_id, filename, blob, now).await?
-            }
+            NewFileMode::ResolveUnique => match actor_username {
+                Some(username) => {
+                    create_new_file_from_blob_with_actor_username(
+                        txn, scope, folder_id, filename, blob, now, username,
+                    )
+                    .await?
+                }
+                None => {
+                    create_new_file_from_blob(txn, scope, folder_id, filename, blob, now).await?
+                }
+            },
+            NewFileMode::Exact => match actor_username {
+                Some(username) => {
+                    create_exact_file_from_blob_with_actor_username(
+                        txn, scope, folder_id, filename, blob, now, username,
+                    )
+                    .await?
+                }
+                None => {
+                    create_exact_file_from_blob(txn, scope, folder_id, filename, blob, now).await?
+                }
+            },
         }
     };
 

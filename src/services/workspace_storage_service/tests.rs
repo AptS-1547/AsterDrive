@@ -276,6 +276,7 @@ async fn exact_name_conflict_cleans_preuploaded_local_blob() {
         StoreFromTempHints {
             resolved_policy: Some(policy.clone()),
             precomputed_hash: None,
+            actor_username: None,
         },
     )
     .await
@@ -299,6 +300,7 @@ async fn exact_name_conflict_cleans_preuploaded_local_blob() {
         StoreFromTempHints {
             resolved_policy: Some(policy),
             precomputed_hash: None,
+            actor_username: None,
         },
     )
     .await
@@ -348,6 +350,7 @@ async fn slow_nondedup_preupload_does_not_block_task_listing() {
             StoreFromTempHints {
                 resolved_policy: Some(policy_for_store),
                 precomputed_hash: None,
+                actor_username: None,
             },
         )
         .await
