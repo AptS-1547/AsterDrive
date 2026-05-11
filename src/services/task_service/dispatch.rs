@@ -74,6 +74,21 @@ struct TaskLaneConfig {
     fast_continue: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TaskClaimCandidate {
+    index: usize,
+    task_id: i64,
+    expected_processing_token: i64,
+    next_processing_token: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ClaimedTask {
+    index: usize,
+    task_id: i64,
+    processing_token: i64,
+}
+
 const ARCHIVE_TASK_KINDS: [BackgroundTaskKind; 2] = [
     BackgroundTaskKind::ArchiveCompress,
     BackgroundTaskKind::ArchiveExtract,
@@ -212,8 +227,8 @@ async fn claim_due_for_lane(
         return Ok(Vec::new());
     }
 
-    let mut claimed_tasks = Vec::with_capacity(due.len());
-    for task in due {
+    let mut candidates = Vec::with_capacity(due.len());
+    for (index, task) in due.iter().enumerate() {
         if task_lane(task.kind) != lane_config.lane {
             tracing::warn!(
                 task_id = task.id,
@@ -223,51 +238,99 @@ async fn claim_due_for_lane(
             );
             continue;
         }
-        let task_id = task.id;
         let next_processing_token = task.processing_token.checked_add(1).ok_or_else(|| {
             AsterError::internal_error("background task processing token overflow")
         })?;
-        let claimed_at = Utc::now();
-        // TODO(#151): 压缩这里的热路径，减少每个候选任务都进事务的开销。
-        // 相关符号：background_task_repo::count_active_processing_by_kinds、
-        // config_repo::lock_by_key、background_task_repo::try_claim。
-        // 这段事务锁住 system_config 里的 lane 配置行，让同一时间只有一个 dispatcher
-        // 能为同一个 lane 做容量检查和 CAS claim。SQLite 单连接也会自然串行化这个事务。
-        let claimed = transaction::with_transaction(&state.db, async |txn| {
-            config_repo::lock_by_key(txn, lane_config.lock_key()).await?;
-            let active = background_task_repo::count_active_processing_by_kinds(
-                txn,
-                claimed_at,
-                lane_config.kinds(),
-            )
-            .await?;
-            if available_lane_capacity(lane_config.limit, active) == 0 {
-                return Ok(false);
-            }
-            background_task_repo::try_claim(
-                txn,
-                task_id,
-                task.processing_token,
-                claimed_at,
-                stale_before,
-                next_processing_token,
-                task_lease_expires_at(claimed_at),
-            )
-            .await
-        })
-        .await?;
 
-        if !claimed {
-            continue;
-        }
+        candidates.push(TaskClaimCandidate {
+            index,
+            task_id: task.id,
+            expected_processing_token: task.processing_token,
+            next_processing_token,
+        });
+    }
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
 
-        claimed_tasks.push((task, TaskLease::new(task_id, next_processing_token)));
-        if claimed_tasks.len() >= available {
-            break;
-        }
+    let claimed =
+        claim_candidates_for_lane(&state.db, lane_config, &candidates, stale_before).await?;
+    let mut claimed_tasks = Vec::with_capacity(claimed.len());
+    for claim in claimed {
+        claimed_tasks.push((
+            due[claim.index].clone(),
+            TaskLease::new(claim.task_id, claim.processing_token),
+        ));
     }
 
     Ok(claimed_tasks)
+}
+
+async fn claim_candidates_for_lane<C>(
+    db: &C,
+    lane_config: TaskLaneConfig,
+    candidates: &[TaskClaimCandidate],
+    stale_before: chrono::DateTime<Utc>,
+) -> Result<Vec<ClaimedTask>>
+where
+    C: sea_orm::TransactionTrait,
+{
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    transaction::with_transaction(db, async |txn| {
+        let claimed_at = Utc::now();
+        // 锁住 system_config 里的 lane 配置行，让同一时间只有一个 dispatcher
+        // 能为同一个 lane 做容量复核和本批 CAS claim。SQLite 单连接也会自然串行化这个事务。
+        config_repo::lock_by_key(txn, lane_config.lock_key()).await?;
+        let active = background_task_repo::count_active_processing_by_kinds(
+            txn,
+            claimed_at,
+            lane_config.kinds(),
+        )
+        .await?;
+        let available = available_lane_capacity(lane_config.limit, active);
+        if available == 0 {
+            tracing::debug!(
+                lane = ?lane_config.lane,
+                active,
+                limit = lane_config.limit,
+                "background task lane reached capacity before batch claim"
+            );
+            return Ok(Vec::new());
+        }
+
+        let mut claimed = Vec::with_capacity(available.min(candidates.len()));
+        for candidate in candidates {
+            if claimed.len() >= available {
+                break;
+            }
+
+            let did_claim = background_task_repo::try_claim(
+                txn,
+                candidate.task_id,
+                candidate.expected_processing_token,
+                claimed_at,
+                stale_before,
+                candidate.next_processing_token,
+                task_lease_expires_at(claimed_at),
+            )
+            .await?;
+            if !did_claim {
+                continue;
+            }
+
+            claimed.push(ClaimedTask {
+                index: candidate.index,
+                task_id: candidate.task_id,
+                processing_token: candidate.next_processing_token,
+            });
+        }
+
+        Ok(claimed)
+    })
+    .await
 }
 
 async fn process_claimed_task(
@@ -704,17 +767,103 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
 
+    use chrono::Utc;
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set};
     use tokio::time::{Duration, sleep};
 
+    use crate::config::DatabaseConfig;
+    use crate::db::repository::background_task_repo;
+    use crate::db::{self, repository::config_repo};
+    use crate::entities::background_task;
     use crate::errors::AsterError;
     use crate::storage::error::{StorageErrorKind, storage_driver_error};
-    use crate::types::BackgroundTaskKind;
+    use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload};
 
-    use super::{available_lane_capacity, task_lane};
+    use super::{
+        TaskClaimCandidate, TaskLane, TaskLaneConfig, available_lane_capacity,
+        claim_candidates_for_lane, task_lane,
+    };
     use super::{evaluate_heartbeat_result, run_with_concurrency_limit, should_retry_task_error};
     use crate::services::task_service::{
         TaskLease, TaskLeaseGuard, is_task_lease_lost, is_task_lease_renewal_timed_out,
     };
+    use migration::Migrator;
+
+    async fn build_dispatch_test_db() -> sea_orm::DatabaseConnection {
+        let db = db::connect(&DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .expect("dispatch test DB should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("dispatch test migrations should succeed");
+        config_repo::ensure_defaults(&db)
+            .await
+            .expect("dispatch test config defaults should exist");
+        db
+    }
+
+    async fn insert_dispatch_test_task(
+        db: &sea_orm::DatabaseConnection,
+        kind: BackgroundTaskKind,
+        status: BackgroundTaskStatus,
+        created_offset_secs: i64,
+        lease_expires_at: Option<chrono::DateTime<Utc>>,
+    ) -> background_task::Model {
+        let now = Utc::now();
+        background_task::ActiveModel {
+            kind: Set(kind),
+            status: Set(status),
+            creator_user_id: Set(None),
+            team_id: Set(None),
+            share_id: Set(None),
+            display_name: Set(format!("dispatch-claim-{created_offset_secs}")),
+            payload_json: Set(StoredTaskPayload("{}".to_string())),
+            result_json: Set(None),
+            steps_json: Set(None),
+            progress_current: Set(0),
+            progress_total: Set(0),
+            status_text: Set(None),
+            attempt_count: Set(0),
+            max_attempts: Set(1),
+            next_run_at: Set(now - chrono::Duration::seconds(1)),
+            processing_token: Set(0),
+            processing_started_at: Set(match status {
+                BackgroundTaskStatus::Processing => Some(now - chrono::Duration::seconds(30)),
+                _ => None,
+            }),
+            last_heartbeat_at: Set(match status {
+                BackgroundTaskStatus::Processing => Some(now - chrono::Duration::seconds(30)),
+                _ => None,
+            }),
+            lease_expires_at: Set(lease_expires_at),
+            started_at: Set(match status {
+                BackgroundTaskStatus::Processing => Some(now - chrono::Duration::seconds(30)),
+                _ => None,
+            }),
+            finished_at: Set(None),
+            last_error: Set(None),
+            expires_at: Set(now + chrono::Duration::hours(1)),
+            created_at: Set(now + chrono::Duration::seconds(created_offset_secs)),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("dispatch test task should insert")
+    }
+
+    fn claim_candidate(index: usize, task: &background_task::Model) -> TaskClaimCandidate {
+        TaskClaimCandidate {
+            index,
+            task_id: task.id,
+            expected_processing_token: task.processing_token,
+            next_processing_token: task.processing_token + 1,
+        }
+    }
 
     #[tokio::test]
     async fn run_with_concurrency_limit_caps_parallelism() {
@@ -776,6 +925,168 @@ mod tests {
         assert_eq!(available_lane_capacity(3, 3), 0);
         assert_eq!(available_lane_capacity(3, 4), 0);
         assert_eq!(available_lane_capacity(3, u64::MAX), 0);
+    }
+
+    #[tokio::test]
+    async fn claim_candidates_for_lane_claims_batch_up_to_rechecked_capacity() {
+        let db = build_dispatch_test_db().await;
+        let tasks = vec![
+            insert_dispatch_test_task(
+                &db,
+                BackgroundTaskKind::ArchiveCompress,
+                BackgroundTaskStatus::Pending,
+                -3,
+                None,
+            )
+            .await,
+            insert_dispatch_test_task(
+                &db,
+                BackgroundTaskKind::ArchiveExtract,
+                BackgroundTaskStatus::Pending,
+                -2,
+                None,
+            )
+            .await,
+            insert_dispatch_test_task(
+                &db,
+                BackgroundTaskKind::ArchiveCompress,
+                BackgroundTaskStatus::Pending,
+                -1,
+                None,
+            )
+            .await,
+        ];
+        let candidates = tasks
+            .iter()
+            .enumerate()
+            .map(|(index, task)| claim_candidate(index, task))
+            .collect::<Vec<_>>();
+
+        let claimed = claim_candidates_for_lane(
+            &db,
+            TaskLaneConfig {
+                lane: TaskLane::Archive,
+                limit: 2,
+                fast_continue: true,
+            },
+            &candidates,
+            Utc::now() - chrono::Duration::seconds(60),
+        )
+        .await
+        .expect("batch claim should succeed");
+
+        assert_eq!(claimed.len(), 2);
+        assert_eq!(claimed[0].task_id, tasks[0].id);
+        assert_eq!(claimed[1].task_id, tasks[1].id);
+        assert_eq!(claimed[0].processing_token, 1);
+        assert_eq!(claimed[1].processing_token, 1);
+
+        let stored = background_task::Entity::find()
+            .all(&db)
+            .await
+            .expect("stored tasks should load");
+        let processing = stored
+            .iter()
+            .filter(|task| task.status == BackgroundTaskStatus::Processing)
+            .map(|task| task.id)
+            .collect::<Vec<_>>();
+        assert!(processing.contains(&tasks[0].id));
+        assert!(processing.contains(&tasks[1].id));
+        assert!(!processing.contains(&tasks[2].id));
+    }
+
+    #[tokio::test]
+    async fn claim_candidates_for_lane_skips_claim_when_rechecked_capacity_is_full() {
+        let db = build_dispatch_test_db().await;
+        let now = Utc::now();
+        insert_dispatch_test_task(
+            &db,
+            BackgroundTaskKind::ThumbnailGenerate,
+            BackgroundTaskStatus::Processing,
+            -3,
+            Some(now + chrono::Duration::seconds(60)),
+        )
+        .await;
+        let pending = insert_dispatch_test_task(
+            &db,
+            BackgroundTaskKind::ThumbnailGenerate,
+            BackgroundTaskStatus::Pending,
+            -1,
+            None,
+        )
+        .await;
+        let candidates = vec![claim_candidate(0, &pending)];
+
+        let claimed = claim_candidates_for_lane(
+            &db,
+            TaskLaneConfig {
+                lane: TaskLane::Thumbnail,
+                limit: 1,
+                fast_continue: true,
+            },
+            &candidates,
+            Utc::now() - chrono::Duration::seconds(60),
+        )
+        .await
+        .expect("full lane batch claim should succeed without claiming");
+
+        assert!(claimed.is_empty());
+        let stored = background_task_repo::find_by_id(&db, pending.id)
+            .await
+            .expect("pending task should still exist");
+        assert_eq!(stored.status, BackgroundTaskStatus::Pending);
+        assert_eq!(stored.processing_token, 0);
+    }
+
+    #[tokio::test]
+    async fn claim_candidates_for_lane_continues_after_stale_candidate_loses_cas() {
+        let db = build_dispatch_test_db().await;
+        let stale = insert_dispatch_test_task(
+            &db,
+            BackgroundTaskKind::ArchiveCompress,
+            BackgroundTaskStatus::Pending,
+            -2,
+            None,
+        )
+        .await;
+        let next = insert_dispatch_test_task(
+            &db,
+            BackgroundTaskKind::ArchiveCompress,
+            BackgroundTaskStatus::Pending,
+            -1,
+            None,
+        )
+        .await;
+        let candidates = vec![
+            TaskClaimCandidate {
+                index: 0,
+                task_id: stale.id,
+                expected_processing_token: stale.processing_token + 1,
+                next_processing_token: stale.processing_token + 2,
+            },
+            claim_candidate(1, &next),
+        ];
+
+        let claimed = claim_candidates_for_lane(
+            &db,
+            TaskLaneConfig {
+                lane: TaskLane::Archive,
+                limit: 1,
+                fast_continue: true,
+            },
+            &candidates,
+            Utc::now() - chrono::Duration::seconds(60),
+        )
+        .await
+        .expect("batch claim should skip stale CAS misses");
+
+        assert_eq!(claimed.len(), 1);
+        assert_eq!(claimed[0].task_id, next.id);
+        let stale = background_task_repo::find_by_id(&db, stale.id)
+            .await
+            .expect("stale candidate should still exist");
+        assert_eq!(stale.status, BackgroundTaskStatus::Pending);
+        assert_eq!(stale.processing_token, 0);
     }
 
     #[test]
