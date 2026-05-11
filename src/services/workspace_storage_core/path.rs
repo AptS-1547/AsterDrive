@@ -6,13 +6,21 @@ use crate::entities::folder;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_scope_service::{
-    WorkspaceStorageScope, load_scope_actor_username, verify_folder_access,
+    WorkspaceStorageScope, load_scope_actor_username_cached, verify_folder_access,
 };
+
+use super::policy::VerifiedFolderPolicyHint;
 
 pub(crate) struct ParsedUploadPath {
     pub base_folder_id: Option<i64>,
+    pub base_folder: Option<VerifiedFolderPolicyHint>,
     pub parent_segments: Vec<String>,
     pub filename: String,
+}
+
+pub(crate) struct ResolvedUploadParent {
+    pub folder_id: Option<i64>,
+    pub folder: Option<VerifiedFolderPolicyHint>,
 }
 
 pub(crate) async fn parse_relative_upload_path(
@@ -21,9 +29,10 @@ pub(crate) async fn parse_relative_upload_path(
     base_folder_id: Option<i64>,
     relative_path: &str,
 ) -> Result<ParsedUploadPath> {
-    if let Some(folder_id) = base_folder_id {
-        verify_folder_access(state, scope, folder_id).await?;
-    }
+    let base_folder = match base_folder_id {
+        Some(folder_id) => Some(verify_folder_access(state, scope, folder_id).await?.into()),
+        None => None,
+    };
 
     if relative_path.split('/').any(|segment| segment.is_empty()) {
         return Err(AsterError::validation_error(
@@ -44,6 +53,7 @@ pub(crate) async fn parse_relative_upload_path(
 
     Ok(ParsedUploadPath {
         base_folder_id,
+        base_folder,
         parent_segments,
         filename,
     })
@@ -53,34 +63,49 @@ pub(crate) async fn ensure_upload_parent_path(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     parsed: &ParsedUploadPath,
-) -> Result<Option<i64>> {
+    actor_username: Option<&str>,
+) -> Result<ResolvedUploadParent> {
     if parsed.parent_segments.is_empty() {
-        return Ok(parsed.base_folder_id);
+        return Ok(ResolvedUploadParent {
+            folder_id: parsed.base_folder_id,
+            folder: parsed.base_folder,
+        });
     }
 
     let txn = crate::db::transaction::begin(&state.db).await?;
     let mut current_parent = parsed.base_folder_id;
+    let mut current_folder = parsed.base_folder;
 
     // 整条父路径在一个事务里补齐，避免目录上传时只创建出半截层级。
     for segment in &parsed.parent_segments {
-        let folder = ensure_folder_in_parent(&txn, scope, current_parent, segment).await?;
+        let folder =
+            ensure_folder_in_parent(state, &txn, scope, current_parent, segment, actor_username)
+                .await?;
         current_parent = Some(folder.id);
+        current_folder = Some(match current_folder {
+            Some(parent_hint) => parent_hint.merge_child(&folder),
+            None => (&folder).into(),
+        });
     }
 
     crate::db::transaction::commit(txn).await?;
-    Ok(current_parent)
+    Ok(ResolvedUploadParent {
+        folder_id: current_parent,
+        folder: current_folder,
+    })
 }
 
 async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
+    state: &PrimaryAppState,
     db: &C,
     scope: WorkspaceStorageScope,
     parent_id: Option<i64>,
     name: &str,
+    actor_username: Option<&str>,
 ) -> Result<folder::Model> {
     // 目录上传 / 解压导入会并发命中同一路径。
     // 这里先查后建，并在插入冲突后回读，保证“得到该目录”的语义是幂等的。
     let name = crate::utils::normalize_validate_name(name)?;
-    let created_by_username = load_scope_actor_username(db, scope).await?;
 
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
@@ -90,13 +115,17 @@ async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
                 return Ok(existing);
             }
 
+            let created_by_username = match actor_username {
+                Some(username) => username.to_string(),
+                None => load_scope_actor_username_cached(state, scope).await?,
+            };
             let now = Utc::now();
             let model = folder::ActiveModel {
                 name: Set(name.clone()),
                 parent_id: Set(parent_id),
                 owner_user_id: Set(Some(user_id)),
                 created_by_user_id: Set(Some(user_id)),
-                created_by_username: Set(created_by_username.clone()),
+                created_by_username: Set(created_by_username),
                 policy_id: Set(None),
                 created_at: Set(now),
                 updated_at: Set(now),
@@ -125,7 +154,10 @@ async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
             {
                 return Ok(existing);
             }
-
+            let created_by_username = match actor_username {
+                Some(username) => username.to_string(),
+                None => load_scope_actor_username_cached(state, scope).await?,
+            };
             let now = Utc::now();
             let model = folder::ActiveModel {
                 name: Set(name.clone()),

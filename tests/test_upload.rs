@@ -211,6 +211,118 @@ async fn create_upload_session(
     .unwrap();
 }
 
+#[actix_web::test]
+async fn test_upload_session_try_create_reports_id_conflict() {
+    use aster_drive::db::repository::{policy_repo, upload_session_repo};
+    use sea_orm::Set;
+
+    let state = common::setup().await;
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "trycreateuser",
+        "trycreate@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let policy = policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist");
+    let upload_id = new_test_upload_id();
+    let now = chrono::Utc::now();
+
+    let build_model = || aster_drive::entities::upload_session::ActiveModel {
+        id: Set(upload_id.clone()),
+        user_id: Set(user.id),
+        team_id: Set(None),
+        filename: Set("try-create.bin".to_string()),
+        total_size: Set(1),
+        chunk_size: Set(1),
+        total_chunks: Set(1),
+        received_count: Set(0),
+        folder_id: Set(None),
+        policy_id: Set(policy.id),
+        status: Set(aster_drive::types::UploadSessionStatus::Uploading),
+        s3_temp_key: Set(None),
+        s3_multipart_id: Set(None),
+        file_id: Set(None),
+        created_at: Set(now),
+        expires_at: Set(now + chrono::Duration::hours(1)),
+        updated_at: Set(now),
+    };
+
+    assert!(
+        upload_session_repo::try_create(&state.db, build_model())
+            .await
+            .unwrap()
+    );
+    assert!(
+        !upload_session_repo::try_create(&state.db, build_model())
+            .await
+            .unwrap()
+    );
+}
+
+#[actix_web::test]
+async fn test_upload_session_try_create_preserves_non_id_unique_conflict() {
+    use aster_drive::db::repository::{policy_repo, upload_session_repo};
+    use sea_orm::{ConnectionTrait, Set};
+
+    let state = common::setup().await;
+    state
+        .db
+        .execute_unprepared(
+            "CREATE UNIQUE INDEX uq_upload_sessions_filename_test ON upload_sessions (filename)",
+        )
+        .await
+        .unwrap();
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "trycreateuniq",
+        "trycreateuniq@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let policy = policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist");
+    let filename = format!("try-create-unique-{}.bin", new_test_upload_id());
+    let now = chrono::Utc::now();
+
+    let build_model = |upload_id: String| aster_drive::entities::upload_session::ActiveModel {
+        id: Set(upload_id),
+        user_id: Set(user.id),
+        team_id: Set(None),
+        filename: Set(filename.clone()),
+        total_size: Set(1),
+        chunk_size: Set(1),
+        total_chunks: Set(1),
+        received_count: Set(0),
+        folder_id: Set(None),
+        policy_id: Set(policy.id),
+        status: Set(aster_drive::types::UploadSessionStatus::Uploading),
+        s3_temp_key: Set(None),
+        s3_multipart_id: Set(None),
+        file_id: Set(None),
+        created_at: Set(now),
+        expires_at: Set(now + chrono::Duration::hours(1)),
+        updated_at: Set(now),
+    };
+
+    assert!(
+        upload_session_repo::try_create(&state.db, build_model(new_test_upload_id()))
+            .await
+            .unwrap()
+    );
+    let err = upload_session_repo::try_create(&state.db, build_model(new_test_upload_id()))
+        .await
+        .expect_err("non-id unique conflict should not be treated as id retry");
+    assert_eq!(err.code(), "E002");
+}
+
 async fn create_dead_remote_policy(
     state: &aster_drive::runtime::PrimaryAppState,
 ) -> aster_drive::entities::storage_policy::Model {
@@ -1311,6 +1423,79 @@ async fn test_direct_and_chunked_upload_share_blob_when_local_dedup_enabled() {
     assert_eq!(direct_blob.hash, chunked_blob.hash);
     assert_eq!(direct_blob.size, chunked_blob.size);
     assert_eq!(direct_blob.ref_count, 2);
+}
+
+#[actix_web::test]
+async fn test_concurrent_chunked_dedup_complete_reuses_blob_without_overwrite() {
+    use aster_drive::db::repository::file_repo;
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    set_default_local_content_dedup(&state, true).await;
+    let user = auth_service::register(
+        &state,
+        "chunkeddedupuser",
+        "chunkeddedup@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let pattern = b"concurrent chunked dedup payload\n";
+    let content = pattern.repeat((10_485_760 / pattern.len()) + 1);
+    let content = content[..10_485_760].to_vec();
+    let mut upload_ids = Vec::new();
+
+    for name in ["dedup-a.bin", "dedup-b.bin"] {
+        let init =
+            upload_service::init_upload(&state, user.id, name, content.len() as i64, None, None)
+                .await
+                .unwrap();
+        let upload_id = init.upload_id.unwrap();
+        let total_chunks = init.total_chunks.unwrap();
+        let chunk_size = init.chunk_size.unwrap() as usize;
+        for chunk_number in 0..total_chunks {
+            let start = chunk_number as usize * chunk_size;
+            let end = ((chunk_number as usize + 1) * chunk_size).min(content.len());
+            upload_service::upload_chunk(
+                &state,
+                &upload_id,
+                chunk_number,
+                user.id,
+                &content[start..end],
+            )
+            .await
+            .unwrap();
+        }
+        upload_ids.push(upload_id);
+    }
+
+    let mut tasks = JoinSet::new();
+    for upload_id in upload_ids {
+        let state = state.clone();
+        tasks.spawn(async move {
+            upload_service::complete_upload(&state, &upload_id, user.id, None)
+                .await
+                .unwrap()
+        });
+    }
+
+    let first = tasks.join_next().await.unwrap().unwrap();
+    let second = tasks.join_next().await.unwrap().unwrap();
+    let first_blob = file_repo::find_blob_by_id(&state.db, first.blob_id)
+        .await
+        .unwrap();
+    let second_blob = file_repo::find_blob_by_id(&state.db, second.blob_id)
+        .await
+        .unwrap();
+    let policy = policy_repo::find_by_id(&state.db, first_blob.policy_id)
+        .await
+        .unwrap();
+    let driver = state.driver_registry.get_driver(&policy).unwrap();
+
+    assert_eq!(first_blob.id, second_blob.id);
+    assert_eq!(first_blob.ref_count, 2);
+    assert_eq!(driver.get(&first_blob.storage_path).await.unwrap(), content);
 }
 
 #[actix_web::test]

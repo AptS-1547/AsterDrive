@@ -9,8 +9,8 @@ use crate::errors::{AsterError, Result};
 use crate::types::{MediaProcessorKind, SystemConfigSource, SystemConfigValueType};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
-    TryInsertResult,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set, TryInsertResult,
 };
 
 const BOOTSTRAP_ENABLE_VIPS_CLI_ENV: &str = "ASTER_BOOTSTRAP_ENABLE_VIPS_CLI";
@@ -102,6 +102,22 @@ pub async fn find_by_key<C: ConnectionTrait>(
         .one(db)
         .await
         .map_err(AsterError::from)
+}
+
+pub async fn lock_by_key<C: ConnectionTrait>(db: &C, key: &str) -> Result<()> {
+    let query = SystemConfig::find().filter(system_config::Column::Key.eq(key));
+    let config = match db.get_database_backend() {
+        DbBackend::Postgres | DbBackend::MySql => query
+            .lock_exclusive()
+            .one(db)
+            .await
+            .map_err(AsterError::from)?,
+        _ => query.one(db).await.map_err(AsterError::from)?,
+    };
+
+    config
+        .map(|_| ())
+        .ok_or_else(|| AsterError::internal_error(format!("system config key '{key}' is missing")))
 }
 
 pub async fn upsert<C: ConnectionTrait>(

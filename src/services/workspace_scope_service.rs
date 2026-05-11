@@ -13,6 +13,7 @@ use sea_orm::ConnectionTrait;
 use serde::{Deserialize, Serialize};
 
 const TEAM_ACCESS_CACHE_TTL: u64 = 60;
+const ACTOR_USERNAME_CACHE_TTL: u64 = 60;
 
 /// scope 同时表达“资源属于哪个空间”和“是谁在操作”。
 ///
@@ -66,6 +67,10 @@ fn team_access_cache_prefix(team_id: i64) -> String {
 
 fn team_access_cache_key(team_id: i64, user_id: i64) -> String {
     format!("{}{}", team_access_cache_prefix(team_id), user_id)
+}
+
+fn actor_username_cache_key(user_id: i64) -> String {
+    format!("actor_username:{user_id}")
 }
 
 pub(crate) async fn invalidate_team_access_cache_for_team(state: &PrimaryAppState, team_id: i64) {
@@ -188,6 +193,26 @@ pub(crate) async fn load_scope_actor_username<C: ConnectionTrait>(
 ) -> Result<String> {
     let user = user_repo::find_by_id(db, scope.actor_user_id()).await?;
     Ok(user.username)
+}
+
+pub(crate) async fn load_scope_actor_username_cached(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+) -> Result<String> {
+    let user_id = scope.actor_user_id();
+    let cache_key = actor_username_cache_key(user_id);
+    if let Some(username) = state.cache.get::<String>(&cache_key).await {
+        tracing::debug!(user_id, "actor username cache hit");
+        return Ok(username);
+    }
+
+    let username = load_scope_actor_username(&state.db, scope).await?;
+    state
+        .cache
+        .set(&cache_key, &username, Some(ACTOR_USERNAME_CACHE_TTL))
+        .await;
+    tracing::debug!(user_id, "actor username cache miss");
+    Ok(username)
 }
 
 pub(crate) fn ensure_personal_file_scope(file: &file::Model) -> Result<()> {

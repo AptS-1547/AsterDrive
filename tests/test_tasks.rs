@@ -9,6 +9,9 @@ use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 use serde_json::Value;
 use std::io::{Cursor, Read, Write};
 
+use aster_drive::config::operations::{
+    BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY, BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+};
 use aster_drive::db::repository::background_task_repo;
 use aster_drive::entities::background_task;
 use aster_drive::services::task_service::{self, RuntimeTaskRunOutcome};
@@ -272,6 +275,48 @@ async fn insert_pending_dispatch_task(
     )
     .await
     .expect("pending dispatch task should be inserted")
+}
+
+async fn insert_pending_lane_task(
+    state: &aster_drive::runtime::PrimaryAppState,
+    kind: BackgroundTaskKind,
+    display_name: &str,
+    payload_json: &str,
+) -> background_task::Model {
+    let now = Utc::now();
+    background_task_repo::create(
+        &state.db,
+        background_task::ActiveModel {
+            kind: Set(kind),
+            status: Set(BackgroundTaskStatus::Pending),
+            creator_user_id: Set(None),
+            team_id: Set(None),
+            share_id: Set(None),
+            display_name: Set(display_name.to_string()),
+            payload_json: Set(StoredTaskPayload(payload_json.to_string())),
+            result_json: Set(None),
+            steps_json: Set(None),
+            progress_current: Set(0),
+            progress_total: Set(0),
+            status_text: Set(None),
+            attempt_count: Set(0),
+            max_attempts: Set(1),
+            next_run_at: Set(now - Duration::seconds(1)),
+            processing_token: Set(0),
+            processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            lease_expires_at: Set(None),
+            started_at: Set(None),
+            finished_at: Set(None),
+            last_error: Set(None),
+            expires_at: Set(now + Duration::hours(1)),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("pending lane task should be inserted")
 }
 
 async fn assert_response_status(
@@ -605,6 +650,62 @@ async fn test_dispatch_due_reclaims_stale_processing_task_with_new_token() {
             .expect("reclaimed stale task should record error")
             .contains("should not be dispatched")
     );
+}
+
+#[actix_web::test]
+async fn test_dispatch_due_fast_continues_thumbnail_lane() {
+    let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+        "5",
+    ));
+
+    for index in 0..5 {
+        insert_pending_lane_task(
+            &state,
+            BackgroundTaskKind::ThumbnailGenerate,
+            &format!("thumbnail-fast-continue-{index}"),
+            "{}",
+        )
+        .await;
+    }
+
+    let stats = task_service::dispatch_due(&state)
+        .await
+        .expect("dispatch should fast-continue thumbnail lane");
+
+    assert_eq!(stats.claimed, 5);
+    assert_eq!(stats.failed, 5);
+    assert_eq!(stats.retried, 0);
+    assert_eq!(stats.succeeded, 0);
+}
+
+#[actix_web::test]
+async fn test_dispatch_due_fast_continues_archive_lane_with_backlog() {
+    let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
+        "2",
+    ));
+
+    for index in 0..3 {
+        insert_pending_lane_task(
+            &state,
+            BackgroundTaskKind::ArchiveCompress,
+            &format!("archive-fast-continue-backlog-{index}"),
+            "{}",
+        )
+        .await;
+    }
+
+    let stats = task_service::dispatch_due(&state)
+        .await
+        .expect("dispatch should fast-continue archive lane");
+
+    assert_eq!(stats.claimed, 3);
+    assert_eq!(stats.failed, 3);
+    assert_eq!(stats.retried, 0);
+    assert_eq!(stats.succeeded, 0);
 }
 
 #[actix_web::test]

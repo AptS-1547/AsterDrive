@@ -71,10 +71,17 @@ pub async fn find_or_create_blob<C: ConnectionTrait>(
 ) -> Result<FindOrCreateBlobResult> {
     for attempt in 0..FIND_OR_CREATE_BLOB_MAX_ATTEMPTS {
         if let Some(existing) = find_active_blob_by_hash(db, hash, policy_id).await? {
-            match increment_blob_ref_count(db, existing.id).await {
+            let blob_id = existing.id;
+            existing.ref_count.checked_add(1).ok_or_else(|| {
+                AsterError::internal_error(format!(
+                    "file_blob #{} ref_count overflow: {}",
+                    existing.id, existing.ref_count
+                ))
+            })?;
+            match increment_blob_ref_count(db, blob_id).await {
                 Ok(()) => {
                     return Ok(FindOrCreateBlobResult {
-                        model: find_blob_by_id(db, existing.id).await?,
+                        model: find_blob_by_id(db, blob_id).await?,
                         inserted: false,
                     });
                 }

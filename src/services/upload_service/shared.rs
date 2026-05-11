@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{ConnectionTrait, Set};
 use std::future::Future;
+use std::time::Instant;
 
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, upload_session};
@@ -12,8 +13,86 @@ use crate::errors::{
 };
 use crate::runtime::PrimaryAppState;
 use crate::storage::StorageErrorKind;
+use crate::storage::multipart::MultipartStorageDriver;
 use crate::types::UploadSessionStatus;
 use crate::utils::{id, paths};
+
+pub(super) const UPLOAD_SESSION_ID_MAX_ATTEMPTS: usize = 5;
+const INIT_MULTIPART_ABORT_MAX_ATTEMPTS: u32 = 3;
+const INIT_MULTIPART_ABORT_INITIAL_BACKOFF_MS: u64 = 50;
+
+pub(super) fn new_upload_id() -> String {
+    id::new_uuid()
+}
+
+pub(super) fn upload_id_collision_exhausted_error() -> AsterError {
+    AsterError::internal_error(format!(
+        "failed to create unique upload session after {UPLOAD_SESSION_ID_MAX_ATTEMPTS} attempts"
+    ))
+}
+
+pub(super) async fn delete_upload_session_record_after_init_error<C: ConnectionTrait>(
+    db: &C,
+    upload_id: &str,
+    context: &str,
+) {
+    if let Err(error) = upload_session_repo::delete(db, upload_id).await {
+        tracing::warn!(
+            upload_id,
+            "failed to delete upload session after {context}: {error}"
+        );
+    }
+}
+
+pub(super) async fn abort_created_multipart_upload_after_init_error(
+    multipart: &dyn MultipartStorageDriver,
+    temp_key: &str,
+    multipart_id: &str,
+    upload_id: &str,
+    context: &str,
+) -> Result<()> {
+    let mut last_error = None;
+    for attempt in 1..=INIT_MULTIPART_ABORT_MAX_ATTEMPTS {
+        match multipart
+            .abort_multipart_upload(temp_key, multipart_id)
+            .await
+        {
+            Ok(()) => return Ok(()),
+            Err(error) if error.storage_error_kind() == Some(StorageErrorKind::NotFound) => {
+                return Ok(());
+            }
+            Err(error) => {
+                if attempt == INIT_MULTIPART_ABORT_MAX_ATTEMPTS {
+                    last_error = Some(error);
+                    break;
+                }
+                let backoff_ms = INIT_MULTIPART_ABORT_INITIAL_BACKOFF_MS * (1_u64 << (attempt - 1));
+                tracing::warn!(
+                    upload_id,
+                    temp_key,
+                    multipart_id,
+                    attempt,
+                    max_attempts = INIT_MULTIPART_ABORT_MAX_ATTEMPTS,
+                    backoff_ms,
+                    "failed to abort multipart upload after {context}, retrying: {error}"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+            }
+        }
+    }
+
+    let error = last_error.unwrap_or_else(|| {
+        AsterError::storage_driver_error("multipart abort failed without an error")
+    });
+    tracing::warn!(
+        upload_id,
+        temp_key,
+        multipart_id,
+        max_attempts = INIT_MULTIPART_ABORT_MAX_ATTEMPTS,
+        "failed to abort multipart upload after {context}: {error}"
+    );
+    Err(error)
+}
 
 pub(super) fn upload_session_chunk_unavailable_error(
     session: &upload_session::Model,
@@ -68,24 +147,6 @@ pub(super) fn expected_chunk_size_for_upload(
         ));
     }
     Ok(expected)
-}
-
-/// 生成唯一的 upload_id（UUID v4），最多重试 5 次防止极低概率碰撞
-pub(super) async fn generate_upload_id<C: ConnectionTrait>(db: &C) -> Result<String> {
-    for _ in 0..5 {
-        let candidate = id::new_uuid();
-        match upload_session_repo::find_by_id(db, &candidate).await {
-            Err(AsterError::UploadSessionNotFound(_)) => return Ok(candidate),
-            Err(e) => return Err(e),
-            Ok(_) => {
-                tracing::warn!("upload_id collision: {candidate}, retrying");
-                continue;
-            }
-        }
-    }
-    Err(AsterError::internal_error(
-        "failed to generate unique upload_id after 5 attempts",
-    ))
 }
 
 pub(super) fn upload_session_status_label(status: UploadSessionStatus) -> &'static str {
@@ -151,22 +212,41 @@ where
     Fut: Future<Output = Result<file::Model>>,
 {
     let upload_id = session.id.as_str();
+    let stage_started_at = Instant::now();
+    let transition_started_at = Instant::now();
     transition_upload_session_to_assembling(db, upload_id, session.status, expected_status).await?;
+    let transition_elapsed_ms = transition_started_at.elapsed().as_millis();
 
+    let completion_started_at = Instant::now();
     match completion_future.await {
         Ok(file) => {
+            let completion_elapsed_ms = completion_started_at.elapsed().as_millis();
+            let total_elapsed_ms = stage_started_at.elapsed().as_millis();
             tracing::debug!(
                 upload_id,
                 file_id = file.id,
                 blob_id = file.blob_id,
                 size = file.size,
+                transition_elapsed_ms,
+                completion_elapsed_ms,
+                total_elapsed_ms,
                 "{}",
                 success_log_message
             );
             Ok(file)
         }
         Err(error) => {
+            let completion_elapsed_ms = completion_started_at.elapsed().as_millis();
             handle_completion_error(db, upload_id, expected_status, &error).await;
+            tracing::debug!(
+                upload_id,
+                expected_status = ?expected_status,
+                transition_elapsed_ms,
+                completion_elapsed_ms,
+                total_elapsed_ms = stage_started_at.elapsed().as_millis(),
+                error_code = error.code(),
+                "upload completion stage failed"
+            );
             Err(error)
         }
     }
@@ -336,6 +416,58 @@ pub(super) async fn mark_session_failed_with_expiration<C: ConnectionTrait>(
 mod tests {
     use super::*;
     use crate::types::UploadSessionStatus;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct NotFoundAbortMultipart {
+        abort_calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl MultipartStorageDriver for NotFoundAbortMultipart {
+        async fn create_multipart_upload(&self, _path: &str) -> Result<String> {
+            panic!("not used")
+        }
+
+        async fn presigned_upload_part_url(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _part_number: i32,
+            _expires: std::time::Duration,
+        ) -> Result<String> {
+            panic!("not used")
+        }
+
+        async fn complete_multipart_upload(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _parts: Vec<(i32, String)>,
+        ) -> Result<()> {
+            panic!("not used")
+        }
+
+        async fn upload_multipart_part(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _part_number: i32,
+            _data: &[u8],
+        ) -> Result<String> {
+            panic!("not used")
+        }
+
+        async fn abort_multipart_upload(&self, _path: &str, _upload_id: &str) -> Result<()> {
+            self.abort_calls.fetch_add(1, Ordering::SeqCst);
+            Err(AsterError::storage_driver_error(
+                "S3 abort_multipart_upload failed: NoSuchUpload",
+            ))
+        }
+
+        async fn list_uploaded_parts(&self, _path: &str, _upload_id: &str) -> Result<Vec<i32>> {
+            panic!("not used")
+        }
+    }
 
     fn mock_session(total_size: i64, chunk_size: i64, total_chunks: i32) -> upload_session::Model {
         upload_session::Model {
@@ -481,5 +613,24 @@ mod tests {
             classify_upload_storage_error(&error),
             UploadStorageErrorClass::NotFound
         );
+    }
+
+    #[tokio::test]
+    async fn abort_created_multipart_upload_treats_not_found_as_success() {
+        let multipart = NotFoundAbortMultipart {
+            abort_calls: AtomicUsize::new(0),
+        };
+
+        abort_created_multipart_upload_after_init_error(
+            &multipart,
+            "tmp/upload",
+            "multipart-1",
+            "upload-1",
+            "test cleanup",
+        )
+        .await
+        .expect("not found multipart abort should be treated as already cleaned up");
+
+        assert_eq!(multipart.abort_calls.load(Ordering::SeqCst), 1);
     }
 }

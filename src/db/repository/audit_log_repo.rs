@@ -27,6 +27,20 @@ pub async fn create<C: ConnectionTrait>(
     model.insert(db).await.map_err(AsterError::from)
 }
 
+pub async fn create_many<C: ConnectionTrait>(
+    db: &C,
+    models: Vec<audit_log::ActiveModel>,
+) -> Result<()> {
+    if models.is_empty() {
+        return Ok(());
+    }
+    AuditLog::insert_many(models)
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
 /// 带过滤条件的分页查询
 pub async fn find_with_filters<C: ConnectionTrait>(
     db: &C,

@@ -6,12 +6,15 @@ use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
 };
+use unicode_normalization::UnicodeNormalization;
 
 use crate::api::pagination::{SortBy, SortOrder};
 use crate::entities::file::{self, Entity as File};
 use crate::errors::{AsterError, MapAsterErr, Result};
 
 use super::common::{FileScope, active_scope_condition, apply_folder_condition, scope_condition};
+
+const UNIQUE_FILENAME_CANDIDATE_BATCH_SIZE: usize = 32;
 
 fn sum_as_i64_expr(
     backend: DbBackend,
@@ -443,6 +446,30 @@ async fn find_by_names_in_folder_in_scope<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+async fn find_names_by_names_in_folder_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FileScope,
+    folder_id: Option<i64>,
+    names: &[String],
+) -> Result<Vec<String>> {
+    if names.is_empty() {
+        return Ok(vec![]);
+    }
+
+    File::find()
+        .select_only()
+        .column(file::Column::Name)
+        .filter(apply_folder_condition(
+            active_scope_condition(scope),
+            folder_id,
+        ))
+        .filter(file::Column::Name.is_in(names.iter().cloned()))
+        .into_tuple::<String>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_by_name_in_folder<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
@@ -479,6 +506,77 @@ pub async fn find_by_names_in_team_folder<C: ConnectionTrait>(
     find_by_names_in_folder_in_scope(db, FileScope::Team { team_id }, folder_id, names).await
 }
 
+fn unique_filename_candidate_error(name: &str) -> AsterError {
+    AsterError::validation_error(format!(
+        "failed to resolve a unique file name candidate for '{name}'"
+    ))
+}
+
+fn checked_candidate_copy_number(
+    normalized_name: &str,
+    start_copy_number: u32,
+    offset: usize,
+) -> Result<u32> {
+    let offset =
+        u32::try_from(offset).map_err(|_| unique_filename_candidate_error(normalized_name))?;
+    start_copy_number
+        .checked_add(offset)
+        .ok_or_else(|| unique_filename_candidate_error(normalized_name))
+}
+
+fn build_copy_filename_candidate_batch(
+    template: &crate::utils::CopyNameTemplate,
+    normalized_name: &str,
+    start_copy_number: u32,
+    count: usize,
+) -> Result<Vec<String>> {
+    let mut candidates = Vec::with_capacity(count);
+    for offset in 0..count {
+        let copy_number =
+            checked_candidate_copy_number(normalized_name, start_copy_number, offset)?;
+        candidates.push(crate::utils::format_copy_name(template, copy_number));
+    }
+    Ok(candidates)
+}
+
+fn build_unique_filename_candidates(normalized_name: &str) -> Result<Vec<String>> {
+    let template = crate::utils::copy_name_template(normalized_name);
+    let mut candidates = Vec::with_capacity(UNIQUE_FILENAME_CANDIDATE_BATCH_SIZE);
+    candidates.push(normalized_name.to_string());
+    candidates.extend(build_copy_filename_candidate_batch(
+        &template,
+        normalized_name,
+        template.next_copy_number,
+        UNIQUE_FILENAME_CANDIDATE_BATCH_SIZE - 1,
+    )?);
+
+    Ok(candidates)
+}
+
+fn push_unique_normalization_variant(
+    variants: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+    variant: &str,
+) {
+    if !seen.contains(variant) {
+        variants.push(variant.to_string());
+        seen.insert(variant.to_string());
+    }
+}
+
+fn add_normalization_query_variants(names: &[String]) -> Vec<String> {
+    let mut variants = Vec::with_capacity(names.len() * 3);
+    let mut seen = HashSet::with_capacity(names.len() * 3);
+    for name in names {
+        push_unique_normalization_variant(&mut variants, &mut seen, name);
+        let composed: String = name.nfc().collect();
+        push_unique_normalization_variant(&mut variants, &mut seen, &composed);
+        let decomposed: String = name.nfd().collect();
+        push_unique_normalization_variant(&mut variants, &mut seen, &decomposed);
+    }
+    variants
+}
+
 /// 基于当前目录快照建议一个不冲突的文件名：
 /// 如果 `name` 已存在则递增 " (1)", " (2)" ...
 ///
@@ -492,28 +590,55 @@ async fn resolve_unique_filename_in_scope<C: ConnectionTrait>(
     name: &str,
 ) -> Result<String> {
     let normalized_name = crate::utils::normalize_validate_name(name)?;
-    let template = crate::utils::copy_name_template(&normalized_name);
-    let existing_names: HashSet<String> = find_by_folder_in_scope(db, scope, folder_id)
-        .await?
-        .into_iter()
-        .map(|file| crate::utils::normalize_name(&file.name))
-        .collect();
+    let candidates = build_unique_filename_candidates(&normalized_name)?;
+    let query_names = add_normalization_query_variants(&candidates);
+    let existing_candidate_names: HashSet<String> =
+        find_names_by_names_in_folder_in_scope(db, scope, folder_id, &query_names)
+            .await?
+            .into_iter()
+            .map(|name| crate::utils::normalize_name(&name))
+            .collect();
 
-    if !existing_names.contains(&normalized_name) {
-        return Ok(normalized_name);
+    if let Some(candidate) = candidates
+        .iter()
+        .find(|candidate| !existing_candidate_names.contains(candidate.as_str()))
+    {
+        return Ok(candidate.clone());
     }
 
-    let mut copy_number = template.next_copy_number;
+    let template = crate::utils::copy_name_template(&normalized_name);
+    let mut next_copy_number = checked_candidate_copy_number(
+        &normalized_name,
+        template.next_copy_number,
+        UNIQUE_FILENAME_CANDIDATE_BATCH_SIZE - 1,
+    )?;
     loop {
-        let candidate = crate::utils::format_copy_name(&template, copy_number);
-        if !existing_names.contains(&candidate) {
-            return Ok(candidate);
+        let candidates = build_copy_filename_candidate_batch(
+            &template,
+            &normalized_name,
+            next_copy_number,
+            UNIQUE_FILENAME_CANDIDATE_BATCH_SIZE,
+        )?;
+        let query_names = add_normalization_query_variants(&candidates);
+        let existing_names: HashSet<String> =
+            find_names_by_names_in_folder_in_scope(db, scope, folder_id, &query_names)
+                .await?
+                .into_iter()
+                .map(|name| crate::utils::normalize_name(&name))
+                .collect();
+
+        if let Some(candidate) = candidates
+            .iter()
+            .find(|candidate| !existing_names.contains(candidate.as_str()))
+        {
+            return Ok(candidate.clone());
         }
-        copy_number = copy_number.checked_add(1).ok_or_else(|| {
-            AsterError::validation_error(format!(
-                "failed to resolve a unique file name candidate for '{name}'"
-            ))
-        })?;
+
+        next_copy_number = checked_candidate_copy_number(
+            &normalized_name,
+            next_copy_number,
+            UNIQUE_FILENAME_CANDIDATE_BATCH_SIZE,
+        )?;
     }
 }
 

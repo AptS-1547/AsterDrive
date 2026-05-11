@@ -10,6 +10,8 @@
 
 mod chunked;
 
+use std::time::Instant;
+
 use chrono::Utc;
 
 use crate::db::repository::upload_session_part_repo;
@@ -31,7 +33,14 @@ use crate::storage::driver::StorageDriver;
 use crate::types::UploadSessionStatus;
 use crate::utils::numbers::u64_to_i64;
 
-use self::chunked::complete_chunked_upload;
+use self::chunked::complete_chunked_upload_with_actor_username;
+
+const UNRESOLVED_UPLOAD_ACTOR_USERNAME: &str = "<unresolved>";
+
+#[derive(Clone, Copy, Default)]
+struct CompleteUploadHints<'a> {
+    actor_username: Option<&'a str>,
+}
 
 #[derive(Debug)]
 enum CompletionPlan {
@@ -48,6 +57,15 @@ async fn complete_upload_impl(
     session: upload_session::Model,
     parts: Option<Vec<(i32, String)>>,
 ) -> Result<file::Model> {
+    complete_upload_impl_with_hints(state, session, parts, CompleteUploadHints::default()).await
+}
+
+async fn complete_upload_impl_with_hints(
+    state: &PrimaryAppState,
+    session: upload_session::Model,
+    parts: Option<Vec<(i32, String)>>,
+    hints: CompleteUploadHints<'_>,
+) -> Result<file::Model> {
     tracing::debug!(
         upload_id = %session.id,
         status = ?session.status,
@@ -57,15 +75,35 @@ async fn complete_upload_impl(
         "completing upload session"
     );
 
-    match determine_completion_plan(&session, parts)? {
+    let upload_id = session.id.clone();
+    let completed_retry = session.status == UploadSessionStatus::Completed;
+    let complete_started_at = Instant::now();
+    let plan = determine_completion_plan(&session, parts)?;
+    let plan_label = completion_plan_label(&plan);
+    let result = match plan {
         CompletionPlan::ReturnCompleted => find_file_by_session(&state.db, &session).await,
-        CompletionPlan::CompletePresigned => complete_presigned_upload(state, session).await,
-        CompletionPlan::CompletePresignedMultipart { parts } => {
-            complete_s3_multipart(state, session, parts).await
+        CompletionPlan::CompletePresigned => {
+            complete_presigned_upload(state, session, hints.actor_username).await
         }
-        CompletionPlan::CompleteRelayMultipart => complete_s3_relay_multipart(state, session).await,
-        CompletionPlan::AssembleChunks => complete_chunked_upload(state, session).await,
-    }
+        CompletionPlan::CompletePresignedMultipart { parts } => {
+            complete_s3_multipart(state, session, parts, hints.actor_username).await
+        }
+        CompletionPlan::CompleteRelayMultipart => {
+            complete_s3_relay_multipart(state, session, hints.actor_username).await
+        }
+        CompletionPlan::AssembleChunks => {
+            complete_chunked_upload_with_actor_username(state, session, hints.actor_username).await
+        }
+    };
+    tracing::debug!(
+        upload_id = %upload_id,
+        plan = plan_label,
+        completed_retry,
+        elapsed_ms = complete_started_at.elapsed().as_millis(),
+        success = result.is_ok(),
+        "upload completion plan finished"
+    );
+    result
 }
 
 fn determine_completion_plan(
@@ -127,13 +165,48 @@ fn determine_completion_plan(
     Ok(CompletionPlan::AssembleChunks)
 }
 
+fn completion_plan_label(plan: &CompletionPlan) -> &'static str {
+    match plan {
+        CompletionPlan::ReturnCompleted => "return_completed",
+        CompletionPlan::CompletePresigned => "complete_presigned",
+        CompletionPlan::CompletePresignedMultipart { .. } => "complete_presigned_multipart",
+        CompletionPlan::CompleteRelayMultipart => "complete_relay_multipart",
+        CompletionPlan::AssembleChunks => "assemble_chunks",
+    }
+}
+
+async fn load_upload_actor_username_best_effort(
+    state: &PrimaryAppState,
+    scope: crate::services::workspace_storage_service::WorkspaceStorageScope,
+    upload_id: &str,
+) -> String {
+    match workspace_storage_service::load_scope_actor_username_cached(state, scope).await {
+        Ok(username) => username,
+        Err(error) => {
+            tracing::warn!(
+                upload_id,
+                user_id = scope.actor_user_id(),
+                "failed to load actor_username for upload finalization, continuing without attribution: {error}"
+            );
+            UNRESOLVED_UPLOAD_ACTOR_USERNAME.to_string()
+        }
+    }
+}
+
 pub async fn complete_upload(
     state: &PrimaryAppState,
     upload_id: &str,
     user_id: i64,
     parts: Option<Vec<(i32, String)>>,
 ) -> Result<FileInfo> {
+    let load_started_at = Instant::now();
     let session = load_upload_session(state, personal_scope(user_id), upload_id).await?;
+    tracing::debug!(
+        upload_id,
+        user_id,
+        elapsed_ms = load_started_at.elapsed().as_millis(),
+        "loaded upload session for completion"
+    );
     complete_upload_impl(state, session, parts)
         .await
         .map(FileInfo::from)
@@ -146,8 +219,30 @@ pub async fn complete_upload_with_audit(
     parts: Option<Vec<(i32, String)>>,
     audit_ctx: &AuditContext,
 ) -> Result<FileInfo> {
-    let session = load_upload_session(state, personal_scope(user_id), upload_id).await?;
-    complete_upload_impl_with_audit(state, session, parts, audit_ctx).await
+    let scope = personal_scope(user_id);
+    let load_started_at = Instant::now();
+    let session = load_upload_session(state, scope, upload_id).await?;
+    tracing::debug!(
+        upload_id,
+        user_id,
+        elapsed_ms = load_started_at.elapsed().as_millis(),
+        "loaded upload session for audited completion"
+    );
+    let actor_username = if should_log_upload_completion(&session) {
+        Some(load_upload_actor_username_best_effort(state, scope, &session.id).await)
+    } else {
+        None
+    };
+    complete_upload_impl_with_audit(
+        state,
+        session,
+        parts,
+        audit_ctx,
+        CompleteUploadHints {
+            actor_username: actor_username.as_deref(),
+        },
+    )
+    .await
 }
 
 pub async fn complete_upload_for_team(
@@ -157,7 +252,15 @@ pub async fn complete_upload_for_team(
     user_id: i64,
     parts: Option<Vec<(i32, String)>>,
 ) -> Result<FileInfo> {
+    let load_started_at = Instant::now();
     let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
+    tracing::debug!(
+        upload_id,
+        team_id,
+        user_id,
+        elapsed_ms = load_started_at.elapsed().as_millis(),
+        "loaded team upload session for completion"
+    );
     complete_upload_impl(state, session, parts)
         .await
         .map(FileInfo::from)
@@ -171,8 +274,31 @@ pub async fn complete_upload_for_team_with_audit(
     parts: Option<Vec<(i32, String)>>,
     audit_ctx: &AuditContext,
 ) -> Result<FileInfo> {
-    let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
-    complete_upload_impl_with_audit(state, session, parts, audit_ctx).await
+    let scope = team_scope(team_id, user_id);
+    let load_started_at = Instant::now();
+    let session = load_upload_session(state, scope, upload_id).await?;
+    tracing::debug!(
+        upload_id,
+        team_id,
+        user_id,
+        elapsed_ms = load_started_at.elapsed().as_millis(),
+        "loaded team upload session for audited completion"
+    );
+    let actor_username = if should_log_upload_completion(&session) {
+        Some(load_upload_actor_username_best_effort(state, scope, &session.id).await)
+    } else {
+        None
+    };
+    complete_upload_impl_with_audit(
+        state,
+        session,
+        parts,
+        audit_ctx,
+        CompleteUploadHints {
+            actor_username: actor_username.as_deref(),
+        },
+    )
+    .await
 }
 
 async fn complete_upload_impl_with_audit(
@@ -180,10 +306,17 @@ async fn complete_upload_impl_with_audit(
     session: upload_session::Model,
     parts: Option<Vec<(i32, String)>>,
     audit_ctx: &AuditContext,
+    hints: CompleteUploadHints<'_>,
 ) -> Result<FileInfo> {
+    // TODO: split the "needs actor attribution" and "needs audit log" decisions if retry/failure
+    // completion paths ever get audited separately.
     let should_log = should_log_upload_completion(&session);
-    let file = complete_upload_impl(state, session, parts).await?;
+    let upload_id = session.id.clone();
+    let complete_started_at = Instant::now();
+    let file = complete_upload_impl_with_hints(state, session, parts, hints).await?;
+    let complete_elapsed_ms = complete_started_at.elapsed().as_millis();
     if should_log {
+        let audit_started_at = Instant::now();
         audit_service::log(
             state,
             audit_ctx,
@@ -194,6 +327,22 @@ async fn complete_upload_impl_with_audit(
             None,
         )
         .await;
+        tracing::debug!(
+            upload_id = %upload_id,
+            file_id = file.id,
+            complete_elapsed_ms,
+            audit_elapsed_ms = audit_started_at.elapsed().as_millis(),
+            total_elapsed_ms = complete_started_at.elapsed().as_millis(),
+            "audited upload completion finished"
+        );
+    } else {
+        tracing::debug!(
+            upload_id = %upload_id,
+            file_id = file.id,
+            complete_elapsed_ms,
+            total_elapsed_ms = complete_started_at.elapsed().as_millis(),
+            "upload completion returned completed session without audit"
+        );
     }
     Ok(file.into())
 }
@@ -251,6 +400,7 @@ async fn finalize_s3_upload_session(
     policy_id: i64,
     storage_path: &str,
     size: i64,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     // 直传模式不会经过本地 assembled 文件，complete 阶段只负责把已经存在的对象
     // 记成 blob + file，并原子更新配额和 session 状态。
@@ -263,6 +413,7 @@ async fn finalize_s3_upload_session(
             policy_id,
             storage_path,
             now: Utc::now(),
+            actor_username,
         },
     )
     .await
@@ -303,6 +454,7 @@ async fn complete_s3_multipart_upload_session(
     expected_status: UploadSessionStatus,
     mut completed_parts: Vec<(i32, String)>,
     missing_message: &str,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     let db = &state.db;
     let temp_key = session
@@ -367,6 +519,7 @@ async fn complete_s3_multipart_upload_session(
                         policy.id,
                         &temp_key,
                         actual_size,
+                        actor_username,
                     )
                     .await;
                 }
@@ -381,7 +534,15 @@ async fn complete_s3_multipart_upload_session(
             )
             .await?;
 
-            finalize_s3_upload_session(state, &session, policy.id, &temp_key, actual_size).await
+            finalize_s3_upload_session(
+                state,
+                &session,
+                policy.id,
+                &temp_key,
+                actual_size,
+                actor_username,
+            )
+            .await
         },
     )
     .await
@@ -391,6 +552,7 @@ async fn complete_s3_multipart_upload_session(
 async fn complete_presigned_upload(
     state: &PrimaryAppState,
     session: upload_session::Model,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     // presigned 单文件的 complete 阶段，本质是“确认对象存在且大小正确”，
     // 然后把 temp_key 直接认领成正式 blob。
@@ -435,6 +597,7 @@ async fn complete_presigned_upload(
                 policy.id,
                 &final_key,
                 actual_size,
+                actor_username,
             )
             .await
             {
@@ -471,6 +634,7 @@ async fn complete_s3_multipart(
     state: &PrimaryAppState,
     session: upload_session::Model,
     parts: Vec<(i32, String)>,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     complete_s3_multipart_upload_session(
         state,
@@ -478,6 +642,7 @@ async fn complete_s3_multipart(
         UploadSessionStatus::Presigned,
         parts,
         "uploaded object not found after multipart complete - assembly may have failed",
+        actor_username,
     )
     .await
 }
@@ -486,6 +651,7 @@ async fn complete_s3_multipart(
 async fn complete_s3_relay_multipart(
     state: &PrimaryAppState,
     session: upload_session::Model,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     let db = &state.db;
     let parts = upload_session_part_repo::list_by_upload(db, &session.id).await?;
@@ -524,6 +690,7 @@ async fn complete_s3_relay_multipart(
         UploadSessionStatus::Uploading,
         completed_parts,
         "uploaded object not found after relay multipart complete - assembly may have failed",
+        actor_username,
     )
     .await
 }

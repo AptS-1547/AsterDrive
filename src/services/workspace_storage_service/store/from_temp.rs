@@ -17,9 +17,11 @@ use crate::storage::driver::StorageDriver;
 use super::{
     HASH_BUF_SIZE, NewFileMode, PreparedNonDedupBlobUpload, StoreFromTempHints,
     StoreFromTempParams, WorkspaceStorageScope, check_quota, cleanup_preuploaded_blob_upload,
-    create_exact_file_from_blob, create_new_file_from_blob, local_content_dedup_enabled,
-    persist_preuploaded_blob, prepare_non_dedup_blob_upload, resolve_policy_for_size,
-    update_storage_used, upload_temp_file_to_prepared_blob, verify_file_access,
+    create_exact_file_from_blob, create_exact_file_from_blob_with_actor_username,
+    create_new_file_from_blob, create_new_file_from_blob_with_actor_username,
+    local_content_dedup_enabled, persist_preuploaded_blob, prepare_non_dedup_blob_upload,
+    resolve_policy_for_size, update_storage_used, upload_temp_file_to_prepared_blob,
+    verify_file_access,
 };
 
 #[derive(Clone)]
@@ -52,8 +54,10 @@ struct PreparedStoreFromTemp {
     blob_plan: TempBlobPlan,
     overwrite_ctx: Option<OverwriteContext>,
     storage_delta: i64,
+    quota_prechecked: bool,
     mime: String,
     now: chrono::DateTime<Utc>,
+    actor_username: Option<String>,
 }
 
 struct WriteFileRecordFromTempParams<'a> {
@@ -66,6 +70,7 @@ struct WriteFileRecordFromTempParams<'a> {
     now: chrono::DateTime<Utc>,
     storage_delta: i64,
     new_file_mode: NewFileMode,
+    actor_username: Option<&'a str>,
 }
 
 fn upload_hash_temp_open_failed(message: String) -> AsterError {
@@ -138,8 +143,8 @@ async fn prepare_store_from_temp(
     let StoreFromTempHints {
         resolved_policy,
         precomputed_hash,
+        actor_username,
     } = hints;
-    let db = &state.db;
 
     tracing::debug!(
         scope = ?scope,
@@ -183,8 +188,9 @@ async fn prepare_store_from_temp(
         load_overwrite_context(state, scope, existing_file_id, skip_lock_check).await?;
     let storage_delta = overwrite_ctx.as_ref().map_or(size, |_| size);
 
-    if storage_delta > 0 {
-        check_quota(db, scope, storage_delta).await?;
+    let quota_prechecked = storage_delta > 0 && matches!(blob_plan, TempBlobPlan::Preuploaded(_));
+    if quota_prechecked {
+        check_quota(&state.db, scope, storage_delta).await?;
     }
 
     if let TempBlobPlan::Preuploaded(preuploaded_blob) = &blob_plan {
@@ -203,10 +209,12 @@ async fn prepare_store_from_temp(
         blob_plan,
         overwrite_ctx,
         storage_delta,
+        quota_prechecked,
         mime: mime_guess::from_path(&filename)
             .first_or_octet_stream()
             .to_string(),
         now: Utc::now(),
+        actor_username: actor_username.map(ToOwned::to_owned),
     })
 }
 
@@ -308,14 +316,16 @@ async fn persist_temp_store(
         blob_plan,
         overwrite_ctx,
         storage_delta,
+        quota_prechecked,
         mime,
         now,
+        actor_username,
     } = prepared;
     let cleanup_blob_plan = blob_plan.clone();
 
     let create_result = async {
         let txn = crate::db::transaction::begin(&state.db).await?;
-        if storage_delta > 0 {
+        if storage_delta > 0 && !quota_prechecked {
             check_quota(&txn, scope, storage_delta).await?;
         }
 
@@ -340,6 +350,7 @@ async fn persist_temp_store(
                 now,
                 storage_delta,
                 new_file_mode,
+                actor_username: actor_username.as_deref(),
             },
         )
         .await?;
@@ -399,6 +410,46 @@ async fn persist_temp_blob<C: ConnectionTrait>(
     }
 }
 
+async fn create_new_file_record_from_blob<C: ConnectionTrait>(
+    txn: &C,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+    actor_username: Option<&str>,
+) -> Result<file::Model> {
+    match actor_username {
+        Some(username) => {
+            create_new_file_from_blob_with_actor_username(
+                txn, scope, folder_id, filename, blob, now, username,
+            )
+            .await
+        }
+        None => create_new_file_from_blob(txn, scope, folder_id, filename, blob, now).await,
+    }
+}
+
+async fn create_exact_file_record_from_blob<C: ConnectionTrait>(
+    txn: &C,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+    actor_username: Option<&str>,
+) -> Result<file::Model> {
+    match actor_username {
+        Some(username) => {
+            create_exact_file_from_blob_with_actor_username(
+                txn, scope, folder_id, filename, blob, now, username,
+            )
+            .await
+        }
+        None => create_exact_file_from_blob(txn, scope, folder_id, filename, blob, now).await,
+    }
+}
+
 async fn write_file_record_from_temp<C: ConnectionTrait>(
     txn: &C,
     params: WriteFileRecordFromTempParams<'_>,
@@ -413,6 +464,7 @@ async fn write_file_record_from_temp<C: ConnectionTrait>(
         now,
         storage_delta,
         new_file_mode,
+        actor_username,
     } = params;
     let result = if let Some(OverwriteContext {
         old_file,
@@ -450,10 +502,28 @@ async fn write_file_record_from_temp<C: ConnectionTrait>(
     } else {
         match new_file_mode {
             NewFileMode::ResolveUnique => {
-                create_new_file_from_blob(txn, scope, folder_id, filename, blob, now).await?
+                create_new_file_record_from_blob(
+                    txn,
+                    scope,
+                    folder_id,
+                    filename,
+                    blob,
+                    now,
+                    actor_username,
+                )
+                .await?
             }
             NewFileMode::Exact => {
-                create_exact_file_from_blob(txn, scope, folder_id, filename, blob, now).await?
+                create_exact_file_record_from_blob(
+                    txn,
+                    scope,
+                    folder_id,
+                    filename,
+                    blob,
+                    now,
+                    actor_username,
+                )
+                .await?
             }
         }
     };

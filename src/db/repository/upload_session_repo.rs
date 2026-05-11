@@ -5,7 +5,7 @@ use crate::errors::{AsterError, Result};
 use crate::types::UploadSessionStatus;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, QuerySelect, sea_query::Expr,
+    QueryOrder, QuerySelect, SqlErr, sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: &str) -> Result<upload_session::Model> {
@@ -21,6 +21,48 @@ pub async fn create<C: ConnectionTrait>(
     model: upload_session::ActiveModel,
 ) -> Result<upload_session::Model> {
     model.insert(db).await.map_err(AsterError::from)
+}
+
+pub async fn try_create<C: ConnectionTrait>(
+    db: &C,
+    model: upload_session::ActiveModel,
+) -> Result<bool> {
+    let id =
+        model.id.try_as_ref().cloned().ok_or_else(|| {
+            AsterError::internal_error("upload session id must be set before insert")
+        })?;
+
+    match UploadSession::insert(model)
+        .exec_without_returning(db)
+        .await
+    {
+        Ok(1) => Ok(true),
+        Ok(rows) => Err(AsterError::internal_error(format!(
+            "upload session insert affected {rows} rows"
+        ))),
+        Err(err) => {
+            if is_unique_conflict_db_err(&err) && upload_session_id_exists(db, &id).await? {
+                Ok(false)
+            } else {
+                Err(AsterError::from(err))
+            }
+        }
+    }
+}
+
+fn is_unique_conflict_db_err(err: &sea_orm::DbErr) -> bool {
+    matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
+}
+
+async fn upload_session_id_exists<C: ConnectionTrait>(db: &C, id: &str) -> Result<bool> {
+    let found = UploadSession::find_by_id(id.to_string())
+        .select_only()
+        .column(upload_session::Column::Id)
+        .into_tuple::<String>()
+        .one(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(found.is_some())
 }
 
 pub async fn update<C: ConnectionTrait>(

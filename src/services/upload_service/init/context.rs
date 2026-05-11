@@ -6,12 +6,18 @@ use crate::entities::{storage_policy, upload_session};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::InitUploadResponse;
+use crate::services::upload_service::shared::{
+    UPLOAD_SESSION_ID_MAX_ATTEMPTS, abort_created_multipart_upload_after_init_error, new_upload_id,
+    upload_id_collision_exhausted_error,
+};
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::storage::multipart::MultipartStorageDriver;
 use crate::types::{UploadMode, UploadSessionStatus};
 
 #[derive(Debug)]
 pub(super) struct ResolvedUploadTarget {
     pub(super) folder_id: Option<i64>,
+    pub(super) folder: Option<workspace_storage_service::VerifiedFolderPolicyHint>,
     pub(super) filename: String,
 }
 
@@ -37,6 +43,18 @@ pub(super) struct UploadSessionRecordParams {
     pub(super) expires_at: DateTime<Utc>,
 }
 
+pub(super) struct MultipartSessionInitParams {
+    pub(super) mode: UploadMode,
+    pub(super) status: UploadSessionStatus,
+    pub(super) chunk_size: i64,
+    pub(super) total_chunks: i32,
+    pub(super) expires_in: chrono::Duration,
+    pub(super) log_label: &'static str,
+    pub(super) abort_db_error_context: &'static str,
+    pub(super) abort_db_error_message: &'static str,
+    pub(super) abort_collision_context: &'static str,
+}
+
 pub(super) async fn resolve_init_upload_context(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
@@ -54,7 +72,7 @@ pub(super) async fn resolve_init_upload_context(
         "resolved upload session target"
     );
 
-    let policy = resolve_init_upload_policy(state, scope, target.folder_id, total_size).await?;
+    let policy = resolve_init_upload_policy(state, scope, target.folder, total_size).await?;
 
     tracing::debug!(
         scope = ?scope,
@@ -88,20 +106,40 @@ async fn resolve_upload_target(
                 state, scope, folder_id, path,
             )
             .await?;
-            let resolved_folder_id =
-                workspace_storage_service::ensure_upload_parent_path(state, scope, &parsed).await?;
+            let actor_username = if parsed.parent_segments.is_empty() {
+                None
+            } else {
+                Some(
+                    workspace_storage_service::load_scope_actor_username_cached(state, scope)
+                        .await?,
+                )
+            };
+            let resolved_parent = workspace_storage_service::ensure_upload_parent_path(
+                state,
+                scope,
+                &parsed,
+                actor_username.as_deref(),
+            )
+            .await?;
             Ok(ResolvedUploadTarget {
-                folder_id: resolved_folder_id,
+                folder_id: resolved_parent.folder_id,
+                folder: resolved_parent.folder,
                 filename: parsed.filename,
             })
         }
         None => {
             let filename = crate::utils::normalize_validate_name(filename)?;
-            if let Some(folder_id) = folder_id {
-                workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
-            }
+            let folder = match folder_id {
+                Some(folder_id) => Some(
+                    workspace_storage_service::verify_folder_access(state, scope, folder_id)
+                        .await?
+                        .into(),
+                ),
+                None => None,
+            };
             Ok(ResolvedUploadTarget {
                 folder_id,
+                folder,
                 filename,
             })
         }
@@ -111,7 +149,7 @@ async fn resolve_upload_target(
 async fn resolve_init_upload_policy(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
+    folder: Option<workspace_storage_service::VerifiedFolderPolicyHint>,
     total_size: i64,
 ) -> Result<storage_policy::Model> {
     if total_size < 0 {
@@ -121,9 +159,10 @@ async fn resolve_init_upload_policy(
     }
 
     // upload 模式协商建立在“最终会写到哪条策略”之上，而不是客户端自己传 mode。
-    let policy =
-        workspace_storage_service::resolve_policy_for_size(state, scope, folder_id, total_size)
-            .await?;
+    let policy = workspace_storage_service::resolve_policy_for_size_with_verified_folder(
+        state, scope, folder, total_size,
+    )
+    .await?;
     validate_policy_upload_size(&policy, total_size)?;
     workspace_storage_service::check_quota(&state.db, scope, total_size).await?;
     Ok(policy)
@@ -139,10 +178,112 @@ fn validate_policy_upload_size(policy: &storage_policy::Model, total_size: i64) 
     Ok(())
 }
 
-pub(super) async fn persist_upload_session(
+pub(super) async fn try_persist_upload_session(
     db: &sea_orm::DatabaseConnection,
     params: UploadSessionRecordParams,
-) -> Result<()> {
+) -> Result<bool> {
+    let session = upload_session_active_model(params);
+    upload_session_repo::try_create(db, session).await
+}
+
+pub(super) async fn init_multipart_session_with_retry(
+    state: &PrimaryAppState,
+    ctx: &InitUploadContext,
+    multipart: &dyn MultipartStorageDriver,
+    params: MultipartSessionInitParams,
+) -> Result<InitUploadResponse> {
+    let MultipartSessionInitParams {
+        mode,
+        status,
+        chunk_size,
+        total_chunks,
+        expires_in,
+        log_label,
+        abort_db_error_context,
+        abort_db_error_message,
+        abort_collision_context,
+    } = params;
+
+    for attempt in 1..=UPLOAD_SESSION_ID_MAX_ATTEMPTS {
+        let upload_id = new_upload_id();
+        let temp_key = format!("files/{upload_id}");
+        let multipart_id = multipart.create_multipart_upload(&temp_key).await?;
+        let inserted_result = try_persist_upload_session(
+            &state.db,
+            UploadSessionRecordParams {
+                upload_id: upload_id.clone(),
+                scope: ctx.scope,
+                filename: ctx.target.filename.clone(),
+                total_size: ctx.total_size,
+                chunk_size,
+                total_chunks,
+                folder_id: ctx.target.folder_id,
+                policy_id: ctx.policy.id,
+                status,
+                s3_temp_key: Some(temp_key.clone()),
+                s3_multipart_id: Some(multipart_id.clone()),
+                expires_at: Utc::now() + expires_in,
+            },
+        )
+        .await;
+
+        let inserted = match inserted_result {
+            Ok(inserted) => inserted,
+            Err(error) => {
+                let abort_result = abort_created_multipart_upload_after_init_error(
+                    multipart,
+                    &temp_key,
+                    &multipart_id,
+                    &upload_id,
+                    abort_db_error_context,
+                )
+                .await;
+                if let Err(abort_error) = abort_result {
+                    return Err(AsterError::storage_driver_error(format!(
+                        "{abort_db_error_message}; init error={error}, abort error={abort_error}"
+                    )));
+                }
+                return Err(error);
+            }
+        };
+
+        if !inserted {
+            abort_created_multipart_upload_after_init_error(
+                multipart,
+                &temp_key,
+                &multipart_id,
+                &upload_id,
+                abort_collision_context,
+            )
+            .await?;
+            tracing::warn!(upload_id, attempt, "upload_id collision, retrying");
+            continue;
+        }
+
+        tracing::debug!(
+            scope = ?ctx.scope,
+            upload_id = %upload_id,
+            policy_id = ctx.policy.id,
+            mode = ?mode,
+            chunk_size,
+            total_chunks,
+            folder_id = ctx.target.folder_id,
+            log_label = %log_label,
+            "initialized upload session"
+        );
+
+        return Ok(chunked_upload_response(
+            mode,
+            upload_id,
+            chunk_size,
+            total_chunks,
+        ));
+    }
+
+    Err(upload_id_collision_exhausted_error())
+}
+
+fn upload_session_active_model(params: UploadSessionRecordParams) -> upload_session::ActiveModel {
     let UploadSessionRecordParams {
         upload_id,
         scope,
@@ -159,7 +300,7 @@ pub(super) async fn persist_upload_session(
     } = params;
     let now = Utc::now();
 
-    let session = upload_session::ActiveModel {
+    upload_session::ActiveModel {
         id: Set(upload_id),
         user_id: Set(scope.actor_user_id()),
         team_id: Set(scope.team_id()),
@@ -177,9 +318,7 @@ pub(super) async fn persist_upload_session(
         created_at: Set(now),
         expires_at: Set(expires_at),
         updated_at: Set(now),
-    };
-    upload_session_repo::create(db, session).await?;
-    Ok(())
+    }
 }
 
 pub(super) fn direct_upload_response() -> InitUploadResponse {

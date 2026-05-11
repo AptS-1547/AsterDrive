@@ -1,5 +1,6 @@
 use chrono::Utc;
 use sea_orm::ConnectionTrait;
+use std::time::Instant;
 
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, file_blob, upload_session};
@@ -8,25 +9,61 @@ use crate::runtime::PrimaryAppState;
 use crate::services::storage_change_service;
 use crate::services::workspace_scope_service::WorkspaceStorageScope;
 
-use super::file_record::create_new_file_from_blob;
-use super::quota::{check_quota, update_storage_used};
+use super::file_record::{
+    create_new_file_from_blob, create_new_file_from_blob_with_actor_username,
+};
+use super::quota::update_storage_used;
 
-pub(crate) async fn finalize_upload_session_blob<C: ConnectionTrait>(
+pub(crate) async fn finalize_upload_session_blob_with_actor_username<C: ConnectionTrait>(
     db: &C,
     session: &upload_session::Model,
     blob: &file_blob::Model,
     now: chrono::DateTime<Utc>,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     // “最终完成一个 upload session”在数据库侧必须保持固定顺序：
     // 先建文件，再记配额，最后把 session 状态切到 completed。
     // 这样调用方只要看到 completed，就能推定文件记录已经可见且额度已落账。
     let scope = scope_from_session(session);
-    let created =
-        create_new_file_from_blob(db, scope, session.folder_id, &session.filename, blob, now)
-            .await?;
+    let started_at = Instant::now();
+    let created = match actor_username {
+        Some(username) => {
+            create_new_file_from_blob_with_actor_username(
+                db,
+                scope,
+                session.folder_id,
+                &session.filename,
+                blob,
+                now,
+                username,
+            )
+            .await?
+        }
+        None => {
+            create_new_file_from_blob(db, scope, session.folder_id, &session.filename, blob, now)
+                .await?
+        }
+    };
+    let create_elapsed_ms = started_at.elapsed().as_millis();
 
+    let quota_started_at = Instant::now();
     update_storage_used(db, scope, blob.size).await?;
+    let quota_elapsed_ms = quota_started_at.elapsed().as_millis();
+
+    let complete_started_at = Instant::now();
     mark_upload_session_completed(db, &session.id, created.id).await?;
+    let complete_elapsed_ms = complete_started_at.elapsed().as_millis();
+    tracing::debug!(
+        upload_id = %session.id,
+        file_id = created.id,
+        blob_id = blob.id,
+        size = blob.size,
+        create_elapsed_ms,
+        quota_elapsed_ms,
+        complete_elapsed_ms,
+        total_elapsed_ms = started_at.elapsed().as_millis(),
+        "finalized upload session blob"
+    );
     Ok(created)
 }
 
@@ -37,6 +74,7 @@ pub(crate) struct FinalizeUploadSessionFileParams<'a> {
     pub policy_id: i64,
     pub storage_path: &'a str,
     pub now: chrono::DateTime<Utc>,
+    pub actor_username: Option<&'a str>,
 }
 
 pub(crate) async fn finalize_upload_session_file(
@@ -50,14 +88,21 @@ pub(crate) async fn finalize_upload_session_file(
         policy_id,
         storage_path,
         now,
+        actor_username,
     } = params;
     let scope = scope_from_session(session);
     let txn = crate::db::transaction::begin(&state.db).await?;
-    check_quota(&txn, scope, size).await?;
 
     let blob =
         file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
-    let created = finalize_upload_session_blob(&txn, session, &blob.model, now).await?;
+    let created = finalize_upload_session_blob_with_actor_username(
+        &txn,
+        session,
+        &blob.model,
+        now,
+        actor_username,
+    )
+    .await?;
 
     crate::db::transaction::commit(txn).await?;
     storage_change_service::publish(

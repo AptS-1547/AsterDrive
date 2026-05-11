@@ -11,7 +11,10 @@ use sea_orm::ActiveEnum;
 use tokio::time::MissedTickBehavior;
 
 use crate::config::operations;
-use crate::db::repository::background_task_repo;
+use crate::db::{
+    repository::{background_task_repo, config_repo},
+    transaction,
+};
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
@@ -35,6 +38,21 @@ pub struct DispatchStats {
     pub failed: usize,
 }
 
+impl DispatchStats {
+    fn add(&mut self, other: Self) {
+        self.claimed += other.claimed;
+        self.succeeded += other.succeeded;
+        self.retried += other.retried;
+        self.failed += other.failed;
+    }
+
+    fn add_outcome(&mut self, outcome: TaskDispatchOutcome) {
+        self.succeeded += outcome.succeeded;
+        self.retried += outcome.retried;
+        self.failed += outcome.failed;
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct TaskDispatchOutcome {
     succeeded: usize,
@@ -42,67 +60,107 @@ struct TaskDispatchOutcome {
     failed: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskLane {
+    Archive,
+    Thumbnail,
+    Fallback,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TaskLaneConfig {
+    lane: TaskLane,
+    limit: usize,
+    fast_continue: bool,
+}
+
+const ARCHIVE_TASK_KINDS: [BackgroundTaskKind; 2] = [
+    BackgroundTaskKind::ArchiveCompress,
+    BackgroundTaskKind::ArchiveExtract,
+];
+const THUMBNAIL_TASK_KINDS: [BackgroundTaskKind; 1] = [BackgroundTaskKind::ThumbnailGenerate];
+const FALLBACK_TASK_KINDS: [BackgroundTaskKind; 1] = [BackgroundTaskKind::SystemRuntime];
+const TASK_LANES: [TaskLane; 3] = [TaskLane::Archive, TaskLane::Thumbnail, TaskLane::Fallback];
+
 pub async fn dispatch_due(state: &PrimaryAppState) -> Result<DispatchStats> {
-    let now = Utc::now();
-    let stale_before = now - Duration::seconds(TASK_PROCESSING_STALE_SECS);
-    let concurrency = operations::background_task_max_concurrency(&state.runtime_config);
-    let due = background_task_repo::list_claimable(
-        &state.db,
-        now,
-        stale_before,
-        u64::try_from(concurrency).unwrap_or_else(|_| {
-            tracing::warn!(
-                concurrency,
-                "background task concurrency exceeds u64; falling back to a single claimed task"
-            );
-            1
-        }),
-    )
-    .await?;
     let mut stats = DispatchStats::default();
-    let mut claimed_tasks = Vec::with_capacity(due.len());
+    let lane_results = stream::iter(
+        task_lane_configs(state)
+            .into_iter()
+            .map(|lane_config| dispatch_lane(state, lane_config)),
+    )
+    .buffer_unordered(TASK_LANES.len())
+    .collect::<Vec<_>>()
+    .await;
+    let mut first_error = None;
 
-    for task in due {
-        let task_id = task.id;
-        let claimed_at = Utc::now();
-        let next_processing_token = task.processing_token.checked_add(1).ok_or_else(|| {
-            AsterError::internal_error("background task processing token overflow")
-        })?;
-        // `try_claim` 是真正的 CAS 关口：即使多台进程同时看到同一条 due task，
-        // 也只有 token/状态仍匹配的那个 worker 能把它认领成功。
-        if !background_task_repo::try_claim(
-            &state.db,
-            task_id,
-            task.processing_token,
-            claimed_at,
-            stale_before,
-            next_processing_token,
-            task_lease_expires_at(claimed_at),
-        )
-        .await?
-        {
-            continue;
+    for result in lane_results {
+        match result {
+            Ok(lane_stats) => stats.add(lane_stats),
+            Err(error) => {
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
         }
-
-        stats.claimed += 1;
-        claimed_tasks.push((task, TaskLease::new(task_id, next_processing_token)));
     }
 
-    // 先把认领结果固定下来，再按并发上限执行，避免边迭代边改库时混淆统计口径。
+    if let Some(first_error) = first_error {
+        tracing::warn!(
+            stats = ?stats,
+            error = %first_error,
+            "partial background task dispatch results due to lane error"
+        );
+        return Err(first_error);
+    }
+
+    Ok(stats)
+}
+
+async fn dispatch_lane(
+    state: &PrimaryAppState,
+    lane_config: TaskLaneConfig,
+) -> Result<DispatchStats> {
+    let mut total = DispatchStats::default();
+
+    loop {
+        let claimed_tasks = claim_due_for_lane(state, lane_config).await?;
+        if claimed_tasks.is_empty() {
+            break;
+        }
+
+        let claimed = claimed_tasks.len();
+        total.claimed += claimed;
+        total.add(run_claimed_tasks(state, claimed_tasks).await?);
+
+        if !lane_config.fast_continue {
+            break;
+        }
+    }
+
+    Ok(total)
+}
+
+async fn run_claimed_tasks(
+    state: &PrimaryAppState,
+    mut claimed_tasks: Vec<(background_task::Model, TaskLease)>,
+) -> Result<DispatchStats> {
+    let concurrency = claimed_tasks.len().max(1);
+    claimed_tasks.sort_by_key(|(task, _)| (task.created_at, task.id));
+
+    // 先把认领结果固定下来，再启动 worker。每个 lane 的容量已经在 claim 阶段扣过，
+    // 这里直接把本批已认领任务全部放出去；fast_continue lane 会在本批结束后继续补位。
     let results = run_with_concurrency_limit(claimed_tasks, concurrency, |(task, lease)| {
         let state = state.clone();
         async move { process_claimed_task(&state, task, lease).await }
     })
     .await;
+    let mut stats = DispatchStats::default();
     let mut first_error = None;
 
     for result in results {
         match result {
-            Ok(outcome) => {
-                stats.succeeded += outcome.succeeded;
-                stats.retried += outcome.retried;
-                stats.failed += outcome.failed;
-            }
+            Ok(outcome) => stats.add_outcome(outcome),
             Err(error) => {
                 if first_error.is_none() {
                     first_error = Some(error);
@@ -116,6 +174,100 @@ pub async fn dispatch_due(state: &PrimaryAppState) -> Result<DispatchStats> {
     }
 
     Ok(stats)
+}
+
+async fn claim_due_for_lane(
+    state: &PrimaryAppState,
+    lane_config: TaskLaneConfig,
+) -> Result<Vec<(background_task::Model, TaskLease)>> {
+    if lane_config.limit == 0 {
+        return Ok(Vec::new());
+    }
+
+    let now = Utc::now();
+    let stale_before = now - Duration::seconds(TASK_PROCESSING_STALE_SECS);
+    let active =
+        background_task_repo::count_active_processing_by_kinds(&state.db, now, lane_config.kinds())
+            .await?;
+    let available = available_lane_capacity(lane_config.limit, active);
+    if available == 0 {
+        tracing::debug!(
+            lane = ?lane_config.lane,
+            active,
+            limit = lane_config.limit,
+            "background task lane is at capacity; skipping claim"
+        );
+        return Ok(Vec::new());
+    }
+
+    let due = background_task_repo::list_claimable_by_kinds(
+        &state.db,
+        now,
+        stale_before,
+        lane_config.kinds(),
+        claim_limit_to_u64(available),
+    )
+    .await?;
+    if due.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut claimed_tasks = Vec::with_capacity(due.len());
+    for task in due {
+        if task_lane(task.kind) != lane_config.lane {
+            tracing::warn!(
+                task_id = task.id,
+                kind = %task.kind.to_value(),
+                lane = ?lane_config.lane,
+                "claimable task kind does not match lane config; skipping"
+            );
+            continue;
+        }
+        let task_id = task.id;
+        let next_processing_token = task.processing_token.checked_add(1).ok_or_else(|| {
+            AsterError::internal_error("background task processing token overflow")
+        })?;
+        let claimed_at = Utc::now();
+        // TODO(#151): 压缩这里的热路径，减少每个候选任务都进事务的开销。
+        // 相关符号：background_task_repo::count_active_processing_by_kinds、
+        // config_repo::lock_by_key、background_task_repo::try_claim。
+        // 这段事务锁住 system_config 里的 lane 配置行，让同一时间只有一个 dispatcher
+        // 能为同一个 lane 做容量检查和 CAS claim。SQLite 单连接也会自然串行化这个事务。
+        let claimed = transaction::with_transaction(&state.db, async |txn| {
+            config_repo::lock_by_key(txn, lane_config.lock_key()).await?;
+            let active = background_task_repo::count_active_processing_by_kinds(
+                txn,
+                claimed_at,
+                lane_config.kinds(),
+            )
+            .await?;
+            if available_lane_capacity(lane_config.limit, active) == 0 {
+                return Ok(false);
+            }
+            background_task_repo::try_claim(
+                txn,
+                task_id,
+                task.processing_token,
+                claimed_at,
+                stale_before,
+                next_processing_token,
+                task_lease_expires_at(claimed_at),
+            )
+            .await
+        })
+        .await?;
+
+        if !claimed {
+            continue;
+        }
+
+        claimed_tasks.push((task, TaskLease::new(task_id, next_processing_token)));
+        if claimed_tasks.len() >= available {
+            break;
+        }
+    }
+
+    Ok(claimed_tasks)
 }
 
 async fn process_claimed_task(
@@ -441,6 +593,74 @@ async fn process_task(
     }
 }
 
+fn task_lane_configs(state: &PrimaryAppState) -> Vec<TaskLaneConfig> {
+    TASK_LANES
+        .into_iter()
+        .map(|lane| TaskLaneConfig {
+            lane,
+            limit: match lane {
+                TaskLane::Archive => {
+                    operations::background_task_archive_max_concurrency(&state.runtime_config)
+                }
+                TaskLane::Thumbnail => {
+                    operations::background_task_thumbnail_max_concurrency(&state.runtime_config)
+                }
+                TaskLane::Fallback => {
+                    operations::background_task_max_concurrency(&state.runtime_config)
+                }
+            },
+            fast_continue: matches!(lane, TaskLane::Archive | TaskLane::Thumbnail),
+        })
+        .collect()
+}
+
+impl TaskLaneConfig {
+    fn kinds(self) -> &'static [BackgroundTaskKind] {
+        task_lane_kinds(self.lane)
+    }
+
+    fn lock_key(self) -> &'static str {
+        match self.lane {
+            TaskLane::Archive => operations::BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
+            TaskLane::Thumbnail => operations::BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+            TaskLane::Fallback => operations::BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+        }
+    }
+}
+
+fn task_lane(kind: BackgroundTaskKind) -> TaskLane {
+    match kind {
+        BackgroundTaskKind::ArchiveCompress | BackgroundTaskKind::ArchiveExtract => {
+            TaskLane::Archive
+        }
+        BackgroundTaskKind::ThumbnailGenerate => TaskLane::Thumbnail,
+        BackgroundTaskKind::SystemRuntime => TaskLane::Fallback,
+    }
+}
+
+fn task_lane_kinds(lane: TaskLane) -> &'static [BackgroundTaskKind] {
+    match lane {
+        TaskLane::Archive => &ARCHIVE_TASK_KINDS,
+        TaskLane::Thumbnail => &THUMBNAIL_TASK_KINDS,
+        TaskLane::Fallback => &FALLBACK_TASK_KINDS,
+    }
+}
+
+fn available_lane_capacity(limit: usize, active: u64) -> usize {
+    let active = usize::try_from(active).unwrap_or(usize::MAX);
+    limit.saturating_sub(active)
+}
+
+fn claim_limit_to_u64(limit: usize) -> u64 {
+    u64::try_from(limit).unwrap_or_else(|_| {
+        tracing::warn!(
+            limit,
+            "background task lane limit exceeds u64; falling back to u64::MAX"
+        );
+        u64::MAX
+    })
+}
+
 fn retry_delay_secs(attempt_count: i32) -> i64 {
     match attempt_count {
         1 => 5,
@@ -490,6 +710,7 @@ mod tests {
     use crate::storage::error::{StorageErrorKind, storage_driver_error};
     use crate::types::BackgroundTaskKind;
 
+    use super::{available_lane_capacity, task_lane};
     use super::{evaluate_heartbeat_result, run_with_concurrency_limit, should_retry_task_error};
     use crate::services::task_service::{
         TaskLease, TaskLeaseGuard, is_task_lease_lost, is_task_lease_renewal_timed_out,
@@ -527,6 +748,34 @@ mod tests {
         assert_eq!(results, vec![2, 4, 6, 8, 10]);
         assert_eq!(max_in_flight.load(Ordering::SeqCst), 2);
         assert_eq!(in_flight.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn task_lane_keeps_archive_and_thumbnail_separate() {
+        assert_eq!(
+            task_lane(BackgroundTaskKind::ArchiveCompress),
+            super::TaskLane::Archive
+        );
+        assert_eq!(
+            task_lane(BackgroundTaskKind::ArchiveExtract),
+            super::TaskLane::Archive
+        );
+        assert_eq!(
+            task_lane(BackgroundTaskKind::ThumbnailGenerate),
+            super::TaskLane::Thumbnail
+        );
+        assert_eq!(
+            task_lane(BackgroundTaskKind::SystemRuntime),
+            super::TaskLane::Fallback
+        );
+    }
+
+    #[test]
+    fn available_lane_capacity_saturates_when_active_exceeds_limit() {
+        assert_eq!(available_lane_capacity(3, 1), 2);
+        assert_eq!(available_lane_capacity(3, 3), 0);
+        assert_eq!(available_lane_capacity(3, 4), 0);
+        assert_eq!(available_lane_capacity(3, u64::MAX), 0);
     }
 
     #[test]

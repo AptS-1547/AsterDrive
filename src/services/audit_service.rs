@@ -2,7 +2,7 @@
 
 use actix_web::HttpRequest;
 use chrono::{DateTime, Duration, Utc};
-use sea_orm::Set;
+use sea_orm::{DatabaseConnection, Set};
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
@@ -16,10 +16,65 @@ use crate::services::auth_service::Claims;
 pub use crate::types::AuditAction;
 use crate::types::{TeamMemberRole, UserRole, UserStatus};
 use std::collections::{HashMap, HashSet};
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Duration as StdDuration;
+use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
 const DEFAULT_RETENTION_DAYS: i64 = 90;
 const MAX_AUDIT_IP_ADDRESS_LEN: usize = 45;
 const MAX_AUDIT_USER_AGENT_LEN: usize = 512;
+const AUDIT_LOG_QUEUE_CAPACITY: usize = 4096;
+const AUDIT_LOG_BATCH_SIZE: usize = 100;
+const AUDIT_LOG_FLUSH_INTERVAL: StdDuration = StdDuration::from_millis(500);
+
+static GLOBAL_AUDIT_LOG_MANAGER: OnceLock<Arc<AuditLogManager>> = OnceLock::new();
+
+struct AuditLogManager {
+    db: DatabaseConnection,
+    buffer: parking_lot::Mutex<Vec<audit_log::ActiveModel>>,
+    flush_lock: Mutex<()>,
+    flush_pending: AtomicBool,
+    shutdown_token: CancellationToken,
+}
+
+struct FlushPendingReset {
+    manager: Arc<AuditLogManager>,
+}
+
+impl Drop for FlushPendingReset {
+    fn drop(&mut self) {
+        self.manager.flush_pending.store(false, Ordering::Release);
+    }
+}
+
+pub fn init_global_audit_log_manager(db: DatabaseConnection) {
+    let manager = Arc::new(AuditLogManager::new(db));
+    match GLOBAL_AUDIT_LOG_MANAGER.set(manager.clone()) {
+        Ok(()) => {
+            drop(tokio::spawn(manager.start_background_task()));
+        }
+        Err(_) => {
+            tracing::warn!("global audit log manager is already initialized; ignoring");
+        }
+    }
+}
+
+pub async fn flush_global_audit_log_manager() {
+    if let Some(manager) = GLOBAL_AUDIT_LOG_MANAGER.get() {
+        manager.flush().await;
+    }
+}
+
+pub async fn shutdown_global_audit_log_manager() {
+    if let Some(manager) = GLOBAL_AUDIT_LOG_MANAGER.get() {
+        manager.cancel();
+        manager.flush().await;
+    }
+}
 
 /// 从 HttpRequest 提取的审计上下文
 #[derive(Clone)]
@@ -385,6 +440,129 @@ pub fn details<T: Serialize>(value: T) -> Option<serde_json::Value> {
     }
 }
 
+async fn write_audit_model(db: &DatabaseConnection, model: audit_log::ActiveModel) {
+    if let Err(e) = audit_log_repo::create(db, model).await {
+        tracing::warn!("failed to write audit log: {e}");
+    }
+}
+
+async fn write_audit_batch(db: &DatabaseConnection, batch: &mut Vec<audit_log::ActiveModel>) {
+    if batch.is_empty() {
+        return;
+    }
+
+    let total = batch.len();
+    let mut models = std::mem::take(batch).into_iter();
+    loop {
+        let chunk = models
+            .by_ref()
+            .take(AUDIT_LOG_BATCH_SIZE)
+            .collect::<Vec<_>>();
+        if chunk.is_empty() {
+            break;
+        }
+
+        let count = chunk.len();
+        if let Err(e) = audit_log_repo::create_many(db, chunk).await {
+            tracing::warn!(count, total, "failed to write audit log batch: {e}");
+        }
+    }
+}
+
+impl AuditLogManager {
+    fn new(db: DatabaseConnection) -> Self {
+        Self {
+            db,
+            buffer: parking_lot::Mutex::new(Vec::with_capacity(AUDIT_LOG_BATCH_SIZE)),
+            flush_lock: Mutex::new(()),
+            flush_pending: AtomicBool::new(false),
+            shutdown_token: CancellationToken::new(),
+        }
+    }
+
+    async fn record(self: &Arc<Self>, model: audit_log::ActiveModel) {
+        let mut overflow_model = None;
+        let should_flush;
+        {
+            let mut buffer = self.buffer.lock();
+            if buffer.len() >= AUDIT_LOG_QUEUE_CAPACITY {
+                overflow_model = Some(model);
+                should_flush = false;
+            } else {
+                buffer.push(model);
+                should_flush = buffer.len() >= AUDIT_LOG_BATCH_SIZE;
+            }
+        }
+
+        if let Some(model) = overflow_model {
+            tracing::warn!(
+                capacity = AUDIT_LOG_QUEUE_CAPACITY,
+                "audit log buffer is full; falling back to direct write"
+            );
+            self.schedule_flush();
+            write_audit_model(&self.db, model).await;
+            return;
+        }
+
+        if should_flush {
+            self.schedule_flush();
+        }
+    }
+
+    fn schedule_flush(self: &Arc<Self>) {
+        if self
+            .flush_pending
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+
+        let manager = Arc::clone(self);
+        drop(tokio::spawn(async move {
+            let _pending_reset = FlushPendingReset {
+                manager: Arc::clone(&manager),
+            };
+            let _guard = manager.flush_lock.lock().await;
+            manager.flush_buffer().await;
+        }));
+    }
+
+    async fn start_background_task(self: Arc<Self>) {
+        loop {
+            tokio::select! {
+                biased;
+                _ = self.shutdown_token.cancelled() => break,
+                _ = tokio::time::sleep(AUDIT_LOG_FLUSH_INTERVAL) => {
+                    if let Ok(_guard) = self.flush_lock.try_lock() {
+                        self.flush_buffer().await;
+                    }
+                }
+            }
+        }
+    }
+
+    async fn flush(&self) {
+        let _guard = self.flush_lock.lock().await;
+        self.flush_buffer().await;
+    }
+
+    fn cancel(&self) {
+        self.shutdown_token.cancel();
+    }
+
+    async fn flush_buffer(&self) {
+        let mut models = {
+            let mut buffer = self.buffer.lock();
+            if buffer.is_empty() {
+                return;
+            }
+            std::mem::take(&mut *buffer)
+        };
+        write_audit_batch(&self.db, &mut models).await;
+    }
+}
+
 impl AuditContext {
     pub fn system() -> Self {
         Self {
@@ -435,7 +613,7 @@ fn bounded_audit_value(value: &str, max_len: usize) -> String {
     value[..end].to_string()
 }
 
-/// Fire-and-forget 审计日志。DB 错误只 warn 不传播。
+/// Best-effort 审计日志。默认入队批量写入，DB 错误只 warn 不传播。
 pub async fn log(
     state: &PrimaryAppState,
     ctx: &AuditContext,
@@ -466,8 +644,10 @@ pub async fn log(
         created_at: Set(Utc::now()),
     };
 
-    if let Err(e) = audit_log_repo::create(&state.db, model).await {
-        tracing::warn!("failed to write audit log: {e}");
+    if let Some(manager) = GLOBAL_AUDIT_LOG_MANAGER.get() {
+        manager.record(model).await;
+    } else {
+        write_audit_model(&state.db, model).await;
     }
 }
 
@@ -477,6 +657,7 @@ async fn query_models(
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<audit_log::Model>> {
+    flush_global_audit_log_manager().await;
     load_offset_page(limit, offset, 200, |limit, offset| async move {
         audit_log_repo::find_with_filters(
             &state.db,
@@ -588,6 +769,7 @@ pub async fn query_team_entries(
 
 /// 清理过期审计日志
 pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
+    flush_global_audit_log_manager().await;
     let retention_days = state
         .runtime_config
         .get_i64("audit_log_retention_days")
@@ -612,11 +794,39 @@ pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use actix_web::test as actix_test;
+    use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
+    use std::sync::Arc;
 
     use super::{
-        AuditAction, AuditRequestInfo, MAX_AUDIT_IP_ADDRESS_LEN, MAX_AUDIT_USER_AGENT_LEN,
-        bounded_audit_value,
+        AuditAction, AuditContext, AuditRequestInfo, MAX_AUDIT_IP_ADDRESS_LEN,
+        MAX_AUDIT_USER_AGENT_LEN, bounded_audit_value,
     };
+    use crate::entities::audit_log;
+
+    async fn in_memory_db() -> sea_orm::DatabaseConnection {
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("in-memory db should connect");
+        migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations should run");
+        db
+    }
+
+    fn audit_model(index: i64) -> audit_log::ActiveModel {
+        audit_log::ActiveModel {
+            id: Default::default(),
+            user_id: Set(42),
+            action: Set(AuditAction::FileUpload),
+            entity_type: Set(Some("file".to_string())),
+            entity_id: Set(Some(index)),
+            entity_name: Set(Some(format!("file-{index}.txt"))),
+            details: Set(None),
+            ip_address: Set(None),
+            user_agent: Set(None),
+            created_at: Set(chrono::Utc::now()),
+        }
+    }
 
     #[test]
     fn bounded_audit_value_truncates_without_splitting_utf8() {
@@ -841,5 +1051,85 @@ mod tests {
             assert_eq!(action.to_string(), expected);
             assert_eq!(AuditAction::from_str_name(expected), Some(action));
         }
+    }
+
+    #[tokio::test]
+    async fn log_writes_synchronously_without_global_manager() {
+        // This test assumes GLOBAL_AUDIT_LOG_MANAGER has not been initialized in this test binary.
+        let db = in_memory_db().await;
+
+        let runtime_config = std::sync::Arc::new(crate::config::RuntimeConfig::new());
+        runtime_config
+            .reload(&db)
+            .await
+            .expect("runtime config should load");
+        let cache = crate::cache::create_cache(&crate::config::CacheConfig {
+            enabled: false,
+            ..Default::default()
+        })
+        .await;
+        let (storage_change_tx, _) = tokio::sync::broadcast::channel(
+            crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
+        );
+        let share_download_rollback =
+            crate::services::share_service::spawn_detached_share_download_rollback_queue(
+                db.clone(),
+                crate::config::operations::DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY,
+            );
+        let state = crate::runtime::PrimaryAppState {
+            db: db.clone(),
+            driver_registry: std::sync::Arc::new(crate::storage::DriverRegistry::new()),
+            runtime_config,
+            policy_snapshot: std::sync::Arc::new(crate::storage::PolicySnapshot::new()),
+            config: std::sync::Arc::new(crate::config::Config::default()),
+            cache,
+            mail_sender: crate::services::mail_service::memory_sender(),
+            storage_change_tx,
+            share_download_rollback,
+        };
+
+        super::log(
+            &state,
+            &AuditContext {
+                user_id: 42,
+                ip_address: None,
+                user_agent: None,
+            },
+            AuditAction::FileUpload,
+            Some("file"),
+            Some(7),
+            Some("report.txt"),
+            None,
+        )
+        .await;
+
+        let count = audit_log::Entity::find()
+            .filter(audit_log::Column::Action.eq(AuditAction::FileUpload))
+            .count(&db)
+            .await
+            .expect("audit query should succeed");
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn audit_log_manager_flushes_threshold_batch() {
+        let db = in_memory_db().await;
+        let manager = Arc::new(super::AuditLogManager::new(db.clone()));
+
+        for index in 0..super::AUDIT_LOG_BATCH_SIZE {
+            let index = i64::try_from(index).expect("audit batch test index fits i64");
+            manager.record(audit_model(index)).await;
+        }
+        manager.flush().await;
+        manager.cancel();
+
+        let count = audit_log::Entity::find()
+            .filter(audit_log::Column::Action.eq(AuditAction::FileUpload))
+            .count(&db)
+            .await
+            .expect("audit query should succeed");
+        let expected =
+            u64::try_from(super::AUDIT_LOG_BATCH_SIZE).expect("audit batch size fits u64");
+        assert_eq!(count, expected);
     }
 }

@@ -14,17 +14,34 @@ enum NewFileNameMode {
     Exact,
 }
 
-async fn create_file_from_blob_with_name_mode<C: ConnectionTrait>(
-    db: &C,
+struct CreateFileFromBlobParams<'a> {
     scope: WorkspaceStorageScope,
     folder_id: Option<i64>,
-    filename: &str,
-    blob: &file_blob::Model,
+    filename: &'a str,
+    blob: &'a file_blob::Model,
     now: chrono::DateTime<Utc>,
     name_mode: NewFileNameMode,
+    actor_username: Option<&'a str>,
+}
+
+async fn create_file_from_blob_with_name_mode<C: ConnectionTrait>(
+    db: &C,
+    params: CreateFileFromBlobParams<'_>,
 ) -> Result<file::Model> {
+    let CreateFileFromBlobParams {
+        scope,
+        folder_id,
+        filename,
+        blob,
+        now,
+        name_mode,
+        actor_username,
+    } = params;
     let normalized_filename = crate::utils::normalize_validate_name(filename)?;
-    let created_by_username = load_scope_actor_username(db, scope).await?;
+    let created_by_username = match actor_username {
+        Some(username) => username.to_string(),
+        None => load_scope_actor_username(db, scope).await?,
+    };
 
     let (mut final_name, team_id) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
@@ -115,12 +132,39 @@ pub(crate) async fn create_new_file_from_blob<C: ConnectionTrait>(
 ) -> Result<file::Model> {
     create_file_from_blob_with_name_mode(
         db,
-        scope,
-        folder_id,
-        filename,
-        blob,
-        now,
-        NewFileNameMode::ResolveUnique,
+        CreateFileFromBlobParams {
+            scope,
+            folder_id,
+            filename,
+            blob,
+            now,
+            name_mode: NewFileNameMode::ResolveUnique,
+            actor_username: None,
+        },
+    )
+    .await
+}
+
+pub(crate) async fn create_new_file_from_blob_with_actor_username<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+    actor_username: &str,
+) -> Result<file::Model> {
+    create_file_from_blob_with_name_mode(
+        db,
+        CreateFileFromBlobParams {
+            scope,
+            folder_id,
+            filename,
+            blob,
+            now,
+            name_mode: NewFileNameMode::ResolveUnique,
+            actor_username: Some(actor_username),
+        },
     )
     .await
 }
@@ -135,12 +179,39 @@ pub(crate) async fn create_exact_file_from_blob<C: ConnectionTrait>(
 ) -> Result<file::Model> {
     create_file_from_blob_with_name_mode(
         db,
-        scope,
-        folder_id,
-        filename,
-        blob,
-        now,
-        NewFileNameMode::Exact,
+        CreateFileFromBlobParams {
+            scope,
+            folder_id,
+            filename,
+            blob,
+            now,
+            name_mode: NewFileNameMode::Exact,
+            actor_username: None,
+        },
+    )
+    .await
+}
+
+pub(crate) async fn create_exact_file_from_blob_with_actor_username<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+    actor_username: &str,
+) -> Result<file::Model> {
+    create_file_from_blob_with_name_mode(
+        db,
+        CreateFileFromBlobParams {
+            scope,
+            folder_id,
+            filename,
+            blob,
+            now,
+            name_mode: NewFileNameMode::Exact,
+            actor_username: Some(actor_username),
+        },
     )
     .await
 }

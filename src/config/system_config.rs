@@ -137,7 +137,9 @@ where
         | operations::REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY => {
             operations::normalize_interval_config_value(key, value)
         }
-        operations::BACKGROUND_TASK_MAX_CONCURRENCY_KEY => {
+        operations::BACKGROUND_TASK_MAX_CONCURRENCY_KEY
+        | operations::BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY
+        | operations::BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY => {
             operations::normalize_concurrency_config_value(key, value)
         }
         operations::SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY => {

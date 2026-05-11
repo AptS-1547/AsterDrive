@@ -144,6 +144,118 @@ pub fn upload_staging_path(policy: &storage_policy::Model, name: &str) -> Result
     resolve_path_within_root(&root, &Path::new(".staging").join(safe), name)
 }
 
+pub async fn promote_local_file_if_absent(
+    driver: &dyn StorageDriver,
+    storage_path: &str,
+    local_path: &str,
+    expected_size: i64,
+) -> Result<()> {
+    let local_driver = driver.as_local_path().ok_or_else(|| {
+        AsterError::storage_driver_error("local path storage driver not supported")
+    })?;
+    let target = local_driver.resolve_local_path(storage_path)?;
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+    }
+
+    let expected_size = numbers::i64_to_u64(expected_size, "local dedup blob size")?;
+    match tokio::fs::hard_link(local_path, &target).await {
+        Ok(()) => match validate_existing_local_blob_size(&target, expected_size).await {
+            Ok(()) => {
+                crate::utils::cleanup_temp_file(local_path).await;
+                Ok(())
+            }
+            Err(error) => {
+                let _ = tokio::fs::remove_file(&target).await;
+                Err(error)
+            }
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            validate_existing_local_blob_size(&target, expected_size).await?;
+            crate::utils::cleanup_temp_file(local_path).await;
+            Ok(())
+        }
+        Err(link_error) => {
+            promote_local_file_via_temp_copy(local_path, &target, expected_size, link_error).await
+        }
+    }
+}
+
+async fn promote_local_file_via_temp_copy(
+    local_path: &str,
+    target: &Path,
+    expected_size: u64,
+    link_error: std::io::Error,
+) -> Result<()> {
+    let Some(parent) = target.parent() else {
+        return Err(AsterError::storage_driver_error(format!(
+            "local dedup target has no parent: {}",
+            target.display()
+        )));
+    };
+    let temp_name = format!(".aster-promote-{}.tmp", crate::utils::id::new_uuid());
+    let temp_path = parent.join(temp_name);
+
+    match copy_file_to_temp(local_path, &temp_path, expected_size).await {
+        Ok(()) => {}
+        Err(error) => {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(error);
+        }
+    }
+
+    let result = match tokio::fs::hard_link(&temp_path, target).await {
+        Ok(()) => {
+            crate::utils::cleanup_temp_file(local_path).await;
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            validate_existing_local_blob_size(target, expected_size).await?;
+            crate::utils::cleanup_temp_file(local_path).await;
+            Ok(())
+        }
+        Err(error) => Err(AsterError::storage_driver_error(format!(
+            "promote local dedup blob with no-clobber link failed after initial link error ({link_error}): {error}"
+        ))),
+    };
+
+    let _ = tokio::fs::remove_file(&temp_path).await;
+    result
+}
+
+async fn copy_file_to_temp(local_path: &str, temp_path: &Path, expected_size: u64) -> Result<()> {
+    let copied = tokio::fs::copy(local_path, temp_path)
+        .await
+        .map_aster_err_ctx(
+            "copy local dedup blob to temp",
+            AsterError::storage_driver_error,
+        )?;
+    if copied != expected_size {
+        return Err(AsterError::storage_driver_error(format!(
+            "local dedup temp copy size mismatch: expected {expected_size}, copied {copied}"
+        )));
+    }
+    Ok(())
+}
+
+async fn validate_existing_local_blob_size(target: &Path, expected_size: u64) -> Result<()> {
+    let metadata = tokio::fs::metadata(target).await.map_aster_err_ctx(
+        "inspect existing local dedup blob",
+        AsterError::storage_driver_error,
+    )?;
+    if metadata.len() != expected_size {
+        return Err(AsterError::storage_driver_error(format!(
+            "existing local dedup blob size mismatch for {}: expected {}, actual {}",
+            target.display(),
+            expected_size,
+            metadata.len()
+        )));
+    }
+    Ok(())
+}
+
 impl LocalDriver {
     pub fn new(policy: &storage_policy::Model) -> Result<Self> {
         Ok(Self {
@@ -548,6 +660,96 @@ mod tests {
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf).await.unwrap();
         assert_eq!(buf, b"Hello");
+
+        let _ = tokio::fs::remove_dir_all(&base).await;
+    }
+
+    #[tokio::test]
+    async fn promote_local_file_if_absent_does_not_overwrite_existing_target() {
+        let base = std::env::temp_dir().join(format!(
+            "aster-local-promote-test-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        tokio::fs::create_dir_all(&base).await.unwrap();
+
+        let policy = build_policy(&base);
+        let driver = super::LocalDriver::new(&policy).unwrap();
+        let target = "ab/cd/existing";
+        let target_full = driver.full_path(target).unwrap();
+        tokio::fs::create_dir_all(target_full.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&target_full, b"old").await.unwrap();
+
+        let source = base.join("source.bin");
+        tokio::fs::write(&source, b"new").await.unwrap();
+        super::promote_local_file_if_absent(&driver, target, source.to_str().unwrap(), 3)
+            .await
+            .unwrap();
+
+        assert_eq!(tokio::fs::read(&target_full).await.unwrap(), b"old");
+        assert!(!source.exists());
+
+        let _ = tokio::fs::remove_dir_all(&base).await;
+    }
+
+    #[tokio::test]
+    async fn promote_local_file_if_absent_rejects_existing_size_mismatch() {
+        let base = std::env::temp_dir().join(format!(
+            "aster-local-promote-mismatch-test-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        tokio::fs::create_dir_all(&base).await.unwrap();
+
+        let policy = build_policy(&base);
+        let driver = super::LocalDriver::new(&policy).unwrap();
+        let target = "ab/cd/existing";
+        let target_full = driver.full_path(target).unwrap();
+        tokio::fs::create_dir_all(target_full.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&target_full, b"old").await.unwrap();
+
+        let source = base.join("source.bin");
+        tokio::fs::write(&source, b"new-data").await.unwrap();
+        let error =
+            super::promote_local_file_if_absent(&driver, target, source.to_str().unwrap(), 8)
+                .await
+                .expect_err("existing blob with different size must be rejected");
+
+        assert!(error.message().contains("size mismatch"));
+        assert_eq!(tokio::fs::read(&target_full).await.unwrap(), b"old");
+        assert!(source.exists());
+
+        let _ = tokio::fs::remove_dir_all(&base).await;
+    }
+
+    #[tokio::test]
+    async fn promote_local_file_if_absent_rolls_back_linked_size_mismatch() {
+        let base = std::env::temp_dir().join(format!(
+            "aster-local-promote-linked-mismatch-test-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        tokio::fs::create_dir_all(&base).await.unwrap();
+
+        let policy = build_policy(&base);
+        let driver = super::LocalDriver::new(&policy).unwrap();
+        let target = "ab/cd/new-target";
+        let target_full = driver.full_path(target).unwrap();
+
+        let source = base.join("source.bin");
+        tokio::fs::write(&source, b"short").await.unwrap();
+        let error =
+            super::promote_local_file_if_absent(&driver, target, source.to_str().unwrap(), 8)
+                .await
+                .expect_err("newly linked blob with different size must be rejected");
+
+        assert!(error.message().contains("size mismatch"));
+        assert!(source.exists());
+        assert!(!target_full.exists());
 
         let _ = tokio::fs::remove_dir_all(&base).await;
     }

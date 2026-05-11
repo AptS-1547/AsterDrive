@@ -23,20 +23,25 @@ pub(crate) use crate::services::workspace_scope_service::{
     verify_folder_access,
 };
 pub(crate) use crate::services::workspace_storage_core::{
-    FinalizeUploadSessionFileParams, check_quota, create_exact_file_from_blob,
-    create_new_file_from_blob, create_nondedup_blob, create_nondedup_blob_with_key,
-    create_remote_nondedup_blob, create_s3_nondedup_blob, ensure_upload_parent_path,
-    finalize_upload_session_blob, finalize_upload_session_file, load_storage_limits,
-    local_content_dedup_enabled, parse_relative_upload_path, resolve_policy_for_size,
-    update_storage_used, update_storage_used_for_resource_scope,
+    FinalizeUploadSessionFileParams, VerifiedFolderPolicyHint, check_quota,
+    create_exact_file_from_blob, create_exact_file_from_blob_with_actor_username,
+    create_new_file_from_blob, create_new_file_from_blob_with_actor_username, create_nondedup_blob,
+    create_nondedup_blob_with_key, create_remote_nondedup_blob, create_s3_nondedup_blob,
+    ensure_upload_parent_path, finalize_upload_session_blob_with_actor_username,
+    finalize_upload_session_file, load_storage_limits, local_content_dedup_enabled,
+    parse_relative_upload_path, resolve_policy_for_size,
+    resolve_policy_for_size_with_verified_folder, update_storage_used,
+    update_storage_used_for_resource_scope,
 };
 
+pub(crate) use crate::services::workspace_scope_service::load_scope_actor_username_cached;
 pub(crate) use blob_upload::{
     PreparedNonDedupBlobUpload, cleanup_preuploaded_blob_upload, persist_preuploaded_blob,
     prepare_non_dedup_blob_upload, upload_reader_to_prepared_blob,
     upload_temp_file_to_prepared_blob,
 };
 pub(crate) use multipart::upload;
+pub(crate) use multipart::{WorkspaceUploadHints, upload_with_hints};
 pub(crate) use store::{
     StoreFromTempHints, StoreFromTempParams, StorePreuploadedNondedupParams, create_empty,
     store_from_temp, store_from_temp_exact_name_with_hints, store_from_temp_with_hints,

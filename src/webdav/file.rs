@@ -502,6 +502,7 @@ impl DavFile for AsterDavFile {
                         workspace_storage_service::StoreFromTempHints {
                             resolved_policy: resolved_policy_hint,
                             precomputed_hash: precomputed_hash.as_deref(),
+                            actor_username: None,
                         },
                     )
                     .await
@@ -588,6 +589,7 @@ impl DavFile for AsterDavFile {
                             skip_lock_check: true,
                             policy,
                             preuploaded_blob: prepared_upload,
+                            actor_username: None,
                         },
                     )
                     .await

@@ -1,4 +1,5 @@
 use chrono::Utc;
+use std::time::Instant;
 
 use crate::db::repository::file_repo;
 use crate::entities::{file, storage_policy, upload_session};
@@ -29,9 +30,10 @@ enum AssembledBlobPlan {
     Preuploaded(PreparedNonDedupBlobUpload),
 }
 
-pub(super) async fn complete_chunked_upload(
+pub(super) async fn complete_chunked_upload_with_actor_username(
     state: &PrimaryAppState,
     session: upload_session::Model,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     let db = &state.db;
     let upload_id = session.id.clone();
@@ -43,7 +45,14 @@ pub(super) async fn complete_chunked_upload(
         async {
             let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
             let driver = state.driver_registry.get_driver(&policy)?;
-            finalize_chunked_upload_session(state, &session, &policy, driver.as_ref()).await
+            finalize_chunked_upload_session(
+                state,
+                &session,
+                &policy,
+                driver.as_ref(),
+                actor_username,
+            )
+            .await
         },
     )
     .await?;
@@ -56,18 +65,33 @@ async fn finalize_chunked_upload_session(
     session: &upload_session::Model,
     policy: &storage_policy::Model,
     driver: &dyn StorageDriver,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     if policy.driver_type == DriverType::Remote {
-        return finalize_remote_chunked_upload_session(state, session, policy, driver).await;
+        return finalize_remote_chunked_upload_session(
+            state,
+            session,
+            policy,
+            driver,
+            actor_username,
+        )
+        .await;
     }
 
+    let assemble_started_at = Instant::now();
     let assembled = assemble_local_chunks_to_temp_file(
         state,
         session,
         workspace_storage_service::local_content_dedup_enabled(policy),
     )
     .await?;
+    let assemble_elapsed_ms = assemble_started_at.elapsed().as_millis();
+
+    let stage_started_at = Instant::now();
     let blob_plan = stage_assembled_blob_upload(driver, policy, &assembled).await?;
+    let stage_elapsed_ms = stage_started_at.elapsed().as_millis();
+
+    let persist_started_at = Instant::now();
     persist_assembled_upload(
         state,
         session,
@@ -75,8 +99,20 @@ async fn finalize_chunked_upload_session(
         policy.id,
         assembled.size,
         &blob_plan,
+        actor_username,
     )
     .await
+    .inspect(|file| {
+        tracing::debug!(
+            upload_id = %session.id,
+            file_id = file.id,
+            size = assembled.size,
+            assemble_elapsed_ms,
+            stage_elapsed_ms,
+            persist_elapsed_ms = persist_started_at.elapsed().as_millis(),
+            "local chunked upload finalized"
+        );
+    })
 }
 
 async fn finalize_remote_chunked_upload_session(
@@ -84,6 +120,7 @@ async fn finalize_remote_chunked_upload_session(
     session: &upload_session::Model,
     policy: &storage_policy::Model,
     driver: &dyn StorageDriver,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     const CHUNK_RELAY_BUFFER_SIZE: usize = 64 * 1024;
 
@@ -97,6 +134,7 @@ async fn finalize_remote_chunked_upload_session(
         writer,
     ));
 
+    let upload_started_at = Instant::now();
     let upload_result = workspace_storage_service::upload_reader_to_prepared_blob(
         driver,
         &prepared,
@@ -104,6 +142,7 @@ async fn finalize_remote_chunked_upload_session(
         session.total_size,
     )
     .await;
+    let upload_elapsed_ms = upload_started_at.elapsed().as_millis();
 
     let relay_result = relay_task.await.map_err(|error| {
         upload_assembly_error_with_subcode(
@@ -123,7 +162,19 @@ async fn finalize_remote_chunked_upload_session(
         return Err(error);
     }
 
-    persist_preuploaded_chunked_upload(state, session, driver, &prepared).await
+    let persist_started_at = Instant::now();
+    persist_preuploaded_chunked_upload(state, session, driver, &prepared, actor_username)
+        .await
+        .inspect(|file| {
+            tracing::debug!(
+                upload_id = %session.id,
+                file_id = file.id,
+                size = session.total_size,
+                upload_elapsed_ms,
+                persist_elapsed_ms = persist_started_at.elapsed().as_millis(),
+                "remote chunked upload finalized"
+            );
+        })
 }
 
 async fn stream_local_chunks_into_writer(
@@ -258,20 +309,13 @@ async fn stage_assembled_blob_upload(
 ) -> Result<AssembledBlobPlan> {
     if let Some(file_hash) = assembled.file_hash.as_ref() {
         let storage_path = crate::utils::storage_path_from_blob_key(file_hash);
-
-        // exists() 作为冗余 PUT 的软短路：失败/返回 false 都会退化为一次 PUT，
-        // 语义等同；真正的并发安全由内容寻址 + find_or_create_blob 保证。
-        let already_stored = driver.exists(&storage_path).await.unwrap_or(false);
-        if already_stored {
-            crate::utils::cleanup_temp_file(&assembled.path).await;
-        } else {
-            let stream_driver = driver
-                .as_stream_upload()
-                .ok_or_else(|| AsterError::storage_driver_error("stream upload not supported"))?;
-            stream_driver
-                .put_file(&storage_path, &assembled.path)
-                .await?;
-        }
+        crate::storage::drivers::local::promote_local_file_if_absent(
+            driver,
+            &storage_path,
+            &assembled.path,
+            assembled.size,
+        )
+        .await?;
 
         return Ok(AssembledBlobPlan::Dedup {
             file_hash: file_hash.clone(),
@@ -299,6 +343,7 @@ async fn persist_assembled_upload(
     policy_id: i64,
     size: i64,
     blob_plan: &AssembledBlobPlan,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     let now = Utc::now();
     let create_result = async {
@@ -319,9 +364,14 @@ async fn persist_assembled_upload(
             }
         };
 
-        let created =
-            workspace_storage_service::finalize_upload_session_blob(&txn, session, &blob, now)
-                .await?;
+        let created = workspace_storage_service::finalize_upload_session_blob_with_actor_username(
+            &txn,
+            session,
+            &blob,
+            now,
+            actor_username,
+        )
+        .await?;
 
         crate::db::transaction::commit(txn).await?;
         Ok::<file::Model, AsterError>(created)
@@ -351,14 +401,20 @@ async fn persist_preuploaded_chunked_upload(
     session: &upload_session::Model,
     driver: &dyn StorageDriver,
     prepared: &PreparedNonDedupBlobUpload,
+    actor_username: Option<&str>,
 ) -> Result<file::Model> {
     let now = Utc::now();
     let create_result = async {
         let txn = crate::db::transaction::begin(&state.db).await?;
         let blob = workspace_storage_service::persist_preuploaded_blob(&txn, prepared).await?;
-        let created =
-            workspace_storage_service::finalize_upload_session_blob(&txn, session, &blob, now)
-                .await?;
+        let created = workspace_storage_service::finalize_upload_session_blob_with_actor_username(
+            &txn,
+            session,
+            &blob,
+            now,
+            actor_username,
+        )
+        .await?;
         crate::db::transaction::commit(txn).await?;
         Ok::<file::Model, AsterError>(created)
     }

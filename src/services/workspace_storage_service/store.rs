@@ -13,11 +13,13 @@ use crate::services::storage_change_service;
 
 use super::{
     HASH_BUF_SIZE, NewFileMode, PreparedNonDedupBlobUpload, WorkspaceStorageScope, check_quota,
-    cleanup_preuploaded_blob_upload, create_exact_file_from_blob, create_new_file_from_blob,
-    create_nondedup_blob, create_remote_nondedup_blob, create_s3_nondedup_blob,
-    local_content_dedup_enabled, persist_preuploaded_blob, prepare_non_dedup_blob_upload,
-    resolve_policy_for_size, update_storage_used, upload_temp_file_to_prepared_blob,
-    verify_file_access, verify_folder_access,
+    cleanup_preuploaded_blob_upload, create_exact_file_from_blob,
+    create_exact_file_from_blob_with_actor_username, create_new_file_from_blob,
+    create_new_file_from_blob_with_actor_username, create_nondedup_blob,
+    create_remote_nondedup_blob, create_s3_nondedup_blob, local_content_dedup_enabled,
+    persist_preuploaded_blob, prepare_non_dedup_blob_upload, resolve_policy_for_size,
+    update_storage_used, upload_temp_file_to_prepared_blob, verify_file_access,
+    verify_folder_access,
 };
 
 #[derive(Clone, Copy)]
@@ -65,6 +67,7 @@ impl<'a> StoreFromTempParams<'a> {
 pub(crate) struct StoreFromTempHints<'a> {
     pub resolved_policy: Option<crate::entities::storage_policy::Model>,
     pub precomputed_hash: Option<&'a str>,
+    pub actor_username: Option<&'a str>,
 }
 
 pub(crate) struct StorePreuploadedNondedupParams<'a> {
@@ -76,6 +79,7 @@ pub(crate) struct StorePreuploadedNondedupParams<'a> {
     pub skip_lock_check: bool,
     pub policy: &'a crate::entities::storage_policy::Model,
     pub preuploaded_blob: PreparedNonDedupBlobUpload,
+    pub actor_username: Option<&'a str>,
 }
 
 pub(crate) async fn store_from_temp(
@@ -201,6 +205,7 @@ pub(crate) async fn store_preuploaded_nondedup(
         skip_lock_check,
         policy,
         preuploaded_blob,
+        actor_username,
     } = params;
     let db = &state.db;
 
@@ -257,10 +262,6 @@ pub(crate) async fn store_preuploaded_nondedup(
     };
     let storage_delta = overwrite_ctx.as_ref().map_or(size, |_| size);
 
-    if storage_delta > 0 {
-        check_quota(db, scope, storage_delta).await?;
-    }
-
     let mime = mime_guess::from_path(&filename)
         .first_or_octet_stream()
         .to_string();
@@ -308,8 +309,17 @@ pub(crate) async fn store_preuploaded_nondedup(
             }
             updated
         } else {
-            let created =
-                create_new_file_from_blob(&txn, scope, folder_id, &filename, &blob, now).await?;
+            let created = match actor_username {
+                Some(username) => {
+                    create_new_file_from_blob_with_actor_username(
+                        &txn, scope, folder_id, &filename, &blob, now, username,
+                    )
+                    .await?
+                }
+                None => {
+                    create_new_file_from_blob(&txn, scope, folder_id, &filename, &blob, now).await?
+                }
+            };
             if storage_delta != 0 {
                 update_storage_used(&txn, scope, storage_delta).await?;
             }

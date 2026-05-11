@@ -35,6 +35,9 @@ pub async fn perform_shutdown(background_tasks: BackgroundTasks, db: DatabaseCon
     background_tasks.shutdown().await;
     tracing::info!("background tasks stopped");
 
+    tracing::info!("flushing audit logs...");
+    crate::services::audit_service::shutdown_global_audit_log_manager().await;
+
     tracing::info!("closing database connection...");
     if let Err(e) = db.close().await {
         tracing::error!("error closing database connection: {}", e);

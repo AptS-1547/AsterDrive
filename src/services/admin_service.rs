@@ -446,6 +446,7 @@ async fn build_daily_reports(
     let start = start_of_local_day(oldest_date, timezone)?;
     let end = start_of_local_day(today + Duration::days(1), timezone)?;
 
+    audit_service::flush_global_audit_log_manager().await;
     let events = audit_log_repo::find_actions_in_range(&state.db, start, end).await?;
 
     for (action, created_at) in events {
