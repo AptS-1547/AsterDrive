@@ -4,6 +4,7 @@ use crate::db::repository::{file_repo, share_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
+use crate::services::file_service::ResolvedDownloadRange;
 use crate::services::{file_service, folder_service};
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
@@ -252,6 +253,15 @@ pub async fn download_shared_file(
     token: &str,
     if_none_match: Option<&str>,
 ) -> Result<file_service::DownloadOutcome> {
+    download_shared_file_with_range(state, token, if_none_match, None).await
+}
+
+pub(crate) async fn download_shared_file_with_range(
+    state: &PrimaryAppState,
+    token: &str,
+    if_none_match: Option<&str>,
+    range: Option<ResolvedDownloadRange>,
+) -> Result<file_service::DownloadOutcome> {
     let share = load_valid_share(state, token).await?;
     let file = load_share_file_resource(state, &share).await?;
     download_share_resource_with_disposition(
@@ -260,6 +270,7 @@ pub async fn download_shared_file(
         &file,
         file_service::DownloadDisposition::Attachment,
         if_none_match,
+        range,
     )
     .await
 }
@@ -270,6 +281,16 @@ pub async fn download_shared_folder_file(
     file_id: i64,
     if_none_match: Option<&str>,
 ) -> Result<file_service::DownloadOutcome> {
+    download_shared_folder_file_with_range(state, token, file_id, if_none_match, None).await
+}
+
+pub(crate) async fn download_shared_folder_file_with_range(
+    state: &PrimaryAppState,
+    token: &str,
+    file_id: i64,
+    if_none_match: Option<&str>,
+    range: Option<ResolvedDownloadRange>,
+) -> Result<file_service::DownloadOutcome> {
     let (share, file) = load_shared_folder_file_target(state, token, file_id).await?;
     download_share_resource_with_disposition(
         state,
@@ -277,6 +298,7 @@ pub async fn download_shared_folder_file(
         &file,
         file_service::DownloadDisposition::Attachment,
         if_none_match,
+        range,
     )
     .await
 }
@@ -421,6 +443,7 @@ async fn download_share_resource_with_disposition(
     file: &crate::entities::file::Model,
     disposition: file_service::DownloadDisposition,
     if_none_match: Option<&str>,
+    range: Option<ResolvedDownloadRange>,
 ) -> Result<file_service::DownloadOutcome> {
     tracing::debug!(
         share_id = share.id,
@@ -439,12 +462,13 @@ async fn download_share_resource_with_disposition(
             file_id = file.id,
             "shared file download satisfied by ETag"
         );
-        return file_service::build_download_outcome_with_disposition(
+        return file_service::build_download_outcome_with_disposition_and_range(
             state,
             file,
             &blob,
             disposition,
             Some(if_none_match),
+            None,
         )
         .await;
     }
@@ -470,12 +494,13 @@ async fn download_share_resource_with_disposition(
         }
     }
 
-    match file_service::build_download_outcome_with_disposition(
+    match file_service::build_download_outcome_with_disposition_and_range(
         state,
         file,
         &blob,
         disposition,
         None,
+        range,
     )
     .await
     {

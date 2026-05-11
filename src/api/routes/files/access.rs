@@ -13,6 +13,7 @@ use crate::services::{
     workspace_models::FileInfo,
     workspace_storage_service::WorkspaceStorageScope,
 };
+use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse, web};
 
 fn request_origin_parts(req: &HttpRequest) -> (String, String) {
@@ -527,10 +528,18 @@ pub(crate) async fn download_response(
         .headers()
         .get("If-None-Match")
         .and_then(|value| value.to_str().ok());
+    let file = file_service::get_info_in_scope(state, scope, file_id).await?;
+    let range = file_service::parse_range_header(req.headers().get(header::RANGE), file.size)?;
     let ctx = AuditContext::from_request(req, claims);
-    let outcome =
-        file_service::download_in_scope_with_audit(state, scope, file_id, if_none_match, &ctx)
-            .await?;
+    let outcome = file_service::download_in_scope_with_file_and_audit(
+        state,
+        scope,
+        file,
+        if_none_match,
+        range,
+        &ctx,
+    )
+    .await?;
     Ok(file_service::outcome_to_response(outcome))
 }
 

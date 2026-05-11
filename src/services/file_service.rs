@@ -32,10 +32,12 @@ pub(crate) use deletion::{
     batch_purge_in_resource_scope, batch_purge_in_scope, cleanup_unreferenced_blob,
     delete_in_scope, ensure_blob_cleanup_if_unreferenced,
 };
+pub(crate) use download::range::{ResolvedDownloadRange, parse_range_header};
 pub use download::{DownloadOutcome, StreamedFile, download, download_raw};
 pub(crate) use download::{
-    build_download_outcome_with_disposition, build_stream_outcome_with_disposition,
-    download_in_scope, outcome_to_response,
+    build_download_outcome_with_disposition_and_range, build_stream_outcome_with_disposition,
+    build_stream_outcome_with_disposition_and_range, download_in_scope_with_range_and_file,
+    outcome_to_response,
 };
 pub use lock::set_lock;
 pub(crate) use lock::set_lock_in_scope;
@@ -189,14 +191,24 @@ pub(crate) async fn copy_file_in_scope_with_audit(
     Ok(file.into())
 }
 
-pub(crate) async fn download_in_scope_with_audit(
+pub(crate) async fn download_in_scope_with_file_and_audit(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
-    file_id: i64,
+    file: crate::entities::file::Model,
     if_none_match: Option<&str>,
+    range: Option<download::range::ResolvedDownloadRange>,
     audit_ctx: &AuditContext,
 ) -> Result<DownloadOutcome> {
-    let outcome = download_in_scope(state, scope, file_id, if_none_match).await?;
+    let file_id = file.id;
+    let outcome = download_in_scope_with_range_and_file(
+        state,
+        scope,
+        file_id,
+        Some(file),
+        if_none_match,
+        range,
+    )
+    .await?;
     audit_service::log(
         state,
         audit_ctx,

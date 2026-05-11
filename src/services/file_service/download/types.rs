@@ -1,5 +1,7 @@
 use tokio_util::io::ReaderStream;
 
+use super::range::ResolvedDownloadRange;
+
 /// 服务层文件流下载数据。路由层负责把这些字段组装成 HttpResponse。
 pub struct StreamedFile {
     pub content_type: String,
@@ -9,6 +11,8 @@ pub struct StreamedFile {
     pub cache_control: &'static str,
     /// 仅 inline 且需要沙盒隔离时不为 None。
     pub csp: Option<&'static str>,
+    /// HTTP Range 响应元数据。None 表示完整文件 200 响应。
+    pub(crate) range: Option<ResolvedDownloadRange>,
     pub body: ReaderStream<Box<dyn tokio::io::AsyncRead + Unpin + Send>>,
     /// 流未走到 EOF 就被 drop 时触发的 hook（客户端中途断连、actix 丢弃 response 等）。
     /// 分享下载用它在断连时回滚 `download_count`，避免"发起一次就计一次、哪怕没发完"的
@@ -39,6 +43,7 @@ impl std::fmt::Debug for StreamedFile {
             .field("etag", &self.etag)
             .field("cache_control", &self.cache_control)
             .field("csp", &self.csp)
+            .field("range", &self.range)
             .field("body", &"<stream>")
             .finish()
     }

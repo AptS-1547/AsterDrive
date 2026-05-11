@@ -9,6 +9,7 @@ use crate::db::repository::{file_repo, team_repo};
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
+use crate::services::file_service::ResolvedDownloadRange;
 use crate::services::{
     file_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -40,13 +41,11 @@ pub(crate) async fn load_public_file(state: &PrimaryAppState, file_id: i64) -> R
     Ok(file)
 }
 
-pub(crate) async fn download_file(
+pub(crate) async fn resolve_file_for_download(
     state: &PrimaryAppState,
     token: &str,
     requested_name: &str,
-    force_download: bool,
-    if_none_match: Option<&str>,
-) -> Result<file_service::DownloadOutcome> {
+) -> Result<file::Model> {
     let (file_id, signature) = parse_token(token)?;
     let file = load_public_file(state, file_id).await?;
 
@@ -58,7 +57,18 @@ pub(crate) async fn download_file(
     }
 
     validate_public_file_name(&file, requested_name)?;
+    Ok(file)
+}
 
+pub(crate) async fn download_file(
+    state: &PrimaryAppState,
+    token: &str,
+    requested_name: &str,
+    force_download: bool,
+    if_none_match: Option<&str>,
+    range: Option<ResolvedDownloadRange>,
+) -> Result<file_service::DownloadOutcome> {
+    let file = resolve_file_for_download(state, token, requested_name).await?;
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
     let disposition = if force_download {
         file_service::DownloadDisposition::Attachment
@@ -66,12 +76,13 @@ pub(crate) async fn download_file(
         file_service::DownloadDisposition::Inline
     };
 
-    file_service::build_download_outcome_with_disposition(
+    file_service::build_download_outcome_with_disposition_and_range(
         state,
         &file,
         &blob,
         disposition,
         if_none_match,
+        range,
     )
     .await
 }

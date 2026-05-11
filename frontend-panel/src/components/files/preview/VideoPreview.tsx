@@ -1,10 +1,10 @@
 import Artplayer from "artplayer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useBlobUrl } from "@/hooks/useBlobUrl";
+import { config } from "@/config/app";
+import { joinApiUrl } from "@/lib/apiUrl";
 import { logger } from "@/lib/logger";
 import { PreviewError } from "./PreviewError";
-import { PreviewLoadingState } from "./PreviewLoadingState";
 import type { PreviewableFileLike } from "./types";
 
 const DEFAULT_ASPECT_RATIO = 16 / 9;
@@ -19,12 +19,27 @@ function getPlayerLanguage(language: string) {
 	return language.startsWith("zh") ? "zh-cn" : "en";
 }
 
+function resolveVideoSource(path: string) {
+	if (/^https?:\/\//i.test(path) || path.startsWith("blob:")) {
+		return path;
+	}
+	if (
+		path.startsWith("/api/") ||
+		path.startsWith("/d/") ||
+		path.startsWith("/pv/")
+	) {
+		return path;
+	}
+	return joinApiUrl(config.apiBaseUrl, path);
+}
+
 export function VideoPreview({ file, path }: VideoPreviewProps) {
-	const { t, i18n } = useTranslation("files");
+	const { i18n } = useTranslation("files");
 	const containerRef = useRef<HTMLDivElement | null>(null);
-	const { blobUrl, error, loading, retry } = useBlobUrl(path);
 	const [playerFailed, setPlayerFailed] = useState(false);
+	const [mediaFailed, setMediaFailed] = useState(false);
 	const [aspectRatio, setAspectRatio] = useState(DEFAULT_ASPECT_RATIO);
+	const videoSource = useMemo(() => resolveVideoSource(path), [path]);
 
 	const playerLanguage = useMemo(
 		() => getPlayerLanguage(i18n.language),
@@ -40,8 +55,8 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 
 	useEffect(() => {
 		setPlayerFailed(false);
+		setMediaFailed(false);
 		setAspectRatio(DEFAULT_ASPECT_RATIO);
-		if (!blobUrl) return;
 
 		const metadataVideo = document.createElement("video");
 
@@ -52,7 +67,7 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 		};
 
 		metadataVideo.preload = "metadata";
-		metadataVideo.src = blobUrl;
+		metadataVideo.src = videoSource;
 		metadataVideo.addEventListener("loadedmetadata", handleLoadedMetadata);
 		metadataVideo.load();
 
@@ -61,17 +76,21 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 			metadataVideo.removeAttribute("src");
 			metadataVideo.load();
 		};
-	}, [blobUrl]);
+	}, [videoSource]);
 
 	useEffect(() => {
-		if (!blobUrl || !containerRef.current || playerFailed) return;
+		if (!containerRef.current || playerFailed || mediaFailed) return;
 
 		let art: Artplayer | null = null;
+		let videoElement: HTMLVideoElement | null = null;
+		const handleVideoError = () => {
+			setMediaFailed(true);
+		};
 
 		try {
 			art = new Artplayer({
 				container: containerRef.current,
-				url: blobUrl,
+				url: videoSource,
 				lang: playerLanguage,
 				fullscreen: true,
 				fullscreenWeb: true,
@@ -83,26 +102,26 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 				hotkey: true,
 				playsInline: true,
 				airplay: true,
+				moreVideoAttr: {
+					preload: "metadata",
+				},
 			});
-			art.template.$video.style.objectFit = "contain";
+			videoElement = art.template.$video;
+			videoElement.style.objectFit = "contain";
+			videoElement.addEventListener("error", handleVideoError);
 		} catch (playerError) {
 			logger.warn("artplayer init failed", file.name, playerError);
 			setPlayerFailed(true);
 		}
 
 		return () => {
+			videoElement?.removeEventListener("error", handleVideoError);
 			art?.destroy(false);
 		};
-	}, [blobUrl, file.name, playerFailed, playerLanguage]);
+	}, [file.name, mediaFailed, playerFailed, playerLanguage, videoSource]);
 
-	if (loading) {
-		return (
-			<PreviewLoadingState text={t("loading_preview")} className="h-full" />
-		);
-	}
-
-	if (error || !blobUrl) {
-		return <PreviewError onRetry={retry} />;
+	if (mediaFailed) {
+		return <PreviewError />;
 	}
 
 	if (playerFailed) {
@@ -113,8 +132,10 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 			>
 				{/* biome-ignore lint/a11y/useMediaCaption: user-uploaded media may not have captions available */}
 				<video
-					src={blobUrl}
+					src={videoSource}
 					controls
+					preload="metadata"
+					onError={() => setMediaFailed(true)}
 					className="block h-full w-full object-contain"
 				/>
 			</div>

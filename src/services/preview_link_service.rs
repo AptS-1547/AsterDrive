@@ -16,6 +16,7 @@ use crate::db::repository::file_repo;
 use crate::entities::{file, share};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
+use crate::services::file_service::ResolvedDownloadRange;
 use crate::services::{
     direct_link_service, file_service, share_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -150,11 +151,12 @@ pub async fn create_token_for_shared_folder_file_for_origin(
     build_link_for_shared_file(state, &share, &file, &payload, Some(request_origin))
 }
 
-pub async fn download_file(
+pub(crate) async fn download_file(
     state: &PrimaryAppState,
     token: &str,
     requested_name: &str,
     if_none_match: Option<&str>,
+    range: Option<ResolvedDownloadRange>,
 ) -> Result<file_service::DownloadOutcome> {
     let resolved = resolve_token(state, token).await?;
     let (payload, file) = match &resolved {
@@ -168,23 +170,25 @@ pub async fn download_file(
     if let Some(if_none_match) = if_none_match
         && file_service::if_none_match_matches(if_none_match, &blob.hash)
     {
-        return file_service::build_stream_outcome_with_disposition(
+        return file_service::build_stream_outcome_with_disposition_and_range(
             state,
             file,
             &blob,
             file_service::DownloadDisposition::Inline,
             Some(if_none_match),
+            None,
         )
         .await;
     }
 
     let reserved = reserve_usage(state, token, payload).await?;
-    match file_service::build_stream_outcome_with_disposition(
+    match file_service::build_stream_outcome_with_disposition_and_range(
         state,
         file,
         &blob,
         file_service::DownloadDisposition::Inline,
         None,
+        range,
     )
     .await
     {
@@ -194,6 +198,20 @@ pub async fn download_file(
             Err(error)
         }
     }
+}
+
+pub(crate) async fn resolve_file_for_download(
+    state: &PrimaryAppState,
+    token: &str,
+    requested_name: &str,
+) -> Result<crate::entities::file::Model> {
+    let resolved = resolve_token(state, token).await?;
+    let file = match &resolved {
+        ResolvedPreviewTarget::File { file, .. } => file,
+        ResolvedPreviewTarget::Shared { file, .. } => file,
+    };
+    direct_link_service::validate_public_file_name(file, requested_name)?;
+    Ok(file.clone())
 }
 
 fn build_payload(subject: PreviewSubject) -> PreviewTokenPayload {

@@ -13,26 +13,34 @@ use crate::storage::driver::PresignedDownloadOptions;
 use crate::types::{
     DriverType, RemoteDownloadStrategy, S3DownloadStrategy, parse_storage_policy_options,
 };
+use crate::utils::numbers;
 
+use super::range::ResolvedDownloadRange;
 use super::types::{DownloadOutcome, StreamedFile};
 
 const PRESIGNED_DOWNLOAD_TTL_SECS: u64 = 5 * 60;
 
-pub(crate) async fn download_in_scope(
+pub(crate) async fn download_in_scope_with_range_and_file(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     id: i64,
+    file: Option<file::Model>,
     if_none_match: Option<&str>,
+    range: Option<ResolvedDownloadRange>,
 ) -> Result<DownloadOutcome> {
     tracing::debug!(
         scope = ?scope,
         file_id = id,
         has_if_none_match = if_none_match.is_some(),
+        has_range = range.is_some(),
         "starting file download"
     );
-    let file = get_info_in_scope(state, scope, id).await?;
+    let file = match file {
+        Some(file) => file,
+        None => get_info_in_scope(state, scope, id).await?,
+    };
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
-    build_download_outcome(state, &file, &blob, if_none_match).await
+    build_download_outcome(state, &file, &blob, if_none_match, range).await
 }
 
 /// 下载文件（流式，不全量缓冲）
@@ -42,11 +50,13 @@ pub async fn download(
     user_id: i64,
     if_none_match: Option<&str>,
 ) -> Result<DownloadOutcome> {
-    download_in_scope(
+    download_in_scope_with_range_and_file(
         state,
         WorkspaceStorageScope::Personal { user_id },
         id,
+        None,
         if_none_match,
+        None,
     )
     .await
 }
@@ -69,22 +79,24 @@ async fn download_raw_unchecked_with_file(
     if_none_match: Option<&str>,
 ) -> Result<DownloadOutcome> {
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
-    build_stream_outcome(state, &file, &blob, if_none_match).await
+    build_stream_outcome(state, &file, &blob, if_none_match, None).await
 }
 
 /// 构建流式下载结果（Attachment disposition）
-pub async fn build_stream_outcome(
+async fn build_stream_outcome(
     state: &PrimaryAppState,
     file: &file::Model,
     blob: &file_blob::Model,
     if_none_match: Option<&str>,
+    range: Option<ResolvedDownloadRange>,
 ) -> Result<DownloadOutcome> {
-    build_stream_outcome_with_disposition(
+    build_stream_outcome_with_disposition_and_range(
         state,
         file,
         blob,
         DownloadDisposition::Attachment,
         if_none_match,
+        range,
     )
     .await
 }
@@ -94,35 +106,39 @@ async fn build_download_outcome(
     file: &file::Model,
     blob: &file_blob::Model,
     if_none_match: Option<&str>,
+    range: Option<ResolvedDownloadRange>,
 ) -> Result<DownloadOutcome> {
-    build_download_outcome_with_disposition(
+    build_download_outcome_with_disposition_and_range(
         state,
         file,
         blob,
         DownloadDisposition::Attachment,
         if_none_match,
+        range,
     )
     .await
 }
 
-pub async fn build_download_outcome_with_disposition(
+pub(crate) async fn build_download_outcome_with_disposition_and_range(
     state: &PrimaryAppState,
     file: &file::Model,
     blob: &file_blob::Model,
     disposition: DownloadDisposition,
     if_none_match: Option<&str>,
+    range: Option<ResolvedDownloadRange>,
 ) -> Result<DownloadOutcome> {
     if let Some(if_none_match) = if_none_match
         && if_none_match_matches(if_none_match, &blob.hash)
     {
         // 命中 If-None-Match 时仍走统一 outcome builder，
         // 这样 304 和 200 会共享相同的缓存头 / sandbox 头策略。
-        return build_stream_outcome_with_disposition(
+        return build_stream_outcome_with_disposition_and_range(
             state,
             file,
             blob,
             disposition,
             Some(if_none_match),
+            None,
         )
         .await;
     }
@@ -146,7 +162,8 @@ pub async fn build_download_outcome_with_disposition(
         return build_presigned_redirect_outcome(state, &policy, file, blob).await;
     }
 
-    build_stream_outcome_with_disposition(state, file, blob, disposition, None).await
+    build_stream_outcome_with_disposition_and_range(state, file, blob, disposition, None, range)
+        .await
 }
 
 async fn build_presigned_redirect_outcome(
@@ -196,6 +213,25 @@ pub async fn build_stream_outcome_with_disposition(
     disposition: DownloadDisposition,
     if_none_match: Option<&str>,
 ) -> Result<DownloadOutcome> {
+    build_stream_outcome_with_disposition_and_range(
+        state,
+        file,
+        blob,
+        disposition,
+        if_none_match,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn build_stream_outcome_with_disposition_and_range(
+    state: &PrimaryAppState,
+    file: &file::Model,
+    blob: &file_blob::Model,
+    disposition: DownloadDisposition,
+    if_none_match: Option<&str>,
+    range: Option<ResolvedDownloadRange>,
+) -> Result<DownloadOutcome> {
     let requires_sandbox =
         disposition == DownloadDisposition::Inline && requires_inline_sandbox(&file.mime_type);
 
@@ -232,10 +268,21 @@ pub async fn build_stream_outcome_with_disposition(
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     // 主下载链路必须保持流式读取；不要改回 driver.get() 的全量缓冲实现。
-    let stream = driver.get_stream(&blob.storage_path).await?;
+    let stream = match range {
+        Some(range) => {
+            driver
+                .get_range(&blob.storage_path, range.start, Some(range.length))
+                .await?
+        }
+        None => driver.get_stream(&blob.storage_path).await?,
+    };
 
     // 64KB buffer — 比默认 4KB 减少系统调用和分配开销
     let reader_stream = tokio_util::io::ReaderStream::with_capacity(stream, 64 * 1024);
+    let content_length = match range {
+        Some(range) => numbers::u64_to_i64(range.length, "download range length")?,
+        None => blob.size,
+    };
 
     tracing::debug!(
         file_id = file.id,
@@ -243,12 +290,13 @@ pub async fn build_stream_outcome_with_disposition(
         policy_id = blob.policy_id,
         size = blob.size,
         disposition = ?disposition,
+        has_range = range.is_some(),
         "building streaming file response"
     );
 
     Ok(DownloadOutcome::Stream(StreamedFile {
         content_type: file.mime_type.clone(),
-        content_length: blob.size,
+        content_length,
         content_disposition: disposition.header_value(&file.name),
         etag,
         cache_control: "private, max-age=0, must-revalidate",
@@ -257,6 +305,7 @@ pub async fn build_stream_outcome_with_disposition(
         } else {
             None
         },
+        range,
         body: reader_stream,
         on_abort: None,
     }))

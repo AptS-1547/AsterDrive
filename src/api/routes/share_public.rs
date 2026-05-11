@@ -10,10 +10,12 @@ use crate::config::RateLimitConfig;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
+use crate::services::file_service::ResolvedDownloadRange;
 use crate::services::{
     direct_link_service, file_service, preview_link_service, profile_service, share_service,
 };
 use actix_governor::Governor;
+use actix_web::http::header;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 
@@ -49,6 +51,31 @@ fn build_share_cookie(
 fn share_cookie_value(req: &actix_web::HttpRequest, token: &str) -> Option<String> {
     req.cookie(&share_cookie_name(token))
         .map(|cookie| cookie.value().to_string())
+}
+
+async fn shared_file_range(
+    state: &PrimaryAppState,
+    token: &str,
+    req: &HttpRequest,
+) -> Result<Option<ResolvedDownloadRange>> {
+    if !req.headers().contains_key(header::RANGE) {
+        return Ok(None);
+    }
+    let (_, file) = share_service::load_preview_shared_file(state, token).await?;
+    file_service::parse_range_header(req.headers().get(header::RANGE), file.size)
+}
+
+async fn shared_folder_file_range(
+    state: &PrimaryAppState,
+    token: &str,
+    file_id: i64,
+    req: &HttpRequest,
+) -> Result<Option<ResolvedDownloadRange>> {
+    if !req.headers().contains_key(header::RANGE) {
+        return Ok(None);
+    }
+    let (_, file) = share_service::load_preview_shared_folder_file(state, token, file_id).await?;
+    file_service::parse_range_header(req.headers().get(header::RANGE), file.size)
 }
 
 /// Extension methods for `DirectLinkQuery`.
@@ -212,13 +239,15 @@ pub async fn download_shared(
 ) -> Result<HttpResponse> {
     let cookie_value = share_cookie_value(&req, path.as_str());
     share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
+    let range = shared_file_range(&state, path.as_str(), &req).await?;
 
-    let outcome = share_service::download_shared_file(
+    let outcome = share_service::download_shared_file_with_range(
         &state,
         &path,
         req.headers()
             .get("If-None-Match")
             .and_then(|v| v.to_str().ok()),
+        range,
     )
     .await?;
     Ok(file_service::outcome_to_response(outcome))
@@ -231,6 +260,8 @@ pub async fn download_direct(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, filename) = path.into_inner();
+    let file = direct_link_service::resolve_file_for_download(&state, &token, &filename).await?;
+    let range = file_service::parse_range_header(req.headers().get(header::RANGE), file.size)?;
     let outcome = direct_link_service::download_file(
         &state,
         &token,
@@ -239,6 +270,7 @@ pub async fn download_direct(
         req.headers()
             .get("If-None-Match")
             .and_then(|v| v.to_str().ok()),
+        range,
     )
     .await?;
     Ok(file_service::outcome_to_response(outcome))
@@ -250,6 +282,8 @@ pub async fn download_preview(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, filename) = path.into_inner();
+    let file = preview_link_service::resolve_file_for_download(&state, &token, &filename).await?;
+    let range = file_service::parse_range_header(req.headers().get(header::RANGE), file.size)?;
     let outcome = preview_link_service::download_file(
         &state,
         &token,
@@ -257,6 +291,7 @@ pub async fn download_preview(
         req.headers()
             .get("If-None-Match")
             .and_then(|v| v.to_str().ok()),
+        range,
     )
     .await?;
     Ok(file_service::outcome_to_response(outcome))
@@ -285,14 +320,16 @@ pub async fn download_shared_folder_file(
     let (token, file_id) = path.into_inner();
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
+    let range = shared_folder_file_range(&state, &token, file_id, &req).await?;
 
-    let outcome = share_service::download_shared_folder_file(
+    let outcome = share_service::download_shared_folder_file_with_range(
         &state,
         &token,
         file_id,
         req.headers()
             .get("If-None-Match")
             .and_then(|v| v.to_str().ok()),
+        range,
     )
     .await?;
     Ok(file_service::outcome_to_response(outcome))

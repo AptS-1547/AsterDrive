@@ -1,5 +1,5 @@
 use actix_web::HttpResponse;
-use actix_web::http::header;
+use actix_web::http::{StatusCode, header};
 
 use super::streaming::AbortAwareStream;
 use super::types::DownloadOutcome;
@@ -29,12 +29,19 @@ pub(crate) fn outcome_to_response(outcome: DownloadOutcome) -> HttpResponse {
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .finish(),
         DownloadOutcome::Stream(streamed) => {
-            let mut response = HttpResponse::Ok();
+            let mut response = match streamed.range {
+                Some(_) => HttpResponse::build(StatusCode::PARTIAL_CONTENT),
+                None => HttpResponse::Ok(),
+            };
             response.content_type(streamed.content_type);
             response.insert_header(("Content-Length", streamed.content_length.to_string()));
             response.insert_header(("Content-Disposition", streamed.content_disposition));
             response.insert_header(("ETag", streamed.etag));
             response.insert_header(("Cache-Control", streamed.cache_control));
+            response.insert_header(("Accept-Ranges", "bytes"));
+            if let Some(range) = streamed.range {
+                response.insert_header(("Content-Range", range.content_range_header()));
+            }
             if let Some(csp_value) = streamed.csp {
                 response.insert_header(("Content-Security-Policy", csp_value));
                 response.insert_header(("X-Content-Type-Options", "nosniff"));

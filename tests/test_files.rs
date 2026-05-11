@@ -3,6 +3,7 @@
 #[macro_use]
 mod common;
 
+use actix_web::http::{StatusCode, header};
 use actix_web::test;
 use aster_drive::db::repository::{file_repo, user_repo};
 use serde_json::Value;
@@ -261,6 +262,88 @@ async fn test_file_preview_link_supports_public_inline_access_and_usage_limit() 
     let req = test::TestRequest::get().uri(&preview_path).to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
+async fn test_file_download_honors_single_range_header() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_with_name_and_mime!(
+        app,
+        token,
+        "clip.mp4",
+        "video/mp4",
+        "abcdefghijklmnopqrstuvwxyz"
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/download"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header((header::RANGE, "bytes=5-9"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(resp.headers().get(header::ACCEPT_RANGES).unwrap(), "bytes");
+    assert_eq!(
+        resp.headers().get(header::CONTENT_RANGE).unwrap(),
+        "bytes 5-9/26"
+    );
+    assert_eq!(resp.headers().get(header::CONTENT_LENGTH).unwrap(), "5");
+    let body = test::read_body(resp).await;
+    assert_eq!(body.as_ref(), b"fghij");
+}
+
+#[actix_web::test]
+async fn test_file_preview_link_honors_single_range_header() {
+    let mut state = common::setup().await;
+    state.cache = aster_drive::cache::create_cache(&aster_drive::config::CacheConfig {
+        enabled: true,
+        ..Default::default()
+    })
+    .await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_with_name_and_mime!(
+        app,
+        token,
+        "range-preview.mp4",
+        "video/mp4",
+        "abcdefghijklmnopqrstuvwxyz"
+    );
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/{file_id}/preview-link"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let preview_path = body["data"]["path"]
+        .as_str()
+        .expect("preview link path should exist")
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&preview_path)
+        .insert_header((header::RANGE, "bytes=-4"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        resp.headers().get(header::CONTENT_RANGE).unwrap(),
+        "bytes 22-25/26"
+    );
+    assert_eq!(
+        resp.headers().get(header::CONTENT_DISPOSITION).unwrap(),
+        r#"inline; filename="range-preview.mp4""#
+    );
+    let body = test::read_body(resp).await;
+    assert_eq!(body.as_ref(), b"wxyz");
 }
 
 #[actix_web::test]
