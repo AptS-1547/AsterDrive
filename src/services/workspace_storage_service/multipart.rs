@@ -3,7 +3,7 @@
 use actix_multipart::Multipart;
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, BufWriter};
 
 use crate::entities::file;
 use crate::errors::{
@@ -140,12 +140,13 @@ async fn upload_local_direct(
                 )?;
             }
 
-            let mut staging_file = tokio::fs::File::create(&staging_path)
+            let staging_file = tokio::fs::File::create(&staging_path)
                 .await
                 .map_aster_err_ctx(
                     "create local staging file",
                     upload_local_staging_file_create_failed,
                 )?;
+            let mut staging_file = BufWriter::new(staging_file);
             let mut hasher = should_dedup.then(Sha256::new);
             let mut size: i64 = 0;
             let staging_path = staging_path.to_string_lossy().into_owned();
@@ -509,9 +510,10 @@ pub(crate) async fn upload_with_hints(
         .await
         .map_aster_err_ctx("create temp dir", upload_temp_dir_create_failed)?;
 
-    let mut temp_file = tokio::fs::File::create(&temp_path)
+    let temp_file = tokio::fs::File::create(&temp_path)
         .await
         .map_aster_err_ctx("create temp", upload_temp_file_create_failed)?;
+    let mut temp_file = BufWriter::new(temp_file);
     let mut size: i64 = 0;
 
     while let Some(field) = payload.next().await {

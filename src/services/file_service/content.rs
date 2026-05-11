@@ -3,7 +3,7 @@
 use actix_web::web::{Bytes, Payload};
 use futures::StreamExt;
 use sha2::{Digest, Sha256};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, BufWriter};
 
 use crate::errors::{
     AsterError, MapAsterErr, Result, file_upload_error_with_subcode,
@@ -83,9 +83,10 @@ pub(crate) async fn stream_request_body_to_temp_upload(
         (temp_path, false)
     };
 
-    let mut temp_file = tokio::fs::File::create(&temp_path)
+    let temp_file = tokio::fs::File::create(&temp_path)
         .await
         .map_aster_err_ctx("create temp", upload_temp_file_create_failed)?;
+    let mut temp_file = BufWriter::new(temp_file);
     let mut size: i64 = 0;
     let mut hasher = should_hash.then(Sha256::new);
 
