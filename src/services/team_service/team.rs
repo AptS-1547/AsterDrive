@@ -13,8 +13,8 @@ use crate::types::TeamMemberRole;
 
 use super::shared::{
     archive_team_record, build_team_info, build_team_info_with_metadata, create_team_record,
-    ensure_can_manage_team, load_team_metadata, missing_creator_username, require_team_membership,
-    resolve_required_policy_group_id, restore_team_record, update_team_record,
+    ensure_can_manage_team, load_team_metadata, require_team_membership, resolve_required_policy_group_id,
+    restore_team_record, update_team_record,
 };
 use super::{CreateTeamInput, TeamInfo, UpdateTeamInput};
 
@@ -33,15 +33,12 @@ pub async fn list_teams(
 
     let mut teams = Vec::with_capacity(memberships.len());
     for (membership, team) in memberships {
-        let created_by_username = creator_usernames
-            .get(&team.created_by)
-            .cloned()
-            .unwrap_or_else(|| missing_creator_username(&team));
+        let created_by = creator_usernames.get(&team.created_by).cloned();
         let member_count = member_counts.get(&team.id).copied().unwrap_or_default();
         teams.push(build_team_info_with_metadata(
             &team,
             membership.role,
-            created_by_username,
+            created_by,
             member_count,
         ));
     }

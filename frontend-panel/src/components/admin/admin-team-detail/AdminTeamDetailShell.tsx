@@ -1,5 +1,6 @@
 import type { ReactNode, RefObject } from "react";
 import { useTranslation } from "react-i18next";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -167,11 +168,9 @@ export function AdminTeamDetailShell({
 										<p className="text-xs uppercase tracking-wide text-muted-foreground">
 											{t("created_by")}
 										</p>
-										<p className="text-sm text-foreground">
-											{team
-												? `${team.created_by_username} (#${team.created_by})`
-												: "-"}
-										</p>
+										<div className="min-w-0">
+											{team ? <UserIdentity user={team.created_by} /> : "-"}
+										</div>
 									</div>
 									<div className="space-y-1">
 										<p className="text-xs uppercase tracking-wide text-muted-foreground">

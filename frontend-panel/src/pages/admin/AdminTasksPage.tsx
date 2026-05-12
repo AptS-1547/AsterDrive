@@ -9,6 +9,7 @@ import { AdminTaskFiltersToolbar } from "@/components/admin/admin-tasks-page/Adm
 import { AdminTaskTable } from "@/components/admin/admin-tasks-page/AdminTaskTable";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
@@ -304,10 +305,8 @@ export default function AdminTasksPage() {
 				id: task.team_id,
 			});
 		}
-		if (task.creator_user_id != null) {
-			return t("admin:overview_background_tasks_source_user", {
-				id: task.creator_user_id,
-			});
+		if (task.creator) {
+			return <UserIdentity user={task.creator} />;
 		}
 		return t("admin:overview_background_tasks_source_system");
 	};

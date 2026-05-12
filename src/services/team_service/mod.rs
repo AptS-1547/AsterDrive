@@ -196,7 +196,7 @@ pub(crate) async fn add_member_with_audit(
         Some(&team.name),
         audit_service::details(audit_service::TeamMemberAddAuditDetails {
             member_user_id: member.user_id,
-            member_username: &member.username,
+            member_username: &member.user.username,
             role: member.role,
             actor_role: Some(team.my_role),
         }),
@@ -227,7 +227,7 @@ pub(crate) async fn update_member_role_with_audit(
         Some(&team.name),
         audit_service::details(audit_service::TeamMemberUpdateAuditDetails {
             member_user_id: member.user_id,
-            member_username: &member.username,
+            member_username: &member.user.username,
             previous_role: previous_member
                 .as_ref()
                 .map(|entry| entry.role)
@@ -262,7 +262,7 @@ pub(crate) async fn remove_member_with_audit(
             Some(&team.name),
             audit_service::details(audit_service::TeamMemberRemoveAuditDetails {
                 member_user_id: member.user_id,
-                member_username: &member.username,
+                member_username: &member.user.username,
                 removed_role: member.role,
                 actor_role: Some(team.my_role),
             }),
@@ -388,7 +388,7 @@ pub(crate) async fn add_admin_member_with_audit(
         Some(&team.name),
         audit_service::details(audit_service::TeamMemberAddAuditDetails {
             member_user_id: member.user_id,
-            member_username: &member.username,
+            member_username: &member.user.username,
             role: member.role,
             actor_role: None,
         }),
@@ -416,7 +416,7 @@ pub(crate) async fn update_admin_member_role_with_audit(
         Some(&team.name),
         audit_service::details(audit_service::TeamMemberUpdateAuditDetails {
             member_user_id: member.user_id,
-            member_username: &member.username,
+            member_username: &member.user.username,
             previous_role: previous_member
                 .as_ref()
                 .map(|entry| entry.role)
@@ -448,7 +448,7 @@ pub(crate) async fn remove_admin_member_with_audit(
             Some(&team.name),
             audit_service::details(audit_service::TeamMemberRemoveAuditDetails {
                 member_user_id: member.user_id,
-                member_username: &member.username,
+                member_username: &member.user.username,
                 removed_role: member.role,
                 actor_role: None,
             }),

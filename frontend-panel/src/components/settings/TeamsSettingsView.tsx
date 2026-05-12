@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
 import { formatBytes, formatDateShort } from "@/lib/format";
 import { getTeamRoleBadgeClass, isTeamManager } from "@/lib/team";
+import { getUserDisplayName } from "@/lib/user";
 import { teamService } from "@/services/teamService";
 import { useAuthStore } from "@/stores/authStore";
 import { useTeamStore } from "@/stores/teamStore";
@@ -111,7 +112,11 @@ export function TeamsSettingsView() {
 									</div>
 									<div className="flex items-center justify-between gap-3">
 										<span>{t("settings:settings_team_created_by")}</span>
-										<span className="truncate">{team.created_by_username}</span>
+										<span className="truncate">
+											{team.created_by
+												? getUserDisplayName(team.created_by)
+												: "-"}
+										</span>
 									</div>
 									<div className="flex items-center justify-between gap-3">
 										<span>{t("settings:settings_team_quota")}</span>
@@ -195,7 +200,9 @@ export function TeamsSettingsView() {
 										<div className="flex items-center justify-between gap-3">
 											<span>{t("settings:settings_team_created_by")}</span>
 											<span className="truncate">
-												{team.created_by_username}
+												{team.created_by
+													? getUserDisplayName(team.created_by)
+													: "-"}
 											</span>
 										</div>
 										<div className="flex items-center justify-between gap-3">

@@ -22,6 +22,7 @@ import { useAdminTeamDetailTabs } from "@/components/admin/admin-team-detail/use
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { handleApiError } from "@/hooks/useApiError";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { getUserDisplayName } from "@/lib/user";
 import { adminTeamService } from "@/services/adminService";
 import type {
 	StoragePolicyGroup,
@@ -611,7 +612,7 @@ export function AdminTeamDetailDialog({
 				title={t("settings:settings_team_remove_member")}
 				description={
 					removeMember
-						? `${t("settings:settings_team_remove_member_desc")} @${removeMember.username}`
+						? `${t("settings:settings_team_remove_member_desc")} ${getUserDisplayName(removeMember.user)}`
 						: t("settings:settings_team_remove_member_desc")
 				}
 				confirmLabel={t("settings:settings_team_remove_member")}

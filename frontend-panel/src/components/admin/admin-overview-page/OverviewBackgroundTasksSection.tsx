@@ -9,6 +9,7 @@ import {
 } from "@/components/common/AdminTable";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
@@ -74,10 +75,8 @@ export function OverviewBackgroundTasksSection({
 		if (task.team_id != null) {
 			return t("overview_background_tasks_source_team", { id: task.team_id });
 		}
-		if (task.creator_user_id != null) {
-			return t("overview_background_tasks_source_user", {
-				id: task.creator_user_id,
-			});
+		if (task.creator) {
+			return <UserIdentity user={task.creator} />;
 		}
 		return t("overview_background_tasks_source_system");
 	};
@@ -148,9 +147,7 @@ export function OverviewBackgroundTasksSection({
 											{formatBackgroundTaskStatus(task.status)}
 										</Badge>
 									</TableCell>
-									<TableCell className="text-sm text-muted-foreground">
-										{formatBackgroundTaskSource(task)}
-									</TableCell>
+									<TableCell>{formatBackgroundTaskSource(task)}</TableCell>
 									<TableCell className="text-sm text-muted-foreground">
 										{detail}
 									</TableCell>

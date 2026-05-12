@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminTeamDetailDialog } from "@/components/admin/AdminTeamDetailDialog";
+import type { UserSummary } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
@@ -17,6 +18,22 @@ const adminTeamServiceMocks = vi.hoisted(() => ({
 	update: vi.fn(),
 	updateMember: vi.fn(),
 }));
+
+function createUserSummary(): UserSummary {
+	return {
+		id: 1,
+		username: "root",
+		profile: {
+			display_name: "Root",
+			avatar: {
+				source: "none",
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
@@ -55,8 +72,7 @@ describe("AdminTeamDetailDialog", () => {
 		adminTeamServiceMocks.get.mockResolvedValue({
 			archived_at: null,
 			created_at: "2026-04-01T00:00:00Z",
-			created_by: 1,
-			created_by_username: "root",
+			created_by: createUserSummary(),
 			description: "Team description",
 			id: 14,
 			member_count: 8,

@@ -2925,8 +2925,7 @@ export interface components {
         };
         AdminBackgroundTaskEvent: {
             created_at: string;
-            /** Format: int64 */
-            creator_user_id?: number | null;
+            creator?: null | components["schemas"]["UserSummary"];
             display_name: string;
             /** Format: int64 */
             duration_ms?: number | null;
@@ -3041,9 +3040,7 @@ export interface components {
         AdminTeamInfo: {
             archived_at?: string | null;
             created_at: string;
-            /** Format: int64 */
-            created_by: number;
-            created_by_username: string;
+            created_by?: null | components["schemas"]["UserSummary"];
             description: string;
             /** Format: int64 */
             id: number;
@@ -3233,9 +3230,8 @@ export interface components {
             /** Format: int64 */
             id: number;
             ip_address?: string | null;
+            user?: null | components["schemas"]["UserSummary"];
             user_agent?: string | null;
-            /** Format: int64 */
-            user_id: number;
         };
         AuthSessionInfo: {
             created_at: string;
@@ -3336,7 +3332,13 @@ export interface components {
             /** Format: int32 */
             total_chunks: number;
         };
-        /** @description User-selected UI accent color. */
+        /**
+         * @description User-selected UI accent color.
+         *
+         *     Stored and returned as a normalized `#rrggbb` hex color. The legacy preset
+         *     names are accepted while parsing old user config, then normalized on output.
+         * @example #2563eb
+         */
         ColorPreset: string;
         /** @description Complete a chunked upload session. */
         CompleteUploadReq: {
@@ -3722,9 +3724,7 @@ export interface components {
             items: {
                 archived_at?: string | null;
                 created_at: string;
-                /** Format: int64 */
-                created_by: number;
-                created_by_username: string;
+                created_by?: null | components["schemas"]["UserSummary"];
                 description: string;
                 /** Format: int64 */
                 id: number;
@@ -3758,9 +3758,8 @@ export interface components {
                 /** Format: int64 */
                 id: number;
                 ip_address?: string | null;
+                user?: null | components["schemas"]["UserSummary"];
                 user_agent?: string | null;
-                /** Format: int64 */
-                user_id: number;
             }[];
             /** Format: int64 */
             limit: number;
@@ -3831,8 +3830,7 @@ export interface components {
                 entity_type: components["schemas"]["EntityType"];
                 /** Format: int64 */
                 id: number;
-                /** Format: int64 */
-                owner_id?: number | null;
+                owner?: null | components["schemas"]["UserSummary"];
                 owner_info?: null | components["schemas"]["ResourceLockOwnerInfo"];
                 path: string;
                 shared: boolean;
@@ -3861,8 +3859,7 @@ export interface components {
                 team_id?: number | null;
                 token: string;
                 updated_at: string;
-                /** Format: int64 */
-                user_id: number;
+                user?: null | components["schemas"]["UserSummary"];
                 /** Format: int64 */
                 view_count: number;
             }[];
@@ -3950,8 +3947,7 @@ export interface components {
                 attempt_count: number;
                 can_retry: boolean;
                 created_at: string;
-                /** Format: int64 */
-                creator_user_id?: number | null;
+                creator?: null | components["schemas"]["UserSummary"];
                 display_name: string;
                 expires_at: string;
                 finished_at?: string | null;
@@ -3990,11 +3986,11 @@ export interface components {
         OffsetPage_TeamAuditEntryInfo: {
             items: {
                 action: components["schemas"]["AuditAction"];
-                actor_username: string;
+                actor?: null | components["schemas"]["UserSummary"];
                 created_at: string;
                 /** Format: int64 */
                 id: number;
-                member_username?: string | null;
+                member?: null | components["schemas"]["UserSummary"];
                 next_role?: null | components["schemas"]["TeamMemberRole"];
                 previous_role?: null | components["schemas"]["TeamMemberRole"];
                 role?: null | components["schemas"]["TeamMemberRole"];
@@ -4375,8 +4371,7 @@ export interface components {
             entity_type: components["schemas"]["EntityType"];
             /** Format: int64 */
             id: number;
-            /** Format: int64 */
-            owner_id?: number | null;
+            owner?: null | components["schemas"]["UserSummary"];
             owner_info?: null | components["schemas"]["ResourceLockOwnerInfo"];
             path: string;
             shared: boolean;
@@ -4502,8 +4497,7 @@ export interface components {
             team_id?: number | null;
             token: string;
             updated_at: string;
-            /** Format: int64 */
-            user_id: number;
+            user?: null | components["schemas"]["UserSummary"];
             /** Format: int64 */
             view_count: number;
         };
@@ -4681,8 +4675,7 @@ export interface components {
             attempt_count: number;
             can_retry: boolean;
             created_at: string;
-            /** Format: int64 */
-            creator_user_id?: number | null;
+            creator?: null | components["schemas"]["UserSummary"];
             display_name: string;
             expires_at: string;
             finished_at?: string | null;
@@ -4753,11 +4746,11 @@ export interface components {
         TaskStepStatus: "pending" | "active" | "succeeded" | "failed" | "canceled";
         TeamAuditEntryInfo: {
             action: components["schemas"]["AuditAction"];
-            actor_username: string;
+            actor?: null | components["schemas"]["UserSummary"];
             created_at: string;
             /** Format: int64 */
             id: number;
-            member_username?: string | null;
+            member?: null | components["schemas"]["UserSummary"];
             next_role?: null | components["schemas"]["TeamMemberRole"];
             previous_role?: null | components["schemas"]["TeamMemberRole"];
             role?: null | components["schemas"]["TeamMemberRole"];
@@ -4765,9 +4758,7 @@ export interface components {
         TeamInfo: {
             archived_at?: string | null;
             created_at: string;
-            /** Format: int64 */
-            created_by: number;
-            created_by_username: string;
+            created_by?: null | components["schemas"]["UserSummary"];
             description: string;
             /** Format: int64 */
             id: number;
@@ -4793,9 +4784,9 @@ export interface components {
             /** Format: int64 */
             team_id: number;
             updated_at: string;
+            user: components["schemas"]["UserSummary"];
             /** Format: int64 */
             user_id: number;
-            username: string;
         };
         TeamMemberPage: {
             items: components["schemas"]["TeamMemberInfo"][];
@@ -5078,6 +5069,13 @@ export interface components {
          * @enum {string}
          */
         UserStatus: "active" | "disabled";
+        /** @description Lightweight user identity for embedding in admin list/detail responses. */
+        UserSummary: {
+            /** Format: int64 */
+            id: number;
+            profile: components["schemas"]["UserProfileInfo"];
+            username: string;
+        };
         /**
          * @description 联系方式验证用途
          * @enum {string}
@@ -5193,9 +5191,8 @@ export interface operations {
                                 /** Format: int64 */
                                 id: number;
                                 ip_address?: string | null;
+                                user?: null | components["schemas"]["UserSummary"];
                                 user_agent?: string | null;
-                                /** Format: int64 */
-                                user_id: number;
                             }[];
                             /** Format: int64 */
                             limit: number;
@@ -5632,8 +5629,7 @@ export interface operations {
                                 entity_type: components["schemas"]["EntityType"];
                                 /** Format: int64 */
                                 id: number;
-                                /** Format: int64 */
-                                owner_id?: number | null;
+                                owner?: null | components["schemas"]["UserSummary"];
                                 owner_info?: null | components["schemas"]["ResourceLockOwnerInfo"];
                                 path: string;
                                 shared: boolean;
@@ -7314,8 +7310,7 @@ export interface operations {
                                 team_id?: number | null;
                                 token: string;
                                 updated_at: string;
-                                /** Format: int64 */
-                                user_id: number;
+                                user?: null | components["schemas"]["UserSummary"];
                                 /** Format: int64 */
                                 view_count: number;
                             }[];
@@ -7417,8 +7412,7 @@ export interface operations {
                                 attempt_count: number;
                                 can_retry: boolean;
                                 created_at: string;
-                                /** Format: int64 */
-                                creator_user_id?: number | null;
+                                creator?: null | components["schemas"]["UserSummary"];
                                 display_name: string;
                                 expires_at: string;
                                 finished_at?: string | null;
@@ -7554,9 +7548,7 @@ export interface operations {
                             items: {
                                 archived_at?: string | null;
                                 created_at: string;
-                                /** Format: int64 */
-                                created_by: number;
-                                created_by_username: string;
+                                created_by?: null | components["schemas"]["UserSummary"];
                                 description: string;
                                 /** Format: int64 */
                                 id: number;
@@ -7623,9 +7615,7 @@ export interface operations {
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
-                            /** Format: int64 */
-                            created_by: number;
-                            created_by_username: string;
+                            created_by?: null | components["schemas"]["UserSummary"];
                             description: string;
                             /** Format: int64 */
                             id: number;
@@ -7691,9 +7681,7 @@ export interface operations {
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
-                            /** Format: int64 */
-                            created_by: number;
-                            created_by_username: string;
+                            created_by?: null | components["schemas"]["UserSummary"];
                             description: string;
                             /** Format: int64 */
                             id: number;
@@ -7805,9 +7793,7 @@ export interface operations {
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
-                            /** Format: int64 */
-                            created_by: number;
-                            created_by_username: string;
+                            created_by?: null | components["schemas"]["UserSummary"];
                             description: string;
                             /** Format: int64 */
                             id: number;
@@ -7889,11 +7875,11 @@ export interface operations {
                         data?: {
                             items: {
                                 action: components["schemas"]["AuditAction"];
-                                actor_username: string;
+                                actor?: null | components["schemas"]["UserSummary"];
                                 created_at: string;
                                 /** Format: int64 */
                                 id: number;
-                                member_username?: string | null;
+                                member?: null | components["schemas"]["UserSummary"];
                                 next_role?: null | components["schemas"]["TeamMemberRole"];
                                 previous_role?: null | components["schemas"]["TeamMemberRole"];
                                 role?: null | components["schemas"]["TeamMemberRole"];
@@ -8034,9 +8020,9 @@ export interface operations {
                             /** Format: int64 */
                             team_id: number;
                             updated_at: string;
+                            user: components["schemas"]["UserSummary"];
                             /** Format: int64 */
                             user_id: number;
-                            username: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
@@ -8146,9 +8132,9 @@ export interface operations {
                             /** Format: int64 */
                             team_id: number;
                             updated_at: string;
+                            user: components["schemas"]["UserSummary"];
                             /** Format: int64 */
                             user_id: number;
-                            username: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
@@ -8201,9 +8187,7 @@ export interface operations {
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
-                            /** Format: int64 */
-                            created_by: number;
-                            created_by_username: string;
+                            created_by?: null | components["schemas"]["UserSummary"];
                             description: string;
                             /** Format: int64 */
                             id: number;
@@ -9649,8 +9633,7 @@ export interface operations {
                             attempt_count: number;
                             can_retry: boolean;
                             created_at: string;
-                            /** Format: int64 */
-                            creator_user_id?: number | null;
+                            creator?: null | components["schemas"]["UserSummary"];
                             display_name: string;
                             expires_at: string;
                             finished_at?: string | null;
@@ -10822,8 +10805,7 @@ export interface operations {
                             attempt_count: number;
                             can_retry: boolean;
                             created_at: string;
-                            /** Format: int64 */
-                            creator_user_id?: number | null;
+                            creator?: null | components["schemas"]["UserSummary"];
                             display_name: string;
                             expires_at: string;
                             finished_at?: string | null;
@@ -12912,8 +12894,7 @@ export interface operations {
                             team_id?: number | null;
                             token: string;
                             updated_at: string;
-                            /** Format: int64 */
-                            user_id: number;
+                            user?: null | components["schemas"]["UserSummary"];
                             /** Format: int64 */
                             view_count: number;
                         };
@@ -13053,8 +13034,7 @@ export interface operations {
                             team_id?: number | null;
                             token: string;
                             updated_at: string;
-                            /** Format: int64 */
-                            user_id: number;
+                            user?: null | components["schemas"]["UserSummary"];
                             /** Format: int64 */
                             view_count: number;
                         };
@@ -13112,8 +13092,7 @@ export interface operations {
                                 attempt_count: number;
                                 can_retry: boolean;
                                 created_at: string;
-                                /** Format: int64 */
-                                creator_user_id?: number | null;
+                                creator?: null | components["schemas"]["UserSummary"];
                                 display_name: string;
                                 expires_at: string;
                                 finished_at?: string | null;
@@ -13188,8 +13167,7 @@ export interface operations {
                             attempt_count: number;
                             can_retry: boolean;
                             created_at: string;
-                            /** Format: int64 */
-                            creator_user_id?: number | null;
+                            creator?: null | components["schemas"]["UserSummary"];
                             display_name: string;
                             expires_at: string;
                             finished_at?: string | null;
@@ -13264,8 +13242,7 @@ export interface operations {
                             attempt_count: number;
                             can_retry: boolean;
                             created_at: string;
-                            /** Format: int64 */
-                            creator_user_id?: number | null;
+                            creator?: null | components["schemas"]["UserSummary"];
                             display_name: string;
                             expires_at: string;
                             finished_at?: string | null;
@@ -13344,9 +13321,7 @@ export interface operations {
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
-                            /** Format: int64 */
-                            created_by: number;
-                            created_by_username: string;
+                            created_by?: null | components["schemas"]["UserSummary"];
                             description: string;
                             /** Format: int64 */
                             id: number;
@@ -13400,9 +13375,7 @@ export interface operations {
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
-                            /** Format: int64 */
-                            created_by: number;
-                            created_by_username: string;
+                            created_by?: null | components["schemas"]["UserSummary"];
                             description: string;
                             /** Format: int64 */
                             id: number;
@@ -13469,9 +13442,7 @@ export interface operations {
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
-                            /** Format: int64 */
-                            created_by: number;
-                            created_by_username: string;
+                            created_by?: null | components["schemas"]["UserSummary"];
                             description: string;
                             /** Format: int64 */
                             id: number;
@@ -13584,9 +13555,7 @@ export interface operations {
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
-                            /** Format: int64 */
-                            created_by: number;
-                            created_by_username: string;
+                            created_by?: null | components["schemas"]["UserSummary"];
                             description: string;
                             /** Format: int64 */
                             id: number;
@@ -13662,11 +13631,11 @@ export interface operations {
                         data?: {
                             items: {
                                 action: components["schemas"]["AuditAction"];
-                                actor_username: string;
+                                actor?: null | components["schemas"]["UserSummary"];
                                 created_at: string;
                                 /** Format: int64 */
                                 id: number;
-                                member_username?: string | null;
+                                member?: null | components["schemas"]["UserSummary"];
                                 next_role?: null | components["schemas"]["TeamMemberRole"];
                                 previous_role?: null | components["schemas"]["TeamMemberRole"];
                                 role?: null | components["schemas"]["TeamMemberRole"];
@@ -13807,9 +13776,9 @@ export interface operations {
                             /** Format: int64 */
                             team_id: number;
                             updated_at: string;
+                            user: components["schemas"]["UserSummary"];
                             /** Format: int64 */
                             user_id: number;
-                            username: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
@@ -13919,9 +13888,9 @@ export interface operations {
                             /** Format: int64 */
                             team_id: number;
                             updated_at: string;
+                            user: components["schemas"]["UserSummary"];
                             /** Format: int64 */
                             user_id: number;
-                            username: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
@@ -13974,9 +13943,7 @@ export interface operations {
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
-                            /** Format: int64 */
-                            created_by: number;
-                            created_by_username: string;
+                            created_by?: null | components["schemas"]["UserSummary"];
                             description: string;
                             /** Format: int64 */
                             id: number;
@@ -14049,8 +14016,7 @@ export interface operations {
                             attempt_count: number;
                             can_retry: boolean;
                             created_at: string;
-                            /** Format: int64 */
-                            creator_user_id?: number | null;
+                            creator?: null | components["schemas"]["UserSummary"];
                             display_name: string;
                             expires_at: string;
                             finished_at?: string | null;
@@ -15437,8 +15403,7 @@ export interface operations {
                             attempt_count: number;
                             can_retry: boolean;
                             created_at: string;
-                            /** Format: int64 */
-                            creator_user_id?: number | null;
+                            creator?: null | components["schemas"]["UserSummary"];
                             display_name: string;
                             expires_at: string;
                             finished_at?: string | null;
@@ -16736,8 +16701,7 @@ export interface operations {
                             team_id?: number | null;
                             token: string;
                             updated_at: string;
-                            /** Format: int64 */
-                            user_id: number;
+                            user?: null | components["schemas"]["UserSummary"];
                             /** Format: int64 */
                             view_count: number;
                         };
@@ -16905,8 +16869,7 @@ export interface operations {
                             team_id?: number | null;
                             token: string;
                             updated_at: string;
-                            /** Format: int64 */
-                            user_id: number;
+                            user?: null | components["schemas"]["UserSummary"];
                             /** Format: int64 */
                             view_count: number;
                         };
@@ -16974,8 +16937,7 @@ export interface operations {
                                 attempt_count: number;
                                 can_retry: boolean;
                                 created_at: string;
-                                /** Format: int64 */
-                                creator_user_id?: number | null;
+                                creator?: null | components["schemas"]["UserSummary"];
                                 display_name: string;
                                 expires_at: string;
                                 finished_at?: string | null;
@@ -17059,8 +17021,7 @@ export interface operations {
                             attempt_count: number;
                             can_retry: boolean;
                             created_at: string;
-                            /** Format: int64 */
-                            creator_user_id?: number | null;
+                            creator?: null | components["schemas"]["UserSummary"];
                             display_name: string;
                             expires_at: string;
                             finished_at?: string | null;
@@ -17144,8 +17105,7 @@ export interface operations {
                             attempt_count: number;
                             can_retry: boolean;
                             created_at: string;
-                            /** Format: int64 */
-                            creator_user_id?: number | null;
+                            creator?: null | components["schemas"]["UserSummary"];
                             display_name: string;
                             expires_at: string;
                             finished_at?: string | null;

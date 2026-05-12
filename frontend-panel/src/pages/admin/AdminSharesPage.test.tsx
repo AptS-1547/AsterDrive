@@ -3,6 +3,7 @@ import { useState } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminSharesPage from "@/pages/admin/AdminSharesPage";
+import type { ShareInfo, UserSummary } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	deleteShare: vi.fn(),
@@ -10,6 +11,22 @@ const mockState = vi.hoisted(() => ({
 	list: vi.fn(),
 	toastSuccess: vi.fn(),
 }));
+
+function createUserSummary(): UserSummary {
+	return {
+		id: 9,
+		username: "root",
+		profile: {
+			display_name: "Root",
+			avatar: {
+				source: "none",
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
@@ -263,16 +280,19 @@ vi.mock("@/services/adminService", () => ({
 	},
 }));
 
-function createShare(overrides: Record<string, unknown> = {}) {
+function createShare(overrides: Partial<ShareInfo> = {}): ShareInfo {
 	return {
 		created_at: "2026-03-28T00:00:00Z",
 		download_count: 1,
+		expires_at: null,
 		id: 11,
 		max_downloads: 0,
 		target: { type: "file", id: 5 },
+		team_id: null,
 		token: "share-token",
-		user_id: 9,
-		expires_at: null,
+		updated_at: "2026-03-28T00:00:00Z",
+		user: createUserSummary(),
+		view_count: 0,
 		...overrides,
 	};
 }

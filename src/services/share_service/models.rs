@@ -8,7 +8,7 @@ use validator::Validate;
 
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
-use crate::services::profile_service;
+use crate::services::{profile_service, user_service};
 use crate::types::EntityType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -58,7 +58,7 @@ impl ShareTarget {
 pub struct ShareInfo {
     pub id: i64,
     pub token: String,
-    pub user_id: i64,
+    pub user: Option<user_service::UserSummary>,
     pub team_id: Option<i64>,
     pub target: ShareTarget,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
@@ -92,7 +92,10 @@ pub(super) fn share_target_for_share(share: &share::Model) -> Result<ShareTarget
     })
 }
 
-pub(super) fn share_info_from_model(model: share::Model) -> Result<ShareInfo> {
+pub(super) fn share_info_from_model(
+    model: share::Model,
+    user: Option<user_service::UserSummary>,
+) -> Result<ShareInfo> {
     let target = share_target_from_columns(model.file_id, model.folder_id).ok_or_else(|| {
         AsterError::internal_error(format!(
             "share #{} has invalid target columns: file_id={:?}, folder_id={:?}",
@@ -103,7 +106,7 @@ pub(super) fn share_info_from_model(model: share::Model) -> Result<ShareInfo> {
     Ok(ShareInfo {
         id: model.id,
         token: model.token,
-        user_id: model.user_id,
+        user,
         team_id: model.team_id,
         target,
         expires_at: model.expires_at,

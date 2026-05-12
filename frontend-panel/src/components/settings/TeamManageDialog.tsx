@@ -20,6 +20,7 @@ import { useTeamManageScrollRestoration } from "@/components/settings/team-manag
 import { useTeamManageTabs } from "@/components/settings/team-manage-detail/useTeamManageTabs";
 import { handleApiError } from "@/hooks/useApiError";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { getUserDisplayName } from "@/lib/user";
 import { teamService } from "@/services/teamService";
 import type { TeamInfo, TeamMemberRole, UserStatus } from "@/types/api";
 
@@ -515,7 +516,7 @@ export function TeamManageDialog({
 				}
 				description={
 					removeMember
-						? `${t("settings:settings_team_remove_member_desc")} @${removeMember.username}`
+						? `${t("settings:settings_team_remove_member_desc")} ${getUserDisplayName(removeMember.user)}`
 						: t("settings:settings_team_remove_member_desc")
 				}
 				confirmLabel={

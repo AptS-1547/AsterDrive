@@ -17,6 +17,22 @@ const mockState = vi.hoisted(() => ({
 	navigate: vi.fn(),
 }));
 
+function createUserSummary(id = 9, username = "root", displayName = "Root") {
+	return {
+		id,
+		username,
+		profile: {
+			display_name: displayName,
+			avatar: {
+				source: "none" as const,
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
+
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string, options?: Record<string, unknown>) => {
@@ -319,13 +335,13 @@ function createOverview() {
 				id: 1,
 				ip_address: "127.0.0.1",
 				user_agent: "Vitest",
-				user_id: 9,
+				user: createUserSummary(),
 			},
 		],
 		recent_background_tasks: [
 			{
 				created_at: "2026-03-29T09:20:00Z",
-				creator_user_id: null,
+				creator: null,
 				display_name: "Trash cleanup",
 				duration_ms: 1250,
 				finished_at: "2026-03-29T09:21:00Z",

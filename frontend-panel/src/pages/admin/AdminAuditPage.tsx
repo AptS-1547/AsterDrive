@@ -15,6 +15,7 @@ import {
 } from "@/components/common/AdminTable";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
@@ -362,7 +363,7 @@ export default function AdminAuditPage() {
 							<TableHeader>
 								<TableRow>
 									<TableHead className="w-[180px]">{t("audit_time")}</TableHead>
-									<TableHead className="w-24">{t("audit_user")}</TableHead>
+									<TableHead className="w-[180px]">{t("audit_user")}</TableHead>
 									<TableHead className="w-[180px]">
 										{t("audit_action")}
 									</TableHead>
@@ -386,9 +387,7 @@ export default function AdminAuditPage() {
 										</TableCell>
 										<TableCell>
 											<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
-												<span className={ADMIN_TABLE_MONO_TEXT_CLASS}>
-													{item.user_id ?? "---"}
-												</span>
+												<UserIdentity user={item.user} />
 											</div>
 										</TableCell>
 										<TableCell>

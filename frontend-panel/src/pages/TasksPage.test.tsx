@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import TasksPage from "@/pages/TasksPage";
-import type { TaskInfo, TaskStepInfo } from "@/types/api";
+import type { TaskInfo, TaskStepInfo, UserSummary } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
@@ -362,6 +362,26 @@ function createTaskSteps(
 	];
 }
 
+function createUserSummary(
+	id = 1,
+	username = "alice",
+	displayName = "Alice",
+): UserSummary {
+	return {
+		id,
+		username,
+		profile: {
+			display_name: displayName,
+			avatar: {
+				source: "none",
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
+
 function createTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
 	const kind = overrides.kind ?? "archive_extract";
 	const status = overrides.status ?? "processing";
@@ -386,7 +406,7 @@ function createTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
 		attempt_count: 0,
 		can_retry: false,
 		created_at: "2026-04-10T00:00:00Z",
-		creator_user_id: 1,
+		creator: createUserSummary(),
 		display_name: "Extract archive",
 		expires_at: "2026-04-11T00:00:00Z",
 		finished_at: null,

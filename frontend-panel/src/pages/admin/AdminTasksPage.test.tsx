@@ -3,7 +3,7 @@ import { cloneElement, isValidElement } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminTasksPage from "@/pages/admin/AdminTasksPage";
-import type { TaskInfo } from "@/types/api";
+import type { TaskInfo, UserSummary } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	cleanupCompleted: vi.fn(),
@@ -11,6 +11,26 @@ const mockState = vi.hoisted(() => ({
 	list: vi.fn(),
 	toastSuccess: vi.fn(),
 }));
+
+function createUserSummary(
+	id = 7,
+	username = "root",
+	displayName = "Root",
+): UserSummary {
+	return {
+		id,
+		username,
+		profile: {
+			display_name: displayName,
+			avatar: {
+				source: "none",
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
@@ -326,7 +346,7 @@ function createTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
 		attempt_count: 0,
 		can_retry: false,
 		created_at: "2026-04-17T00:00:00Z",
-		creator_user_id: 7,
+		creator: createUserSummary(),
 		display_name: "Extract report archive",
 		expires_at: "2026-04-18T00:00:00Z",
 		finished_at: null,
@@ -413,7 +433,7 @@ describe("AdminTasksPage", () => {
 					createTask(),
 					createTask({
 						id: 32,
-						creator_user_id: null,
+						creator: null,
 						display_name: "Trash cleanup",
 						kind: "system_runtime",
 						payload: {
@@ -460,7 +480,7 @@ describe("AdminTasksPage", () => {
 		});
 		expect(screen.getByText("Extract report archive")).toBeInTheDocument();
 		expect(screen.getByText("Trash cleanup")).toBeInTheDocument();
-		expect(screen.getByText("source:user:7")).toBeInTheDocument();
+		expect(screen.getByText("Root")).toBeInTheDocument();
 		expect(screen.getByText("source:system")).toBeInTheDocument();
 		expect(screen.getByText("60%")).toBeInTheDocument();
 		expect(screen.queryByText("#31")).not.toBeInTheDocument();

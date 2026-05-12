@@ -13,7 +13,9 @@ use crate::db::repository::{
 };
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::{audit_service, task_service::RuntimeSystemHealthStatus};
+use crate::services::{
+    audit_service, profile_service, task_service::RuntimeSystemHealthStatus, user_service,
+};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, UserStatus};
 use crate::utils::numbers::u32_to_usize;
 
@@ -85,14 +87,14 @@ pub struct AdminOverviewDailyReport {
     pub total_events: u64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminBackgroundTaskEvent {
     pub id: i64,
     pub kind: BackgroundTaskKind,
     pub status: BackgroundTaskStatus,
     pub display_name: String,
-    pub creator_user_id: Option<i64>,
+    pub creator: Option<user_service::UserSummary>,
     pub team_id: Option<i64>,
     pub status_text: Option<String>,
     pub last_error: Option<String>,
@@ -137,7 +139,7 @@ pub struct AdminSystemHealthSummary {
     pub task_id: Option<i64>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminOverview {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -306,15 +308,34 @@ async fn load_recent_overview_events(
     )?;
     Ok((
         recent_events.items,
-        recent_background_tasks
-            .into_iter()
-            .map(build_background_task_event)
-            .collect(),
+        build_background_task_events(state, recent_background_tasks).await?,
     ))
+}
+
+async fn build_background_task_events(
+    state: &PrimaryAppState,
+    tasks: Vec<crate::entities::background_task::Model>,
+) -> Result<Vec<AdminBackgroundTaskEvent>> {
+    let creator_ids: Vec<i64> = tasks
+        .iter()
+        .filter_map(|task| task.creator_user_id)
+        .collect();
+    let creators = user_service::user_summaries_by_ids(
+        state,
+        &creator_ids,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
+
+    Ok(tasks
+        .into_iter()
+        .map(|task| build_background_task_event(task, &creators))
+        .collect())
 }
 
 fn build_background_task_event(
     task: crate::entities::background_task::Model,
+    creators: &HashMap<i64, user_service::UserSummary>,
 ) -> AdminBackgroundTaskEvent {
     let duration_ms = match (task.started_at, task.finished_at) {
         (Some(started_at), Some(finished_at)) => Some(std::cmp::max(
@@ -329,7 +350,9 @@ fn build_background_task_event(
         kind: task.kind,
         status: task.status,
         display_name: task.display_name,
-        creator_user_id: task.creator_user_id,
+        creator: task
+            .creator_user_id
+            .and_then(|user_id| creators.get(&user_id).cloned()),
         team_id: task.team_id,
         status_text: task.status_text,
         last_error: task.last_error,

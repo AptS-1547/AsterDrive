@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminTeamsPage from "@/pages/admin/AdminTeamsPage";
+import type { UserSummary } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
@@ -13,12 +14,27 @@ const mockState = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
 }));
 
+function createUserSummary(): UserSummary {
+	return {
+		id: 9,
+		username: "root",
+		profile: {
+			display_name: "Root",
+			avatar: {
+				source: "none",
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
+
 const TEAMS = [
 	{
 		archived_at: null,
 		created_at: "2026-04-01T00:00:00Z",
-		created_by: 9,
-		created_by_username: "root",
+		created_by: createUserSummary(),
 		description: "Product and design",
 		id: 14,
 		member_count: 8,

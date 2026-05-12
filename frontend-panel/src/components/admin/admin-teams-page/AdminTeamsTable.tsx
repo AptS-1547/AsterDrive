@@ -12,6 +12,7 @@ import {
 	AdminTableHeader as TableHeader,
 	AdminTableRow as TableRow,
 } from "@/components/common/AdminTable";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -85,14 +86,7 @@ export function AdminTeamsTable({
 								</div>
 							</TableCell>
 							<TableCell>
-								<div className={ADMIN_TABLE_STACKED_CELL_CLASS}>
-									<span className="truncate text-sm text-foreground">
-										{team.created_by_username}
-									</span>
-									<span className="text-xs text-muted-foreground">
-										{t("created_by")} #{team.created_by}
-									</span>
-								</div>
+								<UserIdentity user={team.created_by} />
 							</TableCell>
 							<TableCell>
 								<div className={ADMIN_TABLE_BADGE_CELL_CLASS}>

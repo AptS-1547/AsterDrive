@@ -364,7 +364,7 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
         test::read_body_json(admin_team_member_search_resp).await;
     assert_eq!(admin_team_member_search_body["data"]["total"], 1);
     assert_eq!(
-        admin_team_member_search_body["data"]["items"][0]["username"],
+        admin_team_member_search_body["data"]["items"][0]["user"]["username"],
         "backend-user"
     );
 

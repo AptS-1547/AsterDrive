@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -73,9 +74,7 @@ export function TeamManageAuditSection({
 												<Badge variant="outline">
 													{formatAuditAction(t, entry.action)}
 												</Badge>
-												<span className="text-sm text-foreground">
-													@{entry.actor_username}
-												</span>
+												<UserIdentity user={entry.actor} />
 											</div>
 											<p className="text-sm text-muted-foreground">
 												{formatDateAbsolute(entry.created_at)}

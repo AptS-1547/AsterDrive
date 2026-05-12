@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::{audit_log_repo, user_repo};
+use crate::db::repository::audit_log_repo;
 use crate::entities::audit_log;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::auth_service::Claims;
+use crate::services::{auth_service::Claims, profile_service, user_service};
 pub use crate::types::AuditAction;
 use crate::types::{TeamMemberRole, UserRole, UserStatus};
 use std::collections::{HashMap, HashSet};
@@ -132,11 +132,11 @@ impl AuditLogFilters {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AuditLogEntry {
     pub id: i64,
-    pub user_id: i64,
+    pub user: Option<user_service::UserSummary>,
     pub action: AuditAction,
     pub entity_type: Option<String>,
     pub entity_id: Option<i64>,
@@ -146,23 +146,6 @@ pub struct AuditLogEntry {
     pub user_agent: Option<String>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTime<Utc>,
-}
-
-impl From<audit_log::Model> for AuditLogEntry {
-    fn from(model: audit_log::Model) -> Self {
-        Self {
-            id: model.id,
-            user_id: model.user_id,
-            action: model.action,
-            entity_type: model.entity_type,
-            entity_id: model.entity_id,
-            entity_name: model.entity_name,
-            details: model.details,
-            ip_address: model.ip_address,
-            user_agent: model.user_agent,
-            created_at: model.created_at,
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -417,11 +400,11 @@ pub struct TeamMemberRemoveAuditDetails<'a> {
 pub struct TeamAuditEntryInfo {
     pub id: i64,
     pub action: AuditAction,
-    pub actor_username: String,
+    pub actor: Option<user_service::UserSummary>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub member_username: Option<String>,
+    pub member: Option<user_service::UserSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<TeamMemberRole>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -677,6 +660,40 @@ async fn query_models(
     .await
 }
 
+async fn build_audit_entries(
+    state: &PrimaryAppState,
+    entries: Vec<audit_log::Model>,
+) -> Result<Vec<AuditLogEntry>> {
+    let user_ids: Vec<i64> = entries
+        .iter()
+        .map(|entry| entry.user_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let users = user_service::user_summaries_by_ids(
+        state,
+        &user_ids,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
+
+    Ok(entries
+        .into_iter()
+        .map(|model| AuditLogEntry {
+            id: model.id,
+            user: users.get(&model.user_id).cloned(),
+            action: model.action,
+            entity_type: model.entity_type,
+            entity_id: model.entity_id,
+            entity_name: model.entity_name,
+            details: model.details,
+            ip_address: model.ip_address,
+            user_agent: model.user_agent,
+            created_at: model.created_at,
+        })
+        .collect())
+}
+
 pub async fn query(
     state: &PrimaryAppState,
     filters: AuditLogFilters,
@@ -684,7 +701,7 @@ pub async fn query(
     offset: u64,
 ) -> Result<OffsetPage<AuditLogEntry>> {
     let page = query_models(state, filters, limit, offset).await?;
-    let items = page.items.into_iter().map(Into::into).collect();
+    let items = build_audit_entries(state, page.items).await?;
     Ok(OffsetPage::new(items, page.total, page.limit, page.offset))
 }
 
@@ -692,26 +709,22 @@ fn parse_team_member_role(value: Option<&serde_json::Value>) -> Option<TeamMembe
     serde_json::from_value(value?.clone()).ok()
 }
 
-fn parse_string_field(details: &serde_json::Value, key: &str) -> Option<String> {
-    details.get(key)?.as_str().map(ToOwned::to_owned)
+fn parse_i64_field(details: &serde_json::Value, key: &str) -> Option<i64> {
+    details.get(key)?.as_i64()
 }
 
 fn build_team_audit_entry(
     entry: audit_log::Model,
-    usernames: &HashMap<i64, String>,
+    users: &HashMap<i64, user_service::UserSummary>,
 ) -> TeamAuditEntryInfo {
-    let actor_username = usernames
-        .get(&entry.user_id)
-        .cloned()
-        .unwrap_or_else(|| format!("#{}", entry.user_id));
     let parsed_details = entry
         .details
         .as_deref()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok());
 
-    let member_username = parsed_details
+    let member_user_id = parsed_details
         .as_ref()
-        .and_then(|details| parse_string_field(details, "member_username"));
+        .and_then(|details| parse_i64_field(details, "member_user_id"));
     let role = parsed_details
         .as_ref()
         .and_then(|details| parse_team_member_role(details.get("role")))
@@ -730,9 +743,9 @@ fn build_team_audit_entry(
     TeamAuditEntryInfo {
         id: entry.id,
         action: entry.action,
-        actor_username,
+        actor: users.get(&entry.user_id).cloned(),
         created_at: entry.created_at,
-        member_username,
+        member: member_user_id.and_then(|member_user_id| users.get(&member_user_id).cloned()),
         role,
         previous_role,
         next_role,
@@ -746,22 +759,30 @@ pub async fn query_team_entries(
     offset: u64,
 ) -> Result<OffsetPage<TeamAuditEntryInfo>> {
     let page = query_models(state, filters, limit, offset).await?;
-    let user_ids: Vec<i64> = page
-        .items
-        .iter()
-        .map(|entry| entry.user_id)
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-    let usernames = user_repo::find_by_ids(&state.db, &user_ids)
-        .await?
-        .into_iter()
-        .map(|user| (user.id, user.username))
-        .collect::<HashMap<_, _>>();
+    let mut user_ids = HashSet::new();
+    for entry in &page.items {
+        user_ids.insert(entry.user_id);
+        if let Some(member_user_id) = entry
+            .details
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+            .as_ref()
+            .and_then(|details| parse_i64_field(details, "member_user_id"))
+        {
+            user_ids.insert(member_user_id);
+        }
+    }
+    let user_ids: Vec<i64> = user_ids.into_iter().collect();
+    let users = user_service::user_summaries_by_ids(
+        state,
+        &user_ids,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
     let items = page
         .items
         .into_iter()
-        .map(|entry| build_team_audit_entry(entry, &usernames))
+        .map(|entry| build_team_audit_entry(entry, &users))
         .collect();
 
     Ok(OffsetPage::new(items, page.total, page.limit, page.offset))

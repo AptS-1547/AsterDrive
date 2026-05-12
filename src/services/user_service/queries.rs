@@ -5,9 +5,75 @@ use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{auth_service, profile_service};
 use crate::types::{UserRole, UserStatus};
+use std::collections::{HashMap, HashSet};
 
-use super::models::{MeResponse, UserInfo, user_core};
+use super::models::{MeResponse, UserInfo, UserSummary, user_core};
 use super::preferences::parse_preferences;
+
+pub fn to_user_summary_with_profile(
+    user: &user::Model,
+    profile: profile_service::UserProfileInfo,
+) -> UserSummary {
+    UserSummary {
+        id: user.id,
+        username: user.username.clone(),
+        profile,
+    }
+}
+
+pub async fn to_user_summary(
+    state: &PrimaryAppState,
+    user: &user::Model,
+    audience: profile_service::AvatarAudience,
+) -> Result<UserSummary> {
+    Ok(to_user_summary_with_profile(
+        user,
+        profile_service::get_profile_info(state, user, audience).await?,
+    ))
+}
+
+pub async fn user_summaries_by_ids(
+    state: &PrimaryAppState,
+    user_ids: &[i64],
+    audience: profile_service::AvatarAudience,
+) -> Result<HashMap<i64, UserSummary>> {
+    let unique_ids: Vec<i64> = user_ids
+        .iter()
+        .copied()
+        .filter(|id| *id > 0)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    if unique_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let users = user_repo::find_by_ids(&state.db, &unique_ids).await?;
+    let profile_map = profile_service::get_profile_info_map(state, &users, audience).await?;
+    let gravatar_base_url = profile_service::resolve_gravatar_base_url(state);
+
+    Ok(users
+        .into_iter()
+        .map(|user| {
+            let profile = profile_map.get(&user.id).cloned().unwrap_or_else(|| {
+                profile_service::build_profile_info(&user, None, audience, &gravatar_base_url)
+            });
+            (user.id, to_user_summary_with_profile(&user, profile))
+        })
+        .collect())
+}
+
+pub async fn user_summary_by_id(
+    state: &PrimaryAppState,
+    user_id: i64,
+    audience: profile_service::AvatarAudience,
+) -> Result<Option<UserSummary>> {
+    match user_repo::find_by_id(&state.db, user_id).await {
+        Ok(user) => Ok(Some(to_user_summary(state, &user, audience).await?)),
+        Err(crate::errors::AsterError::RecordNotFound(_)) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
 
 pub async fn to_user_info(
     state: &PrimaryAppState,

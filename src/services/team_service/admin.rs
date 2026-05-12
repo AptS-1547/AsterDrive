@@ -8,8 +8,8 @@ use crate::types::TeamMemberRole;
 
 use super::shared::{
     archive_team_record, build_admin_team_info, build_admin_team_info_with_metadata,
-    create_team_record, load_team_metadata, missing_creator_username,
-    resolve_required_policy_group_id, resolve_target_user, restore_team_record, update_team_record,
+    create_team_record, load_team_metadata, resolve_required_policy_group_id,
+    resolve_target_user, restore_team_record, update_team_record,
 };
 use super::{
     AdminCreateTeamInput, AdminTeamInfo, AdminUpdateTeamInput, CreateTeamInput, UpdateTeamInput,
@@ -36,12 +36,9 @@ pub async fn list_admin_teams(
         page.items
             .into_iter()
             .map(|team| {
-                let created_by_username = creator_usernames
-                    .get(&team.created_by)
-                    .cloned()
-                    .unwrap_or_else(|| missing_creator_username(&team));
+                let created_by = creator_usernames.get(&team.created_by).cloned();
                 let member_count = member_counts.get(&team.id).copied().unwrap_or_default();
-                build_admin_team_info_with_metadata(&team, created_by_username, member_count)
+                build_admin_team_info_with_metadata(&team, created_by, member_count)
             })
             .collect(),
         page.total,

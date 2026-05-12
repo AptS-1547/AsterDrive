@@ -819,7 +819,7 @@ async fn test_audit_log_recorded_on_team_archive_cleanup() {
     let cleanup_entry = assert_action_present(&items, "team_cleanup_expired");
     assert_eq!(cleanup_entry["entity_type"], "team");
     assert_eq!(cleanup_entry["entity_name"], "Cleanup Audit Team");
-    assert_eq!(cleanup_entry["user_id"], 0);
+    assert!(cleanup_entry["user"].is_null());
 
     let details: Value = serde_json::from_str(cleanup_entry["details"].as_str().unwrap()).unwrap();
     assert_eq!(details["retention_days"], 7);

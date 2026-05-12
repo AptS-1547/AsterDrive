@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TeamManageDialog } from "@/components/settings/TeamManageDialog";
+import type { UserSummary } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
@@ -17,6 +18,22 @@ const teamServiceMocks = vi.hoisted(() => ({
 	update: vi.fn(),
 	updateMember: vi.fn(),
 }));
+
+function createUserSummary(): UserSummary {
+	return {
+		id: 1,
+		username: "owner",
+		profile: {
+			display_name: "Owner",
+			avatar: {
+				source: "none",
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
@@ -57,16 +74,18 @@ describe("TeamManageDialog", () => {
 		teamServiceMocks.updateMember.mockReset();
 
 		teamServiceMocks.get.mockResolvedValue({
+			archived_at: null,
 			created_at: "2026-04-01T00:00:00Z",
-			created_by: 1,
-			created_by_username: "owner",
+			created_by: createUserSummary(),
 			description: "Team description",
 			id: 11,
 			member_count: 8,
 			my_role: "owner",
 			name: "Product",
+			policy_group_id: null,
 			storage_quota: 1024,
 			storage_used: 512,
+			updated_at: "2026-04-02T00:00:00Z",
 		});
 		teamServiceMocks.listMembers.mockResolvedValue({
 			items: [],
@@ -93,16 +112,18 @@ describe("TeamManageDialog", () => {
 				pageTab="overview"
 				teamId={11}
 				teamSummary={{
+					archived_at: null,
 					created_at: "2026-04-01T00:00:00Z",
-					created_by: 1,
-					created_by_username: "owner",
+					created_by: createUserSummary(),
 					description: "Team description",
 					id: 11,
 					member_count: 8,
 					my_role: "owner",
 					name: "Product",
+					policy_group_id: null,
 					storage_quota: 1024,
 					storage_used: 512,
+					updated_at: "2026-04-02T00:00:00Z",
 				}}
 			/>,
 		);
@@ -167,16 +188,18 @@ describe("TeamManageDialog", () => {
 				pageTab="overview"
 				teamId={11}
 				teamSummary={{
+					archived_at: null,
 					created_at: "2026-04-01T00:00:00Z",
-					created_by: 1,
-					created_by_username: "owner",
+					created_by: createUserSummary(),
 					description: "Team description",
 					id: 11,
 					member_count: 8,
 					my_role: "owner",
 					name: "Product",
+					policy_group_id: null,
 					storage_quota: 1024,
 					storage_used: 512,
+					updated_at: "2026-04-02T00:00:00Z",
 				}}
 			/>,
 		);

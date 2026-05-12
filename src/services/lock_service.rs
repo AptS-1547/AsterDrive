@@ -15,7 +15,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::{self, AuditContext},
-    folder_service,
+    folder_service, profile_service, user_service,
 };
 use crate::types::{EntityType, StoredLockOwnerInfo};
 use crate::utils::numbers::usize_to_u64;
@@ -56,7 +56,7 @@ pub struct ResourceLock {
     pub entity_type: EntityType,
     pub entity_id: i64,
     pub path: String,
-    pub owner_id: Option<i64>,
+    pub owner: Option<user_service::UserSummary>,
     pub owner_info: Option<ResourceLockOwnerInfo>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub timeout_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -64,28 +64,6 @@ pub struct ResourceLock {
     pub deep: bool,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
-}
-
-impl TryFrom<resource_lock::Model> for ResourceLock {
-    type Error = AsterError;
-
-    fn try_from(model: resource_lock::Model) -> Result<Self> {
-        let owner_info = deserialize_resource_lock_owner_info(&model)?;
-
-        Ok(Self {
-            id: model.id,
-            token: model.token,
-            entity_type: model.entity_type,
-            entity_id: model.entity_id,
-            path: model.path,
-            owner_id: model.owner_id,
-            owner_info,
-            timeout_at: model.timeout_at,
-            shared: model.shared,
-            deep: model.deep,
-            created_at: model.created_at,
-        })
-    }
 }
 
 /// 锁定资源（REST/WebDAV/Web Editor 统一入口）
@@ -197,13 +175,45 @@ pub async fn list_paginated(
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) =
             crate::db::repository::lock_repo::find_paginated(&state.db, limit, offset).await?;
-        let items = items
-            .into_iter()
-            .map(ResourceLock::try_from)
-            .collect::<Result<Vec<_>>>()?;
+        let items = build_resource_locks(state, items).await?;
         Ok((items, total))
     })
     .await
+}
+
+async fn build_resource_locks(
+    state: &PrimaryAppState,
+    locks: Vec<resource_lock::Model>,
+) -> Result<Vec<ResourceLock>> {
+    let owner_ids: Vec<i64> = locks.iter().filter_map(|lock| lock.owner_id).collect();
+    let owners = user_service::user_summaries_by_ids(
+        state,
+        &owner_ids,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
+
+    locks
+        .into_iter()
+        .map(|model| {
+            let owner_info = deserialize_resource_lock_owner_info(&model)?;
+            Ok(ResourceLock {
+                id: model.id,
+                token: model.token,
+                entity_type: model.entity_type,
+                entity_id: model.entity_id,
+                path: model.path,
+                owner: model
+                    .owner_id
+                    .and_then(|owner_id| owners.get(&owner_id).cloned()),
+                owner_info,
+                timeout_at: model.timeout_at,
+                shared: model.shared,
+                deep: model.deep,
+                created_at: model.created_at,
+            })
+        })
+        .collect()
 }
 
 /// 强制解锁（admin 用）

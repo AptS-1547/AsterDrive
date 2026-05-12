@@ -2,12 +2,29 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { AdminTeamDetailShell } from "@/components/admin/admin-team-detail/AdminTeamDetailShell";
+import type { UserSummary } from "@/types/api";
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string) => key,
 	}),
 }));
+
+function createUserSummary(): UserSummary {
+	return {
+		id: 1,
+		username: "root",
+		profile: {
+			display_name: "Root",
+			avatar: {
+				source: "none",
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
 
 function renderShell(
 	overrides: Partial<React.ComponentProps<typeof AdminTeamDetailShell>> = {},
@@ -40,8 +57,7 @@ function renderShell(
 			team={{
 				archived_at: null,
 				created_at: "2026-04-01T00:00:00Z",
-				created_by: 1,
-				created_by_username: "root",
+				created_by: createUserSummary(),
 				description: "Team description",
 				id: 14,
 				member_count: 8,

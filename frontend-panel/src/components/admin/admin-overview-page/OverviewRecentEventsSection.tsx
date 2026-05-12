@@ -9,6 +9,7 @@ import {
 } from "@/components/common/AdminTable";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
@@ -72,8 +73,8 @@ export function OverviewRecentEventsSection({
 										{formatAuditAction(t, event.action)}
 									</Badge>
 								</TableCell>
-								<TableCell className="text-muted-foreground">
-									#{event.user_id}
+								<TableCell>
+									<UserIdentity user={event.user} />
 								</TableCell>
 								<TableCell>
 									<div className="flex flex-col gap-1">

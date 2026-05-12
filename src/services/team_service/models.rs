@@ -4,6 +4,7 @@ use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+use crate::services::user_service;
 use crate::types::{TeamMemberRole, UserStatus};
 
 #[derive(Debug, Clone)]
@@ -47,8 +48,7 @@ pub struct TeamInfo {
     pub id: i64,
     pub name: String,
     pub description: String,
-    pub created_by: i64,
-    pub created_by_username: String,
+    pub created_by: Option<user_service::UserSummary>,
     pub my_role: TeamMemberRole,
     pub member_count: u64,
     pub storage_used: i64,
@@ -69,8 +69,8 @@ pub struct TeamMemberInfo {
     pub id: i64,
     pub team_id: i64,
     pub user_id: i64,
-    pub username: String,
     pub email: String,
+    pub user: user_service::UserSummary,
     pub status: UserStatus,
     pub role: TeamMemberRole,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -120,8 +120,7 @@ pub struct AdminTeamInfo {
     pub id: i64,
     pub name: String,
     pub description: String,
-    pub created_by: i64,
-    pub created_by_username: String,
+    pub created_by: Option<user_service::UserSummary>,
     pub member_count: u64,
     pub storage_used: i64,
     pub storage_quota: i64,

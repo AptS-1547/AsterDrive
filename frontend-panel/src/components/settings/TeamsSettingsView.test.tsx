@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TeamsSettingsView } from "@/components/settings/TeamsSettingsView";
+import type { UserSummary } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	archivedList: vi.fn(),
@@ -12,12 +13,31 @@ const mockState = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
 }));
 
+function createUserSummary(
+	id: number,
+	username: string,
+	displayName: string,
+): UserSummary {
+	return {
+		id,
+		username,
+		profile: {
+			display_name: displayName,
+			avatar: {
+				source: "none",
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
+
 const ACTIVE_TEAMS = [
 	{
 		archived_at: null,
 		created_at: "2026-04-01T00:00:00Z",
-		created_by: 2,
-		created_by_username: "owner",
+		created_by: createUserSummary(2, "owner", "Owner"),
 		description: "Design team",
 		id: 11,
 		member_count: 5,
@@ -34,8 +54,7 @@ const ARCHIVED_TEAMS = [
 	{
 		archived_at: "2026-04-03T00:00:00Z",
 		created_at: "2026-03-01T00:00:00Z",
-		created_by: 3,
-		created_by_username: "archiver",
+		created_by: createUserSummary(3, "archiver", "Archiver"),
 		description: "Archived team",
 		id: 23,
 		member_count: 2,

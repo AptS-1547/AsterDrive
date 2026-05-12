@@ -14,7 +14,7 @@ use crate::entities::share;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
-    batch_service,
+    batch_service, profile_service, user_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::utils::{hash, id};
@@ -108,7 +108,7 @@ pub(crate) async fn create_share_in_scope(
         target = ?target,
         "created share"
     );
-    share_info_from_model(created)
+    share_info_from_model_with_user(state, created).await
 }
 
 pub async fn create_share(
@@ -219,9 +219,8 @@ pub(crate) async fn update_share_in_scope(
     active.max_downloads = Set(max_downloads);
     active.updated_at = Set(Utc::now());
 
-    let updated: ShareInfo = share_repo::update(&state.db, active)
-        .await
-        .and_then(share_info_from_model)?;
+    let updated = share_info_from_model_with_user(state, share_repo::update(&state.db, active).await?)
+        .await?;
     invalidate_active_share_target_cache_for_scope(state, scope).await;
     invalidate_share_token_record_cache(state, &existing_token).await;
     tracing::debug!(
@@ -457,10 +456,7 @@ pub async fn list_paginated(
 ) -> Result<OffsetPage<ShareInfo>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) = share_repo::find_paginated(&state.db, limit, offset).await?;
-        let items = items
-            .into_iter()
-            .map(share_info_from_model)
-            .collect::<Result<Vec<_>>>()?;
+        let items = share_infos_from_models(state, items).await?;
         Ok((items, total))
     })
     .await
@@ -530,4 +526,38 @@ async fn build_my_share_infos(
     }
 
     Ok(items)
+}
+
+async fn share_infos_from_models(
+    state: &PrimaryAppState,
+    shares: Vec<share::Model>,
+) -> Result<Vec<ShareInfo>> {
+    let user_ids: Vec<i64> = shares.iter().map(|share| share.user_id).collect();
+    let users = user_service::user_summaries_by_ids(
+        state,
+        &user_ids,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
+
+    shares
+        .into_iter()
+        .map(|share| {
+            let user = users.get(&share.user_id).cloned();
+            share_info_from_model(share, user)
+        })
+        .collect()
+}
+
+async fn share_info_from_model_with_user(
+    state: &PrimaryAppState,
+    share: share::Model,
+) -> Result<ShareInfo> {
+    let user = user_service::user_summary_by_id(
+        state,
+        share.user_id,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
+    share_info_from_model(share, user)
 }

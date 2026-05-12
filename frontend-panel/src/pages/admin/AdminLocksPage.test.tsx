@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminLocksPage from "@/pages/admin/AdminLocksPage";
+import type { LockPage, UserSummary } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	cleanupExpired: vi.fn(),
@@ -12,6 +13,22 @@ const mockState = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
 	useApiList: vi.fn(),
 }));
+
+function createUserSummary(): UserSummary {
+	return {
+		id: 8,
+		username: "owner",
+		profile: {
+			display_name: "Owner",
+			avatar: {
+				source: "none",
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
@@ -213,12 +230,16 @@ vi.mock("@/services/adminService", () => ({
 	},
 }));
 
-function createLock(overrides: Record<string, unknown> = {}) {
+function createLock(
+	overrides: Partial<LockPage["items"][number]> = {},
+): LockPage["items"][number] {
 	return {
 		created_at: "2026-03-28T00:00:00Z",
 		deep: false,
+		entity_id: 42,
+		entity_type: "file",
 		id: 21,
-		owner_id: 8,
+		owner: createUserSummary(),
 		owner_info: {
 			kind: "text",
 			value: "user@example.com",

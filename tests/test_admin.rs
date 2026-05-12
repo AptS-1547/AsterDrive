@@ -396,7 +396,7 @@ async fn test_admin_team_crud() {
     let team = &body["data"];
     let team_id = team["id"].as_i64().unwrap();
     assert_eq!(team["name"], "Operations");
-    assert_eq!(team["created_by_username"], "testuser");
+    assert_eq!(team["created_by"]["username"], "testuser");
     assert_eq!(team["member_count"], 1);
     assert_eq!(team["policy_group_id"], default_group_id);
 
@@ -486,7 +486,7 @@ async fn test_admin_team_crud() {
     assert_eq!(body["data"]["owner_count"], 0);
     assert_eq!(body["data"]["manager_count"], 1);
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
-    assert_eq!(body["data"]["items"][0]["username"], "team-admin");
+    assert_eq!(body["data"]["items"][0]["user"]["username"], "team-admin");
     assert_eq!(body["data"]["items"][0]["role"], "admin");
 
     let req = test::TestRequest::post()
@@ -502,7 +502,7 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
     let analyst_id = body["data"]["user_id"].as_i64().unwrap();
-    assert_eq!(body["data"]["username"], "team-analyst");
+    assert_eq!(body["data"]["user"]["username"], "team-analyst");
     assert_eq!(body["data"]["role"], "member");
 
     let req = test::TestRequest::patch()
@@ -531,7 +531,10 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["total"], 1);
-    assert_eq!(body["data"]["items"][0]["username"], "team-analyst");
+    assert_eq!(
+        body["data"]["items"][0]["user"]["username"],
+        "team-analyst"
+    );
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/teams/{team_id}/members?keyword=ly"))
@@ -542,7 +545,10 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["total"], 1);
-    assert_eq!(body["data"]["items"][0]["username"], "team-analyst");
+    assert_eq!(
+        body["data"]["items"][0]["user"]["username"],
+        "team-analyst"
+    );
 
     let req = test::TestRequest::get()
         .uri(&format!(
@@ -560,7 +566,10 @@ async fn test_admin_team_crud() {
     assert_eq!(body["data"]["owner_count"], 0);
     assert_eq!(body["data"]["manager_count"], 2);
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
-    assert_eq!(body["data"]["items"][0]["username"], "team-analyst");
+    assert_eq!(
+        body["data"]["items"][0]["user"]["username"],
+        "team-analyst"
+    );
 
     let req = test::TestRequest::delete()
         .uri(&format!(
@@ -599,7 +608,7 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
-    assert_eq!(body["data"]["items"][0]["username"], "team-admin");
+    assert_eq!(body["data"]["items"][0]["user"]["username"], "team-admin");
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/teams")
@@ -1142,7 +1151,8 @@ async fn test_admin_tasks_lists_all_recorded_tasks() {
     assert_eq!(items[0]["id"], personal_task.id);
     assert_eq!(items[0]["kind"], "archive_extract");
     assert_eq!(items[0]["status"], "processing");
-    assert_eq!(items[0]["creator_user_id"], 1);
+    assert_eq!(items[0]["creator"]["id"], 1);
+    assert_eq!(items[0]["creator"]["username"], "testuser");
     assert!(items[0]["team_id"].is_null());
     assert_eq!(items[0]["progress_percent"], 60);
     assert!(items[0]["lease_expires_at"].is_string());
@@ -1150,7 +1160,8 @@ async fn test_admin_tasks_lists_all_recorded_tasks() {
     assert_eq!(items[1]["id"], team_task.id);
     assert_eq!(items[1]["kind"], "archive_compress");
     assert_eq!(items[1]["status"], "failed");
-    assert_eq!(items[1]["creator_user_id"], 1);
+    assert_eq!(items[1]["creator"]["id"], 1);
+    assert_eq!(items[1]["creator"]["username"], "testuser");
     assert_eq!(items[1]["team_id"], team_id);
     assert_eq!(items[1]["last_error"], "zip writer failed");
 
@@ -1166,7 +1177,7 @@ async fn test_admin_tasks_lists_all_recorded_tasks() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["id"], system_task.id);
     assert_eq!(items[0]["kind"], "system_runtime");
-    assert!(items[0]["creator_user_id"].is_null());
+    assert!(items[0]["creator"].is_null());
     assert!(items[0]["team_id"].is_null());
 }
 

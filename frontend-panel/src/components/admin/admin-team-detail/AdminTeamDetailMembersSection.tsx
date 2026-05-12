@@ -10,6 +10,7 @@ import {
 } from "@/components/common/AdminTable";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -309,11 +310,9 @@ export function AdminTeamDetailMembersSection({
 									return (
 										<TableRow key={member.id}>
 											<TableCell>
-												<div className="space-y-1">
+												<div className="space-y-2">
 													<div className="flex items-center gap-2">
-														<span className="font-medium">
-															{member.username}
-														</span>
+														<UserIdentity user={member.user} />
 														<Badge
 															className={cn(
 																"border",
@@ -323,9 +322,6 @@ export function AdminTeamDetailMembersSection({
 															{roleLabel(member.role)}
 														</Badge>
 													</div>
-													<p className="text-xs text-muted-foreground">
-														#{member.user_id}
-													</p>
 												</div>
 											</TableCell>
 											<TableCell>{member.email}</TableCell>

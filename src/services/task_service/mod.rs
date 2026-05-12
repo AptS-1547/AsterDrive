@@ -16,6 +16,7 @@ use chrono::{Duration, Utc};
 use parking_lot::Mutex;
 use sea_orm::{DatabaseConnection, Set};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration as StdDuration, Instant};
 
@@ -27,6 +28,7 @@ use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::{self, AuditContext},
+    profile_service, user_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskResult};
@@ -186,10 +188,7 @@ pub(crate) async fn list_tasks_paginated_in_scope(
         }
     };
 
-    let mut items = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        items.push(build_task_info(state, task).await?);
-    }
+    let items = build_task_infos(state, tasks).await?;
 
     Ok(OffsetPage::new(items, total, limit, offset))
 }
@@ -212,10 +211,7 @@ pub(crate) async fn list_tasks_paginated_for_admin(
     )
     .await?;
 
-    let mut items = Vec::with_capacity(tasks.len());
-    for task in tasks {
-        items.push(build_task_info(state, task).await?);
-    }
+    let items = build_task_infos(state, tasks).await?;
 
     Ok(OffsetPage::new(items, total, limit, offset))
 }
@@ -244,7 +240,7 @@ pub(crate) async fn get_task_in_scope(
     workspace_storage_service::require_scope_access(state, scope).await?;
     let task = background_task_repo::find_by_id(&state.db, task_id).await?;
     ensure_task_in_scope(&task, scope)?;
-    build_task_info(state, task).await
+    build_task_info_with_lookup(state, task).await
 }
 
 pub(crate) async fn retry_task_in_scope(
@@ -316,9 +312,56 @@ pub(crate) async fn retry_task_in_scope_with_audit(
     Ok(task)
 }
 
-async fn build_task_info(
-    _state: &PrimaryAppState,
+async fn build_task_infos(
+    state: &PrimaryAppState,
+    tasks: Vec<background_task::Model>,
+) -> Result<Vec<TaskInfo>> {
+    let creator_ids: Vec<i64> = tasks
+        .iter()
+        .filter_map(|task| task.creator_user_id)
+        .collect();
+    let creators = user_service::user_summaries_by_ids(
+        state,
+        &creator_ids,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
+
+    tasks
+        .into_iter()
+        .map(|task| build_task_info(task, &creators))
+        .collect()
+}
+
+async fn build_task_info_with_lookup(
+    state: &PrimaryAppState,
     task: background_task::Model,
+) -> Result<TaskInfo> {
+    let creator = match task.creator_user_id {
+        Some(user_id) => user_service::user_summary_by_id(
+            state,
+            user_id,
+            profile_service::AvatarAudience::AdminUser,
+        )
+        .await?,
+        None => None,
+    };
+    build_task_info_with_creator(task, creator)
+}
+
+fn build_task_info(
+    task: background_task::Model,
+    creators: &HashMap<i64, user_service::UserSummary>,
+) -> Result<TaskInfo> {
+    let creator = task
+        .creator_user_id
+        .and_then(|user_id| creators.get(&user_id).cloned());
+    build_task_info_with_creator(task, creator)
+}
+
+fn build_task_info_with_creator(
+    task: background_task::Model,
+    creator: Option<user_service::UserSummary>,
 ) -> Result<TaskInfo> {
     // 数据库存的是通用 JSON 负载和步骤快照；这里统一把它们解包成 API 可读结构，
     // 让列表页和详情页不必了解任务种类内部的存储格式。
@@ -345,7 +388,7 @@ async fn build_task_info(
         kind,
         status: task.status,
         display_name: task.display_name,
-        creator_user_id: task.creator_user_id,
+        creator,
         team_id: task.team_id,
         share_id: task.share_id,
         progress_current: task.progress_current,

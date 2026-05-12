@@ -39,6 +39,7 @@ export type UserPage = components["schemas"]["OffsetPage_UserInfo"];
 export type UserPreferences = components["schemas"]["UserPreferences"];
 export type UserProfileInfo = components["schemas"]["UserProfileInfo"];
 export type UserRole = components["schemas"]["UserRole"];
+export type UserSummary = components["schemas"]["UserSummary"];
 export type UserStatus = components["schemas"]["UserStatus"];
 export type VerificationPurpose = components["schemas"]["VerificationPurpose"];
 

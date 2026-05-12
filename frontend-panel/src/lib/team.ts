@@ -3,6 +3,7 @@ import type {
 	TeamAuditEntryInfo,
 	TeamMemberRole,
 } from "@/types/api";
+import { getUserDisplayName } from "./user";
 
 export function isTeamManager(role: TeamMemberRole | null | undefined) {
 	return role === "owner" || role === "admin";
@@ -35,23 +36,24 @@ export function formatTeamAuditSummary(
 	entry: TeamAuditEntryInfo,
 	roleLabel: (role: TeamMemberRole) => string,
 ) {
-	if (!entry.member_username) {
+	if (!entry.member) {
 		return null;
 	}
+	const memberName = getUserDisplayName(entry.member);
 
 	if (entry.action === TEAM_MEMBER_UPDATE_ACTION) {
 		if (entry.previous_role && entry.next_role) {
-			return `@${entry.member_username} · ${roleLabel(entry.previous_role)} -> ${roleLabel(entry.next_role)}`;
+			return `${memberName} · ${roleLabel(entry.previous_role)} -> ${roleLabel(entry.next_role)}`;
 		}
 
-		return `@${entry.member_username}`;
+		return memberName;
 	}
 
 	if (entry.role) {
-		return `@${entry.member_username} · ${roleLabel(entry.role)}`;
+		return `${memberName} · ${roleLabel(entry.role)}`;
 	}
 
-	return `@${entry.member_username}`;
+	return memberName;
 }
 
 const TEAM_MEMBER_UPDATE_ACTION: AuditAction = "team_member_update";

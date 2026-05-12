@@ -9,6 +9,7 @@ import {
 import { AdminTableList } from "@/components/common/AdminTableList";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
@@ -29,7 +30,7 @@ import { adminLockService } from "@/services/adminService";
 
 function formatLockOwnerInfo(lock: WebdavLock) {
 	if (!lock.owner_info) {
-		return lock.owner_id != null ? `#${lock.owner_id}` : "-";
+		return null;
 	}
 
 	switch (lock.owner_info.kind) {
@@ -125,8 +126,8 @@ export default function AdminLocksPage() {
 							<TableCell className="font-mono text-xs max-w-[200px] truncate">
 								{l.path}
 							</TableCell>
-							<TableCell className="text-xs">
-								{formatLockOwnerInfo(l)}
+							<TableCell>
+								{formatLockOwnerInfo(l) ?? <UserIdentity user={l.owner} />}
 							</TableCell>
 							<TableCell>
 								<div className="flex gap-1">

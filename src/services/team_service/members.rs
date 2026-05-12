@@ -45,7 +45,7 @@ pub async fn get_admin_member(
             AsterError::record_not_found(format!("team member user #{member_user_id}"))
         })?;
     let user = user_repo::find_by_id(&state.db, member_user_id).await?;
-    Ok(build_team_member_info(membership, user))
+    build_team_member_info(state, membership, user).await
 }
 
 pub async fn add_admin_member(
@@ -92,7 +92,7 @@ pub async fn add_admin_member(
     )
     .await;
 
-    Ok(build_team_member_info(membership, target_user))
+    build_team_member_info(state, membership, target_user).await
 }
 
 pub async fn update_admin_member_role(
@@ -129,7 +129,7 @@ pub async fn update_admin_member_role(
         member_user_id,
     )
     .await;
-    Ok(build_team_member_info(updated, target_user))
+    build_team_member_info(state, updated, target_user).await
 }
 
 pub async fn remove_admin_member(
@@ -189,7 +189,7 @@ pub async fn get_member(
             AsterError::record_not_found(format!("team member user #{member_user_id}"))
         })?;
     let user = user_repo::find_by_id(&state.db, member_user_id).await?;
-    Ok(build_team_member_info(membership, user))
+    build_team_member_info(state, membership, user).await
 }
 
 pub async fn add_member(
@@ -247,7 +247,7 @@ pub async fn add_member(
     )
     .await;
 
-    Ok(build_team_member_info(membership, target_user))
+    build_team_member_info(state, membership, target_user).await
 }
 
 pub async fn update_member_role(
@@ -298,7 +298,7 @@ pub async fn update_member_role(
         member_user_id,
     )
     .await;
-    Ok(build_team_member_info(updated, target_user))
+    build_team_member_info(state, updated, target_user).await
 }
 
 pub async fn remove_member(

@@ -184,14 +184,23 @@ pub struct UserInfo {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-    pub profile: profile_service::UserProfileInfo,
+	pub updated_at: chrono::DateTime<chrono::Utc>,
+	pub profile: profile_service::UserProfileInfo,
+}
+
+/// Lightweight user identity for embedding in admin list/detail responses.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct UserSummary {
+	pub id: i64,
+	pub username: String,
+	pub profile: profile_service::UserProfileInfo,
 }
 
 pub(super) fn user_core(user: &user::Model) -> UserCore {
-    UserCore {
-        id: user.id,
-        username: user.username.clone(),
+	UserCore {
+		id: user.id,
+		username: user.username.clone(),
         email: user.email.clone(),
         email_verified: auth_service::is_email_verified(user),
         pending_email: user.pending_email.clone(),

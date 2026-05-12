@@ -2154,13 +2154,13 @@ async fn test_team_service_degrades_missing_creator_rows() {
     let loaded = aster_drive::services::team_service::get_team(&state, team.id, owner.id)
         .await
         .unwrap();
-    assert_eq!(loaded.created_by_username, "<deleted_user>");
+    assert!(loaded.created_by.is_none());
 
     let teams = aster_drive::services::team_service::list_teams(&state, member.id, false)
         .await
         .unwrap();
     assert_eq!(teams.len(), 1);
-    assert_eq!(teams[0].created_by_username, "<deleted_user>");
+    assert!(teams[0].created_by.is_none());
 }
 
 #[actix_web::test]

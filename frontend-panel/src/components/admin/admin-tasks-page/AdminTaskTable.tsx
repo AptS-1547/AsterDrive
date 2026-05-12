@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
 	ADMIN_TABLE_BADGE_CELL_CLASS,
@@ -21,7 +22,7 @@ import type {
 
 interface AdminTaskTableProps {
 	formatTaskKind: (kind: BackgroundTaskKind) => string;
-	formatTaskSource: (task: TaskInfo) => string;
+	formatTaskSource: (task: TaskInfo) => ReactNode;
 	formatTaskStatus: (status: BackgroundTaskStatus) => string;
 	items: TaskInfo[];
 }
@@ -114,9 +115,7 @@ export function AdminTaskTable({
 							</TableCell>
 							<TableCell>
 								<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
-									<span className="text-xs text-muted-foreground">
-										{formatTaskSource(task)}
-									</span>
+									{formatTaskSource(task)}
 								</div>
 							</TableCell>
 							<TableCell>

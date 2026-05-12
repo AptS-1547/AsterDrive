@@ -15,14 +15,13 @@ use crate::db::repository::{policy_group_repo, team_member_repo, team_repo, user
 use crate::entities::{team, team_member, user};
 use crate::errors::{AsterError, Result, validation_error_with_subcode};
 use crate::runtime::PrimaryAppState;
+use crate::services::{profile_service, user_service};
 use crate::types::TeamMemberRole;
 
 use super::{
     AdminTeamInfo, CreateTeamInput, TeamInfo, TeamMemberInfo, TeamMemberListFilters,
     TeamMemberPage, UpdateTeamInput,
 };
-
-const MISSING_CREATOR_USERNAME: &str = "<deleted_user>";
 
 fn map_team_member_create_db_err(err: DbErr) -> AsterError {
     if matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
@@ -72,21 +71,24 @@ fn default_team_storage_quota(state: &PrimaryAppState) -> i64 {
     }
 }
 
-pub(super) fn missing_creator_username(team: &team::Model) -> String {
-    tracing::warn!(
-        team_id = team.id,
-        created_by = team.created_by,
-        "team creator missing; using placeholder username"
-    );
-    MISSING_CREATOR_USERNAME.to_string()
-}
-
-async fn load_creator_username(state: &PrimaryAppState, team: &team::Model) -> Result<String> {
-    match user_repo::find_by_id(&state.db, team.created_by).await {
-        Ok(creator) => Ok(creator.username),
-        Err(AsterError::RecordNotFound(_)) => Ok(missing_creator_username(team)),
-        Err(err) => Err(err),
+async fn load_creator_summary(
+    state: &PrimaryAppState,
+    team: &team::Model,
+) -> Result<Option<user_service::UserSummary>> {
+    let creator = user_service::user_summary_by_id(
+        state,
+        team.created_by,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
+    if creator.is_none() {
+        tracing::warn!(
+            team_id = team.id,
+            created_by = team.created_by,
+            "team creator missing"
+        );
     }
+    Ok(creator)
 }
 
 pub(super) async fn build_team_info(
@@ -94,29 +96,23 @@ pub(super) async fn build_team_info(
     team: &team::Model,
     my_role: TeamMemberRole,
 ) -> Result<TeamInfo> {
-    let creator_username = load_creator_username(state, team).await?;
+    let creator = load_creator_summary(state, team).await?;
     let member_count = team_member_repo::count_by_team(&state.db, team.id).await?;
 
-    Ok(build_team_info_with_metadata(
-        team,
-        my_role,
-        creator_username,
-        member_count,
-    ))
+    Ok(build_team_info_with_metadata(team, my_role, creator, member_count))
 }
 
 pub(super) fn build_team_info_with_metadata(
     team: &team::Model,
     my_role: TeamMemberRole,
-    created_by_username: String,
+    created_by: Option<user_service::UserSummary>,
     member_count: u64,
 ) -> TeamInfo {
     TeamInfo {
         id: team.id,
         name: team.name.clone(),
         description: team.description.clone(),
-        created_by: team.created_by,
-        created_by_username,
+        created_by,
         my_role,
         member_count,
         storage_used: team.storage_used,
@@ -132,27 +128,22 @@ pub(super) async fn build_admin_team_info(
     state: &PrimaryAppState,
     team: &team::Model,
 ) -> Result<AdminTeamInfo> {
-    let creator_username = load_creator_username(state, team).await?;
+    let creator = load_creator_summary(state, team).await?;
     let member_count = team_member_repo::count_by_team(&state.db, team.id).await?;
 
-    Ok(build_admin_team_info_with_metadata(
-        team,
-        creator_username,
-        member_count,
-    ))
+    Ok(build_admin_team_info_with_metadata(team, creator, member_count))
 }
 
 pub(super) fn build_admin_team_info_with_metadata(
     team: &team::Model,
-    created_by_username: String,
+    created_by: Option<user_service::UserSummary>,
     member_count: u64,
 ) -> AdminTeamInfo {
     AdminTeamInfo {
         id: team.id,
         name: team.name.clone(),
         description: team.description.clone(),
-        created_by: team.created_by,
-        created_by_username,
+        created_by,
         member_count,
         storage_used: team.storage_used,
         storage_quota: team.storage_quota,
@@ -163,21 +154,69 @@ pub(super) fn build_admin_team_info_with_metadata(
     }
 }
 
-pub(super) fn build_team_member_info(
+pub(super) async fn build_team_member_info(
+    state: &PrimaryAppState,
     membership: team_member::Model,
     user: user::Model,
-) -> TeamMemberInfo {
-    TeamMemberInfo {
+) -> Result<TeamMemberInfo> {
+    let profile = profile_service::get_profile_info(
+        state,
+        &user,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
+    let user_summary = user_service::to_user_summary_with_profile(&user, profile);
+
+    Ok(TeamMemberInfo {
         id: membership.id,
         team_id: membership.team_id,
         user_id: user.id,
-        username: user.username,
         email: user.email,
+        user: user_summary,
         status: user.status,
         role: membership.role,
         created_at: membership.created_at,
         updated_at: membership.updated_at,
-    }
+    })
+}
+
+async fn build_team_member_infos(
+    state: &PrimaryAppState,
+    rows: Vec<(team_member::Model, user::Model)>,
+) -> Result<Vec<TeamMemberInfo>> {
+    let users: Vec<user::Model> = rows.iter().map(|(_, user)| user.clone()).collect();
+    let profile_map = profile_service::get_profile_info_map(
+        state,
+        &users,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
+    let gravatar_base_url = profile_service::resolve_gravatar_base_url(state);
+
+    rows.into_iter()
+        .map(|(membership, user)| {
+            let profile = profile_map.get(&user.id).cloned().unwrap_or_else(|| {
+                profile_service::build_profile_info(
+                    &user,
+                    None,
+                    profile_service::AvatarAudience::AdminUser,
+                    &gravatar_base_url,
+                )
+            });
+            let user_summary = user_service::to_user_summary_with_profile(&user, profile);
+            Ok(TeamMemberInfo {
+                id: membership.id,
+                team_id: membership.team_id,
+                user_id: user.id,
+                email: user.email,
+                user: user_summary,
+                status: user.status,
+                role: membership.role,
+                created_at: membership.created_at,
+                updated_at: membership.updated_at,
+            })
+        })
+        .collect()
 }
 
 fn build_team_member_page(
@@ -233,10 +272,10 @@ pub(super) async fn load_team_member_page(
         }
     }
 
+    let items = build_team_member_infos(state, rows).await?;
+
     Ok(build_team_member_page(
-        rows.into_iter()
-            .map(|(membership, user)| build_team_member_info(membership, user))
-            .collect(),
+        items,
         total,
         effective_limit,
         offset,
@@ -326,7 +365,10 @@ pub(super) async fn ensure_not_last_manager<C: ConnectionTrait>(
 pub(super) async fn load_team_metadata<'a>(
     state: &PrimaryAppState,
     teams: impl IntoIterator<Item = &'a team::Model>,
-) -> Result<(HashMap<i64, String>, HashMap<i64, u64>)> {
+) -> Result<(
+    HashMap<i64, user_service::UserSummary>,
+    HashMap<i64, u64>,
+)> {
     let mut creator_ids = HashSet::new();
     let mut team_ids = HashSet::new();
     for team in teams {
@@ -341,17 +383,15 @@ pub(super) async fn load_team_metadata<'a>(
     let creator_ids: Vec<i64> = creator_ids.into_iter().collect();
     let team_ids: Vec<i64> = team_ids.into_iter().collect();
     let (creators, member_counts) = tokio::try_join!(
-        user_repo::find_by_ids(&state.db, &creator_ids),
+        user_service::user_summaries_by_ids(
+            state,
+            &creator_ids,
+            profile_service::AvatarAudience::AdminUser,
+        ),
         team_member_repo::count_by_team_ids(&state.db, &team_ids),
     )?;
 
-    Ok((
-        creators
-            .into_iter()
-            .map(|creator| (creator.id, creator.username))
-            .collect(),
-        member_counts,
-    ))
+    Ok((creators, member_counts))
 }
 
 pub(super) async fn ensure_assignable_policy_group(

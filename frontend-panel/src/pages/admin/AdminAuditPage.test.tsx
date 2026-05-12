@@ -2,12 +2,28 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminAuditPage from "@/pages/admin/AdminAuditPage";
-import type { AuditLogEntry } from "@/types/api";
+import type { AuditLogEntry, UserSummary } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
 	list: vi.fn(),
 }));
+
+function createUserSummary(): UserSummary {
+	return {
+		id: 9,
+		username: "root",
+		profile: {
+			display_name: "Root",
+			avatar: {
+				source: "none",
+				url_1024: null,
+				url_512: null,
+				version: 0,
+			},
+		},
+	};
+}
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
@@ -223,7 +239,7 @@ function createEntry(overrides: Partial<AuditLogEntry> = {}): AuditLogEntry {
 		id: 1,
 		ip_address: "127.0.0.1",
 		user_agent: "Vitest",
-		user_id: 9,
+		user: createUserSummary(),
 		...overrides,
 	};
 }

@@ -11,6 +11,7 @@ import {
 } from "@/components/common/AdminTable";
 import { AdminTableList } from "@/components/common/AdminTableList";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
@@ -170,7 +171,9 @@ export default function AdminSharesPage() {
 									<Icon name="ArrowSquareOut" className="h-3 w-3" />
 								</a>
 							</TableCell>
-							<TableCell className="text-xs">#{s.user_id}</TableCell>
+							<TableCell>
+								<UserIdentity user={s.user} />
+							</TableCell>
 							<TableCell>
 								<Badge variant="outline">
 									{s.target.type === "file" ? t("core:file") : t("core:folder")}

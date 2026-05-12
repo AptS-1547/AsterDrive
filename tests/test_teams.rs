@@ -81,7 +81,8 @@ async fn test_team_crud_and_member_lifecycle() {
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
     let team_id = body["data"]["id"].as_i64().unwrap();
-    assert_eq!(body["data"]["created_by"], owner_id);
+    assert_eq!(body["data"]["created_by"]["id"], owner_id);
+    assert_eq!(body["data"]["created_by"]["username"], "owner1");
     assert_eq!(body["data"]["my_role"], "owner");
     assert_eq!(body["data"]["member_count"], 1);
 
@@ -115,7 +116,7 @@ async fn test_team_crud_and_member_lifecycle() {
     assert_eq!(body["data"]["owner_count"], 1);
     assert_eq!(body["data"]["manager_count"], 1);
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
-    assert_eq!(body["data"]["items"][0]["username"], "member1");
+    assert_eq!(body["data"]["items"][0]["user"]["username"], "member1");
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/members?keyword=emb"))
@@ -126,7 +127,7 @@ async fn test_team_crud_and_member_lifecycle() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["total"], 1);
-    assert_eq!(body["data"]["items"][0]["username"], "member1");
+    assert_eq!(body["data"]["items"][0]["user"]["username"], "member1");
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/members?keyword=be"))
@@ -137,7 +138,7 @@ async fn test_team_crud_and_member_lifecycle() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["total"], 1);
-    assert_eq!(body["data"]["items"][0]["username"], "member1");
+    assert_eq!(body["data"]["items"][0]["user"]["username"], "member1");
 
     let req = test::TestRequest::get()
         .uri("/api/v1/teams")
@@ -481,7 +482,8 @@ async fn test_team_admin_can_restore_archived_team() {
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
     let team_id = body["data"]["id"].as_i64().unwrap();
-    assert_eq!(body["data"]["created_by"], owner_id);
+    assert_eq!(body["data"]["created_by"]["id"], owner_id);
+    assert_eq!(body["data"]["created_by"]["username"], "restore-owner");
 
     for (user_id, role) in [(admin_id, "admin"), (member_id, "member")] {
         let req = test::TestRequest::post()

@@ -7,6 +7,7 @@ use utoipa::ToSchema;
 
 use crate::entities::background_task;
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::services::user_service;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,7 +186,7 @@ pub struct TaskInfo {
     pub kind: BackgroundTaskKind,
     pub status: BackgroundTaskStatus,
     pub display_name: String,
-    pub creator_user_id: Option<i64>,
+    pub creator: Option<user_service::UserSummary>,
     pub team_id: Option<i64>,
     pub share_id: Option<i64>,
     pub progress_current: i64,
