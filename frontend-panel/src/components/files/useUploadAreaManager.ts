@@ -1,5 +1,11 @@
 import type { ChangeEvent, DragEvent, RefObject } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { formatBytes } from "@/lib/format";
 import {
@@ -75,11 +81,11 @@ export function useUploadAreaManager({
 	const progressBufferRef = useRef(new Map<string, Partial<UploadTask>>());
 	const progressFlushTimerRef = useRef<number | null>(null);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		currentFolderIdRef.current = currentFolderId;
 	}, [currentFolderId]);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		tasksRef.current = tasks;
 	}, [tasks]);
 
