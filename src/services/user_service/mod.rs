@@ -10,7 +10,8 @@ pub use admin::{
     force_delete_with_audit, update, update_with_audit,
 };
 pub use models::{
-    MeResponse, UpdatePreferencesReq, UserCore, UserInfo, UserPreferences, UserSummary,
+    MeResponse, UpdatePreferencesReq, UserCore, UserInfo, UserListFilters, UserPreferences,
+    UserSummary,
 };
 pub use preferences::{get_preferences, parse_preferences, update_preferences};
 pub use queries::{

@@ -238,34 +238,37 @@ export function useUploadAreaManager({
 
 	const attachFileToTask = useCallback(
 		(taskId: string, file: File) => {
-			const task = tasksRef.current.find((item) => item.id === taskId);
-			if (!task || task.status !== "pending_file") return;
+			const sessions = loadSessions(workspace);
+			setTasks((prev) => {
+				const task = prev.find((item) => item.id === taskId);
+				if (!task || task.status !== "pending_file") return prev;
 
-			const session = loadSessions(workspace).find(
-				(entry) => entry.uploadId === task.uploadId,
-			);
-			if (
-				session &&
-				(file.name !== session.filename || file.size !== session.totalSize)
-			) {
-				patchTask(taskId, {
-					error: t("files:upload_resume_mismatch", {
-						name: session.filename,
-						size: formatBytes(session.totalSize),
-					}),
-				});
-				return;
-			}
+				const session = sessions.find(
+					(entry) => entry.uploadId === task.uploadId,
+				);
+				const patch =
+					session &&
+					(file.name !== session.filename || file.size !== session.totalSize)
+						? {
+								error: t("files:upload_resume_mismatch", {
+									name: session.filename,
+									size: formatBytes(session.totalSize),
+								}),
+							}
+						: {
+								file,
+								totalBytes: file.size,
+								status: "queued" as const,
+								error: null,
+								progress: 0,
+							};
 
-			patchTask(taskId, {
-				file,
-				totalBytes: file.size,
-				status: "queued",
-				error: null,
-				progress: 0,
+				return prev.map((item) =>
+					item.id === taskId ? { ...item, ...patch } : item,
+				);
 			});
 		},
-		[patchTask, t, workspace],
+		[t, workspace],
 	);
 
 	const handleResumeFileChange = useCallback(

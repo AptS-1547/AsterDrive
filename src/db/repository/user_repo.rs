@@ -18,6 +18,15 @@ use sea_orm::{
 
 const SQLITE_USERS_FTS_TABLE: &str = "users_search_fts";
 
+#[derive(Debug, Clone, Copy)]
+pub struct AdminUserListFilters<'a> {
+    pub keyword: Option<&'a str>,
+    pub role: Option<UserRole>,
+    pub status: Option<UserStatus>,
+    pub sort_by: AdminUserSortBy,
+    pub sort_order: SortOrder,
+}
+
 fn user_keyword_like_condition(query: &str) -> Condition {
     Condition::any()
         .add(lower_like_condition(user::Column::Username, query))
@@ -179,24 +188,23 @@ pub async fn find_paginated<C: ConnectionTrait>(
     db: &C,
     limit: u64,
     offset: u64,
-    keyword: Option<&str>,
-    role: Option<UserRole>,
-    status: Option<UserStatus>,
-    sort_by: AdminUserSortBy,
-    sort_order: SortOrder,
+    filters: &AdminUserListFilters<'_>,
 ) -> Result<(Vec<user::Model>, u64)> {
     let backend = db.get_database_backend();
-    let keyword = keyword.map(str::trim).filter(|keyword| !keyword.is_empty());
+    let keyword = filters
+        .keyword
+        .map(str::trim)
+        .filter(|keyword| !keyword.is_empty());
 
-    let mut q = apply_admin_user_sort(User::find(), sort_by, sort_order);
+    let mut q = apply_admin_user_sort(User::find(), filters.sort_by, filters.sort_order);
 
     if let Some(keyword) = keyword {
         q = q.filter(user_keyword_condition(backend, keyword));
     }
-    if let Some(role) = role {
+    if let Some(role) = filters.role {
         q = q.filter(user::Column::Role.eq(role));
     }
-    if let Some(status) = status {
+    if let Some(status) = filters.status {
         q = q.filter(user::Column::Status.eq(status));
     }
 

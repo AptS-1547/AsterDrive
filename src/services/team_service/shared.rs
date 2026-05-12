@@ -256,17 +256,20 @@ pub(super) async fn load_team_member_page(
         1,
         operations::team_member_list_max_limit(&state.runtime_config),
     );
+    let repo_filters = team_member_repo::TeamMemberPageFilters {
+        role: filters.role,
+        status: filters.status,
+        keyword: filters.keyword.as_deref(),
+        sort_by: filters.sort_by,
+        sort_order: filters.sort_order,
+    };
     let ((rows, total), role_counts) = tokio::try_join!(
         team_member_repo::list_page_by_team_with_user(
             &state.db,
             team_id,
-            filters.role,
-            filters.status,
-            filters.keyword.as_deref(),
             effective_limit,
             offset,
-            filters.sort_by,
-            filters.sort_order,
+            &repo_filters,
         ),
         team_member_repo::count_by_team_grouped_by_role(&state.db, team_id),
     )?;

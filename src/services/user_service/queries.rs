@@ -1,13 +1,12 @@
-use crate::api::pagination::{AdminUserSortBy, OffsetPage, SortOrder, load_offset_page};
+use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::user_repo;
 use crate::entities::user;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{auth_service, profile_service};
-use crate::types::{UserRole, UserStatus};
 use std::collections::{HashMap, HashSet};
 
-use super::models::{MeResponse, UserInfo, UserSummary, user_core};
+use super::models::{MeResponse, UserInfo, UserListFilters, UserSummary, user_core};
 use super::preferences::parse_preferences;
 
 pub fn to_user_summary_with_profile(
@@ -169,17 +168,17 @@ pub async fn list_paginated(
     state: &PrimaryAppState,
     limit: u64,
     offset: u64,
-    keyword: Option<&str>,
-    role: Option<UserRole>,
-    status: Option<UserStatus>,
-    sort_by: AdminUserSortBy,
-    sort_order: SortOrder,
+    filters: UserListFilters,
 ) -> Result<OffsetPage<UserInfo>> {
     let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
-        user_repo::find_paginated(
-            &state.db, limit, offset, keyword, role, status, sort_by, sort_order,
-        )
-        .await
+        let repo_filters = user_repo::AdminUserListFilters {
+            keyword: filters.keyword.as_deref(),
+            role: filters.role,
+            status: filters.status,
+            sort_by: filters.sort_by,
+            sort_order: filters.sort_order,
+        };
+        user_repo::find_paginated(&state.db, limit, offset, &repo_filters).await
     })
     .await?;
 

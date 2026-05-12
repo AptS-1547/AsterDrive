@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::api::pagination::{SortBy, SortOrder};
+use crate::api::pagination::{AdminUserSortBy, SortBy, SortOrder};
 use crate::entities::user;
 use crate::services::{auth_service, profile_service};
 use crate::types::{
@@ -186,6 +186,48 @@ pub struct UserInfo {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub profile: profile_service::UserProfileInfo,
+}
+
+#[derive(Debug, Clone)]
+pub struct UserListFilters {
+    pub keyword: Option<String>,
+    pub role: Option<UserRole>,
+    pub status: Option<UserStatus>,
+    pub sort_by: AdminUserSortBy,
+    pub sort_order: SortOrder,
+}
+
+impl Default for UserListFilters {
+    fn default() -> Self {
+        Self {
+            keyword: None,
+            role: None,
+            status: None,
+            sort_by: AdminUserSortBy::CreatedAt,
+            sort_order: SortOrder::Desc,
+        }
+    }
+}
+
+impl UserListFilters {
+    pub fn from_inputs(
+        keyword: Option<&str>,
+        role: Option<UserRole>,
+        status: Option<UserStatus>,
+        sort_by: AdminUserSortBy,
+        sort_order: SortOrder,
+    ) -> Self {
+        Self {
+            keyword: keyword
+                .map(str::trim)
+                .filter(|keyword| !keyword.is_empty())
+                .map(str::to_owned),
+            role,
+            status,
+            sort_by,
+            sort_order,
+        }
+    }
 }
 
 /// Lightweight user identity for embedding in admin list/detail responses.

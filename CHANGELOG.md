@@ -5,6 +5,88 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.0-rc.1] - 2026-05-12
+
+### Release Highlights
+
+- **首个 RC 版本与迁移基线收口** — 版本升级到 `0.1.0-rc.1`，数据库 migration 重新压缩为 `m20260512_000001_baseline_schema`，已有部署需先完成 pre-rc.1 旧迁移链再升级
+- **管理后台全列表排序** — 用户、团队、成员、策略、策略组、远程节点、分享、锁、后台任务和审计日志列表支持白名单字段排序，并通过 URL 参数保持排序状态
+- **用户身份展示统一为 UserSummary** — 管理后台、团队、分享、锁、任务和审计相关响应从裸用户 ID / 用户名升级为嵌套用户摘要，前端统一展示头像、显示名和用户名
+- **主题强调色改为 hex 色值** — 偏好设置的 `color_preset` 从固定枚举名切换为 `#rrggbb`，前端支持自定义颜色输入，并兼容旧预设名读取
+- **管理后台表格体验统一** — 抽取 AdminTable 公共组件，统一列表留白、边界、排序表头、可访问性状态和交互反馈
+
+### Added
+
+- **管理后台排序参数**
+  - 管理用户列表支持按 ID、用户名、邮箱、角色、状态、用量、配额、创建时间和更新时间排序
+  - 管理团队列表支持按 ID、名称、用量、配额、创建时间、更新时间和归档时间排序
+  - 团队成员列表支持按用户名、邮箱、角色、状态、创建时间和更新时间排序
+  - 管理策略、策略组、远程节点、分享、锁、后台任务和审计日志列表均新增 `sort_by` / `sort_order` 查询参数
+  - 后端使用白名单枚举映射排序字段，所有非 ID 排序追加 ID 作为稳定 tie-breaker
+- **用户摘要响应模型**
+  - 新增 `UserSummary`，包含用户 ID、用户名和 profile 信息
+  - 管理概览最近任务、审计日志、团队列表 / 详情 / 成员、分享列表、WebDAV 锁列表和团队审计记录返回用户摘要
+  - 前端新增 `UserIdentity` 公共组件，统一展示头像、显示名和 `@username`
+- **自定义主题色**
+  - `ColorPreset` 支持解析并返回规范化的 `#rrggbb` hex 颜色
+  - 前端颜色选择器新增原生 color input，允许输入预设外的强调色
+  - 旧的 `blue` / `green` / `purple` / `orange` 偏好值会被兼容读取并规范化
+- **测试覆盖**
+  - 新增管理后台各列表显式排序、非法排序参数拒绝和后台任务 ID tie-breaker 集成测试
+  - 新增 migration rebase 完整 pre-rc.1 历史重写、不完整历史拒绝和 SQLite schema 基线对齐测试
+  - 新增主题色 hex 接受、非法颜色拒绝和旧预设名规范化测试
+  - 新增 AdminTable 单元测试，覆盖表格结构、样式和排序表头交互
+
+### Changed
+
+- **数据库 migration 基线**
+  - 当前 migration 集合压缩为 `m20260512_000001_baseline_schema`
+  - 旧的 `m20260502_000001_baseline_schema`、文件 / 文件夹 owner provenance 拆分迁移、后台任务 `failure_can_retry` 迁移纳入新的 rc.1 baseline
+  - 已完整应用 pre-rc.1 迁移链的数据库会校验关键 schema sentinels 后，仅重写 `seaql_migrations` 元数据到新 baseline
+  - 升级文档更新 pre-rc.1 rebase 策略和不完整旧库处理方式
+- **管理后台 API 响应**
+  - 审计日志从 `user_id` 改为 `user: UserSummary | null`
+  - 分享列表从裸用户 ID 改为 `user: UserSummary | null`
+  - WebDAV 锁列表从 `owner_id` 改为 `owner: UserSummary | null`
+  - 后台任务事件从 `creator_user_id` 改为 `creator: UserSummary | null`
+  - 团队创建者、成员用户、团队审计 actor / member 统一返回用户摘要
+- **前端管理表格**
+  - 管理后台表格迁移到统一 `AdminTable` / `AdminSortableTableHead` 组件
+  - 排序状态写入 `sortBy` / `sortOrder` URL query，刷新或复制链接后可保持当前排序
+  - 表头补充 `aria-sort`，当前排序列展示方向图标
+- **依赖与生成类型**
+  - Rust crate 版本升级到 `0.1.0-rc.1`
+  - `aws-sdk-s3` 升级到 `1.132.0`，`utoipa` 升级到 `5.5.0`
+  - 前端同步升级 i18next、react-arborist、tailwind-merge、Biome、Playwright、Vite、Vitest、MSW 等依赖
+  - OpenAPI 生成类型同步更新排序参数、`UserSummary` 和 hex `ColorPreset` schema
+
+### Fixed
+
+- **用户更新请求兼容性**
+  - 管理端更新用户时会剔除 `policy_group_id: null`，避免后端把“不修改策略组”误判为非法清空操作
+- **迁移 rebase 安全校验**
+  - rebase 校验补充 `owner_user_id`、`created_by_user_id`、`created_by_username` 和 `background_tasks.failure_can_retry` 等 pre-rc.1 schema sentinels
+  - 混合新旧 baseline、空迁移记录但已有业务表、不完整 pre-rc.1 迁移链会被明确拒绝启动并给出升级提示
+- **主题偏好兼容性**
+  - 已保存旧颜色预设名的用户升级后不会丢失主题色，读取时会自动映射为对应 hex 色值
+
+### Notes
+
+- 本版本为 `0.1.0` 系列第一个 release candidate
+- 升级前请备份数据库；已有部署必须先运行最后一个 pre-rc.1 构建并完成 `m20260502_000001_baseline_schema`、`m20260508_000001_split_file_folder_owner_provenance`、`m20260511_000001_add_background_task_failure_can_retry` 后，再升级到本版本
+- 新部署会直接执行 `m20260512_000001_baseline_schema`；已有完整 pre-rc.1 历史的部署只重写 migration 元数据，不清空业务表
+- 自定义客户端如果消费管理后台 / 团队 / 分享 / 锁 / 审计 API，需要将裸用户字段迁移到 `UserSummary` 嵌套对象
+- 用户偏好里的 `color_preset` 现在以 `#rrggbb` 返回；旧预设名仍可读取，但会规范化输出为 hex
+- 管理后台列表新增 `sort_by` / `sort_order`；未知排序字段会被请求参数校验拒绝
+
+---
+
+**统计数据**：
+- 133 files changed, 6,236 insertions(+), 2,709 deletions(-)
+- 6 commits
+
+---
+
 ## [v0.1.0-beta.5] - 2026-05-12
 
 ### Release Highlights
@@ -2797,7 +2879,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.5...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-rc.1...HEAD
+[v0.1.0-rc.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.5...v0.1.0-rc.1
 [v0.1.0-beta.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.4...v0.1.0-beta.5
 [v0.1.0-beta.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.3...v0.1.0-beta.4
 [v0.1.0-beta.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.2...v0.1.0-beta.3

@@ -32,6 +32,15 @@ pub struct ActiveTeamAccessSnapshot {
     pub role: TeamMemberRole,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct TeamMemberPageFilters<'a> {
+    pub role: Option<TeamMemberRole>,
+    pub status: Option<UserStatus>,
+    pub keyword: Option<&'a str>,
+    pub sort_by: AdminTeamMemberSortBy,
+    pub sort_order: SortOrder,
+}
+
 fn team_member_keyword_like_condition(keyword: &str) -> Condition {
     let mut condition = Condition::any()
         .add(lower_like_condition(
@@ -280,13 +289,9 @@ pub async fn list_by_team_with_user<C: ConnectionTrait>(
 pub async fn list_page_by_team_with_user<C: ConnectionTrait>(
     db: &C,
     team_id: i64,
-    role: Option<TeamMemberRole>,
-    status: Option<UserStatus>,
-    keyword: Option<&str>,
     limit: u64,
     offset: u64,
-    sort_by: AdminTeamMemberSortBy,
-    sort_order: SortOrder,
+    filters: &TeamMemberPageFilters<'_>,
 ) -> Result<(Vec<(team_member::Model, user::Model)>, u64)> {
     let backend = db.get_database_backend();
     let mut query = TeamMember::find()
@@ -294,17 +299,21 @@ pub async fn list_page_by_team_with_user<C: ConnectionTrait>(
         .select_also(user::Entity)
         .filter(team_member::Column::TeamId.eq(team_id));
 
-    if let Some(role) = role {
+    if let Some(role) = filters.role {
         query = query.filter(team_member::Column::Role.eq(role));
     }
-    if let Some(status) = status {
+    if let Some(status) = filters.status {
         query = query.filter(user::Column::Status.eq(status));
     }
-    if let Some(keyword) = keyword.map(str::trim).filter(|keyword| !keyword.is_empty()) {
+    if let Some(keyword) = filters
+        .keyword
+        .map(str::trim)
+        .filter(|keyword| !keyword.is_empty())
+    {
         query = query.filter(team_member_keyword_condition(backend, keyword));
     }
 
-    query = apply_admin_team_member_sort(query, sort_by, sort_order);
+    query = apply_admin_team_member_sort(query, filters.sort_by, filters.sort_order);
 
     let total = query.clone().count(db).await.map_err(AsterError::from)?;
     if total == 0 || limit == 0 {

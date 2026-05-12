@@ -67,11 +67,13 @@ pub async fn list_users(
         &state,
         page.limit_or(50, 100),
         page.offset(),
-        query.keyword.as_deref(),
-        query.role,
-        query.status,
-        query.sort_by(),
-        query.sort_order(),
+        user_service::UserListFilters::from_inputs(
+            query.keyword.as_deref(),
+            query.role,
+            query.status,
+            query.sort_by(),
+            query.sort_order(),
+        ),
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(users)))
