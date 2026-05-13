@@ -456,6 +456,21 @@ async fn wait_for_s3_bucket(endpoint: &str, bucket: &str) {
     }
 }
 
+async fn s3_object_exists(client: &aws_sdk_s3::Client, bucket: &str, key: &str) -> bool {
+    match client.head_object().bucket(bucket).key(key).send().await {
+        Ok(_) => true,
+        Err(error)
+            if error
+                .as_service_error()
+                .map(|service_error| service_error.is_not_found())
+                == Some(true) =>
+        {
+            false
+        }
+        Err(error) => panic!("S3 head_object for {key} failed unexpectedly: {error}"),
+    }
+}
+
 fn snapshot_dir_tree(
     path: &std::path::Path,
 ) -> std::io::Result<std::collections::BTreeSet<String>> {
@@ -504,9 +519,8 @@ fn snapshot_temp_roots(
     Ok(snapshots)
 }
 
-async fn create_s3_default_policy(
+async fn create_s3_policy(
     state: &aster_drive::runtime::PrimaryAppState,
-    user_id: i64,
     name: &str,
     endpoint: &str,
     bucket: &str,
@@ -541,6 +555,21 @@ async fn create_s3_default_policy(
     )
     .await
     .unwrap();
+    state.policy_snapshot.reload(&state.db).await.unwrap();
+    state.driver_registry.invalidate(policy.id);
+    policy
+}
+
+async fn create_s3_default_policy(
+    state: &aster_drive::runtime::PrimaryAppState,
+    user_id: i64,
+    name: &str,
+    endpoint: &str,
+    bucket: &str,
+    options: &str,
+    chunk_size: i64,
+) -> aster_drive::entities::storage_policy::Model {
+    let policy = create_s3_policy(state, name, endpoint, bucket, options, chunk_size).await;
 
     let group = aster_drive::services::policy_service::create_group(
         state,
@@ -2768,6 +2797,143 @@ async fn test_presigned_upload_s3_e2e() {
         .unwrap();
     assert_eq!(blob1.ref_count, 1);
     assert_eq!(blob2.ref_count, 1);
+}
+
+/// S3 presigned URL 在策略强删后仍可能晚到 PUT；延迟任务必须清掉该临时对象。
+#[tokio::test]
+async fn test_force_delete_policy_cleans_late_s3_presigned_put_e2e() {
+    use aster_drive::db::repository::{background_task_repo, policy_repo, upload_session_repo};
+    use aster_drive::entities::background_task;
+    use aster_drive::services::{
+        auth_service, folder_service, policy_service, task_service, upload_service,
+    };
+    use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus, NullablePatch};
+    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+    use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
+        .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
+        .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
+        .start()
+        .await
+        .expect("failed to start rustfs container");
+
+    let port = container.get_host_port_ipv4(9000).await.unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let bucket = "test-force-delete-late-presigned";
+    wait_for_s3_bucket(&endpoint, bucket).await;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "latepresigneds3",
+        "late-presigned-s3@test.com",
+        "pass1234",
+    )
+    .await
+    .unwrap();
+    let policy = create_s3_policy(
+        &state,
+        "Late S3 Presigned Cleanup",
+        &endpoint,
+        bucket,
+        r#"{"s3_upload_strategy":"presigned"}"#,
+        5_242_880,
+    )
+    .await;
+    let folder = folder_service::create(&state, user.id, "late-s3-presigned", None)
+        .await
+        .unwrap();
+    folder_service::update(
+        &state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(policy.id),
+    )
+    .await
+    .unwrap();
+
+    let data = b"late s3 presigned write after force delete".to_vec();
+    let init = upload_service::init_upload(
+        &state,
+        user.id,
+        "late.bin",
+        i64::try_from(data.len()).unwrap(),
+        Some(folder.id),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Presigned);
+    let upload_id = init.upload_id.unwrap();
+    let presigned_url = init.presigned_url.unwrap();
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    let temp_key = session
+        .s3_temp_key
+        .clone()
+        .expect("presigned upload session should store temp key");
+    let object_key = format!("uploads/{temp_key}");
+    let s3_client = s3_test_client(&endpoint);
+    assert!(
+        !s3_object_exists(&s3_client, bucket, &object_key).await,
+        "temp object should not exist before the late PUT"
+    );
+
+    policy_service::delete(&state, policy.id, true)
+        .await
+        .expect("force deleting policy with pending presigned session should succeed");
+    assert!(policy_repo::find_by_id(&state.db, policy.id).await.is_err());
+    assert!(
+        upload_session_repo::find_by_id(&state.db, &upload_id)
+            .await
+            .is_err(),
+        "force delete should remove the upload session before the old URL expires"
+    );
+
+    let response = reqwest::Client::new()
+        .put(&presigned_url)
+        .header("Content-Type", "application/octet-stream")
+        .body(data)
+        .send()
+        .await
+        .expect("late presigned PUT should send");
+    assert!(
+        response.status().is_success(),
+        "old presigned S3 URL should still accept PUT until it expires: {}",
+        response.status()
+    );
+    assert!(
+        s3_object_exists(&s3_client, bucket, &object_key).await,
+        "late PUT should create an orphan temp object after policy deletion"
+    );
+
+    let cleanup_task = background_task::Entity::find()
+        .filter(background_task::Column::Kind.eq(BackgroundTaskKind::StoragePolicyTempCleanup))
+        .one(&state.db)
+        .await
+        .unwrap()
+        .expect("force delete should schedule delayed cleanup");
+    assert_eq!(cleanup_task.status, BackgroundTaskStatus::Pending);
+    let mut due_task: background_task::ActiveModel = cleanup_task.clone().into();
+    due_task.next_run_at = Set(chrono::Utc::now() - chrono::Duration::seconds(1));
+    due_task.update(&state.db).await.unwrap();
+
+    let stats = task_service::dispatch_due(&state).await.unwrap();
+    assert_eq!(stats.claimed, 1);
+    assert_eq!(stats.succeeded, 1);
+    assert!(
+        !s3_object_exists(&s3_client, bucket, &object_key).await,
+        "delayed cleanup should delete the late S3 temp object"
+    );
+    let stored_task = background_task_repo::find_by_id(&state.db, cleanup_task.id)
+        .await
+        .unwrap();
+    assert_eq!(stored_task.status, BackgroundTaskStatus::Succeeded);
 }
 
 /// S3 presigned multipart 上传端到端测试：覆盖 presign_parts / progress / complete 排序分支

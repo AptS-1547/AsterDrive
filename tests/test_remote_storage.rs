@@ -2686,6 +2686,188 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
 }
 
 #[actix_web::test]
+async fn test_force_delete_policy_cleans_late_remote_presigned_put_e2e() {
+    use aster_drive::db::repository::background_task_repo;
+    use aster_drive::entities::background_task;
+    use aster_drive::services::task_service;
+    use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus};
+    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "late-presigned-provider".to_string(),
+            base_url: provider_server.base_url.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "late-presigned-consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &consumer_node_model.access_key,
+    )
+    .await;
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Late Remote Presigned Cleanup",
+        "late-presigned-base",
+        StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        },
+        1024,
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let _ = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+    let folder = folder_service::create(&consumer_state, user.id, "late-remote-presigned", None)
+        .await
+        .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let body = b"late remote presigned write after force delete".to_vec();
+    let init = upload_service::init_upload(
+        &consumer_state,
+        user.id,
+        "late-remote.bin",
+        i64::try_from(body.len()).expect("body length should fit i64"),
+        Some(folder.id),
+        None,
+    )
+    .await
+    .expect("remote presigned upload should initialize");
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Presigned);
+    let upload_id = init
+        .upload_id
+        .expect("presigned mode should return upload id");
+    let presigned_url = init
+        .presigned_url
+        .clone()
+        .expect("presigned mode should return presigned_url");
+    let session = upload_session_repo::find_by_id(&consumer_state.db, &upload_id)
+        .await
+        .expect("upload session should exist");
+    let temp_key = session
+        .s3_temp_key
+        .clone()
+        .expect("remote presigned temp key should exist");
+    let provider_temp_path = managed_ingress_object_path(
+        &provider_state,
+        &consumer_node_model.access_key,
+        &provider_binding.storage_namespace,
+        "",
+        &format!("{}/{}", remote_policy.base_path.trim_matches('/'), temp_key),
+    );
+    assert!(
+        !tokio::fs::try_exists(&provider_temp_path)
+            .await
+            .expect("provider temp path existence should be readable"),
+        "temp object should not exist before the late PUT"
+    );
+
+    policy_service::delete(&consumer_state, remote_policy.id, true)
+        .await
+        .expect("force deleting remote policy with pending presigned session should succeed");
+    assert!(
+        policy_repo::find_by_id(&consumer_state.db, remote_policy.id)
+            .await
+            .is_err(),
+        "remote policy should be deleted"
+    );
+    assert!(
+        upload_session_repo::find_by_id(&consumer_state.db, &upload_id)
+            .await
+            .is_err(),
+        "force delete should remove the remote upload session before the old URL expires"
+    );
+
+    let response = put_presigned_bytes(&presigned_url, body.clone()).await;
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::OK,
+        "old remote presigned URL should still accept PUT until it expires"
+    );
+    let uploaded = tokio::fs::read(&provider_temp_path)
+        .await
+        .expect("late PUT should create an orphan provider temp object");
+    assert_eq!(uploaded, body);
+
+    let cleanup_task = background_task::Entity::find()
+        .filter(background_task::Column::Kind.eq(BackgroundTaskKind::StoragePolicyTempCleanup))
+        .one(&consumer_state.db)
+        .await
+        .expect("cleanup task query should succeed")
+        .expect("force delete should schedule delayed cleanup");
+    assert_eq!(cleanup_task.status, BackgroundTaskStatus::Pending);
+    let mut due_task: background_task::ActiveModel = cleanup_task.clone().into();
+    due_task.next_run_at = Set(Utc::now() - ChronoDuration::seconds(1));
+    due_task.update(&consumer_state.db).await.unwrap();
+
+    let stats = task_service::dispatch_due(&consumer_state)
+        .await
+        .expect("cleanup task dispatch should succeed");
+    assert_eq!(stats.claimed, 1);
+    assert_eq!(stats.succeeded, 1);
+    assert!(
+        !tokio::fs::try_exists(&provider_temp_path)
+            .await
+            .expect("provider temp path existence should be readable after cleanup"),
+        "delayed cleanup should delete the late remote temp object"
+    );
+    let stored_task = background_task_repo::find_by_id(&consumer_state.db, cleanup_task.id)
+        .await
+        .expect("cleanup task should remain queryable");
+    assert_eq!(stored_task.status, BackgroundTaskStatus::Succeeded);
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
 async fn test_remote_relay_stream_direct_upload_e2e() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
