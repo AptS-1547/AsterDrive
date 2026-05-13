@@ -3,11 +3,33 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppLayout } from "@/components/layout/AppLayout";
 
 const mockState = vi.hoisted(() => ({
+	ensureTeamsLoaded: vi.fn(),
 	shouldIgnoreKeyboardTarget: vi.fn(() => false),
+	auth: {
+		user: {
+			id: 7,
+		},
+	},
 }));
 
 vi.mock("@/hooks/useSelectionShortcuts", () => ({
 	shouldIgnoreKeyboardTarget: mockState.shouldIgnoreKeyboardTarget,
+}));
+
+vi.mock("@/stores/authStore", () => ({
+	useAuthStore: (selector: (state: typeof mockState.auth) => unknown) =>
+		selector(mockState.auth),
+}));
+
+vi.mock("@/stores/teamStore", () => ({
+	useTeamStore: (
+		selector: (state: {
+			ensureLoaded: typeof mockState.ensureTeamsLoaded;
+		}) => unknown,
+	) =>
+		selector({
+			ensureLoaded: mockState.ensureTeamsLoaded,
+		}),
 }));
 
 vi.mock("@/components/layout/TopBar", () => ({
@@ -70,8 +92,11 @@ vi.mock("@/components/layout/GlobalSearchDialog", () => ({
 
 describe("AppLayout", () => {
 	beforeEach(() => {
+		mockState.ensureTeamsLoaded.mockReset();
+		mockState.ensureTeamsLoaded.mockResolvedValue(undefined);
 		mockState.shouldIgnoreKeyboardTarget.mockReset();
 		mockState.shouldIgnoreKeyboardTarget.mockReturnValue(false);
+		mockState.auth.user = { id: 7 };
 	});
 
 	it("renders children and forwards actions and drag handlers", () => {
@@ -106,6 +131,7 @@ describe("AppLayout", () => {
 			"data-open",
 			"false",
 		);
+		expect(mockState.ensureTeamsLoaded).toHaveBeenCalledWith(7);
 	});
 
 	it("toggles and closes the mobile sidebar", () => {

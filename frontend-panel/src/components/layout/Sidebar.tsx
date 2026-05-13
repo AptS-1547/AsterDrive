@@ -33,7 +33,6 @@ import { formatBytes } from "@/lib/format";
 import { cn, sidebarNavItemClass } from "@/lib/utils";
 import {
 	isTeamWorkspace,
-	workspaceRootPath,
 	workspaceSharesPath,
 	workspaceTasksPath,
 	workspaceTrashPath,
@@ -108,8 +107,6 @@ export function Sidebar({
 	const user = useAuthStore((s) => s.user);
 	const workspace = useWorkspaceStore((s) => s.workspace);
 	const teams = useTeamStore((s) => s.teams);
-	const loadingTeams = useTeamStore((s) => s.loading);
-	const ensureTeamsLoaded = useTeamStore((s) => s.ensureLoaded);
 	const resizeStateRef = useRef<{
 		startWidth: number;
 		startX: number;
@@ -121,10 +118,6 @@ export function Sidebar({
 	const activeTeam = isTeamWorkspace(workspace)
 		? (teams.find((team) => team.id === workspace.teamId) ?? null)
 		: null;
-
-	useEffect(() => {
-		void ensureTeamsLoaded(user?.id ?? null).catch(() => undefined);
-	}, [ensureTeamsLoaded, user?.id]);
 
 	useEffect(() => {
 		if (!sidebarResizing) {
@@ -298,48 +291,6 @@ export function Sidebar({
 
 	const sidebarContent = (
 		<div className="flex flex-col h-full">
-			<div className="p-2 space-y-1">
-				<p className="px-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-					{t("workspaces")}
-				</p>
-				<Link
-					to={workspaceRootPath({ kind: "personal" })}
-					onClick={onMobileClose}
-					className={sidebarNavItemClass(
-						!isTeamWorkspace(workspace),
-						"justify-between",
-					)}
-				>
-					<span className="inline-flex items-center gap-2">
-						<Icon name="House" className="h-4 w-4 shrink-0" />
-						{t("my_drive")}
-					</span>
-				</Link>
-				{teams.map((team) => (
-					<Link
-						key={team.id}
-						to={workspaceRootPath({ kind: "team", teamId: team.id })}
-						onClick={onMobileClose}
-						className={sidebarNavItemClass(
-							isTeamWorkspace(workspace) && workspace.teamId === team.id,
-							"justify-between",
-						)}
-					>
-						<span className="inline-flex min-w-0 items-center gap-2">
-							<Icon name="Cloud" className="h-4 w-4 shrink-0" />
-							<span className="truncate">{team.name}</span>
-						</span>
-					</Link>
-				))}
-				{loadingTeams && teams.length === 0 ? (
-					<div className="px-2 py-1 text-xs text-muted-foreground">
-						{t("loading")}
-					</div>
-				) : null}
-			</div>
-
-			<Separator />
-
 			{/* Folder tree */}
 			<ScrollArea className="flex-1">
 				<FolderTree onMoveToFolder={onMoveToFolder} />

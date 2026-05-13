@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { AsterDriveWordmark } from "@/components/common/AsterDriveWordmark";
 import { HeaderControls } from "@/components/layout/HeaderControls";
 import { TopBarShell } from "@/components/layout/TopBarShell";
+import { WorkspaceSwitcher } from "@/components/layout/WorkspaceSwitcher";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 
@@ -50,10 +51,13 @@ export function TopBar({
 				close: t("close_sidebar"),
 			}}
 			left={
-				<AsterDriveWordmark
-					alt={t("app_name")}
-					className="hidden h-16 w-auto shrink-0 md:block px-6"
-				/>
+				<div className="flex min-w-0 items-center gap-2 sm:gap-3">
+					<AsterDriveWordmark
+						alt={t("app_name")}
+						className="hidden h-16 w-auto shrink-0 px-6 md:block"
+					/>
+					<WorkspaceSwitcher />
+				</div>
 			}
 			center={
 				<div className="flex w-full max-w-xl items-center">{searchButton}</div>

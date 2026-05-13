@@ -6,6 +6,8 @@ import { TopBar } from "@/components/layout/TopBar";
 import { shouldIgnoreKeyboardTarget } from "@/hooks/useSelectionShortcuts";
 import type { InternalDragData } from "@/lib/dragDrop";
 import { isImeComposingKeyEvent } from "@/lib/keyboard";
+import { useAuthStore } from "@/stores/authStore";
+import { useTeamStore } from "@/stores/teamStore";
 
 interface AppLayoutProps {
 	children: ReactNode;
@@ -24,6 +26,8 @@ export function AppLayout({
 	onTrashDrop,
 	onMoveToFolder,
 }: AppLayoutProps) {
+	const userId = useAuthStore((state) => state.user?.id ?? null);
+	const ensureTeamsLoaded = useTeamStore((state) => state.ensureLoaded);
 	const [mobileOpen, setMobileOpen] = useState(false);
 	const [searchOpen, setSearchOpen] = useState(false);
 
@@ -38,6 +42,10 @@ export function AppLayout({
 	const handleSearchOpen = useCallback(() => {
 		setSearchOpen(true);
 	}, []);
+
+	useEffect(() => {
+		void ensureTeamsLoaded(userId).catch(() => undefined);
+	}, [ensureTeamsLoaded, userId]);
 
 	useEffect(() => {
 		function handleKeyDown(event: KeyboardEvent) {

@@ -21,6 +21,10 @@ vi.mock("@/components/layout/HeaderControls", () => ({
 	),
 }));
 
+vi.mock("@/components/layout/WorkspaceSwitcher", () => ({
+	WorkspaceSwitcher: () => <div>WorkspaceSwitcher</div>,
+}));
+
 vi.mock("@/components/layout/TopBarShell", () => ({
 	TopBarShell: ({
 		left,
@@ -79,6 +83,7 @@ describe("TopBar", () => {
 		expect(
 			screen.getByText("translated:search:placeholder"),
 		).toBeInTheDocument();
+		expect(screen.getByText("WorkspaceSwitcher")).toBeInTheDocument();
 		expect(screen.getByText("HeaderControls")).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Extra" })).toBeInTheDocument();
 		expect(screen.getByTestId("topbar-shell")).toHaveAttribute(
