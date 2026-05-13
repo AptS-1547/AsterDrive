@@ -27,6 +27,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePendingId } from "@/hooks/usePendingId";
 import {
 	invalidateAdminPolicyGroupLookup,
 	loadAdminPolicyGroupLookup,
@@ -174,6 +175,8 @@ export default function AdminPolicyGroupsPage() {
 	);
 	const [formError, setFormError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
+	const { pendingId: deletingGroupId, runWithPending: runWithDeletingGroup } =
+		usePendingId<number>();
 	const totalPages = Math.max(1, Math.ceil(total / pageSize));
 	const currentPage = Math.floor(offset / pageSize) + 1;
 	const prevPageDisabled = offset === 0;
@@ -484,18 +487,20 @@ export default function AdminPolicyGroupsPage() {
 	};
 
 	const handleDelete = async (id: number) => {
-		try {
-			await adminPolicyGroupService.delete(id);
-			invalidateAdminPolicyGroupLookup();
-			if (groups.length === 1 && offset > 0) {
-				setOffset(Math.max(0, offset - pageSize));
-			} else {
-				await reload();
+		await runWithDeletingGroup(id, async () => {
+			try {
+				await adminPolicyGroupService.delete(id);
+				invalidateAdminPolicyGroupLookup();
+				if (groups.length === 1 && offset > 0) {
+					setOffset(Math.max(0, offset - pageSize));
+				} else {
+					await reload();
+				}
+				toast.success(t("policy_group_deleted"));
+			} catch (e) {
+				handleApiError(e);
 			}
-			toast.success(t("policy_group_deleted"));
-		} catch (e) {
-			handleApiError(e);
-		}
+		});
 	};
 
 	const handleMigrateUsers = async () => {
@@ -593,6 +598,7 @@ export default function AdminPolicyGroupsPage() {
 				<PolicyGroupsTable
 					groups={groups}
 					loading={loading}
+					deletingGroupId={deletingGroupId}
 					total={total}
 					currentPage={currentPage}
 					totalPages={totalPages}

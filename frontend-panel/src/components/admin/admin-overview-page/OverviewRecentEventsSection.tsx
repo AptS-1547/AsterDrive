@@ -13,12 +13,15 @@ import { UserIdentity } from "@/components/common/UserIdentity";
 import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
-import { formatAuditAction, formatAuditEntityType } from "@/lib/audit";
+import {
+	formatAuditAction,
+	formatAuditEntityType,
+	getAuditActionBadgeClass,
+} from "@/lib/audit";
 import { PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateAbsolute, formatDateAbsoluteWithOffset } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { AdminOverview } from "@/types/api";
-import { getOverviewActionBadgeClass } from "./overviewPresentation";
 
 interface OverviewRecentEventsSectionProps {
 	loading: boolean;
@@ -68,7 +71,7 @@ export function OverviewRecentEventsSection({
 								<TableCell>
 									<Badge
 										variant="outline"
-										className={getOverviewActionBadgeClass(event.action)}
+										className={getAuditActionBadgeClass(event.action)}
 									>
 										{formatAuditAction(t, event.action)}
 									</Badge>

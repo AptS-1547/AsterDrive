@@ -149,21 +149,27 @@ vi.mock("@/components/ui/badge", () => ({
 
 vi.mock("@/components/ui/button", () => ({
 	Button: ({
+		"aria-label": ariaLabel,
 		children,
 		className,
 		disabled,
 		onClick,
+		title,
 	}: {
+		"aria-label"?: string;
 		children: React.ReactNode;
 		className?: string;
 		disabled?: boolean;
 		onClick?: () => void;
+		title?: string;
 	}) => (
 		<button
 			type="button"
+			aria-label={ariaLabel}
 			className={className}
 			disabled={disabled}
 			onClick={onClick}
+			title={title}
 		>
 			{children}
 		</button>
@@ -317,7 +323,7 @@ describe("AdminLocksPage", () => {
 	it("force unlocks a lock after confirmation", async () => {
 		renderPage();
 
-		fireEvent.click(screen.getAllByRole("button", { name: "Trash" })[0]);
+		fireEvent.click(screen.getAllByRole("button", { name: "force_unlock" })[0]);
 
 		expect(
 			screen.getByText('Force unlock "/docs/report.pdf"?'),
@@ -339,11 +345,37 @@ describe("AdminLocksPage", () => {
 
 		renderPage();
 
-		fireEvent.click(screen.getAllByRole("button", { name: "Trash" })[0]);
+		fireEvent.click(screen.getAllByRole("button", { name: "force_unlock" })[0]);
 		fireEvent.click(screen.getByRole("button", { name: "core:confirm" }));
 
 		await waitFor(() => {
 			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
+		});
+	});
+
+	it("shows a releasing state while force unlock is pending", async () => {
+		let resolveUnlock: (() => void) | null = null;
+		mockState.forceUnlock.mockImplementationOnce(
+			() =>
+				new Promise<void>((resolve) => {
+					resolveUnlock = resolve;
+				}),
+		);
+
+		renderPage();
+
+		fireEvent.click(screen.getAllByRole("button", { name: "force_unlock" })[0]);
+		fireEvent.click(screen.getByRole("button", { name: "core:confirm" }));
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "lock_releasing" }),
+			).toBeDisabled();
+		});
+
+		resolveUnlock?.();
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledWith("lock_released");
 		});
 	});
 });

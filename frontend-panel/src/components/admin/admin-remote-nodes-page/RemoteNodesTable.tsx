@@ -38,6 +38,7 @@ import {
 } from "./shared";
 
 interface RemoteNodesTableProps {
+	deletingRemoteNodeId: number | null;
 	generatingEnrollmentId: number | null;
 	items: RemoteNodeInfo[];
 	loading: boolean;
@@ -50,6 +51,7 @@ interface RemoteNodesTableProps {
 }
 
 export function RemoteNodesTable({
+	deletingRemoteNodeId,
 	generatingEnrollmentId,
 	items,
 	loading,
@@ -113,22 +115,30 @@ export function RemoteNodesTable({
 				</TableHeader>
 			}
 			renderRow={(node) => {
+				const isDeleting = deletingRemoteNodeId === node.id;
 				const enrollmentCompleted = hasCompletedRemoteNodeEnrollment(node);
 				const generateEnrollmentDisabled =
-					generatingEnrollmentId === node.id || enrollmentCompleted;
+					generatingEnrollmentId === node.id ||
+					enrollmentCompleted ||
+					isDeleting;
 				const generateEnrollmentLabel = enrollmentCompleted
 					? t("remote_node_enrollment_completed_action_disabled")
 					: t("remote_node_generate_enrollment_command");
+				const deleteLabel = isDeleting
+					? t("remote_node_deleting")
+					: t("delete_remote_node");
 
 				return (
 					<TableRow
 						key={node.id}
 						className={ADMIN_INTERACTIVE_TABLE_ROW_CLASS}
-						onClick={() => onEdit(node)}
+						onClick={() => {
+							if (!isDeleting) onEdit(node);
+						}}
 						onKeyDown={(event) => {
 							if (event.key === "Enter" || event.key === " ") {
 								event.preventDefault();
-								onEdit(node);
+								if (!isDeleting) onEdit(node);
 							}
 						}}
 						tabIndex={0}
@@ -229,10 +239,14 @@ export function RemoteNodesTable({
 													size="icon"
 													className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
 													onClick={() => onRequestDelete(node.id)}
-													aria-label={t("delete_remote_node")}
-													title={t("delete_remote_node")}
+													aria-label={deleteLabel}
+													title={deleteLabel}
+													disabled={isDeleting}
 												>
-													<Icon name="Trash" className="h-3.5 w-3.5" />
+													<Icon
+														name={isDeleting ? "Spinner" : "Trash"}
+														className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+													/>
 												</Button>
 											</div>
 										</TooltipTrigger>

@@ -62,6 +62,7 @@ function getRuleRangeLabel(
 
 interface PolicyGroupsTableProps {
 	currentPage: number;
+	deletingGroupId: number | null;
 	groups: StoragePolicyGroup[];
 	loading: boolean;
 	nextPageDisabled: boolean;
@@ -86,6 +87,7 @@ interface PolicyGroupsTableProps {
 
 export function PolicyGroupsTable({
 	currentPage,
+	deletingGroupId,
 	groups,
 	loading,
 	nextPageDisabled,
@@ -159,161 +161,176 @@ export function PolicyGroupsTable({
 						</TableRow>
 					</TableHeader>
 				}
-				renderRow={(group) => (
-					<TableRow
-						key={group.id}
-						className={ADMIN_INTERACTIVE_TABLE_ROW_CLASS}
-						onClick={() => onOpenEdit(group)}
-						onKeyDown={(event) => {
-							if (event.key === "Enter" || event.key === " ") {
-								event.preventDefault();
-								onOpenEdit(group);
-							}
-						}}
-						tabIndex={0}
-					>
-						<TableCell>
-							<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
-								<span className={ADMIN_TABLE_MONO_TEXT_CLASS}>{group.id}</span>
-							</div>
-						</TableCell>
-						<TableCell>
-							<div className={ADMIN_TABLE_STACKED_CELL_CLASS}>
-								<div className="truncate font-medium text-foreground">
-									{group.name}
-								</div>
-								{group.description ? (
-									<p className="line-clamp-2 text-xs text-muted-foreground">
-										{group.description}
-									</p>
-								) : (
-									<span className="text-xs text-muted-foreground">
-										{t("policy_group_description_empty")}
+				renderRow={(group) => {
+					const isDeleting = deletingGroupId === group.id;
+					const deleteLabel = isDeleting
+						? t("policy_group_deleting")
+						: t("delete_policy_group");
+
+					return (
+						<TableRow
+							key={group.id}
+							className={ADMIN_INTERACTIVE_TABLE_ROW_CLASS}
+							onClick={() => {
+								if (!isDeleting) onOpenEdit(group);
+							}}
+							onKeyDown={(event) => {
+								if (event.key === "Enter" || event.key === " ") {
+									event.preventDefault();
+									if (!isDeleting) onOpenEdit(group);
+								}
+							}}
+							tabIndex={0}
+						>
+							<TableCell>
+								<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
+									<span className={ADMIN_TABLE_MONO_TEXT_CLASS}>
+										{group.id}
 									</span>
-								)}
-							</div>
-						</TableCell>
-						<TableCell>
-							<div className="flex min-w-0 flex-col gap-1.5 text-left">
-								{group.items.slice(0, 2).map((item) => (
-									<div
-										key={item.id}
-										className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-									>
-										<Badge variant="outline">{item.policy.name}</Badge>
-										<span>
-											{t("policy_group_priority_short", {
-												priority: item.priority,
+								</div>
+							</TableCell>
+							<TableCell>
+								<div className={ADMIN_TABLE_STACKED_CELL_CLASS}>
+									<div className="truncate font-medium text-foreground">
+										{group.name}
+									</div>
+									{group.description ? (
+										<p className="line-clamp-2 text-xs text-muted-foreground">
+											{group.description}
+										</p>
+									) : (
+										<span className="text-xs text-muted-foreground">
+											{t("policy_group_description_empty")}
+										</span>
+									)}
+								</div>
+							</TableCell>
+							<TableCell>
+								<div className="flex min-w-0 flex-col gap-1.5 text-left">
+									{group.items.slice(0, 2).map((item) => (
+										<div
+											key={item.id}
+											className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+										>
+											<Badge variant="outline">{item.policy.name}</Badge>
+											<span>
+												{t("policy_group_priority_short", {
+													priority: item.priority,
+												})}
+											</span>
+											<span>{getRuleRangeLabel(t, item)}</span>
+										</div>
+									))}
+									{group.items.length > 2 ? (
+										<span className="text-xs text-muted-foreground">
+											{t("policy_group_more_rules", {
+												count: group.items.length - 2,
 											})}
 										</span>
-										<span>{getRuleRangeLabel(t, item)}</span>
-									</div>
-								))}
-								{group.items.length > 2 ? (
-									<span className="text-xs text-muted-foreground">
-										{t("policy_group_more_rules", {
-											count: group.items.length - 2,
-										})}
-									</span>
-								) : null}
-							</div>
-						</TableCell>
-						<TableCell>
-							<div className={ADMIN_TABLE_BADGE_CELL_CLASS}>
-								{group.is_default ? (
-									<Badge className="border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-700 dark:bg-blue-900 dark:text-blue-300">
-										{t("is_default")}
-									</Badge>
-								) : null}
-								<Badge
-									variant="outline"
-									className={
-										group.is_enabled
-											? "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
-											: "border-muted-foreground/30 bg-muted text-muted-foreground"
-									}
-								>
-									{group.is_enabled
-										? t("core:active")
-										: t("core:disabled_status")}
-								</Badge>
-							</div>
-						</TableCell>
-						<TableCell>
-							<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
-								<span className="text-xs text-muted-foreground">
-									{formatDateAbsolute(group.updated_at)}
-								</span>
-							</div>
-						</TableCell>
-						<TableCell
-							onClick={(event) => event.stopPropagation()}
-							onKeyDown={(event) => event.stopPropagation()}
-						>
-							<TooltipProvider>
-								<div className="flex justify-end gap-1">
-									<Tooltip>
-										<TooltipTrigger>
-											<div>
-												<Button
-													variant="ghost"
-													size="icon"
-													className={ADMIN_ICON_BUTTON_CLASS}
-													onClick={() => onOpenMigration(group)}
-													aria-label={t("migrate_policy_group_users")}
-													title={t("migrate_policy_group_users")}
-													disabled={total <= 1}
-												>
-													<Icon
-														name="ArrowsClockwise"
-														className="h-3.5 w-3.5"
-													/>
-												</Button>
-											</div>
-										</TooltipTrigger>
-										{total <= 1 ? (
-											<TooltipContent>
-												{t("policy_group_migration_unavailable")}
-											</TooltipContent>
-										) : null}
-									</Tooltip>
-									<Button
-										variant="ghost"
-										size="icon"
-										className={ADMIN_ICON_BUTTON_CLASS}
-										onClick={() => onOpenEdit(group)}
-										aria-label={t("edit_policy_group")}
-										title={t("edit_policy_group")}
-									>
-										<Icon name="PencilSimple" className="h-3.5 w-3.5" />
-									</Button>
-									<Tooltip>
-										<TooltipTrigger>
-											<div>
-												<Button
-													variant="ghost"
-													size="icon"
-													className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-													onClick={() => onRequestDelete(group.id)}
-													aria-label={t("delete_policy_group")}
-													title={t("delete_policy_group")}
-													disabled={group.is_default}
-												>
-													<Icon name="Trash" className="h-3.5 w-3.5" />
-												</Button>
-											</div>
-										</TooltipTrigger>
-										{group.is_default ? (
-											<TooltipContent>
-												{t("policy_group_delete_default_blocked")}
-											</TooltipContent>
-										) : null}
-									</Tooltip>
+									) : null}
 								</div>
-							</TooltipProvider>
-						</TableCell>
-					</TableRow>
-				)}
+							</TableCell>
+							<TableCell>
+								<div className={ADMIN_TABLE_BADGE_CELL_CLASS}>
+									{group.is_default ? (
+										<Badge className="border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-700 dark:bg-blue-900 dark:text-blue-300">
+											{t("is_default")}
+										</Badge>
+									) : null}
+									<Badge
+										variant="outline"
+										className={
+											group.is_enabled
+												? "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+												: "border-muted-foreground/30 bg-muted text-muted-foreground"
+										}
+									>
+										{group.is_enabled
+											? t("core:active")
+											: t("core:disabled_status")}
+									</Badge>
+								</div>
+							</TableCell>
+							<TableCell>
+								<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
+									<span className="text-xs text-muted-foreground">
+										{formatDateAbsolute(group.updated_at)}
+									</span>
+								</div>
+							</TableCell>
+							<TableCell
+								onClick={(event) => event.stopPropagation()}
+								onKeyDown={(event) => event.stopPropagation()}
+							>
+								<TooltipProvider>
+									<div className="flex justify-end gap-1">
+										<Tooltip>
+											<TooltipTrigger>
+												<div>
+													<Button
+														variant="ghost"
+														size="icon"
+														className={ADMIN_ICON_BUTTON_CLASS}
+														onClick={() => onOpenMigration(group)}
+														aria-label={t("migrate_policy_group_users")}
+														title={t("migrate_policy_group_users")}
+														disabled={total <= 1 || isDeleting}
+													>
+														<Icon
+															name="ArrowsClockwise"
+															className="h-3.5 w-3.5"
+														/>
+													</Button>
+												</div>
+											</TooltipTrigger>
+											{total <= 1 ? (
+												<TooltipContent>
+													{t("policy_group_migration_unavailable")}
+												</TooltipContent>
+											) : null}
+										</Tooltip>
+										<Button
+											variant="ghost"
+											size="icon"
+											className={ADMIN_ICON_BUTTON_CLASS}
+											onClick={() => onOpenEdit(group)}
+											aria-label={t("edit_policy_group")}
+											title={t("edit_policy_group")}
+											disabled={isDeleting}
+										>
+											<Icon name="PencilSimple" className="h-3.5 w-3.5" />
+										</Button>
+										<Tooltip>
+											<TooltipTrigger>
+												<div>
+													<Button
+														variant="ghost"
+														size="icon"
+														className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+														onClick={() => onRequestDelete(group.id)}
+														aria-label={deleteLabel}
+														title={deleteLabel}
+														disabled={group.is_default || isDeleting}
+													>
+														<Icon
+															name={isDeleting ? "Spinner" : "Trash"}
+															className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+														/>
+													</Button>
+												</div>
+											</TooltipTrigger>
+											{group.is_default ? (
+												<TooltipContent>
+													{t("policy_group_delete_default_blocked")}
+												</TooltipContent>
+											) : null}
+										</Tooltip>
+									</div>
+								</TooltipProvider>
+							</TableCell>
+						</TableRow>
+					);
+				}}
 			/>
 
 			{total > 0 ? (

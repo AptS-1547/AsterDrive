@@ -13,13 +13,25 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/components/ui/button", () => ({
 	Button: ({
+		"aria-label": ariaLabel,
 		children,
+		disabled,
 		onClick,
+		title,
 	}: {
+		"aria-label"?: string;
 		children: React.ReactNode;
+		disabled?: boolean;
 		onClick?: () => void;
+		title?: string;
 	}) => (
-		<button type="button" onClick={onClick}>
+		<button
+			type="button"
+			aria-label={ariaLabel}
+			disabled={disabled}
+			onClick={onClick}
+			title={title}
+		>
 			{children}
 		</button>
 	),
@@ -66,5 +78,27 @@ describe("TrashBatchActionBar", () => {
 		expect(onRestore).toHaveBeenCalledTimes(1);
 		expect(onPurge).toHaveBeenCalledTimes(1);
 		expect(onClearSelection).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows pending labels and disables actions while busy", () => {
+		render(
+			<TrashBatchActionBar
+				count={2}
+				pendingOperation="restore"
+				onRestore={vi.fn()}
+				onPurge={vi.fn()}
+				onClearSelection={vi.fn()}
+			/>,
+		);
+
+		const restoreButton = screen
+			.getByText("files:trash_restoring")
+			.closest("button");
+		expect(restoreButton).toBeDisabled();
+		const purgeButton = screen
+			.getByText("files:trash_delete_selected")
+			.closest("button");
+		expect(purgeButton).toBeDisabled();
+		expect(screen.getByRole("button", { name: "icon:X" })).toBeDisabled();
 	});
 });

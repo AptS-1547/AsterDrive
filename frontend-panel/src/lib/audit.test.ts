@@ -1,6 +1,10 @@
 import type { TFunction } from "i18next";
 import { describe, expect, it } from "vitest";
-import { formatAuditAction, formatAuditEntityType } from "@/lib/audit";
+import {
+	formatAuditAction,
+	formatAuditEntityType,
+	getAuditActionBadgeClass,
+} from "@/lib/audit";
 
 function createT(translations: Record<string, string> = {}) {
 	return ((key: string, options?: Record<string, unknown>) => {
@@ -40,5 +44,21 @@ describe("audit i18n formatting", () => {
 		expect(formatAuditAction(t, "unknown_action")).toBe("unknown_action");
 		expect(formatAuditEntityType(t, "unknown_entity")).toBe("unknown_entity");
 		expect(formatAuditEntityType(t, null)).toBe("---");
+	});
+
+	it("maps common audit actions to the same badge palette used by admin pages", () => {
+		expect(getAuditActionBadgeClass("file_delete")).toContain("border-red-200");
+		expect(getAuditActionBadgeClass("file_upload")).toContain(
+			"border-emerald-200",
+		);
+		expect(getAuditActionBadgeClass("share_create")).toContain(
+			"border-sky-200",
+		);
+		expect(getAuditActionBadgeClass("user_login")).toContain(
+			"border-amber-200",
+		);
+		expect(getAuditActionBadgeClass("config_update")).toContain(
+			"border-border",
+		);
 	});
 });

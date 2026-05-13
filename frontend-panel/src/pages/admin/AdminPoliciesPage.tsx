@@ -27,6 +27,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePendingId } from "@/hooks/usePendingId";
 import { invalidateAdminPolicyLookup } from "@/lib/adminPolicyLookup";
 import {
 	loadAdminRemoteNodeLookup,
@@ -131,6 +132,11 @@ export default function AdminPoliciesPage() {
 	>(null);
 	const [createStep, setCreateStep] = useState(0);
 	const [createStepTouched, setCreateStepTouched] = useState(false);
+	const {
+		clearPending: clearDeletingPolicy,
+		pendingId: deletingPolicyId,
+		runWithPending: runWithDeletingPolicy,
+	} = usePendingId<number>();
 	const endpointValidationMessage = getEndpointValidationMessage(form, t);
 	const totalPages = Math.max(1, Math.ceil(total / pageSize));
 	const currentPage = Math.floor(offset / pageSize) + 1;
@@ -215,27 +221,30 @@ export default function AdminPoliciesPage() {
 
 	const handleDelete = async (id: number, options?: DeletePolicyQuery) => {
 		if (id === PROTECTED_POLICY_ID) return;
-		try {
-			if (options) {
-				await adminPolicyService.delete(id, options);
-			} else {
-				await adminPolicyService.delete(id);
+		await runWithDeletingPolicy(id, async () => {
+			try {
+				if (options) {
+					await adminPolicyService.delete(id, options);
+				} else {
+					await adminPolicyService.delete(id);
+				}
+				await finalizePolicyDelete();
+				toast.success(
+					options?.force ? t("policy_force_deleted") : t("policy_deleted"),
+				);
+			} catch (error) {
+				if (
+					!options?.force &&
+					error instanceof ApiError &&
+					error.subcode === POLICY_UPLOAD_SESSION_BLOCKER_SUBCODE
+				) {
+					clearDeletingPolicy();
+					requestForceDeleteConfirm(id);
+					return;
+				}
+				handleApiError(error);
 			}
-			await finalizePolicyDelete();
-			toast.success(
-				options?.force ? t("policy_force_deleted") : t("policy_deleted"),
-			);
-		} catch (error) {
-			if (
-				!options?.force &&
-				error instanceof ApiError &&
-				error.subcode === POLICY_UPLOAD_SESSION_BLOCKER_SUBCODE
-			) {
-				requestForceDeleteConfirm(id);
-				return;
-			}
-			handleApiError(error);
-		}
+		});
 	};
 
 	const {
@@ -572,6 +581,7 @@ export default function AdminPoliciesPage() {
 
 				<PoliciesTable
 					loading={loading}
+					deletingPolicyId={deletingPolicyId}
 					onDeletePolicy={requestDeleteConfirm}
 					onEditPolicy={openEdit}
 					policies={policies}

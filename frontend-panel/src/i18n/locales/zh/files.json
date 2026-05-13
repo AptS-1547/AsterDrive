@@ -115,6 +115,8 @@
 	"trash_restore_selected": "恢复所选",
 	"trash_delete_permanently": "永久删除",
 	"trash_delete_selected": "永久删除所选",
+	"trash_restoring": "恢复中...",
+	"trash_purging": "删除中...",
 	"trash_restore_success": "已恢复 {{count}} 项",
 	"trash_restore_partial": "已恢复 {{succeeded}} 项，{{failed}} 项未成功",
 	"trash_restore_failed": "未能恢复所选项目",

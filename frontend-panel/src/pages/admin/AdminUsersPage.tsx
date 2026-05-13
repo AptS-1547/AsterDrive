@@ -20,6 +20,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePendingId } from "@/hooks/usePendingId";
 import { loadAdminPolicyGroupLookup } from "@/lib/adminPolicyGroupLookup";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { runWhenIdle } from "@/lib/idleTask";
@@ -322,6 +323,8 @@ export default function AdminUsersPage() {
 			statusFilter,
 		],
 	);
+	const { pendingId: deletingUserId, runWithPending: runWithDeletingUser } =
+		usePendingId<number>();
 
 	const activeFilterCount =
 		(debouncedKeyword.trim().length > 0 ? 1 : 0) +
@@ -451,26 +454,28 @@ export default function AdminUsersPage() {
 	};
 
 	const deleteUser = async (id: number) => {
-		try {
-			await adminUserService.delete(id);
-			const isLastItemOnPage = users.length === 1;
-			const nextOffset =
-				isLastItemOnPage && offset > 0
-					? Math.max(0, offset - pageSize)
-					: offset;
-			if (detailDialogUserId === id) {
-				setDetailDialogUserId(null);
+		await runWithDeletingUser(id, async () => {
+			try {
+				await adminUserService.delete(id);
+				const isLastItemOnPage = users.length === 1;
+				const nextOffset =
+					isLastItemOnPage && offset > 0
+						? Math.max(0, offset - pageSize)
+						: offset;
+				if (detailDialogUserId === id) {
+					setDetailDialogUserId(null);
+				}
+				if (nextOffset !== offset) {
+					setOffset(nextOffset);
+				} else {
+					setUsers((prev) => prev.filter((u) => u.id !== id));
+					setTotal((prev) => Math.max(0, prev - 1));
+				}
+				toast.success(t("user_deleted"));
+			} catch (e) {
+				handleApiError(e);
 			}
-			if (nextOffset !== offset) {
-				setOffset(nextOffset);
-			} else {
-				setUsers((prev) => prev.filter((u) => u.id !== id));
-				setTotal((prev) => Math.max(0, prev - 1));
-			}
-			toast.success(t("user_deleted"));
-		} catch (e) {
-			handleApiError(e);
-		}
+		});
 	};
 	const {
 		confirmId: deleteUserId,
@@ -572,6 +577,7 @@ export default function AdminUsersPage() {
 				) : (
 					<UsersTable
 						users={users}
+						deletingUserId={deletingUserId}
 						onDeleteUser={requestDeleteUserConfirm}
 						onOpenUserDetail={setDetailDialogUserId}
 						sortBy={sortBy}

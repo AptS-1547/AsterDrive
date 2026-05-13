@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invalidateAdminRemoteNodeLookup } from "@/lib/adminRemoteNodeLookup";
@@ -164,6 +170,7 @@ vi.mock("@/components/ui/badge", () => ({
 
 vi.mock("@/components/ui/button", () => ({
 	Button: ({
+		"aria-label": ariaLabel,
 		children,
 		className,
 		disabled,
@@ -172,6 +179,7 @@ vi.mock("@/components/ui/button", () => ({
 		type,
 		variant,
 	}: {
+		"aria-label"?: string;
 		children: React.ReactNode;
 		className?: string;
 		disabled?: boolean;
@@ -182,6 +190,7 @@ vi.mock("@/components/ui/button", () => ({
 	}) => (
 		<button
 			type={type ?? "button"}
+			aria-label={ariaLabel}
 			className={className}
 			data-variant={variant}
 			disabled={disabled}
@@ -642,7 +651,7 @@ describe("AdminPoliciesPage", () => {
 		fireEvent.click(screen.getByText("S3"));
 		expect(screen.getByDisplayValue("Archive S3")).toBeInTheDocument();
 
-		fireEvent.click(screen.getByRole("button", { name: "Trash" }));
+		fireEvent.click(screen.getByRole("button", { name: "delete_policy" }));
 		expect(screen.getByText('delete_policy "Archive S3"?')).toBeInTheDocument();
 	});
 
@@ -656,7 +665,7 @@ describe("AdminPoliciesPage", () => {
 
 		render(<AdminPoliciesPage />);
 
-		const deleteButton = screen.getByRole("button", { name: "Trash" });
+		const deleteButton = screen.getByRole("button", { name: "delete_policy" });
 		expect(deleteButton).toBeDisabled();
 		expect(deleteButton).toHaveAttribute(
 			"title",
@@ -1544,12 +1553,17 @@ describe("AdminPoliciesPage", () => {
 
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: "Trash" }));
+		fireEvent.click(screen.getByRole("button", { name: "delete_policy" }));
 
 		expect(screen.getByText('delete_policy "Remove Me"?')).toBeInTheDocument();
 		expect(screen.getByText("delete_policy_desc")).toBeInTheDocument();
 
-		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
+		fireEvent.click(
+			within(
+				screen.getByText('delete_policy "Remove Me"?')
+					.parentElement as HTMLElement,
+			).getByRole("button", { name: "core:delete" }),
+		);
 
 		await waitFor(() => {
 			expect(mockState.deletePolicy).toHaveBeenCalledWith(8);
@@ -1579,8 +1593,13 @@ describe("AdminPoliciesPage", () => {
 
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: "Trash" }));
-		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
+		fireEvent.click(screen.getByRole("button", { name: "delete_policy" }));
+		fireEvent.click(
+			within(
+				screen.getByText('delete_policy "Remove Me"?')
+					.parentElement as HTMLElement,
+			).getByRole("button", { name: "core:delete" }),
+		);
 
 		expect(
 			await screen.findByText('force_delete_policy "Remove Me"?'),
@@ -1602,5 +1621,42 @@ describe("AdminPoliciesPage", () => {
 			expect(screen.queryByText("Remove Me")).not.toBeInTheDocument();
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_force_deleted");
+	});
+
+	it("shows a deleting state while policy deletion is pending", async () => {
+		let resolveDelete: (() => void) | null = null;
+		mockState.items = [
+			createPolicy({
+				id: 8,
+				name: "Remove Me",
+			}),
+		];
+		mockState.deletePolicy.mockImplementationOnce(
+			() =>
+				new Promise<void>((resolve) => {
+					resolveDelete = resolve;
+				}),
+		);
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "delete_policy" }));
+		fireEvent.click(
+			within(
+				screen.getByText('delete_policy "Remove Me"?')
+					.parentElement as HTMLElement,
+			).getByRole("button", { name: "core:delete" }),
+		);
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "policy_deleting" }),
+			).toBeDisabled();
+		});
+
+		resolveDelete?.();
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_deleted");
+		});
 	});
 });

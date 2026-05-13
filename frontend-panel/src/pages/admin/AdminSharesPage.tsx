@@ -23,6 +23,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePendingId } from "@/hooks/usePendingId";
 import {
 	ADMIN_ICON_BUTTON_CLASS,
 	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
@@ -109,6 +110,8 @@ export default function AdminSharesPage() {
 		label: t("page_size_option", { count: size }),
 		value: String(size),
 	}));
+	const { pendingId: deletingShareId, runWithPending: runWithDeletingShare } =
+		usePendingId<number>();
 
 	useEffect(() => {
 		setSearchParams(
@@ -143,23 +146,25 @@ export default function AdminSharesPage() {
 	};
 
 	const handleDelete = async (id: number) => {
-		try {
-			await adminShareService.delete(id);
-			const isLastItemOnPage = shares.length === 1;
-			const nextOffset =
-				isLastItemOnPage && offset > 0
-					? Math.max(0, offset - pageSize)
-					: offset;
-			if (nextOffset !== offset) {
-				setOffset(nextOffset);
-			} else {
-				setShares((prev) => prev.filter((s) => s.id !== id));
-				setTotal((prev) => Math.max(0, prev - 1));
+		await runWithDeletingShare(id, async () => {
+			try {
+				await adminShareService.delete(id);
+				const isLastItemOnPage = shares.length === 1;
+				const nextOffset =
+					isLastItemOnPage && offset > 0
+						? Math.max(0, offset - pageSize)
+						: offset;
+				if (nextOffset !== offset) {
+					setOffset(nextOffset);
+				} else {
+					setShares((prev) => prev.filter((s) => s.id !== id));
+					setTotal((prev) => Math.max(0, prev - 1));
+				}
+				toast.success(t("share_deleted"));
+			} catch (e) {
+				handleApiError(e);
 			}
-			toast.success(t("share_deleted"));
-		} catch (e) {
-			handleApiError(e);
-		}
+		});
 	};
 
 	const {
@@ -250,71 +255,86 @@ export default function AdminSharesPage() {
 							</TableRow>
 						</TableHeader>
 					}
-					renderRow={(s) => (
-						<TableRow key={s.id}>
-							<TableCell className="font-mono text-xs">{s.id}</TableCell>
-							<TableCell>
-								<a
-									href={`/s/${s.token}`}
-									target="_blank"
-									rel="noreferrer"
-									className="font-mono text-xs text-primary hover:underline inline-flex items-center gap-1"
-								>
-									{s.token}
-									<Icon name="ArrowSquareOut" className="h-3 w-3" />
-								</a>
-							</TableCell>
-							<TableCell>
-								<UserIdentity user={s.user} />
-							</TableCell>
-							<TableCell>
-								<Badge variant="outline">
-									{s.target.type === "file" ? t("core:file") : t("core:folder")}
-								</Badge>
-							</TableCell>
-							<TableCell>
-								{isExpired(s) ? (
-									<Badge
-										variant="outline"
-										className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400"
+					renderRow={(s) => {
+						const isDeleting = deletingShareId === s.id;
+						const deleteLabel = isDeleting
+							? t("share_deleting")
+							: t("core:delete");
+
+						return (
+							<TableRow key={s.id}>
+								<TableCell className="font-mono text-xs">{s.id}</TableCell>
+								<TableCell>
+									<a
+										href={`/s/${s.token}`}
+										target="_blank"
+										rel="noreferrer"
+										className="font-mono text-xs text-primary hover:underline inline-flex items-center gap-1"
 									>
-										{t("core:expired")}
+										{s.token}
+										<Icon name="ArrowSquareOut" className="h-3 w-3" />
+									</a>
+								</TableCell>
+								<TableCell>
+									<UserIdentity user={s.user} />
+								</TableCell>
+								<TableCell>
+									<Badge variant="outline">
+										{s.target.type === "file"
+											? t("core:file")
+											: t("core:folder")}
 									</Badge>
-								) : isLimitReached(s) ? (
-									<Badge
-										variant="outline"
-										className="text-orange-600 dark:text-orange-400 border-orange-600 dark:border-orange-400"
+								</TableCell>
+								<TableCell>
+									{isExpired(s) ? (
+										<Badge
+											variant="outline"
+											className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400"
+										>
+											{t("core:expired")}
+										</Badge>
+									) : isLimitReached(s) ? (
+										<Badge
+											variant="outline"
+											className="text-orange-600 dark:text-orange-400 border-orange-600 dark:border-orange-400"
+										>
+											{t("limit_reached")}
+										</Badge>
+									) : (
+										<Badge
+											variant="outline"
+											className="text-green-600 dark:text-green-400 border-green-600 dark:border-green-400"
+										>
+											{t("core:active")}
+										</Badge>
+									)}
+								</TableCell>
+								<TableCell className="text-xs">
+									{s.download_count}
+									{s.max_downloads > 0 ? ` / ${s.max_downloads}` : ""}
+								</TableCell>
+								<TableCell className="text-muted-foreground text-xs">
+									{formatDateShort(s.created_at)}
+								</TableCell>
+								<TableCell>
+									<Button
+										variant="ghost"
+										size="icon"
+										className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+										onClick={() => requestConfirm(s.id)}
+										aria-label={deleteLabel}
+										title={deleteLabel}
+										disabled={isDeleting}
 									>
-										{t("limit_reached")}
-									</Badge>
-								) : (
-									<Badge
-										variant="outline"
-										className="text-green-600 dark:text-green-400 border-green-600 dark:border-green-400"
-									>
-										{t("core:active")}
-									</Badge>
-								)}
-							</TableCell>
-							<TableCell className="text-xs">
-								{s.download_count}
-								{s.max_downloads > 0 ? ` / ${s.max_downloads}` : ""}
-							</TableCell>
-							<TableCell className="text-muted-foreground text-xs">
-								{formatDateShort(s.created_at)}
-							</TableCell>
-							<TableCell>
-								<Button
-									variant="ghost"
-									size="icon"
-									className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-									onClick={() => requestConfirm(s.id)}
-								>
-									<Icon name="Trash" className="h-3.5 w-3.5" />
-								</Button>
-							</TableCell>
-						</TableRow>
-					)}
+										<Icon
+											name={isDeleting ? "Spinner" : "Trash"}
+											className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+										/>
+									</Button>
+								</TableCell>
+							</TableRow>
+						);
+					}}
 				/>
 
 				<AdminOffsetPagination

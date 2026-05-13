@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { useState } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -179,15 +185,28 @@ vi.mock("@/components/ui/badge", () => ({
 
 vi.mock("@/components/ui/button", () => ({
 	Button: ({
+		"aria-label": ariaLabel,
 		children,
 		className,
+		disabled,
 		onClick,
+		title,
 	}: {
+		"aria-label"?: string;
 		children: React.ReactNode;
 		className?: string;
+		disabled?: boolean;
 		onClick?: () => void;
+		title?: string;
 	}) => (
-		<button type="button" className={className} onClick={onClick}>
+		<button
+			type="button"
+			aria-label={ariaLabel}
+			className={className}
+			disabled={disabled}
+			onClick={onClick}
+			title={title}
+		>
 			{children}
 		</button>
 	),
@@ -398,14 +417,19 @@ describe("AdminSharesPage", () => {
 			});
 		});
 
-		fireEvent.click(screen.getAllByRole("button", { name: "Trash" })[0]);
+		fireEvent.click(screen.getAllByRole("button", { name: "core:delete" })[0]);
 
 		expect(
 			screen.getByText('core:delete "page-two-share"?'),
 		).toBeInTheDocument();
 		expect(screen.getByText("delete_share_desc")).toBeInTheDocument();
 
-		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
+		fireEvent.click(
+			within(
+				screen.getByText('core:delete "page-two-share"?')
+					.parentElement as HTMLElement,
+			).getByRole("button", { name: "core:delete" }),
+		);
 
 		await waitFor(() => {
 			expect(mockState.deleteShare).toHaveBeenCalledWith(21);
@@ -437,11 +461,52 @@ describe("AdminSharesPage", () => {
 
 		await screen.findByText("share-token");
 
-		fireEvent.click(screen.getAllByRole("button", { name: "Trash" })[0]);
-		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
+		fireEvent.click(screen.getAllByRole("button", { name: "core:delete" })[0]);
+		fireEvent.click(
+			within(
+				screen.getByText('core:delete "share-token"?')
+					.parentElement as HTMLElement,
+			).getByRole("button", { name: "core:delete" }),
+		);
 
 		await waitFor(() => {
 			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
+		});
+	});
+
+	it("shows a deleting state while share deletion is pending", async () => {
+		let resolveDelete: (() => void) | null = null;
+		mockState.list.mockResolvedValueOnce({
+			items: [createShare()],
+			total: 1,
+		});
+		mockState.deleteShare.mockImplementationOnce(
+			() =>
+				new Promise<void>((resolve) => {
+					resolveDelete = resolve;
+				}),
+		);
+
+		renderPage();
+
+		await screen.findByText("share-token");
+		fireEvent.click(screen.getAllByRole("button", { name: "core:delete" })[0]);
+		fireEvent.click(
+			within(
+				screen.getByText('core:delete "share-token"?')
+					.parentElement as HTMLElement,
+			).getByRole("button", { name: "core:delete" }),
+		);
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "share_deleting" }),
+			).toBeDisabled();
+		});
+
+		resolveDelete?.();
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledWith("share_deleted");
 		});
 	});
 

@@ -37,6 +37,7 @@ import type { AdminUserSortBy } from "@/types/adminSort";
 import type { UserInfo } from "@/types/api";
 
 interface UsersTableProps {
+	deletingUserId: number | null;
 	users: UserInfo[];
 	sortBy: AdminUserSortBy;
 	sortOrder: SortOrder;
@@ -65,6 +66,7 @@ function QuotaCell({ user }: { user: UserInfo }) {
 }
 
 export function UsersTable({
+	deletingUserId,
 	onDeleteUser,
 	onOpenUserDetail,
 	onSortChange,
@@ -135,111 +137,123 @@ export function UsersTable({
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{users.map((user) => (
-						<TableRow
-							key={user.id}
-							className={ADMIN_INTERACTIVE_TABLE_ROW_CLASS}
-							onClick={() => onOpenUserDetail(user.id)}
-							onKeyDown={(event) => {
-								if (event.key === "Enter" || event.key === " ") {
-									event.preventDefault();
-									onOpenUserDetail(user.id);
-								}
-							}}
-							tabIndex={0}
-						>
-							<TableCell>
-								<span className={ADMIN_TABLE_MONO_TEXT_CLASS}>{user.id}</span>
-							</TableCell>
-							<TableCell>
-								<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
-									<UserAvatarImage
-										avatar={user.profile.avatar}
-										name={getUserDisplayName(user)}
-										alt=""
-										size="sm"
-										className="mr-3 h-7 w-7 rounded-lg text-[11px]"
-									/>
-									<div className={ADMIN_TABLE_STACKED_CELL_CLASS}>
-										<div className="truncate font-medium text-foreground">
-											{getUserDisplayName(user)}
-										</div>
-										{getNormalizedDisplayName(user.profile.display_name) &&
-										getUserDisplayName(user) !== user.username ? (
-											<div className="truncate text-xs text-muted-foreground">
-												@{user.username}
-											</div>
-										) : null}
-									</div>
-								</div>
-							</TableCell>
-							<TableCell>
-								<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
-									<div className="truncate text-sm text-muted-foreground">
-										{user.email}
-									</div>
-								</div>
-							</TableCell>
-							<TableCell>
-								<div className={ADMIN_TABLE_BADGE_CELL_CLASS}>
-									<Badge
-										variant="outline"
-										className={getRoleBadgeClass(user.role)}
-									>
-										{user.role === "admin" ? "Admin" : "User"}
-									</Badge>
-								</div>
-							</TableCell>
-							<TableCell>
-								<div className={ADMIN_TABLE_BADGE_CELL_CLASS}>
-									<Badge
-										variant="outline"
-										className={getStatusBadgeClass(user.status)}
-									>
-										{user.status === "active"
-											? t("core:active")
-											: t("core:disabled_status")}
-									</Badge>
-								</div>
-							</TableCell>
-							<TableCell>
-								<div className="w-full text-left">
-									<QuotaCell user={user} />
-								</div>
-							</TableCell>
-							<TableCell
-								onClick={(event) => event.stopPropagation()}
-								onKeyDown={(event) => event.stopPropagation()}
+					{users.map((user) => {
+						const isDeleting = deletingUserId === user.id;
+						const deleteLabel = isDeleting
+							? t("user_deleting")
+							: t("delete_user");
+
+						return (
+							<TableRow
+								key={user.id}
+								className={ADMIN_INTERACTIVE_TABLE_ROW_CLASS}
+								onClick={() => {
+									if (!isDeleting) onOpenUserDetail(user.id);
+								}}
+								onKeyDown={(event) => {
+									if (event.key === "Enter" || event.key === " ") {
+										event.preventDefault();
+										if (!isDeleting) onOpenUserDetail(user.id);
+									}
+								}}
+								tabIndex={0}
 							>
-								<div className="flex justify-end">
-									<TooltipProvider>
-										<Tooltip>
-											<TooltipTrigger>
-												<div>
-													<Button
-														variant="ghost"
-														size="icon"
-														className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-														onClick={() => onDeleteUser(user.id)}
-														aria-label={t("delete_user")}
-														title={t("delete_user")}
-														disabled={user.id === 1}
-													>
-														<Icon name="Trash" className="h-3.5 w-3.5" />
-													</Button>
+								<TableCell>
+									<span className={ADMIN_TABLE_MONO_TEXT_CLASS}>{user.id}</span>
+								</TableCell>
+								<TableCell>
+									<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
+										<UserAvatarImage
+											avatar={user.profile.avatar}
+											name={getUserDisplayName(user)}
+											alt=""
+											size="sm"
+											className="mr-3 h-7 w-7 rounded-lg text-[11px]"
+										/>
+										<div className={ADMIN_TABLE_STACKED_CELL_CLASS}>
+											<div className="truncate font-medium text-foreground">
+												{getUserDisplayName(user)}
+											</div>
+											{getNormalizedDisplayName(user.profile.display_name) &&
+											getUserDisplayName(user) !== user.username ? (
+												<div className="truncate text-xs text-muted-foreground">
+													@{user.username}
 												</div>
-											</TooltipTrigger>
-											{user.id === 1 ? (
-												<TooltipContent>
-													{t("initial_admin_delete_blocked")}
-												</TooltipContent>
 											) : null}
-										</Tooltip>
-									</TooltipProvider>
-								</div>
-							</TableCell>
-						</TableRow>
-					))}
+										</div>
+									</div>
+								</TableCell>
+								<TableCell>
+									<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
+										<div className="truncate text-sm text-muted-foreground">
+											{user.email}
+										</div>
+									</div>
+								</TableCell>
+								<TableCell>
+									<div className={ADMIN_TABLE_BADGE_CELL_CLASS}>
+										<Badge
+											variant="outline"
+											className={getRoleBadgeClass(user.role)}
+										>
+											{user.role === "admin" ? "Admin" : "User"}
+										</Badge>
+									</div>
+								</TableCell>
+								<TableCell>
+									<div className={ADMIN_TABLE_BADGE_CELL_CLASS}>
+										<Badge
+											variant="outline"
+											className={getStatusBadgeClass(user.status)}
+										>
+											{user.status === "active"
+												? t("core:active")
+												: t("core:disabled_status")}
+										</Badge>
+									</div>
+								</TableCell>
+								<TableCell>
+									<div className="w-full text-left">
+										<QuotaCell user={user} />
+									</div>
+								</TableCell>
+								<TableCell
+									onClick={(event) => event.stopPropagation()}
+									onKeyDown={(event) => event.stopPropagation()}
+								>
+									<div className="flex justify-end">
+										<TooltipProvider>
+											<Tooltip>
+												<TooltipTrigger>
+													<div>
+														<Button
+															variant="ghost"
+															size="icon"
+															className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+															onClick={() => onDeleteUser(user.id)}
+															aria-label={deleteLabel}
+															title={deleteLabel}
+															disabled={user.id === 1 || isDeleting}
+														>
+															<Icon
+																name={isDeleting ? "Spinner" : "Trash"}
+																className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+															/>
+														</Button>
+													</div>
+												</TooltipTrigger>
+												{user.id === 1 ? (
+													<TooltipContent>
+														{t("initial_admin_delete_blocked")}
+													</TooltipContent>
+												) : null}
+											</Tooltip>
+										</TooltipProvider>
+									</div>
+								</TableCell>
+							</TableRow>
+						);
+					})}
 				</TableBody>
 			</Table>
 		</AdminTableShell>

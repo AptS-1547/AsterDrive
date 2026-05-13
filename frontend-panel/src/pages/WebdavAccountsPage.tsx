@@ -34,6 +34,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePendingId } from "@/hooks/usePendingId";
 import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { writeTextToClipboard } from "@/lib/clipboard";
 import { FOLDER_LIMIT, PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
@@ -102,6 +103,14 @@ export default function WebdavAccountsPage() {
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
 	const [credentialsDialogOpen, setCredentialsDialogOpen] = useState(false);
 	const [webdavPrefix, setWebdavPrefix] = useState("/webdav");
+	const {
+		pendingId: deletingAccountId,
+		runWithPending: runWithDeletingAccount,
+	} = usePendingId<number>();
+	const {
+		pendingId: togglingAccountId,
+		runWithPending: runWithTogglingAccount,
+	} = usePendingId<number>();
 	const {
 		retainedValue: recentCredentials,
 		handleOpenChangeComplete: handleCredentialsDialogOpenChangeComplete,
@@ -202,24 +211,28 @@ export default function WebdavAccountsPage() {
 	};
 
 	const handleDelete = async (id: number) => {
-		try {
-			await webdavAccountService.delete(id);
-			toast.success(t("admin:webdav_account_deleted"));
-			void reload();
-		} catch (err) {
-			handleApiError(err);
-		}
+		await runWithDeletingAccount(id, async () => {
+			try {
+				await webdavAccountService.delete(id);
+				toast.success(t("admin:webdav_account_deleted"));
+				void reload();
+			} catch (err) {
+				handleApiError(err);
+			}
+		});
 	};
 
 	const { requestConfirm, dialogProps } = useConfirmDialog(handleDelete);
 
 	const handleToggle = async (id: number) => {
-		try {
-			await webdavAccountService.toggle(id);
-			void reload();
-		} catch (err) {
-			handleApiError(err);
-		}
+		await runWithTogglingAccount(id, async () => {
+			try {
+				await webdavAccountService.toggle(id);
+				void reload();
+			} catch (err) {
+				handleApiError(err);
+			}
+		});
 	};
 
 	const handleTest = async () => {
@@ -460,65 +473,86 @@ export default function WebdavAccountsPage() {
 								</TableRow>
 							</TableHeader>
 						}
-						renderRow={(account) => (
-							<TableRow key={account.id}>
-								<TableCell>
-									<div className="min-w-[140px]">
-										<span className="truncate font-mono text-sm font-medium text-foreground">
-											{account.username}
-										</span>
-									</div>
-								</TableCell>
-								<TableCell>
-									<div className="flex min-w-[180px] items-center gap-2 text-sm text-foreground">
-										<Icon
-											name={account.root_folder_path ? "FolderOpen" : "Globe"}
-											className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-										/>
-										<span className="truncate">
-											{account.root_folder_path ?? t("all_files")}
-										</span>
-									</div>
-								</TableCell>
-								<TableCell>
-									<Badge
-										variant={account.is_active ? "secondary" : "outline"}
-										className={
-											account.is_active
-												? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-												: undefined
-										}
-									>
-										{account.is_active ? t("active") : t("disabled_status")}
-									</Badge>
-								</TableCell>
-								<TableCell className="text-sm text-muted-foreground">
-									{formatDateShort(account.created_at)}
-								</TableCell>
-								<TableCell>
-									<div className="flex justify-end gap-2">
-										<Button
-											variant="outline"
-											size="icon-sm"
-											onClick={() => void handleToggle(account.id)}
-											title={
-												account.is_active ? t("disabled_status") : t("active")
+						renderRow={(account) => {
+							const isDeleting = deletingAccountId === account.id;
+							const isToggling = togglingAccountId === account.id;
+							const deleteLabel = isDeleting
+								? t("admin:webdav_account_deleting")
+								: t("delete");
+							const toggleLabel = isToggling
+								? t("admin:webdav_account_updating")
+								: account.is_active
+									? t("disabled_status")
+									: t("active");
+
+							return (
+								<TableRow key={account.id}>
+									<TableCell>
+										<div className="min-w-[140px]">
+											<span className="truncate font-mono text-sm font-medium text-foreground">
+												{account.username}
+											</span>
+										</div>
+									</TableCell>
+									<TableCell>
+										<div className="flex min-w-[180px] items-center gap-2 text-sm text-foreground">
+											<Icon
+												name={account.root_folder_path ? "FolderOpen" : "Globe"}
+												className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+											/>
+											<span className="truncate">
+												{account.root_folder_path ?? t("all_files")}
+											</span>
+										</div>
+									</TableCell>
+									<TableCell>
+										<Badge
+											variant={account.is_active ? "secondary" : "outline"}
+											className={
+												account.is_active
+													? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+													: undefined
 											}
 										>
-											<Icon name="Power" className="h-3.5 w-3.5" />
-										</Button>
-										<Button
-											variant="destructive"
-											size="icon-sm"
-											onClick={() => requestConfirm(account.id)}
-											title={t("delete")}
-										>
-											<Icon name="Trash" className="h-3.5 w-3.5" />
-										</Button>
-									</div>
-								</TableCell>
-							</TableRow>
-						)}
+											{account.is_active ? t("active") : t("disabled_status")}
+										</Badge>
+									</TableCell>
+									<TableCell className="text-sm text-muted-foreground">
+										{formatDateShort(account.created_at)}
+									</TableCell>
+									<TableCell>
+										<div className="flex justify-end gap-2">
+											<Button
+												variant="outline"
+												size="icon-sm"
+												onClick={() => void handleToggle(account.id)}
+												title={toggleLabel}
+												aria-label={toggleLabel}
+												disabled={isToggling || isDeleting}
+											>
+												<Icon
+													name={isToggling ? "Spinner" : "Power"}
+													className={`h-3.5 w-3.5 ${isToggling ? "animate-spin" : ""}`}
+												/>
+											</Button>
+											<Button
+												variant="destructive"
+												size="icon-sm"
+												onClick={() => requestConfirm(account.id)}
+												title={deleteLabel}
+												aria-label={deleteLabel}
+												disabled={isDeleting || isToggling}
+											>
+												<Icon
+													name={isDeleting ? "Spinner" : "Trash"}
+													className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+												/>
+											</Button>
+										</div>
+									</TableCell>
+								</TableRow>
+							);
+						}}
 					/>
 				</div>
 			</div>

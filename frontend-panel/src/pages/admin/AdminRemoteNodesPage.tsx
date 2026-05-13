@@ -25,6 +25,7 @@ import { getApiErrorMessage, handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePendingId } from "@/hooks/usePendingId";
 import { invalidateAdminRemoteNodeLookup } from "@/lib/adminRemoteNodeLookup";
 import { writeTextToClipboard } from "@/lib/clipboard";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
@@ -134,6 +135,10 @@ export default function AdminRemoteNodesPage() {
 		useState(false);
 	const [managedIngressProfilesError, setManagedIngressProfilesError] =
 		useState<string | null>(null);
+	const {
+		pendingId: deletingRemoteNodeId,
+		runWithPending: runWithDeletingRemoteNode,
+	} = usePendingId<number>();
 	const managedIngressRequestIdRef = useRef(0);
 	const totalPages = Math.max(1, Math.ceil(total / pageSize));
 	const currentPage = Math.floor(offset / pageSize) + 1;
@@ -428,18 +433,20 @@ export default function AdminRemoteNodesPage() {
 	};
 
 	const handleDelete = async (id: number) => {
-		try {
-			await adminRemoteNodeService.delete(id);
-			invalidateAdminRemoteNodeLookup();
-			if (remoteNodes.length === 1 && offset > 0) {
-				setOffset(Math.max(0, offset - pageSize));
-			} else {
-				await reload();
+		await runWithDeletingRemoteNode(id, async () => {
+			try {
+				await adminRemoteNodeService.delete(id);
+				invalidateAdminRemoteNodeLookup();
+				if (remoteNodes.length === 1 && offset > 0) {
+					setOffset(Math.max(0, offset - pageSize));
+				} else {
+					await reload();
+				}
+				toast.success(t("remote_node_deleted"));
+			} catch (error) {
+				handleApiError(error);
 			}
-			toast.success(t("remote_node_deleted"));
-		} catch (error) {
-			handleApiError(error);
-		}
+		});
 	};
 
 	const {
@@ -618,6 +625,7 @@ export default function AdminRemoteNodesPage() {
 				<RemoteNodesTable
 					loading={loading}
 					items={remoteNodes}
+					deletingRemoteNodeId={deletingRemoteNodeId}
 					generatingEnrollmentId={generatingEnrollmentId}
 					onEdit={openEdit}
 					onGenerateEnrollmentCommand={(node) =>

@@ -28,6 +28,12 @@ import type { TrashItem } from "@/types/api-helpers";
 
 type ViewMode = "grid" | "list";
 type TrashOperation = "restore" | "purge";
+type TrashPendingOperation = TrashOperation | "purge-all";
+
+interface PendingTrashState {
+	keys: Set<string>;
+	operation: TrashPendingOperation;
+}
 
 function getStoredViewMode(): ViewMode {
 	if (typeof window === "undefined") return "list";
@@ -75,6 +81,10 @@ export default function TrashPage() {
 	const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode);
 	const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 	const [loadingMore, setLoadingMore] = useState(false);
+	const [pendingState, setPendingState] = useState<PendingTrashState | null>(
+		null,
+	);
+	const pendingRef = useRef(false);
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
 
 	const items = toTrashItems(contents);
@@ -88,6 +98,9 @@ export default function TrashPage() {
 	const selectionCount = selectedItems.length;
 	const allSelected = items.length > 0 && selectionCount === items.length;
 	const isEmpty = !loading && totalItems === 0;
+	const pendingKeys = pendingState?.keys ?? new Set<string>();
+	const pendingOperation = pendingState?.operation ?? null;
+	const isBusy = pendingState !== null;
 
 	const TRASH_PAGE_SIZE = 100;
 
@@ -164,6 +177,8 @@ export default function TrashPage() {
 	};
 
 	const toggleSelect = (item: TrashItem) => {
+		if (pendingRef.current) return;
+
 		const key = getItemKey(item);
 		setSelectedKeys((prev) => {
 			const next = new Set(prev);
@@ -174,10 +189,14 @@ export default function TrashPage() {
 	};
 
 	const clearSelection = useCallback(() => {
+		if (pendingRef.current) return;
+
 		setSelectedKeys(new Set());
 	}, []);
 
 	const selectAllItems = useCallback(() => {
+		if (pendingRef.current) return;
+
 		setSelectedKeys(new Set(items.map(getItemKey)));
 	}, [items]);
 
@@ -191,45 +210,55 @@ export default function TrashPage() {
 
 	const runOperation = useCallback(
 		async (targets: TrashItem[], operation: TrashOperation) => {
-			if (targets.length === 0) return;
+			if (targets.length === 0 || pendingRef.current) return;
 
-			const results = await Promise.allSettled(
-				targets.map(async (item) => {
-					if (operation === "restore") {
-						if (item.entity_type === "file") {
-							await trashService.restoreFile(item.id);
-						} else {
-							await trashService.restoreFolder(item.id);
-						}
-						return;
-					}
-
-					if (item.entity_type === "file") {
-						await trashService.purgeFile(item.id);
-					} else {
-						await trashService.purgeFolder(item.id);
-					}
-				}),
-			);
-
-			const succeeded = results.filter(
-				(result) => result.status === "fulfilled",
-			).length;
-			const failed = results.length - succeeded;
-
-			const toastContent = formatBatchToast(t, operation, {
-				succeeded,
-				failed,
-				errors: [],
+			pendingRef.current = true;
+			setPendingState({
+				keys: new Set(targets.map(getItemKey)),
+				operation,
 			});
-			if (toastContent.variant === "success") {
-				toast.success(toastContent.title);
-			} else {
-				toast.error(toastContent.title);
-			}
+			try {
+				const results = await Promise.allSettled(
+					targets.map(async (item) => {
+						if (operation === "restore") {
+							if (item.entity_type === "file") {
+								await trashService.restoreFile(item.id);
+							} else {
+								await trashService.restoreFolder(item.id);
+							}
+							return;
+						}
 
-			if (succeeded > 0) {
-				await Promise.all([load(), refreshUser()]);
+						if (item.entity_type === "file") {
+							await trashService.purgeFile(item.id);
+						} else {
+							await trashService.purgeFolder(item.id);
+						}
+					}),
+				);
+
+				const succeeded = results.filter(
+					(result) => result.status === "fulfilled",
+				).length;
+				const failed = results.length - succeeded;
+
+				const toastContent = formatBatchToast(t, operation, {
+					succeeded,
+					failed,
+					errors: [],
+				});
+				if (toastContent.variant === "success") {
+					toast.success(toastContent.title);
+				} else {
+					toast.error(toastContent.title);
+				}
+
+				if (succeeded > 0) {
+					await Promise.all([load(), refreshUser()]);
+				}
+			} finally {
+				pendingRef.current = false;
+				setPendingState(null);
 			}
 		},
 		[load, refreshUser, t],
@@ -258,12 +287,22 @@ export default function TrashPage() {
 	);
 
 	const handlePurgeAll = async () => {
+		if (pendingRef.current) return;
+
+		pendingRef.current = true;
+		setPendingState({
+			keys: new Set(items.map(getItemKey)),
+			operation: "purge-all",
+		});
 		try {
 			await trashService.purgeAll();
 			toast.success(t("trash_emptied"));
 			await Promise.all([load(), refreshUser()]);
 		} catch (err) {
 			handleApiError(err);
+		} finally {
+			pendingRef.current = false;
+			setPendingState(null);
 		}
 	};
 	const {
@@ -279,7 +318,7 @@ export default function TrashPage() {
 	useSelectionShortcuts({
 		selectAll: selectAllItems,
 		clearSelection,
-		enabled: purgeTargets === null && !purgeAllDialogProps.open,
+		enabled: purgeTargets === null && !purgeAllDialogProps.open && !isBusy,
 	});
 
 	return (
@@ -305,10 +344,16 @@ export default function TrashPage() {
 								variant="destructive"
 								size="sm"
 								className="self-start"
+								disabled={isBusy}
 								onClick={() => requestPurgeAllConfirm(true)}
 							>
-								<Icon name="Trash" className="mr-1 h-4 w-4" />
-								{t("admin:empty_trash")}
+								<Icon
+									name={pendingOperation === "purge-all" ? "Spinner" : "Trash"}
+									className={`mr-1 h-4 w-4 ${pendingOperation === "purge-all" ? "animate-spin" : ""}`}
+								/>
+								{pendingOperation === "purge-all"
+									? t("files:trash_purging")
+									: t("admin:empty_trash")}
 							</Button>
 						) : null}
 					</div>
@@ -353,6 +398,9 @@ export default function TrashPage() {
 							{viewMode === "grid" ? (
 								<TrashGrid
 									items={items}
+									actionsDisabled={isBusy}
+									pendingKeys={pendingKeys}
+									pendingOperation={pendingOperation}
 									selectedKeys={selectedKeys}
 									onToggleSelect={toggleSelect}
 									onRestore={(item) => {
@@ -364,6 +412,9 @@ export default function TrashPage() {
 								<TrashTable
 									items={items}
 									allSelected={allSelected}
+									actionsDisabled={isBusy}
+									pendingKeys={pendingKeys}
+									pendingOperation={pendingOperation}
 									selectedKeys={selectedKeys}
 									onToggleSelectAll={toggleSelectAll}
 									onToggleSelect={toggleSelect}
@@ -387,6 +438,7 @@ export default function TrashPage() {
 
 			<TrashBatchActionBar
 				count={selectionCount}
+				pendingOperation={pendingOperation}
 				onRestore={() => {
 					void handleRestore(selectedItems);
 				}}

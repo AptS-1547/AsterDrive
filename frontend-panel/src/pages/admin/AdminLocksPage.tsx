@@ -23,6 +23,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePendingId } from "@/hooks/usePendingId";
 import {
 	ADMIN_ICON_BUTTON_CLASS,
 	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
@@ -98,6 +99,8 @@ export default function AdminLocksPage() {
 			}),
 		[sortBy, sortOrder],
 	);
+	const { pendingId: unlockingLockId, runWithPending: runWithUnlockingLock } =
+		usePendingId<number>();
 
 	useEffect(() => {
 		setSearchParams(
@@ -116,13 +119,15 @@ export default function AdminLocksPage() {
 	}, [setSearchParams, sortBy, sortOrder]);
 
 	const handleForceUnlock = async (id: number) => {
-		try {
-			await adminLockService.forceUnlock(id);
-			setLocks((prev) => prev.filter((l) => l.id !== id));
-			toast.success(t("lock_released"));
-		} catch (e) {
-			handleApiError(e);
-		}
+		await runWithUnlockingLock(id, async () => {
+			try {
+				await adminLockService.forceUnlock(id);
+				setLocks((prev) => prev.filter((l) => l.id !== id));
+				toast.success(t("lock_released"));
+			} catch (e) {
+				handleApiError(e);
+			}
+		});
 	};
 
 	const {
@@ -233,45 +238,58 @@ export default function AdminLocksPage() {
 							</TableRow>
 						</TableHeader>
 					}
-					renderRow={(l) => (
-						<TableRow key={l.id}>
-							<TableCell className="font-mono text-xs">{l.id}</TableCell>
-							<TableCell className="font-mono text-xs max-w-[200px] truncate">
-								{l.path}
-							</TableCell>
-							<TableCell>
-								{formatLockOwnerInfo(l) ?? <UserIdentity user={l.owner} />}
-							</TableCell>
-							<TableCell>
-								<div className="flex gap-1">
-									<Badge variant="outline">
-										{l.shared ? t("shared_lock") : t("exclusive")}
-									</Badge>
-									{l.deep && <Badge variant="outline">{t("deep")}</Badge>}
-								</div>
-							</TableCell>
-							<TableCell>
-								{isExpired(l) ? (
-									<StatusBadge status="expired" />
-								) : (
-									<StatusBadge status="active" />
-								)}
-							</TableCell>
-							<TableCell className="text-muted-foreground text-xs">
-								{formatDateShort(l.created_at)}
-							</TableCell>
-							<TableCell>
-								<Button
-									variant="ghost"
-									size="icon"
-									className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-									onClick={() => requestUnlock(l.id)}
-								>
-									<Icon name="Trash" className="h-3.5 w-3.5" />
-								</Button>
-							</TableCell>
-						</TableRow>
-					)}
+					renderRow={(l) => {
+						const isUnlocking = unlockingLockId === l.id;
+						const unlockLabel = isUnlocking
+							? t("lock_releasing")
+							: t("force_unlock");
+
+						return (
+							<TableRow key={l.id}>
+								<TableCell className="font-mono text-xs">{l.id}</TableCell>
+								<TableCell className="font-mono text-xs max-w-[200px] truncate">
+									{l.path}
+								</TableCell>
+								<TableCell>
+									{formatLockOwnerInfo(l) ?? <UserIdentity user={l.owner} />}
+								</TableCell>
+								<TableCell>
+									<div className="flex gap-1">
+										<Badge variant="outline">
+											{l.shared ? t("shared_lock") : t("exclusive")}
+										</Badge>
+										{l.deep && <Badge variant="outline">{t("deep")}</Badge>}
+									</div>
+								</TableCell>
+								<TableCell>
+									{isExpired(l) ? (
+										<StatusBadge status="expired" />
+									) : (
+										<StatusBadge status="active" />
+									)}
+								</TableCell>
+								<TableCell className="text-muted-foreground text-xs">
+									{formatDateShort(l.created_at)}
+								</TableCell>
+								<TableCell>
+									<Button
+										variant="ghost"
+										size="icon"
+										className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+										onClick={() => requestUnlock(l.id)}
+										aria-label={unlockLabel}
+										title={unlockLabel}
+										disabled={isUnlocking}
+									>
+										<Icon
+											name={isUnlocking ? "Spinner" : "Trash"}
+											className={`h-3.5 w-3.5 ${isUnlocking ? "animate-spin" : ""}`}
+										/>
+									</Button>
+								</TableCell>
+							</TableRow>
+						);
+					}}
 				/>
 			</AdminPageShell>
 

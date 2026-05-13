@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/icon";
 
 interface TrashBatchActionBarProps {
 	count: number;
+	pendingOperation?: "restore" | "purge" | "purge-all" | null;
 	onRestore: () => void;
 	onPurge: () => void;
 	onClearSelection: () => void;
@@ -11,11 +12,15 @@ interface TrashBatchActionBarProps {
 
 export function TrashBatchActionBar({
 	count,
+	pendingOperation = null,
 	onRestore,
 	onPurge,
 	onClearSelection,
 }: TrashBatchActionBarProps) {
 	const { t } = useTranslation(["core", "files"]);
+	const busy = pendingOperation !== null;
+	const restoring = pendingOperation === "restore";
+	const purging = pendingOperation === "purge";
 
 	if (count === 0) return null;
 
@@ -25,16 +30,36 @@ export function TrashBatchActionBar({
 				{t("selected_count", { count })}
 			</span>
 			<div className="flex items-center gap-1">
-				<Button size="sm" variant="outline" onClick={onRestore}>
-					<Icon name="ArrowCounterClockwise" className="mr-1 h-3.5 w-3.5" />
-					{t("files:trash_restore_selected")}
+				<Button size="sm" variant="outline" onClick={onRestore} disabled={busy}>
+					<Icon
+						name={restoring ? "Spinner" : "ArrowCounterClockwise"}
+						className={`mr-1 h-3.5 w-3.5 ${restoring ? "animate-spin" : ""}`}
+					/>
+					{restoring
+						? t("files:trash_restoring")
+						: t("files:trash_restore_selected")}
 				</Button>
-				<Button size="sm" variant="destructive" onClick={onPurge}>
-					<Icon name="Trash" className="mr-1 h-3.5 w-3.5" />
-					{t("files:trash_delete_selected")}
+				<Button
+					size="sm"
+					variant="destructive"
+					onClick={onPurge}
+					disabled={busy}
+				>
+					<Icon
+						name={purging ? "Spinner" : "Trash"}
+						className={`mr-1 h-3.5 w-3.5 ${purging ? "animate-spin" : ""}`}
+					/>
+					{purging
+						? t("files:trash_purging")
+						: t("files:trash_delete_selected")}
 				</Button>
 			</div>
-			<Button size="sm" variant="ghost" onClick={onClearSelection}>
+			<Button
+				size="sm"
+				variant="ghost"
+				onClick={onClearSelection}
+				disabled={busy}
+			>
 				<Icon name="X" className="h-3.5 w-3.5" />
 			</Button>
 		</div>

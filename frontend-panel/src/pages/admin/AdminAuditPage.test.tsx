@@ -316,6 +316,7 @@ describe("AdminAuditPage", () => {
 		expect(await screen.findByText("report.pdf")).toBeInTheDocument();
 		expect(screen.getByText("date:2026-03-28T00:00:00Z")).toBeInTheDocument();
 		expect(screen.getByText("entries:1/2/21")).toBeInTheDocument();
+		expect(screen.getByText("Uploaded file")).toHaveClass("border-emerald-200");
 
 		fireEvent.click(screen.getByRole("button", { name: "CaretRight" }));
 
@@ -348,6 +349,7 @@ describe("AdminAuditPage", () => {
 			});
 		});
 		expect(await screen.findByText("Deleted file")).toBeInTheDocument();
+		expect(screen.getByText("Deleted file")).toHaveClass("border-red-200");
 
 		fireEvent.click(
 			screen.getAllByRole("button", { name: "select-folder" })[0],

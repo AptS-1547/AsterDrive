@@ -22,6 +22,9 @@ import type { TrashItem } from "@/types/api-helpers";
 interface TrashTableProps {
 	items: TrashItem[];
 	allSelected: boolean;
+	actionsDisabled?: boolean;
+	pendingKeys?: Set<string>;
+	pendingOperation?: "restore" | "purge" | "purge-all" | null;
 	selectedKeys: Set<string>;
 	onToggleSelectAll: () => void;
 	onToggleSelect: (item: TrashItem) => void;
@@ -36,6 +39,9 @@ function getItemKey(item: TrashItem) {
 export function TrashTable({
 	items,
 	allSelected,
+	actionsDisabled = false,
+	pendingKeys = new Set<string>(),
+	pendingOperation = null,
 	selectedKeys,
 	onToggleSelectAll,
 	onToggleSelect,
@@ -67,18 +73,31 @@ export function TrashTable({
 			</TableHeader>
 			<TableBody>
 				{items.map((item) => {
-					const selected = selectedKeys.has(getItemKey(item));
+					const itemKey = getItemKey(item);
+					const selected = selectedKeys.has(itemKey);
+					const itemPending = pendingKeys.has(itemKey);
+					const restorePending = itemPending && pendingOperation === "restore";
+					const purgePending = itemPending && pendingOperation === "purge";
+					const restoreLabel = restorePending
+						? t("files:trash_restoring")
+						: t("admin:restore");
+					const purgeLabel = purgePending
+						? t("files:trash_purging")
+						: t("files:trash_delete_permanently");
 					const originalPath =
 						item.original_path === "/" ? t("files:root") : item.original_path;
 
 					return (
 						<TableRow
-							key={getItemKey(item)}
+							key={itemKey}
 							className={cn(
 								"cursor-pointer transition-colors",
 								selected && "bg-accent/40",
+								itemPending && "opacity-75",
 							)}
-							onClick={() => onToggleSelect(item)}
+							onClick={() => {
+								if (!itemPending) onToggleSelect(item);
+							}}
 						>
 							<TableCell
 								className="w-12 pr-0 first:pl-3 md:first:pl-3"
@@ -87,7 +106,9 @@ export function TrashTable({
 								<div className="flex justify-center">
 									<ItemCheckbox
 										checked={selected}
-										onChange={() => onToggleSelect(item)}
+										onChange={() => {
+											if (!itemPending) onToggleSelect(item);
+										}}
 									/>
 								</div>
 							</TableCell>
@@ -129,25 +150,37 @@ export function TrashTable({
 									<Button
 										size="icon-sm"
 										variant="ghost"
+										aria-label={restoreLabel}
+										disabled={actionsDisabled || itemPending}
 										onClick={(e) => {
 											e.stopPropagation();
 											onRestore(item);
 										}}
-										title={t("admin:restore")}
+										title={restoreLabel}
 									>
-										<Icon name="ArrowCounterClockwise" className="h-4 w-4" />
+										<Icon
+											name={
+												restorePending ? "Spinner" : "ArrowCounterClockwise"
+											}
+											className={`h-4 w-4 ${restorePending ? "animate-spin" : ""}`}
+										/>
 									</Button>
 									<Button
 										size="icon-sm"
 										variant="ghost"
 										className="text-destructive hover:text-destructive"
+										aria-label={purgeLabel}
+										disabled={actionsDisabled || itemPending}
 										onClick={(e) => {
 											e.stopPropagation();
 											onPurge(item);
 										}}
-										title={t("files:trash_delete_permanently")}
+										title={purgeLabel}
 									>
-										<Icon name="Trash" className="h-4 w-4" />
+										<Icon
+											name={purgePending ? "Spinner" : "Trash"}
+											className={`h-4 w-4 ${purgePending ? "animate-spin" : ""}`}
+										/>
 									</Button>
 								</div>
 							</TableCell>

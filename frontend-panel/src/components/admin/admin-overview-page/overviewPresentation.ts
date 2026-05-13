@@ -1,8 +1,4 @@
-import type {
-	AdminOverview,
-	AuditAction,
-	BackgroundTaskStatus,
-} from "@/types/api";
+import type { AdminOverview, BackgroundTaskStatus } from "@/types/api";
 
 export const COUNT_FORMATTER = new Intl.NumberFormat();
 export const DECIMAL_FORMATTER = new Intl.NumberFormat(undefined, {
@@ -11,22 +7,6 @@ export const DECIMAL_FORMATTER = new Intl.NumberFormat(undefined, {
 
 export type BackgroundTaskEvent =
 	AdminOverview["recent_background_tasks"][number];
-
-export function getOverviewActionBadgeClass(action: AuditAction) {
-	if (action.includes("delete")) {
-		return "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300";
-	}
-	if (action.includes("upload")) {
-		return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300";
-	}
-	if (action.includes("share")) {
-		return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300";
-	}
-	if (action.includes("login")) {
-		return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300";
-	}
-	return "border-border bg-muted/30 text-muted-foreground";
-}
 
 export function getOverviewBackgroundTaskStatusBadgeClass(
 	status: BackgroundTaskStatus,

@@ -26,15 +26,22 @@ vi.mock("@/components/files/FileTypeIcon", () => ({
 
 vi.mock("@/components/ui/button", () => ({
 	Button: ({
+		disabled,
 		children,
 		className,
 		onClick,
 	}: {
+		disabled?: boolean;
 		children: React.ReactNode;
 		className?: string;
 		onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
 	}) => (
-		<button type="button" className={className} onClick={onClick}>
+		<button
+			type="button"
+			className={className}
+			disabled={disabled}
+			onClick={onClick}
+		>
 			{children}
 		</button>
 	),
@@ -207,6 +214,42 @@ describe("TrashGrid", () => {
 
 		expect(onRestore).toHaveBeenCalledWith(item);
 		expect(onPurge).toHaveBeenCalledWith(item);
+		expect(onToggleSelect).not.toHaveBeenCalled();
+	});
+
+	it("shows restore pending state and blocks row interaction", () => {
+		const item = createFileItem();
+		const onToggleSelect = vi.fn();
+
+		render(
+			<TrashGrid
+				items={[item]}
+				actionsDisabled
+				pendingKeys={new Set(["file:1"])}
+				pendingOperation="restore"
+				selectedKeys={new Set()}
+				onToggleSelect={onToggleSelect}
+				onRestore={vi.fn()}
+				onPurge={vi.fn()}
+			/>,
+		);
+
+		const restoreButton = screen
+			.getByText("files:trash_restoring")
+			.closest("button");
+		expect(restoreButton).toBeDisabled();
+		const purgeButton = screen
+			.getByText("files:trash_delete_permanently")
+			.closest("button");
+		expect(purgeButton).toBeDisabled();
+
+		const card = screen
+			.getByText("report.pdf")
+			.closest("[data-testid='trash-card']");
+		expect(card).not.toBeNull();
+		fireEvent.click(card as HTMLElement);
+		fireEvent.click(screen.getByLabelText("checkbox:false"));
+
 		expect(onToggleSelect).not.toHaveBeenCalled();
 	});
 });

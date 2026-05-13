@@ -14,6 +14,9 @@ import type { TrashItem } from "@/types/api-helpers";
 
 interface TrashGridProps {
 	items: TrashItem[];
+	actionsDisabled?: boolean;
+	pendingKeys?: Set<string>;
+	pendingOperation?: "restore" | "purge" | "purge-all" | null;
 	selectedKeys: Set<string>;
 	onToggleSelect: (item: TrashItem) => void;
 	onRestore: (item: TrashItem) => void;
@@ -26,6 +29,9 @@ function getItemKey(item: TrashItem) {
 
 export function TrashGrid({
 	items,
+	actionsDisabled = false,
+	pendingKeys = new Set<string>(),
+	pendingOperation = null,
 	selectedKeys,
 	onToggleSelect,
 	onRestore,
@@ -36,26 +42,39 @@ export function TrashGrid({
 	return (
 		<div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 			{items.map((item) => {
-				const selected = selectedKeys.has(getItemKey(item));
+				const itemKey = getItemKey(item);
+				const selected = selectedKeys.has(itemKey);
+				const itemPending = pendingKeys.has(itemKey);
+				const restorePending = itemPending && pendingOperation === "restore";
+				const purgePending = itemPending && pendingOperation === "purge";
+				const restoreLabel = restorePending
+					? t("files:trash_restoring")
+					: t("admin:restore");
+				const purgeLabel = purgePending
+					? t("files:trash_purging")
+					: t("files:trash_delete_permanently");
 				const originalPath =
 					item.original_path === "/" ? t("files:root") : item.original_path;
 
 				return (
 					<Card
-						key={getItemKey(item)}
+						key={itemKey}
 						size="sm"
 						role="button"
 						tabIndex={0}
-						onClick={() => onToggleSelect(item)}
+						onClick={() => {
+							if (!itemPending) onToggleSelect(item);
+						}}
 						onKeyDown={(e) => {
 							if (e.key === "Enter" || e.key === " ") {
 								e.preventDefault();
-								onToggleSelect(item);
+								if (!itemPending) onToggleSelect(item);
 							}
 						}}
 						className={cn(
 							"cursor-pointer border transition-colors hover:bg-accent/30",
 							selected && "bg-accent/40 ring-2 ring-primary/40",
+							itemPending && "opacity-75",
 						)}
 					>
 						<CardContent className="space-y-3">
@@ -86,7 +105,9 @@ export function TrashGrid({
 								</div>
 								<ItemCheckbox
 									checked={selected}
-									onChange={() => onToggleSelect(item)}
+									onChange={() => {
+										if (!itemPending) onToggleSelect(item);
+									}}
 								/>
 							</div>
 
@@ -120,28 +141,33 @@ export function TrashGrid({
 								size="sm"
 								variant="outline"
 								className="flex-1"
+								disabled={actionsDisabled || itemPending}
 								onClick={(e) => {
 									e.stopPropagation();
 									onRestore(item);
 								}}
 							>
 								<Icon
-									name="ArrowCounterClockwise"
-									className="mr-1 h-3.5 w-3.5"
+									name={restorePending ? "Spinner" : "ArrowCounterClockwise"}
+									className={`mr-1 h-3.5 w-3.5 ${restorePending ? "animate-spin" : ""}`}
 								/>
-								{t("admin:restore")}
+								{restoreLabel}
 							</Button>
 							<Button
 								size="sm"
 								variant="destructive"
 								className="flex-1"
+								disabled={actionsDisabled || itemPending}
 								onClick={(e) => {
 									e.stopPropagation();
 									onPurge(item);
 								}}
 							>
-								<Icon name="Trash" className="mr-1 h-3.5 w-3.5" />
-								{t("files:trash_delete_permanently")}
+								<Icon
+									name={purgePending ? "Spinner" : "Trash"}
+									className={`mr-1 h-3.5 w-3.5 ${purgePending ? "animate-spin" : ""}`}
+								/>
+								{purgeLabel}
 							</Button>
 						</CardFooter>
 					</Card>

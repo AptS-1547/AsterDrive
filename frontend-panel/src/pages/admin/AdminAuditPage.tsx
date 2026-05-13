@@ -19,6 +19,7 @@ import { UserIdentity } from "@/components/common/UserIdentity";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ import {
 	AUDIT_ENTITY_TYPE_FILTER_VALUES,
 	formatAuditAction,
 	formatAuditEntityType,
+	getAuditActionBadgeClass,
 } from "@/lib/audit";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { formatDateAbsolute, formatDateAbsoluteWithOffset } from "@/lib/format";
@@ -509,9 +511,12 @@ export default function AdminAuditPage() {
 										</TableCell>
 										<TableCell>
 											<div className={ADMIN_TABLE_BADGE_CELL_CLASS}>
-												<span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+												<Badge
+													variant="outline"
+													className={getAuditActionBadgeClass(item.action)}
+												>
 													{formatAuditAction(t, item.action)}
-												</span>
+												</Badge>
 											</div>
 										</TableCell>
 										<TableCell>

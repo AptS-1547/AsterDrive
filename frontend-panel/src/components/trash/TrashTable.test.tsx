@@ -26,17 +26,28 @@ vi.mock("@/components/files/FileTypeIcon", () => ({
 
 vi.mock("@/components/ui/button", () => ({
 	Button: ({
+		"aria-label": ariaLabel,
+		disabled,
 		children,
 		className,
 		onClick,
 		title,
 	}: {
+		"aria-label"?: string;
+		disabled?: boolean;
 		children: React.ReactNode;
 		className?: string;
 		onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
 		title?: string;
 	}) => (
-		<button type="button" className={className} onClick={onClick} title={title}>
+		<button
+			type="button"
+			aria-label={ariaLabel}
+			className={className}
+			disabled={disabled}
+			onClick={onClick}
+			title={title}
+		>
 			{children}
 		</button>
 	),
@@ -180,6 +191,40 @@ describe("TrashTable", () => {
 
 		expect(onRestore).toHaveBeenCalledWith(item);
 		expect(onPurge).toHaveBeenCalledWith(item);
+		expect(onToggleSelect).not.toHaveBeenCalled();
+	});
+
+	it("shows purge pending state and blocks row interaction", () => {
+		const item = createFileItem();
+		const onToggleSelect = vi.fn();
+
+		render(
+			<TrashTable
+				items={[item]}
+				allSelected={false}
+				actionsDisabled
+				pendingKeys={new Set(["file:1"])}
+				pendingOperation="purge"
+				selectedKeys={new Set()}
+				onToggleSelectAll={vi.fn()}
+				onToggleSelect={onToggleSelect}
+				onRestore={vi.fn()}
+				onPurge={vi.fn()}
+			/>,
+		);
+
+		expect(
+			screen.getByRole("button", { name: "admin:restore" }),
+		).toBeDisabled();
+		expect(
+			screen.getByRole("button", { name: "files:trash_purging" }),
+		).toBeDisabled();
+
+		fireEvent.click(
+			screen.getByText("report.pdf").closest("tr") as HTMLElement,
+		);
+		fireEvent.click(screen.getAllByLabelText("checkbox:false")[1]);
+
 		expect(onToggleSelect).not.toHaveBeenCalled();
 	});
 });
