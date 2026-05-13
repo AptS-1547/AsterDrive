@@ -231,24 +231,25 @@ WebDAV 不走 `src/api/routes/**`，而是：
 
 ## 后台任务
 
-primary 周期任务由 `src/runtime/tasks.rs` 注册，间隔来自运行时配置：
+primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worker 和一组周期任务：
 
-- `share-download-rollback`
-- `mail-outbox-dispatch`
-- `background-task-dispatch`
-- `upload-cleanup`
-- `completed-upload-cleanup`
-- `blob-reconcile`
-- `remote-node-health-test`
-- `trash-cleanup`
-- `team-archive-cleanup`
-- `lock-cleanup`
-- `auth-session-cleanup`
-- `audit-cleanup`
-- `task-cleanup`
-- `wopi-session-cleanup`
+- 常驻 worker：`share-download-rollback`
+- 周期任务：
+  - `mail-outbox-dispatch`
+  - `background-task-dispatch`
+  - `upload-cleanup`
+  - `completed-upload-cleanup`
+  - `blob-reconcile`
+  - `system-health-check`（包含数据库、缓存和远端节点健康检查）
+  - `trash-cleanup`
+  - `team-archive-cleanup`
+  - `lock-cleanup`
+  - `auth-session-cleanup`
+  - `audit-cleanup`
+  - `task-cleanup`
+  - `wopi-session-cleanup`
 
-这些周期任务每次执行后都会写成 `SystemRuntime` 风格的任务运行记录，供管理后台查看。
+周期任务按运行时配置里的间隔执行。它们只有在有实际结果或失败时才写 `SystemRuntime` 任务记录；空轮询使用 `RuntimeTaskRunOutcome::quiet()` 不灌历史表。`system-health-check` 在连续健康成功时会刷新最近一条成功记录，而不是每轮新增一条噪音记录。
 
 ## CLI 与离线运维入口
 

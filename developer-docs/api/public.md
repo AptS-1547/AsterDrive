@@ -4,6 +4,8 @@
 
 其中品牌、预览应用和缩略图能力给匿名页面启动用；remote-enrollment 两条用于 primary 和 follower 之间的远端节点 enrollment 握手。这些接口只在 `primary` 节点注册。
 
+三个公开配置读取接口都会带 `Cache-Control: public, max-age=60`。缩略图能力还会在进程内按 60 秒 TTL 缓存，并在媒体处理配置或存储策略变更时主动失效。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/public/branding` | 读取登录页、公开页和匿名入口需要的品牌配置 |
@@ -112,7 +114,8 @@
 - `extensions` 已经做过规范化，统一是不带点的小写扩展名
 - 内置图片处理器启用时会暴露常见图片格式
 - `vips_cli` / `ffmpeg_cli` 只有在对应命令可用且处理器启用时，才会把配置里的扩展名暴露出去；因此它可能包含图片以外的文档或视频扩展名
-- 这份能力来自运行时配置 `media_processing_registry_json`
+- 这份能力主要来自运行时配置 `media_processing_registry_json`
+- 如果某条存储策略配置了 `thumbnail_processor = "storage_native"`，且实际驱动暴露了存储原生缩略图能力，策略里的 `thumbnail_extensions` 也会合并进公开能力列表；当前内置驱动默认不暴露这项能力
 
 ## `POST /public/remote-enrollment/redeem`
 

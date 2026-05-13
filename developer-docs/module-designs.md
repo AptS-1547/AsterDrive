@@ -238,9 +238,10 @@ REST 创建分享时使用 `target: { type, id }` 描述目标；服务层会把
 对应代码主要在：
 
 - `src/services/task_service/mod.rs`
-- `src/services/task_service/dispatch.rs`
+- `src/services/task_service/dispatch.rs` 和 `src/services/task_service/dispatch/`
 - `src/services/task_service/runtime.rs`
-- `src/db/repository/background_task_repo.rs`
+- `src/services/task_service/storage_policy_cleanup.rs`
+- `src/db/repository/background_task_repo/`
 
 ### 设计目标
 
@@ -337,9 +338,21 @@ dispatcher 会定期续心跳，数据库里同时记录：
 
 也就是说，“失败”在这里不是单一语义，而是带重试预算和 lease 状态的结果。
 
+### 分 lane 调度
+
+dispatcher 不是用一个全局并发池无差别捞所有任务，而是按任务类型分 lane：
+
+- `Archive`：`archive_compress`、`archive_extract`，并发上限来自 `background_task_archive_max_concurrency`
+- `Thumbnail`：`thumbnail_generate`，并发上限来自 `background_task_thumbnail_max_concurrency`
+- `Fallback`：`storage_policy_temp_cleanup` 和系统运行记录的兜底 lane，并发上限来自 `background_task_max_concurrency`
+
+archive 和 thumbnail lane 会在单轮 dispatch 里快速继续捞下一批，避免大量同类任务只靠下一次周期 tick 慢慢推进。Fallback lane 更保守，避免维护型任务抢走太多资源。
+
+`storage_policy_temp_cleanup` 是强制删除存储策略后的兜底清理任务：当策略下仍有上传 session，且管理员用 `force=true` 删除策略时，服务端会先清理可立即处理的 session；如果还有临时对象或 multipart upload 需要等预签名 URL 自然失效后再删，就会创建这个任务延后处理。
+
 ### 为什么系统周期任务也记进同一张表
 
-`runtime.rs` 会把系统周期任务的执行结果也记录到 `background_task` 表，但它们的 `kind` 是 `SystemRuntime`，不会再被 dispatcher 执行。
+`runtime.rs` 会把值得留痕的系统周期任务结果记录到 `background_task` 表，但它们的 `kind` 是 `SystemRuntime`，不会再被 dispatcher 执行。空轮询会返回 `Quiet`，不会写表；连续健康的 `system-health-check` 成功结果会刷新最近一条成功记录，而不是每次新增一行。
 
 这样做是为了保留统一观测面：
 

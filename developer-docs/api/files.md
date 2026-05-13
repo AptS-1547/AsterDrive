@@ -148,7 +148,9 @@
 
 ### 缩略图
 
-当前缩略图能力来自运行时的 media processing registry，并由 `/public/thumbnail-support` 暴露给匿名态前端。默认内置 `images` 处理器覆盖常见图片格式；如果启用且运行环境可找到 `vips_cli` / `ffmpeg_cli`，缩略图支持列表也会包含对应配置里的扩展名。
+当前缩略图能力主要来自运行时的 media processing registry，并由 `/public/thumbnail-support` 暴露给匿名态前端。默认内置 `images` 处理器覆盖常见图片格式；如果启用且运行环境可找到 `vips_cli` / `ffmpeg_cli`，缩略图支持列表也会包含对应配置里的扩展名。
+
+存储策略还预留了 `thumbnail_processor = "storage_native"` + `thumbnail_extensions` 的策略级扩展能力；只有实际驱动暴露存储原生缩略图接口时才会生效，当前内置 Local / S3 / Remote 驱动默认都不支持。
 
 接口统一返回 WebP，并按 Blob、processor 和 processor version 复用缓存。
 

@@ -32,9 +32,12 @@
 另外，系统内部还会创建：
 
 - `thumbnail_generate`
+- `storage_policy_temp_cleanup`
 - `system_runtime`
 
-不过这两类任务没有创建者，API 返回的 `creator` 为 `null`，普通用户 `/tasks` 列表通常看不到；管理员可以在 `/api/v1/admin/tasks` 看全部任务。
+这些任务通常没有创建者，API 返回的 `creator` 为 `null`，普通用户 `/tasks` 列表通常看不到；管理员可以在 `/api/v1/admin/tasks` 看全部任务。
+
+`storage_policy_temp_cleanup` 只在管理员用 `DELETE /admin/policies/{id}?force=true` 强制删除存储策略，且仍有临时对象或 multipart upload 需要延后清理时创建。它会先等待预签名 URL 的安全窗口过期，再按删除前保存的策略快照清理对象。
 
 ## 分页
 
@@ -90,11 +93,12 @@
 
 ## 当前任务类型
 
-当前代码和前端 SDK 里的 `BackgroundTaskKind` 有四种：
+当前代码里的 `BackgroundTaskKind` 有五种：
 
 - `archive_extract`
 - `archive_compress`
 - `thumbnail_generate`
+- `storage_policy_temp_cleanup`
 - `system_runtime`
 
 当前 `BackgroundTaskStatus` 有六种：
@@ -110,6 +114,7 @@
 
 - `archive_extract`：解压归档文件到工作空间目录
 - `archive_compress`：把一组选中资源打包并写回工作空间
+- `storage_policy_temp_cleanup`：强制删除存储策略后，兜底清理遗留的临时对象和 multipart upload
 
 ## `POST /tasks/{id}/retry`
 

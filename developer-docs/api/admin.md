@@ -57,12 +57,17 @@
 当前实现注意点：
 
 - 创建和更新都会采用请求里的 `chunk_size`
-- `options` 当前主要承载 S3 / Remote 上传下载策略，例如 `{"s3_upload_strategy":"presigned","s3_download_strategy":"presigned","remote_upload_strategy":"presigned","remote_download_strategy":"presigned"}`
-- 旧配置 `{"presigned_upload":true}` 仍兼容
+- `options` 当前承载策略级行为：
+  - S3 / Remote 上传下载策略，例如 `{"s3_upload_strategy":"presigned","s3_download_strategy":"presigned","remote_upload_strategy":"presigned","remote_download_strategy":"presigned"}`
+  - 本地策略的内容去重开关 `content_dedup`
+  - S3 连接 / 读取 / 操作超时：`s3_connect_timeout_secs`、`s3_read_timeout_secs`、`s3_operation_timeout_secs`
+  - 存储原生缩略图：`thumbnail_processor = "storage_native"` + `thumbnail_extensions`；只有驱动显式暴露该能力时才允许，当前内置 Local / S3 / Remote 驱动默认都不支持
+- 旧配置 `{"presigned_upload":true}` 仍兼容，等价于 S3 预签名上传策略
 - REST 已经可以通过 `allowed_types` 管理策略允许的 MIME / 类型列表；不传时创建会使用空列表，更新会保持原值
 - `driver_type = "remote"` 时需要绑定 `remote_node_id`，远端节点本身通过 `/admin/remote-nodes` 管理
 - 当前 `PATCH` 不能修改 `driver_type`
 - `GET /admin/policies` 支持 `limit`、`offset`、`sort_by`、`sort_order`
+- `DELETE /admin/policies/{id}` 支持 `?force=true`；这只会强制清理仍引用该策略的上传 session，仍有 blob 或策略组项引用时照样拒绝删除。若清理后还有临时对象或 multipart upload 需要延后处理，会创建 `storage_policy_temp_cleanup` 后台任务
 
 ## 远端节点
 
@@ -365,14 +370,14 @@
 - `archive_build_max_entries`
 - `archive_build_max_total_source_bytes`
 - `archive_build_max_temp_bytes`
-- `thumbnail_default_processor`
-- `thumbnail_vips_cli_enabled`
-- `thumbnail_vips_command`
 - `task_retention_hours`
 - `archive_extract_max_staging_bytes`
 - `avatar_max_upload_size_bytes`
 - `thumbnail_max_source_bytes`
 - `media_processing_registry_json`
+
+缩略图处理器已经统一迁移到 `media_processing_registry_json`；旧的 `thumbnail_default_processor`、`thumbnail_vips_cli_enabled`、`thumbnail_vips_command` 会在启动时作为废弃配置键清理，不应再写进新文档或新代码。
+
 - `wopi_access_token_ttl_secs`
 - `wopi_lock_ttl_secs`
 - `wopi_discovery_cache_ttl_secs`
