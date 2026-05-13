@@ -16,6 +16,12 @@ async fn test_public_preview_apps_returns_default_registry() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("Cache-Control")
+            .and_then(|value| value.to_str().ok()),
+        Some("public, max-age=60")
+    );
 
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["version"], 2);

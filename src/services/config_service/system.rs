@@ -1,5 +1,6 @@
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::config::definitions::ALL_CONFIGS;
+use crate::config::media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY;
 use crate::config::system_config as shared_system_config;
 use crate::db::repository::config_repo;
 use crate::entities::system_config;
@@ -188,12 +189,14 @@ pub async fn set(
         config_repo::upsert(&state.db, key, &normalized_value, updated_by).await?,
     );
     state.runtime_config.apply(config.clone());
+    invalidate_dependent_public_config_caches(key);
     Ok(config.into())
 }
 
 pub async fn delete(state: &PrimaryAppState, key: &str) -> Result<()> {
     config_repo::delete_by_key(&state.db, key).await?;
     state.runtime_config.remove(key);
+    invalidate_dependent_public_config_caches(key);
     Ok(())
 }
 
@@ -256,4 +259,10 @@ fn normalize_system_value(state: &PrimaryAppState, key: &str, value: &str) -> Re
 
 fn apply_system_config_definition(config: system_config::Model) -> system_config::Model {
     shared_system_config::apply_definition(config)
+}
+
+fn invalidate_dependent_public_config_caches(key: &str) {
+    if key == MEDIA_PROCESSING_REGISTRY_JSON_KEY {
+        super::public::invalidate_public_thumbnail_support_cache();
+    }
 }

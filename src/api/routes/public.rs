@@ -51,7 +51,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
 )]
 pub async fn get_branding(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
     let branding = config_service::get_public_branding(&state);
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(branding)))
+    Ok(public_config_response(branding))
 }
 
 #[api_docs_macros::path(
@@ -65,7 +65,7 @@ pub async fn get_branding(state: web::Data<PrimaryAppState>) -> Result<HttpRespo
 )]
 pub async fn get_preview_apps(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
     let preview_apps = config_service::get_public_preview_apps(&state);
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(preview_apps)))
+    Ok(public_config_response(preview_apps))
 }
 
 #[api_docs_macros::path(
@@ -78,8 +78,14 @@ pub async fn get_preview_apps(state: web::Data<PrimaryAppState>) -> Result<HttpR
     ),
 )]
 pub async fn get_thumbnail_support(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
-    let support = config_service::get_public_thumbnail_support(&state);
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(support)))
+    let support = config_service::get_public_thumbnail_support(&state).await;
+    Ok(public_config_response(support))
+}
+
+fn public_config_response<T: serde::Serialize>(data: T) -> HttpResponse {
+    HttpResponse::Ok()
+        .insert_header(("Cache-Control", config_service::PUBLIC_CONFIG_CACHE_CONTROL))
+        .json(ApiResponse::ok(data))
 }
 
 #[api_docs_macros::path(

@@ -126,6 +126,7 @@ pub async fn create(
     }
     crate::db::transaction::commit(txn).await?;
     state.policy_snapshot.reload(&state.db).await?;
+    crate::services::config_service::invalidate_public_thumbnail_support_cache();
     policy_repo::find_by_id(&state.db, result.id)
         .await
         .map(Into::into)
@@ -176,11 +177,21 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
             ));
         }
 
-        let cleaned = crate::services::upload_service::force_cleanup_by_policy(state, id).await?;
+        let cleanup = crate::services::upload_service::force_cleanup_by_policy(state, id).await?;
+        let cleanup_task = crate::services::task_service::create_storage_policy_temp_cleanup_task(
+            state,
+            &policy,
+            &cleanup.deferred_temp_keys,
+            &cleanup.deferred_multipart_uploads,
+        )
+        .await?;
         tracing::info!(
             policy_id = id,
             upload_session_count,
-            cleaned,
+            cleaned = cleanup.cleaned,
+            deferred_temp_keys = cleanup.deferred_temp_keys.len(),
+            deferred_multipart_uploads = cleanup.deferred_multipart_uploads.len(),
+            cleanup_task_id = cleanup_task.as_ref().map(|task| task.id),
             "force-cleaned upload sessions before deleting policy"
         );
     }
@@ -204,6 +215,7 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
     // 避免"策略行已删除但 driver 仍在缓存里"的窗口。
     state.driver_registry.invalidate(id);
     state.policy_snapshot.reload(&state.db).await?;
+    crate::services::config_service::invalidate_public_thumbnail_support_cache();
     Ok(())
 }
 
@@ -318,6 +330,7 @@ pub async fn update(
     // 把写操作发到老的 endpoint/bucket/credential 上——无日志、无报错的静默错路由。
     state.driver_registry.invalidate(id);
     state.policy_snapshot.reload(&state.db).await?;
+    crate::services::config_service::invalidate_public_thumbnail_support_cache();
 
     policy_repo::find_by_id(&state.db, result.id)
         .await

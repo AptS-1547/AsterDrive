@@ -1,13 +1,31 @@
-use crate::config::auth_runtime;
 use crate::config::branding;
 use crate::config::site_url;
+use crate::config::{auth_runtime, media_processing};
 use crate::runtime::PrimaryAppState;
 use crate::services::preview_app_service;
 use crate::types::parse_storage_policy_options;
+use moka::future::Cache;
 use serde::Serialize;
 use std::collections::BTreeSet;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::LazyLock;
+use std::time::Duration;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
+
+pub const PUBLIC_THUMBNAIL_SUPPORT_CACHE_TTL_SECS: u64 = 60;
+pub const PUBLIC_CONFIG_CACHE_CONTROL: &str = "public, max-age=60";
+const PUBLIC_THUMBNAIL_SUPPORT_CACHE_KEY: &str = "public_thumbnail_support";
+
+static PUBLIC_THUMBNAIL_SUPPORT_CACHE: LazyLock<
+    Cache<String, media_processing::PublicThumbnailSupport>,
+> = LazyLock::new(|| {
+    Cache::builder()
+        .max_capacity(128)
+        .time_to_live(Duration::from_secs(PUBLIC_THUMBNAIL_SUPPORT_CACHE_TTL_SECS))
+        .build()
+});
 
 #[derive(Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -40,11 +58,29 @@ pub fn get_public_preview_apps(
     preview_app_service::get_public_preview_apps(state)
 }
 
-pub fn get_public_thumbnail_support(
+pub async fn get_public_thumbnail_support(
     state: &PrimaryAppState,
-) -> crate::config::media_processing::PublicThumbnailSupport {
-    let mut support =
-        crate::config::media_processing::public_thumbnail_support(&state.runtime_config);
+) -> media_processing::PublicThumbnailSupport {
+    let cache_key = public_thumbnail_support_cache_key(state);
+    if let Some(cached) = PUBLIC_THUMBNAIL_SUPPORT_CACHE.get(&cache_key).await {
+        return cached;
+    }
+
+    let support = build_public_thumbnail_support(state);
+    PUBLIC_THUMBNAIL_SUPPORT_CACHE
+        .insert(cache_key, support.clone())
+        .await;
+    support
+}
+
+pub(crate) fn invalidate_public_thumbnail_support_cache() {
+    PUBLIC_THUMBNAIL_SUPPORT_CACHE.invalidate_all();
+}
+
+fn build_public_thumbnail_support(
+    state: &PrimaryAppState,
+) -> media_processing::PublicThumbnailSupport {
+    let mut support = media_processing::public_thumbnail_support(&state.runtime_config);
     let mut extensions = support.extensions.iter().cloned().collect::<BTreeSet<_>>();
 
     for policy in state.policy_snapshot.all_policies() {
@@ -69,4 +105,26 @@ pub fn get_public_thumbnail_support(
 
     support.extensions = extensions.into_iter().collect();
     support
+}
+
+fn public_thumbnail_support_cache_key(state: &PrimaryAppState) -> String {
+    let mut hasher = DefaultHasher::new();
+    state
+        .runtime_config
+        .get(media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY)
+        .hash(&mut hasher);
+
+    let mut policies = state.policy_snapshot.all_policies();
+    policies.sort_by_key(|policy| policy.id);
+    for policy in policies {
+        policy.id.hash(&mut hasher);
+        format!("{:?}", policy.driver_type).hash(&mut hasher);
+        policy.endpoint.hash(&mut hasher);
+        policy.bucket.hash(&mut hasher);
+        policy.base_path.hash(&mut hasher);
+        policy.remote_node_id.hash(&mut hasher);
+        policy.options.as_ref().hash(&mut hasher);
+    }
+
+    format!("{PUBLIC_THUMBNAIL_SUPPORT_CACHE_KEY}:{:x}", hasher.finish())
 }
