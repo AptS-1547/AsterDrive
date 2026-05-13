@@ -3,7 +3,7 @@
 这一篇覆盖普通用户和管理员在前端、API 和 WebDAV 客户端可能遇到的错误码：什么意思、自己能做什么、什么时候该找管理员。  
 按你看到的错误码或界面提示往下翻即可，不必通读。
 
-如果是 5xx 级别的服务端错误（`internal_server_error` / `database_error` / `config_error`），按 [故障排查](../deployment/troubleshooting) 处理。
+如果是 5xx 级别的服务端错误（`internal_server_error` / `database_error` / `config_error`），按 [故障排查](/deployment/troubleshooting) 处理。
 
 ## 错误码分段
 
@@ -45,7 +45,7 @@
 服务端异常。
 
 普通用户：稍后重试一次；如果反复失败，把错误码和大致时间反馈给管理员。  
-管理员：去看 [故障排查](../deployment/troubleshooting)。
+管理员：去看 [故障排查](/deployment/troubleshooting)。
 
 ### `rate_limited` (1006)
 
@@ -285,7 +285,7 @@
 - 本地目录权限不允许当前进程写入
 - remote follower 的接收路径或内部接口权限不对
 
-先别急着重传文件，去修存储后端权限。
+建议先修复存储后端权限，再重试上传。
 
 ### `storage_misconfigured` (4006)
 

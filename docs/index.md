@@ -45,11 +45,15 @@ features:
 
 ### 我要管一个实例
 
-先看 [管理后台](/guide/admin-console)，再看 [配置总览](/config/)。AsterDrive 的配置分成启动配置、后台运行时设置、存储策略、策略组和外部网络环境，混在一起看只会把自己绕晕。
+先看 [管理后台](/guide/admin-console)，再看 [配置总览](/config/)。AsterDrive 的配置分成启动配置、后台运行时设置、存储策略、策略组和外部网络环境，按层看会清楚很多。
 
 ### 我要上线或排障
 
 上线前按 [部署概览](/deployment/) 选方式，再补 [反向代理](/deployment/reverse-proxy)、[首次启动检查](/deployment/runtime-behavior)、[备份与恢复](/deployment/backup)。已经出问题就直接去 [故障排查](/deployment/troubleshooting)，看到错误码再配合 [错误码处理](/guide/errors)。
+
+### 我看不懂某个词，或者不知道该查哪里
+
+先看 [术语表](/guide/glossary) 和 [常见问题速查](/guide/faq)。这两页不是让你从头读的，是让你少走弯路的。
 
 ---
 

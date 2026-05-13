@@ -18,7 +18,7 @@ retry_count = 3
 - **MySQL** —— 你已经在用 MySQL，想保持统一
 
 ::: tip 第一次部署直接 SQLite
-绝大多数场景 SQLite 够用，等以后真的撑不住再切——AsterDrive 自带跨数据库迁移工具，不会被困死。
+绝大多数场景 SQLite 够用。规模增长后可通过 AsterDrive 自带的跨数据库迁移工具切换，避免被初始选择限制。
 :::
 
 ## 选项一览
@@ -84,7 +84,7 @@ url = "mysql://user:password@localhost:3306/asterdrive"
 | systemd | `WorkingDirectory/data/asterdrive.db` |
 | Docker（写成 `sqlite:///data/asterdrive.db?mode=rwc`） | 容器里的 `/data` |
 
-长期部署，把 SQLite 路径写成固定目录或挂到持久化卷里，别让它跟着工作目录飘。
+长期部署，把 SQLite 路径写成固定目录或挂到持久化卷里，避免受工作目录变化影响。
 
 ## `pool_size` 和 `retry_count` 怎么调
 

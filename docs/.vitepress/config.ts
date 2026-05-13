@@ -185,8 +185,11 @@ export default defineConfig({
         text: '参考与项目',
         collapsed: true,
         items: [
+          { text: '常见问题速查', link: '/guide/faq' },
+          { text: '术语表', link: '/guide/glossary' },
           { text: '错误码处理', link: '/guide/errors' },
           { text: '自定义前端', link: '/guide/custom-frontend' },
+          { text: '文档贡献说明', link: '/guide/docs-contributing' },
           { text: '关于 AsterDrive', link: '/guide/about' }
         ]
       }

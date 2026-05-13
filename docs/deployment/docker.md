@@ -21,7 +21,7 @@ sudo chown -R 10001:10001 ./data
 
 ::: tip 如果这个容器要跑成从节点
 现在 follower 已经支持在启动时直接读取 bootstrap ENV 完成 enroll。  
-如果你想用 Docker 把另一台 AsterDrive 接成远程节点，不要再照旧文档手动 `docker exec` 跑 `node enroll`，直接看 [Docker 部署从节点](/deployment/docker-follower)。
+如果你想用 Docker 把另一台 AsterDrive 接成远程节点，不再建议沿用旧流程手动 `docker exec` 执行 `node enroll`，直接看 [Docker 部署从节点](/deployment/docker-follower)。
 :::
 
 ## `/data` 里通常会有什么
@@ -108,13 +108,13 @@ services:
 - 如果暂时是纯 HTTP 测试，是否只在首次引导时设置了 `bootstrap_insecure_cookies = true`
 - 切到 HTTPS 后，后台系统设置里的 Cookie 安全开关是否已经改回开启
 - 首页响应头里是否能看到 AsterDrive 返回的页面基线 `Content-Security-Policy`，代理层有没有删掉或覆盖成不兼容的策略
-- 如果站点对外访问，`公开站点地址` 是否已经填成真实 `https://` 来源；多个公开域名逐项添加，主域名放在最前面
+- 如果站点对外访问，`公开站点地址` 是否已经填成真实 `https://` 来源；多个公开域名逐项添加，默认来源放在最前面
 - 如果要开放注册、找回密码或邮箱改绑，测试邮件是否已经发通
 - 数据库、上传目录和临时目录是否都落在 bind mount 的 `./data` 目录里，没有遗漏写到容器内层
 - 默认策略组是否已经创建
 - 如果启用了外部 Office / WOPI 打开方式，至少用一个真实 Office 文件试开并保存一次
 - 如果以后要走 S3 / MinIO，是否已经计划好对象存储浏览器上传放行规则和密钥管理
-- 如果这台实例实际要跑成 `follower`，是否已经按 [Docker 部署从节点](/deployment/docker-follower) 配好长期 `start_mode`、一次性 bootstrap ENV，并在主控端创建默认接收落点
+- 如果这台实例实际要跑成 `follower`，是否已经按 [Docker 部署从节点](/deployment/docker-follower) 配好长期 `start_mode`、一次性 bootstrap ENV，并在主控节点创建默认接收落点
 
 ## 查看运行状态
 

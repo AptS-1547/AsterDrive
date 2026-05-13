@@ -170,7 +170,7 @@ server {
 - SSE 专门关掉 `proxy_buffering`
 - `X-Forwarded-Proto` 必须保留成 `https`
 
-如果你单独给 `/webdav/` 做 location，也不要加 `limit_except` 去限制方法；否则 Finder、Windows、rclone 一类客户端会直接坏掉。
+如果你单独给 `/webdav/` 做 location，也不要加 `limit_except` 去限制方法；否则 Finder、Windows、rclone 一类客户端可能无法正常使用 WebDAV。
 
 ## Traefik
 
@@ -247,11 +247,11 @@ Traefik 默认会补上常见的 `X-Forwarded-*` 头。
 你真正要注意的是：
 
 - `web` 要跳到 `websecure`
-- `websecure` 的超时别太短
+- `websecure` 的超时不要设得太短
 - 不要用 headers middleware 把 AsterDrive 返回的页面 CSP 覆盖掉
 - 不要再给 WebDAV 或缩略图路由套一层会覆盖响应头的 middleware
 
-如果你想把 `/assets/` 做成更激进的 `immutable` 缓存，建议单独再拆一个 router；别顺手把所有 `/api/v1/*` 都改成强缓存，那是给自己找麻烦。
+如果你想把 `/assets/` 做成更激进的 `immutable` 缓存，建议单独再拆一个 router；避免把所有 `/api/v1/*` 设置为强缓存，否则可能缓存动态 API 响应并引发问题。
 
 ## CSP / 安全响应头
 
@@ -260,13 +260,13 @@ AsterDrive 现在会给前端 HTML 自动返回一条页面基线 `Content-Secur
 
 ### 先把两类 CSP 分清楚
 
-生产环境里现在有两层不同的策略，别混成一坨：
+生产环境里现在有两层不同的策略，需要明确区分：
 
 - **站点页面基线 CSP**：给 `/`、管理后台、分享页这类 HTML 页面用，主要约束脚本、样式、图片、iframe、worker 等资源加载来源
 - **危险文件 inline 沙箱 CSP**：给脚本能力文件的原始 inline 响应用，当前后端会只在 `text/html`、`application/xhtml+xml`、`image/svg+xml` 这类响应上额外挂 `Content-Security-Policy: sandbox`
 
 `sandbox` 本身是 **Document directive**，适合约束文档上下文，不是“把所有文件都改成 `sandbox`”的通用方案。  
-如果你把站点自己的基线 CSP 直接改成全站 `sandbox`，登录页、后台、分享页这些正常 HTML 也会一起进沙箱，脚本、表单、存储和同源能力都会被一刀砍掉，站点基本等于自废武功。
+如果你把站点自己的基线 CSP 直接改成全站 `sandbox`，登录页、后台、分享页这些正常 HTML 也会一起进沙箱，脚本、表单、存储和同源能力都会不可用，导致站点核心功能受影响。
 
 所以部署时要按这个原则走：
 
@@ -293,16 +293,16 @@ frame-src 'self' http: https:;
 manifest-src 'self';
 ```
 
-这条策略是按当前前端实际行为收出来的，别乱删：
+这条策略是按当前前端实际行为整理出来的，调整前请确认影响：
 
 - `script-src 'unsafe-inline'` 现在要保留；自定义前端和占位符注入里仍可能出现内联脚本
-- `style-src 'unsafe-inline'` 现在要保留；前端里有运行时内联样式和动态 `<style>`，硬去掉会直接炸样式
+- `style-src 'unsafe-inline'` 现在要保留；前端里有运行时内联样式和动态 `<style>`，强制移除可能导致样式失效
 - `img-src 'self' data: blob: http: https:` 和 `media-src 'self' blob:` 要保留；缩略图、图片 / 视频预览、头像裁剪、外链图标会用到这些来源
 - `connect-src 'self' http: https: ws: wss:` 要保留；预签名上传 / 下载、远程 follower、实时推送都会用到
 - `worker-src 'self' blob:` 要保留；PDF 预览会用 worker，某些构建方式会走 blob worker
 - `frame-src 'self' http: https:` 要保留；外部预览应用和 WOPI 入口可能不是同源 iframe
 
-如果你一定要在网关层覆盖 CSP，至少先抄上面这条，再按你的真实部署往回收。别直接拿网上那种 `connect-src 'self'` 的模板套上去，预签名上传、外部预览或远程节点很容易被你自己拦掉。
+如果你一定要在网关层覆盖 CSP，至少先抄上面这条，再按你的真实部署往回收。不要直接套用只允许 `connect-src 'self'` 的通用模板，预签名上传、外部预览或远程节点很容易因此被拦截。
 
 想继续收紧时，先用 `Content-Security-Policy-Report-Only` 跑一轮真实验收，再切强制模式。  
 至少测试一次登录、上传、PDF 预览、文本预览、分享页、头像、以及外部预览应用 / WOPI。
@@ -331,7 +331,7 @@ manifest-src 'self';
 - Office 页面能打开，但读不到文件
 - 能打开，却保存不回 AsterDrive
 
-## 缩略图缓存不要自作聪明
+## 缩略图缓存请保留重新验证语义
 
 AsterDrive 的缩略图接口已经返回了：
 

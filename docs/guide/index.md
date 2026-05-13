@@ -36,7 +36,7 @@
 
 ## 运维维护
 
-上线后，稳定运行比“能打开页面”更重要。别嫌麻烦，出事再补就晚了。
+上线后，稳定运行比“能打开页面”更重要。建议提前把检查、备份、升级和排障路径准备好。
 
 - [运维 CLI](/deployment/ops-cli)：`doctor`、离线系统设置、跨数据库迁移、节点接入
 - [升级与版本迁移](/deployment/upgrade)：升级前备份、升级后验证、失败回滚
@@ -48,4 +48,4 @@
 
 想知道 AsterDrive 为什么这么设计、适合谁、不适合谁，看 [关于 AsterDrive](./about)。
 
-碰到错误码先看 [错误码处理](./errors)。如果错误发生在部署、反向代理、WebDAV 或 WOPI 场景里，再配合 [故障排查](/deployment/troubleshooting) 一起看。
+概念看不懂先看 [术语表](./glossary)。碰到问题先看 [常见问题速查](./faq)，有错误码再看 [错误码处理](./errors)。如果错误发生在部署、反向代理、WebDAV 或 WOPI 场景里，再配合 [故障排查](/deployment/troubleshooting) 一起看。

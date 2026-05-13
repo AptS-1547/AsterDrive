@@ -87,7 +87,7 @@ ASTER_BENCH_SUMMARY_DIR=tests/performance/results/local \
 k6 run tests/performance/k6/download.js
 ```
 
-现在下载、上传、WebDAV 和 `mixed-ramp.js` 的 summary 里都会带字节计数器，可以直接拿 `count` / `rate` 看有效吞吐，不用只看 `http_req_duration` 这种会把你带沟里的单请求延迟。
+现在下载、上传、WebDAV 和 `mixed-ramp.js` 的 summary 里都会带字节计数器，可以直接拿 `count` / `rate` 看有效吞吐，不用只看 `http_req_duration` 这类不能完整代表有效吞吐的单请求延迟。
 
 ## SQLite 搜索验证
 
@@ -123,7 +123,7 @@ LIMIT 50 OFFSET 0;
 - `SCAN files_name_fts VIRTUAL TABLE INDEX ...`
 - `SEARCH files USING INTEGER PRIMARY KEY ...`
 
-如果你看到的是对 `files` / `folders` 的普通全表 `SCAN`，那就别拿这台实例的搜索压测结果当真，先把 SQLite 运行时和迁移状态查明白。
+如果你看到的是对 `files` / `folders` 的普通全表 `SCAN`，这类结果不适合作为搜索压测基线，先把 SQLite 运行时和迁移状态查明白。
 
 ## 长稳测试
 
@@ -167,7 +167,7 @@ k6 run tests/performance/k6/soak-mixed.js
 4. 执行一组短时 smoke benchmark
 5. 上传 summary artifact
 
-这套 workflow 只负责“脚本还能跑、主要路径没烂掉”，不是正式容量验证。
+这套 workflow 只负责“脚本还能跑、主要路径没有回归”，不是正式容量验证。
 
 ## 本地 Smoke 基线示例
 

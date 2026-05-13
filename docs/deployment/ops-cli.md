@@ -16,6 +16,22 @@ AsterDrive 现在自带一组命令行工具，适合下面这些场景：
 这些命令都还是同一个 `aster_drive` 可执行文件。  
 直接运行 `./aster_drive` 是启动服务；带子命令时，就是执行运维操作。
 
+## 命令速查
+
+| 你要做什么 | 用哪个命令 | 什么时候用 |
+| --- | --- | --- |
+| 检查数据库、迁移、公开站点地址、邮件、默认策略 | `doctor` | 新部署、上线前、升级后 |
+| 深度核对容量、Blob 引用、对象清单、目录树 | `doctor --deep` | 怀疑数据和存储不一致 |
+| 自动修复部分计数漂移 | `doctor --deep --fix` | 已确认可以让 CLI 改计数 |
+| 离线查看系统设置 | `config list` / `config get` | 后台进不去，或想纳入脚本 |
+| 离线修改系统设置 | `config set` / `config import` | 停机窗口、批量配置、灾难恢复 |
+| 在 follower 上完成接入 | `node enroll` | 主控后台生成 enroll 命令后 |
+| SQLite / PostgreSQL / MySQL 之间迁移 | `database-migrate` | 换数据库后端或做迁移演练 |
+
+::: warning 先备份再让 CLI 写数据
+`doctor --fix`、`config set`、`config import`、`database-migrate` 都可能改变数据库。正式环境先备份，避免在未备份的情况下执行试操作，导致后续需要恢复事故。
+:::
+
 ## 先准备数据库地址
 
 最常见的写法：
@@ -33,6 +49,42 @@ docker exec -it asterdrive sh
 ```
 
 这样 SQLite 路径、挂载卷和容器里的实际文件位置不会搞混。
+
+## 用环境变量代替常用参数
+
+运维脚本里如果不想每条命令都写很长的参数，可以用 CLI 专用的 `ASTER_CLI_*` 环境变量。它们只影响命令行工具，不会改服务启动配置。
+
+| 环境变量 | 对应参数 | 适用命令 |
+| --- | --- | --- |
+| `ASTER_CLI_DATABASE_URL` | `--database-url` | `doctor`、`config`、`node enroll` |
+| `ASTER_CLI_OUTPUT_FORMAT` | `--output-format` | `doctor`、`config`、`node`、`database-migrate` |
+| `ASTER_CLI_MASTER_URL` | `node enroll --master-url` | `node enroll` |
+| `ASTER_CLI_ENROLLMENT_TOKEN` | `node enroll --token` | `node enroll` |
+| `ASTER_CLI_SOURCE_DATABASE_URL` | `database-migrate --source-database-url` | `database-migrate` |
+| `ASTER_CLI_TARGET_DATABASE_URL` | `database-migrate --target-database-url` | `database-migrate` |
+
+`doctor` 还有这些脚本友好的开关：
+
+```bash
+ASTER_CLI_DOCTOR_STRICT=true
+ASTER_CLI_DOCTOR_DEEP=true
+ASTER_CLI_DOCTOR_FIX=true
+ASTER_CLI_DOCTOR_SCOPE=blob-ref-counts,storage-objects
+ASTER_CLI_DOCTOR_POLICY_ID=3
+```
+
+数据库迁移时，如果需要观察进度或调小批次，也可以用：
+
+```bash
+ASTER_CLI_PROGRESS=1
+ASTER_CLI_COPY_BATCH_SIZE=100
+```
+
+::: tip 服务配置和 CLI 参数是两套 ENV
+`ASTER__DATABASE__URL` 会覆盖服务读取的 `config.toml`；`ASTER_CLI_DATABASE_URL` 只给运维 CLI 当参数。
+
+如果你是在同一个 shell 里同时启动服务和跑命令，建议把两类变量分开放清楚，排查时会轻松很多。
+:::
 
 ## 部署检查：`doctor`
 
@@ -217,7 +269,7 @@ docker exec -it asterdrive sh
 导出结果更适合审阅、备份或交给脚本处理。  
 如果你打算重新导入，先把它整理成上面那种“键值数组”或 `{"configs": [...]}` 结构，再交给 `import`。
 
-如果你只是想确认某个值是否合法，优先用 `validate`，别上来就 `set`。
+如果你只是想确认某个值是否合法，优先用 `validate`，不要直接使用 `set`。
 
 ## 远程节点接入：`node enroll`
 
@@ -245,7 +297,7 @@ docker exec -it asterdrive sh
 - 用 token 向主控兑换本地绑定信息，并写入 follower 数据库
 - 输出当前监听地址、配置文件路径和下一步连通性检查提示
 
-命令本身不会替你创建主控端的默认接收落点，也不会启动 HTTP 服务。执行成功后，重启 follower 进程，再回主控后台创建或应用默认接收落点。
+命令本身不会替你创建主控节点的默认接收落点，也不会启动 HTTP 服务。执行成功后，重启 follower 进程，再回主控后台创建或应用默认接收落点。
 
 Docker follower 更推荐用启动环境变量自动 enroll，不需要进容器手动跑这条命令，见 [Docker 部署从节点](/deployment/docker-follower)。
 

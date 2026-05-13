@@ -4,12 +4,12 @@
 想把另一台 AsterDrive 用 Docker 跑成 `follower`，并且希望**首次启动时直接靠环境变量自动 enroll**，不再手动 `docker exec ... aster_drive node enroll`。
 :::
 
-这一篇只讲 Docker 场景下的从节点部署。  
-主控端怎么理解远程节点、怎么创建远程存储策略，仍然看 [远程节点](/guide/remote-nodes)。
+这一篇只讲 Docker 场景下的从节点部署。
+主控节点怎么理解远程节点、怎么创建远程存储策略，仍然看 [远程节点](/guide/remote-nodes)。
 
 和旧流程最大的区别只有一件事：
 
-- **现在 follower 容器可以在启动时直接吃 bootstrap ENV，自动完成 enroll**
+- **现在 follower 容器可以在启动时直接读取 bootstrap ENV，自动完成 enroll**
 
 也就是说，第一次启动时不再需要：
 
@@ -45,8 +45,8 @@
 - `http://10.0.0.23:3000`
 - `http://host.example.com:3001`
 
-如果它们都在 Docker 网络里，主控也能解析容器名，那么也可以直接填容器内地址。  
-但别想当然地写 `http://localhost:3000`，那通常只对 follower 自己成立。
+如果它们都在 Docker 网络里，主控也能解析容器名，那么也可以直接填容器内地址。
+不要默认填写 `http://localhost:3000`，那通常只对 follower 自己成立。
 
 ### 4. token 是一次性的
 
@@ -76,7 +76,7 @@
 - `master_url`
 - `token`
 
-当前版本里，follower 接收对象的落点由主控端在远程节点详情里下发。  
+当前版本里，follower 接收对象的落点由主控节点在远程节点详情里下发。
 也就是说，Docker bootstrap 只负责完成主从身份绑定；真正写到 follower 本地目录还是 S3，后面回主控后台创建**接收落点**。
 
 ## 2. 准备 follower 的数据目录
@@ -104,6 +104,7 @@ services:
     environment:
       ASTER__SERVER__HOST: 0.0.0.0
       ASTER__SERVER__START_MODE: follower
+      ASTER__SERVER__FOLLOWER__MANAGED_INGRESS_LOCAL_ROOT: /data/managed-ingress
       ASTER__DATABASE__URL: sqlite:///data/asterdrive.db?mode=rwc
       ASTER_BOOTSTRAP_REMOTE_MASTER_URL: https://drive.example.com
       ASTER_BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN: enr_replace_me
@@ -113,15 +114,26 @@ services:
     restart: unless-stopped
 ```
 
-这里最容易搞混的是两类环境变量：
+这里最容易混在一起的是两类环境变量：
 
-- `ASTER__SERVER__START_MODE=follower`
-  这是**长期运行配置**，建议保留
+- `ASTER__...`
+  这是**长期运行配置覆盖**，和 `config.toml` 同一套结构，建议保留需要长期生效的项
 - `ASTER_BOOTSTRAP_REMOTE_*`
   这是**一次性 bootstrap 输入**，首次 enroll 成功后建议移除
 
-接收落点不放在 bootstrap ENV 里。  
-现在的做法是：follower 先完成 enroll，主控端再通过 follower API 下发接收落点。这个入口在 `管理 -> 远程节点`，更适合后续查看、修改和排错。
+这页用到的 ENV 可以按下面理解：
+
+| 环境变量 | 作用 | 建议 |
+| --- | --- | --- |
+| `ASTER__SERVER__HOST` | 让容器内服务监听所有网卡，方便 Docker 端口映射 | Docker 场景通常保留 |
+| `ASTER__SERVER__START_MODE` | 把实例切成 `follower` 模式 | 从节点长期保留 |
+| `ASTER__SERVER__FOLLOWER__MANAGED_INGRESS_LOCAL_ROOT` | 限制主控下发的 `local` 接收落点根目录 | 需要本地接收落点时保留 |
+| `ASTER__DATABASE__URL` | 指定 follower 自己的数据库 | Docker 场景建议显式写清楚 |
+| `ASTER_BOOTSTRAP_REMOTE_MASTER_URL` | 首次 enroll 时访问的主控地址 | 成功后移除 |
+| `ASTER_BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN` | 主控生成的一次性 enrollment token | 成功后移除 |
+
+接收落点不放在 bootstrap ENV 里。
+现在的做法是：follower 先完成 enroll，主控节点再通过 follower API 下发接收落点。这个入口在 `管理 -> 远程节点`，更适合后续查看、修改和排错。
 
 ## 4. 首次启动
 
@@ -145,6 +157,12 @@ docker logs -f asterdrive-follower
 - `startup complete — listening on 0.0.0.0:3000`
 
 这条路径里，**不需要再手动执行 `node enroll`，也不需要首启后再额外重启一遍**。
+
+::: tip bootstrap ENV 要成对出现
+`ASTER_BOOTSTRAP_REMOTE_MASTER_URL` 和 `ASTER_BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN` 必须一起设置。
+
+如果只设置其中一个，服务会在启动早期提示配置不完整；如果两个都不设置，就按普通 follower 启动，不会自动 enroll。
+:::
 
 ## 5. 验证 follower 已经 ready
 
@@ -180,7 +198,7 @@ curl http://127.0.0.1:3001/health/ready
 - 基础路径：`default` 这类相对路径
 - 勾选“设为默认接收落点”
 
-local 接收落点的路径会被限制在 follower 的 `server.follower.managed_ingress_local_root` 下面。  
+local 接收落点的路径会被限制在 follower 的 `server.follower.managed_ingress_local_root` 下面。
 如果你要让 follower 再写到 S3 / MinIO，也是在这里创建 `s3` 接收落点，而不是在 bootstrap ENV 里传。
 
 接收落点应用成功后，再去：
@@ -204,14 +222,14 @@ local 接收落点的路径会被限制在 follower 的 `server.follower.managed
 docker compose up -d
 ```
 
-数据库里的主控绑定已经持久化了；后续重启 follower，不需要再重复 bootstrap。  
+数据库里的主控绑定已经持久化了；后续重启 follower，不需要再重复 bootstrap。
 但 `ASTER__SERVER__START_MODE=follower` 这种长期运行配置，仍然应该保留。
 
-## 常见坑
+## 常见问题
 
 ### 日志里提示 token 已完成、已过期或已被替换
 
-这说明你拿的是旧 token。  
+这说明你拿的是旧 token。
 回主控后台重新生成一条新的 enrollment token，再更新 Compose。
 
 ### `/health` 是 200，但 `/health/ready` 还是 503
@@ -238,5 +256,7 @@ docker compose up -d
 - 直接在 `/data/config.toml` 里把 `[server].start_mode` 改成 `follower`
 - 或者像上面的 Compose 一样，长期保留 `ASTER__SERVER__START_MODE=follower`
 
-别指望 bootstrap token 自己把一份已存在的 `primary` 配置文件改成 `follower`。  
-它不会替你偷偷改现有配置。
+bootstrap token 不会自动把既有 `primary` 配置改为 `follower`。
+请显式修改 `start_mode`，或长期保留环境变量覆盖。
+
+如果启动时已经带了 `ASTER_BOOTSTRAP_REMOTE_*`，但最终加载出来的模式仍然是 `primary`，服务会停止并提示先切到 `follower`，这是为了避免把主控实例误接成从节点。

@@ -1,10 +1,10 @@
 # 升级与版本迁移
 
-这一篇覆盖 AsterDrive 在 alpha 阶段的版本升级流程：升级前要备份什么、二进制和 Docker 各自怎么升、升级后怎么验证、出问题怎么回滚。  
+这一篇覆盖 AsterDrive 的版本升级流程：升级前要备份什么、二进制和 Docker 各自怎么升、升级后怎么验证、出问题怎么回滚。
 按你部署方式往下找对应章节即可。
 
-::: warning alpha 阶段提醒
-当前版本（`v0.0.1-alpha.x`）处于早期开发阶段。alpha 版本之间可能出现需要数据迁移的破坏性变更，**升级前务必备份**，详见 [备份与恢复](./backup)。
+::: warning 升级前先备份
+正式版本会尽量保持升级路径清晰，但升级仍然可能包含数据库 migration、配置项迁移或镜像依赖调整。升级前请完整备份 `config.toml`、数据库和本地存储目录，详见 [备份与恢复](./backup)。
 :::
 
 ## 升级前先做这几件事
@@ -140,15 +140,44 @@ PostgreSQL 和 SQLite 不受这个限制。
 
 详见 [备份与恢复](./backup#恢复顺序)。
 
-## 关于 migration squash
+## 从早期预发布构建升级
 
-AsterDrive 已在 alpha/rc 阶段引入 migration baseline 整理（[#89](https://github.com/AptS-1547/AsterDrive/issues/89)），把历史 migration 合并为新的基线。
+AsterDrive 在正式版前做过两次 migration baseline 整理。全新正式版部署不需要处理这一节；只有从早期预发布构建一路升级上来的实例，才需要按来源版本确认路径。
 
-这次合并采用 **hard cutover** 策略：
+| 你现在的来源版本 | 建议路径 | 说明 |
+| --- | --- | --- |
+| 早于 `v0.0.1-alpha.25` | 先升级并运行到 `v0.0.1-alpha.25` | 让第一轮 rebase 前的历史 migration 先跑到最新 |
+| `v0.0.1-alpha.25` | 再升级并运行到 `v0.0.1-alpha.26` | `alpha.26` 把更早的历史 migration 压成第一版 baseline |
+| `v0.0.1-alpha.26` 到 `v0.1.0-beta.5` | 先升级并运行到最后一个 beta 构建 | 让 beta 阶段新增的 migration 全部落库 |
+| `v0.1.0-beta.5` | 再升级到 `v0.1.0-rc.1` 或更新版本 | `rc.1` 把 beta 阶段后的迁移链收口到新的 baseline |
+| 全新正式版部署 | 直接部署正式版 | 空数据库会直接执行当前 baseline |
 
-- **新部署** —— 空数据库直接执行新的 baseline migration，不再执行历史 migration 链
-- **已有部署** —— 必须先升级并运行到最后一个 pre-rc.1 构建，确认 `m20260502_000001_baseline_schema`、`m20260508_000001_split_file_folder_owner_provenance`、`m20260511_000001_add_background_task_failure_can_retry` 全部应用后，再升级到包含 rebase 的版本
-- **迁移记录重写** —— 如果数据库已经完整应用 pre-rc.1 的旧 migration 链，启动时会在事务内清空 `seaql_migrations` 并写入新的 baseline migration 名称；业务表数据不会被清空
-- **不完整旧库** —— 如果 `seaql_migrations` 显示旧 migration 没跑完，服务会拒绝启动，并提示先回到最后一个 pre-rc.1 构建完成迁移
+### 第一段：`alpha.25` 到 `alpha.26`
 
-升级前请先备份数据库。不要手工修改 `seaql_migrations`，也不要对业务表执行 `TRUNCATE`；rebase 过程只会重写 migration 元数据。
+`v0.0.1-alpha.26` 做了第一轮 hard cutover，把 `alpha.25` 及更早版本的历史 migration 合并成 `m20260502_000001_baseline_schema`。
+
+如果你的数据库早于 `alpha.25`，请先运行到 `alpha.25`，确认旧迁移链已经完整应用。然后再升级到 `alpha.26` 并让服务完整启动一次。确认 `alpha.26` 的 migration 已经跑完后，再继续往 beta / rc / 正式版升级。
+
+### 第二段：`beta.5` 到 `rc.1`
+
+`v0.1.0-rc.1` 做了第二轮 baseline 收口，当前 migration 集合压缩为：
+
+```text
+m20260512_000001_baseline_schema
+```
+
+已有部署必须先跑完最后一组 pre-rc.1 migration：
+
+```text
+m20260502_000001_baseline_schema
+m20260508_000001_split_file_folder_owner_provenance
+m20260511_000001_add_background_task_failure_can_retry
+```
+
+如果这三条记录齐全，升级到 `rc.1` 或更新版本时，AsterDrive 会校验关键 schema sentinels，然后只重写 `seaql_migrations` 元数据到新的 baseline；业务表数据不会被清空。
+
+如果 migration 历史不完整，服务会拒绝启动，并提示先回到最后一个 pre-rc.1 构建完成迁移。不要手工修改 `seaql_migrations`，也不要对业务表执行 `TRUNCATE`。
+
+::: tip 拿不准当前库在哪一段
+先备份现状，再用当前版本的 `aster_drive doctor --database-url ...` 看 `Database migrations` 检查项。它会提示是缺少 pre-rc.1 migration、混合了新旧 baseline，还是已经在当前 baseline 上。
+:::

@@ -8,7 +8,7 @@
 排查前先做两件事：
 
 1. 看一眼 `/health` 和 `/health/ready` 的返回，能直接告诉你是 DB 不通还是存储后端没起来
-2. 看一眼最近的日志；AsterDrive 的错误码会带 `error_code`，比对 [错误码处理](../guide/errors) 比看英文报错快
+2. 看一眼最近的日志；AsterDrive 的错误码会带 `error_code`，比对 [错误码处理](/guide/errors) 比看英文报错快
 
 ---
 
@@ -109,7 +109,7 @@
   - 如果走外部预览器，先在 `管理 -> 系统设置 -> 站点配置 -> 预览应用` 里看绑定是否正确
   - 如果走 WOPI（Collabora / OnlyOffice），需要确认 WOPI 服务能反向访问到 AsterDrive 的公开站点来源（Origin）
 
-WOPI 接入细节见 [文件编辑](../guide/editing)。
+WOPI 接入细节见 [文件编辑](/guide/editing)。
 
 ---
 
@@ -239,7 +239,7 @@ WOPI access_token 是短期的；如果客户端打开很久后才操作，token
 
 不是消失，是位置改了。先看 [更新日志](https://github.com/AptS-1547/AsterDrive/blob/master/CHANGELOG.md) 对应版本段。
 
-如果你用的是 alpha 版本之间的升级，建议升级前先备份。详见 [备份与恢复](./backup)。
+如果是从早期预发布构建升级，建议先看 [升级与版本迁移](./upgrade) 里的早期构建说明；升级前仍然建议完整备份，详见 [备份与恢复](./backup)。
 
 ---
 

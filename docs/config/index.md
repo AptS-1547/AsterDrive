@@ -1,7 +1,7 @@
 # 配置总览
 
 ::: tip 这一篇先帮你分清“在哪改”
-AsterDrive 的配置分得很清楚。先把这些层分开，后面就不会把部署问题塞到后台，也不会把用户规则硬塞回 `config.toml`。
+AsterDrive 的配置分得很清楚。先把这些层分开，后续就能更容易判断哪些属于部署问题、哪些属于后台规则、哪些应写入 `config.toml`。
 先看自己要改哪一层，再翻对应页面就行，本页不用从头读到尾。
 :::
 
@@ -15,6 +15,26 @@ AsterDrive 的配置分得很清楚。先把这些层分开，后面就不会把
 - **反向代理 / 对象存储自己的配置** —— HTTPS、大文件上传、WebDAV 透传、S3 直传
 
 前面几层是 AsterDrive 自己管的；最后一层属于反向代理、对象存储和外部网络环境。
+
+```text
+启动服务
+  |
+  +-- config.toml / ASTER__ 环境变量
+  |     负责：监听地址、数据库、日志、WebDAV 前缀、节点模式
+  |
+  +-- 数据库里的系统设置
+  |     负责：站点、注册、Cookie、邮件、回收站、WOPI、审计
+  |
+  +-- 存储策略 + 策略组
+  |     负责：文件落点、上传方式、用户/团队分流
+  |
+  +-- 外部环境
+        负责：HTTPS、反向代理、S3 CORS、WebDAV 方法透传
+```
+
+::: tip 判断规则
+服务启动前就必须知道的东西，通常在 `config.toml`。服务已经能打开后才调整的全站规则，通常在后台系统设置。文件写到哪里，去存储策略和策略组。公网入口、证书和上传体积限制，去反向代理。
+:::
 
 ## 我想做这件事，去哪改
 
@@ -54,6 +74,24 @@ ASTER__DATABASE__URL="postgres://user:pass@localhost/asterdrive"
 ASTER__WEBDAV__PREFIX=/dav
 ```
 
+如果用裸二进制启动，进程会先读取当前工作目录下的 `.env`，再按同一套环境变量规则启动。长期部署时建议把 `.env` 放在服务实际的工作目录里，并把权限收紧。
+
+## 常见环境变量分几类
+
+| 类型 | 示例 | 什么时候用 |
+| --- | --- | --- |
+| 启动配置覆盖 | `ASTER__SERVER__HOST`、`ASTER__DATABASE__URL`、`ASTER__SERVER__START_MODE` | 服务启动前就要确定的配置；优先级高于 `config.toml` |
+| 首次引导开关 | `ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES` | 只影响系统设置第一次写入默认值；初始化完成后，后续请在后台系统设置里改 |
+| 从节点自动接入 | `ASTER_BOOTSTRAP_REMOTE_MASTER_URL`、`ASTER_BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN` | Docker follower 首次启动时自动 enroll；成功后建议移除 |
+| 媒体处理默认值 | `ASTER_BOOTSTRAP_ENABLE_VIPS_CLI`、`ASTER_BOOTSTRAP_ENABLE_FFMPEG_CLI` | 只在媒体处理系统设置还不存在时，用来决定初始默认处理器 |
+| 运维 CLI 参数 | `ASTER_CLI_DATABASE_URL`、`ASTER_CLI_OUTPUT_FORMAT` | 脚本里不想每次写长参数时使用，见 [运维 CLI](/deployment/ops-cli) |
+
+::: tip 判断一个 ENV 要不要长期保留
+像 `ASTER__SERVER__START_MODE`、`ASTER__DATABASE__URL` 这类是长期运行配置，可以保留。
+
+像 enrollment token 这类一次性 bootstrap 输入，成功后就可以删掉，避免下次排查时误以为它还会继续生效。
+:::
+
 ## `config.toml` 里有哪些分区
 
 | 分区 | 作用 |
@@ -82,8 +120,8 @@ ASTER__WEBDAV__PREFIX=/dav
 - 自定义配置
 - 其他
 
-::: tip 上线前最容易踩的几项
-- 对外上线前，先填 `公开站点地址`；多个公开域名逐项添加，主域名放在最前面
+::: tip 上线前容易忽略的几项
+- 对外上线前，先填 `公开站点地址`；多个公开域名逐项添加，默认来源放在最前面
 - 准备开放注册、找回密码或邮箱改绑前，先把邮件发通
 - 纯 HTTP 测试环境才临时关闭 Cookie 的 HTTPS 要求
 - 容量紧张时，缩短回收站、历史版本、任务产物保留时间
@@ -120,5 +158,5 @@ ASTER__WEBDAV__PREFIX=/dav
 - Docker 官方镜像：容器里的 `/data`
 
 ::: warning 长期部署写绝对路径
-数据库路径、本地存储路径、临时目录最好都写绝对路径——以后不会被工作目录偷偷影响。
+数据库路径、本地存储路径、临时目录最好都写绝对路径，避免后续受工作目录变化影响。
 :::

@@ -91,11 +91,11 @@ trusted_proxies = ["127.0.0.1", "172.16.0.0/12"]
 - `trusted_proxies` 支持单 IP 和 CIDR，例如 `127.0.0.1`、`10.0.0.0/8`、`172.16.0.0/12`
 - 不要把不受你控制的公网段放进去，这等于相信别人帮你报真实 IP
 
-如果你不想在应用层处理这件事，也可以继续关掉 AsterDrive 限流，把限流交给反向代理（Nginx `limit_req`、Caddy `rate_limit`、Traefik `RateLimit` 中间件）。但别两边都配得很紧，不然排障时会很烦。
+如果你不想在应用层处理这件事，也可以继续关掉 AsterDrive 限流，把限流交给反向代理（Nginx `limit_req`、Caddy `rate_limit`、Traefik `RateLimit` 中间件）。但不建议两边都配置得很紧，否则排障时容易混淆。
 
 ## 几条经验
 
-- 第一次启用保守一点，`burst_size` 别设太小
+- 第一次启用保守一点，`burst_size` 不要设得太小
 - 对外开放公开分享页时，重点关注 `auth` 和 `public`
 - 反代后先确认 `trusted_proxies` 覆盖的是代理到 AsterDrive 的那一跳，不一定是公网入口 IP
 - 不确定时先在测试环境观察一段时间再上
