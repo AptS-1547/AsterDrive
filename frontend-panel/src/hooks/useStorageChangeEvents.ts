@@ -219,6 +219,10 @@ export function useStorageChangeEvents() {
 				// EventSource 的 onerror 不带 HTTP 状态码，无法区分 401/5xx/网络断开。
 				// 统一关闭当前连接、走退避重连，不让浏览器默认 3s 重连风暴。
 				logger.debug("storage change event stream error", error);
+				if (source?.readyState === EventSource.CLOSED) {
+					source = null;
+					return;
+				}
 				failureCount += 1;
 				source?.close();
 				source = null;

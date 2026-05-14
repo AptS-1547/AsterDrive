@@ -69,11 +69,24 @@ pub async fn get_storage_events(
 ) -> Result<HttpResponse> {
     let user_id = claims.user_id;
     let session_version = claims.session_version;
+    let shutdown_token = shutdown_token.map(|token| token.get_ref().clone());
+    if shutdown_token
+        .as_ref()
+        .is_some_and(CancellationToken::is_cancelled)
+    {
+        tracing::debug!(
+            user_id,
+            "rejecting storage change event stream during server shutdown"
+        );
+        return Ok(HttpResponse::NoContent()
+            .insert_header(("Cache-Control", "no-cache"))
+            .finish());
+    }
+
     let visible_team_ids = revalidate_storage_event_stream(&state, user_id, session_version, true)
         .await?
         .expect("visible teams should be loaded on initial SSE auth check");
     let mut rx = state.storage_change_tx.subscribe();
-    let shutdown_token = shutdown_token.map(|token| token.get_ref().clone());
 
     let stream = async_stream::stream! {
         let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(15));

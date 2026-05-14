@@ -41,11 +41,15 @@ const mockState = vi.hoisted(() => ({
 
 class MockEventSource {
 	static instances: MockEventSource[] = [];
+	static CONNECTING = 0;
+	static OPEN = 1;
+	static CLOSED = 2;
 
 	onerror: ((event: Event) => void) | null = null;
 	onmessage: ((event: MessageEvent<string>) => void) | null = null;
 	onopen: ((event: Event) => void) | null = null;
 	close = vi.fn();
+	readyState = MockEventSource.CONNECTING;
 	url: string;
 	withCredentials: boolean;
 
@@ -64,7 +68,13 @@ class MockEventSource {
 	}
 
 	triggerOpen() {
+		this.readyState = MockEventSource.OPEN;
 		this.onopen?.(new Event("open"));
+	}
+
+	triggerClosedError() {
+		this.readyState = MockEventSource.CLOSED;
+		this.onerror?.(new Event("error"));
 	}
 
 	static reset() {
@@ -421,6 +431,26 @@ describe("useStorageChangeEvents", () => {
 			MockEventSource.instances[2]?.triggerError();
 			vi.advanceTimersByTime(4000);
 			expect(MockEventSource.instances).toHaveLength(4);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("does not reconnect after the server permanently closes the stream", async () => {
+		vi.useFakeTimers();
+		try {
+			const { useStorageChangeEvents } = await import(
+				"@/hooks/useStorageChangeEvents"
+			);
+			renderHook(() => useStorageChangeEvents());
+
+			expect(MockEventSource.instances).toHaveLength(1);
+
+			MockEventSource.instances[0]?.triggerClosedError();
+			vi.advanceTimersByTime(60_000);
+
+			expect(MockEventSource.instances[0]?.close).not.toHaveBeenCalled();
+			expect(MockEventSource.instances).toHaveLength(1);
 		} finally {
 			vi.useRealTimers();
 		}
