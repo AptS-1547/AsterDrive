@@ -216,6 +216,7 @@ pub async fn update<S: PrimaryRuntimeState>(
 }
 
 pub async fn delete<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<()> {
+    tracing::debug!(remote_node_id = id, "deleting remote node");
     let policy_refs = policy_repo::count_by_remote_node_id(state.db(), id).await?;
     if policy_refs > 0 {
         return Err(AsterError::validation_error(format!(
@@ -224,6 +225,7 @@ pub async fn delete<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<()> {
     }
     managed_follower_repo::delete(state.db(), id).await?;
     refresh_registry(state).await?;
+    tracing::info!(remote_node_id = id, "deleted remote node");
     Ok(())
 }
 

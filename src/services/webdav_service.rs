@@ -53,11 +53,14 @@ pub async fn recursive_soft_delete(
     folder_id: i64,
 ) -> Result<()> {
     let scope = WorkspaceStorageScope::Personal { user_id };
+    tracing::debug!(user_id, folder_id, "webdav soft deleting folder tree");
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
     let (files, folder_ids) =
         collect_folder_tree_models(&state.db, user_id, folder_id, false).await?;
 
     let file_ids: Vec<i64> = files.into_iter().map(|f| f.id).collect();
+    let file_count = file_ids.len();
+    let folder_count = folder_ids.len();
     let now = Utc::now();
 
     let txn = crate::db::transaction::begin(&state.db).await?;
@@ -74,6 +77,13 @@ pub async fn recursive_soft_delete(
             vec![folder.parent_id],
         ),
     );
+    tracing::debug!(
+        user_id,
+        folder_id,
+        file_count,
+        folder_count,
+        "webdav soft deleted folder tree"
+    );
 
     Ok(())
 }
@@ -87,8 +97,11 @@ pub async fn recursive_purge_folder(
     user_id: i64,
     folder_id: i64,
 ) -> Result<()> {
+    tracing::debug!(user_id, folder_id, "webdav purging folder tree");
     let (all_files, all_folder_ids) =
         collect_folder_tree_models(&state.db, user_id, folder_id, true).await?;
+    let file_count = all_files.len();
+    let folder_count = all_folder_ids.len();
 
     file_service::batch_purge_in_scope(
         state,
@@ -115,6 +128,14 @@ pub async fn recursive_purge_folder(
     }
     crate::services::folder_service::invalidate_folder_path_cache(state).await;
     folder_repo::delete_many(&state.db, &all_folder_ids).await?;
+    tracing::debug!(
+        user_id,
+        folder_id,
+        file_count,
+        folder_count,
+        deleted_shares,
+        "webdav purged folder tree"
+    );
 
     Ok(())
 }

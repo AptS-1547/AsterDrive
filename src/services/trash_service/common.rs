@@ -183,9 +183,16 @@ pub(super) async fn recursive_purge_folder_forest_in_resource_scope(
         return Ok(());
     }
 
+    tracing::debug!(
+        scope = ?scope,
+        root_folder_count = folder_ids.len(),
+        "purging folder forest permanently"
+    );
     let (all_files, all_folder_ids) =
         folder_service::collect_folder_forest_in_resource_scope(&state.db, scope, folder_ids, true)
             .await?;
+    let file_count = all_files.len();
+    let folder_count = all_folder_ids.len();
     file_service::batch_purge_in_resource_scope(state, scope, all_files).await?;
     property_repo::delete_all_for_entities(&state.db, EntityType::Folder, &all_folder_ids).await?;
     let deleted_shares = share_repo::delete_by_folder_ids(&state.db, &all_folder_ids).await?;
@@ -198,5 +205,13 @@ pub(super) async fn recursive_purge_folder_forest_in_resource_scope(
     }
     crate::services::folder_service::invalidate_folder_path_cache(state).await;
     folder_repo::delete_many(&state.db, &all_folder_ids).await?;
+    tracing::debug!(
+        scope = ?scope,
+        root_folder_count = folder_ids.len(),
+        file_count,
+        folder_count,
+        deleted_shares,
+        "purged folder forest permanently"
+    );
     Ok(())
 }

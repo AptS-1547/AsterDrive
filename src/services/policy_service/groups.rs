@@ -266,6 +266,12 @@ pub async fn update_group(
 
 pub async fn delete_group(state: &PrimaryAppState, id: i64) -> Result<()> {
     let group = policy_group_repo::find_group_by_id(&state.db, id).await?;
+    tracing::debug!(
+        policy_group_id = id,
+        policy_group_name = %group.name,
+        is_default = group.is_default,
+        "deleting storage policy group"
+    );
 
     if group.is_default {
         let all = policy_group_repo::find_all_groups(&state.db).await?;
@@ -288,6 +294,11 @@ pub async fn delete_group(state: &PrimaryAppState, id: i64) -> Result<()> {
 
     policy_group_repo::delete_group(&state.db, id).await?;
     state.policy_snapshot.reload(&state.db).await?;
+    tracing::info!(
+        policy_group_id = id,
+        policy_group_name = %group.name,
+        "deleted storage policy group"
+    );
     Ok(())
 }
 

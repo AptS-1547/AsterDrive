@@ -169,14 +169,28 @@ async fn delete_version_inner(
     scope: WorkspaceStorageScope,
     version: file_version::Model,
 ) -> Result<()> {
+    let version_id = version.id;
+    let file_id = version.file_id;
+    let version_number = version.version;
+    let blob_id = version.blob_id;
+    let size = version.size;
     let txn = crate::db::transaction::begin(&state.db).await?;
-    version_repo::delete_by_id(&txn, version.id).await?;
-    version_repo::decrement_versions_after(&txn, version.file_id, version.version).await?;
-    if version.size != 0 {
-        workspace_storage_service::update_storage_used(&txn, scope, -version.size).await?;
+    version_repo::delete_by_id(&txn, version_id).await?;
+    version_repo::decrement_versions_after(&txn, file_id, version_number).await?;
+    if size != 0 {
+        workspace_storage_service::update_storage_used(&txn, scope, -size).await?;
     }
     crate::db::transaction::commit(txn).await?;
-    cleanup_blob_if_unused(state, version.blob_id).await?;
+    cleanup_blob_if_unused(state, blob_id).await?;
+    tracing::debug!(
+        scope = ?scope,
+        file_id,
+        version_id,
+        version = version_number,
+        blob_id,
+        reclaimed_bytes = size,
+        "deleted file version"
+    );
     Ok(())
 }
 
@@ -437,6 +451,8 @@ pub async fn cleanup_excess(state: &PrimaryAppState, file_id: i64) -> Result<()>
     let file = file_repo::find_by_id(db, file_id).await?;
     let scope = resource_scope_from_file(&file)?;
     let max_versions = get_max_versions(state).await;
+    let mut deleted_count = 0u64;
+    let mut reclaimed_bytes = 0i64;
 
     loop {
         let count = version_repo::count_by_file_id(db, file_id).await?;
@@ -458,11 +474,27 @@ pub async fn cleanup_excess(state: &PrimaryAppState, file_id: i64) -> Result<()>
             }
             crate::db::transaction::commit(txn).await?;
             cleanup_blob_if_unused(state, oldest.blob_id).await?;
+            deleted_count += 1;
+            add_reclaimed_bytes(
+                &mut reclaimed_bytes,
+                oldest.size,
+                "cleanup excess version bytes",
+            )?;
         } else {
             break;
         }
     }
 
+    if deleted_count > 0 {
+        tracing::info!(
+            file_id,
+            scope = ?scope,
+            deleted_count,
+            reclaimed_bytes,
+            max_versions,
+            "cleaned up excess file versions"
+        );
+    }
     Ok(())
 }
 
@@ -497,6 +529,13 @@ pub async fn purge_all_versions(state: &PrimaryAppState, file_id: i64) -> Result
         cleanup_blob_if_unused(state, blob_id).await?;
     }
 
+    tracing::debug!(
+        file_id,
+        scope = ?scope,
+        version_count = versions.len(),
+        reclaimed_bytes,
+        "purged all file versions"
+    );
     Ok(())
 }
 

@@ -33,6 +33,13 @@ pub async fn lock(
         if let Some(existing) = lock_repo::find_by_entity(&txn, entity_type, entity_id).await? {
             match existing.timeout_at {
                 Some(timeout_at) if timeout_at < now => {
+                    tracing::debug!(
+                        lock_id = existing.id,
+                        entity_type = ?entity_type,
+                        entity_id,
+                        timeout_at = %timeout_at,
+                        "removing expired lock before acquiring replacement"
+                    );
                     lock_repo::delete_by_id(&txn, existing.id).await?;
                 }
                 _ => return Err(AsterError::resource_locked("resource is already locked")),
@@ -65,6 +72,14 @@ pub async fn lock(
     match result {
         Ok(lock) => {
             crate::db::transaction::commit(txn).await?;
+            tracing::debug!(
+                lock_id = lock.id,
+                entity_type = ?lock.entity_type,
+                entity_id = lock.entity_id,
+                owner_id = lock.owner_id,
+                timeout_at = ?lock.timeout_at,
+                "locked resource"
+            );
             Ok(lock)
         }
         Err(error) => {
@@ -100,7 +115,14 @@ pub async fn unlock(
         }
     }
 
-    do_unlock_by_entity(state, entity_type, entity_id).await
+    do_unlock_by_entity(state, entity_type, entity_id).await?;
+    tracing::debug!(
+        entity_type = ?entity_type,
+        entity_id,
+        user_id,
+        "unlocked resource"
+    );
+    Ok(())
 }
 
 /// 按 token 解锁（WebDAV UNLOCK 用）
@@ -112,6 +134,12 @@ pub async fn unlock_by_token(state: &PrimaryAppState, token: &str) -> Result<()>
 
     lock_repo::delete_by_token(db, token).await?;
     clear_entity_locked_if_unlocked(db, lock.entity_type, lock.entity_id).await?;
+    tracing::debug!(
+        lock_id = lock.id,
+        entity_type = ?lock.entity_type,
+        entity_id = lock.entity_id,
+        "unlocked resource by token"
+    );
     Ok(())
 }
 
@@ -124,6 +152,12 @@ pub async fn force_unlock(state: &PrimaryAppState, lock_id: i64) -> Result<()> {
 
     lock_repo::delete_by_id(db, lock_id).await?;
     clear_entity_locked_if_unlocked(db, lock.entity_type, lock.entity_id).await?;
+    tracing::debug!(
+        lock_id,
+        entity_type = ?lock.entity_type,
+        entity_id = lock.entity_id,
+        "force unlocked resource"
+    );
     Ok(())
 }
 

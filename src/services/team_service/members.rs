@@ -161,6 +161,13 @@ pub async fn remove_admin_member(
         member_user_id,
     )
     .await;
+    tracing::debug!(
+        team_id,
+        member_user_id,
+        membership_id = target_membership.id,
+        removed_role = ?target_membership.role,
+        "admin removed team member"
+    );
     Ok(())
 }
 
@@ -344,5 +351,14 @@ pub async fn remove_member(
         member_user_id,
     )
     .await;
+    tracing::debug!(
+        team_id,
+        actor_user_id,
+        member_user_id,
+        membership_id = target_membership.id,
+        removed_role = ?target_membership.role,
+        self_leave = actor_user_id == member_user_id,
+        "removed team member"
+    );
     Ok(())
 }

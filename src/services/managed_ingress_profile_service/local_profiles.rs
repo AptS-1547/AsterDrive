@@ -119,6 +119,12 @@ pub async fn delete<S: FollowerRuntimeState>(
     profile_key: &str,
 ) -> Result<()> {
     let existing = find_profile_or_err(state, binding.id, profile_key).await?;
+    tracing::debug!(
+        binding_id = binding.id,
+        profile_key = %existing.profile_key,
+        is_default = existing.is_default,
+        "deleting managed ingress profile"
+    );
     let count = managed_ingress_profile_repo::count_by_binding(state.db(), binding.id).await?;
     if existing.is_default && count > 1 {
         return Err(precondition_failed_with_subcode(
@@ -131,7 +137,13 @@ pub async fn delete<S: FollowerRuntimeState>(
         binding.id,
         &existing.profile_key,
     )
-    .await
+    .await?;
+    tracing::info!(
+        binding_id = binding.id,
+        profile_key = %existing.profile_key,
+        "deleted managed ingress profile"
+    );
+    Ok(())
 }
 
 pub async fn resolve_effective_target<S: FollowerRuntimeState>(

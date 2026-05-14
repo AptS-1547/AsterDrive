@@ -37,27 +37,53 @@ async fn cleanup_team_upload_sessions(
     state: &PrimaryAppState,
     sessions: &[upload_session::Model],
 ) -> Result<()> {
+    let mut cleaned_temp_objects = 0u64;
+    let mut aborted_multipart_uploads = 0u64;
     for session in sessions {
-        if let Some(temp_key) = session.s3_temp_key.as_deref()
-            && let Some(policy) = state.policy_snapshot.get_policy(session.policy_id)
-            && let Ok(driver) = state.driver_registry.get_driver(&policy)
+        let Some(temp_key) = session.s3_temp_key.as_deref() else {
+            continue;
+        };
+        let Some(policy) = state.policy_snapshot.get_policy(session.policy_id) else {
+            tracing::warn!(
+                upload_id = %session.id,
+                policy_id = session.policy_id,
+                temp_key,
+                "failed to load storage policy while cleaning team upload session"
+            );
+            continue;
+        };
+        let Ok(driver) = state.driver_registry.get_driver(&policy) else {
+            tracing::warn!(
+                upload_id = %session.id,
+                policy_id = session.policy_id,
+                temp_key,
+                "failed to resolve storage driver while cleaning team upload session"
+            );
+            continue;
+        };
+
         {
             if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
-                if let Some(multipart) = driver.as_multipart()
-                    && let Err(err) = multipart
+                if let Some(multipart) = driver.as_multipart() {
+                    if let Err(err) = multipart
                         .abort_multipart_upload(temp_key, multipart_id)
                         .await
-                {
-                    tracing::warn!(
-                        upload_id = %session.id,
-                        "failed to abort team multipart upload during cleanup: {err}"
-                    );
+                    {
+                        tracing::warn!(
+                            upload_id = %session.id,
+                            "failed to abort team multipart upload during cleanup: {err}"
+                        );
+                    } else {
+                        aborted_multipart_uploads += 1;
+                    }
                 }
             } else if let Err(err) = driver.delete(temp_key).await {
                 tracing::warn!(
                     upload_id = %session.id,
                     "failed to delete team temp upload object during cleanup: {err}"
                 );
+            } else {
+                cleaned_temp_objects += 1;
             }
         }
 
@@ -66,6 +92,14 @@ async fn cleanup_team_upload_sessions(
         crate::utils::cleanup_temp_dir(&temp_dir).await;
     }
 
+    if !sessions.is_empty() {
+        tracing::debug!(
+            upload_session_count = sessions.len(),
+            cleaned_temp_objects,
+            aborted_multipart_uploads,
+            "cleaned team upload sessions"
+        );
+    }
     Ok(())
 }
 
@@ -152,6 +186,12 @@ async fn delete_archived_team_folders<C: ConnectionTrait>(db: &C, team_id: i64) 
 
 async fn force_delete_archived_team(state: &PrimaryAppState, team: team::Model) -> Result<()> {
     let team_id = team.id;
+    let team_name = team.name.clone();
+    tracing::info!(
+        team_id,
+        team_name = %team_name,
+        "force deleting archived team"
+    );
     let upload_sessions = upload_session_repo::find_by_team(&state.db, team_id).await?;
     cleanup_team_upload_sessions(state, &upload_sessions).await?;
 
@@ -178,6 +218,13 @@ async fn force_delete_archived_team(state: &PrimaryAppState, team: team::Model) 
         crate::services::share_service::invalidate_all_share_token_record_cache(state).await;
     }
     crate::services::folder_service::invalidate_folder_path_cache(state).await;
+    tracing::info!(
+        team_id,
+        team_name = %team_name,
+        upload_session_count = upload_sessions.len(),
+        deleted_shares,
+        "force deleted archived team"
+    );
 
     Ok(())
 }

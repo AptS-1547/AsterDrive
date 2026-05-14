@@ -20,6 +20,12 @@ pub(crate) async fn batch_delete_in_scope(
     file_ids: &[i64],
     folder_ids: &[i64],
 ) -> Result<BatchResult> {
+    tracing::debug!(
+        scope = ?scope,
+        requested_file_count = file_ids.len(),
+        requested_folder_count = folder_ids.len(),
+        "batch soft deleting workspace entries"
+    );
     let mut result = BatchResult::new();
     let NormalizedSelection {
         file_ids: normalized_file_ids,
@@ -114,6 +120,10 @@ pub(crate) async fn batch_delete_in_scope(
     if !file_ids_to_delete.is_empty() || !folder_ids_to_delete.is_empty() {
         let now = Utc::now();
         let file_ids_to_delete: Vec<i64> = file_ids_to_delete.into_iter().collect();
+        let direct_file_count = direct_file_ids_deleted.len();
+        let root_folder_count = root_folder_ids_to_delete.len();
+        let total_file_count = file_ids_to_delete.len();
+        let total_folder_count = folder_ids_to_delete.len();
 
         let txn = crate::db::transaction::begin(&state.db).await?;
         file_repo::soft_delete_many(&txn, &file_ids_to_delete, now).await?;
@@ -144,6 +154,23 @@ pub(crate) async fn batch_delete_in_scope(
                 ),
             );
         }
+        tracing::debug!(
+            scope = ?scope,
+            direct_file_count,
+            root_folder_count,
+            total_file_count,
+            total_folder_count,
+            succeeded = result.succeeded,
+            failed = result.failed,
+            "batch soft deleted workspace entries"
+        );
+    } else {
+        tracing::debug!(
+            scope = ?scope,
+            succeeded = result.succeeded,
+            failed = result.failed,
+            "batch soft delete completed without database changes"
+        );
     }
 
     Ok(result)

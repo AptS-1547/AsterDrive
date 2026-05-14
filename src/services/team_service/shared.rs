@@ -493,6 +493,14 @@ pub(super) async fn create_team_record(
         initial_member_user_id,
     )
     .await;
+    tracing::info!(
+        team_id = created_team.id,
+        created_by_user_id,
+        initial_member_user_id,
+        initial_member_role = ?initial_member_role,
+        policy_group_id,
+        "created team"
+    );
 
     Ok(created_team)
 }
@@ -521,11 +529,17 @@ pub(super) async fn update_team_record(
         state, updated.id,
     )
     .await;
+    tracing::debug!(
+        team_id = updated.id,
+        policy_group_id = updated.policy_group_id,
+        "updated team"
+    );
     Ok(updated)
 }
 
 pub(super) async fn archive_team_record(state: &PrimaryAppState, team: team::Model) -> Result<()> {
     let team_id = team.id;
+    let team_name = team.name.clone();
     let mut active = team.into_active_model();
     let now = Utc::now();
     active.archived_at = Set(Some(now));
@@ -535,6 +549,12 @@ pub(super) async fn archive_team_record(state: &PrimaryAppState, team: team::Mod
         state, team_id,
     )
     .await;
+    tracing::info!(
+        team_id,
+        team_name = %team_name,
+        archived_at = %now,
+        "archived team"
+    );
     Ok(())
 }
 
@@ -542,6 +562,8 @@ pub(super) async fn restore_team_record(
     state: &PrimaryAppState,
     team: team::Model,
 ) -> Result<team::Model> {
+    let team_id = team.id;
+    let team_name = team.name.clone();
     let mut active = team.into_active_model();
     let now = Utc::now();
     active.archived_at = Set(None);
@@ -552,6 +574,11 @@ pub(super) async fn restore_team_record(
         restored.id,
     )
     .await;
+    tracing::info!(
+        team_id,
+        team_name = %team_name,
+        "restored archived team"
+    );
     Ok(restored)
 }
 

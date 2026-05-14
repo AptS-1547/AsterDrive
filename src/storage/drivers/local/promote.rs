@@ -28,7 +28,14 @@ pub async fn promote_local_file_if_absent(
                 Ok(())
             }
             Err(error) => {
-                let _ = tokio::fs::remove_file(&target).await;
+                if let Err(cleanup_error) = tokio::fs::remove_file(&target).await
+                    && cleanup_error.kind() != std::io::ErrorKind::NotFound
+                {
+                    tracing::warn!(
+                        target = %target.display(),
+                        "failed to cleanup invalid promoted local blob: {cleanup_error}"
+                    );
+                }
                 Err(error)
             }
         },
@@ -61,7 +68,14 @@ async fn promote_local_file_via_temp_copy(
     match copy_file_to_temp(local_path, &temp_path, expected_size).await {
         Ok(()) => {}
         Err(error) => {
-            let _ = tokio::fs::remove_file(&temp_path).await;
+            if let Err(cleanup_error) = tokio::fs::remove_file(&temp_path).await
+                && cleanup_error.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!(
+                    temp_path = %temp_path.display(),
+                    "failed to cleanup local dedup temp copy after copy error: {cleanup_error}"
+                );
+            }
             return Err(error);
         }
     }
@@ -81,7 +95,14 @@ async fn promote_local_file_via_temp_copy(
         ))),
     };
 
-    let _ = tokio::fs::remove_file(&temp_path).await;
+    if let Err(cleanup_error) = tokio::fs::remove_file(&temp_path).await
+        && cleanup_error.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(
+            temp_path = %temp_path.display(),
+            "failed to cleanup local dedup temp copy: {cleanup_error}"
+        );
+    }
     result
 }
 

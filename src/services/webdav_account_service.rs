@@ -199,6 +199,12 @@ pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
     webdav_account_repo::delete(&state.db, id).await?;
     crate::webdav::auth::invalidate_webdav_auth_for_username(state, &account.username).await;
+    tracing::debug!(
+        webdav_account_id = id,
+        user_id,
+        username = %account.username,
+        "deleted WebDAV account"
+    );
     Ok(())
 }
 

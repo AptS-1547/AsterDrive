@@ -134,6 +134,12 @@ pub async fn create(
 
 pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()> {
     let policy = policy_repo::find_by_id(&state.db, id).await?;
+    tracing::debug!(
+        policy_id = id,
+        policy_name = %policy.name,
+        force,
+        "deleting storage policy"
+    );
 
     if policy.id == SYSTEM_STORAGE_POLICY_ID {
         return Err(AsterError::validation_error(
@@ -216,6 +222,12 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
     state.driver_registry.invalidate(id);
     state.policy_snapshot.reload(&state.db).await?;
     crate::services::config_service::invalidate_public_thumbnail_support_cache();
+    tracing::info!(
+        policy_id = id,
+        policy_name = %policy.name,
+        force,
+        "deleted storage policy"
+    );
     Ok(())
 }
 

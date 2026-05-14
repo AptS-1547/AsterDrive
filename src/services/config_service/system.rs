@@ -197,6 +197,7 @@ pub async fn delete(state: &PrimaryAppState, key: &str) -> Result<()> {
     config_repo::delete_by_key(&state.db, key).await?;
     state.runtime_config.remove(key);
     invalidate_dependent_public_config_caches(key);
+    tracing::debug!(key, "deleted runtime config");
     Ok(())
 }
 

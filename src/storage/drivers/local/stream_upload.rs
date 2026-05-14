@@ -35,7 +35,14 @@ impl StreamUploadDriver for LocalDriver {
 
         // 验证实际写入大小与声明大小一致
         if written != declared_size {
-            let _ = tokio::fs::remove_file(&temp_path).await;
+            if let Err(error) = tokio::fs::remove_file(&temp_path).await
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!(
+                    path = %temp_path.display(),
+                    "failed to cleanup local stream temp file after size mismatch: {error}"
+                );
+            }
             return Err(AsterError::storage_driver_error(format!(
                 "size mismatch: declared {}, actual written {}",
                 size, written
@@ -54,8 +61,15 @@ impl StreamUploadDriver for LocalDriver {
         })?;
         let result = self.put_file(storage_path, temp_path_str).await;
 
-        // 清理临时文件（忽略错误）
-        let _ = tokio::fs::remove_file(&temp_path).await;
+        if let Err(error) = tokio::fs::remove_file(&temp_path).await
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(
+                path = %temp_path.display(),
+                storage_path,
+                "failed to cleanup local stream temp file: {error}"
+            );
+        }
 
         result
     }
@@ -72,7 +86,15 @@ impl StreamUploadDriver for LocalDriver {
             tokio::fs::copy(local_path, &full)
                 .await
                 .map_aster_err_ctx("copy file", AsterError::storage_driver_error)?;
-            let _ = tokio::fs::remove_file(local_path).await;
+            if let Err(error) = tokio::fs::remove_file(local_path).await
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!(
+                    local_path,
+                    storage_path,
+                    "failed to cleanup source file after local copy fallback: {error}"
+                );
+            }
         }
         Ok(storage_path.to_string())
     }

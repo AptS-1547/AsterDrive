@@ -74,6 +74,7 @@ pub(crate) async fn batch_purge_in_resource_scope(
 
     let version_blob_ids =
         crate::db::repository::version_repo::delete_all_by_file_ids(&txn, &file_ids).await?;
+    let version_blob_count = version_blob_ids.len();
 
     crate::db::repository::property_repo::delete_all_for_entities(
         &txn,
@@ -144,6 +145,8 @@ pub(crate) async fn batch_purge_in_resource_scope(
         scope = ?scope,
         file_count = input_count,
         freed_bytes = total_freed_bytes,
+        version_blob_count,
+        deleted_shares,
         cleanup_blob_count = blob_ids.len(),
         "purged files permanently"
     );

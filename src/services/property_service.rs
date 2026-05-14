@@ -130,5 +130,14 @@ pub async fn delete(
         return Err(AsterError::auth_forbidden("DAV: namespace is read-only"));
     }
 
-    property_repo::delete_prop(&state.db, entity_type, entity_id, namespace, name).await
+    property_repo::delete_prop(&state.db, entity_type, entity_id, namespace, name).await?;
+    tracing::debug!(
+        entity_type = ?entity_type,
+        entity_id,
+        user_id,
+        namespace,
+        name,
+        "deleted entity property"
+    );
+    Ok(())
 }

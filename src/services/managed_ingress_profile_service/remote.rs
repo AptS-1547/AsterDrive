@@ -44,10 +44,21 @@ pub async fn delete_remote<S: PrimaryRuntimeState>(
     remote_node_id: i64,
     profile_key: &str,
 ) -> Result<()> {
+    tracing::debug!(
+        remote_node_id,
+        profile_key,
+        "deleting remote managed ingress profile"
+    );
     remote_client_for_node(state, remote_node_id)
         .await?
         .delete_ingress_profile(profile_key)
-        .await
+        .await?;
+    tracing::info!(
+        remote_node_id,
+        profile_key,
+        "deleted remote managed ingress profile"
+    );
+    Ok(())
 }
 
 async fn remote_client_for_node<S: PrimaryRuntimeState>(
