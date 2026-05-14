@@ -66,13 +66,22 @@ test.describe
 
 			await page.getByRole("link", { name: "Tasks" }).click();
 			await expect(page).toHaveURL(/\/tasks$/);
-			await expect(page.getByText(displayName, { exact: true })).toBeVisible({
-				timeout: 30_000,
-			});
-			await page.getByRole("button", { name: "Show details" }).first().click();
-			await expect(page.getByText("Extract to staging")).toBeVisible();
-			await expect(page.getByText("Import to workspace")).toBeVisible();
-			await page
+			const taskCard = page
+				.locator('[data-slot="card"]')
+				.filter({
+					has: page.getByRole("heading", {
+						exact: true,
+						name: displayName,
+					}),
+				})
+				.first();
+			await expect(taskCard).toBeVisible({ timeout: 30_000 });
+			await taskCard
+				.getByRole("button", { exact: true, name: "Show details" })
+				.click();
+			await expect(taskCard.getByText("Extract to staging")).toBeVisible();
+			await expect(taskCard.getByText("Import to workspace")).toBeVisible();
+			await taskCard
 				.getByRole("button", { exact: true, name: "Open target folder" })
 				.click();
 			await expect(
@@ -89,10 +98,21 @@ test.describe
 				"/admin/tasks?kind=archive_extract&status=succeeded",
 				"Tasks",
 			);
-			await expect(page.getByText(displayName, { exact: true })).toBeVisible({
-				timeout: 30_000,
-			});
-			await expect(page.getByText("Archive extraction").first()).toBeVisible();
-			await expect(page.getByText("Completed").first()).toBeVisible();
+			const adminTaskRow = page
+				.getByRole("row")
+				.filter({
+					has: page.getByRole("cell", {
+						exact: true,
+						name: displayName,
+					}),
+				})
+				.first();
+			await expect(adminTaskRow).toBeVisible({ timeout: 30_000 });
+			await expect(
+				adminTaskRow.getByText("Archive extraction", { exact: true }),
+			).toBeVisible();
+			await expect(
+				adminTaskRow.getByText("Completed", { exact: true }),
+			).toBeVisible();
 		});
 	});

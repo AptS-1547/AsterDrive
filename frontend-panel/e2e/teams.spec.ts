@@ -128,12 +128,22 @@ test.describe
 
 			await page.getByRole("link", { name: "Tasks" }).click();
 			await expect(page).toHaveURL(new RegExp(`${workspacePath}/tasks$`));
-			await expect(
-				page.getByText(`Compress ${archiveName}`, { exact: true }),
-			).toBeVisible({
+			const taskDisplayName = `Compress ${archiveName}`;
+			const taskCard = page
+				.locator('[data-slot="card"]')
+				.filter({
+					has: page.getByRole("heading", {
+						exact: true,
+						name: taskDisplayName,
+					}),
+				})
+				.first();
+			await expect(taskCard).toBeVisible({
 				timeout: 30_000,
 			});
-			await page.getByRole("button", { name: "Show details" }).first().click();
-			await expect(page.getByText("Prepare archive sources")).toBeVisible();
+			await taskCard
+				.getByRole("button", { exact: true, name: "Show details" })
+				.click();
+			await expect(taskCard.getByText("Prepare archive sources")).toBeVisible();
 		});
 	});
