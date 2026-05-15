@@ -4710,8 +4710,8 @@ export interface components {
             kind: components["schemas"]["StorageChangeKind"];
             root_affected: boolean;
             /** Format: int64 */
-            storage_delta?: number | null;
-            workspace?: null | components["schemas"]["StorageChangeWorkspace"];
+            storage_delta: number | null;
+            workspace: null | components["schemas"]["StorageChangeWorkspace"];
         };
         /** @enum {string} */
         StorageChangeKind: "file.created" | "file.updated" | "file.trashed" | "file.restored_from_trash" | "file.purged" | "file.version_restored" | "file.version_deleted" | "folder.created" | "folder.updated" | "folder.trashed" | "folder.restored_from_trash" | "folder.purged" | "sync.required";

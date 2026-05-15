@@ -85,6 +85,10 @@ export type ShareListQuery = OperationQuery<"list_my_shares">;
 export type SharePublicInfo = components["schemas"]["SharePublicInfo"];
 export type ShareStatus = components["schemas"]["ShareStatus"];
 export type ShareTarget = components["schemas"]["ShareTarget"];
+export type StorageChangeEvent = components["schemas"]["StorageChangeEvent"];
+export type StorageChangeKind = components["schemas"]["StorageChangeKind"];
+export type StorageChangeWorkspace =
+	components["schemas"]["StorageChangeWorkspace"];
 export type TeamShareListQuery = OperationQuery<"list_team_shares">;
 
 // Admin, storage, and WebDAV

@@ -246,6 +246,8 @@ describe("BatchActionBar", () => {
 				folder_ids: [],
 				affected_parent_ids: [7],
 				root_affected: false,
+				affects_quota: false,
+				storage_delta: null,
 				at: "2026-05-13T00:00:00Z",
 			}),
 		).toBe(true);
@@ -257,6 +259,8 @@ describe("BatchActionBar", () => {
 				folder_ids: [5],
 				affected_parent_ids: [7],
 				root_affected: false,
+				affects_quota: false,
+				storage_delta: null,
 				at: "2026-05-13T00:00:00Z",
 			}),
 		).toBe(true);

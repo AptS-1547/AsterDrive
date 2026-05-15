@@ -1,42 +1,14 @@
 import type { Workspace } from "@/lib/workspace";
 import { workspaceKey } from "@/lib/workspace";
+import type {
+	StorageChangeEvent,
+	StorageChangeKind,
+	StorageChangeWorkspace,
+} from "@/types/api";
 
 const ECHO_TTL_MS = 5_000;
 
-type StorageChangeKind =
-	| "file.created"
-	| "file.updated"
-	| "file.trashed"
-	| "file.deleted"
-	| "file.restored"
-	| "file.restored_from_trash"
-	| "file.purged"
-	| "file.version_restored"
-	| "file.version_deleted"
-	| "folder.created"
-	| "folder.updated"
-	| "folder.trashed"
-	| "folder.deleted"
-	| "folder.restored"
-	| "folder.restored_from_trash"
-	| "folder.purged"
-	| "sync.required";
-
-type StorageChangeWorkspace =
-	| { kind: "personal" }
-	| { kind: "team"; team_id: number };
-
-export interface StorageChangeEventPayload {
-	kind: StorageChangeKind;
-	workspace?: StorageChangeWorkspace | null;
-	file_ids: number[];
-	folder_ids: number[];
-	affected_parent_ids: number[];
-	root_affected: boolean;
-	affects_quota?: boolean;
-	storage_delta?: number | null;
-	at: string;
-}
+export type StorageChangeEventPayload = StorageChangeEvent;
 
 interface StorageEventEchoInput {
 	kind: StorageChangeKind;

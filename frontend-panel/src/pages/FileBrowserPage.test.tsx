@@ -1357,6 +1357,8 @@ describe("FileBrowserPage", () => {
 				folder_ids: [],
 				affected_parent_ids: [12],
 				root_affected: false,
+				affects_quota: false,
+				storage_delta: null,
 				at: "2026-05-13T00:00:00Z",
 			}),
 		).toBe(true);
@@ -1368,6 +1370,8 @@ describe("FileBrowserPage", () => {
 				folder_ids: [2],
 				affected_parent_ids: [12],
 				root_affected: false,
+				affects_quota: false,
+				storage_delta: null,
 				at: "2026-05-13T00:00:00Z",
 			}),
 		).toBe(true);

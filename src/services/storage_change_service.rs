@@ -9,6 +9,8 @@ use std::{
 use chrono::{DateTime, Utc};
 use futures::future::join_all;
 use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use utoipa::ToSchema;
 
 use crate::cache::CacheBackend;
 use crate::runtime::PrimaryRuntimeState;
@@ -27,6 +29,7 @@ pub enum StorageChangeAudience {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub enum StorageChangeKind {
     #[serde(rename = "file.created")]
     FileCreated,
@@ -34,10 +37,6 @@ pub enum StorageChangeKind {
     FileUpdated,
     #[serde(rename = "file.trashed")]
     FileTrashed,
-    #[serde(rename = "file.deleted")]
-    FileDeleted,
-    #[serde(rename = "file.restored")]
-    FileRestored,
     #[serde(rename = "file.restored_from_trash")]
     FileRestoredFromTrash,
     #[serde(rename = "file.purged")]
@@ -52,10 +51,6 @@ pub enum StorageChangeKind {
     FolderUpdated,
     #[serde(rename = "folder.trashed")]
     FolderTrashed,
-    #[serde(rename = "folder.deleted")]
-    FolderDeleted,
-    #[serde(rename = "folder.restored")]
-    FolderRestored,
     #[serde(rename = "folder.restored_from_trash")]
     FolderRestoredFromTrash,
     #[serde(rename = "folder.purged")]
@@ -70,8 +65,6 @@ impl StorageChangeKind {
             Self::FileCreated
             | Self::FileUpdated
             | Self::FileTrashed
-            | Self::FileDeleted
-            | Self::FileRestored
             | Self::FileRestoredFromTrash
             | Self::FilePurged
             | Self::FileVersionRestored
@@ -79,8 +72,6 @@ impl StorageChangeKind {
             Self::FolderCreated
             | Self::FolderUpdated
             | Self::FolderTrashed
-            | Self::FolderDeleted
-            | Self::FolderRestored
             | Self::FolderRestoredFromTrash
             | Self::FolderPurged
             | Self::SyncRequired => true,
@@ -90,23 +81,29 @@ impl StorageChangeKind {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub enum StorageChangeWorkspace {
     Personal,
     Team { team_id: i64 },
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct StorageChangeEvent {
     #[serde(skip_serializing)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(ignore))]
     audience: StorageChangeAudience,
     pub kind: StorageChangeKind,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(required = true))]
     pub workspace: Option<StorageChangeWorkspace>,
     pub file_ids: Vec<i64>,
     pub folder_ids: Vec<i64>,
     pub affected_parent_ids: Vec<i64>,
     pub root_affected: bool,
     pub affects_quota: bool,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(required = true))]
     pub storage_delta: Option<i64>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub at: DateTime<Utc>,
 }
 
@@ -319,7 +316,7 @@ mod tests {
     #[test]
     fn storage_change_event_filters_personal_and_team_visibility() {
         let personal = StorageChangeEvent::new(
-            StorageChangeKind::FileDeleted,
+            StorageChangeKind::FileTrashed,
             WorkspaceStorageScope::Personal { user_id: 11 },
             vec![1],
             vec![],
