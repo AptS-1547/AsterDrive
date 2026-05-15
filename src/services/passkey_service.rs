@@ -570,6 +570,7 @@ pub async fn delete_passkey(state: &PrimaryAppState, user_id: i64, id: i64) -> R
 pub async fn start_login(
     state: &PrimaryAppState,
     identifier: Option<&str>,
+    conditional: bool,
 ) -> Result<PasskeyLoginStartResp> {
     let webauthn = build_webauthn(state)?;
     let (mut options, auth_state) = webauthn
@@ -579,7 +580,9 @@ pub async fn start_login(
         identifier: normalize_login_identifier(identifier),
         state: auth_state,
     };
-    options.mediation = None;
+    if !conditional {
+        options.mediation = None;
+    }
 
     let flow_id = new_flow_id();
     store_login_challenge(state, &flow_id, &challenge).await;
@@ -635,10 +638,12 @@ pub async fn finish_login(
     }
 
     let now = Utc::now();
-    let changed = stored.update_credential(&result).unwrap_or(false);
+    let changed = stored.update_credential(&result).ok_or_else(|| {
+        AsterError::auth_invalid_credentials("passkey credential update mismatch")
+    })?;
     if changed {
         let credential = stored_passkey_credential(&passkey_to_json(&stored)?)?;
-        passkey_repo::update_credential_after_auth(
+        if !passkey_repo::update_credential_after_auth(
             &state.db,
             passkey.id,
             credential,
@@ -647,9 +652,14 @@ pub async fn finish_login(
             u32_to_i64(result.counter(), "passkey sign count")?,
             now,
         )
-        .await?;
+        .await?
+        {
+            return Err(AsterError::auth_invalid_credentials("passkey not found"));
+        }
     } else {
-        passkey_repo::touch_last_used(&state.db, passkey.id, now).await?;
+        if !passkey_repo::touch_last_used(&state.db, passkey.id, now).await? {
+            return Err(AsterError::auth_invalid_credentials("passkey not found"));
+        }
     }
 
     let (access, refresh) =

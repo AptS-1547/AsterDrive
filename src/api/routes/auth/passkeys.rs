@@ -190,7 +190,12 @@ pub async fn start_login(
     body: web::Json<PasskeyLoginStartReq>,
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(&req, &state.runtime_config, RequestSourceMode::Required)?;
-    let resp = passkey_service::start_login(&state, body.identifier.as_deref()).await?;
+    let resp = passkey_service::start_login(
+        &state,
+        body.identifier.as_deref(),
+        body.conditional.unwrap_or(false),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 

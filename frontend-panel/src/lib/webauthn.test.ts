@@ -235,6 +235,47 @@ describe("webauthn", () => {
 		).toEqual([4, 5, 6]);
 	});
 
+	it("keeps non-string registration challenges and missing transport helpers intact", async () => {
+		const challenge = bytes(8, 9).buffer;
+		const userId = bytes(1).buffer;
+		const response = new MockAuthenticatorAttestationResponse({
+			attestationObject: bytes(2).buffer,
+			clientDataJSON: bytes(3).buffer,
+		}) as MockAuthenticatorAttestationResponse & {
+			getTransports?: () => string[];
+		};
+		response.getTransports = undefined;
+		credentialMocks.create.mockResolvedValue(
+			new MockPublicKeyCredential({
+				response,
+			}),
+		);
+
+		await expect(
+			createPasskeyCredential({
+				publicKey: {
+					challenge,
+					rp: { name: "AsterDrive" },
+					user: {
+						displayName: "Alice",
+						id: userId,
+						name: "alice@example.com",
+					},
+				},
+			}),
+		).resolves.toMatchObject({
+			response: {
+				transports: undefined,
+			},
+		});
+
+		const createOptions = credentialMocks.create.mock.calls[0]?.[0] as {
+			publicKey: PublicKeyCredentialCreationOptions;
+		};
+		expect(createOptions.publicKey.challenge).toBe(challenge);
+		expect(createOptions.publicKey.user.id).toBe(userId);
+	});
+
 	it("gets a passkey by merging mediation and abort signal into request options", async () => {
 		const controller = new AbortController();
 		credentialMocks.get.mockResolvedValue(

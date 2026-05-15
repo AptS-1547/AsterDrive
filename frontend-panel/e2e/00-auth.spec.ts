@@ -89,7 +89,8 @@ test.describe
 				resolveGetManually: true,
 			});
 			const passkeyRequests = await mockPasskeyLoginEndpoints(page, {
-				expectStartPayload: (payload) => expect(payload).toEqual({}),
+				expectStartPayload: (payload) =>
+					expect(payload).toEqual({ conditional: true }),
 			});
 			await page.route("**/api/v1/auth/me", async (route) => {
 				await route.fulfill({

@@ -404,7 +404,9 @@ export default function LoginPage() {
 
 		void (async () => {
 			try {
-				const start = await authService.startPasskeyLogin({});
+				const start = await authService.startPasskeyLogin({
+					conditional: true,
+				});
 				if (controller.signal.aborted) return;
 				const credential = await getPasskeyCredential(
 					start.public_key,

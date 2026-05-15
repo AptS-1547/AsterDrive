@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "@/pages/LoginPage";
 import { useThemeStore } from "@/stores/themeStore";
@@ -36,12 +42,15 @@ const MockWebAuthnUnsupportedError = vi.hoisted(
 
 const mockState = vi.hoisted(() => ({
 	check: vi.fn(),
+	conditionalPasskeyError: null as Error | null,
 	handleApiError: vi.fn(),
 	allowUserRegistration: true,
 	conditionalPasskeySupported: false,
+	forceEnableDisabledButtons: false,
 	finishPasskeyLogin: vi.fn(),
 	getPasskeyCredential: vi.fn(),
 	login: vi.fn(),
+	loggerWarn: vi.fn(),
 	location: {
 		hash: "",
 		pathname: "/login",
@@ -104,7 +113,7 @@ vi.mock("@/components/ui/button", () => ({
 	}) => (
 		<button
 			type={type ?? "button"}
-			disabled={disabled}
+			disabled={disabled && !mockState.forceEnableDisabledButtons}
 			onClick={onClick}
 			className={className}
 		>
@@ -182,6 +191,12 @@ vi.mock("@/lib/validation", () => ({
 	},
 }));
 
+vi.mock("@/lib/logger", () => ({
+	logger: {
+		warn: (...args: unknown[]) => mockState.loggerWarn(...args),
+	},
+}));
+
 vi.mock("@/services/authService", () => ({
 	authService: {
 		check: (...args: unknown[]) => mockState.check(...args),
@@ -217,7 +232,9 @@ vi.mock("@/lib/webauthn", () => ({
 	getPasskeyCredential: (...args: unknown[]) =>
 		mockState.getPasskeyCredential(...args),
 	isConditionalPasskeyLoginAvailable: () =>
-		Promise.resolve(mockState.conditionalPasskeySupported),
+		mockState.conditionalPasskeyError
+			? Promise.reject(mockState.conditionalPasskeyError)
+			: Promise.resolve(mockState.conditionalPasskeySupported),
 	isWebAuthnSupported: () => mockState.webAuthnSupported,
 	WebAuthnCancelledError: MockWebAuthnCancelledError,
 	WebAuthnUnsupportedError: MockWebAuthnUnsupportedError,
@@ -248,12 +265,15 @@ describe("LoginPage", () => {
 	beforeEach(() => {
 		document.documentElement.classList.remove("dark");
 		mockState.allowUserRegistration = true;
+		mockState.conditionalPasskeyError = null;
 		mockState.conditionalPasskeySupported = false;
+		mockState.forceEnableDisabledButtons = false;
 		mockState.check.mockReset();
 		mockState.finishPasskeyLogin.mockReset();
 		mockState.getPasskeyCredential.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.login.mockReset();
+		mockState.loggerWarn.mockReset();
 		mockState.location = {
 			hash: "",
 			pathname: "/login",
@@ -376,6 +396,29 @@ describe("LoginPage", () => {
 		expect(screen.getByText("passkey_unsupported")).toBeInTheDocument();
 	});
 
+	it("handles passkey support detection failures and blocked explicit passkey requests", async () => {
+		const detectionError = new Error("conditional detection failed");
+		mockState.conditionalPasskeyError = detectionError;
+		mockState.forceEnableDisabledButtons = true;
+
+		render(<LoginPage />);
+
+		await screen.findByRole("button", { name: /passkey_sign_in/ });
+		await waitFor(() => {
+			expect(mockState.loggerWarn).toHaveBeenCalledWith(
+				"conditional passkey support detection failed",
+				detectionError,
+			);
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: /passkey_sign_in/ }));
+
+		await waitFor(() => {
+			expect(mockState.toastError).toHaveBeenCalledWith("passkey_unsupported");
+		});
+		expect(mockState.startPasskeyLogin).not.toHaveBeenCalled();
+	});
+
 	it("signs users in with a supported passkey without an identifier", async () => {
 		mockState.webAuthnSupported = true;
 
@@ -406,6 +449,23 @@ describe("LoginPage", () => {
 		});
 	});
 
+	it("passes a trimmed identifier into explicit passkey login", async () => {
+		mockState.webAuthnSupported = true;
+
+		render(<LoginPage />);
+
+		fireEvent.change(await screen.findByLabelText("email_or_username"), {
+			target: { value: "  user@example.com  " },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /passkey_sign_in/ }));
+
+		await waitFor(() => {
+			expect(mockState.startPasskeyLogin).toHaveBeenCalledWith({
+				identifier: "user@example.com",
+			});
+		});
+	});
+
 	it("starts conditional passkey login from the username field", async () => {
 		mockState.webAuthnSupported = true;
 		mockState.conditionalPasskeySupported = true;
@@ -421,7 +481,9 @@ describe("LoginPage", () => {
 		});
 
 		await waitFor(() => {
-			expect(mockState.startPasskeyLogin).toHaveBeenCalledWith({});
+			expect(mockState.startPasskeyLogin).toHaveBeenCalledWith({
+				conditional: true,
+			});
 		});
 		await waitFor(() => {
 			expect(mockState.getPasskeyCredential).toHaveBeenCalledWith(
@@ -488,6 +550,47 @@ describe("LoginPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
 			"passkey_login_success",
 		);
+	});
+
+	it("ignores a conditional passkey result after the request has been aborted", async () => {
+		mockState.webAuthnSupported = true;
+		mockState.conditionalPasskeySupported = true;
+		let conditionalSignal: AbortSignal | undefined;
+		let resolveConditionalCredential:
+			| ((credential: { id: string }) => void)
+			| undefined;
+		const conditionalCredentialPromise = new Promise<{ id: string }>(
+			(resolve) => {
+				resolveConditionalCredential = resolve;
+			},
+		);
+		mockState.getPasskeyCredential.mockImplementation(
+			(
+				_options: unknown,
+				mediation?: CredentialMediationRequirement,
+				signal?: AbortSignal,
+			) => {
+				if (mediation === "conditional") {
+					conditionalSignal = signal;
+					return conditionalCredentialPromise;
+				}
+				return Promise.resolve({ id: "credential-1" });
+			},
+		);
+
+		const view = render(<LoginPage />);
+
+		await waitFor(() => {
+			expect(conditionalSignal).toBeDefined();
+		});
+		view.unmount();
+		await act(async () => {
+			resolveConditionalCredential?.({ id: "late-credential" });
+			await conditionalCredentialPromise;
+		});
+
+		expect(mockState.finishPasskeyLogin).not.toHaveBeenCalled();
+		expect(mockState.navigate).not.toHaveBeenCalled();
 	});
 
 	it("shows explicit passkey login errors for unsupported, cancelled, and API failures", async () => {

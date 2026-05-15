@@ -1068,6 +1068,99 @@ describe("AdminSettingsPage", () => {
 		expect(screen.getByDisplayValue("21")).toBeInTheDocument();
 	});
 
+	it("ignores invalid scaled number edits and saves blank scaled values explicitly", async () => {
+		render(<AdminSettingsPage section="auth" />);
+
+		const ttlInput = (await screen.findByDisplayValue(
+			"20",
+		)) as HTMLInputElement;
+
+		fireEvent.change(ttlInput, {
+			target: { value: "1.5" },
+		});
+		expect(
+			screen.queryByRole("button", { name: "save_changes" }),
+		).not.toBeInTheDocument();
+
+		fireEvent.change(ttlInput, {
+			target: { value: String(Number.MAX_SAFE_INTEGER + 1) },
+		});
+		expect(
+			screen.queryByRole("button", { name: "save_changes" }),
+		).not.toBeInTheDocument();
+
+		fireEvent.change(ttlInput, {
+			target: { value: "" },
+		});
+		fireEvent.click(
+			await screen.findByRole("button", { name: "save_changes" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.setConfig).toHaveBeenCalledWith(
+				"auth_access_token_ttl_secs",
+				"",
+			);
+		});
+	});
+
+	it("does not render a scaled number input when the stored numeric draft is invalid", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "auth",
+					key: "auth_access_token_ttl_secs",
+					value: "not-a-number",
+					value_type: "number",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "auth",
+				key: "auth_access_token_ttl_secs",
+				value_type: "number",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="auth" />);
+
+		await screen.findByText("auth_access_token_ttl_secs");
+		expect(
+			screen.queryByPlaceholderText("config_value"),
+		).not.toBeInTheDocument();
+	});
+
+	it("ignores scaled size edits that would overflow the stored byte value", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "storage",
+					key: "avatar_max_upload_size_bytes",
+					value: String(1024 * 1024),
+					value_type: "number",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "storage",
+				key: "avatar_max_upload_size_bytes",
+				value_type: "number",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="storage" />);
+
+		fireEvent.change(await screen.findByDisplayValue("1"), {
+			target: { value: String(Number.MAX_SAFE_INTEGER) },
+		});
+
+		expect(
+			screen.queryByRole("button", { name: "save_changes" }),
+		).not.toBeInTheDocument();
+	});
+
 	it("renders a friendly size unit selector while keeping raw byte values on save", async () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [

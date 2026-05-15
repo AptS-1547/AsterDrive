@@ -228,6 +228,19 @@ describe("SecurityPasskeysSection", () => {
 		});
 	});
 
+	it("shows the unsupported state when WebAuthn is unavailable", async () => {
+		mockState.webAuthnSupported = false;
+
+		render(<SecurityPasskeysSection />);
+
+		expect(
+			await screen.findByText("auth:passkey_unsupported"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /settings:settings_passkeys_add/ }),
+		).toBeDisabled();
+	});
+
 	it("adds a passkey using the default name when the input is blank", async () => {
 		render(<SecurityPasskeysSection />);
 

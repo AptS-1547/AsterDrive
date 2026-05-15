@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { Input } from "@/components/ui/input";
@@ -86,6 +86,59 @@ describe("Input", () => {
 		expect(onKeyUp).toHaveBeenCalled();
 		expect(onMouseUp).toHaveBeenCalled();
 		expect(onBlur).toHaveBeenCalled();
+	});
+
+	it("does not capture selection events while the input is blurred", () => {
+		render(<ControlledInput />);
+
+		const input = screen.getByLabelText("controlled-input") as HTMLInputElement;
+		input.setSelectionRange(2, 4);
+
+		fireEvent.keyUp(input);
+		fireEvent.change(input, {
+			target: {
+				selectionEnd: 6,
+				selectionStart: 6,
+				value: "abcXdef",
+			},
+		});
+
+		expect(input).toHaveValue("abcXdef");
+		expect(document.activeElement).not.toBe(input);
+	});
+
+	it("clamps the restored selection when the controlled value becomes shorter", async () => {
+		function ShorteningInput() {
+			const [value, setValue] = useState("abcdef");
+
+			return (
+				<Input
+					aria-label="shortening-input"
+					value={value}
+					onChange={() => setValue("xy")}
+				/>
+			);
+		}
+
+		render(<ShorteningInput />);
+
+		const input = screen.getByLabelText("shortening-input") as HTMLInputElement;
+		input.focus();
+		input.setSelectionRange(5, 6);
+
+		fireEvent.change(input, {
+			target: {
+				selectionEnd: 6,
+				selectionStart: 5,
+				value: "abcdeZf",
+			},
+		});
+
+		await waitFor(() => {
+			expect(input).toHaveValue("xy");
+			expect(input.selectionStart).toBe(2);
+			expect(input.selectionEnd).toBe(2);
+		});
 	});
 
 	it("does not try to restore text selection for unsupported input types", () => {

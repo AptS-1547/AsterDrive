@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 use webauthn_authenticator_rs::prelude::{Url, WebauthnAuthenticator};
 use webauthn_authenticator_rs::softpasskey::SoftPasskey;
 use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse};
-use webauthn_rs_proto::{AllowCredentials, ResidentKeyRequirement};
+use webauthn_rs_proto::{AllowCredentials, Mediation, ResidentKeyRequirement};
 
 const TEST_BROWSER_ORIGIN: &str = "http://localhost:8080";
 
@@ -335,6 +335,33 @@ where
         start_body["data"]["public_key"].clone(),
     )
     .expect("login challenge should deserialize");
+    (flow_id, challenge)
+}
+
+async fn conditional_passkey_login_start<S, B, E>(app: &S) -> (String, RequestChallengeResponse)
+where
+    S: actix_web::dev::Service<
+            actix_http::Request,
+            Response = actix_web::dev::ServiceResponse<B>,
+            Error = E,
+        >,
+    B: MessageBody,
+    E: std::fmt::Debug,
+{
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/passkeys/login/start")
+        .insert_header(("Origin", TEST_BROWSER_ORIGIN))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({ "conditional": true }))
+        .to_request();
+    let resp = test::call_service(app, req).await;
+    assert_eq!(resp.status(), 200);
+    let start_body: Value = test::read_body_json(resp).await;
+    let flow_id = start_body["data"]["flow_id"].as_str().unwrap().to_string();
+    let challenge = serde_json::from_value::<RequestChallengeResponse>(
+        start_body["data"]["public_key"].clone(),
+    )
+    .expect("conditional login challenge should deserialize");
     (flow_id, challenge)
 }
 
@@ -3654,6 +3681,39 @@ async fn test_passkey_login_without_identifier() {
         id: credential_id,
         transports: None,
     }];
+    let mut credential = softpasskey
+        .do_authentication(Url::parse(TEST_BROWSER_ORIGIN).unwrap(), challenge)
+        .expect("soft passkey authentication should succeed");
+    credential.response.user_handle = Some(user_handle.as_bytes().to_vec());
+    let credential = serde_json::to_value(credential).expect("credential should serialize");
+
+    let resp = passkey_login_finish(&app, &flow_id, credential).await;
+    assert_eq!(resp.status(), 200);
+    assert!(common::extract_cookie(&resp, "aster_access").is_some());
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+}
+
+#[actix_web::test]
+async fn test_passkey_conditional_login_preserves_mediation() {
+    let state = common::setup_with_memory_cache().await;
+    configure_passkey_public_site_url(&state);
+    let app = create_test_app!(state.clone());
+    let (access, _) = register_and_login!(app);
+
+    let (mut softpasskey, passkey) = register_test_passkey(&app, &access, "Laptop").await;
+    let user_id = testuser_id(&state.db).await;
+    let passkey_id = passkey["id"].as_i64().unwrap();
+    let stored_passkey = passkey_repo::find_by_id_for_user(&state.db, passkey_id, user_id)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let (flow_id, challenge) = conditional_passkey_login_start(&app).await;
+    assert!(challenge.public_key.allow_credentials.is_empty());
+    assert!(matches!(challenge.mediation, Some(Mediation::Conditional)));
+
+    let (challenge, user_handle) = allow_test_passkey_credential(challenge, &stored_passkey);
     let mut credential = softpasskey
         .do_authentication(Url::parse(TEST_BROWSER_ORIGIN).unwrap(), challenge)
         .expect("soft passkey authentication should succeed");
