@@ -2351,6 +2351,56 @@ async fn test_upload_service_presign_parts_rejects_non_multipart_session() {
 }
 
 #[actix_web::test]
+async fn test_upload_service_presign_parts_validates_part_number_batch() {
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "presignbatch",
+        "presignbatch@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let upload_id = new_test_upload_id();
+    create_upload_session(
+        &state,
+        user.id,
+        UploadSessionSpec::new(
+            &upload_id,
+            aster_drive::types::UploadSessionStatus::Presigned,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(3, 0)
+        .s3(Some("files/temp-key"), Some("multipart-id")),
+    )
+    .await;
+
+    let err = upload_service::presign_parts(&state, &upload_id, user.id, vec![])
+        .await
+        .unwrap_err();
+    assert_eq!(err.api_error_subcode(), Some("upload.part_numbers_empty"));
+
+    let err = upload_service::presign_parts(&state, &upload_id, user.id, vec![0])
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.api_error_subcode(),
+        Some("upload.part_number_out_of_range")
+    );
+
+    let too_many = (1..=65).collect();
+    let err = upload_service::presign_parts(&state, &upload_id, user.id, too_many)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.api_error_subcode(),
+        Some("upload.part_numbers_too_many")
+    );
+}
+
+#[actix_web::test]
 async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
     use aster_drive::db::repository::upload_session_repo;
     use aster_drive::services::{auth_service, upload_service};
