@@ -249,8 +249,10 @@ impl AuditLogManager {
     pub(super) async fn flush(self: &Arc<Self>) {
         let _guard = self.flush_lock.lock().await;
         self.flush_buffer().await;
-        self.flush_pending.store(false, Ordering::Release);
-        self.delayed_flush_pending.store(false, Ordering::Release);
+        if self.buffer.lock().is_empty() {
+            self.flush_pending.store(false, Ordering::Release);
+            self.delayed_flush_pending.store(false, Ordering::Release);
+        }
         self.schedule_buffered_flush();
     }
 

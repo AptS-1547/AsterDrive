@@ -107,10 +107,75 @@ fn is_missing_entity(error: &AsterError) -> bool {
     )
 }
 
+fn folder_chain_matches_segments(
+    chain: &[folder::Model],
+    root_folder_id: Option<i64>,
+    segments: &[String],
+) -> bool {
+    if chain.is_empty() {
+        return false;
+    }
+
+    let relative_start = match root_folder_id {
+        Some(root_id) => {
+            let Some(root_index) = chain.iter().position(|folder| folder.id == root_id) else {
+                return false;
+            };
+            root_index.saturating_add(1)
+        }
+        None => {
+            if chain
+                .first()
+                .is_none_or(|folder| folder.parent_id.is_some())
+            {
+                return false;
+            }
+            0
+        }
+    };
+
+    let relative_chain = &chain[relative_start..];
+    relative_chain.len() == segments.len()
+        && relative_chain
+            .iter()
+            .zip(segments)
+            .all(|(folder, segment)| folder.name == *segment)
+}
+
+async fn validate_cached_folder_path(
+    state: &PrimaryAppState,
+    user_id: i64,
+    root_folder_id: Option<i64>,
+    folder_id: i64,
+    segments: &[String],
+) -> Result<bool, FsError> {
+    let chain = match folder_repo::find_ancestor_models(&state.db, user_id, folder_id).await {
+        Ok(chain) => chain,
+        Err(error) if is_missing_entity(&error) => return Ok(false),
+        Err(_) => return Err(FsError::GeneralFailure),
+    };
+    if chain.is_empty()
+        || chain.iter().any(|folder| {
+            folder.owner_user_id != Some(user_id)
+                || folder.team_id.is_some()
+                || folder.deleted_at.is_some()
+        })
+    {
+        return Ok(false);
+    }
+
+    Ok(folder_chain_matches_segments(
+        &chain,
+        root_folder_id,
+        segments,
+    ))
+}
+
 async fn load_cached_resolved_node(
     state: &PrimaryAppState,
     user_id: i64,
     path: &DavPath,
+    root_folder_id: Option<i64>,
     cache_key: &str,
     cached: CachedResolvedNode,
 ) -> Result<Option<ResolvedNode>, FsError> {
@@ -151,6 +216,10 @@ async fn load_cached_resolved_node(
                 state.cache.delete(cache_key).await;
                 return Ok(None);
             }
+            if !validate_cached_folder_path(state, user_id, root_folder_id, id, &segments).await? {
+                state.cache.delete(cache_key).await;
+                return Ok(None);
+            }
             Ok(Some(ResolvedNode::Folder(folder)))
         }
         CachedResolvedNode::File {
@@ -176,6 +245,22 @@ async fn load_cached_resolved_node(
             if segments.last().map(String::as_str) != Some(name.as_str())
                 || file.name != name
                 || file.folder_id != folder_id
+            {
+                state.cache.delete(cache_key).await;
+                return Ok(None);
+            }
+            let Some(parent_segments) = segments.get(..segments.len().saturating_sub(1)) else {
+                state.cache.delete(cache_key).await;
+                return Ok(None);
+            };
+            if !validate_cached_parent(
+                state,
+                user_id,
+                root_folder_id,
+                parent_segments,
+                file.folder_id,
+            )
+            .await?
             {
                 state.cache.delete(cache_key).await;
                 return Ok(None);
@@ -242,7 +327,8 @@ pub async fn resolve_path_cached(
     let cache_key = resolve_path_cache_key(user_id, path, root_folder_id);
     if let Some(cached) = state.cache.get::<CachedResolvedNode>(&cache_key).await
         && let Some(node) =
-            load_cached_resolved_node(state, user_id, path, &cache_key, cached).await?
+            load_cached_resolved_node(state, user_id, path, root_folder_id, &cache_key, cached)
+                .await?
     {
         tracing::debug!(user_id, root_folder_id, "webdav path cache hit");
         return Ok(node);
@@ -300,21 +386,8 @@ async fn validate_cached_parent(
 ) -> Result<bool, FsError> {
     match parent_id {
         Some(parent_id) => {
-            let folder = match folder_repo::find_by_id(&state.db, parent_id).await {
-                Ok(folder) => folder,
-                Err(error) if is_missing_entity(&error) => return Ok(false),
-                Err(_) => return Err(FsError::GeneralFailure),
-            };
-            if folder.owner_user_id != Some(user_id)
-                || folder.team_id.is_some()
-                || folder.deleted_at.is_some()
-            {
-                return Ok(false);
-            }
-            match parent_segments.last() {
-                Some(parent_name) => Ok(folder.name == *parent_name),
-                None => Ok(Some(folder.id) == root_folder_id),
-            }
+            validate_cached_folder_path(state, user_id, root_folder_id, parent_id, parent_segments)
+                .await
         }
         None => Ok(root_folder_id.is_none() && parent_segments.is_empty()),
     }

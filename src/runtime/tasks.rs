@@ -74,7 +74,7 @@ impl BackgroundTaskDispatchBackoff {
         let base_interval = effective_dispatch_base_interval(base_interval, max_interval);
         let max_interval = effective_dispatch_max_interval(base_interval, max_interval);
         if self.last_error {
-            return base_interval.min(BACKGROUND_TASK_DISPATCH_ERROR_BACKOFF_CAP);
+            return base_interval.max(BACKGROUND_TASK_DISPATCH_ERROR_BACKOFF_CAP);
         }
         self.idle_interval.max(base_interval).min(max_interval)
     }
@@ -417,9 +417,9 @@ fn effective_jitter_cap(base_interval: Duration, jitter_cap: Duration) -> Durati
     jitter_cap.min(Duration::from_millis(bounded_ms))
 }
 
-fn effective_dispatch_base_interval(base_interval: Duration, max_interval: Duration) -> Duration {
+fn effective_dispatch_base_interval(base_interval: Duration, _max_interval: Duration) -> Duration {
     if base_interval.is_zero() {
-        return max_interval.max(Duration::from_secs(1));
+        return Duration::from_secs(1);
     }
     base_interval
 }
@@ -1034,6 +1034,23 @@ mod tests {
     }
 
     #[test]
+    fn background_task_dispatch_zero_base_interval_uses_minimum_delay() {
+        let base = Duration::ZERO;
+        let max = Duration::from_secs(30);
+        let mut backoff = BackgroundTaskDispatchBackoff::new(base, max);
+
+        assert_eq!(backoff.sleep_duration(base, max), Duration::from_secs(1));
+
+        backoff.record_iteration(
+            BackgroundTaskDispatchTrigger::Timer,
+            BackgroundTaskDispatchIteration::idle(),
+            base,
+            max,
+        );
+        assert_eq!(backoff.sleep_duration(base, max), Duration::from_secs(2));
+    }
+
+    #[test]
     fn background_task_dispatch_backoff_grows_on_idle_and_caps() {
         let base = Duration::from_secs(5);
         let max = Duration::from_secs(30);
@@ -1120,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    fn background_task_dispatch_backoff_uses_short_error_delay() {
+    fn background_task_dispatch_backoff_never_polls_faster_than_normal_after_error() {
         let base = Duration::from_secs(30);
         let max = Duration::from_secs(120);
         let mut backoff = BackgroundTaskDispatchBackoff::new(base, max);
@@ -1131,8 +1148,18 @@ mod tests {
             base,
             max,
         );
+        assert_eq!(backoff.sleep_duration(base, max), base);
+
+        let short_base = Duration::from_secs(1);
+        let mut short_backoff = BackgroundTaskDispatchBackoff::new(short_base, max);
+        short_backoff.record_iteration(
+            BackgroundTaskDispatchTrigger::Timer,
+            BackgroundTaskDispatchIteration::failed(),
+            short_base,
+            max,
+        );
         assert_eq!(
-            backoff.sleep_duration(base, max),
+            short_backoff.sleep_duration(short_base, max),
             BACKGROUND_TASK_DISPATCH_ERROR_BACKOFF_CAP
         );
 

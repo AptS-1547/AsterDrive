@@ -240,6 +240,7 @@ pub async fn find_recoverable_by_owner<C: ConnectionTrait>(
             UploadSessionStatus::Presigned,
         ]))
         .order_by_desc(upload_session::Column::UpdatedAt)
+        .order_by_desc(upload_session::Column::Id)
         .limit(limit);
 
     query = match team_id {

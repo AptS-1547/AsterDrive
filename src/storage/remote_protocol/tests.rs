@@ -630,6 +630,22 @@ async fn remote_client_object_profile_and_compose_paths_roundtrip() {
             .iter()
             .any(|header| header.eq_ignore_ascii_case("range"))
     );
+    assert!(
+        capabilities
+            .browser_cors
+            .exposed_headers
+            .iter()
+            .any(|header| header.eq_ignore_ascii_case("ETag"))
+    );
+    assert_eq!(
+        capabilities
+            .browser_cors
+            .exposed_headers
+            .iter()
+            .filter(|header| header.eq_ignore_ascii_case("ETag"))
+            .count(),
+        1
+    );
     assert!(capabilities.supports_list);
     assert!(capabilities.supports_range_read);
     assert!(capabilities.supports_stream_upload);

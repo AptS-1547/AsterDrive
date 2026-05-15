@@ -25,7 +25,7 @@ const SHARE_COOKIE_PREFIX: &str = "aster_share_";
 fn thumbnail_pending_response() -> HttpResponse {
     HttpResponse::Accepted()
         .insert_header(("Retry-After", "2"))
-        .json(ApiResponse::<()>::ok_empty())
+        .finish()
 }
 
 fn request_origin_parts(req: &HttpRequest) -> (String, String) {

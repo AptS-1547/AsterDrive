@@ -682,13 +682,14 @@ async fn upload_multipart_part_bytes_sends_request_body_without_slice_vec_roundt
 
     let captured = request.expect_request();
     assert_eq!(etag, "\"part-etag\"");
+    let uri = captured.uri().to_string();
     assert!(
-        captured
-            .uri()
-            .to_string()
-            .contains("partNumber=3&uploadId=upload-123"),
-        "expected multipart query in '{}'",
-        captured.uri()
+        uri.contains("partNumber=3"),
+        "expected partNumber in '{uri}'"
+    );
+    assert!(
+        uri.contains("uploadId=upload-123"),
+        "expected uploadId in '{uri}'"
     );
     assert_eq!(
         captured.body().bytes(),

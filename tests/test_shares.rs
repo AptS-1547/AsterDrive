@@ -4,7 +4,10 @@
 mod common;
 
 use actix_web::test;
-use actix_web::{cookie::SameSite, http::StatusCode};
+use actix_web::{
+    cookie::SameSite,
+    http::{StatusCode, header},
+};
 use aster_drive::types::BackgroundTaskStatus;
 use serde_json::Value;
 use std::io::Cursor;
@@ -193,6 +196,15 @@ async fn test_shared_thumbnail_returns_304_for_matching_if_none_match() {
             .get("Retry-After")
             .and_then(|value| value.to_str().ok()),
         Some("2")
+    );
+    assert!(
+        !resp.headers().contains_key(header::CONTENT_TYPE),
+        "pending thumbnail response should not be JSON"
+    );
+    let body = test::read_body(resp).await;
+    assert!(
+        body.is_empty(),
+        "pending thumbnail response should have an empty body"
     );
 
     let stats = aster_drive::services::task_service::drain(&state)

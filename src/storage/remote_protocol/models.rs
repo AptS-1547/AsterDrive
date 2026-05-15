@@ -291,6 +291,7 @@ impl RemoteStorageCapabilities {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[derive(Default)]
 pub struct RemoteStorageFeatureFlags {
     #[serde(default)]
     pub object_get: bool,
@@ -331,23 +332,6 @@ impl RemoteStorageFeatureFlags {
     }
 }
 
-impl Default for RemoteStorageFeatureFlags {
-    fn default() -> Self {
-        Self {
-            object_get: false,
-            object_head: false,
-            object_put: false,
-            object_delete: false,
-            list: false,
-            range_get: false,
-            accept_ranges_header: false,
-            browser_presigned_cors: false,
-            compose: false,
-            metadata: false,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct RemoteStorageBrowserCorsContract {
@@ -361,7 +345,10 @@ impl RemoteStorageBrowserCorsContract {
     pub fn current() -> Self {
         Self {
             allowed_headers: csv_header_values(REMOTE_BROWSER_PRESIGNED_CORS_ALLOWED_HEADERS),
-            exposed_headers: csv_header_values(REMOTE_BROWSER_PRESIGNED_CORS_GET_EXPOSE_HEADERS),
+            exposed_headers: csv_header_values_union(&[
+                REMOTE_BROWSER_PRESIGNED_CORS_GET_EXPOSE_HEADERS,
+                REMOTE_BROWSER_PRESIGNED_CORS_PUT_EXPOSE_HEADERS,
+            ]),
         }
     }
 }
@@ -404,6 +391,21 @@ fn csv_header_values(raw: &str) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .collect()
+}
+
+fn csv_header_values_union(raw_values: &[&str]) -> Vec<String> {
+    raw_values
+        .iter()
+        .flat_map(|raw| csv_header_values(raw))
+        .fold(Vec::new(), |mut headers, header| {
+            if !headers
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&header))
+            {
+                headers.push(header);
+            }
+            headers
+        })
 }
 
 fn contains_header(headers: &[String], expected: &str) -> bool {

@@ -12,7 +12,7 @@ use actix_web::{
 };
 use futures::future::{LocalBoxFuture, Ready, ok};
 use reqwest::Url;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::api::constants::HOUR_SECS;
@@ -202,6 +202,20 @@ fn requested_headers_are_allowed(req: &ServiceRequest) -> AsterResult<bool> {
     let request_headers = request_headers.to_str().map_aster_err_with(|| {
         AsterError::validation_error("invalid Access-Control-Request-Headers")
     })?;
+    let allowed_headers = REMOTE_BROWSER_PRESIGNED_CORS_ALLOWED_HEADERS
+        .split(',')
+        .map(str::trim)
+        .filter(|header| !header.is_empty())
+        .map(|header| {
+            let normalized = header.to_ascii_lowercase();
+            normalized
+                .parse::<header::HeaderName>()
+                .map(|_| normalized)
+                .map_aster_err_with(|| {
+                    AsterError::validation_error("invalid Access-Control-Request-Headers")
+                })
+        })
+        .collect::<AsterResult<HashSet<_>>>()?;
 
     for requested in request_headers.split(',') {
         let requested = requested.trim().to_ascii_lowercase();
@@ -213,7 +227,7 @@ fn requested_headers_are_allowed(req: &ServiceRequest) -> AsterResult<bool> {
             AsterError::validation_error("invalid Access-Control-Request-Headers")
         })?;
 
-        if !matches!(requested.as_str(), "content-type" | "range") {
+        if !allowed_headers.contains(&requested) {
             return Ok(false);
         }
     }
