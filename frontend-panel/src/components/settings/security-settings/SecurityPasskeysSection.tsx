@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { AnimatedCollapsible } from "@/components/common/AnimatedCollapsible";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,12 +39,13 @@ export function SecurityPasskeysSection() {
 	const [name, setName] = useState("");
 	const [editing, setEditing] = useState<EditablePasskeyName | null>(null);
 	const [busyIds, setBusyIds] = useState<Set<number>>(() => new Set());
+	const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
 	const [supported, setSupported] = useState(false);
 
-	const loadPasskeys = useEffectEvent(async () => {
+	const loadPasskeys = useEffectEvent(async (options?: { force?: boolean }) => {
 		try {
 			setLoading(true);
-			setPasskeys(await authService.listPasskeys());
+			setPasskeys(await authService.listPasskeys(options));
 		} catch (error) {
 			handleApiError(error);
 		} finally {
@@ -140,6 +142,18 @@ export function SecurityPasskeysSection() {
 	const { requestConfirm, dialogProps } =
 		useConfirmDialog<number>(handleDelete);
 
+	const toggleExpanded = (id: number) => {
+		setExpandedIds((previous) => {
+			const next = new Set(previous);
+			if (next.has(id)) {
+				next.delete(id);
+			} else {
+				next.add(id);
+			}
+			return next;
+		});
+	};
+
 	return (
 		<div className="space-y-4 rounded-xl border bg-background p-4">
 			<div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -155,7 +169,7 @@ export function SecurityPasskeysSection() {
 					type="button"
 					variant="outline"
 					disabled={loading}
-					onClick={() => void loadPasskeys()}
+					onClick={() => void loadPasskeys({ force: true })}
 				>
 					{loading ? (
 						<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
@@ -167,11 +181,11 @@ export function SecurityPasskeysSection() {
 			</div>
 
 			<div className="rounded-xl border bg-muted/20 p-4">
-				<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-					<div className="space-y-2">
-						<Label htmlFor="new-passkey-name">
-							{t("settings:settings_passkeys_new_name")}
-						</Label>
+				<div className="space-y-2">
+					<Label htmlFor="new-passkey-name">
+						{t("settings:settings_passkeys_new_name")}
+					</Label>
+					<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
 						<Input
 							id="new-passkey-name"
 							value={name}
@@ -180,26 +194,26 @@ export function SecurityPasskeysSection() {
 							placeholder={t("settings:settings_passkeys_name_placeholder")}
 							onChange={(event) => setName(event.target.value)}
 						/>
-						<p className="text-xs text-muted-foreground">
-							{supported
-								? t("settings:settings_passkeys_add_hint")
-								: t("auth:passkey_unsupported")}
-						</p>
+						<Button
+							type="button"
+							disabled={creating || !supported}
+							onClick={() => void handleCreate()}
+						>
+							{creating ? (
+								<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+							) : (
+								<Icon name="Plus" className="mr-2 h-4 w-4" />
+							)}
+							{creating
+								? t("settings:settings_passkeys_adding")
+								: t("settings:settings_passkeys_add")}
+						</Button>
 					</div>
-					<Button
-						type="button"
-						disabled={creating || !supported}
-						onClick={() => void handleCreate()}
-					>
-						{creating ? (
-							<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
-						) : (
-							<Icon name="Plus" className="mr-2 h-4 w-4" />
-						)}
-						{creating
-							? t("settings:settings_passkeys_adding")
-							: t("settings:settings_passkeys_add")}
-					</Button>
+					<p className="text-xs text-muted-foreground">
+						{supported
+							? t("settings:settings_passkeys_add_hint")
+							: t("auth:passkey_unsupported")}
+					</p>
 				</div>
 			</div>
 
@@ -221,60 +235,145 @@ export function SecurityPasskeysSection() {
 					{passkeys.map((passkey) => {
 						const currentEdit = editing?.id === passkey.id ? editing : null;
 						const busy = busyIds.has(passkey.id);
+						const expanded = expandedIds.has(passkey.id);
+
 						return (
 							<div
 								key={passkey.id}
-								className="rounded-xl border bg-muted/20 p-4"
+								className="rounded-xl border bg-muted/20 p-3"
 							>
-								<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-									<div className="min-w-0 flex-1 space-y-3">
-										<div className="flex flex-wrap items-center gap-2">
-											<div className="rounded-lg border bg-background p-2">
+								<div className="flex flex-col gap-3">
+									<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+										<div className="flex min-w-0 items-center gap-2">
+											<div className="rounded-lg border bg-background p-2 text-primary">
 												<Icon name="Shield" className="h-4 w-4" />
 											</div>
-											{currentEdit ? (
-												<Input
-													value={currentEdit.value}
-													disabled={busy}
-													maxLength={128}
-													aria-label={t("settings:settings_passkeys_edit_name")}
-													className="h-9 max-w-sm"
-													onChange={(event) =>
-														setEditing({
-															id: passkey.id,
-															value: event.target.value,
-														})
-													}
-												/>
-											) : (
-												<p className="break-words text-sm font-semibold">
-													{passkey.name}
+											<div className="min-w-0 flex-1 space-y-1">
+												{currentEdit ? (
+													<Input
+														value={currentEdit.value}
+														disabled={busy}
+														maxLength={128}
+														aria-label={t(
+															"settings:settings_passkeys_edit_name",
+														)}
+														className="h-9 max-w-sm"
+														onChange={(event) =>
+															setEditing({
+																id: passkey.id,
+																value: event.target.value,
+															})
+														}
+													/>
+												) : (
+													<p className="truncate text-sm font-semibold">
+														{passkey.name}
+													</p>
+												)}
+												<p className="text-xs text-muted-foreground">
+													{t("settings:settings_passkeys_last_used")}:{" "}
+													<span
+														title={
+															passkey.last_used_at
+																? formatDateAbsoluteWithOffset(
+																		passkey.last_used_at,
+																	)
+																: undefined
+														}
+													>
+														{lastUsedLabel(
+															passkey,
+															t("settings:settings_passkeys_never_used"),
+														)}
+													</span>
 												</p>
-											)}
+											</div>
 											{passkey.backed_up ? (
 												<Badge variant="secondary">
 													{t("settings:settings_passkeys_synced")}
 												</Badge>
 											) : null}
 										</div>
-										<div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
-											<p>
-												{t("settings:settings_passkeys_last_used")}:{" "}
-												<span
-													title={
-														passkey.last_used_at
-															? formatDateAbsoluteWithOffset(
-																	passkey.last_used_at,
-																)
-															: undefined
+										<div className="flex flex-wrap gap-2 md:justify-end">
+											<Button
+												type="button"
+												size="sm"
+												variant="ghost"
+												aria-expanded={expanded}
+												onClick={() => toggleExpanded(passkey.id)}
+											>
+												{expanded
+													? t("settings:settings_security_hide_details")
+													: t("settings:settings_security_show_details")}
+											</Button>
+											{currentEdit ? (
+												<>
+													<Button
+														type="button"
+														size="sm"
+														disabled={
+															busy || currentEdit.value.trim().length === 0
+														}
+														onClick={() => void handleRename()}
+													>
+														{busy ? (
+															<Icon
+																name="Spinner"
+																className="mr-2 h-4 w-4 animate-spin"
+															/>
+														) : (
+															<Icon name="Check" className="mr-2 h-4 w-4" />
+														)}
+														{t("core:save")}
+													</Button>
+													<Button
+														type="button"
+														size="sm"
+														variant="outline"
+														disabled={busy}
+														onClick={() => setEditing(null)}
+													>
+														{t("core:cancel")}
+													</Button>
+												</>
+											) : (
+												<Button
+													type="button"
+													size="sm"
+													variant="outline"
+													disabled={busy}
+													onClick={() =>
+														setEditing({
+															id: passkey.id,
+															value: passkey.name,
+														})
 													}
 												>
-													{lastUsedLabel(
-														passkey,
-														t("settings:settings_passkeys_never_used"),
-													)}
-												</span>
-											</p>
+													<Icon name="PencilSimple" className="mr-2 h-4 w-4" />
+													{t("settings:settings_passkeys_rename")}
+												</Button>
+											)}
+											<Button
+												type="button"
+												size="sm"
+												variant="destructive"
+												disabled={busy}
+												onClick={() => requestConfirm(passkey.id)}
+											>
+												{busy ? (
+													<Icon
+														name="Spinner"
+														className="mr-2 h-4 w-4 animate-spin"
+													/>
+												) : (
+													<Icon name="Trash" className="mr-2 h-4 w-4" />
+												)}
+												{t("settings:settings_passkeys_delete")}
+											</Button>
+										</div>
+									</div>
+									<AnimatedCollapsible open={expanded}>
+										<div className="grid gap-2 border-t pt-3 text-xs text-muted-foreground md:grid-cols-2">
 											<p>
 												{t("settings:settings_passkeys_created")}:{" "}
 												<span
@@ -285,74 +384,18 @@ export function SecurityPasskeysSection() {
 													{formatDateAbsolute(passkey.created_at)}
 												</span>
 											</p>
-										</div>
-									</div>
-									<div className="flex flex-wrap gap-2">
-										{currentEdit ? (
-											<>
-												<Button
-													type="button"
-													size="sm"
-													disabled={
-														busy || currentEdit.value.trim().length === 0
-													}
-													onClick={() => void handleRename()}
-												>
-													{busy ? (
-														<Icon
-															name="Spinner"
-															className="mr-2 h-4 w-4 animate-spin"
-														/>
-													) : (
-														<Icon name="Check" className="mr-2 h-4 w-4" />
+											<p>
+												{t("core:updated_at")}:{" "}
+												<span
+													title={formatDateAbsoluteWithOffset(
+														passkey.updated_at,
 													)}
-													{t("core:save")}
-												</Button>
-												<Button
-													type="button"
-													size="sm"
-													variant="outline"
-													disabled={busy}
-													onClick={() => setEditing(null)}
 												>
-													{t("core:cancel")}
-												</Button>
-											</>
-										) : (
-											<Button
-												type="button"
-												size="sm"
-												variant="outline"
-												disabled={busy}
-												onClick={() =>
-													setEditing({
-														id: passkey.id,
-														value: passkey.name,
-													})
-												}
-											>
-												<Icon name="PencilSimple" className="mr-2 h-4 w-4" />
-												{t("settings:settings_passkeys_rename")}
-											</Button>
-										)}
-										<Button
-											type="button"
-											size="sm"
-											variant="destructive"
-											disabled={busy}
-											onClick={() => requestConfirm(passkey.id)}
-										>
-											{busy ? (
-												<Icon
-													name="Spinner"
-													className="mr-2 h-4 w-4 animate-spin"
-												/>
-											) : (
-												<Icon name="Trash" className="mr-2 h-4 w-4" />
-											)}
-											{t("settings:settings_passkeys_delete")}
-										</Button>
-									</div>
+													{formatDateAbsolute(passkey.updated_at)}
+												</span>
+											</p>
+										</div>
+									</AnimatedCollapsible>
 								</div>
 							</div>
 						);

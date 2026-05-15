@@ -1,56 +1,79 @@
 import { useTranslation } from "react-i18next";
+import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
 import type { MeResponse } from "@/types/api";
 
 interface SecuritySummaryCardProps {
+	sessionCount: number;
 	user: MeResponse | null;
 }
 
-export function SecuritySummaryCard({ user }: SecuritySummaryCardProps) {
+export function SecuritySummaryCard({
+	sessionCount,
+	user,
+}: SecuritySummaryCardProps) {
 	const { t } = useTranslation(["auth", "core", "settings"]);
+	const emailVerified = !!user?.email_verified;
 
 	return (
-		<div className="rounded-xl border bg-background p-4">
-			<div className="flex items-start gap-3">
-				<div className="rounded-lg bg-primary/10 p-2 text-primary">
-					<Icon name="Shield" className="h-4 w-4" />
+		<div className="rounded-xl border bg-muted/20 p-3">
+			<div className="grid gap-3 md:grid-cols-3">
+				<div className="rounded-lg border bg-background px-3 py-2.5">
+					<div className="flex items-center gap-2">
+						<div className="rounded-md bg-primary/10 p-1.5 text-primary">
+							<Icon name="Shield" className="h-4 w-4" />
+						</div>
+						<div className="min-w-0">
+							<p className="text-xs font-medium text-muted-foreground">
+								{t("settings:settings_security_account")}
+							</p>
+							<p className="truncate text-sm font-semibold">
+								@{user?.username ?? ""}
+							</p>
+						</div>
+					</div>
 				</div>
-				<div className="space-y-3">
-					<div className="space-y-1">
-						<p className="text-sm font-semibold">
-							{t("settings:settings_security_account")}
-						</p>
-						<p className="text-sm text-muted-foreground">
-							{t("settings:settings_security_account_desc", {
-								username: user?.username ?? "",
-							})}
-						</p>
+
+				<div className="rounded-lg border bg-background px-3 py-2.5">
+					<div className="flex min-w-0 items-center justify-between gap-3">
+						<div className="min-w-0">
+							<p className="text-xs font-medium text-muted-foreground">
+								{t("settings:settings_email_summary")}
+							</p>
+							<p className="truncate text-sm font-semibold">
+								{user?.email ?? ""}
+							</p>
+						</div>
+						<Badge
+							variant="outline"
+							className={
+								emailVerified
+									? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+									: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+							}
+						>
+							{emailVerified
+								? t("settings:settings_email_verified")
+								: t("settings:settings_email_unverified")}
+						</Badge>
 					</div>
-					<div className="space-y-1 border-t pt-3">
-						<p className="text-sm font-semibold">
-							{t("settings:settings_email_summary")}
-						</p>
-						<p className="text-sm text-muted-foreground">
-							{user?.pending_email
-								? t("settings:settings_email_pending_desc", {
-										email: user.pending_email,
-									})
-								: user?.email_verified
-									? t("settings:settings_email_summary_verified", {
-											email: user.email,
-										})
-									: t("settings:settings_email_summary_unverified", {
-											email: user?.email ?? "",
-										})}
-						</p>
-					</div>
-					<div className="space-y-1 border-t pt-3">
-						<p className="text-sm font-semibold">
-							{t("settings:settings_security_session")}
-						</p>
-						<p className="text-sm text-muted-foreground">
-							{t("settings:settings_security_session_desc")}
-						</p>
+				</div>
+
+				<div className="rounded-lg border bg-background px-3 py-2.5">
+					<div className="flex items-center gap-2">
+						<div className="rounded-md bg-secondary p-1.5 text-secondary-foreground">
+							<Icon name="Monitor" className="h-4 w-4" />
+						</div>
+						<div className="min-w-0">
+							<p className="text-xs font-medium text-muted-foreground">
+								{t("settings:settings_sessions_section")}
+							</p>
+							<p className="text-sm font-semibold">
+								{t("settings:settings_security_session_count", {
+									count: sessionCount,
+								})}
+							</p>
+						</div>
 					</div>
 				</div>
 			</div>

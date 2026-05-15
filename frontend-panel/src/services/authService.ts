@@ -30,6 +30,87 @@ export interface AuthSessionState {
 	expiresIn: number;
 }
 
+interface ListPasskeysOptions {
+	force?: boolean;
+}
+
+let cachedPasskeys: PasskeyInfo[] | null = null;
+let pendingPasskeysRequest: Promise<PasskeyInfo[]> | null = null;
+let passkeysCacheSerial = 0;
+
+function clonePasskeys(passkeys: PasskeyInfo[]) {
+	return passkeys.map((passkey) => ({ ...passkey }));
+}
+
+function primePasskeysCache(passkeys: PasskeyInfo[]) {
+	cachedPasskeys = clonePasskeys(passkeys);
+}
+
+export function invalidatePasskeysCache() {
+	cachedPasskeys = null;
+	pendingPasskeysRequest = null;
+	passkeysCacheSerial += 1;
+}
+
+function upsertCachedPasskey(passkey: PasskeyInfo) {
+	pendingPasskeysRequest = null;
+	passkeysCacheSerial += 1;
+	if (cachedPasskeys === null) {
+		return;
+	}
+	cachedPasskeys = [
+		{ ...passkey },
+		...cachedPasskeys.filter((item) => item.id !== passkey.id),
+	];
+}
+
+function replaceCachedPasskey(passkey: PasskeyInfo) {
+	pendingPasskeysRequest = null;
+	passkeysCacheSerial += 1;
+	if (cachedPasskeys === null) {
+		return;
+	}
+	cachedPasskeys = cachedPasskeys.map((item) =>
+		item.id === passkey.id ? { ...passkey } : item,
+	);
+}
+
+function removeCachedPasskey(id: number) {
+	pendingPasskeysRequest = null;
+	passkeysCacheSerial += 1;
+	if (cachedPasskeys === null) {
+		return;
+	}
+	cachedPasskeys = cachedPasskeys.filter((item) => item.id !== id);
+}
+
+function listPasskeys(options?: ListPasskeysOptions) {
+	const force = options?.force ?? false;
+	if (!force && cachedPasskeys !== null) {
+		return Promise.resolve(clonePasskeys(cachedPasskeys));
+	}
+	if (!force && pendingPasskeysRequest !== null) {
+		return pendingPasskeysRequest.then(clonePasskeys);
+	}
+
+	const requestSerial = ++passkeysCacheSerial;
+	const request = api
+		.get<PasskeyInfo[]>("/auth/passkeys")
+		.then((passkeys) => {
+			if (requestSerial === passkeysCacheSerial) {
+				primePasskeysCache(passkeys);
+			}
+			return clonePasskeys(passkeys);
+		})
+		.finally(() => {
+			if (pendingPasskeysRequest === request) {
+				pendingPasskeysRequest = null;
+			}
+		});
+	pendingPasskeysRequest = request;
+	return request.then(clonePasskeys);
+}
+
 function me(): Promise<MeResponse>;
 function me(fields: MeField[]): Promise<MePartialResponse>;
 function me(fields?: MeField[]) {
@@ -49,6 +130,7 @@ export const authService = {
 		identifier: string,
 		password: string,
 	): Promise<AuthSessionState> => {
+		invalidatePasskeysCache();
 		const data = await api.post<AuthTokenResp>("/auth/login", {
 			identifier,
 			password,
@@ -65,6 +147,7 @@ export const authService = {
 		flowId: string,
 		credential: unknown,
 	): Promise<AuthSessionState> => {
+		invalidatePasskeysCache();
 		const data = await api.post<AuthTokenResp>("/auth/passkeys/login/finish", {
 			flow_id: flowId,
 			credential,
@@ -74,8 +157,10 @@ export const authService = {
 		};
 	},
 
-	register: (username: string, email: string, password: string) =>
-		api.post<UserInfo>("/auth/register", { username, email, password }),
+	register: (username: string, email: string, password: string) => {
+		invalidatePasskeysCache();
+		return api.post<UserInfo>("/auth/register", { username, email, password });
+	},
 
 	resendRegisterActivation: (identifier: string) =>
 		api.post<ActionMessageResp>("/auth/register/resend", { identifier }),
@@ -86,10 +171,15 @@ export const authService = {
 	confirmPasswordReset: (payload: PasswordResetConfirmRequest) =>
 		api.post<ActionMessageResp>("/auth/password/reset/confirm", payload),
 
-	setup: (username: string, email: string, password: string) =>
-		api.post<UserInfo>("/auth/setup", { username, email, password }),
+	setup: (username: string, email: string, password: string) => {
+		invalidatePasskeysCache();
+		return api.post<UserInfo>("/auth/setup", { username, email, password });
+	},
 
-	logout: () => api.post<void>("/auth/logout"),
+	logout: () => {
+		invalidatePasskeysCache();
+		return api.post<void>("/auth/logout");
+	},
 
 	refreshToken: async (): Promise<AuthSessionState> => {
 		const data = await api.post<AuthTokenResp>("/auth/refresh");
@@ -114,7 +204,7 @@ export const authService = {
 
 	listSessions: () => api.get<AuthSessionInfo[]>("/auth/sessions"),
 
-	listPasskeys: () => api.get<PasskeyInfo[]>("/auth/passkeys"),
+	listPasskeys,
 
 	startPasskeyRegistration: (payload: PasskeyRegisterStartRequest) =>
 		api.post<PasskeyRegisterStartResponse>(
@@ -122,21 +212,36 @@ export const authService = {
 			payload,
 		),
 
-	finishPasskeyRegistration: (
+	finishPasskeyRegistration: async (
 		flowId: string,
 		credential: unknown,
 		name?: string,
-	) =>
-		api.post<PasskeyInfo>("/auth/passkeys/register/finish", {
-			flow_id: flowId,
-			credential,
-			name,
-		}),
+	) => {
+		const passkey = await api.post<PasskeyInfo>(
+			"/auth/passkeys/register/finish",
+			{
+				flow_id: flowId,
+				credential,
+				name,
+			},
+		);
+		upsertCachedPasskey(passkey);
+		return passkey;
+	},
 
-	renamePasskey: (id: number, payload: PatchPasskeyRequest) =>
-		api.patch<PasskeyInfo>(`/auth/passkeys/${id}`, payload),
+	renamePasskey: async (id: number, payload: PatchPasskeyRequest) => {
+		const passkey = await api.patch<PasskeyInfo>(
+			`/auth/passkeys/${id}`,
+			payload,
+		);
+		replaceCachedPasskey(passkey);
+		return passkey;
+	},
 
-	deletePasskey: (id: number) => api.delete<void>(`/auth/passkeys/${id}`),
+	deletePasskey: async (id: number) => {
+		await api.delete<void>(`/auth/passkeys/${id}`);
+		removeCachedPasskey(id);
+	},
 
 	revokeSession: (id: string) => api.delete<void>(`/auth/sessions/${id}`),
 

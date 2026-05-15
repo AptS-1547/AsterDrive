@@ -9,6 +9,8 @@ import { SecurityPasswordSection } from "@/components/settings/security-settings
 import { SecuritySessionsSection } from "@/components/settings/security-settings/SecuritySessionsSection";
 import { SecuritySummaryCard } from "@/components/settings/security-settings/SecuritySummaryCard";
 import type { SecurityFormErrors } from "@/components/settings/security-settings/types";
+import { Icon } from "@/components/ui/icon";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { handleApiError } from "@/hooks/useApiError";
 import {
 	clearContactVerificationRedirectSearch,
@@ -22,6 +24,8 @@ import {
 import { authService } from "@/services/authService";
 import { forceLogout, useAuthStore } from "@/stores/authStore";
 import type { AuthSessionInfo } from "@/types/api";
+
+type SecurityPane = "account" | "passkeys" | "sessions";
 
 export function SecuritySettingsView() {
 	const { t } = useTranslation(["auth", "core", "settings"]);
@@ -42,6 +46,7 @@ export function SecuritySettingsView() {
 	const [sessionsLoading, setSessionsLoading] = useState(false);
 	const [revokeBusyId, setRevokeBusyId] = useState<string | null>(null);
 	const [revokeOthersBusy, setRevokeOthersBusy] = useState(false);
+	const [activePane, setActivePane] = useState<SecurityPane>("account");
 
 	useEffect(() => {
 		const verification = getContactVerificationRedirectState(location.search);
@@ -266,66 +271,106 @@ export function SecuritySettingsView() {
 			description={t("settings:settings_security_desc")}
 			contentClassName="pt-4"
 		>
-			<div className="grid gap-5 rounded-xl border bg-muted/20 p-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-				<div className="space-y-4">
-					<SecurityEmailSection
-						canSubmitEmailChange={canSubmitEmailChange}
-						emailBusy={emailBusy}
-						emailError={errors.email}
-						newEmail={newEmail}
-						resendingEmailChange={resendingEmailChange}
-						user={user}
-						onNewEmailChange={(value) => {
-							setNewEmail(value);
-							setErrors((prev) => ({ ...prev, email: undefined }));
-						}}
-						onResendEmailChange={() => void handleResendEmailChange()}
-						onSubmit={(event) => void handleEmailChangeSubmit(event)}
-					/>
+			<div className="space-y-4">
+				<SecuritySummaryCard sessionCount={sessions.length} user={user} />
 
-					<SecurityPasswordSection
-						canSubmitPassword={canSubmitPassword}
-						confirmPassword={confirmPassword}
-						currentPassword={currentPassword}
-						errors={errors}
-						newPassword={newPassword}
-						passwordBusy={passwordBusy}
-						onConfirmPasswordChange={(value) => {
-							setConfirmPassword(value);
-							setErrors((prev) => ({
-								...prev,
-								confirmPassword: undefined,
-							}));
-						}}
-						onCurrentPasswordChange={(value) => {
-							setCurrentPassword(value);
-							setErrors((prev) => ({
-								...prev,
-								currentPassword: undefined,
-							}));
-						}}
-						onNewPasswordChange={(value) => {
-							setNewPassword(value);
-							setErrors((prev) => ({ ...prev, newPassword: undefined }));
-						}}
-						onSubmit={(event) => void handlePasswordSubmit(event)}
-					/>
+				<Tabs
+					value={activePane}
+					onValueChange={(value) => setActivePane(value as SecurityPane)}
+					className="gap-4"
+				>
+					<TabsList className="grid !h-11 w-full grid-cols-3 gap-1 p-1">
+						<TabsTrigger value="account" className="h-full min-w-0 px-3 py-0">
+							<Icon name="Lock" className="h-4 w-4" />
+							<span className="truncate">
+								{t("settings:settings_security_tab_account")}
+							</span>
+						</TabsTrigger>
+						<TabsTrigger value="passkeys" className="h-full min-w-0 px-3 py-0">
+							<Icon name="Shield" className="h-4 w-4" />
+							<span className="truncate">
+								{t("settings:settings_security_tab_passkeys")}
+							</span>
+						</TabsTrigger>
+						<TabsTrigger value="sessions" className="h-full min-w-0 px-3 py-0">
+							<Icon name="Monitor" className="h-4 w-4" />
+							<span className="truncate">
+								{t("settings:settings_security_tab_sessions")}
+							</span>
+						</TabsTrigger>
+					</TabsList>
 
-					<SecurityPasskeysSection />
+					<TabsContent
+						value="account"
+						className="space-y-4 animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
+					>
+						<SecurityEmailSection
+							canSubmitEmailChange={canSubmitEmailChange}
+							emailBusy={emailBusy}
+							emailError={errors.email}
+							newEmail={newEmail}
+							resendingEmailChange={resendingEmailChange}
+							user={user}
+							onNewEmailChange={(value) => {
+								setNewEmail(value);
+								setErrors((prev) => ({ ...prev, email: undefined }));
+							}}
+							onResendEmailChange={() => void handleResendEmailChange()}
+							onSubmit={(event) => void handleEmailChangeSubmit(event)}
+						/>
 
-					<SecuritySessionsSection
-						hasOtherSessions={hasOtherSessions}
-						revokeBusyId={revokeBusyId}
-						revokeOthersBusy={revokeOthersBusy}
-						sessions={sessions}
-						sessionsLoading={sessionsLoading}
-						onRefreshSessions={() => void loadSessions()}
-						onRevokeOtherSessions={() => void handleRevokeOtherSessions()}
-						onRevokeSession={(session) => void handleRevokeSession(session)}
-					/>
-				</div>
+						<SecurityPasswordSection
+							canSubmitPassword={canSubmitPassword}
+							confirmPassword={confirmPassword}
+							currentPassword={currentPassword}
+							errors={errors}
+							newPassword={newPassword}
+							passwordBusy={passwordBusy}
+							onConfirmPasswordChange={(value) => {
+								setConfirmPassword(value);
+								setErrors((prev) => ({
+									...prev,
+									confirmPassword: undefined,
+								}));
+							}}
+							onCurrentPasswordChange={(value) => {
+								setCurrentPassword(value);
+								setErrors((prev) => ({
+									...prev,
+									currentPassword: undefined,
+								}));
+							}}
+							onNewPasswordChange={(value) => {
+								setNewPassword(value);
+								setErrors((prev) => ({ ...prev, newPassword: undefined }));
+							}}
+							onSubmit={(event) => void handlePasswordSubmit(event)}
+						/>
+					</TabsContent>
 
-				<SecuritySummaryCard user={user} />
+					<TabsContent
+						value="passkeys"
+						className="animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
+					>
+						<SecurityPasskeysSection />
+					</TabsContent>
+
+					<TabsContent
+						value="sessions"
+						className="animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
+					>
+						<SecuritySessionsSection
+							hasOtherSessions={hasOtherSessions}
+							revokeBusyId={revokeBusyId}
+							revokeOthersBusy={revokeOthersBusy}
+							sessions={sessions}
+							sessionsLoading={sessionsLoading}
+							onRefreshSessions={() => void loadSessions()}
+							onRevokeOtherSessions={() => void handleRevokeOtherSessions()}
+							onRevokeSession={(session) => void handleRevokeSession(session)}
+						/>
+					</TabsContent>
+				</Tabs>
 			</div>
 		</SettingsSection>
 	);

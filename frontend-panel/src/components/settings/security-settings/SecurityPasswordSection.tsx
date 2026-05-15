@@ -112,7 +112,7 @@ export function SecurityPasswordSection({
 					className="min-w-28"
 					disabled={!canSubmitPassword}
 				>
-					{t("save")}
+					{t("core:save")}
 				</Button>
 			</div>
 		</form>

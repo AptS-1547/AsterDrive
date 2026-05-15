@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { authService } from "@/services/authService";
+import { authService, invalidatePasskeysCache } from "@/services/authService";
+import type { PasskeyInfo } from "@/types/api";
 import { ErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
@@ -48,6 +49,7 @@ vi.mock("@/services/http", () => ({
 
 describe("authService", () => {
 	beforeEach(() => {
+		invalidatePasskeysCache();
 		mockState.clientPost.mockReset();
 		mockState.delete.mockReset();
 		mockState.get.mockReset();
@@ -55,6 +57,21 @@ describe("authService", () => {
 		mockState.post.mockReset();
 		mockState.put.mockReset();
 	});
+
+	function passkey(overrides: Partial<PasskeyInfo> = {}): PasskeyInfo {
+		return {
+			backed_up: false,
+			backup_eligible: true,
+			created_at: "2026-04-01T08:00:00Z",
+			id: 1,
+			last_used_at: null,
+			name: "Phone",
+			sign_count: 0,
+			transports: null,
+			updated_at: "2026-04-01T08:00:00Z",
+			...overrides,
+		};
+	}
 
 	it("uses the expected auth endpoints and payloads", async () => {
 		const prefs = {
@@ -86,12 +103,18 @@ describe("authService", () => {
 			}
 			return undefined;
 		});
+		mockState.patch.mockImplementation((url: string) => {
+			if (url === "/auth/passkeys/1") {
+				return { id: 1, name: "Phone" };
+			}
+			return undefined;
+		});
 		mockState.get.mockImplementation((url: string) => {
 			if (url === "/auth/sessions") {
 				return [];
 			}
 			if (url === "/auth/passkeys") {
-				return [];
+				return Promise.resolve([]);
 			}
 			return undefined;
 		});
@@ -140,15 +163,15 @@ describe("authService", () => {
 		authService.resendEmailChange();
 		authService.setAvatarSource("gravatar");
 		expect(authService.listSessions()).toEqual([]);
-		expect(authService.listPasskeys()).toEqual([]);
+		await expect(authService.listPasskeys()).resolves.toEqual([]);
 		authService.startPasskeyRegistration({ name: "Laptop" });
-		authService.finishPasskeyRegistration(
+		await authService.finishPasskeyRegistration(
 			"register-flow",
 			{ id: "cred" },
 			"Laptop",
 		);
-		authService.renamePasskey(1, { name: "Phone" });
-		authService.deletePasskey(1);
+		await authService.renamePasskey(1, { name: "Phone" });
+		await authService.deletePasskey(1);
 		authService.revokeSession("session-1");
 		await expect(authService.revokeOtherSessions()).resolves.toBe(2);
 
@@ -294,6 +317,101 @@ describe("authService", () => {
 			expiresIn: 900,
 		});
 		await expect(authService.revokeOtherSessions()).resolves.toBe(0);
+	});
+
+	it("caches passkey lists, clones cached results, and supports forced refresh", async () => {
+		const phone = passkey({ id: 1, name: "Phone" });
+		const laptop = passkey({ id: 2, name: "Laptop" });
+		mockState.get
+			.mockResolvedValueOnce([phone])
+			.mockResolvedValueOnce([laptop]);
+
+		const first = await authService.listPasskeys();
+		first[0].name = "Mutated";
+
+		await expect(authService.listPasskeys()).resolves.toEqual([phone]);
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+
+		await expect(authService.listPasskeys({ force: true })).resolves.toEqual([
+			laptop,
+		]);
+		expect(mockState.get).toHaveBeenCalledTimes(2);
+	});
+
+	it("deduplicates concurrent passkey list requests and retries after failures", async () => {
+		const phone = passkey({ id: 1, name: "Phone" });
+		const laptop = passkey({ id: 2, name: "Laptop" });
+		let resolveFirst: ((value: PasskeyInfo[]) => void) | null = null;
+		mockState.get.mockImplementationOnce(
+			() =>
+				new Promise<PasskeyInfo[]>((resolve) => {
+					resolveFirst = resolve;
+				}),
+		);
+
+		const first = authService.listPasskeys();
+		const second = authService.listPasskeys();
+		resolveFirst?.([phone]);
+
+		await expect(Promise.all([first, second])).resolves.toEqual([
+			[phone],
+			[phone],
+		]);
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+
+		invalidatePasskeysCache();
+		const error = new Error("load failed");
+		mockState.get.mockRejectedValueOnce(error).mockResolvedValueOnce([laptop]);
+
+		await expect(authService.listPasskeys()).rejects.toBe(error);
+		await expect(authService.listPasskeys()).resolves.toEqual([laptop]);
+		expect(mockState.get).toHaveBeenCalledTimes(3);
+	});
+
+	it("keeps the passkey cache in sync after create, rename, and delete", async () => {
+		const phone = passkey({ id: 1, name: "Phone" });
+		const laptop = passkey({ id: 2, name: "Laptop" });
+		const renamed = passkey({ id: 2, name: "Work laptop" });
+		mockState.get.mockResolvedValueOnce([phone]);
+		mockState.post.mockResolvedValueOnce(laptop);
+		mockState.patch.mockResolvedValueOnce(renamed);
+		mockState.delete.mockResolvedValueOnce(undefined);
+
+		await expect(authService.listPasskeys()).resolves.toEqual([phone]);
+		await expect(
+			authService.finishPasskeyRegistration(
+				"register-flow",
+				{ id: "cred" },
+				"Laptop",
+			),
+		).resolves.toEqual(laptop);
+		await expect(authService.listPasskeys()).resolves.toEqual([laptop, phone]);
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+
+		await expect(
+			authService.renamePasskey(2, { name: "Work laptop" }),
+		).resolves.toEqual(renamed);
+		await expect(authService.listPasskeys()).resolves.toEqual([renamed, phone]);
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+
+		await authService.deletePasskey(2);
+		await expect(authService.listPasskeys()).resolves.toEqual([phone]);
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+	});
+
+	it("invalidates passkey cache across auth identity changes", async () => {
+		const phone = passkey({ id: 1, name: "Phone" });
+		const laptop = passkey({ id: 2, name: "Laptop" });
+		mockState.get
+			.mockResolvedValueOnce([phone])
+			.mockResolvedValueOnce([laptop]);
+		mockState.post.mockResolvedValue({ expires_in: 900 });
+
+		await expect(authService.listPasskeys()).resolves.toEqual([phone]);
+		await authService.login("bob@example.com", "secret");
+		await expect(authService.listPasskeys()).resolves.toEqual([laptop]);
+
+		expect(mockState.get).toHaveBeenCalledTimes(2);
 	});
 
 	it("uploads avatars through multipart form data and unwraps API responses", async () => {

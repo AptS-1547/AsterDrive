@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AnimatedCollapsible } from "@/components/common/AnimatedCollapsible";
 import { SessionPlatformIcon } from "@/components/settings/SessionPlatformIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,11 +31,23 @@ export function SecuritySessionsSection({
 	sessionsLoading,
 }: SecuritySessionsSectionProps) {
 	const { t } = useTranslation(["auth", "core", "settings"]);
+	const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
 	const sessionDeviceLabels = {
 		desktop: t("settings:settings_sessions_device_desktop"),
 		mobile: t("settings:settings_sessions_device_mobile"),
 		tablet: t("settings:settings_sessions_device_tablet"),
 		unknown: t("settings:settings_sessions_unknown_device"),
+	};
+	const toggleExpanded = (id: string) => {
+		setExpandedIds((previous) => {
+			const next = new Set(previous);
+			if (next.has(id)) {
+				next.delete(id);
+			} else {
+				next.add(id);
+			}
+			return next;
+		});
 	};
 
 	return (
@@ -94,6 +108,7 @@ export function SecuritySessionsSection({
 				<div className="space-y-3">
 					{sessions.map((session) => {
 						const busy = revokeBusyId === session.id;
+						const expanded = expandedIds.has(session.id);
 						const sessionDeviceLabel = formatUserAgentLabel(
 							session.user_agent,
 							sessionDeviceLabels,
@@ -104,20 +119,30 @@ export function SecuritySessionsSection({
 						return (
 							<div
 								key={session.id}
-								className="rounded-xl border bg-muted/20 p-4"
+								className="rounded-xl border bg-muted/20 p-3"
 							>
-								<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-									<div className="space-y-3">
-										<div className="flex flex-wrap items-center gap-2">
-											<div className="flex items-center gap-2">
-												<div className="rounded-lg border bg-background p-2">
-													<SessionPlatformIcon userAgent={session.user_agent} />
-												</div>
+								<div className="flex flex-col gap-3">
+									<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+										<div className="flex min-w-0 items-center gap-2">
+											<div className="rounded-lg border bg-background p-2">
+												<SessionPlatformIcon userAgent={session.user_agent} />
+											</div>
+											<div className="min-w-0 flex-1 space-y-1">
 												<p
-													className="text-sm font-semibold"
+													className="truncate text-sm font-semibold"
 													title={sessionUserAgentTitle}
 												>
 													{sessionDeviceLabel}
+												</p>
+												<p className="text-xs text-muted-foreground">
+													{t("settings:settings_sessions_last_seen")}:{" "}
+													<span
+														title={formatDateAbsoluteWithOffset(
+															session.last_seen_at,
+														)}
+													>
+														{formatDateAbsolute(session.last_seen_at)}
+													</span>
 												</p>
 											</div>
 											{session.is_current ? (
@@ -126,17 +151,41 @@ export function SecuritySessionsSection({
 												</Badge>
 											) : null}
 										</div>
-										<div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
-											<p>
-												{t("settings:settings_sessions_last_seen")}:{" "}
-												<span
-													title={formatDateAbsoluteWithOffset(
-														session.last_seen_at,
-													)}
-												>
-													{formatDateAbsolute(session.last_seen_at)}
-												</span>
-											</p>
+										<div className="flex flex-wrap gap-2 md:justify-end">
+											<Button
+												type="button"
+												size="sm"
+												variant="ghost"
+												aria-expanded={expanded}
+												onClick={() => toggleExpanded(session.id)}
+											>
+												{expanded
+													? t("settings:settings_security_hide_details")
+													: t("settings:settings_security_show_details")}
+											</Button>
+											<Button
+												type="button"
+												size="sm"
+												variant={session.is_current ? "destructive" : "outline"}
+												disabled={busy}
+												onClick={() => onRevokeSession(session)}
+											>
+												{busy ? (
+													<Icon
+														name="Spinner"
+														className="mr-2 h-4 w-4 animate-spin"
+													/>
+												) : (
+													<Icon name="SignOut" className="mr-2 h-4 w-4" />
+												)}
+												{session.is_current
+													? t("settings:settings_sessions_revoke_current")
+													: t("settings:settings_sessions_revoke")}
+											</Button>
+										</div>
+									</div>
+									<AnimatedCollapsible open={expanded}>
+										<div className="grid gap-2 border-t pt-3 text-xs text-muted-foreground md:grid-cols-3">
 											<p>
 												{t("settings:settings_sessions_signed_in")}:{" "}
 												<span
@@ -163,26 +212,7 @@ export function SecuritySessionsSection({
 													t("settings:settings_sessions_unknown_ip")}
 											</p>
 										</div>
-									</div>
-									<Button
-										type="button"
-										size="sm"
-										variant={session.is_current ? "destructive" : "outline"}
-										disabled={busy}
-										onClick={() => onRevokeSession(session)}
-									>
-										{busy ? (
-											<Icon
-												name="Spinner"
-												className="mr-2 h-4 w-4 animate-spin"
-											/>
-										) : (
-											<Icon name="SignOut" className="mr-2 h-4 w-4" />
-										)}
-										{session.is_current
-											? t("settings:settings_sessions_revoke_current")
-											: t("settings:settings_sessions_revoke")}
-									</Button>
+									</AnimatedCollapsible>
 								</div>
 							</div>
 						);

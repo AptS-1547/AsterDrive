@@ -634,8 +634,15 @@ describe("SettingsPage", () => {
 		await waitFor(() =>
 			expect(mockState.authService.listSessions).toHaveBeenCalled(),
 		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_security_tab_sessions",
+			}),
+		);
 		expect(
-			screen.getByText("settings:settings_sessions_section"),
+			screen.getByRole("heading", {
+				name: "settings:settings_sessions_section",
+			}),
 		).toBeInTheDocument();
 		expect(
 			screen.getByText(
@@ -647,6 +654,33 @@ describe("SettingsPage", () => {
 				"Safari 18.3 · iOS 18.3 · settings:settings_sessions_device_mobile",
 			),
 		).toHaveAttribute("title", otherSessionUserAgent);
+		expect(
+			screen.queryByText(/settings:settings_sessions_expires/),
+		).not.toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getAllByRole("button", {
+				name: "settings:settings_security_show_details",
+			})[0],
+		);
+		expect(
+			await screen.findByText(/settings:settings_sessions_expires/),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", {
+				name: "settings:settings_security_hide_details",
+			}),
+		).toHaveAttribute("aria-expanded", "true");
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_security_hide_details",
+			}),
+		);
+		await waitFor(() =>
+			expect(
+				screen.queryByText(/settings:settings_sessions_expires/),
+			).not.toBeInTheDocument(),
+		);
 
 		fireEvent.click(
 			screen.getByRole("button", {
@@ -680,6 +714,11 @@ describe("SettingsPage", () => {
 
 		render(<SettingsPage section="security" />);
 
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_security_tab_passkeys",
+			}),
+		);
 		await waitFor(() =>
 			expect(mockState.authService.listPasskeys).toHaveBeenCalledTimes(1),
 		);
@@ -736,7 +775,7 @@ describe("SettingsPage", () => {
 				target: { value: "newsecret456" },
 			},
 		);
-		fireEvent.click(screen.getByRole("button", { name: "save" }));
+		fireEvent.click(screen.getByRole("button", { name: "core:save" }));
 
 		await waitFor(() =>
 			expect(mockState.authService.changePassword).toHaveBeenCalledWith({

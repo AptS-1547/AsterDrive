@@ -93,14 +93,24 @@ vi.mock("@/components/ui/button", () => ({
 		children,
 		disabled,
 		onClick,
+		size: _size,
 		type,
+		variant: _variant,
+		...props
 	}: {
 		children: React.ReactNode;
 		disabled?: boolean;
 		onClick?: () => void;
+		size?: string;
 		type?: "button" | "submit";
+		variant?: string;
 	}) => (
-		<button type={type ?? "button"} disabled={disabled} onClick={onClick}>
+		<button
+			{...props}
+			type={type ?? "button"}
+			disabled={disabled}
+			onClick={onClick}
+		>
 			{children}
 		</button>
 	),
@@ -226,6 +236,9 @@ describe("SecurityPasskeysSection", () => {
 		await waitFor(() => {
 			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
 		});
+		expect(mockState.authService.listPasskeys).toHaveBeenLastCalledWith({
+			force: true,
+		});
 	});
 
 	it("shows the unsupported state when WebAuthn is unavailable", async () => {
@@ -328,6 +341,32 @@ describe("SecurityPasskeysSection", () => {
 		expect(screen.getByText("date:2026-04-03T08:00:00Z")).toHaveAttribute(
 			"title",
 			"offset:2026-04-03T08:00:00Z",
+		);
+		expect(screen.queryByText("settings:settings_passkeys_created")).toBeNull();
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_security_show_details",
+			}),
+		);
+		expect(
+			await screen.findByText(/settings:settings_passkeys_created/),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", {
+				name: "settings:settings_security_hide_details",
+			}),
+		).toHaveAttribute("aria-expanded", "true");
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_security_hide_details",
+			}),
+		);
+		await waitFor(() =>
+			expect(
+				screen.queryByText(/settings:settings_passkeys_created/),
+			).not.toBeInTheDocument(),
 		);
 
 		fireEvent.click(
