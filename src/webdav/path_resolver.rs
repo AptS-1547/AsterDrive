@@ -8,7 +8,6 @@ use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::AsterError;
 use crate::runtime::PrimaryAppState;
-use crate::services::folder_service;
 use crate::utils::hash;
 use crate::webdav::dav::{DavPath, FsError};
 
@@ -30,8 +29,16 @@ pub enum ResolvedNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum CachedResolvedNode {
     Root,
-    Folder { id: i64 },
-    File { id: i64 },
+    Folder {
+        id: i64,
+        parent_id: Option<i64>,
+        name: String,
+    },
+    File {
+        id: i64,
+        folder_id: Option<i64>,
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,65 +84,19 @@ fn resolve_parent_cache_key(user_id: i64, path: &DavPath, root_folder_id: Option
     )
 }
 
-fn join_path(prefix: &str, leaf: &str) -> String {
-    if prefix == "/" {
-        format!("/{leaf}")
-    } else {
-        format!("{prefix}/{leaf}")
-    }
-}
-
-fn path_from_segments(segments: &[String]) -> String {
-    if segments.is_empty() {
-        "/".to_string()
-    } else {
-        format!("/{}", segments.join("/"))
-    }
-}
-
-async fn expected_full_path(
-    db: &DatabaseConnection,
-    root_folder_id: Option<i64>,
-    segments: &[String],
-) -> Result<String, FsError> {
-    if let Some(root_folder_id) = root_folder_id {
-        let mut paths = folder_service::build_folder_paths(db, &[root_folder_id])
-            .await
-            .map_err(|_| FsError::GeneralFailure)?;
-        let root_path = paths
-            .remove(&root_folder_id)
-            .ok_or(FsError::GeneralFailure)?;
-        if segments.is_empty() {
-            Ok(root_path)
-        } else {
-            Ok(join_path(&root_path, &segments.join("/")))
-        }
-    } else {
-        Ok(path_from_segments(segments))
-    }
-}
-
-async fn folder_full_path(db: &DatabaseConnection, folder_id: i64) -> Result<String, FsError> {
-    let mut paths = folder_service::build_folder_paths(db, &[folder_id])
-        .await
-        .map_err(|_| FsError::GeneralFailure)?;
-    paths.remove(&folder_id).ok_or(FsError::GeneralFailure)
-}
-
-async fn file_full_path(db: &DatabaseConnection, file: &file::Model) -> Result<String, FsError> {
-    let parent_path = if let Some(folder_id) = file.folder_id {
-        folder_full_path(db, folder_id).await?
-    } else {
-        "/".to_string()
-    };
-    Ok(join_path(&parent_path, &file.name))
-}
-
 fn cacheable_node(node: &ResolvedNode) -> CachedResolvedNode {
     match node {
         ResolvedNode::Root => CachedResolvedNode::Root,
-        ResolvedNode::Folder(folder) => CachedResolvedNode::Folder { id: folder.id },
-        ResolvedNode::File(file) => CachedResolvedNode::File { id: file.id },
+        ResolvedNode::Folder(folder) => CachedResolvedNode::Folder {
+            id: folder.id,
+            parent_id: folder.parent_id,
+            name: folder.name.clone(),
+        },
+        ResolvedNode::File(file) => CachedResolvedNode::File {
+            id: file.id,
+            folder_id: file.folder_id,
+            name: file.name.clone(),
+        },
     }
 }
 
@@ -149,7 +110,6 @@ fn is_missing_entity(error: &AsterError) -> bool {
 async fn load_cached_resolved_node(
     state: &PrimaryAppState,
     user_id: i64,
-    root_folder_id: Option<i64>,
     path: &DavPath,
     cache_key: &str,
     cached: CachedResolvedNode,
@@ -164,7 +124,11 @@ async fn load_cached_resolved_node(
                 Ok(None)
             }
         }
-        CachedResolvedNode::Folder { id } => {
+        CachedResolvedNode::Folder {
+            id,
+            parent_id,
+            name,
+        } => {
             let folder = match folder_repo::find_by_id(&state.db, id).await {
                 Ok(folder) => folder,
                 Err(error) if is_missing_entity(&error) => {
@@ -180,15 +144,20 @@ async fn load_cached_resolved_node(
                 state.cache.delete(cache_key).await;
                 return Ok(None);
             }
-            let expected = expected_full_path(&state.db, root_folder_id, &segments).await?;
-            let current = folder_full_path(&state.db, folder.id).await?;
-            if current != expected {
+            if segments.last().map(String::as_str) != Some(name.as_str())
+                || folder.name != name
+                || folder.parent_id != parent_id
+            {
                 state.cache.delete(cache_key).await;
                 return Ok(None);
             }
             Ok(Some(ResolvedNode::Folder(folder)))
         }
-        CachedResolvedNode::File { id } => {
+        CachedResolvedNode::File {
+            id,
+            folder_id,
+            name,
+        } => {
             let file = match file_repo::find_by_id(&state.db, id).await {
                 Ok(file) => file,
                 Err(error) if is_missing_entity(&error) => {
@@ -204,9 +173,10 @@ async fn load_cached_resolved_node(
                 state.cache.delete(cache_key).await;
                 return Ok(None);
             }
-            let expected = expected_full_path(&state.db, root_folder_id, &segments).await?;
-            let current = file_full_path(&state.db, &file).await?;
-            if current != expected {
+            if segments.last().map(String::as_str) != Some(name.as_str())
+                || file.name != name
+                || file.folder_id != folder_id
+            {
                 state.cache.delete(cache_key).await;
                 return Ok(None);
             }
@@ -272,8 +242,7 @@ pub async fn resolve_path_cached(
     let cache_key = resolve_path_cache_key(user_id, path, root_folder_id);
     if let Some(cached) = state.cache.get::<CachedResolvedNode>(&cache_key).await
         && let Some(node) =
-            load_cached_resolved_node(state, user_id, root_folder_id, path, &cache_key, cached)
-                .await?
+            load_cached_resolved_node(state, user_id, path, &cache_key, cached).await?
     {
         tracing::debug!(user_id, root_folder_id, "webdav path cache hit");
         return Ok(node);
@@ -342,9 +311,10 @@ async fn validate_cached_parent(
             {
                 return Ok(false);
             }
-            let expected = expected_full_path(&state.db, root_folder_id, parent_segments).await?;
-            let current = folder_full_path(&state.db, folder.id).await?;
-            Ok(current == expected)
+            match parent_segments.last() {
+                Some(parent_name) => Ok(folder.name == *parent_name),
+                None => Ok(Some(folder.id) == root_folder_id),
+            }
         }
         None => Ok(root_folder_id.is_none() && parent_segments.is_empty()),
     }

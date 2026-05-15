@@ -171,6 +171,24 @@ async fn clear_thumbnail_metadata(state: &PrimaryAppState, blob: &file_blob::Mod
     }
 }
 
+pub(super) async fn persist_thumbnail_metadata(
+    state: &PrimaryAppState,
+    blob: &file_blob::Model,
+    path: &str,
+    processor: &str,
+    version: &str,
+) {
+    if let Err(error) =
+        file_repo::set_thumbnail_metadata(&state.db, blob.id, path, processor, version).await
+    {
+        tracing::warn!(
+            blob_id = blob.id,
+            path,
+            "failed to persist thumbnail metadata: {error}"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::read_thumbnail_from_path;
@@ -233,23 +251,5 @@ mod tests {
 
         assert!(loaded.is_none());
         assert_eq!(driver.exists_calls.load(Ordering::SeqCst), 0);
-    }
-}
-
-pub(super) async fn persist_thumbnail_metadata(
-    state: &PrimaryAppState,
-    blob: &file_blob::Model,
-    path: &str,
-    processor: &str,
-    version: &str,
-) {
-    if let Err(error) =
-        file_repo::set_thumbnail_metadata(&state.db, blob.id, path, processor, version).await
-    {
-        tracing::warn!(
-            blob_id = blob.id,
-            path,
-            "failed to persist thumbnail metadata: {error}"
-        );
     }
 }
