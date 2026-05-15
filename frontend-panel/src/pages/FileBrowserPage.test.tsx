@@ -817,7 +817,7 @@ vi.mock("@/services/fileService", () => ({
 
 vi.mock("@/stores/authStore", () => {
 	const useAuthStore = <T,>(
-		selector: (state: { refreshUser: () => Promise<void> }) => T,
+		selector: (state: { refreshUser: typeof mockState.refreshUser }) => T,
 	) =>
 		selector({
 			refreshUser: mockState.refreshUser,
@@ -1351,7 +1351,7 @@ describe("FileBrowserPage", () => {
 		});
 		expect(
 			consumeStorageEventEcho({
-				kind: "file.deleted",
+				kind: "file.trashed",
 				workspace: { kind: "personal" },
 				file_ids: [1],
 				folder_ids: [],
@@ -1362,7 +1362,7 @@ describe("FileBrowserPage", () => {
 		).toBe(true);
 		expect(
 			consumeStorageEventEcho({
-				kind: "folder.deleted",
+				kind: "folder.trashed",
 				workspace: { kind: "personal" },
 				file_ids: [],
 				folder_ids: [2],

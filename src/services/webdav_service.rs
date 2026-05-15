@@ -70,7 +70,7 @@ pub async fn recursive_soft_delete(
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
-            storage_change_service::StorageChangeKind::FolderDeleted,
+            storage_change_service::StorageChangeKind::FolderTrashed,
             scope,
             vec![],
             vec![folder.id],
@@ -153,14 +153,15 @@ pub fn recursive_copy_folder<'a>(
     Box::pin(async move {
         let scope =
             crate::services::workspace_storage_service::WorkspaceStorageScope::Personal { user_id };
-        let copied = crate::services::folder_service::recursive_copy_folder_in_scope(
-            state,
-            scope,
-            src_folder_id,
-            dest_parent_id,
-            dest_name,
-        )
-        .await?;
+        let (copied, storage_delta) =
+            crate::services::folder_service::recursive_copy_folder_in_scope(
+                state,
+                scope,
+                src_folder_id,
+                dest_parent_id,
+                dest_name,
+            )
+            .await?;
         storage_change_service::publish(
             state,
             storage_change_service::StorageChangeEvent::new(
@@ -169,7 +170,8 @@ pub fn recursive_copy_folder<'a>(
                 vec![],
                 vec![copied.id],
                 vec![copied.parent_id],
-            ),
+            )
+            .with_storage_delta(storage_delta),
         );
         Ok(copied)
     })

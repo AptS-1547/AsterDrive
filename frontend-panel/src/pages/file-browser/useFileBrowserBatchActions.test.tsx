@@ -288,7 +288,7 @@ describe("useFileBrowserBatchActions", () => {
 		expect(mockState.refreshUser).not.toHaveBeenCalled();
 		expect(
 			consumeStorageEventEcho({
-				kind: "file.deleted",
+				kind: "file.trashed",
 				workspace: { kind: "personal" },
 				file_ids: [1, 2],
 				folder_ids: [],
@@ -299,7 +299,7 @@ describe("useFileBrowserBatchActions", () => {
 		).toBe(true);
 		expect(
 			consumeStorageEventEcho({
-				kind: "folder.deleted",
+				kind: "folder.trashed",
 				workspace: { kind: "personal" },
 				file_ids: [],
 				folder_ids: [5],

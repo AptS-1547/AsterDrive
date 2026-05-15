@@ -29,7 +29,7 @@ pub use self::session::{
 };
 pub use crate::services::profile_service::{AvatarInfo, UserProfileInfo};
 pub use crate::services::user_service::{
-    MeResponse, UpdatePreferencesReq, UserInfo, UserPreferences,
+    MePartialResponse, MeResponse, UpdatePreferencesReq, UserInfo, UserPreferences,
 };
 pub use crate::types::{
     AvatarSource, BrowserOpenMode, ColorPreset, Language, PrefViewMode, ThemeMode,

@@ -20,7 +20,7 @@ describe("storageEventEcho", () => {
 
 		expect(
 			consumeStorageEventEcho({
-				kind: "file.deleted",
+				kind: "file.trashed",
 				workspace: { kind: "personal" },
 				file_ids: [1, 2],
 				folder_ids: [],
@@ -31,7 +31,7 @@ describe("storageEventEcho", () => {
 		).toBe(true);
 		expect(
 			consumeStorageEventEcho({
-				kind: "folder.deleted",
+				kind: "folder.trashed",
 				workspace: { kind: "personal" },
 				file_ids: [],
 				folder_ids: [5],
@@ -42,7 +42,7 @@ describe("storageEventEcho", () => {
 		).toBe(true);
 		expect(
 			consumeStorageEventEcho({
-				kind: "file.deleted",
+				kind: "file.trashed",
 				workspace: { kind: "personal" },
 				file_ids: [1, 2],
 				folder_ids: [],
@@ -64,7 +64,7 @@ describe("storageEventEcho", () => {
 
 		expect(
 			consumeStorageEventEcho({
-				kind: "file.deleted",
+				kind: "file.trashed",
 				workspace: { kind: "team", team_id: 9 },
 				file_ids: [11],
 				folder_ids: [],
@@ -75,7 +75,7 @@ describe("storageEventEcho", () => {
 		).toBe(false);
 		expect(
 			consumeStorageEventEcho({
-				kind: "folder.deleted",
+				kind: "folder.trashed",
 				workspace: { kind: "team", team_id: 9 },
 				file_ids: [],
 				folder_ids: [12],

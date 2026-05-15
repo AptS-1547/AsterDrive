@@ -26,6 +26,8 @@ export type CheckResp = components["schemas"]["CheckResp"];
 export type ChangePasswordRequest = components["schemas"]["ChangePasswordReq"];
 export type CreateUserReq = components["schemas"]["CreateUserReq"];
 export type MeResponse = components["schemas"]["MeResponse"];
+export type MePartialResponse = components["schemas"]["MePartialResponse"];
+export type MeField = "profile" | "preferences" | "quota" | "session";
 export type PasswordResetConfirmRequest =
 	components["schemas"]["PasswordResetConfirmReq"];
 export type PasswordResetRequestRequest =

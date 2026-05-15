@@ -6,7 +6,10 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{auth_service, profile_service};
 use std::collections::{HashMap, HashSet};
 
-use super::models::{MeResponse, UserInfo, UserListFilters, UserSummary, user_core};
+use super::models::{
+    MePartialResponse, MeResponse, MeResponseFields, UserInfo, UserListFilters, UserSummary,
+    user_core,
+};
 use super::preferences::parse_preferences;
 
 pub fn to_user_summary_with_profile(
@@ -156,6 +159,46 @@ pub async fn get_me(
             profile_service::AvatarAudience::SelfUser,
         )
         .await?,
+    })
+}
+
+pub async fn get_me_partial(
+    state: &PrimaryAppState,
+    user_id: i64,
+    access_token_expires_at: i64,
+    fields: MeResponseFields,
+) -> Result<MePartialResponse> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let prefs = fields.preferences.then(|| parse_preferences(&user));
+    let profile = if fields.profile {
+        Some(
+            profile_service::get_profile_info(
+                state,
+                &user,
+                profile_service::AvatarAudience::SelfUser,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let core = user_core(&user);
+    Ok(MePartialResponse {
+        id: core.id,
+        username: core.username,
+        email: core.email,
+        email_verified: core.email_verified,
+        pending_email: core.pending_email,
+        role: core.role,
+        status: core.status,
+        policy_group_id: core.policy_group_id,
+        created_at: core.created_at,
+        updated_at: core.updated_at,
+        storage_used: fields.quota.then_some(core.storage_used),
+        storage_quota: fields.quota.then_some(core.storage_quota),
+        access_token_expires_at: fields.session.then_some(access_token_expires_at),
+        preferences: prefs,
+        profile,
     })
 }
 

@@ -36,9 +36,9 @@ async fn copy_frontier_files_in_scope(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     frontier: &[FrontierFolderCopy],
-) -> Result<()> {
+) -> Result<i64> {
     if frontier.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
 
     let db = &state.db;
@@ -219,7 +219,8 @@ pub(crate) fn recursive_copy_folder_in_scope<'a>(
     src_folder_id: i64,
     dest_parent_id: Option<i64>,
     dest_name: &'a str,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<folder::Model>> + Send + 'a>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(folder::Model, i64)>> + Send + 'a>>
+{
     Box::pin(async move {
         let db = &state.db;
         let now = Utc::now();
@@ -248,18 +249,22 @@ pub(crate) fn recursive_copy_folder_in_scope<'a>(
             src_folder_id,
             dest_folder_id: new_folder.id,
         }];
+        let mut storage_delta = 0i64;
         while !frontier.is_empty() {
             // 先并发完成当前层的“文件批量复制”和“下一层子目录读取”，
             // 但把子目录真正写库放在文件复制成功之后，避免扩大失败时的半成品范围。
-            let ((), child_plans) = tokio::try_join!(
+            let (frontier_storage_delta, child_plans) = tokio::try_join!(
                 copy_frontier_files_in_scope(state, scope, &frontier),
                 load_frontier_child_plans_in_scope(state, scope, &frontier),
             )?;
+            storage_delta = storage_delta
+                .checked_add(frontier_storage_delta)
+                .ok_or_else(|| AsterError::internal_error("folder copy storage delta overflow"))?;
             frontier =
                 create_frontier_children_from_plans_in_scope(state, scope, child_plans).await?;
         }
 
-        Ok(new_folder)
+        Ok((new_folder, storage_delta))
     })
 }
 
@@ -316,7 +321,7 @@ pub(crate) async fn copy_folder_in_scope(
 
         match recursive_copy_folder_in_scope(state, scope, src_id, dest_parent_id, &dest_name).await
         {
-            Ok(copied) => {
+            Ok((copied, storage_delta)) => {
                 storage_change_service::publish(
                     state,
                     storage_change_service::StorageChangeEvent::new(
@@ -325,7 +330,8 @@ pub(crate) async fn copy_folder_in_scope(
                         vec![],
                         vec![copied.id],
                         vec![copied.parent_id],
-                    ),
+                    )
+                    .with_storage_delta(storage_delta),
                 );
                 super::invalidate_folder_path_cache(state).await;
                 tracing::debug!(

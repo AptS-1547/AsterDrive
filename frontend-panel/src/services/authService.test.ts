@@ -75,6 +75,7 @@ describe("authService", () => {
 			expiresIn: 900,
 		});
 		authService.me();
+		authService.me(["quota"]);
 		authService.updatePreferences(prefs);
 		await expect(
 			authService.changePassword({
@@ -112,7 +113,10 @@ describe("authService", () => {
 		});
 		expect(mockState.post).toHaveBeenNthCalledWith(6, "/auth/logout");
 		expect(mockState.post).toHaveBeenNthCalledWith(7, "/auth/refresh");
-		expect(mockState.get).toHaveBeenCalledWith("/auth/me");
+		expect(mockState.get).toHaveBeenNthCalledWith(1, "/auth/me");
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/auth/me", {
+			params: { fields: "quota" },
+		});
 		expect(mockState.patch).toHaveBeenNthCalledWith(
 			1,
 			"/auth/preferences",
@@ -139,7 +143,7 @@ describe("authService", () => {
 				source: "gravatar",
 			},
 		);
-		expect(mockState.get).toHaveBeenNthCalledWith(2, "/auth/sessions");
+		expect(mockState.get).toHaveBeenNthCalledWith(3, "/auth/sessions");
 		expect(mockState.delete).toHaveBeenNthCalledWith(
 			1,
 			"/auth/sessions/session-1",

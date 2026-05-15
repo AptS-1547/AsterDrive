@@ -127,12 +127,13 @@ async fn restore_version_inner(
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
-            storage_change_service::StorageChangeKind::FileRestored,
+            storage_change_service::StorageChangeKind::FileVersionRestored,
             scope,
             vec![updated.id],
             vec![],
             vec![updated.folder_id],
-        ),
+        )
+        .with_storage_delta(-reclaimed_bytes),
     );
 
     let mut cleanup_counts = BTreeMap::<i64, i32>::new();
@@ -167,6 +168,7 @@ async fn restore_version_inner(
 async fn delete_version_inner(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
+    parent_folder_id: Option<i64>,
     version: file_version::Model,
 ) -> Result<()> {
     let version_id = version.id;
@@ -181,6 +183,17 @@ async fn delete_version_inner(
         workspace_storage_service::update_storage_used(&txn, scope, -size).await?;
     }
     crate::db::transaction::commit(txn).await?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FileVersionDeleted,
+            scope,
+            vec![file_id],
+            vec![],
+            vec![parent_folder_id],
+        )
+        .with_storage_delta(-size),
+    );
     cleanup_blob_if_unused(state, blob_id).await?;
     tracing::debug!(
         scope = ?scope,
@@ -228,7 +241,7 @@ async fn delete_version_in_scope(
     file_id: i64,
     version_id: i64,
 ) -> Result<()> {
-    workspace_storage_service::verify_file_access(state, scope, file_id).await?;
+    let file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
     if let WorkspaceStorageScope::Team {
         team_id,
         actor_user_id,
@@ -238,7 +251,7 @@ async fn delete_version_in_scope(
             .await?;
     }
     let version = load_version_for_file(&state.db, file_id, version_id).await?;
-    delete_version_inner(state, scope, version).await
+    delete_version_inner(state, scope, file.folder_id, version).await
 }
 
 /// 列出文件的所有版本
@@ -486,6 +499,17 @@ pub async fn cleanup_excess(state: &PrimaryAppState, file_id: i64) -> Result<()>
     }
 
     if deleted_count > 0 {
+        storage_change_service::publish(
+            state,
+            storage_change_service::StorageChangeEvent::new_for_resource_scope(
+                storage_change_service::StorageChangeKind::FileVersionDeleted,
+                scope,
+                vec![file_id],
+                vec![],
+                vec![file.folder_id],
+            )
+            .with_storage_delta(-reclaimed_bytes),
+        );
         tracing::info!(
             file_id,
             scope = ?scope,

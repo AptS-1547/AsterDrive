@@ -391,6 +391,7 @@ use utoipa::{Modify, OpenApi};
             crate::services::user_service::UserCore,
             crate::services::user_service::UserInfo,
             crate::services::user_service::MeResponse,
+            crate::services::user_service::MePartialResponse,
             crate::types::UserRole,
             crate::types::UserStatus,
             crate::types::AvatarSource,

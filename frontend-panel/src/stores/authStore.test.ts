@@ -226,4 +226,46 @@ describe("useAuthStore", () => {
 		expect(useDisplayTimeZoneStore.getState().preference).toBe("browser");
 		expect(localStorage.getItem("aster-display-time-zone")).toBe("browser");
 	});
+
+	it("merges partial quota refreshes without dropping profile or preferences", async () => {
+		const user = createMeResponse({
+			storage_used: 10,
+			storage_quota: 100,
+		});
+		server.use(
+			http.get("*/api/v1/auth/me", ({ request }) => {
+				const url = new URL(request.url);
+				if (url.searchParams.get("fields") === "quota") {
+					return HttpResponse.json(
+						apiResponse({
+							id: user.id,
+							username: user.username,
+							email: user.email,
+							email_verified: user.email_verified,
+							pending_email: user.pending_email,
+							role: user.role,
+							status: user.status,
+							policy_group_id: user.policy_group_id,
+							created_at: user.created_at,
+							updated_at: user.updated_at,
+							storage_used: 42,
+							storage_quota: 100,
+						}),
+					);
+				}
+				return HttpResponse.json(apiResponse(user));
+			}),
+		);
+		const { useAuthStore } = await loadStores();
+
+		await useAuthStore.getState().checkAuth();
+		await useAuthStore.getState().refreshUser({ fields: ["quota"] });
+
+		expect(useAuthStore.getState().user).toMatchObject({
+			storage_used: 42,
+			storage_quota: 100,
+			profile: user.profile,
+			preferences: user.preferences,
+		});
+	});
 });

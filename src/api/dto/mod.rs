@@ -36,9 +36,9 @@ pub mod wopi;
 pub use admin::{AdminCreateTeamReq, AdminListQuery, AdminPatchTeamReq};
 pub use auth::{
     ActionMessageResp, AuthTokenResp, ChangePasswordReq, CheckResp,
-    ContactVerificationConfirmQuery, LoginReq, PasswordResetConfirmReq, PasswordResetRequestReq,
-    RegisterReq, RequestEmailChangeReq, ResendRegisterActivationReq, SetupReq,
-    UpdateAvatarSourceReq, UpdateProfileReq,
+    ContactVerificationConfirmQuery, LoginReq, MeQuery, PasswordResetConfirmReq,
+    PasswordResetRequestReq, RegisterReq, RequestEmailChangeReq, ResendRegisterActivationReq,
+    SetupReq, UpdateAvatarSourceReq, UpdateProfileReq,
 };
 pub use batch::{
     ArchiveCompressReq, ArchiveDownloadReq, BatchCopyReq, BatchDeleteReq, BatchMoveReq,

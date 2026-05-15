@@ -6,12 +6,20 @@ const ECHO_TTL_MS = 5_000;
 type StorageChangeKind =
 	| "file.created"
 	| "file.updated"
+	| "file.trashed"
 	| "file.deleted"
 	| "file.restored"
+	| "file.restored_from_trash"
+	| "file.purged"
+	| "file.version_restored"
+	| "file.version_deleted"
 	| "folder.created"
 	| "folder.updated"
+	| "folder.trashed"
 	| "folder.deleted"
 	| "folder.restored"
+	| "folder.restored_from_trash"
+	| "folder.purged"
 	| "sync.required";
 
 type StorageChangeWorkspace =
@@ -25,6 +33,8 @@ export interface StorageChangeEventPayload {
 	folder_ids: number[];
 	affected_parent_ids: number[];
 	root_affected: boolean;
+	affects_quota?: boolean;
+	storage_delta?: number | null;
 	at: string;
 }
 
@@ -105,7 +115,7 @@ export function rememberStorageDeleteEchoes(input: StorageDeleteEchoInput) {
 	if (fileIds.length > 0) {
 		echoIds.push(
 			rememberStorageEventEcho({
-				kind: "file.deleted",
+				kind: "file.trashed",
 				workspace: input.workspace,
 				fileIds,
 			}),
@@ -114,7 +124,7 @@ export function rememberStorageDeleteEchoes(input: StorageDeleteEchoInput) {
 	if (folderIds.length > 0) {
 		echoIds.push(
 			rememberStorageEventEcho({
-				kind: "folder.deleted",
+				kind: "folder.trashed",
 				workspace: input.workspace,
 				folderIds,
 			}),

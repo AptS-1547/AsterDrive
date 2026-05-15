@@ -87,11 +87,17 @@ function reloadTeamsForCurrentUser() {
 }
 
 function eventMayChangeStorageUsage(event: StorageChangeEventPayload) {
+	if (typeof event.affects_quota === "boolean") {
+		return event.affects_quota;
+	}
 	return (
 		event.kind === "sync.required" ||
 		event.kind === "file.created" ||
 		event.kind === "file.updated" ||
 		event.kind === "file.restored" ||
+		event.kind === "file.purged" ||
+		event.kind === "file.version_restored" ||
+		event.kind === "file.version_deleted" ||
 		event.kind === "folder.created"
 	);
 }
@@ -108,7 +114,7 @@ function refreshStorageUsage(event: StorageChangeEventPayload) {
 		return;
 	}
 	if (event.workspace.kind === "personal") {
-		void refreshUser();
+		void refreshUser({ fields: ["quota"] });
 		return;
 	}
 	reloadTeamsForCurrentUser();

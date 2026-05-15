@@ -96,7 +96,8 @@ pub(crate) async fn copy_file_in_scope(
             vec![copied.id],
             vec![],
             vec![copied.folder_id],
-        ),
+        )
+        .with_storage_delta(blob.size),
     );
     tracing::debug!(
         scope = ?scope,
@@ -287,7 +288,8 @@ pub async fn duplicate_file_record(
             vec![copied.id],
             vec![],
             vec![copied.folder_id],
-        ),
+        )
+        .with_storage_delta(copied.size),
     );
     Ok(copied.into())
 }
@@ -324,9 +326,9 @@ pub(crate) async fn batch_duplicate_file_records_to_mixed_folders_in_scope(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     copy_specs: &[BatchDuplicateFileRecordTargetSpec],
-) -> Result<()> {
+) -> Result<i64> {
     if copy_specs.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
 
     let total_size = copy_specs.iter().try_fold(0i64, |acc, spec| {
@@ -370,7 +372,7 @@ pub(crate) async fn batch_duplicate_file_records_to_mixed_folders_in_scope(
     workspace_storage_service::update_storage_used(&txn, scope, total_size).await?;
 
     crate::db::transaction::commit(txn).await?;
-    Ok(())
+    Ok(total_size)
 }
 
 /// 批量复制文件记录：一次事务处理 blob ref_count + 文件创建 + 配额

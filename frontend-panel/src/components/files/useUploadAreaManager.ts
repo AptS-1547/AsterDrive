@@ -22,6 +22,7 @@ import {
 	writeUploadConcurrency,
 } from "@/lib/uploadSettings";
 import type { Workspace } from "@/lib/workspace";
+import type { MeField } from "@/types/api";
 import {
 	extractFilesFromDrop,
 	extractFilesFromInput,
@@ -47,7 +48,7 @@ interface UseUploadAreaManagerOptions {
 	breadcrumb: Array<{ id: number | null; name: string }>;
 	currentFolderId: number | null;
 	refresh: () => Promise<void>;
-	refreshUser: () => Promise<void>;
+	refreshUser: (options?: { fields?: MeField[] }) => Promise<void>;
 	resumeFileInputRef: RefObject<HTMLInputElement | null>;
 	workspace: Workspace;
 }
@@ -206,7 +207,7 @@ export function useUploadAreaManager({
 		pendingRefreshFolderIdsRef.current = new Set();
 
 		if (pendingRefreshFolderIds.size > 0) {
-			void refreshUser();
+			void refreshUser({ fields: ["quota"] });
 		}
 		if (shouldRefreshCurrentFolder) {
 			void refresh();

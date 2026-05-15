@@ -207,6 +207,7 @@ describe("useStorageChangeEvents", () => {
 			folder_ids: [],
 			affected_parent_ids: [7],
 			root_affected: false,
+			affects_quota: false,
 			at: "2026-04-08T00:00:00Z",
 		});
 
@@ -226,9 +227,7 @@ describe("useStorageChangeEvents", () => {
 		await waitFor(() => {
 			expect(mockState.fileStore.navigateTo).toHaveBeenCalledWith(7);
 		});
-		await waitFor(() => {
-			expect(mockState.auth.refreshUser).toHaveBeenCalledTimes(1);
-		});
+		expect(mockState.auth.refreshUser).not.toHaveBeenCalled();
 		expect(mockState.teamStore.reload).not.toHaveBeenCalled();
 
 		hook.unmount();
@@ -254,6 +253,7 @@ describe("useStorageChangeEvents", () => {
 			folder_ids: [],
 			affected_parent_ids: [],
 			root_affected: false,
+			affects_quota: true,
 			at: "2026-04-08T00:00:00Z",
 		});
 
@@ -279,12 +279,13 @@ describe("useStorageChangeEvents", () => {
 		});
 
 		MockEventSource.instances[0]?.emit({
-			kind: "file.deleted",
+			kind: "file.trashed",
 			workspace: { kind: "team", team_id: 42 },
 			file_ids: [5],
 			folder_ids: [],
 			affected_parent_ids: [7],
 			root_affected: false,
+			affects_quota: false,
 			at: "2026-04-08T00:00:00Z",
 		});
 
@@ -313,6 +314,8 @@ describe("useStorageChangeEvents", () => {
 			folder_ids: [],
 			affected_parent_ids: [7],
 			root_affected: false,
+			affects_quota: true,
+			storage_delta: 64,
 			at: "2026-04-08T00:00:00Z",
 		});
 
@@ -322,6 +325,65 @@ describe("useStorageChangeEvents", () => {
 		expect(mockState.invalidateBlobUrl).not.toHaveBeenCalled();
 		expect(mockState.invalidateTextContent).not.toHaveBeenCalled();
 		expect(mockState.fileStore.navigateTo).not.toHaveBeenCalled();
+	});
+
+	it("refreshes only personal quota for quota-affecting personal events", async () => {
+		const { useStorageChangeEvents } = await import(
+			"@/hooks/useStorageChangeEvents"
+		);
+
+		renderHook(() => useStorageChangeEvents());
+
+		await waitFor(() => {
+			expect(MockEventSource.instances).toHaveLength(1);
+		});
+
+		MockEventSource.instances[0]?.emit({
+			kind: "file.purged",
+			workspace: { kind: "personal" },
+			file_ids: [5],
+			folder_ids: [],
+			affected_parent_ids: [7],
+			root_affected: false,
+			affects_quota: true,
+			storage_delta: -12,
+			at: "2026-04-08T00:00:00Z",
+		});
+
+		await waitFor(() => {
+			expect(mockState.auth.refreshUser).toHaveBeenCalledWith({
+				fields: ["quota"],
+			});
+		});
+		expect(mockState.teamStore.reload).not.toHaveBeenCalled();
+	});
+
+	it("falls back to legacy quota heuristics when affects_quota is absent", async () => {
+		const { useStorageChangeEvents } = await import(
+			"@/hooks/useStorageChangeEvents"
+		);
+
+		renderHook(() => useStorageChangeEvents());
+
+		await waitFor(() => {
+			expect(MockEventSource.instances).toHaveLength(1);
+		});
+
+		MockEventSource.instances[0]?.emit({
+			kind: "file.created",
+			workspace: { kind: "personal" },
+			file_ids: [5],
+			folder_ids: [],
+			affected_parent_ids: [7],
+			root_affected: false,
+			at: "2026-04-08T00:00:00Z",
+		});
+
+		await waitFor(() => {
+			expect(mockState.auth.refreshUser).toHaveBeenCalledWith({
+				fields: ["quota"],
+			});
+		});
 	});
 
 	it("defers folder refresh while the upload queue gate is active", async () => {
@@ -345,6 +407,7 @@ describe("useStorageChangeEvents", () => {
 			folder_ids: [],
 			affected_parent_ids: [7],
 			root_affected: false,
+			affects_quota: false,
 			at: "2026-04-08T00:00:00Z",
 		});
 
@@ -359,7 +422,7 @@ describe("useStorageChangeEvents", () => {
 
 	it("ignores matching local mutation echo events", async () => {
 		rememberStorageEventEcho({
-			kind: "file.deleted",
+			kind: "file.trashed",
 			workspace: { kind: "personal" },
 			fileIds: [12],
 		});
@@ -374,12 +437,13 @@ describe("useStorageChangeEvents", () => {
 		});
 
 		MockEventSource.instances[0]?.emit({
-			kind: "file.deleted",
+			kind: "file.trashed",
 			workspace: { kind: "personal" },
 			file_ids: [12],
 			folder_ids: [],
 			affected_parent_ids: [7],
 			root_affected: false,
+			affects_quota: false,
 			at: "2026-04-08T00:00:00Z",
 		});
 

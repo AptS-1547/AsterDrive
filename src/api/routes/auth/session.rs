@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use super::{AuthTokenResp, ChangePasswordReq, storage_event_frame};
+use super::{AuthTokenResp, ChangePasswordReq, MeQuery, storage_event_frame};
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::request_auth::{access_cookie_token, bearer_token};
 use crate::api::response::{ApiResponse, RemovedCountResponse};
@@ -341,6 +341,7 @@ pub async fn logout(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Http
     path = "/api/v1/auth/me",
     tag = "auth",
     operation_id = "me",
+    params(MeQuery),
     responses(
         (status = 200, description = "Current user info", body = inline(ApiResponse<crate::api::routes::auth::MeResponse>)),
         (status = 401, description = "Not authenticated"),
@@ -350,10 +351,26 @@ pub async fn logout(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Http
 pub async fn me(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    query: web::Query<MeQuery>,
 ) -> Result<HttpResponse> {
-    let resp =
-        user_service::get_me(&state, claims.user_id, usize_to_i64(claims.exp, "jwt exp")?).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
+    let access_token_expires_at = usize_to_i64(claims.exp, "jwt exp")?;
+    match query.selected_fields()? {
+        Some(fields) => {
+            let resp = user_service::get_me_partial(
+                &state,
+                claims.user_id,
+                access_token_expires_at,
+                fields,
+            )
+            .await?;
+            Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
+        }
+        None => {
+            let resp =
+                user_service::get_me(&state, claims.user_id, access_token_expires_at).await?;
+            Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
+        }
+    }
 }
 
 #[api_docs_macros::path(

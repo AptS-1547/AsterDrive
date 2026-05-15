@@ -19,7 +19,7 @@ pub(crate) async fn delete_in_scope(
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
-            storage_change_service::StorageChangeKind::FileDeleted,
+            storage_change_service::StorageChangeKind::FileTrashed,
             scope,
             vec![file.id],
             vec![],

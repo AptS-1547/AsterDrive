@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::cache::CacheBackend;
 use crate::runtime::PrimaryRuntimeState;
-use crate::services::workspace_storage_service::WorkspaceStorageScope;
+use crate::services::workspace_storage_service::{WorkspaceResourceScope, WorkspaceStorageScope};
 
 pub const STORAGE_CHANGE_CHANNEL_CAPACITY: usize = 1024;
 const CACHE_INVALIDATION_COALESCE_DELAY: StdDuration = StdDuration::from_millis(25);
@@ -32,18 +32,34 @@ pub enum StorageChangeKind {
     FileCreated,
     #[serde(rename = "file.updated")]
     FileUpdated,
+    #[serde(rename = "file.trashed")]
+    FileTrashed,
     #[serde(rename = "file.deleted")]
     FileDeleted,
     #[serde(rename = "file.restored")]
     FileRestored,
+    #[serde(rename = "file.restored_from_trash")]
+    FileRestoredFromTrash,
+    #[serde(rename = "file.purged")]
+    FilePurged,
+    #[serde(rename = "file.version_restored")]
+    FileVersionRestored,
+    #[serde(rename = "file.version_deleted")]
+    FileVersionDeleted,
     #[serde(rename = "folder.created")]
     FolderCreated,
     #[serde(rename = "folder.updated")]
     FolderUpdated,
+    #[serde(rename = "folder.trashed")]
+    FolderTrashed,
     #[serde(rename = "folder.deleted")]
     FolderDeleted,
     #[serde(rename = "folder.restored")]
     FolderRestored,
+    #[serde(rename = "folder.restored_from_trash")]
+    FolderRestoredFromTrash,
+    #[serde(rename = "folder.purged")]
+    FolderPurged,
     #[serde(rename = "sync.required")]
     SyncRequired,
 }
@@ -51,11 +67,22 @@ pub enum StorageChangeKind {
 impl StorageChangeKind {
     fn invalidates_folder_path_cache(self) -> bool {
         match self {
-            Self::FileCreated | Self::FileUpdated | Self::FileDeleted | Self::FileRestored => false,
+            Self::FileCreated
+            | Self::FileUpdated
+            | Self::FileTrashed
+            | Self::FileDeleted
+            | Self::FileRestored
+            | Self::FileRestoredFromTrash
+            | Self::FilePurged
+            | Self::FileVersionRestored
+            | Self::FileVersionDeleted => false,
             Self::FolderCreated
             | Self::FolderUpdated
+            | Self::FolderTrashed
             | Self::FolderDeleted
             | Self::FolderRestored
+            | Self::FolderRestoredFromTrash
+            | Self::FolderPurged
             | Self::SyncRequired => true,
         }
     }
@@ -78,6 +105,8 @@ pub struct StorageChangeEvent {
     pub folder_ids: Vec<i64>,
     pub affected_parent_ids: Vec<i64>,
     pub root_affected: bool,
+    pub affects_quota: bool,
+    pub storage_delta: Option<i64>,
     pub at: DateTime<Utc>,
 }
 
@@ -110,8 +139,50 @@ impl StorageChangeEvent {
             folder_ids: normalize_ids(folder_ids.into_iter()),
             affected_parent_ids,
             root_affected,
+            affects_quota: false,
+            storage_delta: None,
             at: Utc::now(),
         }
+    }
+
+    pub(crate) fn new_for_resource_scope(
+        kind: StorageChangeKind,
+        scope: WorkspaceResourceScope,
+        file_ids: Vec<i64>,
+        folder_ids: Vec<i64>,
+        affected_parent_ids: Vec<Option<i64>>,
+    ) -> Self {
+        let (audience, workspace) = match scope {
+            WorkspaceResourceScope::Personal { user_id } => (
+                StorageChangeAudience::User(user_id),
+                StorageChangeWorkspace::Personal,
+            ),
+            WorkspaceResourceScope::Team { team_id } => (
+                StorageChangeAudience::Team(team_id),
+                StorageChangeWorkspace::Team { team_id },
+            ),
+        };
+        let (affected_parent_ids, root_affected) =
+            normalize_parent_ids(affected_parent_ids.into_iter());
+
+        Self {
+            audience,
+            kind,
+            workspace: Some(workspace),
+            file_ids: normalize_ids(file_ids.into_iter()),
+            folder_ids: normalize_ids(folder_ids.into_iter()),
+            affected_parent_ids,
+            root_affected,
+            affects_quota: false,
+            storage_delta: None,
+            at: Utc::now(),
+        }
+    }
+
+    pub(crate) fn with_storage_delta(mut self, delta: i64) -> Self {
+        self.affects_quota = delta != 0;
+        self.storage_delta = Some(delta);
+        self
     }
 
     pub fn sync_required() -> Self {
@@ -123,6 +194,8 @@ impl StorageChangeEvent {
             folder_ids: Vec::new(),
             affected_parent_ids: Vec::new(),
             root_affected: false,
+            affects_quota: true,
+            storage_delta: None,
             at: Utc::now(),
         }
     }
