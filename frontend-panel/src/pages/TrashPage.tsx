@@ -255,7 +255,7 @@ export default function TrashPage() {
 
 				if (succeeded > 0) {
 					if (operation === "purge") {
-						await Promise.all([load(), refreshUser()]);
+						await Promise.all([load(), refreshUser({ fields: ["quota"] })]);
 					} else {
 						await load();
 					}
@@ -301,7 +301,7 @@ export default function TrashPage() {
 		try {
 			await trashService.purgeAll();
 			toast.success(t("trash_emptied"));
-			await Promise.all([load(), refreshUser()]);
+			await Promise.all([load(), refreshUser({ fields: ["quota"] })]);
 		} catch (err) {
 			handleApiError(err);
 		} finally {

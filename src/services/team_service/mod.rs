@@ -35,7 +35,8 @@ pub use models::{
 };
 pub(crate) use shared::validate_team_name;
 pub use team::{
-    archive_team, create_team, get_team, list_teams, list_user_team_ids, restore_team, update_team,
+    archive_team, create_team, get_team, list_teams, list_teams_filtered, list_user_team_ids,
+    restore_team, update_team,
 };
 
 // 和其他 service 一样，audit 放在聚合层，核心 team/member 逻辑保持纯业务语义。

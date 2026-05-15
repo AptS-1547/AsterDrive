@@ -17,10 +17,21 @@ fn write_temp_fixture(name: &str, contents: &str) -> String {
 #[actix_web::test]
 async fn test_trash_restore_purge() {
     let state = common::setup().await;
+    let mut rx = state.storage_change_tx.subscribe();
     let app = create_test_app!(state);
 
     let (token, _) = register_and_login!(app);
     let file_id = upload_test_file!(app, token);
+    let upload_event = rx.recv().await.expect("upload should publish event");
+    assert_eq!(
+        upload_event.kind,
+        aster_drive::services::storage_change_service::StorageChangeKind::FileCreated
+    );
+    assert!(upload_event.affects_quota);
+    assert_eq!(
+        upload_event.storage_delta,
+        Some("test content".len() as i64)
+    );
 
     // 软删除
     let req = test::TestRequest::delete()
@@ -30,6 +41,13 @@ async fn test_trash_restore_purge() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    let trash_event = rx.recv().await.expect("soft delete should publish event");
+    assert_eq!(
+        trash_event.kind,
+        aster_drive::services::storage_change_service::StorageChangeKind::FileTrashed
+    );
+    assert!(!trash_event.affects_quota);
+    assert_eq!(trash_event.storage_delta, None);
 
     // 列出回收站
     let req = test::TestRequest::get()
@@ -53,6 +71,13 @@ async fn test_trash_restore_purge() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    let restore_event = rx.recv().await.expect("restore should publish event");
+    assert_eq!(
+        restore_event.kind,
+        aster_drive::services::storage_change_service::StorageChangeKind::FileRestoredFromTrash
+    );
+    assert!(!restore_event.affects_quota);
+    assert_eq!(restore_event.storage_delta, None);
 
     // 文件可访问
     let req = test::TestRequest::get()
@@ -70,6 +95,7 @@ async fn test_trash_restore_purge() {
         .insert_header(common::csrf_header_for(&token))
         .to_request();
     test::call_service(&app, req).await;
+    let _trash_again_event = rx.recv().await.expect("soft delete should publish event");
 
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/trash/file/{file_id}"))
@@ -78,6 +104,16 @@ async fn test_trash_restore_purge() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    let purge_event = rx.recv().await.expect("purge should publish event");
+    assert_eq!(
+        purge_event.kind,
+        aster_drive::services::storage_change_service::StorageChangeKind::FilePurged
+    );
+    assert!(purge_event.affects_quota);
+    assert_eq!(
+        purge_event.storage_delta,
+        Some(-("test content".len() as i64))
+    );
 
     // 回收站为空
     let req = test::TestRequest::get()

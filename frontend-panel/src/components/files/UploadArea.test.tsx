@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { MeField } from "@/types/api";
 
 const appendCompletedPart = vi.fn();
 const cancelUpload = vi.fn();
@@ -25,7 +26,7 @@ interface MockFileStoreState {
 }
 
 interface MockAuthStoreState {
-	refreshUser: () => Promise<void>;
+	refreshUser: (options?: { fields?: MeField[] }) => Promise<void>;
 }
 
 class MockApiError extends Error {

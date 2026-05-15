@@ -30,6 +30,7 @@ pub(crate) async fn store_from_temp_internal(
     let prepared = prepare::prepare_store_from_temp(state, params, hints).await?;
     let scope = prepared.scope;
     let existing_file_id = prepared.existing_file_id;
+    let storage_delta = prepared.storage_delta;
     let overwritten = existing_file_id.is_some();
     let result = persist::persist_temp_store(state, prepared, new_file_mode).await?;
 
@@ -46,7 +47,8 @@ pub(crate) async fn store_from_temp_internal(
             vec![result.id],
             vec![],
             vec![result.folder_id],
-        ),
+        )
+        .with_storage_delta(storage_delta),
     );
 
     if let Some(existing_id) = existing_file_id {

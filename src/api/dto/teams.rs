@@ -7,6 +7,9 @@ use validator::{Validate, ValidationError};
 
 use crate::api::pagination::{AdminTeamMemberSortBy, SortOrder};
 
+pub const DEFAULT_TEAM_LIST_LIMIT: u64 = 100;
+pub const MAX_TEAM_LIST_LIMIT: u64 = 200;
+
 // ── Team CRUD ───────────────────────────────────────────────────────────────
 
 /// Query parameters for listing teams.
@@ -17,6 +20,21 @@ use crate::api::pagination::{AdminTeamMemberSortBy, SortOrder};
 )]
 pub struct ListTeamsQuery {
     pub archived: Option<bool>,
+    pub keyword: Option<String>,
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+}
+
+impl ListTeamsQuery {
+    pub fn limit(&self) -> u64 {
+        self.limit
+            .map(|limit| limit.clamp(1, MAX_TEAM_LIST_LIMIT))
+            .unwrap_or(DEFAULT_TEAM_LIST_LIMIT)
+    }
+
+    pub fn offset(&self) -> u64 {
+        self.offset.unwrap_or(0)
+    }
 }
 
 /// Create a new team.
@@ -103,5 +121,31 @@ fn validate_add_team_member(value: &AddTeamMemberReq) -> std::result::Result<(),
             "user_id or identifier is required",
         )),
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DEFAULT_TEAM_LIST_LIMIT, ListTeamsQuery, MAX_TEAM_LIST_LIMIT};
+
+    #[test]
+    fn list_teams_query_applies_default_and_max_limit() {
+        let default_query = ListTeamsQuery {
+            archived: None,
+            keyword: None,
+            limit: None,
+            offset: None,
+        };
+        assert_eq!(default_query.limit(), DEFAULT_TEAM_LIST_LIMIT);
+        assert_eq!(default_query.offset(), 0);
+
+        let oversized_query = ListTeamsQuery {
+            archived: None,
+            keyword: None,
+            limit: Some(MAX_TEAM_LIST_LIMIT + 1),
+            offset: Some(25),
+        };
+        assert_eq!(oversized_query.limit(), MAX_TEAM_LIST_LIMIT);
+        assert_eq!(oversized_query.offset(), 25);
     }
 }

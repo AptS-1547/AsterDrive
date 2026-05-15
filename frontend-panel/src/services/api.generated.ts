@@ -2989,6 +2989,13 @@ export interface components {
             /** Format: int64 */
             uploads: number;
         };
+        AdminOverviewQuery: {
+            /** Format: int32 */
+            days?: number | null;
+            /** Format: int64 */
+            event_limit?: number | null;
+            timezone?: string | null;
+        };
         AdminOverviewStats: {
             /** Format: int64 */
             active_users: number;
@@ -3289,6 +3296,16 @@ export interface components {
             user?: null | components["schemas"]["UserSummary"];
             user_agent?: string | null;
         };
+        AuditLogFilterQuery: {
+            action?: string | null;
+            after?: string | null;
+            before?: string | null;
+            /** Format: int64 */
+            entity_id?: number | null;
+            entity_type?: string | null;
+            /** Format: int64 */
+            user_id?: number | null;
+        };
         AuthSessionInfo: {
             created_at: string;
             expires_at: string;
@@ -3319,7 +3336,7 @@ export interface components {
          * @description 后台任务类型
          * @enum {string}
          */
-        BackgroundTaskKind: "archive_extract" | "archive_compress" | "thumbnail_generate" | "system_runtime";
+        BackgroundTaskKind: "archive_extract" | "archive_compress" | "thumbnail_generate" | "storage_policy_temp_cleanup" | "system_runtime";
         /**
          * @description 后台任务状态
          * @enum {string}
@@ -3418,6 +3435,10 @@ export interface components {
             requires_restart: boolean;
             value_type: components["schemas"]["SystemConfigValueType"];
         };
+        /** @description Query parameters for email contact verification confirmation. */
+        ContactVerificationConfirmQuery: {
+            token?: string | null;
+        };
         /** @description Copy a file to a target folder. */
         CopyFileReq: {
             /**
@@ -3508,6 +3529,13 @@ export interface components {
         /** @description Query parameters for deleting a storage policy. */
         DeletePolicyQuery: {
             force?: boolean;
+        };
+        /**
+         * @description Query parameters for direct link downloads.
+         *     NOTE: The `force_download()` method is defined in `src/api/routes/share_public.rs`.
+         */
+        DirectLinkQuery: {
+            download?: string | null;
         };
         DirectLinkTokenInfo: {
             token: string;
@@ -3680,6 +3708,33 @@ export interface components {
             name: string;
             updated_at: string;
         };
+        /** @description 文件列表分页参数（文件夹用 offset 分页，文件用 cursor 分页） */
+        FolderListQuery: {
+            /**
+             * Format: int64
+             * @description cursor 分页：上一页最后一条文件的 id
+             */
+            file_after_id?: number | null;
+            /** @description cursor 分页：上一页最后一条文件的排序字段值（序列化为字符串） */
+            file_after_value?: string | null;
+            /**
+             * Format: int64
+             * @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询）
+             */
+            file_limit?: number | null;
+            /**
+             * Format: int64
+             * @description 文件夹最大返回数量（默认 200，最大 1000；传 0 跳过文件夹查询）
+             */
+            folder_limit?: number | null;
+            /**
+             * Format: int64
+             * @description 文件夹偏移量（默认 0）
+             */
+            folder_offset?: number | null;
+            sort_by?: null | components["schemas"]["SortBy"];
+            sort_order?: null | components["schemas"]["SortOrder"];
+        };
         HealthResponse: {
             build_time: string;
             status: string;
@@ -3723,10 +3778,50 @@ export interface components {
             sort_order?: null | components["schemas"]["SortOrder"];
             status?: null | components["schemas"]["UserStatus"];
         };
+        /** @description Query parameters for listing teams. */
+        ListTeamsQuery: {
+            archived?: boolean | null;
+            keyword?: string | null;
+            /** Format: int64 */
+            limit?: number | null;
+            /** Format: int64 */
+            offset?: number | null;
+        };
         /** @description Standard login credentials. */
         LoginReq: {
             identifier: string;
             password: string;
+        };
+        /**
+         * @description Partial `/auth/me` response. The always-needed account identity is kept
+         *     stable, while heavier or narrow-use groups are serialized only when selected.
+         */
+        MePartialResponse: {
+            /** Format: int64 */
+            access_token_expires_at?: number | null;
+            created_at: string;
+            email: string;
+            email_verified: boolean;
+            /** Format: int64 */
+            id: number;
+            pending_email?: string | null;
+            /** Format: int64 */
+            policy_group_id?: number | null;
+            preferences?: null | components["schemas"]["UserPreferences"];
+            profile?: null | components["schemas"]["UserProfileInfo"];
+            role: components["schemas"]["UserRole"];
+            status: components["schemas"]["UserStatus"];
+            /** Format: int64 */
+            storage_quota?: number | null;
+            /** Format: int64 */
+            storage_used?: number | null;
+            updated_at: string;
+            username: string;
+        };
+        /** @description Query parameters for `/auth/me`. */
+        MeQuery: {
+            /** @description Comma-separated field groups to include: profile, preferences, quota, session. */
+            fields?: string | null;
         };
         /** @description /auth/me 响应：用户信息 + 偏好设置 */
         MeResponse: {
@@ -4606,6 +4701,29 @@ export interface components {
         SortBy: "name" | "size" | "created_at" | "updated_at" | "type";
         /** @enum {string} */
         SortOrder: "asc" | "desc";
+        StorageChangeEvent: {
+            affected_parent_ids: number[];
+            affects_quota: boolean;
+            at: string;
+            file_ids: number[];
+            folder_ids: number[];
+            kind: components["schemas"]["StorageChangeKind"];
+            root_affected: boolean;
+            /** Format: int64 */
+            storage_delta: number | null;
+            workspace: null | components["schemas"]["StorageChangeWorkspace"];
+        };
+        /** @enum {string} */
+        StorageChangeKind: "file.created" | "file.updated" | "file.trashed" | "file.restored_from_trash" | "file.purged" | "file.version_restored" | "file.version_deleted" | "folder.created" | "folder.updated" | "folder.trashed" | "folder.restored_from_trash" | "folder.purged" | "sync.required";
+        StorageChangeWorkspace: {
+            /** @enum {string} */
+            kind: "personal";
+        } | {
+            /** @enum {string} */
+            kind: "team";
+            /** Format: int64 */
+            team_id: number;
+        };
         StoragePolicy: {
             allowed_types: string[];
             base_path: string;
@@ -4706,6 +4824,22 @@ export interface components {
             id: number;
             name: string;
         };
+        StoragePolicyTempCleanupTaskPayloadInfo: {
+            driver_type: components["schemas"]["DriverType"];
+            multipart_upload_count: number;
+            /** Format: int64 */
+            policy_id: number;
+            policy_name: string;
+            temp_key_count: number;
+        };
+        StoragePolicyTempCleanupTaskResult: {
+            /** Format: int64 */
+            deleted_objects: number;
+            /** Format: int64 */
+            failed_objects: number;
+            /** Format: int64 */
+            missing_objects: number;
+        };
         StreamTicketInfo: {
             download_path: string;
             expires_at: string;
@@ -4781,6 +4915,9 @@ export interface components {
         }) | (components["schemas"]["ThumbnailGenerateTaskPayload"] & {
             /** @enum {string} */
             kind: "thumbnail_generate";
+        }) | (components["schemas"]["StoragePolicyTempCleanupTaskPayloadInfo"] & {
+            /** @enum {string} */
+            kind: "storage_policy_temp_cleanup";
         }) | (components["schemas"]["RuntimeTaskPayload"] & {
             /** @enum {string} */
             kind: "system_runtime";
@@ -4794,6 +4931,9 @@ export interface components {
         }) | (components["schemas"]["ThumbnailGenerateTaskResult"] & {
             /** @enum {string} */
             kind: "thumbnail_generate";
+        }) | (components["schemas"]["StoragePolicyTempCleanupTaskResult"] & {
+            /** @enum {string} */
+            kind: "storage_policy_temp_cleanup";
         }) | (components["schemas"]["RuntimeTaskResult"] & {
             /** @enum {string} */
             kind: "system_runtime";
@@ -4975,6 +5115,31 @@ export interface components {
             entity_type: components["schemas"]["EntityType"];
             /** Format: int64 */
             id: number;
+        };
+        /** @description 回收站列表分页参数 */
+        TrashListQuery: {
+            /** @description cursor 分页：上一页最后一条文件的 expires_at（ISO 8601） */
+            file_after_expires_at?: string | null;
+            /**
+             * Format: int64
+             * @description cursor 分页：上一页最后一条文件的 id
+             */
+            file_after_id?: number | null;
+            /**
+             * Format: int64
+             * @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询）
+             */
+            file_limit?: number | null;
+            /**
+             * Format: int64
+             * @description 文件夹最大返回数量（默认 200，最大 1000；传 0 跳过文件夹查询）
+             */
+            folder_limit?: number | null;
+            /**
+             * Format: int64
+             * @description 文件夹偏移量（默认 0）
+             */
+            folder_offset?: number | null;
         };
         /** @description Update the user's avatar source. */
         UpdateAvatarSourceReq: {
@@ -5194,6 +5359,10 @@ export interface components {
         WebdavSettingsInfo: {
             endpoint: string;
             prefix: string;
+        };
+        /** @description Query parameters for WOPI file endpoints. */
+        WopiAccessQuery: {
+            access_token: string;
         };
         WopiLaunchSession: {
             access_token: string;
@@ -9001,7 +9170,10 @@ export interface operations {
     };
     me: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Comma-separated field groups to include: profile, preferences, quota, session. */
+                fields?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13393,6 +13565,9 @@ export interface operations {
         parameters: {
             query?: {
                 archived?: boolean | null;
+                keyword?: string | null;
+                limit?: number | null;
+                offset?: number | null;
             };
             header?: never;
             path?: never;

@@ -20,34 +20,40 @@ describe("storageEventEcho", () => {
 
 		expect(
 			consumeStorageEventEcho({
-				kind: "file.deleted",
+				kind: "file.trashed",
 				workspace: { kind: "personal" },
 				file_ids: [1, 2],
 				folder_ids: [],
 				affected_parent_ids: [7],
 				root_affected: false,
+				affects_quota: false,
+				storage_delta: null,
 				at: "2026-05-13T00:00:00Z",
 			}),
 		).toBe(true);
 		expect(
 			consumeStorageEventEcho({
-				kind: "folder.deleted",
+				kind: "folder.trashed",
 				workspace: { kind: "personal" },
 				file_ids: [],
 				folder_ids: [5],
 				affected_parent_ids: [7],
 				root_affected: false,
+				affects_quota: false,
+				storage_delta: null,
 				at: "2026-05-13T00:00:00Z",
 			}),
 		).toBe(true);
 		expect(
 			consumeStorageEventEcho({
-				kind: "file.deleted",
+				kind: "file.trashed",
 				workspace: { kind: "personal" },
 				file_ids: [1, 2],
 				folder_ids: [],
 				affected_parent_ids: [7],
 				root_affected: false,
+				affects_quota: false,
+				storage_delta: null,
 				at: "2026-05-13T00:00:00Z",
 			}),
 		).toBe(false);
@@ -64,23 +70,27 @@ describe("storageEventEcho", () => {
 
 		expect(
 			consumeStorageEventEcho({
-				kind: "file.deleted",
+				kind: "file.trashed",
 				workspace: { kind: "team", team_id: 9 },
 				file_ids: [11],
 				folder_ids: [],
 				affected_parent_ids: [7],
 				root_affected: false,
+				affects_quota: false,
+				storage_delta: null,
 				at: "2026-05-13T00:00:00Z",
 			}),
 		).toBe(false);
 		expect(
 			consumeStorageEventEcho({
-				kind: "folder.deleted",
+				kind: "folder.trashed",
 				workspace: { kind: "team", team_id: 9 },
 				file_ids: [],
 				folder_ids: [12],
 				affected_parent_ids: [7],
 				root_affected: false,
+				affects_quota: false,
+				storage_delta: null,
 				at: "2026-05-13T00:00:00Z",
 			}),
 		).toBe(false);

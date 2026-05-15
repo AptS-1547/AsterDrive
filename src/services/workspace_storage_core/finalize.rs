@@ -113,7 +113,8 @@ pub(crate) async fn finalize_upload_session_file(
             vec![created.id],
             vec![],
             vec![created.folder_id],
-        ),
+        )
+        .with_storage_delta(size),
     );
     Ok(created)
 }

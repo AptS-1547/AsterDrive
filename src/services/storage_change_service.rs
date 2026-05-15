@@ -9,10 +9,12 @@ use std::{
 use chrono::{DateTime, Utc};
 use futures::future::join_all;
 use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use utoipa::ToSchema;
 
 use crate::cache::CacheBackend;
 use crate::runtime::PrimaryRuntimeState;
-use crate::services::workspace_storage_service::WorkspaceStorageScope;
+use crate::services::workspace_storage_service::{WorkspaceResourceScope, WorkspaceStorageScope};
 
 pub const STORAGE_CHANGE_CHANNEL_CAPACITY: usize = 1024;
 const CACHE_INVALIDATION_COALESCE_DELAY: StdDuration = StdDuration::from_millis(25);
@@ -27,23 +29,32 @@ pub enum StorageChangeAudience {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub enum StorageChangeKind {
     #[serde(rename = "file.created")]
     FileCreated,
     #[serde(rename = "file.updated")]
     FileUpdated,
-    #[serde(rename = "file.deleted")]
-    FileDeleted,
-    #[serde(rename = "file.restored")]
-    FileRestored,
+    #[serde(rename = "file.trashed")]
+    FileTrashed,
+    #[serde(rename = "file.restored_from_trash")]
+    FileRestoredFromTrash,
+    #[serde(rename = "file.purged")]
+    FilePurged,
+    #[serde(rename = "file.version_restored")]
+    FileVersionRestored,
+    #[serde(rename = "file.version_deleted")]
+    FileVersionDeleted,
     #[serde(rename = "folder.created")]
     FolderCreated,
     #[serde(rename = "folder.updated")]
     FolderUpdated,
-    #[serde(rename = "folder.deleted")]
-    FolderDeleted,
-    #[serde(rename = "folder.restored")]
-    FolderRestored,
+    #[serde(rename = "folder.trashed")]
+    FolderTrashed,
+    #[serde(rename = "folder.restored_from_trash")]
+    FolderRestoredFromTrash,
+    #[serde(rename = "folder.purged")]
+    FolderPurged,
     #[serde(rename = "sync.required")]
     SyncRequired,
 }
@@ -51,11 +62,18 @@ pub enum StorageChangeKind {
 impl StorageChangeKind {
     fn invalidates_folder_path_cache(self) -> bool {
         match self {
-            Self::FileCreated | Self::FileUpdated | Self::FileDeleted | Self::FileRestored => false,
+            Self::FileCreated
+            | Self::FileUpdated
+            | Self::FileTrashed
+            | Self::FileRestoredFromTrash
+            | Self::FilePurged
+            | Self::FileVersionRestored
+            | Self::FileVersionDeleted => false,
             Self::FolderCreated
             | Self::FolderUpdated
-            | Self::FolderDeleted
-            | Self::FolderRestored
+            | Self::FolderTrashed
+            | Self::FolderRestoredFromTrash
+            | Self::FolderPurged
             | Self::SyncRequired => true,
         }
     }
@@ -63,21 +81,29 @@ impl StorageChangeKind {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub enum StorageChangeWorkspace {
     Personal,
     Team { team_id: i64 },
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct StorageChangeEvent {
     #[serde(skip_serializing)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(ignore))]
     audience: StorageChangeAudience,
     pub kind: StorageChangeKind,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(required = true))]
     pub workspace: Option<StorageChangeWorkspace>,
     pub file_ids: Vec<i64>,
     pub folder_ids: Vec<i64>,
     pub affected_parent_ids: Vec<i64>,
     pub root_affected: bool,
+    pub affects_quota: bool,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(required = true))]
+    pub storage_delta: Option<i64>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub at: DateTime<Utc>,
 }
 
@@ -110,8 +136,50 @@ impl StorageChangeEvent {
             folder_ids: normalize_ids(folder_ids.into_iter()),
             affected_parent_ids,
             root_affected,
+            affects_quota: false,
+            storage_delta: None,
             at: Utc::now(),
         }
+    }
+
+    pub(crate) fn new_for_resource_scope(
+        kind: StorageChangeKind,
+        scope: WorkspaceResourceScope,
+        file_ids: Vec<i64>,
+        folder_ids: Vec<i64>,
+        affected_parent_ids: Vec<Option<i64>>,
+    ) -> Self {
+        let (audience, workspace) = match scope {
+            WorkspaceResourceScope::Personal { user_id } => (
+                StorageChangeAudience::User(user_id),
+                StorageChangeWorkspace::Personal,
+            ),
+            WorkspaceResourceScope::Team { team_id } => (
+                StorageChangeAudience::Team(team_id),
+                StorageChangeWorkspace::Team { team_id },
+            ),
+        };
+        let (affected_parent_ids, root_affected) =
+            normalize_parent_ids(affected_parent_ids.into_iter());
+
+        Self {
+            audience,
+            kind,
+            workspace: Some(workspace),
+            file_ids: normalize_ids(file_ids.into_iter()),
+            folder_ids: normalize_ids(folder_ids.into_iter()),
+            affected_parent_ids,
+            root_affected,
+            affects_quota: false,
+            storage_delta: None,
+            at: Utc::now(),
+        }
+    }
+
+    pub(crate) fn with_storage_delta(mut self, delta: i64) -> Self {
+        self.affects_quota = delta != 0;
+        self.storage_delta = Some(delta);
+        self
     }
 
     pub fn sync_required() -> Self {
@@ -123,6 +191,8 @@ impl StorageChangeEvent {
             folder_ids: Vec::new(),
             affected_parent_ids: Vec::new(),
             root_affected: false,
+            affects_quota: true,
+            storage_delta: None,
             at: Utc::now(),
         }
     }
@@ -246,7 +316,7 @@ mod tests {
     #[test]
     fn storage_change_event_filters_personal_and_team_visibility() {
         let personal = StorageChangeEvent::new(
-            StorageChangeKind::FileDeleted,
+            StorageChangeKind::FileTrashed,
             WorkspaceStorageScope::Personal { user_id: 11 },
             vec![1],
             vec![],

@@ -1,4 +1,5 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import type { ChangeEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import {
 	isTeamWorkspace,
@@ -24,10 +26,13 @@ import {
 	workspaceKey,
 	workspaceRootPath,
 } from "@/lib/workspace";
+import { teamService } from "@/services/teamService";
 import { useTeamStore } from "@/stores/teamStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import type { TeamInfo } from "@/types/api";
 
 type WorkspaceSwitcherVariant = "topbar" | "sidebar";
+const TEAM_SEARCH_LIMIT = 50;
 
 function WorkspaceMenuItem({
 	active,
@@ -82,20 +87,56 @@ export function WorkspaceSwitcher({
 	const teams = useTeamStore((state) => state.teams);
 	const loadingTeams = useTeamStore((state) => state.loading);
 	const [teamQuery, setTeamQuery] = useState("");
-	const deferredTeamQuery = useDeferredValue(teamQuery);
+	const [searchedTeams, setSearchedTeams] = useState<TeamInfo[] | null>(null);
+	const [searchLoading, setSearchLoading] = useState(false);
+	const normalizedTeamQuery = teamQuery.trim();
+	const hasTeamQuery = normalizedTeamQuery.length > 0;
+
+	useEffect(() => {
+		if (!normalizedTeamQuery) {
+			setSearchedTeams(null);
+			setSearchLoading(false);
+			return;
+		}
+
+		let active = true;
+		setSearchLoading(true);
+
+		const timer = window.setTimeout(() => {
+			teamService
+				.list({ keyword: normalizedTeamQuery, limit: TEAM_SEARCH_LIMIT })
+				.then((nextTeams) => {
+					if (active) {
+						setSearchedTeams(nextTeams);
+					}
+				})
+				.catch((error) => {
+					if (!active) {
+						return;
+					}
+					logger.warn("Failed to search teams", error);
+					setSearchedTeams([]);
+				})
+				.finally(() => {
+					if (active) {
+						setSearchLoading(false);
+					}
+				});
+		}, 250);
+
+		return () => {
+			active = false;
+			window.clearTimeout(timer);
+		};
+	}, [normalizedTeamQuery]);
 
 	const activeTeam = isTeamWorkspace(workspace)
 		? (teams.find((team) => team.id === workspace.teamId) ?? null)
 		: null;
-	const filteredTeams = useMemo(() => {
-		const query = deferredTeamQuery.trim().toLocaleLowerCase();
-		if (!query) {
-			return teams;
-		}
-		return teams.filter((team) =>
-			team.name.toLocaleLowerCase().includes(query),
-		);
-	}, [deferredTeamQuery, teams]);
+	const visibleTeams = useMemo(
+		() => (hasTeamQuery ? (searchedTeams ?? []) : teams),
+		[hasTeamQuery, searchedTeams, teams],
+	);
 	const currentLabel = isTeamWorkspace(workspace)
 		? (activeTeam?.name ??
 			t("workspace_team_fallback", { id: workspace.teamId }))
@@ -112,12 +153,21 @@ export function WorkspaceSwitcher({
 	const handleManageTeams = () => {
 		navigate("/settings/teams");
 	};
-	const hasTeamQuery = teamQuery.trim().length > 0;
-	const showLoadingState = loadingTeams && teams.length === 0;
+	const handleTeamQueryChange = (event: ChangeEvent<HTMLInputElement>) => {
+		setTeamQuery(event.target.value);
+		setSearchedTeams(null);
+	};
+	const searchPending = hasTeamQuery && searchedTeams === null;
+	const isLoadingTeamOptions = loadingTeams || searchLoading || searchPending;
+	const showLoadingState =
+		(loadingTeams && teams.length === 0 && !hasTeamQuery) || searchPending;
 	const showEmptyTeamsState =
 		!loadingTeams && teams.length === 0 && !hasTeamQuery;
 	const showNoMatchesState =
-		!loadingTeams && teams.length > 0 && filteredTeams.length === 0;
+		hasTeamQuery &&
+		!searchLoading &&
+		searchedTeams !== null &&
+		visibleTeams.length === 0;
 	const isSidebarVariant = variant === "sidebar";
 
 	return (
@@ -155,10 +205,10 @@ export function WorkspaceSwitcher({
 					</span>
 				</span>
 				<Icon
-					name={loadingTeams ? "Spinner" : "CaretDown"}
+					name={isLoadingTeamOptions ? "Spinner" : "CaretDown"}
 					className={cn(
 						"h-3 w-3 shrink-0 text-muted-foreground",
-						loadingTeams && "animate-spin",
+						isLoadingTeamOptions && "animate-spin",
 					)}
 				/>
 			</DropdownMenuTrigger>
@@ -174,7 +224,7 @@ export function WorkspaceSwitcher({
 						/>
 						<Input
 							value={teamQuery}
-							onChange={(event) => setTeamQuery(event.target.value)}
+							onChange={handleTeamQueryChange}
 							onKeyDown={(event) => event.stopPropagation()}
 							placeholder={t("workspace_search_placeholder")}
 							aria-label={t("workspace_search_placeholder")}
@@ -208,7 +258,7 @@ export function WorkspaceSwitcher({
 								meta={t("workspace_personal_label")}
 								value="personal"
 							/>
-							{filteredTeams.map((team) => (
+							{visibleTeams.map((team) => (
 								<WorkspaceMenuItem
 									key={team.id}
 									active={

@@ -9,7 +9,7 @@ use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
-    file_service, folder_service,
+    file_service, folder_service, storage_change_service,
     workspace_storage_service::{self, WorkspaceResourceScope, WorkspaceStorageScope},
 };
 use crate::types::EntityType;
@@ -188,6 +188,15 @@ pub(super) async fn recursive_purge_folder_forest_in_resource_scope(
         root_folder_count = folder_ids.len(),
         "purging folder forest permanently"
     );
+    let root_folders = folder_repo::find_by_ids(&state.db, folder_ids).await?;
+    let root_parent_ids: HashMap<i64, Option<i64>> = root_folders
+        .iter()
+        .map(|folder| (folder.id, folder.parent_id))
+        .collect();
+    let parent_ids: Vec<Option<i64>> = folder_ids
+        .iter()
+        .map(|folder_id| root_parent_ids.get(folder_id).copied().flatten())
+        .collect();
     let (all_files, all_folder_ids) =
         folder_service::collect_folder_forest_in_resource_scope(&state.db, scope, folder_ids, true)
             .await?;
@@ -205,6 +214,16 @@ pub(super) async fn recursive_purge_folder_forest_in_resource_scope(
     }
     crate::services::folder_service::invalidate_folder_path_cache(state).await;
     folder_repo::delete_many(&state.db, &all_folder_ids).await?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new_for_resource_scope(
+            storage_change_service::StorageChangeKind::FolderPurged,
+            scope,
+            vec![],
+            folder_ids.to_vec(),
+            parent_ids,
+        ),
+    );
     tracing::debug!(
         scope = ?scope,
         root_folder_count = folder_ids.len(),

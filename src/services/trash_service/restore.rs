@@ -50,7 +50,7 @@ async fn restore_file_in_scope(
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
-            storage_change_service::StorageChangeKind::FileRestored,
+            storage_change_service::StorageChangeKind::FileRestoredFromTrash,
             scope,
             vec![id],
             vec![],
@@ -106,7 +106,7 @@ async fn restore_folder_in_scope(
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
-            storage_change_service::StorageChangeKind::FolderRestored,
+            storage_change_service::StorageChangeKind::FolderRestoredFromTrash,
             scope,
             vec![],
             vec![id],

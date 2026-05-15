@@ -6,13 +6,13 @@ on:
       - 'frontend-panel/**'
       - 'scripts/coverage-summary.mjs'
       - '.github/workflows/frontend.yml'
-    branches: [master]
+    branches: [master, develop]
   pull_request:
     paths:
       - 'frontend-panel/**'
       - 'scripts/coverage-summary.mjs'
       - '.github/workflows/frontend.yml'
-    branches: [master]
+    branches: [master, develop]
 
 permissions:
   contents: read

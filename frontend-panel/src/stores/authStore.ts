@@ -8,7 +8,12 @@ import { useDisplayTimeZoneStore } from "@/stores/displayTimeZoneStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useTeamStore } from "@/stores/teamStore";
 import { useThemeStore } from "@/stores/themeStore";
-import type { MeResponse, UserPreferences } from "@/types/api";
+import type {
+	MeField,
+	MePartialResponse,
+	MeResponse,
+	UserPreferences,
+} from "@/types/api";
 
 const CACHED_USER_KEY = "aster-cached-user";
 const EXPIRES_AT_KEY = "aster-auth-expires-at";
@@ -17,7 +22,11 @@ const REFRESH_RETRY_MS = 60_000;
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let inFlightRefresh: Promise<void> | null = null;
-let inFlightRefreshUser: Promise<void> | null = null;
+let inFlightFullRefreshUser: Promise<void> | null = null;
+
+interface RefreshUserOptions {
+	fields?: MeField[];
+}
 
 function getCachedUser(): MeResponse | null {
 	try {
@@ -112,7 +121,7 @@ interface AuthState {
 	logout: () => Promise<void>;
 	checkAuth: () => Promise<void>;
 	refreshToken: () => Promise<void>;
-	refreshUser: () => Promise<void>;
+	refreshUser: (options?: RefreshUserOptions) => Promise<void>;
 	setStorageEventStreamEnabled: (enabled: boolean) => void;
 	syncSession: (expiresIn: number) => void;
 	startAutoRefresh: (delayMs?: number) => void;
@@ -160,6 +169,44 @@ function mergeUserPreferences(
 			...(user.preferences ?? {}),
 			...patch,
 		},
+	};
+}
+
+function mergePartialUser(
+	current: MeResponse | null,
+	partial: MePartialResponse,
+	fields: MeField[],
+): MeResponse | null {
+	if (!current) return null;
+
+	const fieldSet = new Set(fields);
+	return {
+		...current,
+		id: partial.id,
+		username: partial.username,
+		email: partial.email,
+		email_verified: partial.email_verified,
+		pending_email: partial.pending_email,
+		role: partial.role,
+		status: partial.status,
+		policy_group_id: partial.policy_group_id,
+		created_at: partial.created_at,
+		updated_at: partial.updated_at,
+		storage_used: fieldSet.has("quota")
+			? (partial.storage_used ?? current.storage_used)
+			: current.storage_used,
+		storage_quota: fieldSet.has("quota")
+			? (partial.storage_quota ?? current.storage_quota)
+			: current.storage_quota,
+		access_token_expires_at: fieldSet.has("session")
+			? (partial.access_token_expires_at ?? current.access_token_expires_at)
+			: current.access_token_expires_at,
+		preferences: fieldSet.has("preferences")
+			? (partial.preferences ?? null)
+			: current.preferences,
+		profile: fieldSet.has("profile")
+			? (partial.profile ?? current.profile)
+			: current.profile,
 	};
 }
 
@@ -293,14 +340,35 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 		return inFlightRefresh;
 	},
 
-	refreshUser: async () => {
-		if (inFlightRefreshUser) return inFlightRefreshUser;
+	refreshUser: async (options) => {
+		const selectedFields =
+			options?.fields && options.fields.length > 0 ? options.fields : null;
+		const isPartialRefresh = selectedFields !== null;
+		if (!isPartialRefresh && inFlightFullRefreshUser) {
+			return inFlightFullRefreshUser;
+		}
 
-		inFlightRefreshUser = (async () => {
+		const refresh = (async () => {
 			try {
-				const user = await authService.me();
-				const expiresAt =
-					getExpiresAtFromUser(user) ?? get().expiresAt ?? getStoredExpiresAt();
+				const response = isPartialRefresh
+					? await authService.me(selectedFields)
+					: await authService.me();
+				const user = isPartialRefresh
+					? mergePartialUser(
+							get().user,
+							response as MePartialResponse,
+							selectedFields,
+						)
+					: (response as MeResponse);
+				if (!user) return;
+
+				const expiresAt = selectedFields?.includes("session")
+					? (getExpiresAtFromUser(user) ??
+						get().expiresAt ??
+						getStoredExpiresAt())
+					: (getExpiresAtFromUser(user) ??
+						get().expiresAt ??
+						getStoredExpiresAt());
 				setCachedUser(user);
 				if (expiresAt !== null) {
 					setStoredExpiresAt(expiresAt);
@@ -316,11 +384,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 			} catch (e) {
 				logger.warn("refreshUser failed", e);
 			} finally {
-				inFlightRefreshUser = null;
+				if (!isPartialRefresh) {
+					inFlightFullRefreshUser = null;
+				}
 			}
 		})();
 
-		return inFlightRefreshUser;
+		if (!isPartialRefresh) {
+			inFlightFullRefreshUser = refresh;
+		}
+		return refresh;
 	},
 
 	setStorageEventStreamEnabled: (enabled) => {

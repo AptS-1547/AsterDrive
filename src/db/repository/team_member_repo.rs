@@ -3,11 +3,14 @@
 use std::collections::HashMap;
 
 use crate::api::pagination::{AdminTeamMemberSortBy, SortOrder};
-use crate::db::repository::search_query::{
-    escape_like_query, lower_like_condition, mysql_boolean_mode_query, sqlite_fts_match_condition,
-    sqlite_match_query,
-};
 use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
+use crate::db::repository::{
+    search_query::{
+        escape_like_query, lower_like_condition, mysql_boolean_mode_query,
+        sqlite_fts_match_condition, sqlite_match_query,
+    },
+    team_repo::team_keyword_condition,
+};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
     FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
@@ -40,6 +43,8 @@ pub struct TeamMemberPageFilters<'a> {
     pub sort_by: AdminTeamMemberSortBy,
     pub sort_order: SortOrder,
 }
+
+pub type UserTeamMembershipOrder = (team_member::Column, Order);
 
 fn team_member_keyword_like_condition(keyword: &str) -> Condition {
     let mut condition = Condition::any()
@@ -191,59 +196,83 @@ pub async fn list_by_user_with_team<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
-    list_by_user_with_team_for_archived_state(db, user_id, false).await
+    list_by_user_with_team_filtered(db, user_id, None, None, None, None).await
+}
+
+pub async fn list_by_user_with_team_filtered<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    keyword: Option<&str>,
+    limit: Option<u64>,
+    offset: Option<u64>,
+    order: Option<UserTeamMembershipOrder>,
+) -> Result<Vec<(team_member::Model, team::Model)>> {
+    list_by_user_with_team_for_archived_state(db, user_id, false, keyword, limit, offset, order)
+        .await
 }
 
 pub async fn list_by_user_with_archived_team<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
-    list_by_user_with_team_for_archived_state(db, user_id, true).await
+    list_by_user_with_archived_team_filtered(db, user_id, None, None, None, None).await
+}
+
+pub async fn list_by_user_with_archived_team_filtered<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    keyword: Option<&str>,
+    limit: Option<u64>,
+    offset: Option<u64>,
+    order: Option<UserTeamMembershipOrder>,
+) -> Result<Vec<(team_member::Model, team::Model)>> {
+    list_by_user_with_team_for_archived_state(db, user_id, true, keyword, limit, offset, order)
+        .await
 }
 
 async fn list_by_user_with_team_for_archived_state<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
     archived: bool,
+    keyword: Option<&str>,
+    limit: Option<u64>,
+    offset: Option<u64>,
+    order: Option<UserTeamMembershipOrder>,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
-    let memberships = TeamMember::find()
-        .filter(team_member::Column::UserId.eq(user_id))
-        .order_by_desc(team_member::Column::UpdatedAt)
-        .all(db)
-        .await
-        .map_err(AsterError::from)?;
+    let backend = db.get_database_backend();
+    let mut query = TeamMember::find()
+        .inner_join(team::Entity)
+        .select_also(team::Entity)
+        .filter(team_member::Column::UserId.eq(user_id));
 
-    if memberships.is_empty() {
-        return Ok(vec![]);
+    let (order_column, order_direction) =
+        order.unwrap_or((team_member::Column::UpdatedAt, Order::Desc));
+    query = query.order_by(order_column, order_direction);
+
+    query = if archived {
+        query.filter(team::Column::ArchivedAt.is_not_null())
+    } else {
+        query.filter(team::Column::ArchivedAt.is_null())
+    };
+
+    if let Some(keyword) = keyword.map(str::trim).filter(|keyword| !keyword.is_empty()) {
+        query = query.filter(team_keyword_condition(backend, keyword));
     }
 
-    let team_ids: Vec<i64> = memberships
-        .iter()
-        .map(|membership| membership.team_id)
-        .collect();
-    let mut team_query =
-        team::Entity::find().filter(team::Column::Id.is_in(team_ids.iter().copied()));
-    team_query = if archived {
-        team_query.filter(team::Column::ArchivedAt.is_not_null())
-    } else {
-        team_query.filter(team::Column::ArchivedAt.is_null())
-    };
-    let team_map: HashMap<i64, team::Model> = team_query
+    if let Some(offset) = offset {
+        query = query.offset(offset);
+    }
+
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+
+    Ok(query
         .all(db)
         .await
         .map_err(AsterError::from)?
         .into_iter()
-        .map(|team| (team.id, team))
-        .collect();
-
-    Ok(memberships
-        .into_iter()
-        .filter_map(|membership| {
-            team_map
-                .get(&membership.team_id)
-                .cloned()
-                .map(|team| (membership, team))
-        })
+        .filter_map(|(membership, team)| team.map(|team| (membership, team)))
         .collect())
 }
 

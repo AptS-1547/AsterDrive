@@ -1,32 +1,14 @@
 import type { Workspace } from "@/lib/workspace";
 import { workspaceKey } from "@/lib/workspace";
+import type {
+	StorageChangeEvent,
+	StorageChangeKind,
+	StorageChangeWorkspace,
+} from "@/types/api";
 
 const ECHO_TTL_MS = 5_000;
 
-type StorageChangeKind =
-	| "file.created"
-	| "file.updated"
-	| "file.deleted"
-	| "file.restored"
-	| "folder.created"
-	| "folder.updated"
-	| "folder.deleted"
-	| "folder.restored"
-	| "sync.required";
-
-type StorageChangeWorkspace =
-	| { kind: "personal" }
-	| { kind: "team"; team_id: number };
-
-export interface StorageChangeEventPayload {
-	kind: StorageChangeKind;
-	workspace?: StorageChangeWorkspace | null;
-	file_ids: number[];
-	folder_ids: number[];
-	affected_parent_ids: number[];
-	root_affected: boolean;
-	at: string;
-}
+export type StorageChangeEventPayload = StorageChangeEvent;
 
 interface StorageEventEchoInput {
 	kind: StorageChangeKind;
@@ -105,7 +87,7 @@ export function rememberStorageDeleteEchoes(input: StorageDeleteEchoInput) {
 	if (fileIds.length > 0) {
 		echoIds.push(
 			rememberStorageEventEcho({
-				kind: "file.deleted",
+				kind: "file.trashed",
 				workspace: input.workspace,
 				fileIds,
 			}),
@@ -114,7 +96,7 @@ export function rememberStorageDeleteEchoes(input: StorageDeleteEchoInput) {
 	if (folderIds.length > 0) {
 		echoIds.push(
 			rememberStorageEventEcho({
-				kind: "folder.deleted",
+				kind: "folder.trashed",
 				workspace: input.workspace,
 				folderIds,
 			}),

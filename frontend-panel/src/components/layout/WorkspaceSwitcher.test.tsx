@@ -1,6 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceSwitcher } from "@/components/layout/WorkspaceSwitcher";
+
+const teamServiceMocks = vi.hoisted(() => ({
+	list: vi.fn(),
+}));
 
 const mockState = vi.hoisted(() => ({
 	navigate: vi.fn(),
@@ -46,6 +50,10 @@ vi.mock("@/stores/teamStore", () => ({
 			teams: mockState.teams,
 			loading: mockState.loading,
 		}),
+}));
+
+vi.mock("@/services/teamService", () => ({
+	teamService: teamServiceMocks,
 }));
 
 vi.mock("@/components/ui/button", () => ({
@@ -181,6 +189,8 @@ vi.mock("@/components/ui/dropdown-menu", () => {
 
 describe("WorkspaceSwitcher", () => {
 	beforeEach(() => {
+		vi.useRealTimers();
+		teamServiceMocks.list.mockReset();
 		mockState.navigate.mockReset();
 		mockState.workspace = { kind: "personal" };
 		mockState.teams = [];
@@ -247,11 +257,13 @@ describe("WorkspaceSwitcher", () => {
 		expect(mockState.navigate).toHaveBeenCalledWith("/teams/9");
 	});
 
-	it("filters team options with the search field", () => {
+	it("searches team options with the backend after debounce", async () => {
+		vi.useFakeTimers();
 		mockState.teams = [
 			{ id: 3, name: "Core" },
 			{ id: 9, name: "Design" },
 		];
+		teamServiceMocks.list.mockResolvedValue([{ id: 9, name: "Design" }]);
 
 		render(<WorkspaceSwitcher />);
 
@@ -265,7 +277,46 @@ describe("WorkspaceSwitcher", () => {
 		expect(
 			screen.queryByRole("button", { name: /^Core/ }),
 		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: /^Design/ }),
+		).not.toBeInTheDocument();
+		expect(screen.getByText("translated:loading")).toBeInTheDocument();
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(250);
+		});
+
+		expect(teamServiceMocks.list).toHaveBeenCalledWith({
+			keyword: "des",
+			limit: 50,
+		});
 		expect(screen.getByRole("button", { name: /^Design/ })).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: /^Core/ }),
+		).not.toBeInTheDocument();
+	});
+
+	it("shows an empty search state when the backend returns no teams", async () => {
+		vi.useFakeTimers();
+		mockState.teams = [{ id: 3, name: "Core" }];
+		teamServiceMocks.list.mockResolvedValue([]);
+
+		render(<WorkspaceSwitcher />);
+
+		fireEvent.change(
+			screen.getByRole("textbox", {
+				name: "translated:workspace_search_placeholder",
+			}),
+			{ target: { value: "missing" } },
+		);
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(250);
+		});
+
+		expect(
+			screen.getByText("translated:workspace_no_matching_teams"),
+		).toBeInTheDocument();
 	});
 
 	it("falls back to the team id when the active team is not loaded yet", () => {

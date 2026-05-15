@@ -167,6 +167,86 @@ pub struct MeResponse {
     pub profile: profile_service::UserProfileInfo,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeResponseField {
+    Profile,
+    Preferences,
+    Quota,
+    Session,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeResponseFields {
+    pub profile: bool,
+    pub preferences: bool,
+    pub quota: bool,
+    pub session: bool,
+}
+
+impl MeResponseFields {
+    pub fn all() -> Self {
+        Self {
+            profile: true,
+            preferences: true,
+            quota: true,
+            session: true,
+        }
+    }
+
+    pub fn from_fields(fields: impl IntoIterator<Item = MeResponseField>) -> Self {
+        let mut selected = Self {
+            profile: false,
+            preferences: false,
+            quota: false,
+            session: false,
+        };
+        for field in fields {
+            match field {
+                MeResponseField::Profile => selected.profile = true,
+                MeResponseField::Preferences => selected.preferences = true,
+                MeResponseField::Quota => selected.quota = true,
+                MeResponseField::Session => selected.session = true,
+            }
+        }
+        selected
+    }
+}
+
+impl Default for MeResponseFields {
+    fn default() -> Self {
+        Self::all()
+    }
+}
+
+/// Partial `/auth/me` response. The always-needed account identity is kept
+/// stable, while heavier or narrow-use groups are serialized only when selected.
+#[derive(Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct MePartialResponse {
+    pub id: i64,
+    pub username: String,
+    pub email: String,
+    pub email_verified: bool,
+    pub pending_email: Option<String>,
+    pub role: UserRole,
+    pub status: UserStatus,
+    pub policy_group_id: Option<i64>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_used: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_quota: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_token_expires_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferences: Option<Option<UserPreferences>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<profile_service::UserProfileInfo>,
+}
+
 /// 通用用户响应：核心字段 + profile
 #[derive(Debug, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]

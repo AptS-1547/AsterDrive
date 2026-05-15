@@ -16,9 +16,16 @@ export function createMeResponse(
 		id: 1,
 		username: "alice",
 		email: "alice@example.com",
+		email_verified: true,
+		pending_email: null,
 		role: "user",
 		status: "active",
+		policy_group_id: null,
+		storage_used: 0,
+		storage_quota: 0,
 		access_token_expires_at: Math.floor(Date.now() / 1000) + 900,
+		created_at: "2026-04-08T00:00:00Z",
+		updated_at: "2026-04-08T00:00:00Z",
 		profile: {
 			avatar: {
 				source: "none",

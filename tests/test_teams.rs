@@ -193,6 +193,132 @@ async fn test_team_crud_and_member_lifecycle() {
 }
 
 #[actix_web::test]
+async fn test_team_list_keyword_filters_visible_teams_and_archived_state() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+
+    let owner_id = register_user!(
+        app,
+        db,
+        mail_sender,
+        "teamsearchowner",
+        "teamsearchowner@example.com",
+        "password123"
+    );
+    let member_id = register_user!(
+        app,
+        db,
+        mail_sender,
+        "teamsearchmember",
+        "teamsearchmember@example.com",
+        "password123"
+    );
+    let owner_token = login_user!(app, "teamsearchowner", "password123");
+    let member_token = login_user!(app, "teamsearchmember", "password123");
+
+    macro_rules! create_team {
+        ($name:expr, $description:expr) => {{
+        let req = test::TestRequest::post()
+            .uri("/api/v1/teams")
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
+            .set_json(serde_json::json!({
+                "name": $name,
+                "description": $description
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+        let body: Value = test::read_body_json(resp).await;
+        body["data"]["id"].as_i64().unwrap()
+    }};
+    }
+
+    let alpha_id = create_team!("Alpha Ops", "Operations workspace");
+    let beta_id = create_team!("Beta Studio", "Backend platform squad");
+    let archived_id = create_team!("Archived Ops", "Old operations");
+    let hidden_id = create_team!("Hidden Ops", "Owner-only workspace");
+
+    for team_id in [alpha_id, beta_id, archived_id] {
+        let req = test::TestRequest::post()
+            .uri(&format!("/api/v1/teams/{team_id}/members"))
+            .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+            .insert_header(common::csrf_header_for(&owner_token))
+            .set_json(serde_json::json!({ "user_id": member_id }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/teams/{archived_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/teams?keyword=Ops")
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let teams = body["data"].as_array().unwrap();
+    assert_eq!(teams.len(), 1);
+    assert_eq!(teams[0]["id"], alpha_id);
+    assert_eq!(teams[0]["my_role"], "member");
+    assert_ne!(teams[0]["id"], hidden_id);
+    assert_eq!(teams[0]["created_by"]["id"], owner_id);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/teams?keyword=backend")
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let teams = body["data"].as_array().unwrap();
+    assert_eq!(teams.len(), 1);
+    assert_eq!(teams[0]["id"], beta_id);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/teams?archived=true&keyword=Ops")
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let teams = body["data"].as_array().unwrap();
+    assert_eq!(teams.len(), 1);
+    assert_eq!(teams[0]["id"], archived_id);
+    assert!(teams[0]["archived_at"].is_string());
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/teams?keyword=%20%20&limit=1&offset=1")
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let teams = body["data"].as_array().unwrap();
+    assert_eq!(teams.len(), 1);
+    assert!(
+        teams[0]["id"] == alpha_id || teams[0]["id"] == beta_id,
+        "limited active list should return one visible active team"
+    );
+    assert_ne!(teams[0]["id"], archived_id);
+    assert_ne!(teams[0]["id"], hidden_id);
+}
+
+#[actix_web::test]
 async fn test_team_permissions_for_member_and_admin() {
     let state = common::setup().await;
     let db = state.db.clone();

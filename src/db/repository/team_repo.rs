@@ -20,25 +20,31 @@ const SQLITE_TEAMS_FTS_TABLE: &str = "teams_search_fts";
 
 fn team_keyword_like_condition(query: &str) -> Condition {
     Condition::any()
-        .add(lower_like_condition(team::Column::Name, query))
-        .add(lower_like_condition(team::Column::Description, query))
+        .add(lower_like_condition(
+            (team::Entity, team::Column::Name),
+            query,
+        ))
+        .add(lower_like_condition(
+            (team::Entity, team::Column::Description),
+            query,
+        ))
 }
 
-fn team_keyword_condition(backend: DbBackend, query: &str) -> Condition {
+pub(crate) fn team_keyword_condition(backend: DbBackend, query: &str) -> Condition {
     match backend {
         DbBackend::Postgres => {
             let pattern = format!("%{}%", escape_like_query(query));
             Condition::any()
-                .add(Expr::col(team::Column::Name).ilike(pattern.clone()))
-                .add(Expr::col(team::Column::Description).ilike(pattern))
+                .add(Expr::col((team::Entity, team::Column::Name)).ilike(pattern.clone()))
+                .add(Expr::col((team::Entity, team::Column::Description)).ilike(pattern))
         }
         DbBackend::MySql => mysql_boolean_mode_query(query)
             .map(|boolean_query| {
                 Condition::all().add(Expr::cust_with_exprs(
                     "MATCH(?, ?) AGAINST (? IN BOOLEAN MODE)",
                     [
-                        Expr::col(team::Column::Name),
-                        Expr::col(team::Column::Description),
+                        Expr::col((team::Entity, team::Column::Name)),
+                        Expr::col((team::Entity, team::Column::Description)),
                         Expr::val(boolean_query),
                     ],
                 ))
@@ -47,7 +53,7 @@ fn team_keyword_condition(backend: DbBackend, query: &str) -> Condition {
         DbBackend::Sqlite => sqlite_match_query(query)
             .map(|match_query| {
                 Condition::all().add(sqlite_fts_match_condition(
-                    team::Column::Id,
+                    (team::Entity, team::Column::Id),
                     SQLITE_TEAMS_FTS_TABLE,
                     &match_query,
                 ))
@@ -347,9 +353,13 @@ mod tests {
                 .build(DbBackend::Postgres)
         );
 
-        assert!(sql.as_str().contains(r#""name" ILIKE '%ops%'"#), "{sql}");
         assert!(
-            sql.as_str().contains(r#""description" ILIKE '%ops%'"#),
+            sql.as_str().contains(r#""teams"."name" ILIKE '%ops%'"#),
+            "{sql}"
+        );
+        assert!(
+            sql.as_str()
+                .contains(r#""teams"."description" ILIKE '%ops%'"#),
             "{sql}"
         );
     }
@@ -364,8 +374,8 @@ mod tests {
         );
 
         assert!(sql.as_str().contains("MATCH("), "{sql}");
-        assert!(sql.as_str().contains("`name`"), "{sql}");
-        assert!(sql.as_str().contains("`description`"), "{sql}");
+        assert!(sql.as_str().contains("`teams`.`name`"), "{sql}");
+        assert!(sql.as_str().contains("`teams`.`description`"), "{sql}");
         assert!(
             sql.as_str()
                 .contains(r#"AGAINST ('\"ops\"' IN BOOLEAN MODE)"#),
@@ -384,12 +394,13 @@ mod tests {
 
         assert!(!sql.as_str().contains("MATCH("), "{sql}");
         assert!(
-            sql.as_str().contains("LOWER(`name`) LIKE '%ops-core%'"),
+            sql.as_str()
+                .contains("LOWER(`teams`.`name`) LIKE '%ops-core%'"),
             "{sql}"
         );
         assert!(
             sql.as_str()
-                .contains("LOWER(`description`) LIKE '%ops-core%'"),
+                .contains("LOWER(`teams`.`description`) LIKE '%ops-core%'"),
             "{sql}"
         );
     }

@@ -7,7 +7,7 @@ use crate::entities::file;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
-    share_service,
+    share_service, storage_change_service,
     workspace_storage_service::{self, WorkspaceResourceScope, WorkspaceStorageScope},
 };
 use crate::utils::numbers::{i64_to_i32, usize_to_u32};
@@ -67,6 +67,7 @@ pub(crate) async fn batch_purge_in_resource_scope(
     }
 
     let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
+    let parent_ids: Vec<Option<i64>> = files.iter().map(|file| file.folder_id).collect();
     let blob_ids: Vec<i64> = files.iter().map(|file| file.blob_id).collect();
     let count = usize_to_u32(files.len(), "purged file count")?;
 
@@ -125,6 +126,17 @@ pub(crate) async fn batch_purge_in_resource_scope(
     .await?;
 
     crate::db::transaction::commit(txn).await?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new_for_resource_scope(
+            storage_change_service::StorageChangeKind::FilePurged,
+            scope,
+            file_ids,
+            vec![],
+            parent_ids,
+        )
+        .with_storage_delta(-total_freed_bytes),
+    );
     if deleted_shares > 0 {
         share_service::invalidate_active_share_target_cache_for_resource_scope(state, scope).await;
         share_service::invalidate_all_share_token_record_cache(state).await;

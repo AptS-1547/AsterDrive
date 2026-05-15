@@ -569,7 +569,7 @@ async fn test_aster_dav_fs_remove_dir_publishes_storage_event() {
     dav_fs.remove_dir(&target).await.unwrap();
 
     let event = recv_storage_event(&mut rx).await;
-    assert_eq!(event.kind, StorageChangeKind::FolderDeleted);
+    assert_eq!(event.kind, StorageChangeKind::FolderTrashed);
     assert!(matches!(
         event.workspace,
         Some(StorageChangeWorkspace::Personal)

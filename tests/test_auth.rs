@@ -1734,6 +1734,11 @@ async fn test_storage_events_stream_receives_file_change_frames() {
     let event = read_next_sse_json(&mut body).await;
     assert_eq!(event["kind"], "file.created");
     assert_eq!(event["workspace"]["kind"], "personal");
+    assert_eq!(event["affects_quota"], true);
+    assert_eq!(
+        event["storage_delta"].as_i64(),
+        Some("test content".len() as i64)
+    );
     assert!(
         event["file_ids"]
             .as_array()
@@ -2141,6 +2146,45 @@ async fn test_auth_me() {
     assert!(body["data"]["password_hash"].is_null());
     assert!(body["data"]["profile"]["display_name"].is_null());
     assert_eq!(body["data"]["profile"]["avatar"]["source"], "none");
+}
+
+#[actix_web::test]
+async fn test_auth_me_supports_field_selection() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me?fields=quota")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let data = &body["data"];
+    assert_eq!(data["username"], "testuser");
+    assert!(data["storage_used"].is_i64());
+    assert!(data["storage_quota"].is_i64());
+    assert!(data.get("access_token_expires_at").is_none());
+    assert!(data.get("preferences").is_none());
+    assert!(data.get("profile").is_none());
+}
+
+#[actix_web::test]
+async fn test_auth_me_rejects_unknown_field_selection() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me?fields=quota,secrets")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    assert_service_status!(app, req, 400);
 }
 
 #[actix_web::test]

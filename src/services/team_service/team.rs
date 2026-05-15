@@ -23,7 +23,19 @@ pub async fn list_teams(
     user_id: i64,
     archived: bool,
 ) -> Result<Vec<TeamInfo>> {
-    let memberships = list_user_team_memberships(state, user_id, archived).await?;
+    list_teams_filtered(state, user_id, archived, None, None, None).await
+}
+
+pub async fn list_teams_filtered(
+    state: &PrimaryAppState,
+    user_id: i64,
+    archived: bool,
+    keyword: Option<&str>,
+    limit: Option<u64>,
+    offset: Option<u64>,
+) -> Result<Vec<TeamInfo>> {
+    let memberships =
+        list_user_team_memberships(state, user_id, archived, keyword, limit, offset).await?;
     if memberships.is_empty() {
         return Ok(vec![]);
     }
@@ -50,24 +62,35 @@ pub async fn list_user_team_ids(
     user_id: i64,
     archived: bool,
 ) -> Result<HashSet<i64>> {
-    Ok(list_user_team_memberships(state, user_id, archived)
-        .await?
-        .into_iter()
-        .map(|(membership, _)| membership.team_id)
-        .collect())
+    Ok(
+        list_user_team_memberships(state, user_id, archived, None, None, None)
+            .await?
+            .into_iter()
+            .map(|(membership, _)| membership.team_id)
+            .collect(),
+    )
 }
 
 async fn list_user_team_memberships(
     state: &PrimaryAppState,
     user_id: i64,
     archived: bool,
+    keyword: Option<&str>,
+    limit: Option<u64>,
+    offset: Option<u64>,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
     // 用户视角列团队时，本质是“先看 membership，再带 team”。
     // 这样角色信息和 archived 过滤能保持一致，不会出现“能看到 team 但没有 membership”的状态。
     if archived {
-        team_member_repo::list_by_user_with_archived_team(&state.db, user_id).await
+        team_member_repo::list_by_user_with_archived_team_filtered(
+            &state.db, user_id, keyword, limit, offset, None,
+        )
+        .await
     } else {
-        team_member_repo::list_by_user_with_team(&state.db, user_id).await
+        team_member_repo::list_by_user_with_team_filtered(
+            &state.db, user_id, keyword, limit, offset, None,
+        )
+        .await
     }
 }
 

@@ -95,6 +95,11 @@ pub(crate) async fn batch_copy_in_scope(
     }
 
     if !file_copy_specs.is_empty() {
+        let storage_delta = file_copy_specs.iter().try_fold(0i64, |acc, spec| {
+            acc.checked_add(spec.src.size).ok_or_else(|| {
+                AsterError::internal_error("copied byte count overflow during batch copy")
+            })
+        })?;
         let created_files = file_service::batch_duplicate_file_records_with_names_in_scope(
             state,
             scope,
@@ -110,7 +115,8 @@ pub(crate) async fn batch_copy_in_scope(
                 created_files.into_iter().map(|file| file.id).collect(),
                 vec![],
                 vec![target_folder_id],
-            ),
+            )
+            .with_storage_delta(storage_delta),
         );
     }
 

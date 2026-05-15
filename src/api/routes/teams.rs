@@ -64,8 +64,15 @@ pub async fn list_teams(
     claims: web::ReqData<Claims>,
     query: web::Query<ListTeamsQuery>,
 ) -> Result<HttpResponse> {
-    let teams =
-        team_service::list_teams(&state, claims.user_id, query.archived.unwrap_or(false)).await?;
+    let teams = team_service::list_teams_filtered(
+        &state,
+        claims.user_id,
+        query.archived.unwrap_or(false),
+        query.keyword.as_deref(),
+        Some(query.limit()),
+        Some(query.offset()),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(teams)))
 }
 

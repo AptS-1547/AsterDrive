@@ -4,6 +4,9 @@ use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
+use crate::errors::{AsterError, Result};
+use crate::services::user_service::{MeResponseField, MeResponseFields};
+
 /// Registration request for new users.
 #[derive(Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -47,7 +50,10 @@ pub struct LoginReq {
 
 /// Query parameters for email contact verification confirmation.
 #[derive(Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
+#[cfg_attr(
+    all(debug_assertions, feature = "openapi"),
+    derive(IntoParams, ToSchema)
+)]
 pub struct ContactVerificationConfirmQuery {
     pub token: Option<String>,
 }
@@ -86,6 +92,55 @@ pub struct UpdateProfileReq {
 pub struct ChangePasswordReq {
     pub current_password: String,
     pub new_password: String,
+}
+
+/// Query parameters for `/auth/me`.
+#[derive(Deserialize)]
+#[cfg_attr(
+    all(debug_assertions, feature = "openapi"),
+    derive(IntoParams, ToSchema)
+)]
+pub struct MeQuery {
+    /// Comma-separated field groups to include: profile, preferences, quota, session.
+    pub fields: Option<String>,
+}
+
+impl MeQuery {
+    pub fn selected_fields(&self) -> Result<Option<MeResponseFields>> {
+        let Some(fields) = self.fields.as_deref() else {
+            return Ok(None);
+        };
+
+        let fields = fields.trim();
+        if fields.is_empty() {
+            return Ok(None);
+        }
+
+        let mut selected = Vec::new();
+        for raw_field in fields.split(',') {
+            let field = raw_field.trim().to_ascii_lowercase();
+            if field.is_empty() {
+                continue;
+            }
+            selected.push(match field.as_str() {
+                "profile" => MeResponseField::Profile,
+                "preferences" => MeResponseField::Preferences,
+                "quota" => MeResponseField::Quota,
+                "session" => MeResponseField::Session,
+                _ => {
+                    return Err(AsterError::validation_error(format!(
+                        "invalid auth/me field '{raw_field}'"
+                    )));
+                }
+            });
+        }
+
+        if selected.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(MeResponseFields::from_fields(selected)))
+        }
+    }
 }
 
 /// Request a password reset email.

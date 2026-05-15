@@ -134,7 +134,7 @@ pub(crate) async fn batch_delete_in_scope(
             storage_change_service::publish(
                 state,
                 storage_change_service::StorageChangeEvent::new(
-                    storage_change_service::StorageChangeKind::FileDeleted,
+                    storage_change_service::StorageChangeKind::FileTrashed,
                     scope,
                     direct_file_ids_deleted,
                     vec![],
@@ -146,7 +146,7 @@ pub(crate) async fn batch_delete_in_scope(
             storage_change_service::publish(
                 state,
                 storage_change_service::StorageChangeEvent::new(
-                    storage_change_service::StorageChangeKind::FolderDeleted,
+                    storage_change_service::StorageChangeKind::FolderTrashed,
                     scope,
                     vec![],
                     root_folder_ids_to_delete,

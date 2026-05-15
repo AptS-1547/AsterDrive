@@ -26,7 +26,7 @@ describe("teamService", () => {
 	});
 
 	it("builds team list, audit log, and member list endpoints", () => {
-		teamService.list({ archived: true });
+		teamService.list({ archived: true, keyword: "ops", limit: 50, offset: 10 });
 		teamService.list();
 		teamService.listAuditLogs(7, {
 			user_id: 9,
@@ -46,7 +46,10 @@ describe("teamService", () => {
 		});
 		teamService.listMembers(7);
 
-		expect(mockState.get).toHaveBeenNthCalledWith(1, "/teams?archived=true");
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			1,
+			"/teams?archived=true&keyword=ops&limit=50&offset=10",
+		);
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/teams");
 		expect(mockState.get).toHaveBeenNthCalledWith(
 			3,

@@ -5,6 +5,9 @@ import type {
 	AvatarSource,
 	ChangePasswordRequest,
 	CheckResp,
+	MeField,
+	MePartialResponse,
+	MeQuery,
 	MeResponse,
 	PasswordResetConfirmRequest,
 	PasswordResetRequestRequest,
@@ -19,6 +22,18 @@ import { ApiError, api } from "./http";
 
 export interface AuthSessionState {
 	expiresIn: number;
+}
+
+function me(): Promise<MeResponse>;
+function me(fields: MeField[]): Promise<MePartialResponse>;
+function me(fields?: MeField[]) {
+	if (!fields || fields.length === 0) {
+		return api.get<MeResponse>("/auth/me");
+	}
+	const params: MeQuery = { fields: fields.join(",") };
+	return api.get<MePartialResponse>("/auth/me", {
+		params,
+	});
 }
 
 export const authService = {
@@ -61,7 +76,7 @@ export const authService = {
 		};
 	},
 
-	me: () => api.get<MeResponse>("/auth/me"),
+	me,
 
 	updatePreferences: (prefs: UpdatePreferencesRequest) =>
 		api.patch<UserPreferences>("/auth/preferences", prefs),

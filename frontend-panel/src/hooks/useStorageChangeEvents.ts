@@ -87,13 +87,7 @@ function reloadTeamsForCurrentUser() {
 }
 
 function eventMayChangeStorageUsage(event: StorageChangeEventPayload) {
-	return (
-		event.kind === "sync.required" ||
-		event.kind === "file.created" ||
-		event.kind === "file.updated" ||
-		event.kind === "file.restored" ||
-		event.kind === "folder.created"
-	);
+	return event.affects_quota;
 }
 
 function refreshStorageUsage(event: StorageChangeEventPayload) {
@@ -108,7 +102,7 @@ function refreshStorageUsage(event: StorageChangeEventPayload) {
 		return;
 	}
 	if (event.workspace.kind === "personal") {
-		void refreshUser();
+		void refreshUser({ fields: ["quota"] });
 		return;
 	}
 	reloadTeamsForCurrentUser();

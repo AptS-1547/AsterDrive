@@ -178,7 +178,8 @@ pub(crate) async fn create_empty(
             vec![created.id],
             vec![],
             vec![created.folder_id],
-        ),
+        )
+        .with_storage_delta(EMPTY_SIZE),
     );
     tracing::debug!(
         scope = ?scope,
@@ -355,7 +356,8 @@ pub(crate) async fn store_preuploaded_nondedup(
             vec![result.id],
             vec![],
             vec![result.folder_id],
-        ),
+        )
+        .with_storage_delta(storage_delta),
     );
 
     if let Some(existing_id) = existing_file_id {
