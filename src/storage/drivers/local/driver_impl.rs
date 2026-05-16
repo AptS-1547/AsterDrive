@@ -56,6 +56,10 @@ impl StorageDriver for LocalDriver {
         })
     }
 
+    fn supports_efficient_range(&self) -> bool {
+        true
+    }
+
     async fn delete(&self, path: &str) -> Result<()> {
         tokio::fs::remove_file(self.full_path(path)?)
             .await

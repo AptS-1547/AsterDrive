@@ -1,6 +1,7 @@
 //! ZIP 文件只读预览服务。
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::Utc;
@@ -16,11 +17,13 @@ use crate::errors::{
     AsterError, MapAsterErr, Result, auth_forbidden_with_subcode, validation_error_with_subcode,
 };
 use crate::runtime::PrimaryAppState;
+use crate::services::archive_service::range_reader::StorageRangeReader;
 use crate::services::archive_service::zip_scan::{
     ZipScanEntryKind, ZipScanLimits, scan_zip_archive,
 };
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::services::{share_service, task_service, workspace_storage_service};
+use crate::storage::StorageDriver;
 use crate::types::EntityType;
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
@@ -374,23 +377,69 @@ pub(crate) async fn scan_manifest_from_temp(
     temp_path: &Path,
     limits: &ArchivePreviewLimits,
 ) -> Result<ArchivePreviewManifest> {
-    let source_file_id = source_file.id;
-    let source_blob_id = blob.id;
-    let source_hash = blob.hash.clone();
     let path = temp_path.to_path_buf();
+    scan_manifest_with_reader(
+        source_file.id,
+        blob.id,
+        blob.hash.clone(),
+        limits,
+        move || {
+            let file = std::fs::File::open(&path).map_aster_err_ctx(
+                "open archive preview temp file",
+                AsterError::storage_driver_error,
+            )?;
+            Ok(file)
+        },
+    )
+    .await
+}
+
+pub(crate) async fn scan_manifest_from_storage_range(
+    source_file: &file::Model,
+    blob: &file_blob::Model,
+    driver: Arc<dyn StorageDriver>,
+    limits: &ArchivePreviewLimits,
+) -> Result<ArchivePreviewManifest> {
+    let source_size = crate::utils::numbers::i64_to_u64(source_file.size, "source archive size")?;
+    let storage_path = blob.storage_path.clone();
+    let handle = tokio::runtime::Handle::current();
+    scan_manifest_with_reader(
+        source_file.id,
+        blob.id,
+        blob.hash.clone(),
+        limits,
+        move || {
+            Ok(StorageRangeReader::new(
+                driver,
+                storage_path,
+                source_size,
+                handle,
+            ))
+        },
+    )
+    .await
+}
+
+async fn scan_manifest_with_reader<R, F>(
+    source_file_id: i64,
+    source_blob_id: i64,
+    source_hash: String,
+    limits: &ArchivePreviewLimits,
+    make_reader: F,
+) -> Result<ArchivePreviewManifest>
+where
+    R: std::io::Read + std::io::Seek + Send + 'static,
+    F: FnOnce() -> Result<R> + Send + 'static,
+{
     let scan_limits = limits.scan_limits;
     let deadline =
         Instant::now().checked_add(std::time::Duration::from_secs(limits.max_duration_secs));
     let generated_at = Utc::now().to_rfc3339();
+    let manifest_source_hash = source_hash.clone();
 
     let manifest = tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::open(&path).map_aster_err_ctx(
-            "open archive preview temp file",
-            AsterError::storage_driver_error,
-        )?;
-        let mut archive = zip::ZipArchive::new(file).map_aster_err_with(|| {
-            archive_preview_validation_error("archive_preview.invalid_zip", "invalid zip archive")
-        })?;
+        let reader = make_reader()?;
+        let mut archive = zip::ZipArchive::new(reader).map_err(map_archive_open_error)?;
         let scanned = scan_zip_archive(&mut archive, scan_limits, deadline, |_| Ok(()))
             .map_err(map_archive_preview_scan_error)?;
         let entries = scanned
@@ -414,7 +463,7 @@ pub(crate) async fn scan_manifest_from_temp(
             schema_version: CACHE_SCHEMA_VERSION,
             format: FORMAT_ZIP.to_string(),
             source_blob_id,
-            source_hash,
+            source_hash: manifest_source_hash,
             generated_at,
             entry_count: crate::utils::numbers::u64_to_i64(
                 scanned.entry_count,
@@ -440,8 +489,8 @@ pub(crate) async fn scan_manifest_from_temp(
 
     fit_manifest_to_limit(
         source_file_id,
-        blob.id,
-        &blob.hash,
+        source_blob_id,
+        &source_hash,
         &limits.signature,
         manifest,
         limits.max_manifest_bytes,
@@ -692,6 +741,18 @@ fn map_archive_preview_scan_error(error: AsterError) -> AsterError {
     error
 }
 
+fn map_archive_open_error(error: zip::result::ZipError) -> AsterError {
+    if let zip::result::ZipError::Io(io_error) = error
+        && let Some(source) = io_error
+            .get_ref()
+            .and_then(|source| source.downcast_ref::<AsterError>())
+    {
+        return source.clone();
+    }
+
+    archive_preview_validation_error("archive_preview.invalid_zip", "invalid zip archive")
+}
+
 async fn copy_async_reader_to_writer_with_expected_size<R, W>(
     reader: &mut R,
     writer: &mut W,
@@ -747,14 +808,162 @@ where
 
 #[cfg(test)]
 mod tests {
+    use async_trait::async_trait;
+    use std::io::Write;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::io::AsyncWriteExt;
 
     use super::*;
+    use crate::storage::BlobMetadata;
+
+    struct PreviewMemoryRangeDriver {
+        data: Vec<u8>,
+        range_calls: AtomicUsize,
+        stream_calls: AtomicUsize,
+    }
+
+    impl PreviewMemoryRangeDriver {
+        fn new(data: Vec<u8>) -> Self {
+            Self {
+                data,
+                range_calls: AtomicUsize::new(0),
+                stream_calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl StorageDriver for PreviewMemoryRangeDriver {
+        async fn put(&self, _path: &str, _data: &[u8]) -> Result<String> {
+            Ok("memory".to_string())
+        }
+
+        async fn get(&self, _path: &str) -> Result<Vec<u8>> {
+            Ok(self.data.clone())
+        }
+
+        async fn get_stream(
+            &self,
+            _path: &str,
+        ) -> Result<Box<dyn tokio::io::AsyncRead + Unpin + Send>> {
+            self.stream_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Box::new(std::io::Cursor::new(self.data.clone())))
+        }
+
+        async fn get_range(
+            &self,
+            _path: &str,
+            offset: u64,
+            length: Option<u64>,
+        ) -> Result<Box<dyn tokio::io::AsyncRead + Unpin + Send>> {
+            self.range_calls.fetch_add(1, Ordering::SeqCst);
+            let start =
+                crate::utils::numbers::u64_to_usize(offset, "preview memory range start offset")?;
+            let end = length
+                .map(|len| {
+                    offset.checked_add(len).ok_or_else(|| {
+                        AsterError::internal_error("preview memory range end overflow")
+                    })
+                })
+                .transpose()?
+                .map(|end| {
+                    crate::utils::numbers::u64_to_usize(end, "preview memory range end offset")
+                })
+                .transpose()?
+                .unwrap_or(self.data.len())
+                .min(self.data.len());
+            let bytes = if start >= self.data.len() {
+                Vec::new()
+            } else {
+                self.data[start..end].to_vec()
+            };
+            Ok(Box::new(std::io::Cursor::new(bytes)))
+        }
+
+        fn supports_efficient_range(&self) -> bool {
+            true
+        }
+
+        async fn delete(&self, _path: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn exists(&self, _path: &str) -> Result<bool> {
+            Ok(true)
+        }
+
+        async fn metadata(&self, _path: &str) -> Result<BlobMetadata> {
+            Ok(BlobMetadata {
+                size: crate::utils::numbers::usize_to_u64(
+                    self.data.len(),
+                    "preview memory driver data length",
+                )?,
+                content_type: None,
+            })
+        }
+    }
 
     fn failed_task_subcode(message: &str) -> Option<String> {
         map_failed_task_error(Some(message))
             .api_error_subcode()
             .map(str::to_string)
+    }
+
+    fn preview_test_limits() -> ArchivePreviewLimits {
+        ArchivePreviewLimits {
+            max_source_bytes: 1024 * 1024,
+            max_manifest_bytes: 64 * 1024,
+            max_duration_secs: 10,
+            scan_limits: ZipScanLimits {
+                max_uncompressed_bytes: 1024 * 1024,
+                max_entries: 100,
+                max_files: 100,
+                max_directories: 100,
+                max_depth: 16,
+                max_path_bytes: 4096,
+                max_compression_ratio: 100,
+                max_entry_compression_ratio: 100,
+            },
+            signature: "test".to_string(),
+        }
+    }
+
+    fn preview_test_file(size: i64) -> file::Model {
+        let now = Utc::now();
+        file::Model {
+            id: 7,
+            name: "bundle.zip".to_string(),
+            folder_id: None,
+            team_id: None,
+            blob_id: 9,
+            size,
+            owner_user_id: Some(1),
+            created_by_user_id: Some(1),
+            created_by_username: "tester".to_string(),
+            mime_type: "application/zip".to_string(),
+            created_at: now,
+            updated_at: now,
+            deleted_at: None,
+            is_locked: false,
+        }
+    }
+
+    fn preview_test_blob(size: i64) -> file_blob::Model {
+        let now = Utc::now();
+        file_blob::Model {
+            id: 9,
+            hash: "hash".to_string(),
+            size,
+            policy_id: 1,
+            storage_path: "blob.zip".to_string(),
+            thumbnail_path: None,
+            thumbnail_processor: None,
+            thumbnail_version: None,
+            ref_count: 1,
+            created_at: now,
+            updated_at: now,
+        }
     }
 
     #[test]
@@ -888,5 +1097,42 @@ mod tests {
                 .message()
                 .contains("expands beyond declared size")
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn range_manifest_scan_uses_get_range_without_full_stream() {
+        let bytes = {
+            let cursor = std::io::Cursor::new(Vec::new());
+            let mut zip = zip::ZipWriter::new(cursor);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            zip.add_directory("docs/", options)
+                .expect("directory should be added");
+            zip.start_file("docs/readme.txt", options)
+                .expect("file should start");
+            zip.write_all(b"hello").expect("file should write");
+            zip.finish().expect("zip should finish").into_inner()
+        };
+        let source_size =
+            crate::utils::numbers::usize_to_i64(bytes.len(), "preview range test zip size")
+                .expect("test zip size should fit i64");
+        let source_file = preview_test_file(source_size);
+        let blob = preview_test_blob(source_size);
+        let driver = Arc::new(PreviewMemoryRangeDriver::new(bytes));
+
+        let manifest = scan_manifest_from_storage_range(
+            &source_file,
+            &blob,
+            driver.clone(),
+            &preview_test_limits(),
+        )
+        .await
+        .expect("range manifest scan should succeed");
+
+        assert_eq!(manifest.entry_count, 2);
+        assert_eq!(manifest.file_count, 1);
+        assert_eq!(manifest.directory_count, 1);
+        assert_eq!(driver.stream_calls.load(Ordering::SeqCst), 0);
+        assert!(driver.range_calls.load(Ordering::SeqCst) > 0);
     }
 }

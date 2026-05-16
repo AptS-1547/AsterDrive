@@ -74,6 +74,14 @@ pub trait StorageDriver: Send + Sync {
         })
     }
 
+    /// 是否支持高效 Range 读取。
+    ///
+    /// 默认 `get_range()` 会从完整流里丢弃前缀字节，不能用于大量随机 seek。
+    /// 基于本地 seek、HTTP Range 或远端原生 Range 的驱动应覆盖为 `true`。
+    fn supports_efficient_range(&self) -> bool {
+        false
+    }
+
     /// 删除文件
     async fn delete(&self, path: &str) -> Result<()>;
 

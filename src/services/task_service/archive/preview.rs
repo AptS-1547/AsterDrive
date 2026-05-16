@@ -1,7 +1,5 @@
 //! 归档预览任务子模块。
 
-use std::path::Path;
-
 use crate::db::repository::file_repo;
 use crate::entities::{background_task, file, file_blob};
 use crate::errors::{AsterError, Result};
@@ -122,22 +120,6 @@ pub(super) async fn process_archive_preview_task(
             Some("Worker claimed task"),
             None,
         )?;
-        set_task_step_active(
-            &mut steps,
-            TASK_STEP_DOWNLOAD_SOURCE,
-            Some("Downloading source archive"),
-            None,
-        )?;
-        mark_task_progress(
-            state,
-            &lease_guard,
-            0,
-            4,
-            Some("Downloading source archive"),
-            &steps,
-        )
-        .await?;
-
         let source_file = file_repo::find_by_id(&state.db, payload.file_id).await?;
         ensure_source_file_matches_payload(&source_file, &payload)?;
         archive_preview_service::ensure_archive_preview_source_supported(&source_file)?;
@@ -162,21 +144,50 @@ pub(super) async fn process_archive_preview_task(
         let blob = file_repo::find_blob_by_id(&state.db, source_file.blob_id).await?;
         ensure_source_blob_matches_payload(&blob, &payload)?;
 
-        let task_temp_dir = prepare_task_temp_dir(state, lease_guard.lease()).await?;
-        let source_archive_path = Path::new(&task_temp_dir).join("source.zip");
-        archive_preview_service::download_blob_to_temp(
-            state,
-            &source_file,
-            &blob,
-            &source_archive_path,
-        )
-        .await?;
-        set_task_step_succeeded(
-            &mut steps,
-            TASK_STEP_DOWNLOAD_SOURCE,
-            Some("Source archive downloaded"),
-            Some((1, 4)),
-        )?;
+        let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+        let driver = state.driver_registry.get_driver(&policy)?;
+        let use_range_scan = driver.supports_efficient_range();
+        let source_archive_path = if use_range_scan {
+            set_task_step_succeeded(
+                &mut steps,
+                TASK_STEP_DOWNLOAD_SOURCE,
+                Some("Source archive range reader ready"),
+                Some((1, 4)),
+            )?;
+            None
+        } else {
+            set_task_step_active(
+                &mut steps,
+                TASK_STEP_DOWNLOAD_SOURCE,
+                Some("Downloading source archive"),
+                None,
+            )?;
+            mark_task_progress(
+                state,
+                &lease_guard,
+                0,
+                4,
+                Some("Downloading source archive"),
+                &steps,
+            )
+            .await?;
+            let task_temp_dir = prepare_task_temp_dir(state, lease_guard.lease()).await?;
+            let source_archive_path = std::path::Path::new(&task_temp_dir).join("source.zip");
+            archive_preview_service::download_blob_to_temp(
+                state,
+                &source_file,
+                &blob,
+                &source_archive_path,
+            )
+            .await?;
+            set_task_step_succeeded(
+                &mut steps,
+                TASK_STEP_DOWNLOAD_SOURCE,
+                Some("Source archive downloaded"),
+                Some((1, 4)),
+            )?;
+            Some(source_archive_path)
+        };
         set_task_step_active(
             &mut steps,
             TASK_STEP_SCAN_ARCHIVE,
@@ -192,13 +203,26 @@ pub(super) async fn process_archive_preview_task(
             &steps,
         )
         .await?;
-        let manifest = archive_preview_service::scan_manifest_from_temp(
-            &source_file,
-            &blob,
-            &source_archive_path,
-            &limits,
-        )
-        .await?;
+        let manifest = match source_archive_path {
+            Some(source_archive_path) => {
+                archive_preview_service::scan_manifest_from_temp(
+                    &source_file,
+                    &blob,
+                    &source_archive_path,
+                    &limits,
+                )
+                .await?
+            }
+            None => {
+                archive_preview_service::scan_manifest_from_storage_range(
+                    &source_file,
+                    &blob,
+                    driver,
+                    &limits,
+                )
+                .await?
+            }
+        };
         set_task_step_succeeded(
             &mut steps,
             TASK_STEP_SCAN_ARCHIVE,

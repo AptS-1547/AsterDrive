@@ -96,6 +96,10 @@ impl StorageDriver for S3Driver {
         Ok(Box::new(resp.body.into_async_read()))
     }
 
+    fn supports_efficient_range(&self) -> bool {
+        true
+    }
+
     async fn delete(&self, path: &str) -> Result<()> {
         let key = self.full_key(path);
         self.client

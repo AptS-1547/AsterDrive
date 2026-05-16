@@ -91,9 +91,7 @@ where
 
     for index in 0..archive.len() {
         ensure_zip_scan_deadline(deadline)?;
-        let entry = archive
-            .by_index_raw(index)
-            .map_aster_err_with(|| AsterError::validation_error("invalid zip archive entry"))?;
+        let entry = archive.by_index_raw(index).map_err(map_zip_entry_error)?;
         validate_zip_entry_supported(&entry)?;
         let enclosed_path = entry.enclosed_name().ok_or_else(|| {
             AsterError::validation_error(format!(
@@ -197,6 +195,18 @@ pub(crate) fn ensure_zip_scan_deadline(deadline: Option<Instant>) -> Result<()> 
         ));
     }
     Ok(())
+}
+
+fn map_zip_entry_error(error: zip::result::ZipError) -> AsterError {
+    if let zip::result::ZipError::Io(io_error) = error
+        && let Some(source) = io_error
+            .get_ref()
+            .and_then(|source| source.downcast_ref::<AsterError>())
+    {
+        return source.clone();
+    }
+
+    AsterError::validation_error("invalid zip archive entry")
 }
 
 fn build_scan_entry(

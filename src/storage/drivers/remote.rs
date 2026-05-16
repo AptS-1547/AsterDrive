@@ -119,6 +119,10 @@ impl StorageDriver for RemoteDriver {
             .await
     }
 
+    fn supports_efficient_range(&self) -> bool {
+        true
+    }
+
     async fn delete(&self, path: &str) -> Result<()> {
         self.client.delete(&self.object_key(path)).await
     }
