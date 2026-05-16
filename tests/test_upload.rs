@@ -4,6 +4,7 @@
 mod common;
 
 use actix_web::test;
+use aster_drive::api::subcode::ApiSubcode;
 use aster_drive::db::repository::policy_repo;
 use serde_json::Value;
 use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
@@ -893,10 +894,7 @@ async fn test_chunk_upload_endpoint_keeps_duplicate_size_validation() {
         .set_payload(b"short".to_vec())
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
-    );
+    assert!(resp.status().is_client_error());
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["error"]["internal_code"], "E056");
     assert_eq!(body["error"]["subcode"], "upload.chunk_size_mismatch");
@@ -2472,14 +2470,17 @@ async fn test_upload_service_presign_parts_validates_part_number_batch() {
     let err = upload_service::presign_parts(&state, &upload_id, user.id, vec![])
         .await
         .unwrap_err();
-    assert_eq!(err.api_error_subcode(), Some("upload.part_numbers_empty"));
+    assert_eq!(
+        err.api_error_subcode(),
+        Some(ApiSubcode::UploadPartNumbersEmpty)
+    );
 
     let err = upload_service::presign_parts(&state, &upload_id, user.id, vec![0])
         .await
         .unwrap_err();
     assert_eq!(
         err.api_error_subcode(),
-        Some("upload.part_number_out_of_range")
+        Some(ApiSubcode::UploadPartNumberOutOfRange)
     );
 
     let too_many = (1..=65).collect();
@@ -2488,7 +2489,7 @@ async fn test_upload_service_presign_parts_validates_part_number_batch() {
         .unwrap_err();
     assert_eq!(
         err.api_error_subcode(),
-        Some("upload.part_numbers_too_many")
+        Some(ApiSubcode::UploadPartNumbersTooMany)
     );
 }
 

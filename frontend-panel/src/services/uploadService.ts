@@ -13,7 +13,7 @@ import type {
 	RecoverableUploadSession,
 	UploadProgressResponse,
 } from "@/types/api";
-import { type ApiResponse, ErrorCode } from "@/types/api-helpers";
+import { type ApiResponse, ErrorCode, isApiSubcode } from "@/types/api-helpers";
 import { CSRF_HEADER_NAME, getCsrfToken } from "./csrf";
 import { ApiError, api } from "./http";
 
@@ -180,7 +180,10 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 			if (resp.data.code !== ErrorCode.Success) {
 				throw new ApiError(resp.data.code, resp.data.msg, {
 					internalCode: resp.data.error?.internal_code ?? undefined,
-					subcode: resp.data.error?.subcode ?? undefined,
+					subcode:
+						resp.data.error?.subcode && isApiSubcode(resp.data.error.subcode)
+							? resp.data.error.subcode
+							: undefined,
 					retryable: resp.data.error?.retryable ?? undefined,
 				});
 			}

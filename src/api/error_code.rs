@@ -97,18 +97,15 @@ impl From<&AsterError> for ErrorCode {
             AsterError::ValidationError(_) => {
                 if matches!(
                     err.api_error_subcode(),
-                    Some(subcode) if matches!(
-                        subcode.parse::<ApiSubcode>().ok(),
-                        Some(
-                            ApiSubcode::AuthUsernameExists
-                                | ApiSubcode::AuthEmailExists
-                                | ApiSubcode::AuthIdentifierExists
-                                | ApiSubcode::FileNameConflict
-                                | ApiSubcode::FolderNameConflict
-                                | ApiSubcode::TeamMemberExists
-                                | ApiSubcode::WebdavUsernameExists
-                                | ApiSubcode::RemoteNodeUniqueConflict
-                        )
+                    Some(
+                        ApiSubcode::AuthUsernameExists
+                            | ApiSubcode::AuthEmailExists
+                            | ApiSubcode::AuthIdentifierExists
+                            | ApiSubcode::FileNameConflict
+                            | ApiSubcode::FolderNameConflict
+                            | ApiSubcode::TeamMemberExists
+                            | ApiSubcode::WebdavUsernameExists
+                            | ApiSubcode::RemoteNodeUniqueConflict
                     )
                 ) {
                     ErrorCode::Conflict
@@ -195,7 +192,7 @@ const _: () = assert!(
 mod tests {
     use super::ErrorCode;
     use crate::api::subcode::ApiSubcode;
-    use crate::errors::{validation_error_with_dynamic_subcode, validation_error_with_subcode};
+    use crate::errors::validation_error_with_subcode;
 
     #[test]
     fn validation_conflict_subcodes_map_to_conflict() {
@@ -224,19 +221,6 @@ mod tests {
             ApiSubcode::PolicyUploadSessionsExist,
         ] {
             let error = validation_error_with_subcode(subcode, "invalid request");
-
-            assert_eq!(ErrorCode::from(&error), ErrorCode::BadRequest);
-        }
-    }
-
-    #[test]
-    fn validation_dynamic_or_unknown_subcodes_do_not_claim_conflict() {
-        for subcode in [
-            "auth.future_conflict",
-            "remote_node.future_conflict",
-            "file.created",
-        ] {
-            let error = validation_error_with_dynamic_subcode(subcode, "invalid request");
 
             assert_eq!(ErrorCode::from(&error), ErrorCode::BadRequest);
         }

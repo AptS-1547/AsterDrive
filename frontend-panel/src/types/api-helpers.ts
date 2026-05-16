@@ -190,7 +190,7 @@ export function isApiSubcode(value: string): value is ApiSubcode {
 
 export interface ApiErrorInfo {
 	internal_code: string;
-	subcode?: string | null;
+	subcode?: ApiSubcode | null;
 	retryable?: boolean | null;
 }
 

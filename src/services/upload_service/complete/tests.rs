@@ -1,6 +1,7 @@
 use super::audit::should_log_upload_completion;
 use super::plan::{CompletionPlan, determine_completion_plan};
 
+use crate::api::subcode::ApiSubcode;
 use crate::entities::upload_session;
 use crate::types::UploadSessionStatus;
 
@@ -32,7 +33,10 @@ fn determine_completion_plan_marks_previous_failure_with_subcode() {
         .expect_err("failed session should not continue");
 
     assert_eq!(err.code(), "E057");
-    assert_eq!(err.api_error_subcode(), Some("upload.previous_failure"));
+    assert_eq!(
+        err.api_error_subcode(),
+        Some(ApiSubcode::UploadPreviousFailure)
+    );
 }
 
 #[test]
@@ -54,7 +58,10 @@ fn determine_completion_plan_requires_parts_for_presigned_multipart() {
         determine_completion_plan(&session, None).expect_err("multipart complete needs parts");
 
     assert_eq!(err.code(), "E005");
-    assert_eq!(err.api_error_subcode(), Some("upload.parts_required"));
+    assert_eq!(
+        err.api_error_subcode(),
+        Some(ApiSubcode::UploadPartsRequired)
+    );
 }
 
 #[test]
@@ -65,7 +72,10 @@ fn determine_completion_plan_marks_incomplete_chunks_with_subcode() {
     let err = determine_completion_plan(&session, None).expect_err("missing chunks should fail");
 
     assert_eq!(err.code(), "E057");
-    assert_eq!(err.api_error_subcode(), Some("upload.incomplete_chunks"));
+    assert_eq!(
+        err.api_error_subcode(),
+        Some(ApiSubcode::UploadIncompleteChunks)
+    );
 }
 
 #[test]

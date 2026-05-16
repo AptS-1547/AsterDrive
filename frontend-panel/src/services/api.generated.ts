@@ -3286,7 +3286,7 @@ export interface components {
         ApiErrorInfo: {
             internal_code: string;
             retryable?: boolean | null;
-            subcode?: string | null;
+            subcode?: null | components["schemas"]["ApiSubcode"];
         };
         /**
          * @description 统一 API 响应格式

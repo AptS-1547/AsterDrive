@@ -332,7 +332,10 @@ mod tests {
             error.storage_error_kind(),
             Some(StorageErrorKind::Precondition)
         );
-        assert_eq!(error.api_error_subcode(), Some("remote_node.disabled"));
+        assert_eq!(
+            error.api_error_subcode(),
+            Some(ApiSubcode::RemoteNodeDisabled)
+        );
         assert!(error.message().contains("remote node #7 is disabled"));
     }
 

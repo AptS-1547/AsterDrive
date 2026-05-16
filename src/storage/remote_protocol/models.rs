@@ -1,4 +1,3 @@
-use crate::api::response::ApiErrorInfo;
 use crate::errors::Result;
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::types::{
@@ -551,5 +550,4 @@ pub(super) struct ApiEnvelope<T> {
     pub(super) code: i32,
     pub(super) msg: String,
     pub(super) data: Option<T>,
-    pub(super) error: Option<ApiErrorInfo>,
 }

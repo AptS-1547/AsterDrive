@@ -17,6 +17,7 @@ import type {
 	TaskInfo,
 	WopiLaunchSession,
 } from "@/types/api";
+import { isApiSubcode } from "@/types/api-helpers";
 import { ApiError, type ApiRequestConfig, api } from "./http";
 
 type ServiceRequestOptions = Pick<ApiRequestConfig, "signal">;
@@ -214,7 +215,10 @@ export function createFileService(workspace: Workspace) {
 							body?.msg ?? `HTTP ${status}`,
 							{
 								internalCode: body?.error?.internal_code ?? undefined,
-								subcode: body?.error?.subcode ?? undefined,
+								subcode:
+									body?.error?.subcode && isApiSubcode(body.error.subcode)
+										? body.error.subcode
+										: undefined,
 								retryable: body?.error?.retryable ?? undefined,
 							},
 						);

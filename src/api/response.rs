@@ -5,14 +5,14 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use super::error_code::ErrorCode;
+use super::{error_code::ErrorCode, subcode::ApiSubcode};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ApiErrorInfo {
     pub internal_code: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub subcode: Option<String>,
+    pub subcode: Option<ApiSubcode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retryable: Option<bool>,
 }

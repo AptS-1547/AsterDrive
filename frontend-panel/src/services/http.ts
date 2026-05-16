@@ -7,9 +7,11 @@ import axios, { AxiosHeaders } from "axios";
 import { config } from "@/config/app";
 import {
 	type ApiErrorInfo as ApiErrorInfoPayload,
+	type ApiSubcode,
 	type ApiResponse,
 	ErrorCode,
 	type ErrorCode as ErrorCodeType,
+	isApiSubcode,
 } from "@/types/api-helpers";
 import { CSRF_HEADER_NAME, getCsrfToken } from "./csrf";
 
@@ -91,7 +93,7 @@ export type ApiRequestConfig = Pick<
 
 type ApiErrorDetails = {
 	internalCode?: string;
-	subcode?: string;
+	subcode?: ApiSubcode;
 	retryable?: boolean;
 };
 
@@ -170,7 +172,7 @@ client.interceptors.response.use(
 export class ApiError extends Error {
 	code: ErrorCodeType;
 	internalCode?: string;
-	subcode?: string;
+	subcode?: ApiSubcode;
 	retryable?: boolean;
 
 	constructor(
@@ -213,7 +215,10 @@ function normalizeApiErrorInfo(
 	return {
 		internalCode:
 			typeof value.internal_code === "string" ? value.internal_code : undefined,
-		subcode: typeof value.subcode === "string" ? value.subcode : undefined,
+		subcode:
+			typeof value.subcode === "string" && isApiSubcode(value.subcode)
+				? value.subcode
+				: undefined,
 		retryable:
 			typeof value.retryable === "boolean" ? value.retryable : undefined,
 	};

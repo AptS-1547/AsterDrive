@@ -325,25 +325,55 @@ async fn upload_multipart_part_payload(
         Box::new(reader),
         expected_size,
     );
-    let (upload_result, writer_result) = tokio::join!(upload_future, writer_future);
+    tokio::pin!(upload_future);
+    tokio::pin!(writer_future);
 
+    tokio::select! {
+        upload_result = &mut upload_future => {
+            let writer_result = writer_future.await;
+            prioritize_multipart_part_results(upload_result, writer_result)
+        }
+        writer_result = &mut writer_future => {
+            if let Err(writer_error) = writer_result {
+                if is_chunk_payload_error(&writer_error) {
+                    // Payload validation/read failures are authoritative. Dropping upload_future
+                    // cancels the provider request instead of waiting for it to observe EOF.
+                    return Err(writer_error);
+                }
+
+                let upload_result = upload_future.await;
+                return prioritize_multipart_part_results(upload_result, Err(writer_error));
+            }
+
+            let upload_result = upload_future.await;
+            prioritize_multipart_part_results(upload_result, Ok(()))
+        }
+    }
+}
+
+fn is_chunk_payload_error(error: &AsterError) -> bool {
+    let subcode = error.api_error_subcode();
+    matches!(
+        subcode,
+        Some(
+            ApiSubcode::UploadChunkTooLarge
+                | ApiSubcode::UploadChunkSizeMismatch
+                | ApiSubcode::UploadChunkSizeOverflow
+                | ApiSubcode::UploadRequestBodyReadFailed
+        )
+    )
+}
+
+fn prioritize_multipart_part_results(
+    upload_result: Result<String>,
+    writer_result: Result<()>,
+) -> Result<String> {
     match (upload_result, writer_result) {
         (Ok(etag), Ok(())) => Ok(etag),
         (Err(error), Ok(())) => Err(error),
         (Ok(_), Err(error)) => Err(error),
         (Err(upload_error), Err(writer_error)) => {
-            let writer_subcode = writer_error
-                .api_error_subcode()
-                .and_then(|subcode| subcode.parse::<ApiSubcode>().ok());
-            if matches!(
-                writer_subcode,
-                Some(
-                    ApiSubcode::UploadChunkTooLarge
-                        | ApiSubcode::UploadChunkSizeMismatch
-                        | ApiSubcode::UploadChunkSizeOverflow
-                        | ApiSubcode::UploadRequestBodyReadFailed
-                )
-            ) {
+            if is_chunk_payload_error(&writer_error) {
                 Err(writer_error)
             } else {
                 Err(upload_error)
@@ -900,4 +930,133 @@ pub async fn upload_chunk_payload_for_team(
 ) -> Result<ChunkUploadResponse> {
     let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
     upload_chunk_payload_impl(state, session, chunk_number, payload).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::FromRequest;
+    use std::time::Duration;
+
+    struct PendingMultipart;
+
+    #[async_trait::async_trait]
+    impl crate::storage::MultipartStorageDriver for PendingMultipart {
+        async fn create_multipart_upload(&self, _path: &str) -> Result<String> {
+            panic!("not used")
+        }
+
+        async fn presigned_upload_part_url(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _part_number: i32,
+            _expires: Duration,
+        ) -> Result<String> {
+            panic!("not used")
+        }
+
+        async fn complete_multipart_upload(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _parts: Vec<(i32, String)>,
+        ) -> Result<()> {
+            panic!("not used")
+        }
+
+        async fn upload_multipart_part(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _part_number: i32,
+            _data: &[u8],
+        ) -> Result<String> {
+            panic!("not used")
+        }
+
+        async fn upload_multipart_part_reader(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _part_number: i32,
+            _reader: Box<dyn tokio::io::AsyncRead + Unpin + Send + Sync>,
+            _size: i64,
+        ) -> Result<String> {
+            futures::future::pending().await
+        }
+
+        async fn abort_multipart_upload(&self, _path: &str, _upload_id: &str) -> Result<()> {
+            panic!("not used")
+        }
+
+        async fn list_uploaded_parts(&self, _path: &str, _upload_id: &str) -> Result<Vec<i32>> {
+            panic!("not used")
+        }
+    }
+
+    async fn payload_from_bytes(data: &'static [u8]) -> actix_web::web::Payload {
+        let (req, mut dev_payload) = actix_web::test::TestRequest::default()
+            .set_payload(bytes::Bytes::from_static(data))
+            .to_http_parts();
+        actix_web::web::Payload::from_request(&req, &mut dev_payload)
+            .await
+            .expect("test payload should extract")
+    }
+
+    #[tokio::test]
+    async fn multipart_payload_error_returns_without_waiting_for_upload_future() {
+        let multipart = PendingMultipart;
+        let payload = payload_from_bytes(b"too-large").await;
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            upload_multipart_part_payload(&multipart, "tmp", "multipart-id", 1, payload, 4, 0),
+        )
+        .await
+        .expect("payload validation error should not wait for the upload future");
+
+        let err = result.expect_err("oversized payload should fail");
+        assert_eq!(
+            err.api_error_subcode(),
+            Some(ApiSubcode::UploadChunkTooLarge)
+        );
+    }
+
+    #[test]
+    fn multipart_result_priority_prefers_payload_validation_errors() {
+        let upload_error = validation_error_with_subcode(
+            ApiSubcode::UploadStatusConflict,
+            "provider upload failed",
+        );
+        let writer_error = chunk_body_size_mismatch(0, 4, 3);
+
+        let err = prioritize_multipart_part_results(Err(upload_error), Err(writer_error))
+            .expect_err("combined errors should fail");
+
+        assert_eq!(
+            err.api_error_subcode(),
+            Some(ApiSubcode::UploadChunkSizeMismatch)
+        );
+    }
+
+    #[test]
+    fn multipart_result_priority_prefers_upload_error_for_relay_failures() {
+        let upload_error = validation_error_with_subcode(
+            ApiSubcode::UploadStatusConflict,
+            "provider upload failed",
+        );
+        let writer_error = chunk_upload_error_with_subcode(
+            ApiSubcode::UploadChunkRelayFailed,
+            "duplex relay failed",
+        );
+
+        let err = prioritize_multipart_part_results(Err(upload_error), Err(writer_error))
+            .expect_err("combined errors should fail");
+
+        assert_eq!(
+            err.api_error_subcode(),
+            Some(ApiSubcode::UploadStatusConflict)
+        );
+    }
 }

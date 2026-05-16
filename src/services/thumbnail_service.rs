@@ -226,6 +226,7 @@ mod tests {
     use super::{
         ensure_source_size_supported, render_thumbnail_bytes, thumb_path, thumbnail_etag_value_for,
     };
+    use crate::api::subcode::ApiSubcode;
     use crate::config::operations::DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES;
     use crate::entities::file_blob;
     use crate::errors::Result;
@@ -438,7 +439,10 @@ mod tests {
         let err =
             ensure_source_size_supported(&blob_with_size(max_source_bytes + 1), max_source_bytes)
                 .unwrap_err();
-        assert_eq!(err.api_error_subcode(), Some("thumbnail.source_too_large"));
+        assert_eq!(
+            err.api_error_subcode(),
+            Some(ApiSubcode::ThumbnailSourceTooLarge)
+        );
     }
 
     #[test]

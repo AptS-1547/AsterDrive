@@ -718,11 +718,11 @@ pub(super) fn task_lease_renewal_timed_out(lease: TaskLease) -> AsterError {
 }
 
 pub(super) fn is_task_lease_lost(error: &AsterError) -> bool {
-    error.api_error_subcode() == Some(ApiSubcode::TaskLeaseLost.as_str())
+    error.api_error_subcode() == Some(ApiSubcode::TaskLeaseLost)
 }
 
 pub(super) fn is_task_lease_renewal_timed_out(error: &AsterError) -> bool {
-    error.api_error_subcode() == Some(ApiSubcode::TaskLeaseRenewalTimedOut.as_str())
+    error.api_error_subcode() == Some(ApiSubcode::TaskLeaseRenewalTimedOut)
 }
 
 fn task_lease_renewal_timeout() -> StdDuration {
@@ -809,7 +809,7 @@ mod tests {
             started_at: None,
             finished_at: Some(now),
             last_error: Some(crate::errors::encode_api_error_subcode_message(
-                ApiSubcode::ArchivePreviewInvalidZip.as_str(),
+                ApiSubcode::ArchivePreviewInvalidZip,
                 "invalid zip archive".to_string(),
             )),
             failure_can_retry: Some(false),
@@ -833,7 +833,7 @@ mod tests {
 
         assert_eq!(
             crate::errors::task_error_subcode_from_storage(&stored),
-            Some(ApiSubcode::ArchivePreviewRejected.as_str())
+            Some(ApiSubcode::ArchivePreviewRejected)
         );
         assert_eq!(
             crate::errors::task_error_display_message(&stored),

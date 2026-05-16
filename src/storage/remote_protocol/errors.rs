@@ -1,10 +1,24 @@
 use crate::api::error_code::ErrorCode;
-use crate::errors::{AsterError, Result, precondition_failed_with_dynamic_subcode};
+use crate::api::subcode::ApiSubcode;
+use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
 use crate::storage::error::{
-    StorageErrorKind, storage_driver_error, storage_driver_error_with_dynamic_subcode,
+    StorageErrorKind, storage_driver_error, storage_driver_error_with_subcode,
 };
+use serde::Deserialize;
 
 use super::models::{ApiEnvelope, RemoteIngressProfileInfo};
+
+#[derive(Debug, Deserialize)]
+struct RemoteErrorEnvelope {
+    code: i32,
+    msg: String,
+    error: Option<RemoteErrorInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteErrorInfo {
+    subcode: Option<String>,
+}
 
 pub(super) fn map_reqwest_error(error: reqwest::Error) -> AsterError {
     if error.is_timeout() {
@@ -64,12 +78,13 @@ pub(super) fn build_remote_status_error_from_parts(
     context: &str,
     not_found_as_record: bool,
 ) -> AsterError {
-    let envelope = serde_json::from_str::<ApiEnvelope<serde_json::Value>>(body).ok();
+    let envelope = serde_json::from_str::<RemoteErrorEnvelope>(body).ok();
     let remote_code = envelope.as_ref().map(|value| value.code);
     let remote_subcode = envelope
         .as_ref()
         .and_then(|value| value.error.as_ref())
-        .and_then(|value| value.subcode.as_deref());
+        .and_then(|value| value.subcode.as_deref())
+        .and_then(ApiSubcode::parse);
     let remote_message = envelope
         .as_ref()
         .map(|envelope| envelope.msg.as_str())
@@ -101,13 +116,12 @@ pub(super) fn build_remote_status_error_from_parts(
         reqwest::StatusCode::NOT_FOUND if not_found_as_record || is_not_found_remote_code => {
             AsterError::record_not_found(message)
         }
-        reqwest::StatusCode::PRECONDITION_FAILED => remote_subcode
-            .map(|subcode| precondition_failed_with_dynamic_subcode(subcode, message.clone()))
-            .unwrap_or_else(|| AsterError::precondition_failed(message)),
+        reqwest::StatusCode::PRECONDITION_FAILED => {
+            let subcode = remote_subcode.unwrap_or(ApiSubcode::StoragePrecondition);
+            precondition_failed_with_subcode(subcode, message)
+        }
         _ => remote_subcode
-            .map(|subcode| {
-                storage_driver_error_with_dynamic_subcode(kind, subcode, message.clone())
-            })
+            .map(|subcode| storage_driver_error_with_subcode(kind, subcode, message.clone()))
             .unwrap_or_else(|| storage_driver_error(kind, message)),
     }
 }

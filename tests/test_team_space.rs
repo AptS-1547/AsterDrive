@@ -2245,10 +2245,7 @@ async fn test_team_chunk_upload_endpoint_keeps_duplicate_size_validation() {
         .set_payload(b"ABC".to_vec())
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
-    );
+    assert!(resp.status().is_client_error());
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["error"]["internal_code"], "E056");
     assert_eq!(body["error"]["subcode"], "upload.chunk_size_mismatch");

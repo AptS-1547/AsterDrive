@@ -520,7 +520,7 @@ mod tests {
         assert_eq!(err.code(), "E056"); // ChunkUploadFailed
         assert_eq!(
             err.api_error_subcode(),
-            Some("upload.chunk_session_invalid")
+            Some(ApiSubcode::UploadChunkSessionInvalid)
         );
     }
 
@@ -532,7 +532,7 @@ mod tests {
         assert_eq!(err.code(), "E056");
         assert_eq!(
             err.api_error_subcode(),
-            Some("upload.chunk_session_invalid")
+            Some(ApiSubcode::UploadChunkSessionInvalid)
         );
     }
 
@@ -559,7 +559,7 @@ mod tests {
         assert_eq!(e.code(), "E005"); // ValidationError
         assert_eq!(
             e.api_error_subcode(),
-            Some("upload.chunk_transport_mismatch")
+            Some(ApiSubcode::UploadChunkTransportMismatch)
         );
 
         session.status = Uploading;

@@ -23,7 +23,7 @@ import type {
 	UserPreferences,
 	UserProfileInfo,
 } from "@/types/api";
-import { type ApiResponse, ErrorCode } from "@/types/api-helpers";
+import { type ApiResponse, ErrorCode, isApiSubcode } from "@/types/api-helpers";
 import { ApiError, api } from "./http";
 
 export interface AuthSessionState {
@@ -277,7 +277,10 @@ export const authService = {
 		if (resp.code !== ErrorCode.Success) {
 			throw new ApiError(resp.code, resp.msg, {
 				internalCode: resp.error?.internal_code ?? undefined,
-				subcode: resp.error?.subcode ?? undefined,
+				subcode:
+					resp.error?.subcode && isApiSubcode(resp.error.subcode)
+						? resp.error.subcode
+						: undefined,
 				retryable: resp.error?.retryable ?? undefined,
 			});
 		}

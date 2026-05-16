@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
 
 type MockAxiosError = {
 	config?: { _retry?: boolean; url?: string };
@@ -246,7 +246,7 @@ describe("http api helpers", () => {
 				msg: "Storage Driver Error",
 				error: {
 					internal_code: "E031",
-					subcode: "storage.transient",
+					subcode: ApiSubcode.StorageTransient,
 					retryable: true,
 				},
 			},
@@ -259,8 +259,32 @@ describe("http api helpers", () => {
 				code: ErrorCode.StorageTransientFailure,
 				message: "Storage Driver Error",
 				internalCode: "E031",
-				subcode: "storage.transient",
+				subcode: ApiSubcode.StorageTransient,
 				retryable: true,
+			}),
+		);
+	});
+
+	it("drops unknown backend subcodes before constructing ApiError", async () => {
+		mockState.client.get.mockResolvedValue({
+			data: {
+				code: ErrorCode.Forbidden,
+				msg: "denied",
+				error: {
+					internal_code: "E013",
+					subcode: "remote.dynamic",
+				},
+			},
+		});
+
+		const { api } = await loadHttpModule();
+
+		await expect(api.get("/files")).rejects.toEqual(
+			expect.objectContaining({
+				code: ErrorCode.Forbidden,
+				message: "denied",
+				internalCode: "E013",
+				subcode: undefined,
 			}),
 		);
 	});

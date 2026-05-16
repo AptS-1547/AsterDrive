@@ -651,9 +651,7 @@ pub(crate) fn archive_preview_validation_error(
 
 pub(crate) fn map_failed_task_error(last_error: Option<&str>) -> AsterError {
     let message = last_error.unwrap_or("archive preview generation failed");
-    match crate::errors::task_error_subcode_from_storage(message)
-        .and_then(|subcode| subcode.parse::<ApiSubcode>().ok())
-    {
+    match crate::errors::task_error_subcode_from_storage(message) {
         Some(ApiSubcode::ArchivePreviewUnsupportedType) => {
             return archive_preview_validation_error(
                 ApiSubcode::ArchivePreviewUnsupportedType,
@@ -914,10 +912,8 @@ mod tests {
         }
     }
 
-    fn failed_task_subcode(message: &str) -> Option<String> {
-        map_failed_task_error(Some(message))
-            .api_error_subcode()
-            .map(str::to_string)
+    fn failed_task_subcode(message: &str) -> Option<ApiSubcode> {
+        map_failed_task_error(Some(message)).api_error_subcode()
     }
 
     fn preview_test_limits() -> ArchivePreviewLimits {
@@ -979,7 +975,7 @@ mod tests {
     #[test]
     fn map_failed_task_error_reads_persisted_subcode_without_text_matching() {
         let stored = crate::errors::encode_api_error_subcode_message(
-            ApiSubcode::ArchivePreviewInvalidZip.as_str(),
+            ApiSubcode::ArchivePreviewInvalidZip,
             "worker changed this wording".to_string(),
         );
 
@@ -987,7 +983,7 @@ mod tests {
 
         assert_eq!(
             error.api_error_subcode(),
-            Some(ApiSubcode::ArchivePreviewInvalidZip.as_str())
+            Some(ApiSubcode::ArchivePreviewInvalidZip)
         );
         assert_eq!(error.message(), "invalid zip archive");
     }
@@ -996,49 +992,33 @@ mod tests {
     fn map_failed_task_error_preserves_archive_preview_subcodes() {
         assert_eq!(
             failed_task_subcode("archive preview currently supports .zip files only"),
-            Some(
-                ApiSubcode::ArchivePreviewUnsupportedType
-                    .as_str()
-                    .to_string()
-            )
+            Some(ApiSubcode::ArchivePreviewUnsupportedType)
         );
         assert_eq!(
             failed_task_subcode(
                 "source archive size 135064658 exceeds archive preview limit 67108864"
             ),
-            Some(
-                ApiSubcode::ArchivePreviewSourceTooLarge
-                    .as_str()
-                    .to_string()
-            )
+            Some(ApiSubcode::ArchivePreviewSourceTooLarge)
         );
         assert_eq!(
             failed_task_subcode("invalid zip archive"),
-            Some(ApiSubcode::ArchivePreviewInvalidZip.as_str().to_string())
+            Some(ApiSubcode::ArchivePreviewInvalidZip)
         );
         assert_eq!(
             failed_task_subcode(
                 "archive preview manifest for file #1 exceeds server limit 64 bytes"
             ),
-            Some(
-                ApiSubcode::ArchivePreviewManifestTooLarge
-                    .as_str()
-                    .to_string()
-            )
+            Some(ApiSubcode::ArchivePreviewManifestTooLarge)
         );
         assert_eq!(
             failed_task_subcode(
                 "source archive size mismatch: declared 3 bytes, downloaded 2 bytes"
             ),
-            Some(
-                ApiSubcode::ArchivePreviewSourceSizeMismatch
-                    .as_str()
-                    .to_string()
-            )
+            Some(ApiSubcode::ArchivePreviewSourceSizeMismatch)
         );
         assert_eq!(
             failed_task_subcode("archive contains 2 entries, exceeds server limit 1"),
-            Some(ApiSubcode::ArchivePreviewRejected.as_str().to_string())
+            Some(ApiSubcode::ArchivePreviewRejected)
         );
     }
 
@@ -1092,7 +1072,7 @@ mod tests {
         .expect_err("short stream should fail");
         assert_eq!(
             short_error.api_error_subcode(),
-            Some(ApiSubcode::ArchivePreviewSourceSizeMismatch.as_str())
+            Some(ApiSubcode::ArchivePreviewSourceSizeMismatch)
         );
         assert!(short_error.message().contains("downloaded 0 bytes"));
 
@@ -1116,7 +1096,7 @@ mod tests {
         producer.await.expect("producer should finish");
         assert_eq!(
             long_error.api_error_subcode(),
-            Some(ApiSubcode::ArchivePreviewSourceSizeMismatch.as_str())
+            Some(ApiSubcode::ArchivePreviewSourceSizeMismatch)
         );
         assert!(
             long_error

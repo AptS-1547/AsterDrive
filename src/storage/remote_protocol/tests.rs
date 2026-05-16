@@ -4,6 +4,7 @@ use super::errors::{
 };
 use super::*;
 use crate::api::error_code::ErrorCode;
+use crate::api::subcode::ApiSubcode;
 use crate::errors::AsterError;
 use crate::storage::driver::PresignedDownloadOptions;
 use crate::storage::error::StorageErrorKind;
@@ -547,13 +548,13 @@ fn not_found_record_error_uses_contextual_remote_message() {
 }
 
 #[test]
-fn remote_status_error_preserves_subcodes_and_plain_body_context() {
+fn remote_status_error_preserves_known_subcodes_and_ignores_unknown_remote_values() {
     let body = serde_json::json!({
         "code": ErrorCode::StoragePermissionDenied as i32,
         "msg": "denied",
         "error": {
             "internal_code": "E031",
-            "subcode": "storage.remote_permission",
+            "subcode": "storage.permission",
             "retryable": false
         }
     })
@@ -566,8 +567,28 @@ fn remote_status_error_preserves_subcodes_and_plain_body_context() {
     );
 
     assert_eq!(err.storage_error_kind(), Some(StorageErrorKind::Permission));
-    assert_eq!(err.api_error_subcode(), Some("storage.remote_permission"));
+    assert_eq!(err.api_error_subcode(), Some(ApiSubcode::StoragePermission));
     assert_eq!(err.message(), "get remote storage object: denied");
+
+    let unknown = build_remote_status_error_from_parts(
+        reqwest::StatusCode::FORBIDDEN,
+        &serde_json::json!({
+            "code": ErrorCode::StoragePermissionDenied as i32,
+            "msg": "denied",
+            "error": {
+                "internal_code": "E031",
+                "subcode": "storage.remote_permission",
+                "retryable": false
+            }
+        })
+        .to_string(),
+        "get remote storage object",
+        false,
+    );
+    assert_eq!(
+        unknown.api_error_subcode(),
+        Some(ApiSubcode::StoragePermission)
+    );
 
     let precondition = build_remote_status_error_from_parts(
         reqwest::StatusCode::PRECONDITION_FAILED,
@@ -587,7 +608,7 @@ fn remote_status_error_preserves_subcodes_and_plain_body_context() {
     assert!(matches!(precondition, AsterError::PreconditionFailed(_)));
     assert_eq!(
         precondition.api_error_subcode(),
-        Some("remote.revision_stale")
+        Some(ApiSubcode::StoragePrecondition)
     );
 
     let plain = build_remote_status_error_from_parts(

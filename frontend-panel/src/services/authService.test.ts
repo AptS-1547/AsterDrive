@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { authService, invalidatePasskeysCache } from "@/services/authService";
 import type { PasskeyInfo } from "@/types/api";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
 	clientPost: vi.fn(),
@@ -456,7 +456,7 @@ describe("authService", () => {
 				error: {
 					internal_code: "E001",
 					retryable: true,
-					subcode: "avatar-too-large",
+					subcode: ApiSubcode.AvatarRenderFailed,
 				},
 				msg: "upload failed",
 			},
@@ -471,7 +471,7 @@ describe("authService", () => {
 			internalCode: "E001",
 			message: "upload failed",
 			retryable: true,
-			subcode: "avatar-too-large",
+			subcode: ApiSubcode.AvatarRenderFailed,
 		});
 	});
 });

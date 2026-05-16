@@ -107,7 +107,7 @@ fn normalize_patterns(patterns: Vec<String>) -> Vec<String> {
 }
 
 fn normalize_for_match(value: &str) -> String {
-    value.trim().to_ascii_lowercase()
+    value.trim().to_lowercase()
 }
 
 fn simple_glob_matches(name: &str, pattern: &str) -> bool {
@@ -254,6 +254,12 @@ mod tests {
             ]),
             vec!["blocked-*".to_string(), "thumbs.db".to_string()]
         );
+    }
+
+    #[test]
+    fn patterns_match_non_ascii_case_insensitively() {
+        assert!(is_blocked_name("ä.txt", &[String::from("Ä*")]));
+        assert!(is_blocked_name("Ä.txt", &[String::from("ä*")]));
     }
 
     #[test]

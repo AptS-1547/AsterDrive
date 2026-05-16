@@ -45,11 +45,16 @@ fn api_subcode_openapi_schema_uses_wire_values() {
 }
 
 #[test]
-fn api_error_info_openapi_subcode_keeps_dynamic_string_escape_hatch() {
+fn api_error_info_openapi_subcode_references_api_subcode_schema() {
     let value = serde_json::to_value(ApiDoc::openapi()).unwrap();
     let subcode = &value["components"]["schemas"]["ApiErrorInfo"]["properties"]["subcode"];
 
-    assert_eq!(subcode["type"], serde_json::json!(["string", "null"]));
-    assert!(subcode.get("$ref").is_none());
+    assert_eq!(
+        subcode["oneOf"],
+        serde_json::json!([
+            { "type": "null" },
+            { "$ref": "#/components/schemas/ApiSubcode" }
+        ])
+    );
     assert!(subcode.get("enum").is_none());
 }

@@ -1,5 +1,6 @@
 //! 存储错误分类与编码。
 
+use crate::api::subcode::ApiSubcode;
 use crate::errors::{AsterError, encode_api_error_subcode_message};
 
 const STORAGE_ERROR_KIND_PREFIX: &str = "__ASTER_STORAGE_KIND__=";
@@ -54,9 +55,9 @@ pub fn storage_driver_error(kind: StorageErrorKind, message: impl Into<String>) 
     AsterError::storage_driver_error(encode_storage_driver_error_message(kind, message.into()))
 }
 
-pub fn storage_driver_error_with_dynamic_subcode(
+pub fn storage_driver_error_with_subcode(
     kind: StorageErrorKind,
-    subcode: &str,
+    subcode: ApiSubcode,
     message: impl Into<String>,
 ) -> AsterError {
     storage_driver_error(
@@ -275,16 +276,19 @@ mod tests {
 
     #[test]
     fn tagged_storage_error_preserves_nested_api_subcode() {
-        let error = storage_driver_error_with_dynamic_subcode(
+        let error = storage_driver_error_with_subcode(
             StorageErrorKind::Transient,
-            "storage.remote_timeout",
+            ApiSubcode::StorageTransient,
             "remote timeout",
         );
         assert_eq!(
             error.storage_error_kind(),
             Some(StorageErrorKind::Transient)
         );
-        assert_eq!(error.api_error_subcode(), Some("storage.remote_timeout"));
+        assert_eq!(
+            error.api_error_subcode(),
+            Some(ApiSubcode::StorageTransient)
+        );
         assert_eq!(error.message(), "remote timeout");
     }
 }

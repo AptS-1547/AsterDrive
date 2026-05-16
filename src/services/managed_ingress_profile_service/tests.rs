@@ -6,6 +6,7 @@ use super::{
     paths::{normalize_relative_local_path, resolve_managed_local_path},
     resolve_effective_target, update,
 };
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{managed_ingress_profile_repo, master_binding_repo};
 use crate::entities::{managed_ingress_profile, master_binding};
 use crate::runtime::{FollowerRuntimeState, SharedRuntimeState};
@@ -480,7 +481,7 @@ async fn update_rejects_unsetting_current_default_directly() {
 
     assert_eq!(
         error.api_error_subcode(),
-        Some("managed_ingress.default_update_requires_replacement")
+        Some(ApiSubcode::ManagedIngressDefaultUpdateRequiresReplacement)
     );
 }
 
@@ -500,7 +501,7 @@ async fn delete_protects_default_when_other_profiles_exist_then_allows_after_rep
         .unwrap_err();
     assert_eq!(
         error.api_error_subcode(),
-        Some("managed_ingress.default_delete_requires_replacement")
+        Some(ApiSubcode::ManagedIngressDefaultDeleteRequiresReplacement)
     );
 
     update(
@@ -530,7 +531,7 @@ async fn resolve_effective_target_reports_required_default_and_pending_states() 
     let missing_error = expect_aster_err(resolve_effective_target(&state, &binding).await);
     assert_eq!(
         missing_error.api_error_subcode(),
-        Some("managed_ingress.required")
+        Some(ApiSubcode::ManagedIngressRequired)
     );
 
     let profile = create(
@@ -556,7 +557,7 @@ async fn resolve_effective_target_reports_required_default_and_pending_states() 
     let error = expect_aster_err(resolve_effective_target(&state, &binding).await);
     assert_eq!(
         error.api_error_subcode(),
-        Some("managed_ingress.default_error")
+        Some(ApiSubcode::ManagedIngressDefaultError)
     );
 
     stored = managed_ingress_profile_repo::find_by_binding_and_profile_key(
@@ -577,6 +578,6 @@ async fn resolve_effective_target_reports_required_default_and_pending_states() 
     let error = expect_aster_err(resolve_effective_target(&state, &binding).await);
     assert_eq!(
         error.api_error_subcode(),
-        Some("managed_ingress.default_not_applied")
+        Some(ApiSubcode::ManagedIngressDefaultNotApplied)
     );
 }
