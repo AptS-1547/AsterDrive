@@ -27,6 +27,12 @@ AsterDrive is an MIT-licensed self-hosted cloud drive for people who want to own
 
 It is built as a Rust backend plus a React frontend, shipped as one server binary or an Alpine-based container image. The current `v0.1.x` line is an early stable release: usable for personal and small-team deployments, but still evolving quickly.
 
+## Scope
+
+AsterDrive is not trying to clone the whole Nextcloud ecosystem. It focuses on being a lightweight, hackable cloud drive for personal and small-team self-hosting.
+
+It currently does not aim to provide calendars, contacts, plugin marketplaces, multi-primary clustering, automatic failover, real-time desktop sync clients, or enterprise compliance guarantees.
+
 ## Highlights
 
 - **Self-hosted by default** - single service, embedded frontend assets, SQLite out of the box, optional PostgreSQL / MySQL

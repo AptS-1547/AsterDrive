@@ -1,7 +1,7 @@
 name: Feature Request
 description: Suggest a new feature
 title: "[Feature]: "
-labels: ["enhancement", "needs-triage"]
+labels: ["Enhancement", "Wait For More Info"]
 assignees:
   - AptS-1547
 body:

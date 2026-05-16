@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: AsterDrive
-  text: 文档中心
-  tagline: 自托管云存储的部署、使用、管理和运维手册。先选路径，再看细节。
+  text: 轻量自托管云盘
+  tagline: Rust + React 构建，从单机部署开始，按需要接入团队空间、S3、WebDAV、WOPI 和远程从节点。
   actions:
     - theme: brand
       text: 快速开始
@@ -30,6 +30,12 @@ features:
     details: Docker、systemd、反向代理、升级、备份、故障排查和运维 CLI 放在同一条维护路径里。
     link: /deployment/
 ---
+
+## 先认识它
+
+AsterDrive 是一个基于 Rust 和 React 的轻量自托管云盘。你可以从默认 SQLite + 本地存储的单机部署开始，之后按需要接入 PostgreSQL / MySQL、S3 兼容对象存储、团队空间、WebDAV、WOPI 在线预览编辑，以及远程从节点存储。
+
+它不是完整协作套件或多主集群系统，当前重点是把个人和小团队的文件管理、分享、上传、预览、存储策略和日常运维路径做清楚。
 
 ## 按目的走
 

@@ -1,7 +1,7 @@
 name: Question
 description: Ask a question about using AsterDrive
 title: "[Question]: "
-labels: ["question"]
+labels: ["Question"]
 assignees:
   - AptS-1547
 body:

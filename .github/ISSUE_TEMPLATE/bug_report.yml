@@ -1,15 +1,20 @@
 name: Bug Report
-description: Report a bug to help us improve
+description: Report a reproducible problem in AsterDrive
 title: "[Bug]: "
-labels: ["bug", "needs-triage"]
+labels: ["Bug", "Wait For More Info"]
 assignees:
   - AptS-1547
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please remove secrets, tokens, passwords, bucket keys, and private hostnames from any logs or configuration snippets.
+
   - type: textarea
     id: what-happened
     attributes:
-      label: Describe the bug
-      description: A clear and concise description of the bug.
+      label: What happened?
+      description: Describe the problem and the user-visible impact.
     validations:
       required: true
 
@@ -38,30 +43,11 @@ body:
     validations:
       required: true
 
-  - type: textarea
-    id: logs
-    attributes:
-      label: Error messages / logs
-      render: shell
-
   - type: input
     id: version
     attributes:
       label: AsterDrive version
-      placeholder: e.g. v0.1.0 or master branch
-    validations:
-      required: true
-
-  - type: dropdown
-    id: os
-    attributes:
-      label: Operating system
-      options:
-        - Linux
-        - macOS
-        - Windows
-        - Docker
-        - Other
+      placeholder: e.g. v0.1.0, stable Docker tag, or commit SHA
     validations:
       required: true
 
@@ -70,17 +56,61 @@ body:
     attributes:
       label: Installation method
       options:
+        - Docker / Compose
         - Pre-built binary
-        - Docker
         - Built from source
         - Other
     validations:
       required: true
 
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database backend
+      options:
+        - SQLite
+        - PostgreSQL
+        - MySQL
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: storage
+    attributes:
+      label: Storage backend involved
+      options:
+        - Local filesystem
+        - S3-compatible storage
+        - Remote follower node
+        - WebDAV client path
+        - Not storage-related
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - OS / distro:
+        - Browser or WebDAV client:
+        - Reverse proxy:
+        - Deployment notes:
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error messages / logs
+      description: Include the API error code and relevant server logs if available. Remove secrets before posting.
+      render: shell
+
   - type: textarea
     id: config
     attributes:
-      label: Configuration (remove sensitive values)
+      label: Relevant configuration
+      description: Include only the parts related to the bug and replace sensitive values with placeholders.
       render: toml
 
   - type: checkboxes
@@ -90,5 +120,7 @@ body:
       options:
         - label: I have searched existing issues for duplicates
           required: true
-        - label: I have checked the documentation
+        - label: I have checked the documentation and FAQ
+          required: true
+        - label: I have removed secrets and private credentials from this report
           required: true
