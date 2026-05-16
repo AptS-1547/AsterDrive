@@ -1,7 +1,7 @@
 use crate::api::error_code::ErrorCode;
-use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
+use crate::errors::{AsterError, Result, precondition_failed_with_dynamic_subcode};
 use crate::storage::error::{
-    StorageErrorKind, storage_driver_error, storage_driver_error_with_subcode,
+    StorageErrorKind, storage_driver_error, storage_driver_error_with_dynamic_subcode,
 };
 
 use super::models::{ApiEnvelope, RemoteIngressProfileInfo};
@@ -102,10 +102,12 @@ pub(super) fn build_remote_status_error_from_parts(
             AsterError::record_not_found(message)
         }
         reqwest::StatusCode::PRECONDITION_FAILED => remote_subcode
-            .map(|subcode| precondition_failed_with_subcode(subcode, message.clone()))
+            .map(|subcode| precondition_failed_with_dynamic_subcode(subcode, message.clone()))
             .unwrap_or_else(|| AsterError::precondition_failed(message)),
         _ => remote_subcode
-            .map(|subcode| storage_driver_error_with_subcode(kind, subcode, message.clone()))
+            .map(|subcode| {
+                storage_driver_error_with_dynamic_subcode(kind, subcode, message.clone())
+            })
             .unwrap_or_else(|| storage_driver_error(kind, message)),
     }
 }

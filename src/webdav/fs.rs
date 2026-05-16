@@ -213,20 +213,16 @@ impl DavFileSystem for AsterDavFs {
             let mut entries: Vec<Box<dyn DavDirEntry>> = Vec::new();
 
             for folder in &folders {
-                if is_hidden_name(&folder.name) {
-                    continue;
-                }
                 entries.push(Box::new(AsterDavDirEntry::from_folder(folder)));
             }
 
             // 批量查询所有 blob（1 次查询替代 N 次）
-            let visible_files: Vec<_> = files.iter().filter(|f| !is_hidden_name(&f.name)).collect();
-            let blob_ids: Vec<i64> = visible_files.iter().map(|f| f.blob_id).collect();
+            let blob_ids: Vec<i64> = files.iter().map(|f| f.blob_id).collect();
             let blobs = file_repo::find_blobs_by_ids(&self.state.db, &blob_ids)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
-            for file in &visible_files {
+            for file in &files {
                 if let Some(blob) = blobs.get(&file.blob_id) {
                     entries.push(Box::new(AsterDavDirEntry::from_file(file, blob)));
                 }
@@ -681,8 +677,6 @@ fn entity_type_name(entity_type: EntityType) -> &'static str {
         EntityType::Folder => "folder",
     }
 }
-
-use crate::utils::is_hidden_name;
 
 /// AsterError → FsError 映射
 fn to_fs_error(err: crate::errors::AsterError) -> FsError {

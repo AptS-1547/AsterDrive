@@ -1,6 +1,7 @@
 use chrono::Utc;
 use std::time::Instant;
 
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::file_repo;
 use crate::entities::{file, storage_policy, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result, upload_assembly_error_with_subcode};
@@ -146,7 +147,7 @@ async fn finalize_remote_chunked_upload_session(
 
     let relay_result = relay_task.await.map_err(|error| {
         upload_assembly_error_with_subcode(
-            "upload.chunk_relay_failed",
+            ApiSubcode::UploadChunkRelayFailed,
             format!("remote chunk relay task failed: {error}"),
         )
     })?;
@@ -188,28 +189,29 @@ async fn stream_local_chunks_into_writer(
     let mut buffer = vec![0u8; STREAM_BUFFER_SIZE];
     for chunk_number in 0..total_chunks {
         let chunk_path = paths::upload_chunk_path(&upload_temp_dir, &upload_id, chunk_number);
-        let mut chunk_file = tokio::fs::File::open(&chunk_path)
-            .await
-            .map_aster_err_ctx(&format!("open chunk {chunk_number}"), |message| {
-                upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
-            })?;
+        let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_aster_err_ctx(
+            &format!("open chunk {chunk_number}"),
+            |message| {
+                upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+            },
+        )?;
 
         loop {
-            let read = chunk_file
-                .read(&mut buffer)
-                .await
-                .map_aster_err_ctx(&format!("read chunk {chunk_number}"), |message| {
-                    upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
-                })?;
+            let read = chunk_file.read(&mut buffer).await.map_aster_err_ctx(
+                &format!("read chunk {chunk_number}"),
+                |message| {
+                    upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+                },
+            )?;
             if read == 0 {
                 break;
             }
-            writer
-                .write_all(&buffer[..read])
-                .await
-                .map_aster_err_ctx("relay remote chunk", |message| {
-                    upload_assembly_error_with_subcode("upload.chunk_relay_failed", message)
-                })?;
+            writer.write_all(&buffer[..read]).await.map_aster_err_ctx(
+                "relay remote chunk",
+                |message| {
+                    upload_assembly_error_with_subcode(ApiSubcode::UploadChunkRelayFailed, message)
+                },
+            )?;
         }
     }
 
@@ -217,7 +219,7 @@ async fn stream_local_chunks_into_writer(
         .shutdown()
         .await
         .map_aster_err_ctx("shutdown remote chunk relay", |message| {
-            upload_assembly_error_with_subcode("upload.chunk_relay_failed", message)
+            upload_assembly_error_with_subcode(ApiSubcode::UploadChunkRelayFailed, message)
         })?;
     Ok(())
 }
@@ -238,7 +240,7 @@ async fn assemble_local_chunks_to_temp_file(
     let mut out_file = tokio::fs::File::create(&assembled_path)
         .await
         .map_aster_err_ctx("create assembled file", |message| {
-            upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
+            upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
         })?;
     let mut hasher = should_dedup.then(Sha256::new);
     let mut size: i64 = 0;
@@ -250,19 +252,20 @@ async fn assemble_local_chunks_to_temp_file(
     for i in 0..session.total_chunks {
         let chunk_path =
             paths::upload_chunk_path(&state.config.server.upload_temp_dir, upload_id, i);
-        let mut chunk_file = tokio::fs::File::open(&chunk_path)
-            .await
-            .map_aster_err_ctx(&format!("open chunk {i}"), |message| {
-                upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
-            })?;
+        let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_aster_err_ctx(
+            &format!("open chunk {i}"),
+            |message| {
+                upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+            },
+        )?;
 
         loop {
-            let n = chunk_file
-                .read(&mut buffer)
-                .await
-                .map_aster_err_ctx(&format!("read chunk {i}"), |message| {
-                    upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
-                })?;
+            let n = chunk_file.read(&mut buffer).await.map_aster_err_ctx(
+                &format!("read chunk {i}"),
+                |message| {
+                    upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+                },
+            )?;
             if n == 0 {
                 break;
             }
@@ -274,7 +277,7 @@ async fn assemble_local_chunks_to_temp_file(
             let chunk_len = usize_to_i64(n, "assembled chunk length")?;
             size = size.checked_add(chunk_len).ok_or_else(|| {
                 upload_assembly_error_with_subcode(
-                    "upload.assembly_size_overflow",
+                    ApiSubcode::UploadAssemblySizeOverflow,
                     "assembled upload size exceeds i64 range",
                 )
             })?;
@@ -282,7 +285,7 @@ async fn assemble_local_chunks_to_temp_file(
                 .write_all(data)
                 .await
                 .map_aster_err_ctx("write assembled", |message| {
-                    upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
+                    upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
                 })?;
         }
     }
@@ -290,7 +293,7 @@ async fn assemble_local_chunks_to_temp_file(
         .flush()
         .await
         .map_aster_err_ctx("flush assembled", |message| {
-            upload_assembly_error_with_subcode("upload.assembly_io_failed", message)
+            upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
         })?;
     drop(out_file);
 

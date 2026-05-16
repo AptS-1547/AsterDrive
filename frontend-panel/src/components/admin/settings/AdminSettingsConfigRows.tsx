@@ -25,6 +25,7 @@ import {
 	isMultilineType,
 	isNumberType,
 	isSizeConfig,
+	isStringArrayType,
 	type NewCustomDraft,
 	parseWholeNumber,
 	SIZE_DISPLAY_UNITS,
@@ -109,7 +110,7 @@ function FieldMeta({ config }: { config: SystemConfig }) {
 	);
 }
 
-function PublicSiteUrlOriginsControl({
+function StringArrayConfigControl({
 	config,
 	draftValue,
 	fullWidth,
@@ -121,11 +122,33 @@ function PublicSiteUrlOriginsControl({
 	hasError?: boolean;
 }) {
 	const { t, updateDraftValue } = useAdminSettingsCategoryContent();
+	const isPublicSiteUrl = config.key === PUBLIC_SITE_URL_KEY;
+	const itemLabel = t(
+		isPublicSiteUrl
+			? "public_site_url_origin_label"
+			: "settings_string_array_item_label",
+	);
+	const addLabel = t(
+		isPublicSiteUrl
+			? "public_site_url_add_origin"
+			: "settings_string_array_add_item",
+	);
+	const removeLabel = t(
+		isPublicSiteUrl
+			? "public_site_url_remove_origin"
+			: "settings_string_array_remove_item",
+	);
+	const primaryLabel = isPublicSiteUrl
+		? t("public_site_url_primary_origin")
+		: null;
+	const placeholder = isPublicSiteUrl
+		? "https://drive.example.com"
+		: t("config_value");
 	const rows = draftValue.length > 0 ? draftValue : [""];
 	const nextRowIdRef = useRef(0);
 	const rowIdsRef = useRef<string[]>([]);
 	const createRowId = () => {
-		const rowId = `public-site-url-origin-${nextRowIdRef.current}`;
+		const rowId = `${config.key}-string-array-row-${nextRowIdRef.current}`;
 		nextRowIdRef.current += 1;
 		return rowId;
 	};
@@ -157,30 +180,30 @@ function PublicSiteUrlOriginsControl({
 				return (
 					<div key={item.key} className="flex items-center gap-2">
 						<Input
-							type="url"
-							inputMode="url"
+							type={isPublicSiteUrl ? "url" : "text"}
+							inputMode={isPublicSiteUrl ? "url" : "text"}
 							className="min-w-0 flex-1"
 							value={item.value}
-							aria-label={`${t("public_site_url_origin_label")} ${index + 1}`}
+							aria-label={`${itemLabel} ${index + 1}`}
 							aria-invalid={hasError ? true : undefined}
 							onChange={(event) => {
 								const nextRows = [...rows];
 								nextRows[index] = event.target.value;
 								updateRows(nextRows);
 							}}
-							placeholder="https://drive.example.com"
+							placeholder={placeholder}
 						/>
-						{index === 0 ? (
+						{primaryLabel && index === 0 ? (
 							<span className="shrink-0 text-xs font-medium text-primary">
-								{t("public_site_url_primary_origin")}
+								{primaryLabel}
 							</span>
 						) : null}
 						<Button
 							type="button"
 							variant="outline"
 							size="icon"
-							aria-label={t("public_site_url_add_origin")}
-							title={t("public_site_url_add_origin")}
+							aria-label={addLabel}
+							title={addLabel}
 							onClick={() => {
 								const nextRows = [...rows];
 								nextRows.splice(index + 1, 0, "");
@@ -194,8 +217,8 @@ function PublicSiteUrlOriginsControl({
 							type="button"
 							variant="ghost"
 							size="icon"
-							aria-label={t("public_site_url_remove_origin")}
-							title={t("public_site_url_remove_origin")}
+							aria-label={removeLabel}
+							title={removeLabel}
 							onClick={() => {
 								if (rows.length <= 1) {
 									updateRows([]);
@@ -365,6 +388,7 @@ function ConfigInputControl({
 	const draftStringValue = configValueToString(draftValue);
 	const isSensitive = getConfigIsSensitive(config);
 	const multiline = isMultilineType(valueType);
+	const stringArray = isStringArrayType(valueType);
 	const brandingPreviewAppearance = isBrandingAssetConfig(config)
 		? getBrandingAssetPreviewAppearance(config)
 		: null;
@@ -421,9 +445,9 @@ function ConfigInputControl({
 		);
 	}
 
-	if (config.key === PUBLIC_SITE_URL_KEY) {
+	if (stringArray) {
 		return (
-			<PublicSiteUrlOriginsControl
+			<StringArrayConfigControl
 				config={config}
 				draftValue={configValueToStringArray(draftValue)}
 				fullWidth={fullWidth}

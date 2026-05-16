@@ -5,6 +5,7 @@ use sea_orm::{ConnectionTrait, Set};
 use std::future::Future;
 use std::time::Instant;
 
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, upload_session};
 use crate::errors::{
@@ -110,7 +111,7 @@ pub(super) fn upload_session_chunk_unavailable_error(
             AsterError::upload_session_expired("session already completed")
         }
         UploadSessionStatus::Presigned => validation_error_with_subcode(
-            "upload.chunk_transport_mismatch",
+            ApiSubcode::UploadChunkTransportMismatch,
             "session does not accept relay chunk uploads",
         ),
         UploadSessionStatus::Uploading => {
@@ -125,7 +126,7 @@ pub(super) fn expected_chunk_size_for_upload(
 ) -> Result<i64> {
     if session.total_chunks <= 0 || session.chunk_size <= 0 {
         return Err(chunk_upload_error_with_subcode(
-            "upload.chunk_session_invalid",
+            ApiSubcode::UploadChunkSessionInvalid,
             format!(
                 "invalid upload session chunk metadata: total_chunks={}, chunk_size={}",
                 session.total_chunks, session.chunk_size
@@ -141,7 +142,7 @@ pub(super) fn expected_chunk_size_for_upload(
     let expected = session.total_size - preceding;
     if expected <= 0 {
         return Err(chunk_upload_error_with_subcode(
-            "upload.chunk_session_invalid",
+            ApiSubcode::UploadChunkSessionInvalid,
             format!(
                 "invalid final chunk size for upload {}: total_size={}, preceding={preceding}",
                 session.id, session.total_size
@@ -182,7 +183,7 @@ pub(super) async fn transition_upload_session_to_assembling<C: ConnectionTrait>(
                 return Err(AsterError::upload_session_expired("session expired"));
             }
             return Err(upload_assembly_error_with_subcode(
-                "upload.status_conflict",
+                ApiSubcode::UploadStatusConflict,
                 format!(
                     "session status is '{:?}', expected '{}'",
                     session.status,
@@ -191,7 +192,7 @@ pub(super) async fn transition_upload_session_to_assembling<C: ConnectionTrait>(
             ));
         }
         return Err(upload_assembly_error_with_subcode(
-            "upload.status_conflict",
+            ApiSubcode::UploadStatusConflict,
             format!(
                 "session status is '{:?}', expected '{}'",
                 actual_status,
@@ -266,7 +267,7 @@ pub(super) async fn find_file_by_session<C: ConnectionTrait>(
 ) -> Result<file::Model> {
     let file_id = session.file_id.ok_or_else(|| {
         upload_assembly_error_with_subcode(
-            "upload.completed_file_missing",
+            ApiSubcode::UploadCompletedFileMissing,
             "upload already completed but file_id not found; please refresh",
         )
     })?;

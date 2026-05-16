@@ -145,15 +145,6 @@ pub fn storage_path_from_blob_key(blob_key: &str) -> String {
     format!("{}/{}/{}", &blob_key[..2], &blob_key[2..4], blob_key)
 }
 
-/// macOS / Office 生成的隐藏文件名，不在目录列表中显示
-pub fn is_hidden_name(name: &str) -> bool {
-    name.starts_with("._")
-        || name.starts_with("~$")
-        || name == ".DS_Store"
-        || name == ".Spotlight-V100"
-        || name == ".Trashes"
-}
-
 /// 生成副本名称（macOS/Windows 风格）
 ///
 /// 规则：
@@ -213,16 +204,6 @@ pub fn next_copy_name(name: &str) -> String {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-
-    #[test]
-    fn test_is_hidden_name() {
-        assert!(is_hidden_name("._file.txt"));
-        assert!(is_hidden_name("~$document.docx"));
-        assert!(is_hidden_name(".DS_Store"));
-        assert!(is_hidden_name(".Spotlight-V100"));
-        assert!(is_hidden_name(".Trashes"));
-        assert!(!is_hidden_name("normal.txt"));
-    }
 
     #[test]
     fn test_validate_name() {

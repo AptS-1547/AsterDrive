@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+use crate::api::subcode::ApiSubcode;
 use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_subcode};
 
 pub(in crate::services::managed_ingress_profile_service) fn resolve_managed_local_path(
@@ -107,7 +108,7 @@ pub(in crate::services::managed_ingress_profile_service) fn normalize_relative_l
             Component::Normal(segment) => normalized.push(segment),
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
                 return Err(validation_error_with_subcode(
-                    "managed_ingress.local_path_invalid",
+                    ApiSubcode::ManagedIngressLocalPathInvalid,
                     "local ingress base_path must stay within server.follower.managed_ingress_local_root",
                 ));
             }

@@ -11,6 +11,7 @@ use webauthn_rs::prelude::{
 };
 use webauthn_rs_proto::{ResidentKeyRequirement, UserVerificationPolicy};
 
+use crate::api::subcode::ApiSubcode;
 use crate::cache::CacheExt;
 use crate::config::{branding, site_url};
 use crate::db::repository::{passkey_repo, user_repo};
@@ -120,13 +121,13 @@ fn normalize_passkey_name(name: Option<&str>) -> Result<String> {
     let normalized = trimmed.unwrap_or("Passkey");
     if normalized.chars().count() > PASSKEY_NAME_MAX_LEN {
         return Err(validation_error_with_subcode(
-            "passkey.name_too_long",
+            ApiSubcode::PasskeyNameTooLong,
             format!("passkey name exceeds {PASSKEY_NAME_MAX_LEN} characters"),
         ));
     }
     if normalized.chars().any(char::is_control) {
         return Err(validation_error_with_subcode(
-            "passkey.name_invalid",
+            ApiSubcode::PasskeyNameInvalid,
             "passkey name cannot contain control characters",
         ));
     }
@@ -375,7 +376,7 @@ fn ensure_discoverable_registration_result(credential: &RegisterPublicKeyCredent
         == Some(false)
     {
         return Err(validation_error_with_subcode(
-            "passkey.not_discoverable",
+            ApiSubcode::PasskeyNotDiscoverable,
             "passkey registration did not create a discoverable credential",
         ));
     }

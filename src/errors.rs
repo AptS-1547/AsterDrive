@@ -4,6 +4,7 @@ use actix_web::http::StatusCode;
 use std::any::Any;
 
 use crate::api::response::ApiErrorInfo;
+use crate::api::subcode::ApiSubcode;
 use crate::storage::error::{
     StorageErrorKind, storage_driver_error_display_message, storage_driver_error_kind_from_message,
 };
@@ -166,15 +167,15 @@ impl AsterError {
         }
 
         match self.storage_error_kind()? {
-            StorageErrorKind::Auth => Some("storage.auth"),
-            StorageErrorKind::Misconfigured => Some("storage.misconfigured"),
-            StorageErrorKind::NotFound => Some("storage.not_found"),
-            StorageErrorKind::Permission => Some("storage.permission"),
-            StorageErrorKind::Precondition => Some("storage.precondition"),
-            StorageErrorKind::RateLimited => Some("storage.rate_limited"),
-            StorageErrorKind::Transient => Some("storage.transient"),
-            StorageErrorKind::Unsupported => Some("storage.unsupported"),
-            StorageErrorKind::Unknown => Some("storage.unknown"),
+            StorageErrorKind::Auth => Some(ApiSubcode::StorageAuth.as_str()),
+            StorageErrorKind::Misconfigured => Some(ApiSubcode::StorageMisconfigured.as_str()),
+            StorageErrorKind::NotFound => Some(ApiSubcode::StorageNotFound.as_str()),
+            StorageErrorKind::Permission => Some(ApiSubcode::StoragePermission.as_str()),
+            StorageErrorKind::Precondition => Some(ApiSubcode::StoragePrecondition.as_str()),
+            StorageErrorKind::RateLimited => Some(ApiSubcode::StorageRateLimited.as_str()),
+            StorageErrorKind::Transient => Some(ApiSubcode::StorageTransient.as_str()),
+            StorageErrorKind::Unsupported => Some(ApiSubcode::StorageUnsupported.as_str()),
+            StorageErrorKind::Unknown => Some(ApiSubcode::StorageUnknown.as_str()),
         }
     }
 
@@ -357,42 +358,82 @@ pub(crate) fn task_error_display_message(raw_message: &str) -> &str {
     api_error_display_message(raw_message)
 }
 
-pub fn validation_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn validation_error_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::validation_error)
 }
 
-pub fn auth_forbidden_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn validation_error_with_dynamic_subcode(
+    subcode: &str,
+    message: impl Into<String>,
+) -> AsterError {
+    tag_error_with_dynamic_subcode(subcode, message, AsterError::validation_error)
+}
+
+pub fn auth_forbidden_with_subcode(subcode: ApiSubcode, message: impl Into<String>) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::auth_forbidden)
 }
 
-pub fn precondition_failed_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn precondition_failed_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::precondition_failed)
 }
 
-pub fn file_upload_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn precondition_failed_with_dynamic_subcode(
+    subcode: &str,
+    message: impl Into<String>,
+) -> AsterError {
+    tag_error_with_dynamic_subcode(subcode, message, AsterError::precondition_failed)
+}
+
+pub fn file_upload_error_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::file_upload_failed)
 }
 
-pub fn payload_too_large_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn payload_too_large_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::payload_too_large)
 }
 
-pub fn chunk_upload_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn chunk_upload_error_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::chunk_upload_failed)
 }
 
-pub fn upload_assembly_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn upload_assembly_error_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::upload_assembly_failed)
 }
 
 pub fn thumbnail_generation_error_with_subcode(
-    subcode: &str,
+    subcode: ApiSubcode,
     message: impl Into<String>,
 ) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::thumbnail_generation_failed)
 }
 
 fn tag_error_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+    f: impl FnOnce(String) -> AsterError,
+) -> AsterError {
+    tag_error_with_dynamic_subcode(subcode.as_str(), message, f)
+}
+
+fn tag_error_with_dynamic_subcode(
     subcode: &str,
     message: impl Into<String>,
     f: impl FnOnce(String) -> AsterError,
@@ -496,6 +537,7 @@ mod tests {
         upload_assembly_error_with_subcode, validation_error_with_subcode,
     };
     use crate::api::error_code::ErrorCode;
+    use crate::api::subcode::ApiSubcode;
     use crate::storage::error::{StorageErrorKind, storage_driver_error};
     use actix_web::body;
     use actix_web::http::StatusCode;
@@ -629,7 +671,8 @@ mod tests {
 
     #[actix_web::test]
     async fn validation_subcode_response_uses_conflict_code_and_preserves_message() {
-        let err = validation_error_with_subcode("auth.email_exists", "email already exists");
+        let err =
+            validation_error_with_subcode(ApiSubcode::AuthEmailExists, "email already exists");
         let response = actix_web::ResponseError::error_response(&err);
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -652,8 +695,10 @@ mod tests {
 
     #[actix_web::test]
     async fn upload_assembly_response_preserves_subcode_on_server_error() {
-        let err =
-            upload_assembly_error_with_subcode("upload.temp_object_missing", "object missing");
+        let err = upload_assembly_error_with_subcode(
+            ApiSubcode::UploadTempObjectMissing,
+            "object missing",
+        );
         let response = actix_web::ResponseError::error_response(&err);
 
         let body = body::to_bytes(response.into_body())
@@ -673,7 +718,7 @@ mod tests {
     #[actix_web::test]
     async fn thumbnail_generation_response_preserves_subcode_on_server_error() {
         let err = thumbnail_generation_error_with_subcode(
-            "thumbnail.output_invalid",
+            ApiSubcode::ThumbnailOutputInvalid,
             "decode ffmpeg thumbnail output",
         );
         let response = actix_web::ResponseError::error_response(&err);

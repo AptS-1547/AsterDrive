@@ -2125,6 +2125,51 @@ describe("AdminSettingsPage", () => {
 		});
 	});
 
+	it("edits generic string-array configs with list rows and saves arrays", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "webdav",
+					key: "webdav_block_system_file_patterns",
+					value: [".DS_Store"],
+					value_type: "string_array",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "webdav",
+				key: "webdav_block_system_file_patterns",
+				label_i18n_key: "settings_item_webdav_block_system_file_patterns_label",
+				value_type: "string_array",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="webdav" />);
+
+		const firstPattern = await screen.findByLabelText(
+			"settings_string_array_item_label 1",
+		);
+		expect(firstPattern).toHaveValue(".DS_Store");
+
+		fireEvent.click(screen.getByRole("button", { name: "Plus" }));
+		fireEvent.change(
+			screen.getByLabelText("settings_string_array_item_label 2"),
+			{
+				target: { value: "Thumbs.db" },
+			},
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "save_changes" }));
+
+		await waitFor(() => {
+			expect(mockState.setConfig).toHaveBeenCalledWith(
+				"webdav_block_system_file_patterns",
+				[".DS_Store", "Thumbs.db"],
+			);
+		});
+	});
+
 	it("clears the public site URL draft when the only origin row is removed", async () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [

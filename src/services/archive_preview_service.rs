@@ -10,6 +10,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+use crate::api::subcode::ApiSubcode;
 use crate::config::operations;
 use crate::db::repository::{file_repo, property_repo};
 use crate::entities::{file, file_blob};
@@ -159,8 +160,8 @@ pub(crate) async fn preview_shared_folder_file(
 fn ensure_user_preview_enabled(state: &PrimaryAppState) -> Result<()> {
     ensure_preview_master_enabled(state)?;
     if !operations::archive_preview_user_enabled(&state.runtime_config) {
-        return Err(auth_forbidden_with_subcode(
-            "archive_preview.user_disabled",
+        return Err(archive_preview_forbidden_error(
+            ApiSubcode::ArchivePreviewUserDisabled,
             "archive preview for user files is disabled",
         ));
     }
@@ -170,8 +171,8 @@ fn ensure_user_preview_enabled(state: &PrimaryAppState) -> Result<()> {
 fn ensure_share_preview_enabled(state: &PrimaryAppState) -> Result<()> {
     ensure_preview_master_enabled(state)?;
     if !operations::archive_preview_share_enabled(&state.runtime_config) {
-        return Err(auth_forbidden_with_subcode(
-            "archive_preview.share_disabled",
+        return Err(archive_preview_forbidden_error(
+            ApiSubcode::ArchivePreviewShareDisabled,
             "archive preview for shared files is disabled",
         ));
     }
@@ -180,8 +181,8 @@ fn ensure_share_preview_enabled(state: &PrimaryAppState) -> Result<()> {
 
 fn ensure_preview_master_enabled(state: &PrimaryAppState) -> Result<()> {
     if !operations::archive_preview_enabled(&state.runtime_config) {
-        return Err(auth_forbidden_with_subcode(
-            "archive_preview.disabled",
+        return Err(archive_preview_forbidden_error(
+            ApiSubcode::ArchivePreviewDisabled,
             "archive preview is disabled",
         ));
     }
@@ -201,7 +202,7 @@ async fn preview_verified_file(
     let limits = ArchivePreviewLimits::from_runtime_config(&state.runtime_config)?;
     if source_file.size > limits.max_source_bytes {
         return Err(archive_preview_validation_error(
-            "archive_preview.source_too_large",
+            ApiSubcode::ArchivePreviewSourceTooLarge,
             format!(
                 "source archive size {} exceeds archive preview limit {}",
                 source_file.size, limits.max_source_bytes
@@ -324,7 +325,7 @@ pub(crate) async fn store_cached_manifest(
     let serialized = serialize_cached_manifest(blob.id, &blob.hash, &limits.signature, manifest)?;
     if serialized.len() > ENTITY_PROPERTY_VALUE_MAX_BYTES {
         return Err(archive_preview_validation_error(
-            "archive_preview.manifest_too_large",
+            ApiSubcode::ArchivePreviewManifestTooLarge,
             format!(
                 "archive preview manifest for file #{} exceeds entity property limit {} bytes",
                 source_file.id, ENTITY_PROPERTY_VALUE_MAX_BYTES
@@ -549,7 +550,7 @@ fn fit_manifest_to_limit(
     }
 
     Err(archive_preview_validation_error(
-        "archive_preview.manifest_too_large",
+        ApiSubcode::ArchivePreviewManifestTooLarge,
         format!(
             "archive preview manifest for file #{file_id} exceeds server limit {max_manifest_bytes} bytes or entity property limit {ENTITY_PROPERTY_VALUE_MAX_BYTES} bytes"
         ),
@@ -631,14 +632,18 @@ pub(crate) fn ensure_archive_preview_source_supported(source_file: &file::Model)
         Ok(())
     } else {
         Err(archive_preview_validation_error(
-            "archive_preview.unsupported_type",
+            ApiSubcode::ArchivePreviewUnsupportedType,
             "archive preview currently supports .zip files only",
         ))
     }
 }
 
+fn archive_preview_forbidden_error(subcode: ApiSubcode, message: impl Into<String>) -> AsterError {
+    auth_forbidden_with_subcode(subcode, message)
+}
+
 pub(crate) fn archive_preview_validation_error(
-    subcode: &str,
+    subcode: ApiSubcode,
     message: impl Into<String>,
 ) -> AsterError {
     validation_error_with_subcode(subcode, message)
@@ -646,40 +651,42 @@ pub(crate) fn archive_preview_validation_error(
 
 pub(crate) fn map_failed_task_error(last_error: Option<&str>) -> AsterError {
     let message = last_error.unwrap_or("archive preview generation failed");
-    match crate::errors::task_error_subcode_from_storage(message) {
-        Some("archive_preview.unsupported_type") => {
+    match crate::errors::task_error_subcode_from_storage(message)
+        .and_then(|subcode| subcode.parse::<ApiSubcode>().ok())
+    {
+        Some(ApiSubcode::ArchivePreviewUnsupportedType) => {
             return archive_preview_validation_error(
-                "archive_preview.unsupported_type",
+                ApiSubcode::ArchivePreviewUnsupportedType,
                 "archive preview currently supports .zip files only",
             );
         }
-        Some("archive_preview.source_too_large") => {
+        Some(ApiSubcode::ArchivePreviewSourceTooLarge) => {
             return archive_preview_validation_error(
-                "archive_preview.source_too_large",
+                ApiSubcode::ArchivePreviewSourceTooLarge,
                 crate::errors::task_error_display_message(message).to_string(),
             );
         }
-        Some("archive_preview.invalid_zip") => {
+        Some(ApiSubcode::ArchivePreviewInvalidZip) => {
             return archive_preview_validation_error(
-                "archive_preview.invalid_zip",
+                ApiSubcode::ArchivePreviewInvalidZip,
                 "invalid zip archive",
             );
         }
-        Some("archive_preview.manifest_too_large") => {
+        Some(ApiSubcode::ArchivePreviewManifestTooLarge) => {
             return archive_preview_validation_error(
-                "archive_preview.manifest_too_large",
+                ApiSubcode::ArchivePreviewManifestTooLarge,
                 crate::errors::task_error_display_message(message).to_string(),
             );
         }
-        Some("archive_preview.source_size_mismatch") => {
+        Some(ApiSubcode::ArchivePreviewSourceSizeMismatch) => {
             return archive_preview_validation_error(
-                "archive_preview.source_size_mismatch",
+                ApiSubcode::ArchivePreviewSourceSizeMismatch,
                 crate::errors::task_error_display_message(message).to_string(),
             );
         }
-        Some("archive_preview.rejected") => {
+        Some(ApiSubcode::ArchivePreviewRejected) => {
             return archive_preview_validation_error(
-                "archive_preview.rejected",
+                ApiSubcode::ArchivePreviewRejected,
                 crate::errors::task_error_display_message(message).to_string(),
             );
         }
@@ -692,31 +699,31 @@ pub(crate) fn map_failed_task_error(last_error: Option<&str>) -> AsterError {
         || (lower.contains("supports .zip") && lower.contains("archive preview"))
     {
         return archive_preview_validation_error(
-            "archive_preview.unsupported_type",
+            ApiSubcode::ArchivePreviewUnsupportedType,
             "archive preview currently supports .zip files only",
         );
     }
     if lower.contains("source archive size") && lower.contains("archive preview limit") {
         return archive_preview_validation_error(
-            "archive_preview.source_too_large",
+            ApiSubcode::ArchivePreviewSourceTooLarge,
             message.to_string(),
         );
     }
     if lower.contains("invalid zip archive") {
         return archive_preview_validation_error(
-            "archive_preview.invalid_zip",
+            ApiSubcode::ArchivePreviewInvalidZip,
             "invalid zip archive",
         );
     }
     if lower.contains("manifest") && lower.contains("exceeds") {
         return archive_preview_validation_error(
-            "archive_preview.manifest_too_large",
+            ApiSubcode::ArchivePreviewManifestTooLarge,
             message.to_string(),
         );
     }
     if lower.contains("size mismatch") || lower.contains("expands beyond declared size") {
         return archive_preview_validation_error(
-            "archive_preview.source_size_mismatch",
+            ApiSubcode::ArchivePreviewSourceSizeMismatch,
             message.to_string(),
         );
     }
@@ -725,7 +732,10 @@ pub(crate) fn map_failed_task_error(last_error: Option<&str>) -> AsterError {
         || lower.contains("compression ratio")
         || lower.contains("unsafe path")
     {
-        return archive_preview_validation_error("archive_preview.rejected", message.to_string());
+        return archive_preview_validation_error(
+            ApiSubcode::ArchivePreviewRejected,
+            message.to_string(),
+        );
     }
 
     AsterError::record_not_found("archive preview is unavailable for this file")
@@ -734,7 +744,7 @@ pub(crate) fn map_failed_task_error(last_error: Option<&str>) -> AsterError {
 fn map_archive_preview_scan_error(error: AsterError) -> AsterError {
     if matches!(error, AsterError::ValidationError(_)) && error.api_error_subcode().is_none() {
         return archive_preview_validation_error(
-            "archive_preview.rejected",
+            ApiSubcode::ArchivePreviewRejected,
             error.message().to_string(),
         );
     }
@@ -750,7 +760,7 @@ fn map_archive_open_error(error: zip::result::ZipError) -> AsterError {
         return source.clone();
     }
 
-    archive_preview_validation_error("archive_preview.invalid_zip", "invalid zip archive")
+    archive_preview_validation_error(ApiSubcode::ArchivePreviewInvalidZip, "invalid zip archive")
 }
 
 async fn copy_async_reader_to_writer_with_expected_size<R, W>(
@@ -782,7 +792,7 @@ where
         })?;
         if next_copied > expected_bytes {
             return Err(archive_preview_validation_error(
-                "archive_preview.source_size_mismatch",
+                ApiSubcode::ArchivePreviewSourceSizeMismatch,
                 format!("{context} expands beyond declared size: declared {expected_bytes} bytes"),
             ));
         }
@@ -796,7 +806,7 @@ where
 
     if copied != expected_bytes {
         return Err(archive_preview_validation_error(
-            "archive_preview.source_size_mismatch",
+            ApiSubcode::ArchivePreviewSourceSizeMismatch,
             format!(
                 "{context} size mismatch: declared {expected_bytes} bytes, downloaded {copied} bytes"
             ),
@@ -969,7 +979,7 @@ mod tests {
     #[test]
     fn map_failed_task_error_reads_persisted_subcode_without_text_matching() {
         let stored = crate::errors::encode_api_error_subcode_message(
-            "archive_preview.invalid_zip",
+            ApiSubcode::ArchivePreviewInvalidZip.as_str(),
             "worker changed this wording".to_string(),
         );
 
@@ -977,7 +987,7 @@ mod tests {
 
         assert_eq!(
             error.api_error_subcode(),
-            Some("archive_preview.invalid_zip")
+            Some(ApiSubcode::ArchivePreviewInvalidZip.as_str())
         );
         assert_eq!(error.message(), "invalid zip archive");
     }
@@ -986,33 +996,49 @@ mod tests {
     fn map_failed_task_error_preserves_archive_preview_subcodes() {
         assert_eq!(
             failed_task_subcode("archive preview currently supports .zip files only"),
-            Some("archive_preview.unsupported_type".to_string())
+            Some(
+                ApiSubcode::ArchivePreviewUnsupportedType
+                    .as_str()
+                    .to_string()
+            )
         );
         assert_eq!(
             failed_task_subcode(
                 "source archive size 135064658 exceeds archive preview limit 67108864"
             ),
-            Some("archive_preview.source_too_large".to_string())
+            Some(
+                ApiSubcode::ArchivePreviewSourceTooLarge
+                    .as_str()
+                    .to_string()
+            )
         );
         assert_eq!(
             failed_task_subcode("invalid zip archive"),
-            Some("archive_preview.invalid_zip".to_string())
+            Some(ApiSubcode::ArchivePreviewInvalidZip.as_str().to_string())
         );
         assert_eq!(
             failed_task_subcode(
                 "archive preview manifest for file #1 exceeds server limit 64 bytes"
             ),
-            Some("archive_preview.manifest_too_large".to_string())
+            Some(
+                ApiSubcode::ArchivePreviewManifestTooLarge
+                    .as_str()
+                    .to_string()
+            )
         );
         assert_eq!(
             failed_task_subcode(
                 "source archive size mismatch: declared 3 bytes, downloaded 2 bytes"
             ),
-            Some("archive_preview.source_size_mismatch".to_string())
+            Some(
+                ApiSubcode::ArchivePreviewSourceSizeMismatch
+                    .as_str()
+                    .to_string()
+            )
         );
         assert_eq!(
             failed_task_subcode("archive contains 2 entries, exceeds server limit 1"),
-            Some("archive_preview.rejected".to_string())
+            Some(ApiSubcode::ArchivePreviewRejected.as_str().to_string())
         );
     }
 
@@ -1066,7 +1092,7 @@ mod tests {
         .expect_err("short stream should fail");
         assert_eq!(
             short_error.api_error_subcode(),
-            Some("archive_preview.source_size_mismatch")
+            Some(ApiSubcode::ArchivePreviewSourceSizeMismatch.as_str())
         );
         assert!(short_error.message().contains("downloaded 0 bytes"));
 
@@ -1090,7 +1116,7 @@ mod tests {
         producer.await.expect("producer should finish");
         assert_eq!(
             long_error.api_error_subcode(),
-            Some("archive_preview.source_size_mismatch")
+            Some(ApiSubcode::ArchivePreviewSourceSizeMismatch.as_str())
         );
         assert!(
             long_error

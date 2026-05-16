@@ -1,5 +1,6 @@
 //! 仓储模块：`managed_ingress_profile_repo`。
 
+use crate::api::subcode::ApiSubcode;
 use crate::entities::managed_ingress_profile::{self, Entity as ManagedIngressProfile};
 use crate::errors::{AsterError, Result, validation_error_with_subcode};
 use sea_orm::sea_query::Expr;
@@ -113,7 +114,7 @@ pub async fn set_only_default_for_binding(
     let existing = find_by_id(db, profile_id).await?;
     if existing.master_binding_id != master_binding_id {
         return Err(validation_error_with_subcode(
-            "managed_ingress.binding_mismatch",
+            ApiSubcode::ManagedIngressBindingMismatch,
             format!(
                 "managed ingress profile #{profile_id} does not belong to master_binding #{master_binding_id}"
             ),

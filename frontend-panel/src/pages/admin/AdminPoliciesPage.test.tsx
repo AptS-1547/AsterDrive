@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invalidateAdminRemoteNodeLookup } from "@/lib/adminRemoteNodeLookup";
 import AdminPoliciesPage from "@/pages/admin/AdminPoliciesPage";
 import { ApiError } from "@/services/http";
+import { ApiSubcode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
 	create: vi.fn(),
@@ -1584,7 +1585,7 @@ describe("AdminPoliciesPage", () => {
 		mockState.deletePolicy
 			.mockRejectedValueOnce(
 				new ApiError(1003, "upload sessions exist", {
-					subcode: "policy.upload_sessions_exist",
+					subcode: ApiSubcode.PolicyUploadSessionsExist,
 				}),
 			)
 			.mockImplementationOnce(async (id: number) => {

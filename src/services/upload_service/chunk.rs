@@ -9,6 +9,7 @@ use chrono::Utc;
 use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{upload_session_part_repo, upload_session_repo};
 use crate::entities::upload_session;
 use crate::errors::{
@@ -78,7 +79,7 @@ async fn inspect_existing_local_chunk(
         }
         Err(error) => {
             return Err(chunk_upload_error_with_subcode(
-                "upload.chunk_persist_failed",
+                ApiSubcode::UploadChunkPersistFailed,
                 format!("stat existing chunk file: {error}"),
             ));
         }
@@ -119,7 +120,7 @@ async fn write_local_chunk_temp(
             .await
             .map_err(|error| {
                 chunk_upload_error_with_subcode(
-                    "upload.chunk_persist_failed",
+                    ApiSubcode::UploadChunkPersistFailed,
                     format!("create temp chunk file: {error}"),
                 )
             })?;
@@ -127,12 +128,12 @@ async fn write_local_chunk_temp(
         file.write_all(data)
             .await
             .map_aster_err_ctx("write chunk", |message| {
-                chunk_upload_error_with_subcode("upload.chunk_persist_failed", message)
+                chunk_upload_error_with_subcode(ApiSubcode::UploadChunkPersistFailed, message)
             })?;
         file.flush()
             .await
             .map_aster_err_ctx("flush chunk", |message| {
-                chunk_upload_error_with_subcode("upload.chunk_persist_failed", message)
+                chunk_upload_error_with_subcode(ApiSubcode::UploadChunkPersistFailed, message)
             })?;
         Ok::<(), AsterError>(())
     }
@@ -147,28 +148,28 @@ async fn write_local_chunk_temp(
 
 fn chunk_body_read_failed() -> AsterError {
     validation_error_with_subcode(
-        "upload.request_body_read_failed",
+        ApiSubcode::UploadRequestBodyReadFailed,
         "failed to read request body",
     )
 }
 
 fn chunk_body_size_mismatch(chunk_number: i32, expected_size: i64, actual_size: i64) -> AsterError {
     chunk_upload_error_with_subcode(
-        "upload.chunk_size_mismatch",
+        ApiSubcode::UploadChunkSizeMismatch,
         format!("chunk {chunk_number} size mismatch: expected {expected_size}, got {actual_size}"),
     )
 }
 
 fn chunk_body_too_large(chunk_number: i32, expected_size: i64) -> AsterError {
     payload_too_large_with_subcode(
-        "upload.chunk_too_large",
+        ApiSubcode::UploadChunkTooLarge,
         format!("chunk {chunk_number} exceeds expected size {expected_size}"),
     )
 }
 
 fn chunk_body_size_overflow() -> AsterError {
     payload_too_large_with_subcode(
-        "upload.chunk_size_overflow",
+        ApiSubcode::UploadChunkSizeOverflow,
         "chunk body size exceeds supported range",
     )
 }
@@ -237,7 +238,7 @@ async fn write_local_chunk_temp_stream(
             .await
             .map_err(|error| {
                 chunk_upload_error_with_subcode(
-                    "upload.chunk_persist_failed",
+                    ApiSubcode::UploadChunkPersistFailed,
                     format!("create temp chunk file: {error}"),
                 )
             })?;
@@ -251,7 +252,7 @@ async fn write_local_chunk_temp_stream(
             file.write_all(&chunk)
                 .await
                 .map_aster_err_ctx("write chunk", |message| {
-                    chunk_upload_error_with_subcode("upload.chunk_persist_failed", message)
+                    chunk_upload_error_with_subcode(ApiSubcode::UploadChunkPersistFailed, message)
                 })?;
         }
 
@@ -259,7 +260,7 @@ async fn write_local_chunk_temp_stream(
         file.flush()
             .await
             .map_aster_err_ctx("flush chunk", |message| {
-                chunk_upload_error_with_subcode("upload.chunk_persist_failed", message)
+                chunk_upload_error_with_subcode(ApiSubcode::UploadChunkPersistFailed, message)
             })?;
         Ok::<(), AsterError>(())
     }
@@ -288,7 +289,7 @@ async fn pipe_payload_to_writer(
                 .write_all(&chunk)
                 .await
                 .map_aster_err_ctx("stream relay chunk", |message| {
-                    chunk_upload_error_with_subcode("upload.chunk_relay_failed", message)
+                    chunk_upload_error_with_subcode(ApiSubcode::UploadChunkRelayFailed, message)
                 })?;
         }
         ensure_chunk_body_exact_size(size, expected_size, chunk_number)?;
@@ -296,7 +297,7 @@ async fn pipe_payload_to_writer(
             .shutdown()
             .await
             .map_aster_err_ctx("finish relay chunk stream", |message| {
-                chunk_upload_error_with_subcode("upload.chunk_relay_failed", message)
+                chunk_upload_error_with_subcode(ApiSubcode::UploadChunkRelayFailed, message)
             })?;
         Ok::<(), AsterError>(())
     }
@@ -331,13 +332,16 @@ async fn upload_multipart_part_payload(
         (Err(error), Ok(())) => Err(error),
         (Ok(_), Err(error)) => Err(error),
         (Err(upload_error), Err(writer_error)) => {
+            let writer_subcode = writer_error
+                .api_error_subcode()
+                .and_then(|subcode| subcode.parse::<ApiSubcode>().ok());
             if matches!(
-                writer_error.api_error_subcode(),
+                writer_subcode,
                 Some(
-                    "upload.chunk_too_large"
-                        | "upload.chunk_size_mismatch"
-                        | "upload.chunk_size_overflow"
-                        | "upload.request_body_read_failed"
+                    ApiSubcode::UploadChunkTooLarge
+                        | ApiSubcode::UploadChunkSizeMismatch
+                        | ApiSubcode::UploadChunkSizeOverflow
+                        | ApiSubcode::UploadRequestBodyReadFailed
                 )
             ) {
                 Err(writer_error)
@@ -387,7 +391,7 @@ async fn publish_local_chunk_temp(
                 remove_local_chunk_file(temp_path, upload_id, chunk_number, "chunk publish error")
                     .await;
                 return Err(chunk_upload_error_with_subcode(
-                    "upload.chunk_persist_failed",
+                    ApiSubcode::UploadChunkPersistFailed,
                     format!("publish chunk file: {error}"),
                 ));
             }
@@ -402,7 +406,7 @@ async fn publish_local_chunk_temp(
     )
     .await;
     Err(chunk_upload_error_with_subcode(
-        "upload.chunk_persist_failed",
+        ApiSubcode::UploadChunkPersistFailed,
         "publish chunk file: existing chunk stayed unavailable",
     ))
 }
@@ -431,7 +435,7 @@ async fn upload_chunk_impl(
     }
     if chunk_number < 0 || chunk_number >= session.total_chunks {
         return Err(validation_error_with_subcode(
-            "upload.chunk_number_out_of_range",
+            ApiSubcode::UploadChunkNumberOutOfRange,
             format!(
                 "chunk_number {} out of range [0, {})",
                 chunk_number, session.total_chunks
@@ -443,7 +447,7 @@ async fn upload_chunk_impl(
     let data_len = usize_to_i64(data.len(), "chunk data length")?;
     if data_len != expected_size {
         return Err(chunk_upload_error_with_subcode(
-            "upload.chunk_size_mismatch",
+            ApiSubcode::UploadChunkSizeMismatch,
             format!("chunk {chunk_number} size mismatch: expected {expected_size}, got {data_len}"),
         ));
     }
@@ -636,7 +640,7 @@ async fn upload_chunk_payload_impl(
     }
     if chunk_number < 0 || chunk_number >= session.total_chunks {
         return Err(validation_error_with_subcode(
-            "upload.chunk_number_out_of_range",
+            ApiSubcode::UploadChunkNumberOutOfRange,
             format!(
                 "chunk_number {} out of range [0, {})",
                 chunk_number, session.total_chunks

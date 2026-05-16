@@ -13,6 +13,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+use crate::api::subcode::ApiSubcode;
 use crate::errors::AsterError;
 use crate::storage::StorageErrorKind;
 
@@ -96,15 +97,18 @@ impl From<&AsterError> for ErrorCode {
             AsterError::ValidationError(_) => {
                 if matches!(
                     err.api_error_subcode(),
-                    Some(
-                        "auth.username_exists"
-                            | "auth.email_exists"
-                            | "auth.identifier_exists"
-                            | "file.name_conflict"
-                            | "folder.name_conflict"
-                            | "team.member_exists"
-                            | "webdav.username_exists"
-                            | "remote_node.unique_conflict"
+                    Some(subcode) if matches!(
+                        subcode.parse::<ApiSubcode>().ok(),
+                        Some(
+                            ApiSubcode::AuthUsernameExists
+                                | ApiSubcode::AuthEmailExists
+                                | ApiSubcode::AuthIdentifierExists
+                                | ApiSubcode::FileNameConflict
+                                | ApiSubcode::FolderNameConflict
+                                | ApiSubcode::TeamMemberExists
+                                | ApiSubcode::WebdavUsernameExists
+                                | ApiSubcode::RemoteNodeUniqueConflict
+                        )
                     )
                 ) {
                     ErrorCode::Conflict
@@ -186,3 +190,55 @@ const _: () = assert!(
     crate::errors::ASTER_ERROR_VARIANT_COUNT == 38,
     "AsterError variant count mismatch: update the assertion or the From impl"
 );
+
+#[cfg(test)]
+mod tests {
+    use super::ErrorCode;
+    use crate::api::subcode::ApiSubcode;
+    use crate::errors::{validation_error_with_dynamic_subcode, validation_error_with_subcode};
+
+    #[test]
+    fn validation_conflict_subcodes_map_to_conflict() {
+        for subcode in [
+            ApiSubcode::AuthUsernameExists,
+            ApiSubcode::AuthEmailExists,
+            ApiSubcode::AuthIdentifierExists,
+            ApiSubcode::FileNameConflict,
+            ApiSubcode::FolderNameConflict,
+            ApiSubcode::TeamMemberExists,
+            ApiSubcode::WebdavUsernameExists,
+            ApiSubcode::RemoteNodeUniqueConflict,
+        ] {
+            let error = validation_error_with_subcode(subcode, "already exists");
+
+            assert_eq!(ErrorCode::from(&error), ErrorCode::Conflict);
+        }
+    }
+
+    #[test]
+    fn validation_non_conflict_subcodes_stay_bad_request() {
+        for subcode in [
+            ApiSubcode::UploadEmptyFile,
+            ApiSubcode::ArchivePreviewUnsupportedType,
+            ApiSubcode::ManagedIngressDriverUnsupported,
+            ApiSubcode::PolicyUploadSessionsExist,
+        ] {
+            let error = validation_error_with_subcode(subcode, "invalid request");
+
+            assert_eq!(ErrorCode::from(&error), ErrorCode::BadRequest);
+        }
+    }
+
+    #[test]
+    fn validation_dynamic_or_unknown_subcodes_do_not_claim_conflict() {
+        for subcode in [
+            "auth.future_conflict",
+            "remote_node.future_conflict",
+            "file.created",
+        ] {
+            let error = validation_error_with_dynamic_subcode(subcode, "invalid request");
+
+            assert_eq!(ErrorCode::from(&error), ErrorCode::BadRequest);
+        }
+    }
+}

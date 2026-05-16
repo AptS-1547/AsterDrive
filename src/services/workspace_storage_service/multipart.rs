@@ -7,6 +7,7 @@ mod streaming_direct;
 
 use actix_multipart::Multipart;
 
+use crate::api::subcode::ApiSubcode;
 use crate::entities::file;
 use crate::errors::{Result, validation_error_with_subcode};
 use crate::runtime::PrimaryAppState;
@@ -69,7 +70,7 @@ pub(crate) async fn upload_with_hints(
         && declared_size < 0
     {
         return Err(validation_error_with_subcode(
-            "upload.declared_size_invalid",
+            ApiSubcode::UploadDeclaredSizeInvalid,
             "declared_size cannot be negative",
         ));
     }

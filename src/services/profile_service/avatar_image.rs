@@ -3,6 +3,7 @@
 use actix_multipart::Multipart;
 use futures::StreamExt;
 
+use crate::api::subcode::ApiSubcode;
 use crate::errors::{
     AsterError, MapAsterErr, Result, file_upload_error_with_subcode, validation_error_with_subcode,
 };
@@ -22,7 +23,7 @@ pub(super) async fn read_avatar_upload(
 
     while let Some(field) = payload.next().await {
         let mut field = field.map_aster_err(|message| {
-            file_upload_error_with_subcode("avatar.upload_read_failed", message)
+            file_upload_error_with_subcode(ApiSubcode::AvatarUploadReadFailed, message)
         })?;
         let Some(current_file_name) = field
             .content_disposition()
@@ -33,7 +34,7 @@ pub(super) async fn read_avatar_upload(
         else {
             while let Some(chunk) = field.next().await {
                 chunk.map_aster_err(|message| {
-                    file_upload_error_with_subcode("avatar.upload_read_failed", message)
+                    file_upload_error_with_subcode(ApiSubcode::AvatarUploadReadFailed, message)
                 })?;
             }
             continue;
@@ -43,7 +44,7 @@ pub(super) async fn read_avatar_upload(
         file_name = Some(current_file_name);
         while let Some(chunk) = field.next().await {
             let chunk = chunk.map_aster_err(|message| {
-                file_upload_error_with_subcode("avatar.upload_read_failed", message)
+                file_upload_error_with_subcode(ApiSubcode::AvatarUploadReadFailed, message)
             })?;
             if bytes.len() + chunk.len() > max_upload_size {
                 return Err(AsterError::file_too_large(format!(
@@ -58,7 +59,7 @@ pub(super) async fn read_avatar_upload(
 
     if !saw_file || bytes.is_empty() {
         return Err(validation_error_with_subcode(
-            "avatar.file_required",
+            ApiSubcode::AvatarFileRequired,
             "avatar file is required",
         ));
     }

@@ -1,3 +1,4 @@
+use crate::api::subcode::ApiSubcode;
 use crate::errors::{Result, precondition_failed_with_subcode};
 use crate::storage::{StorageDriver, extensions::NativeThumbnailRequest};
 
@@ -10,7 +11,7 @@ pub(super) async fn render_thumbnail_with_storage_native(
 ) -> Result<Vec<u8>> {
     let native = driver.as_native_thumbnail().ok_or_else(|| {
         precondition_failed_with_subcode(
-            "thumbnail.processor_unavailable",
+            ApiSubcode::ThumbnailProcessorUnavailable,
             "storage driver does not support native thumbnail processing",
         )
     })?;
@@ -24,7 +25,7 @@ pub(super) async fn render_thumbnail_with_storage_native(
         .await?
         .ok_or_else(|| {
             precondition_failed_with_subcode(
-                "thumbnail.processor_unavailable",
+                ApiSubcode::ThumbnailProcessorUnavailable,
                 "storage driver could not produce a native thumbnail",
             )
         })?;

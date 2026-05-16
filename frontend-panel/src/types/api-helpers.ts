@@ -1,10 +1,12 @@
 import type {
+	ApiSubcode as GeneratedApiSubcode,
 	ErrorCode as GeneratedErrorCode,
 	TrashFileItem,
 	TrashFolderItem,
 } from "@/types/api";
 
 export type ErrorCode = GeneratedErrorCode;
+export type ApiSubcode = GeneratedApiSubcode;
 
 export const ErrorCode = {
 	Success: 0,
@@ -55,6 +57,136 @@ export const ErrorCode = {
 	SharePasswordRequired: 6002,
 	ShareDownloadLimitReached: 6003,
 } as const satisfies Record<string, ErrorCode>;
+
+export const ApiSubcode = {
+	ArchivePreviewDisabled: "archive_preview.disabled",
+	ArchivePreviewUserDisabled: "archive_preview.user_disabled",
+	ArchivePreviewShareDisabled: "archive_preview.share_disabled",
+	ArchivePreviewSourceTooLarge: "archive_preview.source_too_large",
+	ArchivePreviewInvalidZip: "archive_preview.invalid_zip",
+	ArchivePreviewManifestTooLarge: "archive_preview.manifest_too_large",
+	ArchivePreviewUnsupportedType: "archive_preview.unsupported_type",
+	ArchivePreviewRejected: "archive_preview.rejected",
+	ArchivePreviewSourceSizeMismatch: "archive_preview.source_size_mismatch",
+	AuthUsernameExists: "auth.username_exists",
+	AuthEmailExists: "auth.email_exists",
+	AuthIdentifierExists: "auth.identifier_exists",
+	AvatarFileRequired: "avatar.file_required",
+	AvatarUploadReadFailed: "avatar.upload_read_failed",
+	AvatarProcessorUnavailable: "avatar.processor_unavailable",
+	AvatarEmptyImage: "avatar.empty_image",
+	AvatarRenderFailed: "avatar.render_failed",
+	AvatarOutputInvalid: "avatar.output_invalid",
+	FileNameConflict: "file.name_conflict",
+	FileEtagMismatch: "file.etag_mismatch",
+	FileModifiedDuringWrite: "file.modified_during_write",
+	FolderNameConflict: "folder.name_conflict",
+	ManagedIngressBindingMismatch: "managed_ingress.binding_mismatch",
+	ManagedIngressDefaultDeleteRequiresReplacement:
+		"managed_ingress.default_delete_requires_replacement",
+	ManagedIngressDefaultError: "managed_ingress.default_error",
+	ManagedIngressDefaultMissing: "managed_ingress.default_missing",
+	ManagedIngressDefaultNotApplied: "managed_ingress.default_not_applied",
+	ManagedIngressDefaultUpdateRequiresReplacement:
+		"managed_ingress.default_update_requires_replacement",
+	ManagedIngressDriverUnsupported: "managed_ingress.driver_unsupported",
+	ManagedIngressLocalPathInvalid: "managed_ingress.local_path_invalid",
+	ManagedIngressRequired: "managed_ingress.required",
+	ManagedIngressSinglePrimaryRequired:
+		"managed_ingress.single_primary_required",
+	MasterBindingDisabled: "master_binding.disabled",
+	PasskeyNameInvalid: "passkey.name_invalid",
+	PasskeyNameTooLong: "passkey.name_too_long",
+	PasskeyNotDiscoverable: "passkey.not_discoverable",
+	PolicyUploadSessionsExist: "policy.upload_sessions_exist",
+	RemoteNodeDisabled: "remote_node.disabled",
+	RemoteNodeEnrollmentRequired: "remote_node.enrollment_required",
+	RemoteNodeUniqueConflict: "remote_node.unique_conflict",
+	StorageAuth: "storage.auth",
+	StorageMisconfigured: "storage.misconfigured",
+	StorageNotFound: "storage.not_found",
+	StoragePermission: "storage.permission",
+	StoragePrecondition: "storage.precondition",
+	StorageRateLimited: "storage.rate_limited",
+	StorageTransient: "storage.transient",
+	StorageUnsupported: "storage.unsupported",
+	StorageUnknown: "storage.unknown",
+	TaskLeaseLost: "task.lease_lost",
+	TaskLeaseRenewalTimedOut: "task.lease_renewal_timed_out",
+	TeamMemberExists: "team.member_exists",
+	ThumbnailFormatGuessFailed: "thumbnail.format_guess_failed",
+	ThumbnailDecodeFailed: "thumbnail.decode_failed",
+	ThumbnailEncodeFailed: "thumbnail.encode_failed",
+	ThumbnailSourceOpenFailed: "thumbnail.source_open_failed",
+	ThumbnailSourceStreamFailed: "thumbnail.source_stream_failed",
+	ThumbnailTaskPanicked: "thumbnail.task_panicked",
+	ThumbnailSourceTooLarge: "thumbnail.source_too_large",
+	ThumbnailProcessorUnavailable: "thumbnail.processor_unavailable",
+	ThumbnailRenderFailed: "thumbnail.render_failed",
+	ThumbnailOutputInvalid: "thumbnail.output_invalid",
+	ThumbnailSourceTempCreateFailed: "thumbnail.source_temp_create_failed",
+	ThumbnailSourceTempFlushFailed: "thumbnail.source_temp_flush_failed",
+	ThumbnailSourceTempCopyFailed: "thumbnail.source_temp_copy_failed",
+	UploadTempDirCreateFailed: "upload.temp_dir_create_failed",
+	UploadTempFileCreateFailed: "upload.temp_file_create_failed",
+	UploadTempFileWriteFailed: "upload.temp_file_write_failed",
+	UploadTempFileFlushFailed: "upload.temp_file_flush_failed",
+	UploadRequestBodyReadFailed: "upload.request_body_read_failed",
+	UploadRequestBodySizeOverflow: "upload.request_body_size_overflow",
+	UploadRequestSizeMismatch: "upload.request_size_mismatch",
+	UploadHashTempOpenFailed: "upload.hash_temp_open_failed",
+	UploadHashTempReadFailed: "upload.hash_temp_read_failed",
+	UploadFieldReadFailed: "upload.field_read_failed",
+	UploadLocalStagingPathResolveFailed:
+		"upload.local_staging_path_resolve_failed",
+	UploadLocalStagingDirCreateFailed: "upload.local_staging_dir_create_failed",
+	UploadLocalStagingFileCreateFailed: "upload.local_staging_file_create_failed",
+	UploadLocalStagingWriteFailed: "upload.local_staging_write_failed",
+	UploadLocalStagingFlushFailed: "upload.local_staging_flush_failed",
+	UploadDirectRelayWriteFailed: "upload.direct_relay_write_failed",
+	UploadDirectRelayShutdownFailed: "upload.direct_relay_shutdown_failed",
+	UploadDirectRelayTaskFailed: "upload.direct_relay_task_failed",
+	UploadBodySizeOverflow: "upload.body_size_overflow",
+	UploadDeclaredSizeInvalid: "upload.declared_size_invalid",
+	UploadEmptyFile: "upload.empty_file",
+	UploadChunkPersistFailed: "upload.chunk_persist_failed",
+	UploadChunkRelayFailed: "upload.chunk_relay_failed",
+	UploadChunkTransportMismatch: "upload.chunk_transport_mismatch",
+	UploadChunkSessionInvalid: "upload.chunk_session_invalid",
+	UploadChunkNumberOutOfRange: "upload.chunk_number_out_of_range",
+	UploadChunkSizeMismatch: "upload.chunk_size_mismatch",
+	UploadChunkTooLarge: "upload.chunk_too_large",
+	UploadChunkSizeOverflow: "upload.chunk_size_overflow",
+	UploadStatusConflict: "upload.status_conflict",
+	UploadCompletedFileMissing: "upload.completed_file_missing",
+	UploadPreviousFailure: "upload.previous_failure",
+	UploadPartsRequired: "upload.parts_required",
+	UploadIncompleteChunks: "upload.incomplete_chunks",
+	UploadIncompleteParts: "upload.incomplete_parts",
+	UploadMissingPart: "upload.missing_part",
+	UploadTempObjectMissing: "upload.temp_object_missing",
+	UploadTempObjectSizeMismatch: "upload.temp_object_size_mismatch",
+	UploadFinalObjectSizeMismatch: "upload.final_object_size_mismatch",
+	UploadSessionCorrupted: "upload.session_corrupted",
+	UploadPartNumbersEmpty: "upload.part_numbers_empty",
+	UploadPartNumbersTooMany: "upload.part_numbers_too_many",
+	UploadPartNumberOutOfRange: "upload.part_number_out_of_range",
+	UploadAssemblyIoFailed: "upload.assembly_io_failed",
+	UploadAssemblySizeOverflow: "upload.assembly_size_overflow",
+	WebdavUsernameExists: "webdav.username_exists",
+	WopiMaxExpectedSizeExceeded: "wopi.max_expected_size_exceeded",
+} as const satisfies Record<string, ApiSubcode>;
+
+type AssertNever<T extends never> = T;
+export type ApiSubcodeCoverageCheck = AssertNever<
+	Exclude<ApiSubcode, (typeof ApiSubcode)[keyof typeof ApiSubcode]>
+>;
+
+const apiSubcodeValues = new Set<string>(Object.values(ApiSubcode));
+
+export function isApiSubcode(value: string): value is ApiSubcode {
+	return apiSubcodeValues.has(value);
+}
 
 export interface ApiErrorInfo {
 	internal_code: string;

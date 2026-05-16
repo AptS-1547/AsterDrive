@@ -4,6 +4,7 @@ use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 
 use crate::api::pagination::{AdminPolicySortBy, OffsetPage, SortOrder, load_offset_page};
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{managed_follower_repo, policy_group_repo, policy_repo};
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_subcode};
@@ -176,7 +177,7 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
     if upload_session_count > 0 {
         if !force {
             return Err(validation_error_with_subcode(
-                "policy.upload_sessions_exist",
+                ApiSubcode::PolicyUploadSessionsExist,
                 format!(
                     "cannot delete policy: {upload_session_count} upload session(s) still reference it"
                 ),

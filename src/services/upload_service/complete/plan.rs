@@ -1,5 +1,6 @@
 use chrono::Utc;
 
+use crate::api::subcode::ApiSubcode;
 use crate::entities::upload_session;
 use crate::errors::{
     AsterError, Result, upload_assembly_error_with_subcode, validation_error_with_subcode,
@@ -35,7 +36,7 @@ pub(super) fn determine_completion_plan(
 
     if session.status == UploadSessionStatus::Failed {
         return Err(upload_assembly_error_with_subcode(
-            "upload.previous_failure",
+            ApiSubcode::UploadPreviousFailure,
             "upload assembly failed previously; please start a new upload",
         ));
     }
@@ -44,7 +45,7 @@ pub(super) fn determine_completion_plan(
         if session.s3_multipart_id.is_some() {
             let parts = parts.ok_or_else(|| {
                 validation_error_with_subcode(
-                    "upload.parts_required",
+                    ApiSubcode::UploadPartsRequired,
                     "parts required for multipart upload completion",
                 )
             })?;
@@ -63,7 +64,7 @@ pub(super) fn determine_completion_plan(
 
     if session.received_count != session.total_chunks {
         return Err(upload_assembly_error_with_subcode(
-            "upload.incomplete_chunks",
+            ApiSubcode::UploadIncompleteChunks,
             format!(
                 "expected {} chunks, got {}",
                 session.total_chunks, session.received_count

@@ -1,6 +1,7 @@
 use std::io::Cursor;
 use std::path::PathBuf;
 
+use crate::api::subcode::ApiSubcode;
 use crate::config::media_processing as media_processing_config;
 use crate::errors::{
     AsterError, MapAsterErr, Result, file_upload_error_with_subcode,
@@ -94,7 +95,7 @@ pub async fn process_avatar_upload(
             tokio::task::spawn_blocking(move || generate_avatar_variants(data))
                 .await
                 .map_aster_err_ctx("avatar processing task panicked", |message| {
-                    file_upload_error_with_subcode("avatar.render_failed", message)
+                    file_upload_error_with_subcode(ApiSubcode::AvatarRenderFailed, message)
                 })?
         }
         MediaProcessorKind::VipsCli => {
@@ -102,11 +103,11 @@ pub async fn process_avatar_upload(
             render_avatar_with_vips_cli(state, file_name, data, &command).await
         }
         MediaProcessorKind::FfmpegCli => Err(precondition_failed_with_subcode(
-            "avatar.processor_unavailable",
+            ApiSubcode::AvatarProcessorUnavailable,
             "ffmpeg_cli avatar processing is not supported",
         )),
         MediaProcessorKind::StorageNative => Err(precondition_failed_with_subcode(
-            "avatar.processor_unavailable",
+            ApiSubcode::AvatarProcessorUnavailable,
             "storage-native avatar processing is not supported",
         )),
     }
@@ -128,7 +129,7 @@ pub(super) fn generate_avatar_variants(data: Vec<u8>) -> Result<ProcessedAvatar>
     let (width, height) = img.dimensions();
     if width == 0 || height == 0 {
         return Err(validation_error_with_subcode(
-            "avatar.empty_image",
+            ApiSubcode::AvatarEmptyImage,
             "empty image",
         ));
     }
@@ -154,7 +155,7 @@ fn encode_avatar_webp(img: &DynamicImage) -> Result<Vec<u8>> {
     let mut buf = Cursor::new(Vec::new());
     img.write_to(&mut buf, ImageFormat::WebP)
         .map_aster_err_ctx("encode avatar webp", |message| {
-            file_upload_error_with_subcode("avatar.render_failed", message)
+            file_upload_error_with_subcode(ApiSubcode::AvatarRenderFailed, message)
         })?;
     Ok(buf.into_inner())
 }
@@ -163,12 +164,12 @@ fn validate_avatar_variant_output(bytes: &[u8], expected_size: u32, label: &str)
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_aster_err_ctx("guess avatar vips output format", |message| {
-            file_upload_error_with_subcode("avatar.output_invalid", message)
+            file_upload_error_with_subcode(ApiSubcode::AvatarOutputInvalid, message)
         })?;
 
     if reader.format() != Some(ImageFormat::WebP) {
         return Err(file_upload_error_with_subcode(
-            "avatar.output_invalid",
+            ApiSubcode::AvatarOutputInvalid,
             format!("avatar vips {label} output is not WebP"),
         ));
     }
@@ -180,12 +181,12 @@ fn validate_avatar_variant_output(bytes: &[u8], expected_size: u32, label: &str)
     let image = reader
         .decode()
         .map_aster_err_ctx("decode avatar vips output", |message| {
-            file_upload_error_with_subcode("avatar.output_invalid", message)
+            file_upload_error_with_subcode(ApiSubcode::AvatarOutputInvalid, message)
         })?;
     let (width, height) = image.dimensions();
     if width != expected_size || height != expected_size {
         return Err(file_upload_error_with_subcode(
-            "avatar.output_invalid",
+            ApiSubcode::AvatarOutputInvalid,
             format!("avatar vips {label} output has unexpected dimensions {width}x{height}"),
         ));
     }
@@ -216,7 +217,7 @@ async fn render_avatar_with_vips_cli(
     tokio::fs::write(&input_path, original)
         .await
         .map_aster_err_ctx("write avatar vips source temp file", |message| {
-            file_upload_error_with_subcode("avatar.render_failed", message)
+            file_upload_error_with_subcode(ApiSubcode::AvatarRenderFailed, message)
         })?;
 
     let command = command.to_string();
@@ -248,23 +249,23 @@ async fn render_avatar_with_vips_cli(
     small_task
         .await
         .map_aster_err_ctx("avatar vips CLI 512 task panicked", |message| {
-            file_upload_error_with_subcode("avatar.render_failed", message)
+            file_upload_error_with_subcode(ApiSubcode::AvatarRenderFailed, message)
         })??;
     large_task
         .await
         .map_aster_err_ctx("avatar vips CLI 1024 task panicked", |message| {
-            file_upload_error_with_subcode("avatar.render_failed", message)
+            file_upload_error_with_subcode(ApiSubcode::AvatarRenderFailed, message)
         })??;
 
     let small_bytes = tokio::fs::read(&small_output_path)
         .await
         .map_aster_err_ctx("read avatar vips 512 output", |message| {
-            file_upload_error_with_subcode("avatar.render_failed", message)
+            file_upload_error_with_subcode(ApiSubcode::AvatarRenderFailed, message)
         })?;
     let large_bytes = tokio::fs::read(&large_output_path)
         .await
         .map_aster_err_ctx("read avatar vips 1024 output", |message| {
-            file_upload_error_with_subcode("avatar.render_failed", message)
+            file_upload_error_with_subcode(ApiSubcode::AvatarRenderFailed, message)
         })?;
     validate_avatar_variant_output(&small_bytes, AVATAR_SIZE_SM, "512")?;
     validate_avatar_variant_output(&large_bytes, AVATAR_SIZE_LG, "1024")?;
@@ -303,11 +304,11 @@ fn run_avatar_vips_variant(
             "--crop",
             "centre",
         ],
-        |message| file_upload_error_with_subcode("avatar.render_failed", message),
+        |message| file_upload_error_with_subcode(ApiSubcode::AvatarRenderFailed, message),
     )?;
     if !output.status.success() {
         return Err(file_upload_error_with_subcode(
-            "avatar.render_failed",
+            ApiSubcode::AvatarRenderFailed,
             format!(
                 "vips CLI avatar command failed for {size}px output: {}",
                 cli_output_detail(&output)

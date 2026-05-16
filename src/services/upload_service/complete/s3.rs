@@ -1,5 +1,6 @@
 use chrono::Utc;
 
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::upload_session_part_repo;
 use crate::entities::{file, upload_session};
 use crate::errors::{Result, upload_assembly_error_with_subcode};
@@ -24,7 +25,10 @@ pub(super) async fn complete_presigned_upload(
         .s3_temp_key
         .as_deref()
         .ok_or_else(|| {
-            upload_assembly_error_with_subcode("upload.session_corrupted", "missing s3_temp_key")
+            upload_assembly_error_with_subcode(
+                ApiSubcode::UploadSessionCorrupted,
+                "missing s3_temp_key",
+            )
         })?
         .to_string();
 
@@ -127,7 +131,7 @@ pub(super) async fn complete_s3_relay_multipart(
         crate::utils::numbers::i32_to_usize(session.total_chunks, "upload session total_chunks")?;
     if parts.len() != expected_parts {
         return Err(upload_assembly_error_with_subcode(
-            "upload.incomplete_parts",
+            ApiSubcode::UploadIncompleteParts,
             format!(
                 "expected {} parts, got {}",
                 session.total_chunks,
@@ -139,7 +143,7 @@ pub(super) async fn complete_s3_relay_multipart(
     for (expected, part) in (1..=session.total_chunks).zip(parts.iter()) {
         if part.part_number != expected {
             return Err(upload_assembly_error_with_subcode(
-                "upload.missing_part",
+                ApiSubcode::UploadMissingPart,
                 format!(
                     "missing uploaded part {}; got {:?}",
                     expected, part.part_number
@@ -174,7 +178,7 @@ async fn ensure_uploaded_s3_object_size(
         Err(error) => match driver.exists(temp_key).await {
             Ok(false) => {
                 return Err(upload_assembly_error_with_subcode(
-                    "upload.temp_object_missing",
+                    ApiSubcode::UploadTempObjectMissing,
                     missing_message,
                 ));
             }
@@ -195,7 +199,7 @@ async fn ensure_uploaded_s3_object_size(
             tracing::warn!("failed to delete uploaded temp object: {error}");
         }
         return Err(upload_assembly_error_with_subcode(
-            "upload.temp_object_size_mismatch",
+            ApiSubcode::UploadTempObjectSizeMismatch,
             format!(
                 "size mismatch: declared {} but uploaded {}",
                 declared_size, actual_size
@@ -252,7 +256,7 @@ async fn copy_presigned_object_to_final_key(
     .await?;
     if final_size != verified_temp_size {
         return Err(upload_assembly_error_with_subcode(
-            "upload.final_object_size_mismatch",
+            ApiSubcode::UploadFinalObjectSizeMismatch,
             format!(
                 "final object size mismatch: temp object {} bytes, final object {} bytes",
                 verified_temp_size, final_size
@@ -275,7 +279,10 @@ async fn complete_s3_multipart_upload_session(
         .s3_temp_key
         .as_deref()
         .ok_or_else(|| {
-            upload_assembly_error_with_subcode("upload.session_corrupted", "missing s3_temp_key")
+            upload_assembly_error_with_subcode(
+                ApiSubcode::UploadSessionCorrupted,
+                "missing s3_temp_key",
+            )
         })?
         .to_string();
     let multipart_id = session
@@ -283,7 +290,7 @@ async fn complete_s3_multipart_upload_session(
         .as_deref()
         .ok_or_else(|| {
             upload_assembly_error_with_subcode(
-                "upload.session_corrupted",
+                ApiSubcode::UploadSessionCorrupted,
                 "missing s3_multipart_id",
             )
         })?

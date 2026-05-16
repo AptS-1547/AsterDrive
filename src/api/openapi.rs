@@ -329,6 +329,7 @@ use utoipa::{Modify, OpenApi};
         schemas(
             // api::error_code / api::pagination / api::response：统一错误码、分页结构和通用响应模型。
             crate::api::error_code::ErrorCode,
+            crate::api::subcode::ApiSubcode,
             crate::api::pagination::SortBy,
             crate::api::pagination::SortOrder,
             crate::api::pagination::LimitOffsetQuery,

@@ -13,6 +13,7 @@ mod primary;
 pub(crate) mod request_auth;
 pub mod response;
 pub mod routes;
+pub mod subcode;
 
 pub use follower::configure_follower;
 pub use primary::configure_primary;

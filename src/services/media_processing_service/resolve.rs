@@ -1,7 +1,8 @@
+use crate::api::subcode::ApiSubcode;
 use crate::config::media_processing as media_processing_config;
 use crate::entities::{file_blob, storage_policy};
 use crate::errors::{
-    AsterError, Result, precondition_failed_with_subcode, validation_error_with_subcode,
+    AsterError, Result, precondition_failed_with_subcode, validation_error_with_dynamic_subcode,
 };
 use crate::runtime::PrimaryAppState;
 use crate::types::{MediaProcessorKind, parse_storage_policy_options};
@@ -28,8 +29,12 @@ pub(crate) fn map_thumbnail_request_error(error: AsterError) -> AsterError {
         let subcode = error
             .api_error_subcode()
             .map(str::to_string)
-            .unwrap_or_else(|| "thumbnail.processor_unavailable".to_string());
-        return validation_error_with_subcode(&subcode, display_message);
+            .unwrap_or_else(|| {
+                ApiSubcode::ThumbnailProcessorUnavailable
+                    .as_str()
+                    .to_string()
+            });
+        return validation_error_with_dynamic_subcode(&subcode, display_message);
     }
 
     error
@@ -322,7 +327,7 @@ fn thumbnail_precondition_is_user_fixable(message: &str) -> bool {
 }
 
 fn thumbnail_processor_unavailable_error(message: impl Into<String>) -> AsterError {
-    precondition_failed_with_subcode("thumbnail.processor_unavailable", message)
+    precondition_failed_with_subcode(ApiSubcode::ThumbnailProcessorUnavailable, message)
 }
 
 #[cfg(test)]

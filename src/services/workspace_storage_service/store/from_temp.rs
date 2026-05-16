@@ -82,7 +82,7 @@ pub(super) async fn revalidate_overwrite_target<C: ConnectionTrait>(
 
     if current_file.blob_id != old_file.blob_id {
         return Err(precondition_failed_with_subcode(
-            "file.modified_during_write",
+            ApiSubcode::FileModifiedDuringWrite,
             "file changed while upload body was being received",
         ));
     }

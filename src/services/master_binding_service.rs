@@ -1,5 +1,6 @@
 //! 服务模块：`master_binding_service`。
 
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::master_binding_repo;
 use crate::entities::master_binding;
 use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
@@ -216,7 +217,7 @@ async fn authorize_binding_request<S: FollowerRuntimeState>(
         .ok_or_else(|| AsterError::auth_invalid_credentials("unknown internal access_key"))?;
     if !allow_disabled && !binding.is_enabled {
         return Err(precondition_failed_with_subcode(
-            "master_binding.disabled",
+            ApiSubcode::MasterBindingDisabled,
             "master binding is disabled",
         ));
     }
@@ -285,7 +286,7 @@ async fn authorize_presigned_binding_request<S: FollowerRuntimeState>(
         .ok_or_else(|| AsterError::auth_invalid_credentials("unknown internal access_key"))?;
     if !binding.is_enabled {
         return Err(precondition_failed_with_subcode(
-            "master_binding.disabled",
+            ApiSubcode::MasterBindingDisabled,
             "master binding is disabled",
         ));
     }

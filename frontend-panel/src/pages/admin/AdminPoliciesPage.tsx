@@ -52,6 +52,7 @@ import type {
 	RemoteNodeInfo,
 	StoragePolicy,
 } from "@/types/api";
+import { ApiSubcode } from "@/types/api-helpers";
 
 const POLICY_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const DEFAULT_POLICY_PAGE_SIZE = 20 as const;
@@ -69,7 +70,8 @@ const DEFAULT_POLICY_SORT_BY =
 	"created_at" as const satisfies AdminPolicySortBy;
 const DEFAULT_POLICY_SORT_ORDER = "desc" as const satisfies SortOrder;
 const CREATE_LAST_STEP = 2;
-const POLICY_UPLOAD_SESSION_BLOCKER_SUBCODE = "policy.upload_sessions_exist";
+const POLICY_UPLOAD_SESSION_BLOCKER_SUBCODE =
+	ApiSubcode.PolicyUploadSessionsExist;
 
 export default function AdminPoliciesPage() {
 	const { t } = useTranslation("admin");

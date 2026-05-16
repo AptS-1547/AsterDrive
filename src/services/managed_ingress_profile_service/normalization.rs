@@ -1,3 +1,4 @@
+use crate::api::subcode::ApiSubcode;
 use crate::entities::managed_ingress_profile;
 use crate::errors::{AsterError, Result, validation_error_with_subcode};
 use crate::storage::drivers::s3_config::normalize_s3_endpoint_and_bucket;
@@ -155,7 +156,7 @@ fn normalize_profile_fields(fields: IngressProfileFields) -> Result<NormalizedIn
 
     match driver_type {
         DriverType::Remote => Err(validation_error_with_subcode(
-            "managed_ingress.driver_unsupported",
+            ApiSubcode::ManagedIngressDriverUnsupported,
             "managed ingress profiles only support local and s3 drivers",
         )),
         DriverType::Local => Ok(NormalizedIngressProfileInput {

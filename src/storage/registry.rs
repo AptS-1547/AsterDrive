@@ -7,6 +7,7 @@ use super::drivers::remote::RemoteDriver;
 use super::drivers::s3::S3Driver;
 use super::error::storage_driver_error;
 use super::multipart::MultipartStorageDriver;
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{managed_follower_repo, master_binding_repo};
 use crate::entities::storage_policy;
 use crate::errors::{Result, precondition_failed_with_subcode};
@@ -187,7 +188,7 @@ impl DriverRegistry {
                 })?;
                 if !remote_node.is_enabled {
                     return Err(precondition_failed_with_subcode(
-                        "remote_node.disabled",
+                        ApiSubcode::RemoteNodeDisabled,
                         format!("remote node #{remote_node_id} is disabled"),
                     ));
                 }

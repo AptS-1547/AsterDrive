@@ -7,6 +7,7 @@ use image::ImageFormat;
 use image::imageops::FilterType;
 use image::{ImageReader, Limits};
 
+use crate::api::subcode::ApiSubcode;
 use crate::entities::file_blob;
 use crate::errors::{
     AsterError, MapAsterErr, Result, thumbnail_generation_error_with_subcode,
@@ -24,27 +25,27 @@ pub(crate) const IMAGES_THUMBNAIL_PROCESSOR_NAMESPACE: &str = "images";
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
 
 fn thumbnail_format_guess_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode("thumbnail.format_guess_failed", message)
+    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailFormatGuessFailed, message)
 }
 
 fn thumbnail_decode_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode("thumbnail.decode_failed", message)
+    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailDecodeFailed, message)
 }
 
 fn thumbnail_encode_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode("thumbnail.encode_failed", message)
+    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailEncodeFailed, message)
 }
 
 fn thumbnail_source_open_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode("thumbnail.source_open_failed", message)
+    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailSourceOpenFailed, message)
 }
 
 fn thumbnail_source_stream_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode("thumbnail.source_stream_failed", message)
+    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailSourceStreamFailed, message)
 }
 
 fn thumbnail_task_panicked(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode("thumbnail.task_panicked", message)
+    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailTaskPanicked, message)
 }
 
 /// 计算缩略图在存储驱动中的路径
@@ -209,7 +210,7 @@ pub(crate) fn ensure_source_size_supported(
 ) -> Result<()> {
     if blob.size > max_source_bytes {
         return Err(validation_error_with_subcode(
-            "thumbnail.source_too_large",
+            ApiSubcode::ThumbnailSourceTooLarge,
             format!(
                 "thumbnail source exceeds {} MiB limit",
                 max_source_bytes / 1024 / 1024

@@ -7,6 +7,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{folder_repo, webdav_account_repo};
 use crate::entities::webdav_account;
 use crate::errors::{AsterError, Result, validation_error_with_subcode};
@@ -14,7 +15,10 @@ use crate::runtime::PrimaryAppState;
 use crate::utils::hash;
 
 fn webdav_username_exists_error() -> AsterError {
-    validation_error_with_subcode("webdav.username_exists", "WebDAV username already exists")
+    validation_error_with_subcode(
+        ApiSubcode::WebdavUsernameExists,
+        "WebDAV username already exists",
+    )
 }
 
 fn map_webdav_account_create_db_err(err: DbErr) -> AsterError {

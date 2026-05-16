@@ -5,6 +5,7 @@ use futures::StreamExt;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncWriteExt, BufWriter};
 
+use crate::api::subcode::ApiSubcode;
 use crate::errors::{
     AsterError, MapAsterErr, Result, file_upload_error_with_subcode,
     precondition_failed_with_subcode, validation_error_with_subcode,
@@ -29,19 +30,19 @@ pub(crate) struct StreamedTempUpload {
 }
 
 fn upload_temp_dir_create_failed(message: String) -> AsterError {
-    file_upload_error_with_subcode("upload.temp_dir_create_failed", message)
+    file_upload_error_with_subcode(ApiSubcode::UploadTempDirCreateFailed, message)
 }
 
 fn upload_temp_file_create_failed(message: String) -> AsterError {
-    file_upload_error_with_subcode("upload.temp_file_create_failed", message)
+    file_upload_error_with_subcode(ApiSubcode::UploadTempFileCreateFailed, message)
 }
 
 fn upload_temp_file_write_failed(message: String) -> AsterError {
-    file_upload_error_with_subcode("upload.temp_file_write_failed", message)
+    file_upload_error_with_subcode(ApiSubcode::UploadTempFileWriteFailed, message)
 }
 
 fn upload_temp_file_flush_failed(message: String) -> AsterError {
-    file_upload_error_with_subcode("upload.temp_file_flush_failed", message)
+    file_upload_error_with_subcode(ApiSubcode::UploadTempFileFlushFailed, message)
 }
 
 pub(crate) async fn stream_request_body_to_temp_upload(
@@ -94,7 +95,7 @@ pub(crate) async fn stream_request_body_to_temp_upload(
         while let Some(chunk) = payload.next().await {
             let chunk = chunk.map_aster_err_with(|| {
                 validation_error_with_subcode(
-                    "upload.request_body_read_failed",
+                    ApiSubcode::UploadRequestBodyReadFailed,
                     "failed to read request body",
                 )
             })?;
@@ -109,7 +110,7 @@ pub(crate) async fn stream_request_body_to_temp_upload(
                 .checked_add(usize_to_i64(chunk.len(), "request body chunk length")?)
                 .ok_or_else(|| {
                     file_upload_error_with_subcode(
-                        "upload.request_body_size_overflow",
+                        ApiSubcode::UploadRequestBodySizeOverflow,
                         "accumulated request body size overflows i64",
                     )
                 })?;
@@ -134,7 +135,7 @@ pub(crate) async fn stream_request_body_to_temp_upload(
     {
         crate::utils::cleanup_temp_file(&temp_path).await;
         return Err(validation_error_with_subcode(
-            "upload.request_size_mismatch",
+            ApiSubcode::UploadRequestSizeMismatch,
             "request body length does not match declared size",
         ));
     }
@@ -274,7 +275,7 @@ pub(crate) async fn update_content_in_scope(
         let expected = etag.trim_matches('"');
         if !expected.eq_ignore_ascii_case(&current_blob.hash) {
             return Err(precondition_failed_with_subcode(
-                "file.etag_mismatch",
+                ApiSubcode::FileEtagMismatch,
                 "file has been modified (ETag mismatch)",
             ));
         }
@@ -397,7 +398,7 @@ pub(crate) async fn update_content_stream_in_scope(
         let expected = etag.trim_matches('"');
         if !expected.eq_ignore_ascii_case(&current_blob.hash) {
             return Err(precondition_failed_with_subcode(
-                "file.etag_mismatch",
+                ApiSubcode::FileEtagMismatch,
                 "file has been modified (ETag mismatch)",
             ));
         }

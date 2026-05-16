@@ -134,9 +134,29 @@ pub const AUDIT_LOG_RETENTION_DAYS_KEY: &str = "audit_log_retention_days";
 
 // ── WebDAV keys ──────────────────────────────────────────────────────────────
 pub const WEBDAV_ENABLED_KEY: &str = "webdav_enabled";
+pub const WEBDAV_BLOCK_SYSTEM_FILES_ENABLED_KEY: &str = "webdav_block_system_files_enabled";
+pub const WEBDAV_BLOCK_SYSTEM_FILE_PATTERNS_KEY: &str = "webdav_block_system_file_patterns";
+pub const DEFAULT_WEBDAV_SYSTEM_FILE_PATTERNS: &[&str] = &[
+    ".DS_Store",
+    "._*",
+    ".Spotlight-V100",
+    ".Trashes",
+    ".fseventsd",
+    "Thumbs.db",
+    "desktop.ini",
+    "$RECYCLE.BIN",
+    "System Volume Information",
+];
 
 fn empty_string_array_default() -> String {
     "[]".to_string()
+}
+
+fn default_webdav_system_file_patterns() -> String {
+    match serde_json::to_string(DEFAULT_WEBDAV_SYSTEM_FILE_PATTERNS) {
+        Ok(value) => value,
+        Err(_) => "[]".to_string(),
+    }
 }
 
 /// 单条配置定义
@@ -263,6 +283,28 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "webdav",
         description: "Enable or disable WebDAV access",
+    },
+    ConfigDef {
+        key: WEBDAV_BLOCK_SYSTEM_FILES_ENABLED_KEY,
+        label_i18n_key: "settings_item_webdav_block_system_files_enabled_label",
+        description_i18n_key: "settings_item_webdav_block_system_files_enabled_desc",
+        value_type: SystemConfigValueType::Boolean,
+        default_fn: || "true".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "webdav",
+        description: "Block WebDAV clients from creating common operating-system metadata files and folders",
+    },
+    ConfigDef {
+        key: WEBDAV_BLOCK_SYSTEM_FILE_PATTERNS_KEY,
+        label_i18n_key: "settings_item_webdav_block_system_file_patterns_label",
+        description_i18n_key: "settings_item_webdav_block_system_file_patterns_desc",
+        value_type: SystemConfigValueType::StringArray,
+        default_fn: default_webdav_system_file_patterns,
+        requires_restart: false,
+        is_sensitive: false,
+        category: "webdav",
+        description: "WebDAV basename patterns blocked when system-file protection is enabled",
     },
     // ── Network ─────────────────────────────────────────────
     ConfigDef {

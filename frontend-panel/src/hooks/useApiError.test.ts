@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => {
 	class MockApiError extends Error {
@@ -69,7 +69,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.StorageDriverError,
 				"Storage Driver Error",
-				"storage.transient",
+				ApiSubcode.StorageTransient,
 			),
 		);
 
@@ -88,7 +88,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.PreconditionFailed,
 				"managed ingress required",
-				"managed_ingress.required",
+				ApiSubcode.ManagedIngressRequired,
 			),
 		);
 
@@ -107,7 +107,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.FileUploadFailed,
 				"Upload Failed",
-				"upload.temp_file_write_failed",
+				ApiSubcode.UploadTempFileWriteFailed,
 			),
 		);
 
@@ -126,7 +126,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.Conflict,
 				"email already exists",
-				"auth.email_exists",
+				ApiSubcode.AuthEmailExists,
 			),
 		);
 
@@ -135,6 +135,39 @@ describe("handleApiError", () => {
 		);
 		expect(mockState.toastError).toHaveBeenCalledWith(
 			"translated:errors:auth_email_exists",
+		);
+	});
+
+	it("ignores unknown dynamic subcodes and falls back to the top-level code", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.Forbidden,
+				"remote denied this operation",
+				"remote.dynamic",
+			),
+		);
+
+		expect(mockState.translate).toHaveBeenCalledWith("errors:forbidden");
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"translated:errors:forbidden",
+		);
+	});
+
+	it("falls back to the raw message for known subcodes without a local message key", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.DatabaseError,
+				"remote enrollment is required",
+				ApiSubcode.RemoteNodeEnrollmentRequired,
+			),
+		);
+
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"remote enrollment is required",
 		);
 	});
 

@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ArchivePreview } from "@/components/files/preview/ArchivePreview";
 import { ApiError, ApiPendingError } from "@/services/http";
 import type { ArchivePreviewManifest } from "@/types/api";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
 
 vi.mock("@/lib/format", () => ({
 	formatBytes: (value: number) => `bytes:${value}`,
@@ -299,7 +299,7 @@ describe("ArchivePreview", () => {
 		const loadManifest = vi.fn(async () => {
 			throw new ApiError(ErrorCode.Forbidden, "archive preview is disabled", {
 				internalCode: "E013",
-				subcode: "archive_preview.disabled",
+				subcode: ApiSubcode.ArchivePreviewDisabled,
 			});
 		});
 		render(<ArchivePreview loadManifest={loadManifest} />);
@@ -313,8 +313,8 @@ describe("ArchivePreview", () => {
 	});
 
 	it.each([
-		"archive_preview.user_disabled",
-		"archive_preview.share_disabled",
+		ApiSubcode.ArchivePreviewUserDisabled,
+		ApiSubcode.ArchivePreviewShareDisabled,
 	])("shows disabled state for %s", async (subcode) => {
 		const loadManifest = vi.fn(async () => {
 			throw new ApiError(
@@ -338,32 +338,32 @@ describe("ArchivePreview", () => {
 
 	it.each([
 		[
-			"archive_preview.unsupported_type",
+			ApiSubcode.ArchivePreviewUnsupportedType,
 			"archive preview currently supports .zip files only",
 			"archive_preview_unsupported_type",
 		],
 		[
-			"archive_preview.source_too_large",
+			ApiSubcode.ArchivePreviewSourceTooLarge,
 			"source archive size 135064658 exceeds archive preview limit 67108864",
 			"archive_preview_source_too_large",
 		],
 		[
-			"archive_preview.invalid_zip",
+			ApiSubcode.ArchivePreviewInvalidZip,
 			"invalid zip archive",
 			"archive_preview_invalid_zip",
 		],
 		[
-			"archive_preview.rejected",
+			ApiSubcode.ArchivePreviewRejected,
 			"archive contains 2 entries, exceeds server limit 1",
 			"archive_preview_rejected",
 		],
 		[
-			"archive_preview.manifest_too_large",
+			ApiSubcode.ArchivePreviewManifestTooLarge,
 			"archive preview manifest exceeds server limit",
 			"archive_preview_rejected",
 		],
 		[
-			"archive_preview.source_size_mismatch",
+			ApiSubcode.ArchivePreviewSourceSizeMismatch,
 			"source archive size mismatch",
 			"archive_preview_rejected",
 		],

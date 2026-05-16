@@ -5,6 +5,7 @@ mod from_temp;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result, precondition_failed_with_subcode};
@@ -398,7 +399,7 @@ async fn revalidate_preuploaded_overwrite_target<C: sea_orm::ConnectionTrait>(
 
     if current_file.blob_id != old_file.blob_id {
         return Err(precondition_failed_with_subcode(
-            "file.modified_during_write",
+            ApiSubcode::FileModifiedDuringWrite,
             "file changed while upload body was being received",
         ));
     }

@@ -28,6 +28,7 @@ type OperationData<Operation extends keyof ApiOperations> =
 
 // Core responses
 export type ErrorCode = components["schemas"]["ErrorCode"];
+export type ApiSubcode = components["schemas"]["ApiSubcode"];
 export type HealthResponse = components["schemas"]["HealthResponse"];
 export type MemoryStatsResponse = components["schemas"]["MemoryStatsResponse"];
 

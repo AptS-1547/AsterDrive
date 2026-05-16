@@ -27,7 +27,7 @@ import { formatBytes, formatDateTime, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ApiError, ApiPendingError, isRequestCanceled } from "@/services/http";
 import type { ArchivePreviewManifest } from "@/types/api";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import { PreviewUnavailable } from "./PreviewUnavailable";
@@ -62,6 +62,18 @@ type ArchiveBreadcrumbItem = {
 	name: string;
 };
 
+const archivePreviewDisabledSubcodes = new Set<string>([
+	ApiSubcode.ArchivePreviewDisabled,
+	ApiSubcode.ArchivePreviewUserDisabled,
+	ApiSubcode.ArchivePreviewShareDisabled,
+]);
+
+const archivePreviewRejectedSubcodes = new Set<string>([
+	ApiSubcode.ArchivePreviewRejected,
+	ApiSubcode.ArchivePreviewManifestTooLarge,
+	ApiSubcode.ArchivePreviewSourceSizeMismatch,
+]);
+
 function classifyArchivePreviewError(error: unknown): ArchivePreviewErrorKind {
 	if (!(error instanceof ApiError)) {
 		return "generic";
@@ -70,35 +82,31 @@ function classifyArchivePreviewError(error: unknown): ArchivePreviewErrorKind {
 	const subcode = error.subcode ?? "";
 	if (
 		error.code === ErrorCode.Forbidden &&
-		(subcode === "archive_preview.disabled" ||
-			subcode === "archive_preview.user_disabled" ||
-			subcode === "archive_preview.share_disabled")
+		archivePreviewDisabledSubcodes.has(subcode)
 	) {
 		return "disabled";
 	}
 	if (
 		error.code === ErrorCode.BadRequest &&
-		subcode === "archive_preview.unsupported_type"
+		subcode === ApiSubcode.ArchivePreviewUnsupportedType
 	) {
 		return "unsupported";
 	}
 	if (
 		error.code === ErrorCode.BadRequest &&
-		subcode === "archive_preview.source_too_large"
+		subcode === ApiSubcode.ArchivePreviewSourceTooLarge
 	) {
 		return "sourceTooLarge";
 	}
 	if (
 		error.code === ErrorCode.BadRequest &&
-		subcode === "archive_preview.invalid_zip"
+		subcode === ApiSubcode.ArchivePreviewInvalidZip
 	) {
 		return "invalid";
 	}
 	if (
 		error.code === ErrorCode.BadRequest &&
-		(subcode === "archive_preview.rejected" ||
-			subcode === "archive_preview.manifest_too_large" ||
-			subcode === "archive_preview.source_size_mismatch")
+		archivePreviewRejectedSubcodes.has(subcode)
 	) {
 		return "rejected";
 	}

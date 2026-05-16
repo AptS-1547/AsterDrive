@@ -3,6 +3,7 @@
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, DbErr, IntoActiveModel, Set, SqlErr};
 
+use crate::api::subcode::ApiSubcode;
 use crate::config::auth_runtime::RuntimeContactVerificationPolicy;
 use crate::db::repository::{contact_verification_token_repo, user_repo};
 use crate::entities::{contact_verification_token, user};
@@ -21,15 +22,18 @@ fn is_unique_conflict_db_err(err: &DbErr) -> bool {
 }
 
 fn username_exists_error() -> AsterError {
-    validation_error_with_subcode("auth.username_exists", "username already exists")
+    validation_error_with_subcode(ApiSubcode::AuthUsernameExists, "username already exists")
 }
 
 fn email_exists_error() -> AsterError {
-    validation_error_with_subcode("auth.email_exists", "email already exists")
+    validation_error_with_subcode(ApiSubcode::AuthEmailExists, "email already exists")
 }
 
 fn identifier_exists_error() -> AsterError {
-    validation_error_with_subcode("auth.identifier_exists", "username or email already exists")
+    validation_error_with_subcode(
+        ApiSubcode::AuthIdentifierExists,
+        "username or email already exists",
+    )
 }
 
 async fn map_user_create_db_err<C: ConnectionTrait>(

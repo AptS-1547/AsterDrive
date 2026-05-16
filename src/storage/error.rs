@@ -54,7 +54,7 @@ pub fn storage_driver_error(kind: StorageErrorKind, message: impl Into<String>) 
     AsterError::storage_driver_error(encode_storage_driver_error_message(kind, message.into()))
 }
 
-pub fn storage_driver_error_with_subcode(
+pub fn storage_driver_error_with_dynamic_subcode(
     kind: StorageErrorKind,
     subcode: &str,
     message: impl Into<String>,
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn tagged_storage_error_preserves_nested_api_subcode() {
-        let error = storage_driver_error_with_subcode(
+        let error = storage_driver_error_with_dynamic_subcode(
             StorageErrorKind::Transient,
             "storage.remote_timeout",
             "remote timeout",

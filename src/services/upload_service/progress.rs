@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use crate::api::constants::HOUR_SECS;
+use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{upload_session_part_repo, upload_session_repo};
 use crate::entities::upload_session;
 use crate::errors::{Result, validation_error_with_subcode};
@@ -199,7 +200,7 @@ async fn presign_parts_impl(
     );
     if session.status != UploadSessionStatus::Presigned {
         return Err(validation_error_with_subcode(
-            "upload.status_conflict",
+            ApiSubcode::UploadStatusConflict,
             format!(
                 "session status is '{:?}', expected 'presigned'",
                 session.status
@@ -210,12 +211,12 @@ async fn presign_parts_impl(
 
     let multipart_id = session.s3_multipart_id.as_deref().ok_or_else(|| {
         validation_error_with_subcode(
-            "upload.chunk_session_invalid",
+            ApiSubcode::UploadChunkSessionInvalid,
             "not a multipart upload session",
         )
     })?;
     let temp_key = session.s3_temp_key.as_deref().ok_or_else(|| {
-        validation_error_with_subcode("upload.session_corrupted", "missing s3_temp_key")
+        validation_error_with_subcode(ApiSubcode::UploadSessionCorrupted, "missing s3_temp_key")
     })?;
 
     let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
@@ -243,13 +244,13 @@ fn validate_presign_part_numbers(
 ) -> Result<()> {
     if part_numbers.is_empty() {
         return Err(validation_error_with_subcode(
-            "upload.part_numbers_empty",
+            ApiSubcode::UploadPartNumbersEmpty,
             "part_numbers cannot be empty",
         ));
     }
     if part_numbers.len() > PRESIGNED_PARTS_MAX_BATCH {
         return Err(validation_error_with_subcode(
-            "upload.part_numbers_too_many",
+            ApiSubcode::UploadPartNumbersTooMany,
             format!("part_numbers cannot contain more than {PRESIGNED_PARTS_MAX_BATCH} entries"),
         ));
     }
@@ -257,7 +258,7 @@ fn validate_presign_part_numbers(
     for part_number in part_numbers {
         if *part_number < 1 || *part_number > session.total_chunks {
             return Err(validation_error_with_subcode(
-                "upload.part_number_out_of_range",
+                ApiSubcode::UploadPartNumberOutOfRange,
                 format!(
                     "part number {} is outside the valid range 1..={}",
                     part_number, session.total_chunks

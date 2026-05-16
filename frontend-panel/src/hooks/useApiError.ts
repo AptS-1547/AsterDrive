@@ -2,8 +2,11 @@ import { toast } from "sonner";
 import i18n from "@/i18n";
 import { ApiError } from "@/services/http";
 import {
+	ApiSubcode,
+	type ApiSubcode as ApiSubcodeType,
 	ErrorCode,
 	type ErrorCode as ErrorCodeType,
+	isApiSubcode,
 } from "@/types/api-helpers";
 
 const errorMessageKeys: Partial<Record<ErrorCodeType, string>> = {
@@ -44,119 +47,141 @@ const errorMessageKeys: Partial<Record<ErrorCodeType, string>> = {
 	[ErrorCode.ShareDownloadLimitReached]: "errors:share_download_limit_reached",
 };
 
-const errorSubcodeKeys: Partial<Record<string, string>> = {
-	"auth.username_exists": "errors:auth_username_exists",
-	"auth.email_exists": "errors:auth_email_exists",
-	"auth.identifier_exists": "errors:auth_identifier_exists",
-	"file.etag_mismatch": "errors:file_etag_mismatch",
-	"file.name_conflict": "errors:file_name_conflict",
-	"folder.name_conflict": "errors:folder_name_conflict",
-	"upload.field_read_failed": "errors:upload_field_read_failed",
-	"upload.request_body_read_failed": "errors:upload_request_body_read_failed",
-	"upload.request_body_size_overflow":
+const errorSubcodeKeys: Partial<Record<ApiSubcodeType, string>> = {
+	[ApiSubcode.AuthUsernameExists]: "errors:auth_username_exists",
+	[ApiSubcode.AuthEmailExists]: "errors:auth_email_exists",
+	[ApiSubcode.AuthIdentifierExists]: "errors:auth_identifier_exists",
+	[ApiSubcode.FileEtagMismatch]: "errors:file_etag_mismatch",
+	[ApiSubcode.FileNameConflict]: "errors:file_name_conflict",
+	[ApiSubcode.FolderNameConflict]: "errors:folder_name_conflict",
+	[ApiSubcode.UploadFieldReadFailed]: "errors:upload_field_read_failed",
+	[ApiSubcode.UploadRequestBodyReadFailed]:
+		"errors:upload_request_body_read_failed",
+	[ApiSubcode.UploadRequestBodySizeOverflow]:
 		"errors:upload_request_body_size_overflow",
-	"upload.request_size_mismatch": "errors:upload_request_size_mismatch",
-	"upload.temp_dir_create_failed": "errors:upload_temp_dir_create_failed",
-	"upload.temp_file_create_failed": "errors:upload_temp_file_create_failed",
-	"upload.temp_file_write_failed": "errors:upload_temp_file_write_failed",
-	"upload.temp_file_flush_failed": "errors:upload_temp_file_flush_failed",
-	"upload.local_staging_path_resolve_failed":
+	[ApiSubcode.UploadRequestSizeMismatch]: "errors:upload_request_size_mismatch",
+	[ApiSubcode.UploadTempDirCreateFailed]:
+		"errors:upload_temp_dir_create_failed",
+	[ApiSubcode.UploadTempFileCreateFailed]:
+		"errors:upload_temp_file_create_failed",
+	[ApiSubcode.UploadTempFileWriteFailed]:
+		"errors:upload_temp_file_write_failed",
+	[ApiSubcode.UploadTempFileFlushFailed]:
+		"errors:upload_temp_file_flush_failed",
+	[ApiSubcode.UploadLocalStagingPathResolveFailed]:
 		"errors:upload_local_staging_path_resolve_failed",
-	"upload.local_staging_dir_create_failed":
+	[ApiSubcode.UploadLocalStagingDirCreateFailed]:
 		"errors:upload_local_staging_dir_create_failed",
-	"upload.local_staging_file_create_failed":
+	[ApiSubcode.UploadLocalStagingFileCreateFailed]:
 		"errors:upload_local_staging_file_create_failed",
-	"upload.local_staging_write_failed":
+	[ApiSubcode.UploadLocalStagingWriteFailed]:
 		"errors:upload_local_staging_write_failed",
-	"upload.local_staging_flush_failed":
+	[ApiSubcode.UploadLocalStagingFlushFailed]:
 		"errors:upload_local_staging_flush_failed",
-	"upload.body_size_overflow": "errors:upload_body_size_overflow",
-	"upload.empty_file": "errors:upload_empty_file",
-	"upload.direct_relay_write_failed": "errors:upload_direct_relay_write_failed",
-	"upload.direct_relay_shutdown_failed":
+	[ApiSubcode.UploadBodySizeOverflow]: "errors:upload_body_size_overflow",
+	[ApiSubcode.UploadEmptyFile]: "errors:upload_empty_file",
+	[ApiSubcode.UploadDirectRelayWriteFailed]:
+		"errors:upload_direct_relay_write_failed",
+	[ApiSubcode.UploadDirectRelayShutdownFailed]:
 		"errors:upload_direct_relay_shutdown_failed",
-	"upload.direct_relay_task_failed": "errors:upload_direct_relay_task_failed",
-	"upload.declared_size_invalid": "errors:upload_declared_size_invalid",
-	"upload.hash_temp_open_failed": "errors:upload_hash_temp_open_failed",
-	"upload.hash_temp_read_failed": "errors:upload_hash_temp_read_failed",
-	"upload.chunk_transport_mismatch": "errors:upload_chunk_transport_mismatch",
-	"upload.chunk_session_invalid": "errors:upload_chunk_session_invalid",
-	"upload.chunk_number_out_of_range": "errors:upload_chunk_number_out_of_range",
-	"upload.chunk_size_mismatch": "errors:upload_chunk_size_mismatch",
-	"upload.chunk_persist_failed": "errors:upload_chunk_persist_failed",
-	"upload.status_conflict": "errors:upload_status_conflict",
-	"upload.completed_file_missing": "errors:upload_completed_file_missing",
-	"upload.previous_failure": "errors:upload_previous_failure",
-	"upload.parts_required": "errors:upload_parts_required",
-	"upload.incomplete_chunks": "errors:upload_incomplete_chunks",
-	"upload.incomplete_parts": "errors:upload_incomplete_parts",
-	"upload.missing_part": "errors:upload_missing_part",
-	"upload.temp_object_missing": "errors:upload_temp_object_missing",
-	"upload.temp_object_size_mismatch": "errors:upload_temp_object_size_mismatch",
-	"upload.session_corrupted": "errors:upload_session_corrupted",
-	"upload.chunk_relay_failed": "errors:upload_chunk_relay_failed",
-	"upload.assembly_io_failed": "errors:upload_assembly_io_failed",
-	"upload.assembly_size_overflow": "errors:upload_assembly_size_overflow",
-	"storage.auth": "errors:storage_auth_failed",
-	"storage.permission": "errors:storage_permission_denied",
-	"storage.misconfigured": "errors:storage_misconfigured",
-	"storage.not_found": "errors:storage_not_found",
-	"storage.rate_limited": "errors:storage_rate_limited",
-	"storage.transient": "errors:storage_transient_failure",
-	"storage.precondition": "errors:storage_precondition_failed",
-	"storage.unsupported": "errors:storage_operation_unsupported",
-	"task.lease_lost": "errors:task_lease_lost",
-	"task.lease_renewal_timed_out": "errors:task_lease_renewal_timed_out",
-	"thumbnail.format_guess_failed": "errors:thumbnail_format_guess_failed",
-	"thumbnail.decode_failed": "errors:thumbnail_decode_failed",
-	"thumbnail.encode_failed": "errors:thumbnail_encode_failed",
-	"thumbnail.processor_unavailable": "errors:thumbnail_processor_unavailable",
-	"thumbnail.render_failed": "errors:thumbnail_render_failed",
-	"thumbnail.output_invalid": "errors:thumbnail_output_invalid",
-	"thumbnail.task_panicked": "errors:thumbnail_task_panicked",
-	"thumbnail.source_too_large": "errors:thumbnail_source_too_large",
-	"thumbnail.source_temp_create_failed":
+	[ApiSubcode.UploadDirectRelayTaskFailed]:
+		"errors:upload_direct_relay_task_failed",
+	[ApiSubcode.UploadDeclaredSizeInvalid]: "errors:upload_declared_size_invalid",
+	[ApiSubcode.UploadHashTempOpenFailed]: "errors:upload_hash_temp_open_failed",
+	[ApiSubcode.UploadHashTempReadFailed]: "errors:upload_hash_temp_read_failed",
+	[ApiSubcode.UploadChunkTransportMismatch]:
+		"errors:upload_chunk_transport_mismatch",
+	[ApiSubcode.UploadChunkSessionInvalid]: "errors:upload_chunk_session_invalid",
+	[ApiSubcode.UploadChunkNumberOutOfRange]:
+		"errors:upload_chunk_number_out_of_range",
+	[ApiSubcode.UploadChunkSizeMismatch]: "errors:upload_chunk_size_mismatch",
+	[ApiSubcode.UploadChunkPersistFailed]: "errors:upload_chunk_persist_failed",
+	[ApiSubcode.UploadStatusConflict]: "errors:upload_status_conflict",
+	[ApiSubcode.UploadCompletedFileMissing]:
+		"errors:upload_completed_file_missing",
+	[ApiSubcode.UploadPreviousFailure]: "errors:upload_previous_failure",
+	[ApiSubcode.UploadPartsRequired]: "errors:upload_parts_required",
+	[ApiSubcode.UploadIncompleteChunks]: "errors:upload_incomplete_chunks",
+	[ApiSubcode.UploadIncompleteParts]: "errors:upload_incomplete_parts",
+	[ApiSubcode.UploadMissingPart]: "errors:upload_missing_part",
+	[ApiSubcode.UploadTempObjectMissing]: "errors:upload_temp_object_missing",
+	[ApiSubcode.UploadTempObjectSizeMismatch]:
+		"errors:upload_temp_object_size_mismatch",
+	[ApiSubcode.UploadSessionCorrupted]: "errors:upload_session_corrupted",
+	[ApiSubcode.UploadChunkRelayFailed]: "errors:upload_chunk_relay_failed",
+	[ApiSubcode.UploadAssemblyIoFailed]: "errors:upload_assembly_io_failed",
+	[ApiSubcode.UploadAssemblySizeOverflow]:
+		"errors:upload_assembly_size_overflow",
+	[ApiSubcode.StorageAuth]: "errors:storage_auth_failed",
+	[ApiSubcode.StoragePermission]: "errors:storage_permission_denied",
+	[ApiSubcode.StorageMisconfigured]: "errors:storage_misconfigured",
+	[ApiSubcode.StorageNotFound]: "errors:storage_not_found",
+	[ApiSubcode.StorageRateLimited]: "errors:storage_rate_limited",
+	[ApiSubcode.StorageTransient]: "errors:storage_transient_failure",
+	[ApiSubcode.StoragePrecondition]: "errors:storage_precondition_failed",
+	[ApiSubcode.StorageUnsupported]: "errors:storage_operation_unsupported",
+	[ApiSubcode.TaskLeaseLost]: "errors:task_lease_lost",
+	[ApiSubcode.TaskLeaseRenewalTimedOut]: "errors:task_lease_renewal_timed_out",
+	[ApiSubcode.ThumbnailFormatGuessFailed]:
+		"errors:thumbnail_format_guess_failed",
+	[ApiSubcode.ThumbnailDecodeFailed]: "errors:thumbnail_decode_failed",
+	[ApiSubcode.ThumbnailEncodeFailed]: "errors:thumbnail_encode_failed",
+	[ApiSubcode.ThumbnailProcessorUnavailable]:
+		"errors:thumbnail_processor_unavailable",
+	[ApiSubcode.ThumbnailRenderFailed]: "errors:thumbnail_render_failed",
+	[ApiSubcode.ThumbnailOutputInvalid]: "errors:thumbnail_output_invalid",
+	[ApiSubcode.ThumbnailTaskPanicked]: "errors:thumbnail_task_panicked",
+	[ApiSubcode.ThumbnailSourceTooLarge]: "errors:thumbnail_source_too_large",
+	[ApiSubcode.ThumbnailSourceTempCreateFailed]:
 		"errors:thumbnail_source_temp_create_failed",
-	"thumbnail.source_stream_failed": "errors:thumbnail_source_stream_failed",
-	"thumbnail.source_temp_flush_failed":
+	[ApiSubcode.ThumbnailSourceStreamFailed]:
+		"errors:thumbnail_source_stream_failed",
+	[ApiSubcode.ThumbnailSourceTempFlushFailed]:
 		"errors:thumbnail_source_temp_flush_failed",
-	"thumbnail.source_temp_copy_failed":
+	[ApiSubcode.ThumbnailSourceTempCopyFailed]:
 		"errors:thumbnail_source_temp_copy_failed",
-	"avatar.file_required": "errors:avatar_file_required",
-	"avatar.upload_read_failed": "errors:avatar_upload_read_failed",
-	"avatar.processor_unavailable": "errors:avatar_processor_unavailable",
-	"avatar.empty_image": "errors:avatar_empty_image",
-	"avatar.render_failed": "errors:avatar_render_failed",
-	"avatar.output_invalid": "errors:avatar_output_invalid",
-	"master_binding.disabled": "errors:master_binding_disabled",
-	"managed_ingress.binding_mismatch": "errors:managed_ingress_binding_mismatch",
-	"managed_ingress.default_delete_requires_replacement":
+	[ApiSubcode.AvatarFileRequired]: "errors:avatar_file_required",
+	[ApiSubcode.AvatarUploadReadFailed]: "errors:avatar_upload_read_failed",
+	[ApiSubcode.AvatarProcessorUnavailable]:
+		"errors:avatar_processor_unavailable",
+	[ApiSubcode.AvatarEmptyImage]: "errors:avatar_empty_image",
+	[ApiSubcode.AvatarRenderFailed]: "errors:avatar_render_failed",
+	[ApiSubcode.AvatarOutputInvalid]: "errors:avatar_output_invalid",
+	[ApiSubcode.MasterBindingDisabled]: "errors:master_binding_disabled",
+	[ApiSubcode.ManagedIngressBindingMismatch]:
+		"errors:managed_ingress_binding_mismatch",
+	[ApiSubcode.ManagedIngressDefaultDeleteRequiresReplacement]:
 		"errors:managed_ingress_default_delete_requires_replacement",
-	"managed_ingress.default_error": "errors:managed_ingress_default_error",
-	"managed_ingress.default_missing": "errors:managed_ingress_default_missing",
-	"managed_ingress.default_not_applied":
+	[ApiSubcode.ManagedIngressDefaultError]:
+		"errors:managed_ingress_default_error",
+	[ApiSubcode.ManagedIngressDefaultMissing]:
+		"errors:managed_ingress_default_missing",
+	[ApiSubcode.ManagedIngressDefaultNotApplied]:
 		"errors:managed_ingress_default_not_applied",
-	"managed_ingress.required": "errors:managed_ingress_required",
-	"managed_ingress.default_update_requires_replacement":
+	[ApiSubcode.ManagedIngressRequired]: "errors:managed_ingress_required",
+	[ApiSubcode.ManagedIngressDefaultUpdateRequiresReplacement]:
 		"errors:managed_ingress_default_update_requires_replacement",
-	"managed_ingress.driver_unsupported":
+	[ApiSubcode.ManagedIngressDriverUnsupported]:
 		"errors:managed_ingress_driver_unsupported",
-	"managed_ingress.local_path_invalid":
+	[ApiSubcode.ManagedIngressLocalPathInvalid]:
 		"errors:managed_ingress_local_path_invalid",
-	"managed_ingress.single_primary_required":
+	[ApiSubcode.ManagedIngressSinglePrimaryRequired]:
 		"errors:managed_ingress_single_primary_required",
-	"remote_node.disabled": "errors:remote_node_disabled",
-	"team.member_exists": "errors:team_member_exists",
-	"webdav.username_exists": "errors:webdav_username_exists",
-	"wopi.max_expected_size_exceeded": "errors:wopi_max_expected_size_exceeded",
-	"remote_node.unique_conflict": "errors:remote_node_unique_conflict",
+	[ApiSubcode.RemoteNodeDisabled]: "errors:remote_node_disabled",
+	[ApiSubcode.TeamMemberExists]: "errors:team_member_exists",
+	[ApiSubcode.WebdavUsernameExists]: "errors:webdav_username_exists",
+	[ApiSubcode.WopiMaxExpectedSizeExceeded]:
+		"errors:wopi_max_expected_size_exceeded",
+	[ApiSubcode.RemoteNodeUniqueConflict]: "errors:remote_node_unique_conflict",
 };
 
 export function getApiErrorMessage(error: unknown) {
 	if (error instanceof ApiError) {
-		const key =
-			(error.subcode ? errorSubcodeKeys[error.subcode] : undefined) ??
-			errorMessageKeys[error.code];
+		const subcodeKey =
+			error.subcode && isApiSubcode(error.subcode)
+				? errorSubcodeKeys[error.subcode]
+				: undefined;
+		const key = subcodeKey ?? errorMessageKeys[error.code];
 		if (key) {
 			return i18n.t(key);
 		}

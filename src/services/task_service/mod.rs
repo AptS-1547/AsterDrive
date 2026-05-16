@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration as StdDuration, Instant};
 
 use crate::api::pagination::{AdminTaskSortBy, OffsetPage, SortOrder};
+use crate::api::subcode::ApiSubcode;
 use crate::config::operations;
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
@@ -63,8 +64,6 @@ pub(super) const TASK_STATUS_TEXT_MAX_LEN: usize = 255;
 pub(super) const TASK_DRAIN_MAX_ROUNDS: usize = 32;
 const TASK_LEASE_LOST_MESSAGE_PREFIX: &str = "background task lease lost";
 const TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX: &str = "background task lease renewal timed out";
-const TASK_LEASE_LOST_SUBCODE: &str = "task.lease_lost";
-const TASK_LEASE_RENEWAL_TIMEOUT_SUBCODE: &str = "task.lease_renewal_timed_out";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct AdminTaskListFilters {
@@ -700,7 +699,7 @@ fn load_task_retention_hours(state: &PrimaryAppState) -> i64 {
 
 pub(super) fn task_lease_lost(lease: TaskLease) -> AsterError {
     precondition_failed_with_subcode(
-        TASK_LEASE_LOST_SUBCODE,
+        ApiSubcode::TaskLeaseLost,
         format!(
             "{TASK_LEASE_LOST_MESSAGE_PREFIX} for task #{} with token {}",
             lease.task_id, lease.processing_token
@@ -710,7 +709,7 @@ pub(super) fn task_lease_lost(lease: TaskLease) -> AsterError {
 
 pub(super) fn task_lease_renewal_timed_out(lease: TaskLease) -> AsterError {
     precondition_failed_with_subcode(
-        TASK_LEASE_RENEWAL_TIMEOUT_SUBCODE,
+        ApiSubcode::TaskLeaseRenewalTimedOut,
         format!(
             "{TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX} for task #{} with token {}",
             lease.task_id, lease.processing_token
@@ -719,11 +718,11 @@ pub(super) fn task_lease_renewal_timed_out(lease: TaskLease) -> AsterError {
 }
 
 pub(super) fn is_task_lease_lost(error: &AsterError) -> bool {
-    error.api_error_subcode() == Some(TASK_LEASE_LOST_SUBCODE)
+    error.api_error_subcode() == Some(ApiSubcode::TaskLeaseLost.as_str())
 }
 
 pub(super) fn is_task_lease_renewal_timed_out(error: &AsterError) -> bool {
-    error.api_error_subcode() == Some(TASK_LEASE_RENEWAL_TIMEOUT_SUBCODE)
+    error.api_error_subcode() == Some(ApiSubcode::TaskLeaseRenewalTimedOut.as_str())
 }
 
 fn task_lease_renewal_timeout() -> StdDuration {
@@ -750,6 +749,7 @@ mod tests {
         build_task_info_with_creator, ensure_task_in_scope, truncate_error,
         validate_admin_task_cleanup_status,
     };
+    use crate::api::subcode::ApiSubcode;
     use crate::entities::background_task;
     use crate::services::workspace_storage_service::WorkspaceStorageScope;
     use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload};
@@ -809,7 +809,7 @@ mod tests {
             started_at: None,
             finished_at: Some(now),
             last_error: Some(crate::errors::encode_api_error_subcode_message(
-                "archive_preview.invalid_zip",
+                ApiSubcode::ArchivePreviewInvalidZip.as_str(),
                 "invalid zip archive".to_string(),
             )),
             failure_can_retry: Some(false),
@@ -826,14 +826,14 @@ mod tests {
     #[test]
     fn task_error_encoding_preserves_subcode_before_truncation() {
         let error = crate::errors::validation_error_with_subcode(
-            "archive_preview.rejected",
+            ApiSubcode::ArchivePreviewRejected,
             "archive contains unsafe path",
         );
         let stored = truncate_error(&crate::errors::encode_task_error_for_storage(&error));
 
         assert_eq!(
             crate::errors::task_error_subcode_from_storage(&stored),
-            Some("archive_preview.rejected")
+            Some(ApiSubcode::ArchivePreviewRejected.as_str())
         );
         assert_eq!(
             crate::errors::task_error_display_message(&stored),
