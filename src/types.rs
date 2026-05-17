@@ -22,7 +22,7 @@ pub use config::{SystemConfigSource, SystemConfigValueType};
 pub use entity::EntityType;
 pub use mail::{MailOutboxStatus, MailTemplateCode, StoredMailPayload};
 pub use passkey::StoredPasskeyCredential;
-pub use patch::NullablePatch;
+pub use patch::{NullablePatch, deserialize_nullable_patch_option};
 pub use preferences::{
     BrowserOpenMode, ColorPreset, Language, PrefViewMode, StoredUserConfig, ThemeMode, UserConfig,
     UserPreferences,

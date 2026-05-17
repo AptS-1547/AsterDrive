@@ -4,7 +4,11 @@ import {
 	invalidateExternalAuthLinksCache,
 	invalidatePasskeysCache,
 } from "@/services/authService";
-import type { ExternalAuthLinkInfo, PasskeyInfo } from "@/types/api";
+import type {
+	ExternalAuthLinkInfo,
+	ExternalAuthPublicProvider,
+	PasskeyInfo,
+} from "@/types/api";
 import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
@@ -355,6 +359,76 @@ describe("authService", () => {
 			expiresIn: 900,
 		});
 		await expect(authService.revokeOtherSessions()).resolves.toBe(0);
+	});
+
+	it("uses the expected external auth endpoints and payloads", async () => {
+		const provider: ExternalAuthPublicProvider = {
+			display_name: "Example IDP",
+			icon_url: null,
+			key: "team/idp",
+			kind: "oidc",
+		};
+		mockState.get.mockResolvedValueOnce([provider]);
+		mockState.post.mockImplementation((url: string) => {
+			if (url === "/auth/external-auth/email-verification/start") {
+				return { message: "sent" };
+			}
+			if (url.endsWith("/start")) {
+				return { authorization_url: "https://idp.example.com/authorize" };
+			}
+			if (url === "/auth/external-auth/password-link") {
+				return { expires_in: 1200 };
+			}
+			return undefined;
+		});
+
+		await expect(authService.listExternalAuthProviders()).resolves.toEqual([
+			provider,
+		]);
+		expect(
+			authService.startExternalAuthLogin(provider, {
+				return_path: "/files",
+			}),
+		).toEqual({
+			authorization_url: "https://idp.example.com/authorize",
+		});
+		expect(
+			authService.startExternalAuthEmailVerification({
+				email: "alice@example.com",
+				flow_token: "flow-token",
+			}),
+		).toEqual({ message: "sent" });
+		await expect(
+			authService.linkExternalAuthWithPassword({
+				flow_token: "flow-token",
+				identifier: "alice@example.com",
+				password: "secret",
+			}),
+		).resolves.toEqual({ expiresIn: 1200 });
+
+		expect(mockState.get).toHaveBeenCalledWith("/auth/external-auth/providers");
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			1,
+			"/auth/external-auth/oidc/team%2Fidp/start",
+			{ return_path: "/files" },
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			2,
+			"/auth/external-auth/email-verification/start",
+			{
+				email: "alice@example.com",
+				flow_token: "flow-token",
+			},
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			3,
+			"/auth/external-auth/password-link",
+			{
+				flow_token: "flow-token",
+				identifier: "alice@example.com",
+				password: "secret",
+			},
+		);
 	});
 
 	it("caches passkey lists, clones cached results, and supports forced refresh", async () => {

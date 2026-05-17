@@ -236,6 +236,13 @@ pub async fn confirm_email_verification(
     let resolved = match result {
         Ok(resolved) => {
             crate::db::transaction::commit(txn).await?;
+            if resolved.auto_provisioned
+                && let Some(policy_group_id) = resolved.user.policy_group_id
+            {
+                state
+                    .policy_snapshot
+                    .set_user_policy_group(resolved.user.id, policy_group_id);
+            }
             resolved
         }
         Err(error) => return Err(error),

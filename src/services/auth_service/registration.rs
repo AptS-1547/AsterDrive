@@ -24,7 +24,7 @@ pub async fn create_user_by_admin(
     email: &str,
     password: &str,
 ) -> Result<AuthUserInfo> {
-    create_user_with_role(
+    let user = create_user_with_role(
         &state.db,
         state,
         CreateUserWithRoleInput {
@@ -36,8 +36,13 @@ pub async fn create_user_by_admin(
             email_verified_at: Some(Utc::now()),
         },
     )
-    .await
-    .map(AuthUserInfo::from)
+    .await?;
+    if let Some(policy_group_id) = user.policy_group_id {
+        state
+            .policy_snapshot
+            .set_user_policy_group(user.id, policy_group_id);
+    }
+    Ok(AuthUserInfo::from(user))
 }
 
 pub async fn register(
@@ -99,6 +104,11 @@ pub async fn register(
         .await?;
     }
     crate::db::transaction::commit(txn).await?;
+    if let Some(policy_group_id) = user.policy_group_id {
+        state
+            .policy_snapshot
+            .set_user_policy_group(user.id, policy_group_id);
+    }
 
     tracing::debug!(
         user_id = user.id,

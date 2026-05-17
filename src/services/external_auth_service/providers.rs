@@ -7,7 +7,7 @@ use crate::entities::external_auth_provider;
 use crate::errors::{AsterError, Result};
 use crate::external_auth::{ExternalAuthProviderConfig, registry};
 use crate::runtime::PrimaryAppState;
-use crate::types::ExternalAuthProviderKind;
+use crate::types::{ExternalAuthProviderKind, NullablePatch};
 use crate::utils::id;
 
 use super::REDACTED_SECRET;
@@ -51,6 +51,14 @@ pub(super) fn provider_to_public(
         kind: model.provider_kind,
         display_name: model.display_name,
         icon_url: model.icon_url,
+    }
+}
+
+fn nullable_patch_to_update<T>(value: NullablePatch<T>) -> Option<Option<T>> {
+    match value {
+        NullablePatch::Absent => None,
+        NullablePatch::Null => Some(None),
+        NullablePatch::Value(value) => Some(Some(value)),
     }
 }
 
@@ -197,6 +205,7 @@ pub async fn list_public_providers_by_kind(
         external_auth_provider_repo::find_enabled_by_kind(&state.db, provider_kind)
             .await?
             .into_iter()
+            .filter(|provider| registry::default_registry().contains(provider.provider_kind))
             .map(provider_to_public)
             .collect(),
     )
@@ -371,16 +380,16 @@ pub async fn update_provider(
     if let Some(display_name) = input.display_name {
         active.display_name = Set(normalize_required(&display_name, "display_name", 128)?);
     }
-    if let Some(icon_url) = input.icon_url {
+    if let Some(icon_url) = input.icon_url.and_then(nullable_patch_to_update) {
         active.icon_url = Set(normalize_icon_url_input(icon_url)?);
     }
-    if let Some(issuer_url) = input.issuer_url {
+    if let Some(issuer_url) = input.issuer_url.and_then(nullable_patch_to_update) {
         active.issuer_url = Set(normalize_issuer_url_input(
             issuer_url,
             descriptor.issuer_url_required,
         )?);
     }
-    if let Some(authorization_url) = input.authorization_url {
+    if let Some(authorization_url) = input.authorization_url.and_then(nullable_patch_to_update) {
         active.authorization_url = Set(normalize_manual_endpoint_input(
             authorization_url,
             "authorization_url",
@@ -388,7 +397,7 @@ pub async fn update_provider(
             descriptor.manual_endpoint_configuration_supported,
         )?);
     }
-    if let Some(token_url) = input.token_url {
+    if let Some(token_url) = input.token_url.and_then(nullable_patch_to_update) {
         active.token_url = Set(normalize_manual_endpoint_input(
             token_url,
             "token_url",
@@ -396,7 +405,7 @@ pub async fn update_provider(
             descriptor.manual_endpoint_configuration_supported,
         )?);
     }
-    if let Some(userinfo_url) = input.userinfo_url {
+    if let Some(userinfo_url) = input.userinfo_url.and_then(nullable_patch_to_update) {
         active.userinfo_url = Set(normalize_manual_endpoint_input(
             userinfo_url,
             "userinfo_url",
@@ -407,10 +416,12 @@ pub async fn update_provider(
     if let Some(client_id) = input.client_id {
         active.client_id = Set(normalize_required(&client_id, "client_id", 512)?);
     }
-    active.client_secret = Set(normalize_secret_update(
-        input.client_secret,
-        existing.client_secret.clone(),
-    ));
+    if let Some(client_secret) = input.client_secret {
+        active.client_secret = Set(normalize_secret_update(
+            client_secret,
+            existing.client_secret.clone(),
+        ));
+    }
     if let Some(scopes) = input.scopes {
         active.scopes = Set(normalize_scopes(Some(&scopes), existing.protocol)?);
     }
@@ -426,28 +437,31 @@ pub async fn update_provider(
     if let Some(value) = input.require_email_verified {
         active.require_email_verified = Set(value);
     }
-    if let Some(value) = input.subject_claim {
+    if let Some(value) = input.subject_claim.and_then(nullable_patch_to_update) {
         active.subject_claim = Set(normalize_optional_claim(value, "subject_claim")?);
     }
-    if let Some(value) = input.username_claim {
+    if let Some(value) = input.username_claim.and_then(nullable_patch_to_update) {
         active.username_claim = Set(normalize_optional_claim(value, "username_claim")?);
     }
-    if let Some(value) = input.display_name_claim {
+    if let Some(value) = input.display_name_claim.and_then(nullable_patch_to_update) {
         active.display_name_claim = Set(normalize_optional_claim(value, "display_name_claim")?);
     }
-    if let Some(value) = input.email_claim {
+    if let Some(value) = input.email_claim.and_then(nullable_patch_to_update) {
         active.email_claim = Set(normalize_optional_claim(value, "email_claim")?);
     }
-    if let Some(value) = input.email_verified_claim {
+    if let Some(value) = input
+        .email_verified_claim
+        .and_then(nullable_patch_to_update)
+    {
         active.email_verified_claim = Set(normalize_optional_claim(value, "email_verified_claim")?);
     }
-    if let Some(value) = input.groups_claim {
+    if let Some(value) = input.groups_claim.and_then(nullable_patch_to_update) {
         active.groups_claim = Set(normalize_optional_claim(value, "groups_claim")?);
     }
-    if let Some(value) = input.avatar_url_claim {
+    if let Some(value) = input.avatar_url_claim.and_then(nullable_patch_to_update) {
         active.avatar_url_claim = Set(normalize_optional_claim(value, "avatar_url_claim")?);
     }
-    if let Some(value) = input.allowed_domains {
+    if let Some(value) = input.allowed_domains.and_then(nullable_patch_to_update) {
         active.allowed_domains = Set(normalize_allowed_domains(value)?);
     }
     active.updated_at = Set(Utc::now());

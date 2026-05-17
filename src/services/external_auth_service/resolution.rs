@@ -18,6 +18,10 @@ use super::{EXTERNAL_AUTH_USER_PASSWORD_BYTES, USERNAME_MAX_LEN, USERNAME_MIN_LE
 
 pub(super) type ExternalAuthUserClaims = ExternalAuthProfile;
 
+const UNIQUE_USERNAME_MAX_ATTEMPTS: usize = 5;
+const UNIQUE_USERNAME_SUFFIX_LEN: usize = 6;
+const UNIQUE_USERNAME_SUFFIX_CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+
 #[derive(Debug)]
 pub(super) struct ResolvedExternalAuthUser {
     pub(super) user: user::Model,
@@ -69,10 +73,7 @@ fn sanitize_username_piece(value: &str) -> String {
         .to_string()
 }
 
-async fn unique_username<C: sea_orm::ConnectionTrait>(
-    db: &C,
-    claims: &ExternalAuthUserClaims,
-) -> Result<String> {
+fn external_auth_username_base(claims: &ExternalAuthUserClaims) -> String {
     let mut base = claims
         .preferred_username
         .as_deref()
@@ -96,12 +97,28 @@ async fn unique_username<C: sea_orm::ConnectionTrait>(
         base.push('0');
     }
 
-    if user_repo::find_by_username(db, &base).await?.is_none() {
-        return Ok(base);
+    base
+}
+
+fn random_username_suffix() -> String {
+    use rand::RngExt;
+    let mut rng = rand::rng();
+    (0..UNIQUE_USERNAME_SUFFIX_LEN)
+        .map(|_| {
+            let index = rng.random_range(0..UNIQUE_USERNAME_SUFFIX_CHARSET.len());
+            UNIQUE_USERNAME_SUFFIX_CHARSET[index] as char
+        })
+        .collect()
+}
+
+fn external_auth_username_candidate(base: &str, attempt: usize) -> String {
+    if attempt == 0 {
+        return base.to_string();
     }
 
-    let stem_max = USERNAME_MAX_LEN.saturating_sub(5);
-    let mut stem = base;
+    let suffix = random_username_suffix();
+    let stem_max = USERNAME_MAX_LEN.saturating_sub(suffix.len() + 1);
+    let mut stem = base.to_string();
     if stem.len() > stem_max {
         stem.truncate(stem_max);
         stem = stem.trim_matches('-').to_string();
@@ -109,18 +126,14 @@ async fn unique_username<C: sea_orm::ConnectionTrait>(
     if stem.len() < USERNAME_MIN_LEN {
         stem = "oidc".to_string();
     }
-    for index in 1..10_000 {
-        let candidate = format!("{stem}-{index}");
-        if candidate.len() > USERNAME_MAX_LEN {
-            continue;
-        }
-        if user_repo::find_by_username(db, &candidate).await?.is_none() {
-            return Ok(candidate);
-        }
-    }
-    Err(AsterError::validation_error(
-        "failed to allocate unique username for external auth user",
-    ))
+    format!("{stem}-{suffix}")
+}
+
+fn external_auth_username_conflict(err: &AsterError) -> bool {
+    matches!(
+        err.api_error_subcode(),
+        Some(crate::api::subcode::ApiSubcode::AuthUsernameExists)
+    )
 }
 
 pub(super) fn claims_with_verified_local_email(
@@ -245,45 +258,65 @@ async fn create_external_auth_user_and_identity(
         ));
     }
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
-    let result = async {
-        if let Some(existing) = user_repo::find_by_email(&txn, email).await? {
-            return Err(AsterError::validation_error(format!(
-                "user email '{}' already exists but automatic email linking is disabled",
-                existing.email
-            )));
-        }
-        let username = unique_username(&txn, claims).await?;
+    let username_base = external_auth_username_base(claims);
+    for attempt in 0..UNIQUE_USERNAME_MAX_ATTEMPTS {
+        let username = external_auth_username_candidate(&username_base, attempt);
         let password = random_internal_password();
-        let user = auth_service::shared::create_user_with_role(
-            &txn,
-            state,
-            auth_service::shared::CreateUserWithRoleInput {
-                username: &username,
-                email,
-                password: &password,
-                role: UserRole::User,
-                status: UserStatus::Active,
-                email_verified_at: claims.email_verified.then_some(now),
-            },
-        )
-        .await?;
-        create_identity_for_claims(&txn, user.id, provider, claims, now).await?;
-        Ok(user)
-    }
-    .await;
 
-    match result {
-        Ok(user) => {
-            crate::db::transaction::commit(txn).await?;
-            Ok(ResolvedExternalAuthUser {
-                user,
-                linked: true,
-                auto_provisioned: true,
-            })
+        let txn = crate::db::transaction::begin(&state.db).await?;
+        let result = async {
+            if let Some(existing) = user_repo::find_by_email(&txn, email).await? {
+                return Err(AsterError::validation_error(format!(
+                    "user email '{}' already exists but automatic email linking is disabled",
+                    existing.email
+                )));
+            }
+            let user = auth_service::shared::create_user_with_role(
+                &txn,
+                state,
+                auth_service::shared::CreateUserWithRoleInput {
+                    username: &username,
+                    email,
+                    password: &password,
+                    role: UserRole::User,
+                    status: UserStatus::Active,
+                    email_verified_at: claims.email_verified.then_some(now),
+                },
+            )
+            .await?;
+            create_identity_for_claims(&txn, user.id, provider, claims, now).await?;
+            Ok(user)
         }
-        Err(err) => Err(err),
+        .await;
+
+        match result {
+            Ok(user) => {
+                crate::db::transaction::commit(txn).await?;
+                if let Some(policy_group_id) = user.policy_group_id {
+                    state
+                        .policy_snapshot
+                        .set_user_policy_group(user.id, policy_group_id);
+                }
+                return Ok(ResolvedExternalAuthUser {
+                    user,
+                    linked: true,
+                    auto_provisioned: true,
+                });
+            }
+            Err(err) if external_auth_username_conflict(&err) => {
+                tracing::debug!(
+                    username,
+                    attempt = attempt + 1,
+                    "external auth username candidate conflicted, retrying"
+                );
+            }
+            Err(err) => return Err(err),
+        }
     }
+
+    Err(AsterError::validation_error(
+        "failed to allocate unique username for external auth user",
+    ))
 }
 
 async fn create_external_auth_user_and_identity_in_connection<C: sea_orm::ConnectionTrait>(
@@ -314,23 +347,42 @@ async fn create_external_auth_user_and_identity_in_connection<C: sea_orm::Connec
         ));
     }
 
-    let username = unique_username(db, claims).await?;
-    let password = random_internal_password();
-    let user = auth_service::shared::create_user_with_role(
-        db,
-        state,
-        auth_service::shared::CreateUserWithRoleInput {
-            username: &username,
-            email,
-            password: &password,
-            role: UserRole::User,
-            status: UserStatus::Active,
-            email_verified_at: Some(now),
-        },
-    )
-    .await?;
-    create_identity_for_claims(db, user.id, provider, claims, now).await?;
-    Ok(user)
+    let username_base = external_auth_username_base(claims);
+    for attempt in 0..UNIQUE_USERNAME_MAX_ATTEMPTS {
+        let username = external_auth_username_candidate(&username_base, attempt);
+        let password = random_internal_password();
+        match auth_service::shared::create_user_with_role(
+            db,
+            state,
+            auth_service::shared::CreateUserWithRoleInput {
+                username: &username,
+                email,
+                password: &password,
+                role: UserRole::User,
+                status: UserStatus::Active,
+                email_verified_at: Some(now),
+            },
+        )
+        .await
+        {
+            Ok(user) => {
+                create_identity_for_claims(db, user.id, provider, claims, now).await?;
+                return Ok(user);
+            }
+            Err(err) if external_auth_username_conflict(&err) => {
+                tracing::debug!(
+                    username,
+                    attempt = attempt + 1,
+                    "external auth username candidate conflicted, retrying"
+                );
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err(AsterError::validation_error(
+        "failed to allocate unique username for external auth user",
+    ))
 }
 
 pub(super) async fn resolve_external_auth_user_with_verified_email<C: sea_orm::ConnectionTrait>(

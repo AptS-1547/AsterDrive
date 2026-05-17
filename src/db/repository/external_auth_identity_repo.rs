@@ -107,15 +107,20 @@ pub async fn touch_login<C: ConnectionTrait>(
     display_name_snapshot: Option<&str>,
     now: chrono::DateTime<Utc>,
 ) -> Result<bool> {
-    let result = ExternalAuthIdentity::update_many()
-        .col_expr(
+    let mut update = ExternalAuthIdentity::update_many();
+    if let Some(email_snapshot) = email_snapshot {
+        update = update.col_expr(
             external_auth_identity::Column::EmailSnapshot,
-            Expr::value(email_snapshot.map(str::to_string)),
-        )
-        .col_expr(
+            Expr::value(email_snapshot.to_string()),
+        );
+    }
+    if let Some(display_name_snapshot) = display_name_snapshot {
+        update = update.col_expr(
             external_auth_identity::Column::DisplayNameSnapshot,
-            Expr::value(display_name_snapshot.map(str::to_string)),
-        )
+            Expr::value(display_name_snapshot.to_string()),
+        );
+    }
+    let result = update
         .col_expr(
             external_auth_identity::Column::LastLoginAt,
             Expr::value(Some(now)),

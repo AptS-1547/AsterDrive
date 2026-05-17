@@ -91,9 +91,9 @@ export default function AdminExternalAuthPage() {
 	const [createdProviderCallback, setCreatedProviderCallback] =
 		useState<AdminExternalAuthProviderInfo | null>(null);
 	const lastWrittenSearchRef = useRef<string | null>(null);
-	const setOffset = (value: number) => {
+	const setOffset = useCallback((value: number) => {
 		setOffsetState(normalizeOffset(value));
-	};
+	}, []);
 	const enabledCount = useMemo(
 		() => providers.filter((provider) => provider.enabled).length,
 		[providers],
@@ -204,6 +204,14 @@ export default function AdminExternalAuthPage() {
 					offset,
 				}),
 			]);
+			if (providerList.items.length === 0 && providerList.total > 0) {
+				const maxOffset =
+					Math.floor((providerList.total - 1) / pageSize) * pageSize;
+				if (offset > maxOffset) {
+					setOffset(maxOffset);
+					return;
+				}
+			}
 			setProviderKinds(kinds);
 			setProviders(providerList.items);
 			setTotal(providerList.total);
@@ -212,7 +220,7 @@ export default function AdminExternalAuthPage() {
 		} finally {
 			setLoading(false);
 		}
-	}, [offset, pageSize]);
+	}, [offset, pageSize, setOffset]);
 
 	useEffect(() => {
 		void loadProviders();

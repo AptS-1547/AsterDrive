@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 /// PATCH 请求里的可空字段三态：
 /// - `Absent`：字段未传，保持不变
@@ -16,6 +16,16 @@ impl<T> NullablePatch<T> {
     pub fn is_present(&self) -> bool {
         !matches!(self, Self::Absent)
     }
+}
+
+pub fn deserialize_nullable_patch_option<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<NullablePatch<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(|value| Some(NullablePatch::from(value)))
 }
 
 impl<T> From<Option<T>> for NullablePatch<T> {

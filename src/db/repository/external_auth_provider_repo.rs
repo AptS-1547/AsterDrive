@@ -88,17 +88,6 @@ pub async fn find_by_id<C: ConnectionTrait>(
         .ok_or_else(|| AsterError::record_not_found(format!("external auth provider #{id}")))
 }
 
-pub async fn find_by_key<C: ConnectionTrait>(
-    db: &C,
-    key: &str,
-) -> Result<Option<external_auth_provider::Model>> {
-    ExternalAuthProvider::find()
-        .filter(external_auth_provider::Column::Key.eq(key))
-        .one(db)
-        .await
-        .map_err(AsterError::from)
-}
-
 pub async fn find_by_kind_key<C: ConnectionTrait>(
     db: &C,
     kind: ExternalAuthProviderKind,

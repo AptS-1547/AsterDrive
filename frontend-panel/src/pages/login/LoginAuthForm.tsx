@@ -16,6 +16,32 @@ import {
 } from "./authAnimations";
 import type { AuthMode } from "./types";
 
+function normalizedUrl(value: string) {
+	try {
+		return new URL(value, document.baseURI).href;
+	} catch {
+		return value;
+	}
+}
+
+function fallbackExternalAuthIcon(
+	target: HTMLImageElement,
+	configuredIcon: string,
+	kindIcon: string,
+) {
+	if (
+		configuredIcon &&
+		kindIcon &&
+		target.dataset.fallbackTried !== "1" &&
+		normalizedUrl(target.src) !== normalizedUrl(kindIcon)
+	) {
+		target.dataset.fallbackTried = "1";
+		target.src = kindIcon;
+		return;
+	}
+	target.hidden = true;
+}
+
 function ExternalAuthProviderIcon({
 	provider,
 }: {
@@ -33,15 +59,11 @@ function ExternalAuthProviderIcon({
 				aria-hidden="true"
 				className="mr-2 h-4 w-4 object-contain"
 				onError={(event) => {
-					if (
-						configuredIcon &&
-						kindIcon &&
-						event.currentTarget.src !== kindIcon
-					) {
-						event.currentTarget.src = kindIcon;
-						return;
-					}
-					event.currentTarget.hidden = true;
+					fallbackExternalAuthIcon(
+						event.currentTarget,
+						configuredIcon,
+						kindIcon,
+					);
 				}}
 			/>
 		);

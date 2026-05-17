@@ -40,6 +40,19 @@ const MockWebAuthnUnsupportedError = vi.hoisted(
 		},
 );
 
+const mockTranslate = vi.hoisted(
+	() => (key: string, options?: Record<string, unknown>) => {
+		const normalized = key.replace(/^core:/, "");
+		if (
+			normalized === "external_auth_sign_in_with" &&
+			typeof options?.provider === "string"
+		) {
+			return `external_auth_sign_in_with ${options.provider}`;
+		}
+		return normalized;
+	},
+);
+
 const mockState = vi.hoisted(() => ({
 	check: vi.fn(),
 	conditionalPasskeyError: null as Error | null,
@@ -76,16 +89,7 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string, options?: Record<string, unknown>) => {
-			const normalized = key.replace(/^core:/, "");
-			if (
-				normalized === "external_auth_sign_in_with" &&
-				typeof options?.provider === "string"
-			) {
-				return `external_auth_sign_in_with ${options.provider}`;
-			}
-			return normalized;
-		},
+		t: mockTranslate,
 	}),
 }));
 
@@ -209,6 +213,107 @@ vi.mock("@/lib/logger", () => ({
 	logger: {
 		warn: (...args: unknown[]) => mockState.loggerWarn(...args),
 	},
+}));
+
+vi.mock("@/pages/login/ExternalAuthRecoveryPanel", () => ({
+	ExternalAuthRecoveryPanel: ({
+		email,
+		emailError,
+		identifier,
+		identifierError,
+		mode,
+		onBack,
+		onEmailChange,
+		onIdentifierChange,
+		onModeChange,
+		onPasswordChange,
+		password,
+		passwordError,
+		sent,
+		t,
+	}: {
+		email: string;
+		emailError: string;
+		identifier: string;
+		identifierError: string;
+		mode: "password" | "email";
+		onBack: () => void;
+		onEmailChange: (value: string, error: string) => void;
+		onIdentifierChange: (value: string) => void;
+		onModeChange: (mode: "password" | "email") => void;
+		onPasswordChange: (value: string) => void;
+		password: string;
+		passwordError: string;
+		sent: boolean;
+		t: (key: string) => string;
+	}) => (
+		<div>
+			<div>external_auth_email_verification_title</div>
+			<div>{sent ? "external_auth_email_verification_sent_title" : ""}</div>
+			<button
+				type="button"
+				role="tab"
+				aria-selected={mode === "password"}
+				onClick={() => onModeChange("password")}
+			>
+				external_auth_password_link_tab
+			</button>
+			<button
+				type="button"
+				role="tab"
+				aria-selected={mode === "email"}
+				onClick={() => onModeChange("email")}
+			>
+				external_auth_email_verification_tab
+			</button>
+			{mode === "password" ? (
+				<div>
+					<label htmlFor="external-auth-password-link-identifier">
+						email_or_username
+					</label>
+					<input
+						id="external-auth-password-link-identifier"
+						value={identifier}
+						onChange={(event) => onIdentifierChange(event.target.value)}
+					/>
+					<div>{identifierError}</div>
+					<label htmlFor="external-auth-password-link-password">password</label>
+					<input
+						id="external-auth-password-link-password"
+						value={password}
+						onChange={(event) => onPasswordChange(event.target.value)}
+					/>
+					<div>{passwordError}</div>
+					<button type="submit">
+						{t("external_auth_password_link_submit")}
+					</button>
+				</div>
+			) : (
+				<div>
+					<label htmlFor="external-auth-recovery-email">email</label>
+					<input
+						id="external-auth-recovery-email"
+						value={email}
+						onChange={(event) => {
+							const value = event.target.value;
+							onEmailChange(
+								value,
+								/^[^@]+@[^@]+\.[^@]+$/.test(value) ? "" : "invalid-email",
+							);
+						}}
+					/>
+					<div>{emailError}</div>
+					<button type="submit">
+						{t("external_auth_email_verification_send")}
+					</button>
+					<div>{sent && email ? `email: ${email}` : ""}</div>
+				</div>
+			)}
+			<button type="button" onClick={onBack}>
+				back_to_sign_in
+			</button>
+		</div>
+	),
 }));
 
 vi.mock("@/services/authService", () => ({
@@ -847,8 +952,7 @@ describe("LoginPage", () => {
 		mockState.location = {
 			hash: "",
 			pathname: "/login",
-			search:
-				"?external_auth=error&message=Provider%20rejected%20login&return_path=%2Ffiles",
+			search: "?external_auth=error&code=2003&return_path=%2Ffiles",
 		};
 
 		render(<LoginPage />);
@@ -857,7 +961,7 @@ describe("LoginPage", () => {
 			expect(mockState.toastError).toHaveBeenCalledWith(
 				"external_auth_login_failed",
 				{
-					description: "Provider rejected login",
+					description: "external_auth_login_failed_desc",
 					id: "external-auth-login-error",
 				},
 			),
@@ -898,6 +1002,260 @@ describe("LoginPage", () => {
 		);
 	});
 
+	it("links an external auth flow with an existing password", async () => {
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search: "?external_auth=email_required&flow=flow-token",
+		};
+
+		render(<LoginPage />);
+
+		await screen.findByRole("button", {
+			name: /external_auth_password_link_submit/,
+		});
+		const identifierInput = document.querySelector<HTMLInputElement>(
+			"#external-auth-password-link-identifier",
+		);
+		const passwordInput = document.querySelector<HTMLInputElement>(
+			"#external-auth-password-link-password",
+		);
+		if (!identifierInput || !passwordInput) {
+			throw new Error("external auth password-link fields not found");
+		}
+		fireEvent.change(identifierInput, {
+			target: { value: "  user@example.com  " },
+		});
+		fireEvent.change(passwordInput, {
+			target: { value: "secret123" },
+		});
+		const submitButton = screen.getByRole("button", {
+			name: /external_auth_password_link_submit/,
+		});
+		await waitFor(() => {
+			expect(submitButton).toBeEnabled();
+		});
+		fireEvent.click(submitButton);
+
+		await waitFor(() => {
+			expect(mockState.linkExternalAuthWithPassword).toHaveBeenCalledWith({
+				flow_token: "flow-token",
+				identifier: "user@example.com",
+				password: "secret123",
+			});
+		});
+		expect(mockState.syncSession).toHaveBeenCalledWith(900);
+		expect(mockState.refreshUser).toHaveBeenCalledTimes(1);
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"external_auth_password_link_success",
+		);
+
+		await waitFor(() => {
+			expect(mockState.navigate).toHaveBeenCalledWith("/", { replace: true });
+		});
+	});
+
+	it("validates external auth password-link fields before submitting", async () => {
+		mockState.forceEnableDisabledButtons = true;
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search: "?external_auth=email_required&flow=flow-token",
+		};
+
+		render(<LoginPage />);
+
+		await screen.findByRole("button", {
+			name: /external_auth_password_link_submit/,
+		});
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: /external_auth_password_link_submit/,
+			}),
+		);
+
+		expect(screen.getAllByText("email_or_username").length).toBeGreaterThan(0);
+		expect(screen.getByText("password-required")).toBeInTheDocument();
+		expect(mockState.linkExternalAuthWithPassword).not.toHaveBeenCalled();
+
+		const identifierInput = document.querySelector<HTMLInputElement>(
+			"#external-auth-password-link-identifier",
+		);
+		if (!identifierInput) {
+			throw new Error("external auth password-link identifier not found");
+		}
+		fireEvent.change(identifierInput, {
+			target: { value: "user@example.com" },
+		});
+	});
+
+	it("sends external auth email verification and shows the sent state", async () => {
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search: "?external_auth=email_required&flow=flow-token",
+		};
+
+		render(<LoginPage />);
+
+		const emailTab = await screen.findByRole("tab", {
+			name: /external_auth_email_verification_tab/,
+		});
+		fireEvent.click(emailTab);
+		await waitFor(() => {
+			expect(emailTab).toHaveAttribute("aria-selected", "true");
+		});
+		const emailInput = await waitFor(() => {
+			const input = document.querySelector<HTMLInputElement>(
+				"#external-auth-recovery-email",
+			);
+			if (!input) throw new Error("email recovery field not ready");
+			return input;
+		});
+		fireEvent.change(emailInput, {
+			target: { value: "verify@example.com" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: /external_auth_email_verification_send/,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.startExternalAuthEmailVerification).toHaveBeenCalledWith(
+				{
+					email: "verify@example.com",
+					flow_token: "flow-token",
+				},
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"external_auth_email_verification_sent_toast",
+		);
+		expect(
+			await screen.findByText("external_auth_email_verification_sent_title"),
+		).toBeInTheDocument();
+		expect(screen.getByText("email: verify@example.com")).toBeInTheDocument();
+	});
+
+	it("validates and reports external auth email verification failures", async () => {
+		const error = new Error("email verification failed");
+		mockState.startExternalAuthEmailVerification.mockRejectedValueOnce(error);
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search: "?external_auth=email_required&flow=flow-token",
+		};
+
+		render(<LoginPage />);
+
+		const emailTab = await screen.findByRole("tab", {
+			name: /external_auth_email_verification_tab/,
+		});
+		fireEvent.click(emailTab);
+		await waitFor(() => {
+			expect(emailTab).toHaveAttribute("aria-selected", "true");
+		});
+		const emailInput = await waitFor(() => {
+			const input = document.querySelector<HTMLInputElement>(
+				"#external-auth-recovery-email",
+			);
+			if (!input) throw new Error("email recovery field not ready");
+			return input;
+		});
+		fireEvent.change(emailInput, {
+			target: { value: "bad" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: /external_auth_email_verification_send/,
+			}),
+		);
+
+		expect(screen.getByText("invalid-email")).toBeInTheDocument();
+		expect(mockState.startExternalAuthEmailVerification).not.toHaveBeenCalled();
+
+		fireEvent.change(emailInput, {
+			target: { value: "verify@example.com" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: /external_auth_email_verification_send/,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
+		});
+	});
+
+	it("closes external auth recovery and returns to the sign-in form", async () => {
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search: "?external_auth=email_required&flow=flow-token",
+		};
+
+		render(<LoginPage />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /back_to_sign_in/ }),
+		);
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "sign_in" }),
+			).toBeInTheDocument();
+		});
+	});
+
+	it("shows external auth recovery redirect error toasts", async () => {
+		const cases = [
+			{
+				description: "external_auth_email_verification_missing_token_desc",
+				id: "external-auth-recovery-missing",
+				search: "?external_auth=email_verification_missing",
+				title: "external_auth_email_verification_missing_token_title",
+			},
+			{
+				description: "external_auth_email_verification_invalid_desc",
+				id: "external-auth-recovery-invalid",
+				search: "?external_auth=email_verification_invalid",
+				title: "external_auth_email_verification_invalid_title",
+			},
+			{
+				description: "external_auth_email_verification_expired_desc",
+				id: "external-auth-recovery-expired",
+				search: "?external_auth=email_verification_expired",
+				title: "external_auth_email_verification_expired_title",
+			},
+		];
+
+		for (const item of cases) {
+			mockState.location = {
+				hash: "",
+				pathname: "/login",
+				search: item.search,
+			};
+			mockState.navigate.mockReset();
+			mockState.toastError.mockReset();
+
+			const view = render(<LoginPage />);
+
+			await waitFor(() => {
+				expect(mockState.toastError).toHaveBeenCalledWith(item.title, {
+					description: item.description,
+					id: item.id,
+				});
+			});
+			expect(mockState.navigate).toHaveBeenCalledWith(
+				{ hash: "", pathname: "/login", search: "" },
+				{ replace: true },
+			);
+			view.unmount();
+		}
+	});
+
 	it("starts external auth login with the provider kind and key", async () => {
 		const provider = {
 			display_name: "Example IDP",
@@ -926,6 +1284,40 @@ describe("LoginPage", () => {
 		expect(mockState.locationAssign).toHaveBeenCalledWith(
 			"https://idp.example.com/authorize",
 		);
+	});
+
+	it("reports external auth provider loading and login start failures", async () => {
+		const loadError = new Error("providers failed");
+		mockState.listExternalAuthProviders.mockRejectedValueOnce(loadError);
+
+		const firstView = render(<LoginPage />);
+
+		await waitFor(() => {
+			expect(mockState.loggerWarn).toHaveBeenCalledWith(
+				"failed to load external auth providers",
+				loadError,
+			);
+		});
+		firstView.unmount();
+
+		const provider = {
+			display_name: "Example IDP",
+			icon_url: null,
+			key: "example",
+			kind: "oidc",
+		};
+		const startError = new Error("start failed");
+		mockState.listExternalAuthProviders.mockResolvedValueOnce([provider]);
+		mockState.startExternalAuthLogin.mockRejectedValueOnce(startError);
+
+		render(<LoginPage />);
+
+		fireEvent.click(await screen.findByRole("button", { name: /Example IDP/ }));
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(startError);
+		});
+		expect(mockState.locationAssign).not.toHaveBeenCalled();
 	});
 
 	it("keeps the desktop brand logo matched to the dark hero surface", () => {

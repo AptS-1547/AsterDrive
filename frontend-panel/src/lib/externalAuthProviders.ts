@@ -1,9 +1,13 @@
 import type { ExternalAuthProviderKind } from "@/types/api";
 
-export function externalAuthKindIconPath(kind: ExternalAuthProviderKind) {
+export function externalAuthKindIconPath(
+	kind: ExternalAuthProviderKind,
+): string {
 	switch (kind) {
 		case "oidc":
 			return "/static/external-auth/openid-seeklogo.svg";
+		default:
+			return "";
 	}
 }
 

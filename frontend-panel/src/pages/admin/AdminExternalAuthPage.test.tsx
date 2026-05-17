@@ -14,6 +14,7 @@ const mockState = vi.hoisted(() => ({
 	testParams: vi.fn(),
 	toastSuccess: vi.fn(),
 	update: vi.fn(),
+	writeTextToClipboard: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -35,7 +36,28 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("@/components/common/ConfirmDialog", () => ({
-	ConfirmDialog: () => null,
+	ConfirmDialog: ({
+		confirmLabel,
+		description,
+		onConfirm,
+		open,
+		title,
+	}: {
+		confirmLabel: string;
+		description?: string;
+		onConfirm: () => void;
+		open: boolean;
+		title: string;
+	}) =>
+		open ? (
+			<div role="dialog">
+				<h2>{title}</h2>
+				<p>{description}</p>
+				<button type="button" onClick={onConfirm}>
+					{confirmLabel}
+				</button>
+			</div>
+		) : null,
 }));
 
 vi.mock("@/components/admin/AdminOffsetPagination", () => ({
@@ -211,7 +233,8 @@ vi.mock("@/hooks/usePageTitle", () => ({
 }));
 
 vi.mock("@/lib/clipboard", () => ({
-	writeTextToClipboard: vi.fn(),
+	writeTextToClipboard: (...args: unknown[]) =>
+		mockState.writeTextToClipboard(...args),
 }));
 
 vi.mock("@/services/adminService", () => ({
@@ -271,7 +294,9 @@ describe("AdminExternalAuthPage", () => {
 		mockState.testParams.mockReset();
 		mockState.toastSuccess.mockReset();
 		mockState.update.mockReset();
+		mockState.writeTextToClipboard.mockReset();
 
+		mockState.writeTextToClipboard.mockResolvedValue(undefined);
 		mockState.listKinds.mockResolvedValue([
 			{
 				authorization_url_required: false,
@@ -425,6 +450,45 @@ describe("AdminExternalAuthPage", () => {
 				/\/api\/v1\/auth\/external-auth\/oidc\/example\/callback/,
 			),
 		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "core:close" }));
+
+		await waitFor(() => {
+			expect(
+				screen.queryByText("external_auth_provider_created_callback_title"),
+			).not.toBeInTheDocument();
+		});
+	});
+
+	it("keeps the create wizard on the type step when no provider kinds are available", async () => {
+		const loadKindsError = new Error("provider kinds unavailable");
+		mockState.listKinds
+			.mockResolvedValueOnce([])
+			.mockRejectedValueOnce(loadKindsError);
+
+		render(
+			<MemoryRouter initialEntries={["/admin/external-auth"]}>
+				<AdminExternalAuthPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() => expect(mockState.listKinds).toHaveBeenCalledTimes(1));
+		const createButtons = screen.getAllByRole("button", {
+			name: /external_auth_provider_create/,
+		});
+		fireEvent.click(createButtons[createButtons.length - 1]);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(loadKindsError);
+		});
+		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+
+		expect(
+			screen.getByText("external_auth_provider_wizard_choose_type_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByLabelText("external_auth_provider_display_name"),
+		).not.toBeInTheDocument();
 	});
 
 	it("tests provider draft parameters while creating", async () => {
@@ -646,5 +710,211 @@ describe("AdminExternalAuthPage", () => {
 		expect(
 			screen.getAllByText("external_auth_provider_claim_default_hint").length,
 		).toBeGreaterThanOrEqual(7);
+	});
+
+	it("copies callback URLs from the provider list and reports clipboard failures", async () => {
+		mockState.list.mockResolvedValue({
+			items: [savedProvider()],
+			limit: 20,
+			offset: 0,
+			total: 1,
+		});
+
+		render(
+			<MemoryRouter initialEntries={["/admin/external-auth"]}>
+				<AdminExternalAuthPage />
+			</MemoryRouter>,
+		);
+
+		await screen.findByText("Example IDP");
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "external_auth_provider_copy_callback_url",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.writeTextToClipboard).toHaveBeenCalledWith(
+				expect.stringContaining(
+					"/api/v1/auth/external-auth/oidc/example/callback",
+				),
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"core:copied_to_clipboard",
+		);
+
+		mockState.writeTextToClipboard.mockRejectedValueOnce(
+			new Error("clipboard denied"),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "external_auth_provider_copy_callback_url",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.writeTextToClipboard).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	it("updates an existing provider and closes the edit dialog", async () => {
+		mockState.list.mockResolvedValue({
+			items: [savedProvider()],
+			limit: 20,
+			offset: 0,
+			total: 1,
+		});
+		mockState.update.mockResolvedValue(
+			savedProvider({
+				display_name: "Updated IDP",
+				icon_url: "/static/idp-updated.svg",
+			}),
+		);
+
+		render(
+			<MemoryRouter initialEntries={["/admin/external-auth"]}>
+				<AdminExternalAuthPage />
+			</MemoryRouter>,
+		);
+
+		await screen.findByText("Example IDP");
+		fireEvent.click(screen.getByText("Example IDP"));
+		fireEvent.change(
+			screen.getByLabelText("external_auth_provider_display_name"),
+			{
+				target: { value: "Updated IDP" },
+			},
+		);
+		fireEvent.change(screen.getByLabelText("external_auth_provider_icon_url"), {
+			target: { value: "/static/idp-updated.svg" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "save_changes" }));
+
+		await waitFor(() => {
+			expect(mockState.update).toHaveBeenCalledWith(
+				1,
+				expect.objectContaining({
+					display_name: "Updated IDP",
+					icon_url: "/static/idp-updated.svg",
+				}),
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"external_auth_provider_updated",
+		);
+		expect(
+			screen.queryByText("external_auth_provider_edit"),
+		).not.toBeInTheDocument();
+	});
+
+	it("handles test, update, delete, and list loading failures through the shared error handler", async () => {
+		const loadError = new Error("load failed");
+		mockState.listKinds.mockRejectedValueOnce(loadError);
+
+		render(
+			<MemoryRouter initialEntries={["/admin/external-auth"]}>
+				<AdminExternalAuthPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(loadError);
+		});
+	});
+
+	it("deletes providers and reloads the current page", async () => {
+		mockState.list.mockResolvedValue({
+			items: [savedProvider()],
+			limit: 20,
+			offset: 0,
+			total: 1,
+		});
+		mockState.deleteProvider.mockResolvedValue(undefined);
+
+		render(
+			<MemoryRouter initialEntries={["/admin/external-auth"]}>
+				<AdminExternalAuthPage />
+			</MemoryRouter>,
+		);
+
+		await screen.findByText("Example IDP");
+		fireEvent.click(
+			screen.getByRole("button", { name: "external_auth_provider_delete" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
+
+		await waitFor(() => {
+			expect(mockState.deleteProvider).toHaveBeenCalledWith(1);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"external_auth_provider_deleted",
+		);
+		expect(mockState.list).toHaveBeenLastCalledWith({
+			limit: 20,
+			offset: 0,
+		});
+	});
+
+	it("moves back a page after deleting the last provider on an offset page", async () => {
+		mockState.list.mockResolvedValue({
+			items: [savedProvider()],
+			limit: 20,
+			offset: 20,
+			total: 21,
+		});
+		mockState.deleteProvider.mockResolvedValue(undefined);
+
+		render(
+			<MemoryRouter initialEntries={["/admin/external-auth?offset=20"]}>
+				<AdminExternalAuthPage />
+			</MemoryRouter>,
+		);
+
+		await screen.findByText("Example IDP");
+		fireEvent.click(
+			screen.getByRole("button", { name: "external_auth_provider_delete" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
+
+		await waitFor(() => {
+			expect(mockState.deleteProvider).toHaveBeenCalledWith(1);
+		});
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenLastCalledWith({
+				limit: 20,
+				offset: 0,
+			});
+		});
+	});
+
+	it("moves an out-of-range URL offset back to the last populated page", async () => {
+		mockState.list
+			.mockResolvedValueOnce({
+				items: [],
+				limit: 20,
+				offset: 40,
+				total: 21,
+			})
+			.mockResolvedValueOnce({
+				items: [savedProvider()],
+				limit: 20,
+				offset: 20,
+				total: 21,
+			});
+
+		render(
+			<MemoryRouter initialEntries={["/admin/external-auth?offset=40"]}>
+				<AdminExternalAuthPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenLastCalledWith({
+				limit: 20,
+				offset: 20,
+			});
+		});
+		expect(await screen.findByText("Example IDP")).toBeInTheDocument();
 	});
 });

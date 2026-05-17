@@ -14,6 +14,7 @@ use crate::services::external_auth_service::{
     UpdateExternalAuthProviderInput,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
+use serde::Serialize;
 
 fn external_auth_provider_audit_details(
     provider: &AdminExternalAuthProviderInfo,
@@ -27,6 +28,13 @@ fn external_auth_provider_audit_details(
         auto_link_verified_email_enabled: provider.auto_link_verified_email_enabled,
         require_email_verified: provider.require_email_verified,
     })
+}
+
+#[derive(Serialize)]
+struct ExternalAuthProviderTestParamsAuditDetails<'a> {
+    provider_kind: &'a str,
+    key: &'a str,
+    success: bool,
 }
 
 #[api_docs_macros::path(
@@ -215,9 +223,30 @@ pub async fn delete_external_auth_provider(
 )]
 pub async fn test_external_auth_provider_params(
     state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
     body: web::Json<ExternalAuthProviderTestParamsInput>,
 ) -> Result<HttpResponse> {
-    let result = external_auth_service::test_provider_params(&state, body.into_inner()).await?;
+    let input = body.into_inner();
+    let provider_kind = input.provider_kind.as_str();
+    let result = external_auth_service::test_provider_params(&state, input).await;
+    let success = result.is_ok();
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::AdminTestExternalAuthProvider,
+        Some("external_auth_provider"),
+        None,
+        Some("draft"),
+        audit_service::details(ExternalAuthProviderTestParamsAuditDetails {
+            provider_kind,
+            key: "draft",
+            success,
+        }),
+    )
+    .await;
+    let result = result?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }
 

@@ -15,7 +15,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::services::auth_service::LoginResult;
-use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
+use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind, NullablePatch};
 
 pub use links::{cleanup_expired_flows, delete_link, list_links};
 pub use login::{finish_callback, start_login};
@@ -205,26 +205,138 @@ pub struct CreateExternalAuthProviderInput {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
 pub struct UpdateExternalAuthProviderInput {
     pub display_name: Option<String>,
-    pub icon_url: Option<Option<String>>,
-    pub issuer_url: Option<Option<String>>,
-    pub authorization_url: Option<Option<String>>,
-    pub token_url: Option<Option<String>>,
-    pub userinfo_url: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub icon_url: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub issuer_url: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub authorization_url: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub token_url: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub userinfo_url: Option<NullablePatch<String>>,
     pub client_id: Option<String>,
-    pub client_secret: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub client_secret: Option<NullablePatch<String>>,
     pub scopes: Option<String>,
     pub enabled: Option<bool>,
     pub auto_provision_enabled: Option<bool>,
     pub auto_link_verified_email_enabled: Option<bool>,
     pub require_email_verified: Option<bool>,
-    pub subject_claim: Option<Option<String>>,
-    pub username_claim: Option<Option<String>>,
-    pub display_name_claim: Option<Option<String>>,
-    pub email_claim: Option<Option<String>>,
-    pub email_verified_claim: Option<Option<String>>,
-    pub groups_claim: Option<Option<String>>,
-    pub avatar_url_claim: Option<Option<String>>,
-    pub allowed_domains: Option<Option<Vec<String>>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub subject_claim: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub username_claim: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub display_name_claim: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub email_claim: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub email_verified_claim: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub groups_claim: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<String>)
+    )]
+    pub avatar_url_claim: Option<NullablePatch<String>>,
+    #[serde(
+        default,
+        deserialize_with = "crate::types::deserialize_nullable_patch_option"
+    )]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(value_type = Option<Vec<String>>)
+    )]
+    pub allowed_domains: Option<NullablePatch<Vec<String>>>,
 }
 
 #[derive(Debug, Deserialize)]

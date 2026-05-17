@@ -1,7 +1,10 @@
 //! 认证服务子模块：`shared`。
 
 use chrono::{Duration, Utc};
-use sea_orm::{ActiveModelTrait, ConnectionTrait, DbErr, IntoActiveModel, Set, SqlErr};
+use sea_orm::{
+    ActiveModelTrait, ConnectionTrait, DbErr, EntityTrait, IntoActiveModel, Iterable, Set, SqlErr,
+    TryInsertResult, sea_query::OnConflict,
+};
 
 use crate::api::subcode::ApiSubcode;
 use crate::config::auth_runtime::RuntimeContactVerificationPolicy;
@@ -46,6 +49,14 @@ async fn map_user_create_db_err<C: ConnectionTrait>(
         return AsterError::from(err);
     }
 
+    map_user_create_conflict(db, username, email).await
+}
+
+async fn map_user_create_conflict<C: ConnectionTrait>(
+    db: &C,
+    username: &str,
+    email: &str,
+) -> AsterError {
     if user_repo::find_by_username(db, username)
         .await
         .ok()
@@ -70,6 +81,36 @@ async fn map_user_create_db_err<C: ConnectionTrait>(
     }
 
     identifier_exists_error()
+}
+
+async fn insert_user_with_conflict_marker<C: ConnectionTrait>(
+    db: &C,
+    model: user::ActiveModel,
+) -> std::result::Result<Option<user::Model>, DbErr> {
+    let mut on_conflict = OnConflict::new();
+    on_conflict.do_nothing_on(user::PrimaryKey::iter());
+
+    match user::Entity::insert(model)
+        .on_conflict(on_conflict.to_owned())
+        .try_insert()
+        .exec(db)
+        .await?
+    {
+        TryInsertResult::Inserted(result) => {
+            let user = user::Entity::find_by_id(result.last_insert_id)
+                .one(db)
+                .await?
+                .ok_or_else(|| {
+                    DbErr::RecordNotFound(format!(
+                        "inserted user #{} could not be reloaded",
+                        result.last_insert_id
+                    ))
+                })?;
+            Ok(Some(user))
+        }
+        TryInsertResult::Conflicted => Ok(None),
+        TryInsertResult::Empty => Err(DbErr::RecordNotInserted),
+    }
 }
 
 pub(super) fn map_user_email_db_err(err: DbErr) -> AsterError {
@@ -202,18 +243,15 @@ pub(crate) async fn create_user_with_role<C: ConnectionTrait>(
         updated_at: Set(now),
         ..Default::default()
     };
-    let user = match model.insert(db).await {
-        Ok(user) => user,
+    let user = match insert_user_with_conflict_marker(db, model).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            return Err(map_user_create_conflict(db, &username_for_err, &email_for_err).await);
+        }
         Err(err) => {
             return Err(map_user_create_db_err(db, err, &username_for_err, &email_for_err).await);
         }
     };
-
-    if let Some(policy_group_id) = user.policy_group_id {
-        state
-            .policy_snapshot
-            .set_user_policy_group(user.id, policy_group_id);
-    }
 
     Ok(user)
 }
@@ -238,6 +276,13 @@ pub(super) async fn create_first_admin(
         },
     )
     .await
+    .inspect(|user| {
+        if let Some(policy_group_id) = user.policy_group_id {
+            state
+                .policy_snapshot
+                .set_user_policy_group(user.id, policy_group_id);
+        }
+    })
 }
 
 pub(super) async fn issue_contact_verification_token<C: ConnectionTrait>(

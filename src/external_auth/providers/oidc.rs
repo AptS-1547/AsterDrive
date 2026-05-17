@@ -254,6 +254,12 @@ fn truncate_to_utf8_boundary(value: &str, max_len: usize) -> String {
 
 fn normalize_optional_snapshot(value: Option<String>) -> Option<String> {
     value
+        .map(|value| {
+            value
+                .chars()
+                .filter(|ch| !ch.is_control())
+                .collect::<String>()
+        })
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .map(|value| truncate_to_utf8_boundary(&value, OIDC_SNAPSHOT_MAX_LEN))

@@ -274,6 +274,7 @@ describe("uploadService", () => {
 		await expect(promise).rejects.toThrow("upload aborted");
 		await expect(promise).rejects.toBeInstanceOf(UploadRequestError);
 		await expect(promise).rejects.toMatchObject({
+			isAborted: true,
 			status: 0,
 			retryable: false,
 		});

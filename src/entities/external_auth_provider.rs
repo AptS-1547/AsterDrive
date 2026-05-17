@@ -2,12 +2,13 @@
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[sea_orm(table_name = "external_auth_providers")]
 pub struct Model {
@@ -42,6 +43,46 @@ pub struct Model {
     pub created_at: DateTimeUtc,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: DateTimeUtc,
+}
+
+impl fmt::Debug for Model {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Model")
+            .field("id", &self.id)
+            .field("key", &self.key)
+            .field("display_name", &self.display_name)
+            .field("icon_url", &self.icon_url)
+            .field("provider_kind", &self.provider_kind)
+            .field("protocol", &self.protocol)
+            .field("issuer_url", &self.issuer_url)
+            .field("authorization_url", &self.authorization_url)
+            .field("token_url", &self.token_url)
+            .field("userinfo_url", &self.userinfo_url)
+            .field("client_id", &self.client_id)
+            .field(
+                "client_secret",
+                &self.client_secret.as_ref().map(|_| "***REDACTED***"),
+            )
+            .field("scopes", &self.scopes)
+            .field("enabled", &self.enabled)
+            .field("auto_provision_enabled", &self.auto_provision_enabled)
+            .field(
+                "auto_link_verified_email_enabled",
+                &self.auto_link_verified_email_enabled,
+            )
+            .field("require_email_verified", &self.require_email_verified)
+            .field("subject_claim", &self.subject_claim)
+            .field("username_claim", &self.username_claim)
+            .field("display_name_claim", &self.display_name_claim)
+            .field("email_claim", &self.email_claim)
+            .field("email_verified_claim", &self.email_verified_claim)
+            .field("groups_claim", &self.groups_claim)
+            .field("avatar_url_claim", &self.avatar_url_claim)
+            .field("allowed_domains", &self.allowed_domains)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .finish()
+    }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

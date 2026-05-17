@@ -5,7 +5,11 @@ import {
 import { getApiErrorMessage } from "@/hooks/useApiError";
 import { api } from "@/services/http";
 import type { InitUploadResponse } from "@/services/uploadService";
-import { buildUploadPath, uploadService } from "@/services/uploadService";
+import {
+	buildUploadPath,
+	UploadRequestError,
+	uploadService,
+} from "@/services/uploadService";
 import type { UploadTask } from "./uploadAreaManagerShared";
 import { completeWithRetry } from "./uploadAreaManagerShared";
 import type {
@@ -132,11 +136,11 @@ export function createSimpleUploadRunners({
 			});
 			markFolderForRefresh(task);
 		} catch (error) {
-			const message = getApiErrorMessage(error);
-			if (message.includes("abort")) {
+			if (error instanceof UploadRequestError && error.isAborted) {
 				patchTask(task.id, { status: "cancelled", error: null });
 				return;
 			}
+			const message = getApiErrorMessage(error);
 			markTaskFailed(task.id, message);
 		} finally {
 			presignedXhrRef.current.delete(task.id);

@@ -170,15 +170,11 @@ export function ExternalAuthProviderIcon({
 				aria-hidden="true"
 				className={cn("object-contain", className)}
 				onError={(event) => {
-					if (
-						configuredIcon &&
-						kindIcon &&
-						event.currentTarget.src !== kindIcon
-					) {
-						event.currentTarget.src = kindIcon;
-						return;
-					}
-					event.currentTarget.hidden = true;
+					fallbackExternalAuthIcon(
+						event.currentTarget,
+						configuredIcon,
+						kindIcon,
+					);
 				}}
 			/>
 		);
@@ -232,6 +228,36 @@ function nullableSecretText(value: string) {
 	return trimmed && trimmed !== REDACTED_SECRET ? trimmed : null;
 }
 
+function isRedactedSecret(value: string) {
+	return value.trim() === REDACTED_SECRET;
+}
+
+function normalizedUrl(value: string) {
+	try {
+		return new URL(value, document.baseURI).href;
+	} catch {
+		return value;
+	}
+}
+
+function fallbackExternalAuthIcon(
+	target: HTMLImageElement,
+	configuredIcon: string,
+	kindIcon: string,
+) {
+	if (
+		configuredIcon &&
+		kindIcon &&
+		target.dataset.fallbackTried !== "1" &&
+		normalizedUrl(target.src) !== normalizedUrl(kindIcon)
+	) {
+		target.dataset.fallbackTried = "1";
+		target.src = kindIcon;
+		return;
+	}
+	target.hidden = true;
+}
+
 function effectiveClaim(value: string | null | undefined, fallback: string) {
 	return value?.trim() || fallback;
 }
@@ -277,7 +303,9 @@ export function updatePayload(
 		auto_provision_enabled: form.autoProvisionEnabled,
 		avatar_url_claim: nullableText(form.avatarUrlClaim),
 		client_id: form.clientId.trim(),
-		client_secret: nullableText(form.clientSecret),
+		...(isRedactedSecret(form.clientSecret)
+			? {}
+			: { client_secret: nullableText(form.clientSecret) }),
 		display_name: form.displayName.trim(),
 		display_name_claim: nullableText(form.displayNameClaim),
 		email_claim: nullableText(form.emailClaim),

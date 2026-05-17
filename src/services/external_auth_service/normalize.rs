@@ -3,7 +3,7 @@ use crate::entities::external_auth_provider;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::auth_service;
-use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
+use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind, NullablePatch};
 use crate::utils::hash;
 
 use super::{
@@ -89,13 +89,13 @@ pub(super) fn normalize_secret_create(value: Option<String>) -> Option<String> {
 }
 
 pub(super) fn normalize_secret_update(
-    value: Option<Option<String>>,
+    value: NullablePatch<String>,
     existing: Option<String>,
 ) -> Option<String> {
     match value {
-        None => existing,
-        Some(None) => None,
-        Some(Some(secret)) => {
+        NullablePatch::Absent => existing,
+        NullablePatch::Null => None,
+        NullablePatch::Value(secret) => {
             let trimmed = secret.trim();
             if trimmed.is_empty() {
                 None
@@ -345,18 +345,6 @@ pub(super) fn normalize_email_for_external_auth(value: &str) -> Result<String> {
     Ok(email)
 }
 
-fn request_origin(req: &actix_web::HttpRequest) -> Result<(String, String)> {
-    let conn = req.connection_info();
-    let scheme = conn.scheme().to_string();
-    let host = conn.host().to_string();
-    if host.trim().is_empty() {
-        return Err(AsterError::config_error(
-            "cannot build external auth redirect URI without request host",
-        ));
-    }
-    Ok((scheme, host))
-}
-
 fn callback_path(provider_kind: ExternalAuthProviderKind, provider_key: &str) -> String {
     format!(
         "/api/v1/auth/external-auth/{}/{provider_key}/callback",
@@ -370,10 +358,16 @@ pub fn callback_redirect_uri(
     provider_kind: ExternalAuthProviderKind,
     provider_key: &str,
 ) -> Result<String> {
-    let (scheme, host) = request_origin(req)?;
+    let conn = req.connection_info();
+    let scheme = conn.scheme();
+    let host = conn.host();
     let path = callback_path(provider_kind, provider_key);
-    let uri = site_url::public_app_url_for_request(&state.runtime_config, &path, &scheme, &host)
-        .unwrap_or_else(|| format!("{scheme}://{host}{path}"));
+    let uri = site_url::public_app_url_for_request(&state.runtime_config, &path, scheme, host)
+        .ok_or_else(|| {
+            AsterError::config_error(
+                "cannot build external auth callback redirect URI; configure public_site_url",
+            )
+        })?;
     if uri.starts_with('/') {
         return Err(AsterError::config_error(
             "external auth callback redirect URI must be absolute; configure public_site_url",

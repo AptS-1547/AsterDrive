@@ -267,6 +267,7 @@ export default function LoginPage() {
 		}
 
 		searchParams.delete("external_auth");
+		searchParams.delete("code");
 		searchParams.delete("message");
 		searchParams.delete("flow");
 		searchParams.delete("return_path");

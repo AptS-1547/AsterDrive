@@ -10,14 +10,16 @@ use aster_drive::db::repository::{
     external_auth_identity_repo, external_auth_login_flow_repo, external_auth_provider_repo,
 };
 use aster_drive::entities::{
-    external_auth_email_verification_flow, external_auth_identity, external_auth_login_flow,
-    external_auth_provider, user,
+    audit_log, external_auth_email_verification_flow, external_auth_identity,
+    external_auth_login_flow, external_auth_provider, user,
 };
-use aster_drive::services::external_auth_service;
+use aster_drive::services::{audit_service, external_auth_service};
+use aster_drive::types::AuditAction;
 use chrono::{Duration, Utc};
 use external_auth::oidc::*;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
+    QueryOrder,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -67,8 +69,13 @@ async fn admin_provider_api_masks_secret_and_public_list_only_shows_enabled() {
     );
     assert!(public_body["data"][0].get("client_secret").is_none());
 
+    let provider_id = created["data"]["id"]
+        .as_i64()
+        .expect("provider id should be returned");
     let req = test::TestRequest::patch()
-        .uri("/api/v1/admin/external-auth/providers/1")
+        .uri(&format!(
+            "/api/v1/admin/external-auth/providers/{provider_id}"
+        ))
         .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
         .insert_header(common::csrf_header_for(&admin_token))
         .set_json(serde_json::json!({ "enabled": false }))
@@ -187,6 +194,30 @@ async fn admin_tests_external_auth_provider_draft_params_without_persisting() {
         .await
         .expect("providers should query");
     assert!(providers.is_empty());
+    audit_service::flush_global_audit_log_manager().await;
+    let audit_entry = audit_log::Entity::find()
+        .filter(audit_log::Column::Action.eq(AuditAction::AdminTestExternalAuthProvider))
+        .order_by_desc(audit_log::Column::Id)
+        .one(&state.db)
+        .await
+        .expect("audit log should query")
+        .expect("draft test should write an audit log");
+    assert_eq!(audit_entry.user_id, 1);
+    assert_eq!(
+        audit_entry.entity_type.as_deref(),
+        Some("external_auth_provider")
+    );
+    assert_eq!(audit_entry.entity_name.as_deref(), Some("draft"));
+    let details: Value = serde_json::from_str(
+        audit_entry
+            .details
+            .as_deref()
+            .expect("audit details should exist"),
+    )
+    .expect("audit details should parse");
+    assert_eq!(details["provider_kind"], "oidc");
+    assert_eq!(details["key"], "draft");
+    assert_eq!(details["success"], true);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/external-auth/providers/test")
@@ -199,6 +230,23 @@ async fn admin_tests_external_auth_provider_draft_params_without_persisting() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
+    audit_service::flush_global_audit_log_manager().await;
+    let audit_entry = audit_log::Entity::find()
+        .filter(audit_log::Column::Action.eq(AuditAction::AdminTestExternalAuthProvider))
+        .order_by_desc(audit_log::Column::Id)
+        .one(&state.db)
+        .await
+        .expect("audit log should query")
+        .expect("failed draft test should write an audit log");
+    let details: Value = serde_json::from_str(
+        audit_entry
+            .details
+            .as_deref()
+            .expect("audit details should exist"),
+    )
+    .expect("audit details should parse");
+    assert_eq!(details["provider_kind"], "oidc");
+    assert_eq!(details["success"], false);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/external-auth/providers")
@@ -836,6 +884,59 @@ async fn no_email_claim_can_register_after_local_email_verification() {
     assert_eq!(
         identities[0].email_snapshot.as_deref(),
         Some("fallback-provision@example.com")
+    );
+
+    server.stop(true).await;
+}
+
+#[actix_web::test]
+async fn auto_provision_retries_username_collision_with_random_suffix() {
+    let (mock_provider, server) = start_mock_external_auth_provider().await;
+    mock_provider.set_subject("username-collision-subject");
+    mock_provider.set_email("username-collision@example.com");
+
+    let state = common::setup().await;
+    configure_oidc_public_site_url(&state);
+    let app = create_test_app!(state.clone());
+    let (admin_token, _) = register_and_login!(app);
+    admin_create_user!(
+        app,
+        admin_token,
+        "oidctest",
+        "existing-oidc-name@example.com",
+        "password123"
+    );
+    let provider_key =
+        create_external_auth_provider_key(&app, &admin_token, &mock_provider.issuer, true, true)
+            .await;
+
+    let state_value = start_oidc_login(&app, &mock_provider, &provider_key, "/files").await;
+    let resp = finish_oidc_callback(&app, &provider_key, &state_value).await;
+    assert_eq!(resp.status(), 302);
+    assert!(common::extract_cookie(&resp, "aster_access").is_some());
+
+    let user = user::Entity::find()
+        .filter(user::Column::Email.eq("username-collision@example.com"))
+        .one(&state.db)
+        .await
+        .expect("user should query")
+        .expect("OIDC auto-provision should create user");
+    assert_ne!(user.username, "oidctest");
+    assert!(user.username.starts_with("oidctest-"));
+    assert!(user.username.len() <= 16);
+
+    let identities = external_auth_identity::Entity::find()
+        .filter(external_auth_identity::Column::Subject.eq("username-collision-subject"))
+        .all(&state.db)
+        .await
+        .expect("identities should query");
+    assert_eq!(identities.len(), 1);
+    assert_eq!(identities[0].user_id, user.id);
+    assert!(
+        state
+            .policy_snapshot
+            .resolve_default_policy_group_id(user.id)
+            .is_some()
     );
 
     server.stop(true).await;

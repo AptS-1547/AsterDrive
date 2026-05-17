@@ -125,6 +125,12 @@ fn normalize_text_value(field_name: &str, value: &str, max_len: usize) -> Result
 
 fn string_or_default(value: Option<String>, default: &str) -> String {
     value
+        .map(|value| {
+            value
+                .chars()
+                .filter(|ch| *ch != '\r' && *ch != '\n')
+                .collect::<String>()
+        })
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| default.to_string())
@@ -270,5 +276,13 @@ mod tests {
             wordmark_light_url_or_default(&runtime_config),
             DEFAULT_BRANDING_WORDMARK_LIGHT_URL
         );
+    }
+
+    #[test]
+    fn effective_branding_title_strips_crlf_from_runtime_value() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(BRANDING_TITLE_KEY, "  My\r\nDrive\n  "));
+
+        assert_eq!(title_or_default(&runtime_config), "MyDrive");
     }
 }

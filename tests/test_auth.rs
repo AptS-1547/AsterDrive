@@ -6,6 +6,7 @@ mod common;
 use actix_web::body::MessageBody;
 use actix_web::cookie::SameSite;
 use actix_web::test;
+use aster_drive::config::branding::DEFAULT_BRANDING_TITLE;
 use aster_drive::db::repository::{auth_session_repo, passkey_repo, user_repo};
 use aster_drive::entities::passkey;
 use aster_drive::services::auth_service;
@@ -1336,9 +1337,7 @@ async fn test_email_change_confirmation_redirects_and_notifies_previous_email() 
     assert_eq!(previous_email_notice.to.address, "test@example.com");
     assert_eq!(
         previous_email_notice.subject,
-        aster_drive::config::mail::default_template_subject(
-            aster_drive::types::MailTemplateCode::ContactChangeNotice,
-        )
+        format!("Your {DEFAULT_BRANDING_TITLE} Email Address Was Updated")
     );
     assert!(
         previous_email_notice
@@ -1461,9 +1460,7 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
     assert_eq!(password_reset_notice.to.address, "test@example.com");
     assert_eq!(
         password_reset_notice.subject,
-        aster_drive::config::mail::default_template_subject(
-            aster_drive::types::MailTemplateCode::PasswordResetNotice,
-        )
+        format!("Your {DEFAULT_BRANDING_TITLE} Password Was Reset")
     );
     assert!(
         password_reset_notice

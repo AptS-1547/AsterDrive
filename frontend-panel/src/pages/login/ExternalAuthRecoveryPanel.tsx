@@ -211,7 +211,7 @@ export function ExternalAuthRecoveryPanel({
 								<Button
 									type="submit"
 									className="h-10 w-full"
-									disabled={busy || email.trim().length === 0}
+									disabled={busy || email.trim().length === 0 || !!emailError}
 								>
 									{submittingEmail ? (
 										<Icon

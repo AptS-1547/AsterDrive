@@ -4,6 +4,7 @@ use crate::errors::{AsterError, Result};
 use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
 use async_trait::async_trait;
 use serde::Serialize;
+use std::fmt;
 
 #[derive(Clone, Debug)]
 pub struct ExternalAuthProviderDescriptor {
@@ -22,7 +23,7 @@ pub struct ExternalAuthProviderDescriptor {
     pub supports_email_verified_claim: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ExternalAuthProviderConfig {
     pub id: i64,
     pub key: String,
@@ -42,6 +43,34 @@ pub struct ExternalAuthProviderConfig {
     pub email_verified_claim: Option<String>,
     pub groups_claim: Option<String>,
     pub avatar_url_claim: Option<String>,
+}
+
+impl fmt::Debug for ExternalAuthProviderConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExternalAuthProviderConfig")
+            .field("id", &self.id)
+            .field("key", &self.key)
+            .field("provider_kind", &self.provider_kind)
+            .field("protocol", &self.protocol)
+            .field("issuer_url", &self.issuer_url)
+            .field("authorization_url", &self.authorization_url)
+            .field("token_url", &self.token_url)
+            .field("userinfo_url", &self.userinfo_url)
+            .field("client_id", &self.client_id)
+            .field(
+                "client_secret",
+                &self.client_secret.as_ref().map(|_| "***REDACTED***"),
+            )
+            .field("scopes", &self.scopes)
+            .field("subject_claim", &self.subject_claim)
+            .field("username_claim", &self.username_claim)
+            .field("display_name_claim", &self.display_name_claim)
+            .field("email_claim", &self.email_claim)
+            .field("email_verified_claim", &self.email_verified_claim)
+            .field("groups_claim", &self.groups_claim)
+            .field("avatar_url_claim", &self.avatar_url_claim)
+            .finish()
+    }
 }
 
 impl ExternalAuthProviderConfig {

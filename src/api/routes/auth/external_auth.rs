@@ -1,6 +1,7 @@
 //! 认证 API 路由：`external-auth`。
 
 use super::cookies::{build_access_cookie, build_csrf_cookie, build_refresh_cookie};
+use crate::api::error_code::ErrorCode;
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::response::ApiResponse;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
@@ -87,7 +88,7 @@ pub async fn start_login(
     ),
     responses(
         (status = 302, description = "External auth callback completed and redirected"),
-        (status = 401, description = "Invalid external auth callback"),
+        (status = 302, description = "Invalid external auth callback redirected to login"),
     ),
 )]
 pub async fn finish_login(
@@ -445,13 +446,15 @@ fn external_auth_error_redirect_response(
     state: &PrimaryAppState,
     error: &AsterError,
 ) -> HttpResponse {
-    let mut path = format!(
-        "/login?external_auth=error&message={}",
-        urlencoding::encode(error.message())
-    );
-    if error.http_status().is_server_error() {
-        path = "/login?external_auth=error".to_string();
-    }
+    tracing::warn!(error = %error, "external auth callback failed");
+    let path = if error.http_status().is_server_error() {
+        "/login?external_auth=error".to_string()
+    } else {
+        format!(
+            "/login?external_auth=error&code={}",
+            ErrorCode::from(error) as u32
+        )
+    };
     let redirect_url = site_url::public_app_url_or_path(&state.runtime_config, &path);
     HttpResponse::Found()
         .append_header((header::LOCATION, redirect_url))

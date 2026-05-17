@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
 
@@ -15,6 +15,7 @@ const mockState = vi.hoisted(() => ({
 		preference: "browser",
 	},
 	previewAppsLoad: vi.fn(),
+	warmupRouteChunks: vi.fn(),
 	setAuthState: vi.fn(),
 	themeInit: vi.fn(),
 	thumbnailSupportLoad: vi.fn(),
@@ -48,6 +49,11 @@ vi.mock("@/hooks/usePwaUpdate", () => ({
 
 vi.mock("@/hooks/useStorageChangeEvents", () => ({
 	useStorageChangeEvents: vi.fn(),
+}));
+
+vi.mock("@/lib/pwaWarmup", () => ({
+	warmupRouteChunks: (...args: unknown[]) =>
+		mockState.warmupRouteChunks(...args),
 }));
 
 vi.mock("@/components/layout/OfflineBootFallback", () => ({
@@ -122,6 +128,7 @@ describe("App", () => {
 		mockState.themeInit.mockReset();
 		mockState.thumbnailSupportLoad.mockReset();
 		mockState.toastSuccess.mockReset();
+		mockState.warmupRouteChunks.mockReset();
 		vi.useRealTimers();
 	});
 
@@ -136,6 +143,15 @@ describe("App", () => {
 
 		expect(mockState.previewAppsLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.thumbnailSupportLoad).toHaveBeenCalledTimes(1);
+		expect(mockState.authStore.checkAuth).not.toHaveBeenCalled();
+		expect(mockState.setAuthState).toHaveBeenCalledWith({ isChecking: false });
+	});
+
+	it("skips the bootstrap auth check on public share routes", () => {
+		window.history.replaceState({}, "", "/s/share-token");
+
+		render(<App />);
+
 		expect(mockState.authStore.checkAuth).not.toHaveBeenCalled();
 		expect(mockState.setAuthState).toHaveBeenCalledWith({ isChecking: false });
 	});
@@ -187,6 +203,29 @@ describe("App", () => {
 		expect(mockState.thumbnailSupportLoad).toHaveBeenCalledTimes(1);
 	});
 
+	it("renders the offline boot fallback instead of the router", () => {
+		mockState.authStore.bootOffline = true;
+
+		render(<App />);
+
+		expect(screen.getByTestId("offline-fallback")).toBeInTheDocument();
+		expect(screen.queryByTestId("router-provider")).not.toBeInTheDocument();
+		expect(screen.getByTestId("toaster")).toBeInTheDocument();
+	});
+
+	it("defers redirect handling and warmup while auth is still checking", async () => {
+		mockState.authStore.isAuthenticated = true;
+		mockState.authStore.isChecking = true;
+		window.history.replaceState({}, "", "/?external_auth=success");
+
+		render(<App />);
+		await Promise.resolve();
+
+		expect(mockState.toastSuccess).not.toHaveBeenCalled();
+		expect(mockState.warmupRouteChunks).not.toHaveBeenCalled();
+		expect(window.location.search).toBe("?external_auth=success");
+	});
+
 	it("shows and consumes the external auth success redirect toast after auth is ready", () => {
 		mockState.authStore.isAuthenticated = true;
 		mockState.authStore.isChecking = false;
@@ -204,5 +243,59 @@ describe("App", () => {
 		expect(window.location.pathname).toBe("/");
 		expect(window.location.search).toBe("?view=grid");
 		expect(window.location.hash).toBe("#files");
+	});
+
+	it("removes the external auth success query when it is the only search parameter", () => {
+		mockState.authStore.isAuthenticated = true;
+		mockState.authStore.isChecking = false;
+		window.history.replaceState({}, "", "/tasks?external_auth=success");
+
+		render(<App />);
+
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("auth:login_success", {
+			id: "external-auth-login-success",
+		});
+		expect(window.location.pathname).toBe("/tasks");
+		expect(window.location.search).toBe("");
+	});
+
+	it("warms user route chunks after auth is ready", async () => {
+		mockState.authStore.isAuthenticated = true;
+		mockState.authStore.isChecking = false;
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(mockState.warmupRouteChunks).toHaveBeenCalledWith("user");
+		});
+	});
+
+	it("warms admin route chunks for admin users", async () => {
+		mockState.authStore.isAuthenticated = true;
+		mockState.authStore.isChecking = false;
+		mockState.authStore.user = { role: "admin" };
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(mockState.warmupRouteChunks).toHaveBeenCalledWith("admin");
+		});
+	});
+
+	it("removes the display time zone attribute on unmount", () => {
+		mockState.displayTimeZoneStore.preference = "Asia/Shanghai";
+
+		const { unmount } = render(<App />);
+
+		expect(document.documentElement).toHaveAttribute(
+			"data-display-time-zone",
+			"Asia/Shanghai",
+		);
+
+		unmount();
+
+		expect(document.documentElement).not.toHaveAttribute(
+			"data-display-time-zone",
+		);
 	});
 });

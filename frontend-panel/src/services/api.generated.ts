@@ -10588,15 +10588,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description External auth callback completed and redirected */
+            /** @description Invalid external auth callback redirected to login */
             302: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid external auth callback */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };

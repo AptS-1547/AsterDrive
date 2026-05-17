@@ -500,7 +500,7 @@ describe("AdminTasksPage", () => {
 				sort_order: "desc",
 			});
 		});
-		expect(screen.getByText("source:team:8")).toBeInTheDocument();
+		expect(await screen.findByText("source:team:8")).toBeInTheDocument();
 		expect(screen.getByText("zip writer failed")).toBeInTheDocument();
 
 		fireEvent.click(screen.getAllByRole("button", { name: "select-50" })[0]);

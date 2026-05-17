@@ -14,6 +14,8 @@ use super::resolution::{
 };
 use super::{ExternalAuthPasswordLinkRequest, ExternalAuthPasswordLinkResult};
 
+const DUMMY_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHRmb3JkdW1teQ$uLpdZ2ciOQUUMGrye7Tyvz/vZ/saqtJiqQBvovmG6ms";
+
 pub async fn link_with_password(
     state: &PrimaryAppState,
     input: ExternalAuthPasswordLinkRequest,
@@ -46,8 +48,15 @@ pub async fn link_with_password(
         ));
     }
 
-    let Some(user) = auth_service::shared::find_user_by_identifier(&state.db, identifier).await?
-    else {
+    let user = auth_service::shared::find_user_by_identifier(&state.db, identifier).await?;
+    let password_hash = user
+        .as_ref()
+        .map(|user| user.password_hash.as_str())
+        .unwrap_or(DUMMY_PASSWORD_HASH);
+    if !hash::verify_password(&input.password, password_hash)? {
+        return Err(AsterError::auth_invalid_credentials("invalid credentials"));
+    }
+    let Some(user) = user else {
         return Err(AsterError::auth_invalid_credentials("invalid credentials"));
     };
     if !user.status.is_active() {
@@ -57,9 +66,6 @@ pub async fn link_with_password(
         return Err(AsterError::auth_pending_activation(
             "account pending activation",
         ));
-    }
-    if !hash::verify_password(&input.password, &user.password_hash)? {
-        return Err(AsterError::auth_invalid_credentials("invalid credentials"));
     }
 
     let claims = claims_without_provider_email(&flow);
