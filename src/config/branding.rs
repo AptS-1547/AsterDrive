@@ -42,6 +42,8 @@ pub fn title_or_default(runtime_config: &RuntimeConfig) -> String {
     string_or_default(
         runtime_config.get(BRANDING_TITLE_KEY),
         DEFAULT_BRANDING_TITLE,
+        "branding_title",
+        MAX_BRANDING_TITLE_LEN,
     )
 }
 
@@ -49,6 +51,8 @@ pub fn description_or_default(runtime_config: &RuntimeConfig) -> String {
     string_or_default(
         runtime_config.get(BRANDING_DESCRIPTION_KEY),
         DEFAULT_BRANDING_DESCRIPTION,
+        "branding_description",
+        MAX_BRANDING_DESCRIPTION_LEN,
     )
 }
 
@@ -115,7 +119,7 @@ fn normalize_text_value(field_name: &str, value: &str, max_len: usize) -> Result
             "{field_name} exceeds {max_len} characters",
         )));
     }
-    if normalized.chars().any(char::is_control) {
+    if strip_control_chars(normalized) != normalized {
         return Err(AsterError::validation_error(format!(
             "{field_name} cannot contain control characters",
         )));
@@ -123,9 +127,19 @@ fn normalize_text_value(field_name: &str, value: &str, max_len: usize) -> Result
     Ok(normalized.to_string())
 }
 
-fn string_or_default(value: Option<String>, default: &str) -> String {
+fn strip_control_chars(value: &str) -> String {
+    value.chars().filter(|ch| !ch.is_control()).collect()
+}
+
+fn string_or_default(
+    value: Option<String>,
+    default: &str,
+    field_name: &str,
+    max_len: usize,
+) -> String {
     value
-        .map(|value| value.trim().to_string())
+        .map(|value| strip_control_chars(&value))
+        .and_then(|value| normalize_text_value(field_name, &value, max_len).ok())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| default.to_string())
 }
@@ -270,5 +284,13 @@ mod tests {
             wordmark_light_url_or_default(&runtime_config),
             DEFAULT_BRANDING_WORDMARK_LIGHT_URL
         );
+    }
+
+    #[test]
+    fn effective_branding_title_strips_control_chars_from_runtime_value() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(BRANDING_TITLE_KEY, "  My\r\n\tDrive\u{7}  "));
+
+        assert_eq!(title_or_default(&runtime_config), "MyDrive");
     }
 }

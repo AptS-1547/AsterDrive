@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	adminConfigService,
+	adminExternalAuthService,
 	adminLockService,
 	adminOverviewService,
 	adminPolicyGroupService,
@@ -103,6 +104,25 @@ describe("adminService", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(5, "/admin/shares");
 		expect(mockState.get).toHaveBeenNthCalledWith(6, "/admin/locks");
 		expect(mockState.get).toHaveBeenNthCalledWith(7, "/admin/config");
+	});
+
+	it("tests external auth provider draft parameters without an id", () => {
+		adminExternalAuthService.testParams({
+			client_id: "client-id",
+			issuer_url: "https://idp.example.com",
+			provider_kind: "oidc" as never,
+			scopes: "openid email profile",
+		});
+
+		expect(mockState.post).toHaveBeenCalledWith(
+			"/admin/external-auth/providers/test",
+			{
+				client_id: "client-id",
+				issuer_url: "https://idp.example.com",
+				provider_kind: "oidc",
+				scopes: "openid email profile",
+			},
+		);
 	});
 
 	it("loads all policy groups across multiple pages", async () => {
@@ -233,6 +253,23 @@ describe("adminService", () => {
 			secret_key: "SECRET",
 		});
 		adminRemoteNodeService.createEnrollmentCommand(6);
+		adminExternalAuthService.listKinds();
+		adminExternalAuthService.list({ limit: 20, offset: 0 });
+		adminExternalAuthService.get(15);
+		adminExternalAuthService.create({
+			client_id: "client-id",
+			display_name: "Example IDP",
+			icon_url: "/static/external-auth/example.svg",
+			issuer_url: "https://idp.example.com",
+			provider_kind: "oidc" as never,
+		});
+		adminExternalAuthService.update(15, {
+			display_name: "Example IDP",
+			enabled: true,
+			icon_url: null,
+		});
+		adminExternalAuthService.test(15);
+		adminExternalAuthService.delete(15);
 		adminPolicyGroupService.get(4);
 		adminPolicyGroupService.create({
 			name: "Default Group",
@@ -328,45 +365,89 @@ describe("adminService", () => {
 			9,
 			"/admin/remote-nodes/6/enrollment-token",
 		);
-		expect(mockState.get).toHaveBeenNthCalledWith(5, "/admin/policy-groups/4");
-		expect(mockState.post).toHaveBeenNthCalledWith(10, "/admin/policy-groups", {
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			5,
+			"/admin/external-auth/provider-kinds",
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			6,
+			"/admin/external-auth/providers?limit=20&offset=0",
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			7,
+			"/admin/external-auth/providers/15",
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			10,
+			"/admin/external-auth/providers",
+			{
+				client_id: "client-id",
+				display_name: "Example IDP",
+				icon_url: "/static/external-auth/example.svg",
+				issuer_url: "https://idp.example.com",
+				provider_kind: "oidc",
+			},
+		);
+		expect(mockState.patch).toHaveBeenNthCalledWith(
+			4,
+			"/admin/external-auth/providers/15",
+			{
+				display_name: "Example IDP",
+				enabled: true,
+				icon_url: null,
+			},
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			11,
+			"/admin/external-auth/providers/15/test",
+		);
+		expect(mockState.delete).toHaveBeenNthCalledWith(
+			4,
+			"/admin/external-auth/providers/15",
+		);
+
+		expect(mockState.get).toHaveBeenNthCalledWith(8, "/admin/policy-groups/4");
+		expect(mockState.post).toHaveBeenNthCalledWith(12, "/admin/policy-groups", {
 			name: "Default Group",
 			items: [{ policy_id: 3, priority: 1 }],
 		});
 		expect(mockState.patch).toHaveBeenNthCalledWith(
-			4,
+			5,
 			"/admin/policy-groups/4",
 			{
 				is_default: true,
 			},
 		);
 		expect(mockState.post).toHaveBeenNthCalledWith(
-			11,
+			13,
 			"/admin/policy-groups/4/migrate-users",
 			{
 				target_group_id: 8,
 			},
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(
-			4,
+			5,
 			"/admin/policy-groups/4",
 		);
 
-		expect(mockState.delete).toHaveBeenNthCalledWith(5, "/admin/shares/11");
-		expect(mockState.delete).toHaveBeenNthCalledWith(6, "/admin/locks/12");
-		expect(mockState.delete).toHaveBeenNthCalledWith(7, "/admin/locks/expired");
+		expect(mockState.delete).toHaveBeenNthCalledWith(6, "/admin/shares/11");
+		expect(mockState.delete).toHaveBeenNthCalledWith(7, "/admin/locks/12");
+		expect(mockState.delete).toHaveBeenNthCalledWith(8, "/admin/locks/expired");
 
-		expect(mockState.get).toHaveBeenNthCalledWith(6, "/admin/config/schema");
+		expect(mockState.get).toHaveBeenNthCalledWith(9, "/admin/config/schema");
 		expect(mockState.get).toHaveBeenNthCalledWith(
-			7,
+			10,
 			"/admin/config/template-variables",
 		);
-		expect(mockState.get).toHaveBeenNthCalledWith(8, "/admin/config/mail.host");
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			11,
+			"/admin/config/mail.host",
+		);
 		expect(mockState.put).toHaveBeenCalledWith("/admin/config/mail.host", {
 			value: "smtp.example.com",
 		});
 		expect(mockState.delete).toHaveBeenNthCalledWith(
-			8,
+			9,
 			"/admin/config/mail.host",
 		);
 	});

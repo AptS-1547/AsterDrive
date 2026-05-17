@@ -1,3 +1,4 @@
+import axios from "axios";
 import { toast } from "sonner";
 import i18n from "@/i18n";
 import { ApiError } from "@/services/http";
@@ -175,6 +176,51 @@ const errorSubcodeKeys: Partial<Record<ApiSubcodeType, string>> = {
 	[ApiSubcode.RemoteNodeUniqueConflict]: "errors:remote_node_unique_conflict",
 };
 
+function getErrorCode(error: unknown): string | undefined {
+	if (typeof error !== "object" || error === null || !("code" in error)) {
+		return undefined;
+	}
+	return typeof error.code === "string" ? error.code : undefined;
+}
+
+function getTrimmedErrorMessage(error: Error): string {
+	return error.message.trim();
+}
+
+function getTransportErrorMessageKey(error: unknown): string | null {
+	const code = getErrorCode(error);
+	if (code === "ERR_CANCELED") {
+		return null;
+	}
+
+	const message =
+		error instanceof Error ? getTrimmedErrorMessage(error) : undefined;
+	const normalizedMessage = message?.toLowerCase();
+
+	const timedOut =
+		code === "ECONNABORTED" ||
+		code === "ETIMEDOUT" ||
+		normalizedMessage?.includes("timeout") === true;
+	if (timedOut) {
+		return "errors:request_timeout";
+	}
+
+	if (axios.isAxiosError(error) && !error.response) {
+		return "errors:network_error";
+	}
+
+	if (
+		message === "Network Error" ||
+		normalizedMessage === "network error" ||
+		message === "Failed to fetch" ||
+		message === "Load failed"
+	) {
+		return "errors:network_error";
+	}
+
+	return null;
+}
+
 export function getApiErrorMessage(error: unknown) {
 	if (error instanceof ApiError) {
 		const subcodeKey =
@@ -189,8 +235,13 @@ export function getApiErrorMessage(error: unknown) {
 		return message || i18n.t("errors:unexpected_error");
 	}
 
+	const transportErrorKey = getTransportErrorMessageKey(error);
+	if (transportErrorKey) {
+		return i18n.t(transportErrorKey);
+	}
+
 	if (error instanceof Error) {
-		const message = error.message.trim();
+		const message = getTrimmedErrorMessage(error);
 		return message || i18n.t("errors:unexpected_error");
 	}
 

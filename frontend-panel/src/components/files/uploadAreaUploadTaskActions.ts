@@ -1,5 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { getResumePlan } from "@/components/files/uploadResume";
+import { getApiErrorMessage } from "@/hooks/useApiError";
 import {
 	loadSessions,
 	removeSession,
@@ -63,7 +64,6 @@ export async function runQueuedUploadTask(
 		runDirectUpload,
 		runMultipartUpload,
 		runPresignedUpload,
-		t,
 		tasksRef,
 		workspace,
 	}: UploadTaskActionsContext,
@@ -150,10 +150,7 @@ export async function runQueuedUploadTask(
 						mode: null,
 					});
 				} else {
-					const message =
-						error instanceof Error
-							? error.message
-							: t("errors:unexpected_error");
+					const message = getApiErrorMessage(error);
 					markTaskFailed(taskId, message);
 					return;
 				}
@@ -188,8 +185,7 @@ export async function runQueuedUploadTask(
 		}
 		await runDirectUpload(task);
 	} catch (error) {
-		const message =
-			error instanceof Error ? error.message : t("errors:unexpected_error");
+		const message = getApiErrorMessage(error);
 		markTaskFailed(taskId, message);
 	}
 }

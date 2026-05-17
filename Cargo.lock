@@ -711,6 +711,7 @@ dependencies = [
  "mime_guess",
  "moka",
  "num_cpus",
+ "openidconnect",
  "parking_lot",
  "paste",
  "percent-encoding",
@@ -718,7 +719,7 @@ dependencies = [
  "quick-xml",
  "rand 0.10.1",
  "redis",
- "reqwest",
+ "reqwest 0.13.3",
  "rsa",
  "rust-embed",
  "sea-orm",
@@ -3216,6 +3217,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]
@@ -3509,6 +3511,15 @@ name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
+
+[[package]]
+name = "itertools"
+version = "0.10.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
+dependencies = [
+ "either",
+]
 
 [[package]]
 name = "itertools"
@@ -4145,6 +4156,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "oauth2"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "getrandom 0.2.17",
+ "http 1.4.0",
+ "rand 0.8.6",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "sha2 0.10.9",
+ "thiserror 1.0.69",
+ "url",
+]
+
+[[package]]
 name = "objc2-core-foundation"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4191,10 +4222,50 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
+name = "openidconnect"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d8c6709ba2ea764bbed26bce1adf3c10517113ddea6f2d4196e4851757ef2b2"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "dyn-clone",
+ "ed25519-dalek",
+ "hmac 0.12.1",
+ "http 1.4.0",
+ "itertools 0.10.5",
+ "log",
+ "oauth2",
+ "p256 0.13.2",
+ "p384",
+ "rand 0.8.6",
+ "rsa",
+ "serde",
+ "serde-value",
+ "serde_json",
+ "serde_path_to_error",
+ "serde_plain",
+ "serde_with",
+ "sha2 0.10.9",
+ "subtle",
+ "thiserror 1.0.69",
+ "url",
+]
+
+[[package]]
 name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
+
+[[package]]
+name = "ordered-float"
+version = "2.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "ordered-float"
@@ -4699,7 +4770,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5055,6 +5126,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71fe3824f5629716b1589be05dacd749f6aa084c87e00e016714a8cdfccc997c"
 dependencies = [
  "bytecheck",
+]
+
+[[package]]
+name = "reqwest"
+version = "0.12.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "futures-core",
+ "http 1.4.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "js-sys",
+ "log",
+ "percent-encoding",
+ "pin-project-lite",
+ "quinn",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sync_wrapper",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tower-http",
+ "tower-service",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]
@@ -5464,7 +5573,7 @@ dependencies = [
  "chrono",
  "derive_more 2.1.1",
  "futures-util",
- "itertools",
+ "itertools 0.14.0",
  "log",
  "mac_address",
  "ouroboros",
@@ -5524,7 +5633,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae1374d83dd5b43f14dcc90fc726486c556f4db774b680b12b8c680af76e8233"
 dependencies = [
  "heck 0.5.0",
- "itertools",
+ "itertools 0.14.0",
  "pluralizer",
  "proc-macro2",
  "quote",
@@ -5557,7 +5666,7 @@ checksum = "b04cdb0135c16e829504e93fbe7880513578d56f07aaea152283526590111828"
 dependencies = [
  "chrono",
  "inherent",
- "ordered-float",
+ "ordered-float 4.6.0",
  "rust_decimal",
  "sea-query-derive",
  "serde_json",
@@ -5694,6 +5803,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-value"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
+dependencies = [
+ "ordered-float 2.10.1",
+ "serde",
+]
+
+[[package]]
 name = "serde_bytes"
 version = "0.11.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5745,6 +5864,17 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_path_to_error"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10a9ff822e371bb5403e391ecd83e182e0e77ba7f6fe0160b795797109d1b457"
+dependencies = [
+ "itoa",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -6427,7 +6557,7 @@ dependencies = [
  "ferroid",
  "futures",
  "http 1.4.0",
- "itertools",
+ "itertools 0.14.0",
  "log",
  "memchr",
  "parse-display",

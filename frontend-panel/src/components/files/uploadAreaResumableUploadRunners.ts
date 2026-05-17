@@ -4,6 +4,7 @@ import {
 	S3_PROCESSING_PROGRESS,
 	type UploadMode,
 } from "@/components/files/uploadResume";
+import { getApiErrorMessage } from "@/hooks/useApiError";
 import { appendCompletedPart, removeSession } from "@/lib/uploadPersistence";
 import {
 	type CompletedPart,
@@ -31,7 +32,6 @@ export function createResumableUploadRunners({
 	multipartInFlightRef,
 	patchTask,
 	patchTaskThrottled,
-	t,
 }: UploadModeRunnerContext): Pick<
 	UploadModeRunners,
 	| "cancelMultipartSession"
@@ -52,7 +52,6 @@ export function createResumableUploadRunners({
 		multipartInFlightRef,
 		patchTask,
 		patchTaskThrottled,
-		t,
 	});
 
 	const cancelMultipartSession = async (task: UploadTask) => {
@@ -97,8 +96,7 @@ export function createResumableUploadRunners({
 				patchTask(task.id, { status: "cancelled", error: null });
 				return;
 			}
-			const message =
-				error instanceof Error ? error.message : t("errors:unexpected_error");
+			const message = getApiErrorMessage(error);
 			if (!task.file) {
 				if (shouldRemovePersistedSession(error)) {
 					removeSession(uploadId);

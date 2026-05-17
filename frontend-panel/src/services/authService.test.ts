@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { authService, invalidatePasskeysCache } from "@/services/authService";
-import type { PasskeyInfo } from "@/types/api";
+import {
+	authService,
+	invalidateExternalAuthLinksCache,
+	invalidatePasskeysCache,
+} from "@/services/authService";
+import type {
+	ExternalAuthLinkInfo,
+	ExternalAuthPublicProvider,
+	PasskeyInfo,
+} from "@/types/api";
 import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
@@ -49,6 +57,7 @@ vi.mock("@/services/http", () => ({
 
 describe("authService", () => {
 	beforeEach(() => {
+		invalidateExternalAuthLinksCache();
 		invalidatePasskeysCache();
 		mockState.clientPost.mockReset();
 		mockState.delete.mockReset();
@@ -69,6 +78,26 @@ describe("authService", () => {
 			sign_count: 0,
 			transports: null,
 			updated_at: "2026-04-01T08:00:00Z",
+			...overrides,
+		};
+	}
+
+	function externalAuthLink(
+		overrides: Partial<ExternalAuthLinkInfo> = {},
+	): ExternalAuthLinkInfo {
+		return {
+			created_at: "2026-05-01T08:00:00Z",
+			display_name_snapshot: "Alice",
+			email_snapshot: "alice@example.com",
+			id: 1,
+			issuer: "https://idp.example.com",
+			last_login_at: null,
+			provider_display_name: "Example IDP",
+			provider_id: 1,
+			provider_kind: "oidc",
+			provider_key: "example",
+			subject: "subject-1",
+			updated_at: "2026-05-01T08:00:00Z",
 			...overrides,
 		};
 	}
@@ -114,6 +143,9 @@ describe("authService", () => {
 				return [];
 			}
 			if (url === "/auth/passkeys") {
+				return Promise.resolve([]);
+			}
+			if (url === "/auth/external-auth/links") {
 				return Promise.resolve([]);
 			}
 			return undefined;
@@ -164,6 +196,7 @@ describe("authService", () => {
 		authService.setAvatarSource("gravatar");
 		expect(authService.listSessions()).toEqual([]);
 		await expect(authService.listPasskeys()).resolves.toEqual([]);
+		await expect(authService.listExternalAuthLinks()).resolves.toEqual([]);
 		authService.startPasskeyRegistration({ name: "Laptop" });
 		await authService.finishPasskeyRegistration(
 			"register-flow",
@@ -172,6 +205,7 @@ describe("authService", () => {
 		);
 		await authService.renamePasskey(1, { name: "Phone" });
 		await authService.deletePasskey(1);
+		await authService.deleteExternalAuthLink(1);
 		authService.revokeSession("session-1");
 		await expect(authService.revokeOtherSessions()).resolves.toBe(2);
 
@@ -255,6 +289,10 @@ describe("authService", () => {
 		);
 		expect(mockState.get).toHaveBeenNthCalledWith(3, "/auth/sessions");
 		expect(mockState.get).toHaveBeenNthCalledWith(4, "/auth/passkeys");
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			5,
+			"/auth/external-auth/links",
+		);
 		expect(mockState.post).toHaveBeenNthCalledWith(
 			14,
 			"/auth/passkeys/register/start",
@@ -275,10 +313,14 @@ describe("authService", () => {
 		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/auth/passkeys/1");
 		expect(mockState.delete).toHaveBeenNthCalledWith(
 			2,
-			"/auth/sessions/session-1",
+			"/auth/external-auth/links/1",
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(
 			3,
+			"/auth/sessions/session-1",
+		);
+		expect(mockState.delete).toHaveBeenNthCalledWith(
+			4,
 			"/auth/sessions/others",
 		);
 	});
@@ -317,6 +359,76 @@ describe("authService", () => {
 			expiresIn: 900,
 		});
 		await expect(authService.revokeOtherSessions()).resolves.toBe(0);
+	});
+
+	it("uses the expected external auth endpoints and payloads", async () => {
+		const provider: ExternalAuthPublicProvider = {
+			display_name: "Example IDP",
+			icon_url: null,
+			key: "team/idp",
+			kind: "oidc",
+		};
+		mockState.get.mockResolvedValueOnce([provider]);
+		mockState.post.mockImplementation((url: string) => {
+			if (url === "/auth/external-auth/email-verification/start") {
+				return { message: "sent" };
+			}
+			if (url.endsWith("/start")) {
+				return { authorization_url: "https://idp.example.com/authorize" };
+			}
+			if (url === "/auth/external-auth/password-link") {
+				return { expires_in: 1200 };
+			}
+			return undefined;
+		});
+
+		await expect(authService.listExternalAuthProviders()).resolves.toEqual([
+			provider,
+		]);
+		expect(
+			authService.startExternalAuthLogin(provider, {
+				return_path: "/files",
+			}),
+		).toEqual({
+			authorization_url: "https://idp.example.com/authorize",
+		});
+		expect(
+			authService.startExternalAuthEmailVerification({
+				email: "alice@example.com",
+				flow_token: "flow-token",
+			}),
+		).toEqual({ message: "sent" });
+		await expect(
+			authService.linkExternalAuthWithPassword({
+				flow_token: "flow-token",
+				identifier: "alice@example.com",
+				password: "secret",
+			}),
+		).resolves.toEqual({ expiresIn: 1200 });
+
+		expect(mockState.get).toHaveBeenCalledWith("/auth/external-auth/providers");
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			1,
+			"/auth/external-auth/oidc/team%2Fidp/start",
+			{ return_path: "/files" },
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			2,
+			"/auth/external-auth/email-verification/start",
+			{
+				email: "alice@example.com",
+				flow_token: "flow-token",
+			},
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			3,
+			"/auth/external-auth/password-link",
+			{
+				flow_token: "flow-token",
+				identifier: "alice@example.com",
+				password: "secret",
+			},
+		);
 	});
 
 	it("caches passkey lists, clones cached results, and supports forced refresh", async () => {
@@ -399,6 +511,78 @@ describe("authService", () => {
 		expect(mockState.get).toHaveBeenCalledTimes(1);
 	});
 
+	it("caches external auth link lists, clones cached results, and supports forced refresh", async () => {
+		const firstLink = externalAuthLink({ id: 1, subject: "subject-1" });
+		const secondLink = externalAuthLink({ id: 2, subject: "subject-2" });
+		mockState.get
+			.mockResolvedValueOnce([firstLink])
+			.mockResolvedValueOnce([secondLink]);
+
+		const first = await authService.listExternalAuthLinks();
+		first[0].subject = "mutated";
+
+		await expect(authService.listExternalAuthLinks()).resolves.toEqual([
+			firstLink,
+		]);
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+
+		await expect(
+			authService.listExternalAuthLinks({ force: true }),
+		).resolves.toEqual([secondLink]);
+		expect(mockState.get).toHaveBeenCalledTimes(2);
+	});
+
+	it("deduplicates concurrent external auth link list requests and retries after failures", async () => {
+		const firstLink = externalAuthLink({ id: 1, subject: "subject-1" });
+		const secondLink = externalAuthLink({ id: 2, subject: "subject-2" });
+		let resolveFirst: ((value: ExternalAuthLinkInfo[]) => void) | null = null;
+		mockState.get.mockImplementationOnce(
+			() =>
+				new Promise<ExternalAuthLinkInfo[]>((resolve) => {
+					resolveFirst = resolve;
+				}),
+		);
+
+		const first = authService.listExternalAuthLinks();
+		const second = authService.listExternalAuthLinks();
+		resolveFirst?.([firstLink]);
+
+		await expect(Promise.all([first, second])).resolves.toEqual([
+			[firstLink],
+			[firstLink],
+		]);
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+
+		invalidateExternalAuthLinksCache();
+		const error = new Error("load failed");
+		mockState.get
+			.mockRejectedValueOnce(error)
+			.mockResolvedValueOnce([secondLink]);
+
+		await expect(authService.listExternalAuthLinks()).rejects.toBe(error);
+		await expect(authService.listExternalAuthLinks()).resolves.toEqual([
+			secondLink,
+		]);
+		expect(mockState.get).toHaveBeenCalledTimes(3);
+	});
+
+	it("keeps the external auth link cache in sync after delete", async () => {
+		const firstLink = externalAuthLink({ id: 1, subject: "subject-1" });
+		const secondLink = externalAuthLink({ id: 2, subject: "subject-2" });
+		mockState.get.mockResolvedValueOnce([firstLink, secondLink]);
+		mockState.delete.mockResolvedValueOnce(undefined);
+
+		await expect(authService.listExternalAuthLinks()).resolves.toEqual([
+			firstLink,
+			secondLink,
+		]);
+		await authService.deleteExternalAuthLink(2);
+		await expect(authService.listExternalAuthLinks()).resolves.toEqual([
+			firstLink,
+		]);
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+	});
+
 	it("invalidates passkey cache across auth identity changes", async () => {
 		const phone = passkey({ id: 1, name: "Phone" });
 		const laptop = passkey({ id: 2, name: "Laptop" });
@@ -410,6 +594,25 @@ describe("authService", () => {
 		await expect(authService.listPasskeys()).resolves.toEqual([phone]);
 		await authService.login("bob@example.com", "secret");
 		await expect(authService.listPasskeys()).resolves.toEqual([laptop]);
+
+		expect(mockState.get).toHaveBeenCalledTimes(2);
+	});
+
+	it("invalidates external auth link cache across auth identity changes", async () => {
+		const firstLink = externalAuthLink({ id: 1, subject: "subject-1" });
+		const secondLink = externalAuthLink({ id: 2, subject: "subject-2" });
+		mockState.get
+			.mockResolvedValueOnce([firstLink])
+			.mockResolvedValueOnce([secondLink]);
+		mockState.post.mockResolvedValue({ expires_in: 900 });
+
+		await expect(authService.listExternalAuthLinks()).resolves.toEqual([
+			firstLink,
+		]);
+		await authService.login("bob@example.com", "secret");
+		await expect(authService.listExternalAuthLinks()).resolves.toEqual([
+			secondLink,
+		]);
 
 		expect(mockState.get).toHaveBeenCalledTimes(2);
 	});

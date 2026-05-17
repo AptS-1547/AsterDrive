@@ -1,3 +1,4 @@
+import { getApiErrorMessage } from "@/hooks/useApiError";
 import { removeSession } from "@/lib/uploadPersistence";
 import { isRetryableUploadError } from "@/services/uploadService";
 import {
@@ -18,7 +19,6 @@ type ResumableUploadSharedContext = Pick<
 	| "multipartInFlightRef"
 	| "patchTask"
 	| "patchTaskThrottled"
-	| "t"
 >;
 
 interface RunResumableTransferOptions<TItem> {
@@ -79,7 +79,6 @@ export function createResumableUploadShared({
 	multipartInFlightRef,
 	patchTask,
 	patchTaskThrottled,
-	t,
 }: ResumableUploadSharedContext) {
 	const adjustMultipartInFlight = (taskId: string, delta: number) => {
 		const current = multipartInFlightRef.current.get(taskId) ?? 0;
@@ -240,8 +239,7 @@ export function createResumableUploadShared({
 				patchTask(task.id, { status: "cancelled", error: null });
 				return;
 			}
-			const message =
-				error instanceof Error ? error.message : t("errors:unexpected_error");
+			const message = getApiErrorMessage(error);
 			markTaskFailed(task.id, message);
 		} finally {
 			abortFlagsRef.current.delete(task.id);

@@ -26,18 +26,21 @@ export type {
 };
 
 export class UploadRequestError extends Error {
+	isAborted: boolean;
 	retryable: boolean;
 	status?: number;
 
 	constructor(
 		message: string,
 		options?: {
+			isAborted?: boolean;
 			retryable?: boolean;
 			status?: number;
 		},
 	) {
 		super(message);
 		this.name = "UploadRequestError";
+		this.isAborted = options?.isAborted ?? false;
 		this.retryable = options?.retryable ?? false;
 		this.status = options?.status;
 	}
@@ -264,6 +267,7 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 				xhr.onabort = () =>
 					reject(
 						new UploadRequestError("upload aborted", {
+							isAborted: true,
 							status: xhr.status,
 							retryable: false,
 						}),

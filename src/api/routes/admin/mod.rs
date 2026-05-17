@@ -20,6 +20,7 @@ pub use crate::api::dto::admin::{
 pub(crate) mod audit_logs;
 pub(crate) mod common;
 pub(crate) mod config;
+pub(crate) mod external_auth;
 pub(crate) mod locks;
 pub(crate) mod overview;
 pub(crate) mod policies;
@@ -33,6 +34,11 @@ pub use audit_logs::list_audit_logs;
 pub use config::{
     config_schema, config_template_variables, delete_config, execute_config_action, get_config,
     list_config, set_config,
+};
+pub use external_auth::{
+    create_external_auth_provider, delete_external_auth_provider, get_external_auth_provider,
+    list_external_auth_provider_kinds, list_external_auth_providers, test_external_auth_provider,
+    test_external_auth_provider_params, update_external_auth_provider,
 };
 pub use locks::{cleanup_expired_locks, force_unlock, list_locks};
 pub use overview::get_overview;
@@ -109,6 +115,39 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                     .route(
                         "/remote-nodes/test",
                         web::post().to(test_remote_node_params),
+                    )
+                    // external auth
+                    .route(
+                        "/external-auth/provider-kinds",
+                        web::get().to(list_external_auth_provider_kinds),
+                    )
+                    .route(
+                        "/external-auth/providers",
+                        web::get().to(list_external_auth_providers),
+                    )
+                    .route(
+                        "/external-auth/providers",
+                        web::post().to(create_external_auth_provider),
+                    )
+                    .route(
+                        "/external-auth/providers/test",
+                        web::post().to(test_external_auth_provider_params),
+                    )
+                    .route(
+                        "/external-auth/providers/{id}",
+                        web::get().to(get_external_auth_provider),
+                    )
+                    .route(
+                        "/external-auth/providers/{id}",
+                        web::patch().to(update_external_auth_provider),
+                    )
+                    .route(
+                        "/external-auth/providers/{id}",
+                        web::delete().to(delete_external_auth_provider),
+                    )
+                    .route(
+                        "/external-auth/providers/{id}/test",
+                        web::post().to(test_external_auth_provider),
                     )
                     // policy groups
                     .route("/policy-groups", web::get().to(list_policy_groups))

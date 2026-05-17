@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { SettingsSection } from "@/components/common/SettingsScaffold";
 import { SecurityEmailSection } from "@/components/settings/security-settings/SecurityEmailSection";
+import { SecurityExternalAuthLinksSection } from "@/components/settings/security-settings/SecurityExternalAuthLinksSection";
 import { SecurityPasskeysSection } from "@/components/settings/security-settings/SecurityPasskeysSection";
 import { SecurityPasswordSection } from "@/components/settings/security-settings/SecurityPasswordSection";
 import { SecuritySessionsSection } from "@/components/settings/security-settings/SecuritySessionsSection";
@@ -25,7 +26,7 @@ import { authService } from "@/services/authService";
 import { forceLogout, useAuthStore } from "@/stores/authStore";
 import type { AuthSessionInfo } from "@/types/api";
 
-type SecurityPane = "account" | "passkeys" | "sessions";
+type SecurityPane = "account" | "passkeys" | "external" | "sessions";
 
 export function SecuritySettingsView() {
 	const { t } = useTranslation(["auth", "core", "settings"]);
@@ -279,7 +280,7 @@ export function SecuritySettingsView() {
 					onValueChange={(value) => setActivePane(value as SecurityPane)}
 					className="gap-4"
 				>
-					<TabsList className="grid !h-11 w-full grid-cols-3 gap-1 p-1">
+					<TabsList className="grid !h-11 w-full grid-cols-4 gap-1 p-1">
 						<TabsTrigger value="account" className="h-full min-w-0 px-3 py-0">
 							<Icon name="Lock" className="h-4 w-4" />
 							<span className="truncate">
@@ -290,6 +291,12 @@ export function SecuritySettingsView() {
 							<Icon name="Shield" className="h-4 w-4" />
 							<span className="truncate">
 								{t("settings:settings_security_tab_passkeys")}
+							</span>
+						</TabsTrigger>
+						<TabsTrigger value="external" className="h-full min-w-0 px-3 py-0">
+							<Icon name="Globe" className="h-4 w-4" />
+							<span className="truncate">
+								{t("settings:settings_security_tab_external")}
 							</span>
 						</TabsTrigger>
 						<TabsTrigger value="sessions" className="h-full min-w-0 px-3 py-0">
@@ -353,6 +360,13 @@ export function SecuritySettingsView() {
 						className="animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
 					>
 						<SecurityPasskeysSection />
+					</TabsContent>
+
+					<TabsContent
+						value="external"
+						className="animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
+					>
+						<SecurityExternalAuthLinksSection />
 					</TabsContent>
 
 					<TabsContent

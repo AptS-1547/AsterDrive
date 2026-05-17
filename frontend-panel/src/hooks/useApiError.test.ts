@@ -15,10 +15,24 @@ const mockState = vi.hoisted(() => {
 
 	return {
 		ApiError: MockApiError,
+		isAxiosError: vi.fn(
+			(error: unknown) =>
+				typeof error === "object" &&
+				error !== null &&
+				"isAxiosError" in error &&
+				(error as { isAxiosError?: boolean }).isAxiosError === true,
+		),
 		toastError: vi.fn(),
 		translate: vi.fn((key: string) => `translated:${key}`),
 	};
 });
+
+vi.mock("axios", () => ({
+	default: {
+		isAxiosError: mockState.isAxiosError,
+	},
+	isAxiosError: mockState.isAxiosError,
+}));
 
 vi.mock("sonner", () => ({
 	toast: {
@@ -38,6 +52,7 @@ vi.mock("@/services/http", () => ({
 
 describe("handleApiError", () => {
 	beforeEach(() => {
+		mockState.isAxiosError.mockClear();
 		mockState.toastError.mockReset();
 		mockState.translate.mockClear();
 	});
@@ -181,6 +196,35 @@ describe("handleApiError", () => {
 		expect(mockState.toastError).toHaveBeenNthCalledWith(
 			2,
 			"translated:errors:unexpected_error",
+		);
+	});
+
+	it("maps transport failures to localized messages", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError({
+			isAxiosError: true,
+			message: "Network Error",
+		});
+		handleApiError(new Error("Failed to fetch"));
+		handleApiError(
+			Object.assign(new Error("timeout of 30000ms exceeded"), {
+				code: "ECONNABORTED",
+				isAxiosError: true,
+			}),
+		);
+
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			1,
+			"translated:errors:network_error",
+		);
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			2,
+			"translated:errors:network_error",
+		);
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			3,
+			"translated:errors:request_timeout",
 		);
 	});
 

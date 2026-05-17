@@ -5,6 +5,13 @@ import type {
 	AvatarSource,
 	ChangePasswordRequest,
 	CheckResp,
+	ExternalAuthEmailVerificationStartRequest,
+	ExternalAuthEmailVerificationStartResponse,
+	ExternalAuthLinkInfo,
+	ExternalAuthPasswordLinkRequest,
+	ExternalAuthPublicProvider,
+	ExternalAuthStartLoginRequest,
+	ExternalAuthStartLoginResponse,
 	MeField,
 	MePartialResponse,
 	MeQuery,
@@ -34,22 +41,50 @@ interface ListPasskeysOptions {
 	force?: boolean;
 }
 
+interface ListExternalAuthLinksOptions {
+	force?: boolean;
+}
+
 let cachedPasskeys: PasskeyInfo[] | null = null;
 let pendingPasskeysRequest: Promise<PasskeyInfo[]> | null = null;
 let passkeysCacheSerial = 0;
 
+let cachedExternalAuthLinks: ExternalAuthLinkInfo[] | null = null;
+let pendingExternalAuthLinksRequest: Promise<ExternalAuthLinkInfo[]> | null =
+	null;
+let externalAuthLinksCacheSerial = 0;
+
 function clonePasskeys(passkeys: PasskeyInfo[]) {
 	return passkeys.map((passkey) => ({ ...passkey }));
+}
+
+function cloneExternalAuthLinks(links: ExternalAuthLinkInfo[]) {
+	return links.map((link) => ({ ...link }));
 }
 
 function primePasskeysCache(passkeys: PasskeyInfo[]) {
 	cachedPasskeys = clonePasskeys(passkeys);
 }
 
+function primeExternalAuthLinksCache(links: ExternalAuthLinkInfo[]) {
+	cachedExternalAuthLinks = cloneExternalAuthLinks(links);
+}
+
 export function invalidatePasskeysCache() {
 	cachedPasskeys = null;
 	pendingPasskeysRequest = null;
 	passkeysCacheSerial += 1;
+}
+
+export function invalidateExternalAuthLinksCache() {
+	cachedExternalAuthLinks = null;
+	pendingExternalAuthLinksRequest = null;
+	externalAuthLinksCacheSerial += 1;
+}
+
+function invalidateAuthIdentityCaches() {
+	invalidatePasskeysCache();
+	invalidateExternalAuthLinksCache();
 }
 
 function upsertCachedPasskey(passkey: PasskeyInfo) {
@@ -84,6 +119,17 @@ function removeCachedPasskey(id: number) {
 	cachedPasskeys = cachedPasskeys.filter((item) => item.id !== id);
 }
 
+function removeCachedExternalAuthLink(id: number) {
+	pendingExternalAuthLinksRequest = null;
+	externalAuthLinksCacheSerial += 1;
+	if (cachedExternalAuthLinks === null) {
+		return;
+	}
+	cachedExternalAuthLinks = cachedExternalAuthLinks.filter(
+		(item) => item.id !== id,
+	);
+}
+
 function listPasskeys(options?: ListPasskeysOptions) {
 	const force = options?.force ?? false;
 	if (!force && cachedPasskeys !== null) {
@@ -111,6 +157,33 @@ function listPasskeys(options?: ListPasskeysOptions) {
 	return request.then(clonePasskeys);
 }
 
+function listExternalAuthLinks(options?: ListExternalAuthLinksOptions) {
+	const force = options?.force ?? false;
+	if (!force && cachedExternalAuthLinks !== null) {
+		return Promise.resolve(cloneExternalAuthLinks(cachedExternalAuthLinks));
+	}
+	if (!force && pendingExternalAuthLinksRequest !== null) {
+		return pendingExternalAuthLinksRequest.then(cloneExternalAuthLinks);
+	}
+
+	const requestSerial = ++externalAuthLinksCacheSerial;
+	const request = api
+		.get<ExternalAuthLinkInfo[]>("/auth/external-auth/links")
+		.then((links) => {
+			if (requestSerial === externalAuthLinksCacheSerial) {
+				primeExternalAuthLinksCache(links);
+			}
+			return cloneExternalAuthLinks(links);
+		})
+		.finally(() => {
+			if (pendingExternalAuthLinksRequest === request) {
+				pendingExternalAuthLinksRequest = null;
+			}
+		});
+	pendingExternalAuthLinksRequest = request;
+	return request.then(cloneExternalAuthLinks);
+}
+
 function me(): Promise<MeResponse>;
 function me(fields: MeField[]): Promise<MePartialResponse>;
 function me(fields?: MeField[]) {
@@ -130,7 +203,7 @@ export const authService = {
 		identifier: string,
 		password: string,
 	): Promise<AuthSessionState> => {
-		invalidatePasskeysCache();
+		invalidateAuthIdentityCaches();
 		const data = await api.post<AuthTokenResp>("/auth/login", {
 			identifier,
 			password,
@@ -143,11 +216,44 @@ export const authService = {
 	startPasskeyLogin: (payload: PasskeyLoginStartRequest = {}) =>
 		api.post<PasskeyLoginStartResponse>("/auth/passkeys/login/start", payload),
 
+	listExternalAuthProviders: () =>
+		api.get<ExternalAuthPublicProvider[]>("/auth/external-auth/providers"),
+
+	startExternalAuthLogin: (
+		provider: ExternalAuthPublicProvider,
+		payload: ExternalAuthStartLoginRequest = {},
+	) =>
+		api.post<ExternalAuthStartLoginResponse>(
+			`/auth/external-auth/${encodeURIComponent(provider.kind)}/${encodeURIComponent(provider.key)}/start`,
+			payload,
+		),
+
+	startExternalAuthEmailVerification: (
+		payload: ExternalAuthEmailVerificationStartRequest,
+	) =>
+		api.post<ExternalAuthEmailVerificationStartResponse>(
+			"/auth/external-auth/email-verification/start",
+			payload,
+		),
+
+	linkExternalAuthWithPassword: async (
+		payload: ExternalAuthPasswordLinkRequest,
+	): Promise<AuthSessionState> => {
+		invalidateAuthIdentityCaches();
+		const data = await api.post<AuthTokenResp>(
+			"/auth/external-auth/password-link",
+			payload,
+		);
+		return {
+			expiresIn: Number(data.expires_in) || 900,
+		};
+	},
+
 	finishPasskeyLogin: async (
 		flowId: string,
 		credential: unknown,
 	): Promise<AuthSessionState> => {
-		invalidatePasskeysCache();
+		invalidateAuthIdentityCaches();
 		const data = await api.post<AuthTokenResp>("/auth/passkeys/login/finish", {
 			flow_id: flowId,
 			credential,
@@ -158,7 +264,7 @@ export const authService = {
 	},
 
 	register: (username: string, email: string, password: string) => {
-		invalidatePasskeysCache();
+		invalidateAuthIdentityCaches();
 		return api.post<UserInfo>("/auth/register", { username, email, password });
 	},
 
@@ -172,12 +278,12 @@ export const authService = {
 		api.post<ActionMessageResp>("/auth/password/reset/confirm", payload),
 
 	setup: (username: string, email: string, password: string) => {
-		invalidatePasskeysCache();
+		invalidateAuthIdentityCaches();
 		return api.post<UserInfo>("/auth/setup", { username, email, password });
 	},
 
 	logout: () => {
-		invalidatePasskeysCache();
+		invalidateAuthIdentityCaches();
 		return api.post<void>("/auth/logout");
 	},
 
@@ -203,6 +309,13 @@ export const authService = {
 	},
 
 	listSessions: () => api.get<AuthSessionInfo[]>("/auth/sessions"),
+
+	listExternalAuthLinks,
+
+	deleteExternalAuthLink: async (id: number) => {
+		await api.delete<void>(`/auth/external-auth/links/${id}`);
+		removeCachedExternalAuthLink(id);
+	},
 
 	listPasskeys,
 

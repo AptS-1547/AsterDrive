@@ -3,13 +3,74 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+	externalAuthKindIconPath,
+	normalizeExternalAuthIconUrl,
+} from "@/lib/externalAuthProviders";
 import { cn } from "@/lib/utils";
+import type { ExternalAuthPublicProvider } from "@/types/api";
 import {
 	AnimateHeight,
 	AnimateInlineSwap,
 	AnimateText,
 } from "./authAnimations";
 import type { AuthMode } from "./types";
+
+function normalizedUrl(value: string) {
+	try {
+		return new URL(value, document.baseURI).href;
+	} catch {
+		return value;
+	}
+}
+
+function fallbackExternalAuthIcon(
+	target: HTMLImageElement,
+	configuredIcon: string,
+	kindIcon: string,
+) {
+	if (
+		configuredIcon &&
+		kindIcon &&
+		target.dataset.fallbackTried !== "1" &&
+		normalizedUrl(target.src) !== normalizedUrl(kindIcon)
+	) {
+		target.dataset.fallbackTried = "1";
+		target.src = kindIcon;
+		return;
+	}
+	target.hidden = true;
+}
+
+function ExternalAuthProviderIcon({
+	provider,
+}: {
+	provider: ExternalAuthPublicProvider;
+}) {
+	const configuredIcon = normalizeExternalAuthIconUrl(provider.icon_url);
+	const kindIcon = externalAuthKindIconPath(provider.kind);
+	const iconUrl = configuredIcon || kindIcon;
+
+	if (iconUrl) {
+		return (
+			<img
+				src={iconUrl}
+				alt=""
+				aria-hidden="true"
+				className="mr-2 h-4 w-4 object-contain"
+				onError={(event) => {
+					fallbackExternalAuthIcon(
+						event.currentTarget,
+						configuredIcon,
+						kindIcon,
+					);
+				}}
+			/>
+		);
+	}
+
+	return <Icon name="Globe" className="mr-2 h-4 w-4" />;
+}
 
 interface LoginAuthFormProps {
 	checking: boolean;
@@ -24,6 +85,9 @@ interface LoginAuthFormProps {
 	mode: AuthMode;
 	modeActionText: string;
 	password: string;
+	externalAuthBusyProvider: string | null;
+	externalAuthLoading: boolean;
+	externalAuthProviders: ExternalAuthPublicProvider[];
 	passkeySubmitting: boolean;
 	passkeySupported: boolean;
 	registrationClosed: boolean;
@@ -34,6 +98,7 @@ interface LoginAuthFormProps {
 	onForgotPassword: () => void;
 	onIdentifierChange: (value: string) => void;
 	onPasswordChange: (value: string) => void;
+	onExternalAuthLogin: (provider: ExternalAuthPublicProvider) => void;
 	onPasskeyLogin: () => void;
 	onShowPasswordChange: (show: boolean) => void;
 	onSwitchAuthMode: (mode: Extract<AuthMode, "login" | "register">) => void;
@@ -55,10 +120,14 @@ export function LoginAuthForm({
 	onForgotPassword,
 	onIdentifierChange,
 	onPasswordChange,
+	onExternalAuthLogin,
 	onPasskeyLogin,
 	onShowPasswordChange,
 	onSwitchAuthMode,
 	password,
+	externalAuthBusyProvider,
+	externalAuthLoading,
+	externalAuthProviders,
 	passkeySubmitting,
 	passkeySupported,
 	registrationClosed,
@@ -68,6 +137,8 @@ export function LoginAuthForm({
 }: LoginAuthFormProps) {
 	const { t } = useTranslation(["auth", "core", "settings"]);
 	const requiresExtraField = mode === "register" || mode === "setup";
+	const authMethodBusy =
+		submitting || passkeySubmitting || externalAuthBusyProvider !== null;
 
 	return (
 		<>
@@ -221,9 +292,7 @@ export function LoginAuthForm({
 						type="button"
 						variant="outline"
 						className="h-10 w-full"
-						disabled={
-							checking || submitting || passkeySubmitting || !passkeySupported
-						}
+						disabled={checking || authMethodBusy || !passkeySupported}
 						onClick={onPasskeyLogin}
 					>
 						{passkeySubmitting ? (
@@ -238,6 +307,38 @@ export function LoginAuthForm({
 							{t("passkey_unsupported")}
 						</p>
 					)}
+					{externalAuthLoading ? (
+						<div className="flex h-10 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
+							<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+							{t("external_auth_loading_providers")}
+						</div>
+					) : null}
+					{externalAuthProviders.map((provider) => {
+						const busy = externalAuthBusyProvider === provider.key;
+						return (
+							<Button
+								key={`${provider.kind}:${provider.key}`}
+								type="button"
+								variant="outline"
+								className="h-10 w-full"
+								disabled={checking || authMethodBusy}
+								onClick={() => onExternalAuthLogin(provider)}
+							>
+								{busy ? (
+									<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+								) : (
+									<ExternalAuthProviderIcon provider={provider} />
+								)}
+								<span className="truncate">
+									{busy
+										? t("external_auth_redirecting")
+										: t("external_auth_sign_in_with", {
+												provider: provider.display_name,
+											})}
+								</span>
+							</Button>
+						);
+					})}
 				</div>
 			) : null}
 

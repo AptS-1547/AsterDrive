@@ -68,6 +68,14 @@ pub enum AuditAction {
     AdminUpdateRemoteIngressProfile,
     #[sea_orm(string_value = "admin_delete_remote_ingress_profile")]
     AdminDeleteRemoteIngressProfile,
+    #[sea_orm(string_value = "admin_create_external_auth_provider")]
+    AdminCreateExternalAuthProvider,
+    #[sea_orm(string_value = "admin_update_external_auth_provider")]
+    AdminUpdateExternalAuthProvider,
+    #[sea_orm(string_value = "admin_delete_external_auth_provider")]
+    AdminDeleteExternalAuthProvider,
+    #[sea_orm(string_value = "admin_test_external_auth_provider")]
+    AdminTestExternalAuthProvider,
     #[sea_orm(string_value = "batch_copy")]
     BatchCopy,
     #[sea_orm(string_value = "batch_delete")]
@@ -218,6 +226,12 @@ pub enum AuditAction {
     UserPasskeyRegister,
     #[sea_orm(string_value = "user_passkey_rename")]
     UserPasskeyRename,
+    #[sea_orm(string_value = "user_external_auth_login")]
+    UserExternalAuthLogin,
+    #[sea_orm(string_value = "user_external_auth_link")]
+    UserExternalAuthLink,
+    #[sea_orm(string_value = "user_external_auth_unlink")]
+    UserExternalAuthUnlink,
     #[sea_orm(string_value = "user_refresh_token_reuse_detected")]
     UserRefreshTokenReuseDetected,
     #[sea_orm(string_value = "user_request_email_change")]
@@ -266,6 +280,10 @@ impl AuditAction {
             Self::AdminCreateRemoteIngressProfile => "admin_create_remote_ingress_profile",
             Self::AdminUpdateRemoteIngressProfile => "admin_update_remote_ingress_profile",
             Self::AdminDeleteRemoteIngressProfile => "admin_delete_remote_ingress_profile",
+            Self::AdminCreateExternalAuthProvider => "admin_create_external_auth_provider",
+            Self::AdminUpdateExternalAuthProvider => "admin_update_external_auth_provider",
+            Self::AdminDeleteExternalAuthProvider => "admin_delete_external_auth_provider",
+            Self::AdminTestExternalAuthProvider => "admin_test_external_auth_provider",
             Self::BatchCopy => "batch_copy",
             Self::BatchDelete => "batch_delete",
             Self::BatchMove => "batch_move",
@@ -341,6 +359,9 @@ impl AuditAction {
             Self::UserPasskeyLogin => "user_passkey_login",
             Self::UserPasskeyRegister => "user_passkey_register",
             Self::UserPasskeyRename => "user_passkey_rename",
+            Self::UserExternalAuthLogin => "user_external_auth_login",
+            Self::UserExternalAuthLink => "user_external_auth_link",
+            Self::UserExternalAuthUnlink => "user_external_auth_unlink",
             Self::UserRefreshTokenReuseDetected => "user_refresh_token_reuse_detected",
             Self::UserRequestEmailChange => "user_request_email_change",
             Self::UserRequestPasswordReset => "user_request_password_reset",
@@ -383,6 +404,10 @@ impl AuditAction {
             "admin_create_remote_ingress_profile" => Some(Self::AdminCreateRemoteIngressProfile),
             "admin_update_remote_ingress_profile" => Some(Self::AdminUpdateRemoteIngressProfile),
             "admin_delete_remote_ingress_profile" => Some(Self::AdminDeleteRemoteIngressProfile),
+            "admin_create_external_auth_provider" => Some(Self::AdminCreateExternalAuthProvider),
+            "admin_update_external_auth_provider" => Some(Self::AdminUpdateExternalAuthProvider),
+            "admin_delete_external_auth_provider" => Some(Self::AdminDeleteExternalAuthProvider),
+            "admin_test_external_auth_provider" => Some(Self::AdminTestExternalAuthProvider),
             "batch_copy" => Some(Self::BatchCopy),
             "batch_delete" => Some(Self::BatchDelete),
             "batch_move" => Some(Self::BatchMove),
@@ -458,6 +483,9 @@ impl AuditAction {
             "user_passkey_login" => Some(Self::UserPasskeyLogin),
             "user_passkey_register" => Some(Self::UserPasskeyRegister),
             "user_passkey_rename" => Some(Self::UserPasskeyRename),
+            "user_external_auth_login" => Some(Self::UserExternalAuthLogin),
+            "user_external_auth_link" => Some(Self::UserExternalAuthLink),
+            "user_external_auth_unlink" => Some(Self::UserExternalAuthUnlink),
             "user_refresh_token_reuse_detected" => Some(Self::UserRefreshTokenReuseDetected),
             "user_request_email_change" => Some(Self::UserRequestEmailChange),
             "user_request_password_reset" => Some(Self::UserRequestPasswordReset),
