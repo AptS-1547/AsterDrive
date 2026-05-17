@@ -100,6 +100,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/external-auth/provider-kinds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_list_external_auth_provider_kinds"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/external-auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_list_external_auth_providers"];
+        put?: never;
+        post: operations["admin_create_external_auth_provider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/external-auth/providers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["admin_get_external_auth_provider"];
+        put?: never;
+        post?: never;
+        delete: operations["admin_delete_external_auth_provider"];
+        options?: never;
+        head?: never;
+        patch: operations["admin_update_external_auth_provider"];
+        trace?: never;
+    };
+    "/api/v1/admin/external-auth/providers/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_test_external_auth_provider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/locks": {
         parameters: {
             query?: never;
@@ -686,6 +750,134 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["resend_email_change"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/external-auth/email-verification/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["confirm_external_auth_email_verification"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/external-auth/email-verification/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_external_auth_email_verification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/external-auth/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_external_auth_links"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/external-auth/links/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_external_auth_link"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/external-auth/password-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["link_external_auth_with_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/external-auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_external_auth_providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/external-auth/{kind}/{provider}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["finish_external_auth_login"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/external-auth/{kind}/{provider}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_external_auth_login"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3117,6 +3309,30 @@ export interface components {
             /** Format: int64 */
             policy_group_id?: number | null;
         };
+        AdminExternalAuthProviderInfo: {
+            allowed_domains: string[];
+            auto_link_verified_email_enabled: boolean;
+            auto_provision_enabled: boolean;
+            client_id: string;
+            client_secret?: string | null;
+            client_secret_configured: boolean;
+            created_at: string;
+            display_name: string;
+            display_name_claim?: string | null;
+            email_claim?: string | null;
+            enabled: boolean;
+            groups_claim?: string | null;
+            /** Format: int64 */
+            id: number;
+            issuer_url: string;
+            key: string;
+            protocol: components["schemas"]["ExternalAuthProtocol"];
+            provider_kind: components["schemas"]["ExternalAuthProviderKind"];
+            require_email_verified: boolean;
+            scopes: string;
+            updated_at: string;
+            username_claim?: string | null;
+        };
         AdminLockListQuery: {
             sort_by?: null | components["schemas"]["AdminLockSortBy"];
             sort_order?: null | components["schemas"]["SortOrder"];
@@ -3498,7 +3714,7 @@ export interface components {
          * @description 审计日志动作
          * @enum {string}
          */
-        AuditAction: "admin_create_user" | "admin_force_delete_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "admin_create_policy" | "admin_update_policy" | "admin_delete_policy" | "admin_delete_config" | "admin_delete_share" | "admin_force_unlock" | "admin_cleanup_expired_locks" | "admin_cleanup_tasks" | "admin_create_remote_node" | "admin_update_remote_node" | "admin_delete_remote_node" | "admin_test_remote_node" | "admin_create_remote_node_enrollment_token" | "admin_create_remote_ingress_profile" | "admin_update_remote_ingress_profile" | "admin_delete_remote_ingress_profile" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_create" | "file_delete" | "file_download" | "file_direct_link_create" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "file_preview_link_create" | "file_wopi_open" | "file_upload_cancel" | "file_restore" | "file_purge" | "file_lock" | "file_unlock" | "file_version_restore" | "file_version_delete" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "folder_restore" | "folder_purge" | "folder_lock" | "folder_unlock" | "property_set" | "property_delete" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "task_retry" | "archive_compress" | "archive_extract" | "archive_download" | "trash_purge_all" | "remote_enrollment_redeem" | "remote_enrollment_ack" | "user_revoke_other_sessions" | "user_revoke_session" | "user_update_preferences" | "user_update_profile" | "user_upload_avatar" | "user_set_avatar_source" | "user_update_wopi_info" | "webdav_account_create" | "webdav_account_delete" | "webdav_account_toggle" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_passkey_delete" | "user_passkey_login" | "user_passkey_register" | "user_passkey_rename" | "user_refresh_token_reuse_detected" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration";
+        AuditAction: "admin_create_user" | "admin_force_delete_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "admin_create_policy" | "admin_update_policy" | "admin_delete_policy" | "admin_delete_config" | "admin_delete_share" | "admin_force_unlock" | "admin_cleanup_expired_locks" | "admin_cleanup_tasks" | "admin_create_remote_node" | "admin_update_remote_node" | "admin_delete_remote_node" | "admin_test_remote_node" | "admin_create_remote_node_enrollment_token" | "admin_create_remote_ingress_profile" | "admin_update_remote_ingress_profile" | "admin_delete_remote_ingress_profile" | "admin_create_external_auth_provider" | "admin_update_external_auth_provider" | "admin_delete_external_auth_provider" | "admin_test_external_auth_provider" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_create" | "file_delete" | "file_download" | "file_direct_link_create" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "file_preview_link_create" | "file_wopi_open" | "file_upload_cancel" | "file_restore" | "file_purge" | "file_lock" | "file_unlock" | "file_version_restore" | "file_version_delete" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "folder_restore" | "folder_purge" | "folder_lock" | "folder_unlock" | "property_set" | "property_delete" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "task_retry" | "archive_compress" | "archive_extract" | "archive_download" | "trash_purge_all" | "remote_enrollment_redeem" | "remote_enrollment_ack" | "user_revoke_other_sessions" | "user_revoke_session" | "user_update_preferences" | "user_update_profile" | "user_upload_avatar" | "user_set_avatar_source" | "user_update_wopi_info" | "webdav_account_create" | "webdav_account_delete" | "webdav_account_toggle" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_passkey_delete" | "user_passkey_login" | "user_passkey_register" | "user_passkey_rename" | "user_external_auth_login" | "user_external_auth_link" | "user_external_auth_unlink" | "user_refresh_token_reuse_detected" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration";
         AuditLogEntry: {
             action: components["schemas"]["AuditAction"];
             created_at: string;
@@ -3678,6 +3894,24 @@ export interface components {
             folder_id?: number | null;
             name: string;
         };
+        CreateExternalAuthProviderInput: {
+            allowed_domains?: string[] | null;
+            auto_link_verified_email_enabled?: boolean | null;
+            auto_provision_enabled?: boolean | null;
+            client_id: string;
+            client_secret?: string | null;
+            display_name: string;
+            display_name_claim?: string | null;
+            email_claim?: string | null;
+            enabled?: boolean | null;
+            groups_claim?: string | null;
+            issuer_url: string;
+            key: string;
+            provider_kind: components["schemas"]["ExternalAuthProviderKind"];
+            require_email_verified?: boolean | null;
+            scopes?: string | null;
+            username_claim?: string | null;
+        };
         /** @description Create a new folder. */
         CreateFolderReq: {
             name: string;
@@ -3794,6 +4028,70 @@ export interface components {
         ExecuteConfigActionResp: {
             message: string;
             value?: string | null;
+        };
+        ExternalAuthCallbackQuery: {
+            code?: string | null;
+            error?: string | null;
+            error_description?: string | null;
+            state?: string | null;
+        };
+        ExternalAuthEmailVerificationConfirmQuery: {
+            token?: string | null;
+        };
+        ExternalAuthEmailVerificationStartRequest: {
+            email: string;
+            flow_token: string;
+        };
+        ExternalAuthEmailVerificationStartResponse: {
+            message: string;
+        };
+        ExternalAuthLinkInfo: {
+            created_at: string;
+            display_name_snapshot?: string | null;
+            email_snapshot?: string | null;
+            /** Format: int64 */
+            id: number;
+            issuer: string;
+            last_login_at?: string | null;
+            provider_display_name: string;
+            /** Format: int64 */
+            provider_id: number;
+            provider_key: string;
+            provider_kind: components["schemas"]["ExternalAuthProviderKind"];
+            subject: string;
+            updated_at: string;
+        };
+        ExternalAuthPasswordLinkRequest: {
+            flow_token: string;
+            identifier: string;
+            password: string;
+        };
+        /**
+         * @description 外部认证协议族。
+         * @enum {string}
+         */
+        ExternalAuthProtocol: "oidc" | "oauth2";
+        /**
+         * @description 外部认证提供商类型。
+         * @enum {string}
+         */
+        ExternalAuthProviderKind: "oidc";
+        ExternalAuthProviderTestResult: {
+            authorization_endpoint: string;
+            issuer: string;
+            jwks_key_count: number;
+            token_endpoint: string;
+        };
+        ExternalAuthPublicProvider: {
+            display_name: string;
+            key: string;
+            kind: components["schemas"]["ExternalAuthProviderKind"];
+        };
+        ExternalAuthStartLoginRequest: {
+            return_path?: string | null;
+        };
+        ExternalAuthStartLoginResponse: {
+            authorization_url: string;
         };
         /** @description Extract an archive file. */
         ExtractArchiveRequest: {
@@ -5421,6 +5719,23 @@ export interface components {
         UpdateAvatarSourceReq: {
             source: components["schemas"]["AvatarSource"];
         };
+        UpdateExternalAuthProviderInput: {
+            allowed_domains?: string[] | null;
+            auto_link_verified_email_enabled?: boolean | null;
+            auto_provision_enabled?: boolean | null;
+            client_id?: string | null;
+            client_secret?: string | null;
+            display_name?: string | null;
+            display_name_claim?: string | null;
+            email_claim?: string | null;
+            enabled?: boolean | null;
+            groups_claim?: string | null;
+            issuer_url?: string | null;
+            key?: string | null;
+            require_email_verified?: boolean | null;
+            scopes?: string | null;
+            username_claim?: string | null;
+        };
         /**
          * @description PATCH request:
          *     - non-null built-in fields are merged into existing preferences
@@ -6108,6 +6423,447 @@ export interface operations {
             };
             /** @description Mail service unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_list_external_auth_provider_kinds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Supported external auth provider kinds */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            default_scopes: string;
+                            description: string;
+                            display_name: string;
+                            kind: components["schemas"]["ExternalAuthProviderKind"];
+                            protocol: components["schemas"]["ExternalAuthProtocol"];
+                            supports_discovery: boolean;
+                            supports_email_verified_claim: boolean;
+                            supports_pkce: boolean;
+                        }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_list_external_auth_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description External auth providers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            allowed_domains: string[];
+                            auto_link_verified_email_enabled: boolean;
+                            auto_provision_enabled: boolean;
+                            client_id: string;
+                            client_secret?: string | null;
+                            client_secret_configured: boolean;
+                            created_at: string;
+                            display_name: string;
+                            display_name_claim?: string | null;
+                            email_claim?: string | null;
+                            enabled: boolean;
+                            groups_claim?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            issuer_url: string;
+                            key: string;
+                            protocol: components["schemas"]["ExternalAuthProtocol"];
+                            provider_kind: components["schemas"]["ExternalAuthProviderKind"];
+                            require_email_verified: boolean;
+                            scopes: string;
+                            updated_at: string;
+                            username_claim?: string | null;
+                        }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_create_external_auth_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExternalAuthProviderInput"];
+            };
+        };
+        responses: {
+            /** @description External auth provider created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            allowed_domains: string[];
+                            auto_link_verified_email_enabled: boolean;
+                            auto_provision_enabled: boolean;
+                            client_id: string;
+                            client_secret?: string | null;
+                            client_secret_configured: boolean;
+                            created_at: string;
+                            display_name: string;
+                            display_name_claim?: string | null;
+                            email_claim?: string | null;
+                            enabled: boolean;
+                            groups_claim?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            issuer_url: string;
+                            key: string;
+                            protocol: components["schemas"]["ExternalAuthProtocol"];
+                            provider_kind: components["schemas"]["ExternalAuthProviderKind"];
+                            require_email_verified: boolean;
+                            scopes: string;
+                            updated_at: string;
+                            username_claim?: string | null;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid provider configuration */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_get_external_auth_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External auth provider ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description External auth provider */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            allowed_domains: string[];
+                            auto_link_verified_email_enabled: boolean;
+                            auto_provision_enabled: boolean;
+                            client_id: string;
+                            client_secret?: string | null;
+                            client_secret_configured: boolean;
+                            created_at: string;
+                            display_name: string;
+                            display_name_claim?: string | null;
+                            email_claim?: string | null;
+                            enabled: boolean;
+                            groups_claim?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            issuer_url: string;
+                            key: string;
+                            protocol: components["schemas"]["ExternalAuthProtocol"];
+                            provider_kind: components["schemas"]["ExternalAuthProviderKind"];
+                            require_email_verified: boolean;
+                            scopes: string;
+                            updated_at: string;
+                            username_claim?: string | null;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description External auth provider not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_delete_external_auth_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External auth provider ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description External auth provider deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description External auth provider not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_update_external_auth_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External auth provider ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateExternalAuthProviderInput"];
+            };
+        };
+        responses: {
+            /** @description External auth provider updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            allowed_domains: string[];
+                            auto_link_verified_email_enabled: boolean;
+                            auto_provision_enabled: boolean;
+                            client_id: string;
+                            client_secret?: string | null;
+                            client_secret_configured: boolean;
+                            created_at: string;
+                            display_name: string;
+                            display_name_claim?: string | null;
+                            email_claim?: string | null;
+                            enabled: boolean;
+                            groups_claim?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            issuer_url: string;
+                            key: string;
+                            protocol: components["schemas"]["ExternalAuthProtocol"];
+                            provider_kind: components["schemas"]["ExternalAuthProviderKind"];
+                            require_email_verified: boolean;
+                            scopes: string;
+                            updated_at: string;
+                            username_claim?: string | null;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid provider configuration */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description External auth provider not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    admin_test_external_auth_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External auth provider ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description External auth provider tested */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            authorization_endpoint: string;
+                            issuer: string;
+                            jwks_key_count: number;
+                            token_endpoint: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Discovery failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description External auth provider not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9384,6 +10140,314 @@ export interface operations {
             };
             /** @description No pending email change */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    confirm_external_auth_email_verification: {
+        parameters: {
+            query?: {
+                token?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description External auth email verification completed and redirected */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_external_auth_email_verification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalAuthEmailVerificationStartRequest"];
+            };
+        };
+        responses: {
+            /** @description External auth email verification email queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            message: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid flow or email */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description External auth linking or registration is not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_external_auth_links: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Linked external auth identities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            display_name_snapshot?: string | null;
+                            email_snapshot?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            issuer: string;
+                            last_login_at?: string | null;
+                            provider_display_name: string;
+                            /** Format: int64 */
+                            provider_id: number;
+                            provider_key: string;
+                            provider_kind: components["schemas"]["ExternalAuthProviderKind"];
+                            subject: string;
+                            updated_at: string;
+                        }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_external_auth_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External auth identity link ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description External auth identity unlinked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description External auth identity link not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    link_external_auth_with_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalAuthPasswordLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description External auth identity linked and user logged in */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        /** @description Response body for token issuance (login / refresh / password change). */
+                        data?: {
+                            /** Format: int64 */
+                            expires_in: number;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid flow or request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid credentials */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_external_auth_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enabled external auth providers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            display_name: string;
+                            key: string;
+                            kind: components["schemas"]["ExternalAuthProviderKind"];
+                        }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+        };
+    };
+    finish_external_auth_login: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+                error_description?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description External auth provider kind */
+                kind: string;
+                /** @description External auth provider key */
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description External auth callback completed and redirected */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid external auth callback */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_external_auth_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description External auth provider kind */
+                kind: string;
+                /** @description External auth provider key */
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalAuthStartLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description External auth authorization URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            authorization_url: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Provider not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

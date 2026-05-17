@@ -15,6 +15,14 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use bytes::Bytes;
 use rand::RngExt;
 
+pub use self::external_auth::{
+    confirm_email_verification as confirm_external_auth_email_verification,
+    delete_link as delete_external_auth_link, finish_login as finish_external_auth_login,
+    link_with_password as link_external_auth_with_password, list_links as list_external_auth_links,
+    list_providers as list_external_auth_providers,
+    start_email_verification as start_external_auth_email_verification,
+    start_login as start_external_auth_login,
+};
 pub use self::passkeys::{
     delete_passkey, finish_login as finish_passkey_login,
     finish_registration as finish_passkey_registration, list_passkeys, rename_passkey,
@@ -44,6 +52,7 @@ const AUTH_MAIL_RESPONSE_FLOOR_MS: u64 = 350;
 const AUTH_MAIL_RESPONSE_JITTER_MS: u64 = 125;
 
 pub mod cookies;
+pub mod external_auth;
 pub mod passkeys;
 pub mod profile;
 pub mod public;
@@ -103,6 +112,36 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
             web::resource("/passkeys/login/finish")
                 .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
                 .route(web::post().to(finish_passkey_login)),
+        )
+        .service(
+            web::resource("/external-auth/providers")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::get().to(list_external_auth_providers)),
+        )
+        .service(
+            web::resource("/external-auth/email-verification/start")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(start_external_auth_email_verification)),
+        )
+        .service(
+            web::resource("/external-auth/password-link")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(link_external_auth_with_password)),
+        )
+        .service(
+            web::resource("/external-auth/email-verification/confirm")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::get().to(confirm_external_auth_email_verification)),
+        )
+        .service(
+            web::resource("/external-auth/{kind}/{provider}/start")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(start_external_auth_login)),
+        )
+        .service(
+            web::resource("/external-auth/{kind}/{provider}/callback")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::get().to(finish_external_auth_login)),
         )
         .service(
             web::resource("/refresh")
@@ -168,6 +207,18 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                 .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
                 .route(web::patch().to(rename_passkey))
                 .route(web::delete().to(delete_passkey)),
+        )
+        .service(
+            web::resource("/external-auth/links")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::get().to(list_external_auth_links)),
+        )
+        .service(
+            web::resource("/external-auth/links/{id}")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::delete().to(delete_external_auth_link)),
         )
         .service(
             web::resource("/email/change")

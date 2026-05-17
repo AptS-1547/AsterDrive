@@ -111,6 +111,10 @@ pub const MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_SUBJECT_KEY: &str =
     "mail_template_contact_change_notice_subject";
 pub const MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_HTML_KEY: &str =
     "mail_template_contact_change_notice_html";
+pub const MAIL_TEMPLATE_EXTERNAL_AUTH_EMAIL_VERIFICATION_SUBJECT_KEY: &str =
+    "mail_template_external_auth_email_verification_subject";
+pub const MAIL_TEMPLATE_EXTERNAL_AUTH_EMAIL_VERIFICATION_HTML_KEY: &str =
+    "mail_template_external_auth_email_verification_html";
 
 // ── General / branding keys ──────────────────────────────────────────────────
 pub const PUBLIC_SITE_URL_KEY: &str = "public_site_url";
@@ -1164,6 +1168,38 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "mail.template",
         description: "HTML template for previous-address email change notices. Prefer a complete HTML document for best client compatibility",
+    },
+    ConfigDef {
+        key: MAIL_TEMPLATE_EXTERNAL_AUTH_EMAIL_VERIFICATION_SUBJECT_KEY,
+        label_i18n_key: "settings_item_mail_template_external_auth_email_verification_subject_label",
+        description_i18n_key: "settings_item_mail_template_external_auth_email_verification_subject_desc",
+        value_type: SystemConfigValueType::String,
+        default_fn: || {
+            crate::config::mail::default_template_subject(
+                crate::types::MailTemplateCode::ExternalAuthEmailVerification,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "Subject template for external auth email verification emails",
+    },
+    ConfigDef {
+        key: MAIL_TEMPLATE_EXTERNAL_AUTH_EMAIL_VERIFICATION_HTML_KEY,
+        label_i18n_key: "settings_item_mail_template_external_auth_email_verification_html_label",
+        description_i18n_key: "settings_item_mail_template_external_auth_email_verification_html_desc",
+        value_type: SystemConfigValueType::Multiline,
+        default_fn: || {
+            crate::config::mail::default_template_html(
+                crate::types::MailTemplateCode::ExternalAuthEmailVerification,
+            )
+            .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "mail.template",
+        description: "HTML template for external auth email verification emails. Prefer a complete HTML document for best client compatibility",
     },
     // ── General ─────────────────────────────────────────────
     ConfigDef {

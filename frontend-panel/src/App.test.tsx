@@ -18,6 +18,7 @@ const mockState = vi.hoisted(() => ({
 	setAuthState: vi.fn(),
 	themeInit: vi.fn(),
 	thumbnailSupportLoad: vi.fn(),
+	toastSuccess: vi.fn(),
 }));
 
 vi.mock("react-router-dom", () => ({
@@ -26,6 +27,15 @@ vi.mock("react-router-dom", () => ({
 
 vi.mock("sonner", () => ({
 	Toaster: () => <div data-testid="toaster" />,
+	toast: {
+		success: (...args: unknown[]) => mockState.toastSuccess(...args),
+	},
+}));
+
+vi.mock("@/i18n", () => ({
+	default: {
+		t: (key: string) => key,
+	},
 }));
 
 vi.mock("@/router", () => ({
@@ -111,6 +121,7 @@ describe("App", () => {
 		mockState.setAuthState.mockReset();
 		mockState.themeInit.mockReset();
 		mockState.thumbnailSupportLoad.mockReset();
+		mockState.toastSuccess.mockReset();
 		vi.useRealTimers();
 	});
 
@@ -174,5 +185,24 @@ describe("App", () => {
 		expect(mockState.brandingLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.previewAppsLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.thumbnailSupportLoad).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows and consumes the external auth success redirect toast after auth is ready", () => {
+		mockState.authStore.isAuthenticated = true;
+		mockState.authStore.isChecking = false;
+		window.history.replaceState(
+			{ preserved: true },
+			"",
+			"/?external_auth=success&view=grid#files",
+		);
+
+		render(<App />);
+
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("auth:login_success", {
+			id: "external-auth-login-success",
+		});
+		expect(window.location.pathname).toBe("/");
+		expect(window.location.search).toBe("?view=grid");
+		expect(window.location.hash).toBe("#files");
 	});
 });

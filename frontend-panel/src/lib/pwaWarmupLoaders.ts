@@ -46,6 +46,11 @@ export const adminRouteWarmupLoaders = [
 		load: () => import("@/pages/admin/AdminPoliciesPage"),
 	},
 	{
+		key: "route:admin-external-auth",
+		label: "AdminExternalAuthPage",
+		load: () => import("@/pages/admin/AdminExternalAuthPage"),
+	},
+	{
 		key: "route:admin-settings",
 		label: "AdminSettingsPage",
 		load: () => import("@/pages/admin/AdminSettingsPage"),

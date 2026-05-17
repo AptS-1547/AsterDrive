@@ -1,0 +1,576 @@
+//! 数据库迁移：新增外部认证 provider、身份绑定和登录 flow 表。
+
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        create_external_auth_providers(manager).await?;
+        create_external_auth_identities(manager).await?;
+        create_external_auth_login_flows(manager).await?;
+        create_external_auth_email_verification_flows(manager).await?;
+        create_indexes(manager).await
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        for table in [
+            ExternalAuthEmailVerificationFlows::Table.into_iden(),
+            ExternalAuthLoginFlows::Table.into_iden(),
+            ExternalAuthIdentities::Table.into_iden(),
+            ExternalAuthProviders::Table.into_iden(),
+        ] {
+            manager
+                .drop_table(Table::drop().table(table).if_exists().to_owned())
+                .await?;
+        }
+        Ok(())
+    }
+}
+
+async fn create_external_auth_providers(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    manager
+        .create_table(
+            Table::create()
+                .table(ExternalAuthProviders::Table)
+                .if_not_exists()
+                .col(big_integer_pk(ExternalAuthProviders::Id))
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::Key)
+                        .string_len(64)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::DisplayName)
+                        .string_len(128)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::ProviderKind)
+                        .string_len(32)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::Protocol)
+                        .string_len(32)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::IssuerUrl)
+                        .string_len(512)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::AuthorizationUrl)
+                        .text()
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::TokenUrl)
+                        .text()
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::UserinfoUrl)
+                        .text()
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::ClientId)
+                        .string_len(512)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::ClientSecret)
+                        .text()
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::Scopes)
+                        .string_len(512)
+                        .not_null()
+                        .default("openid email profile"),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::Enabled)
+                        .boolean()
+                        .not_null()
+                        .default(false),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::AutoProvisionEnabled)
+                        .boolean()
+                        .not_null()
+                        .default(false),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::AutoLinkVerifiedEmailEnabled)
+                        .boolean()
+                        .not_null()
+                        .default(false),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::RequireEmailVerified)
+                        .boolean()
+                        .not_null()
+                        .default(true),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::SubjectClaim)
+                        .string_len(128)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::UsernameClaim)
+                        .string_len(128)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::DisplayNameClaim)
+                        .string_len(128)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::EmailClaim)
+                        .string_len(128)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::EmailVerifiedClaim)
+                        .string_len(128)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::GroupsClaim)
+                        .string_len(128)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::AvatarUrlClaim)
+                        .string_len(128)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthProviders::AllowedDomains)
+                        .text()
+                        .null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(manager, ExternalAuthProviders::CreatedAt)
+                        .not_null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(manager, ExternalAuthProviders::UpdatedAt)
+                        .not_null(),
+                )
+                .to_owned(),
+        )
+        .await
+}
+
+async fn create_external_auth_identities(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    manager
+        .create_table(
+            Table::create()
+                .table(ExternalAuthIdentities::Table)
+                .if_not_exists()
+                .col(big_integer_pk(ExternalAuthIdentities::Id))
+                .col(
+                    ColumnDef::new(ExternalAuthIdentities::UserId)
+                        .big_integer()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthIdentities::ProviderId)
+                        .big_integer()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthIdentities::IdentityNamespace)
+                        .string_len(512)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthIdentities::Subject)
+                        .string_len(255)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthIdentities::EmailSnapshot)
+                        .string_len(255)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthIdentities::DisplayNameSnapshot)
+                        .string_len(255)
+                        .null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(manager, ExternalAuthIdentities::CreatedAt)
+                        .not_null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(manager, ExternalAuthIdentities::UpdatedAt)
+                        .not_null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(manager, ExternalAuthIdentities::LastLoginAt)
+                        .null(),
+                )
+                .foreign_key(
+                    ForeignKey::create()
+                        .from(
+                            ExternalAuthIdentities::Table,
+                            ExternalAuthIdentities::UserId,
+                        )
+                        .to(Users::Table, Users::Id)
+                        .on_delete(ForeignKeyAction::Cascade),
+                )
+                .foreign_key(
+                    ForeignKey::create()
+                        .from(
+                            ExternalAuthIdentities::Table,
+                            ExternalAuthIdentities::ProviderId,
+                        )
+                        .to(ExternalAuthProviders::Table, ExternalAuthProviders::Id)
+                        .on_delete(ForeignKeyAction::Cascade),
+                )
+                .to_owned(),
+        )
+        .await
+}
+
+async fn create_external_auth_login_flows(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    manager
+        .create_table(
+            Table::create()
+                .table(ExternalAuthLoginFlows::Table)
+                .if_not_exists()
+                .col(big_integer_pk(ExternalAuthLoginFlows::Id))
+                .col(
+                    ColumnDef::new(ExternalAuthLoginFlows::ProviderId)
+                        .big_integer()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthLoginFlows::StateHash)
+                        .string_len(64)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthLoginFlows::Nonce)
+                        .string_len(512)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthLoginFlows::PkceVerifier)
+                        .string_len(256)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthLoginFlows::RedirectUri)
+                        .text()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthLoginFlows::ReturnPath)
+                        .text()
+                        .null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(manager, ExternalAuthLoginFlows::CreatedAt)
+                        .not_null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(manager, ExternalAuthLoginFlows::ExpiresAt)
+                        .not_null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(manager, ExternalAuthLoginFlows::ConsumedAt)
+                        .null(),
+                )
+                .foreign_key(
+                    ForeignKey::create()
+                        .from(
+                            ExternalAuthLoginFlows::Table,
+                            ExternalAuthLoginFlows::ProviderId,
+                        )
+                        .to(ExternalAuthProviders::Table, ExternalAuthProviders::Id)
+                        .on_delete(ForeignKeyAction::Cascade),
+                )
+                .to_owned(),
+        )
+        .await
+}
+
+async fn create_external_auth_email_verification_flows(
+    manager: &SchemaManager<'_>,
+) -> Result<(), DbErr> {
+    manager
+        .create_table(
+            Table::create()
+                .table(ExternalAuthEmailVerificationFlows::Table)
+                .if_not_exists()
+                .col(big_integer_pk(ExternalAuthEmailVerificationFlows::Id))
+                .col(
+                    ColumnDef::new(ExternalAuthEmailVerificationFlows::ProviderId)
+                        .big_integer()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthEmailVerificationFlows::IdentityNamespace)
+                        .string_len(512)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthEmailVerificationFlows::Subject)
+                        .string_len(255)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthEmailVerificationFlows::TargetEmail)
+                        .string_len(255)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthEmailVerificationFlows::DisplayNameSnapshot)
+                        .string_len(255)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthEmailVerificationFlows::PreferredUsernameSnapshot)
+                        .string_len(255)
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthEmailVerificationFlows::ReturnPath)
+                        .text()
+                        .null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthEmailVerificationFlows::FlowTokenHash)
+                        .string_len(64)
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(ExternalAuthEmailVerificationFlows::VerificationTokenHash)
+                        .string_len(64)
+                        .null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(
+                        manager,
+                        ExternalAuthEmailVerificationFlows::EmailRequestedAt,
+                    )
+                    .null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(
+                        manager,
+                        ExternalAuthEmailVerificationFlows::CreatedAt,
+                    )
+                    .not_null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(
+                        manager,
+                        ExternalAuthEmailVerificationFlows::ExpiresAt,
+                    )
+                    .not_null(),
+                )
+                .col(
+                    crate::time::utc_date_time_column(
+                        manager,
+                        ExternalAuthEmailVerificationFlows::ConsumedAt,
+                    )
+                    .null(),
+                )
+                .foreign_key(
+                    ForeignKey::create()
+                        .from(
+                            ExternalAuthEmailVerificationFlows::Table,
+                            ExternalAuthEmailVerificationFlows::ProviderId,
+                        )
+                        .to(ExternalAuthProviders::Table, ExternalAuthProviders::Id)
+                        .on_delete(ForeignKeyAction::Cascade),
+                )
+                .to_owned(),
+        )
+        .await
+}
+
+async fn create_indexes(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    for index in [
+        Index::create()
+            .name("idx_external_auth_providers_kind_key")
+            .table(ExternalAuthProviders::Table)
+            .col(ExternalAuthProviders::ProviderKind)
+            .col(ExternalAuthProviders::Key)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("idx_external_auth_identities_provider_subject")
+            .table(ExternalAuthIdentities::Table)
+            .col(ExternalAuthIdentities::ProviderId)
+            .col(ExternalAuthIdentities::Subject)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("idx_external_auth_identities_namespace_subject")
+            .table(ExternalAuthIdentities::Table)
+            .col(ExternalAuthIdentities::IdentityNamespace)
+            .col(ExternalAuthIdentities::Subject)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("idx_external_auth_identities_user_provider")
+            .table(ExternalAuthIdentities::Table)
+            .col(ExternalAuthIdentities::UserId)
+            .col(ExternalAuthIdentities::ProviderId)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("idx_external_auth_identities_user_id")
+            .table(ExternalAuthIdentities::Table)
+            .col(ExternalAuthIdentities::UserId)
+            .to_owned(),
+        Index::create()
+            .name("idx_external_auth_login_flows_state_hash")
+            .table(ExternalAuthLoginFlows::Table)
+            .col(ExternalAuthLoginFlows::StateHash)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("idx_external_auth_login_flows_expires_at")
+            .table(ExternalAuthLoginFlows::Table)
+            .col(ExternalAuthLoginFlows::ExpiresAt)
+            .to_owned(),
+        Index::create()
+            .name("idx_external_auth_email_flows_flow_token_hash")
+            .table(ExternalAuthEmailVerificationFlows::Table)
+            .col(ExternalAuthEmailVerificationFlows::FlowTokenHash)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("idx_external_auth_email_flows_verification_token_hash")
+            .table(ExternalAuthEmailVerificationFlows::Table)
+            .col(ExternalAuthEmailVerificationFlows::VerificationTokenHash)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("idx_external_auth_email_flows_namespace_subject")
+            .table(ExternalAuthEmailVerificationFlows::Table)
+            .col(ExternalAuthEmailVerificationFlows::IdentityNamespace)
+            .col(ExternalAuthEmailVerificationFlows::Subject)
+            .to_owned(),
+        Index::create()
+            .name("idx_external_auth_email_flows_expires_at")
+            .table(ExternalAuthEmailVerificationFlows::Table)
+            .col(ExternalAuthEmailVerificationFlows::ExpiresAt)
+            .to_owned(),
+    ] {
+        manager.create_index(index).await?;
+    }
+    Ok(())
+}
+
+fn big_integer_pk<T>(column: T) -> ColumnDef
+where
+    T: IntoIden,
+{
+    let mut column = ColumnDef::new(column);
+    column
+        .big_integer()
+        .not_null()
+        .auto_increment()
+        .primary_key();
+    column
+}
+
+#[derive(DeriveIden)]
+enum Users {
+    Table,
+    Id,
+}
+
+#[derive(DeriveIden)]
+enum ExternalAuthProviders {
+    Table,
+    Id,
+    Key,
+    DisplayName,
+    ProviderKind,
+    Protocol,
+    IssuerUrl,
+    AuthorizationUrl,
+    TokenUrl,
+    UserinfoUrl,
+    ClientId,
+    ClientSecret,
+    Scopes,
+    Enabled,
+    AutoProvisionEnabled,
+    AutoLinkVerifiedEmailEnabled,
+    RequireEmailVerified,
+    SubjectClaim,
+    UsernameClaim,
+    DisplayNameClaim,
+    EmailClaim,
+    EmailVerifiedClaim,
+    GroupsClaim,
+    AvatarUrlClaim,
+    AllowedDomains,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum ExternalAuthIdentities {
+    Table,
+    Id,
+    UserId,
+    ProviderId,
+    IdentityNamespace,
+    Subject,
+    EmailSnapshot,
+    DisplayNameSnapshot,
+    CreatedAt,
+    UpdatedAt,
+    LastLoginAt,
+}
+
+#[derive(DeriveIden)]
+enum ExternalAuthLoginFlows {
+    Table,
+    Id,
+    ProviderId,
+    StateHash,
+    Nonce,
+    PkceVerifier,
+    RedirectUri,
+    ReturnPath,
+    CreatedAt,
+    ExpiresAt,
+    ConsumedAt,
+}
+
+#[derive(DeriveIden)]
+enum ExternalAuthEmailVerificationFlows {
+    Table,
+    Id,
+    ProviderId,
+    IdentityNamespace,
+    Subject,
+    TargetEmail,
+    DisplayNameSnapshot,
+    PreferredUsernameSnapshot,
+    ReturnPath,
+    FlowTokenHash,
+    VerificationTokenHash,
+    EmailRequestedAt,
+    CreatedAt,
+    ExpiresAt,
+    ConsumedAt,
+}

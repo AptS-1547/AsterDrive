@@ -166,6 +166,22 @@ fn audit_action_strings_match_existing_contract() {
             AuditAction::AdminDeleteRemoteIngressProfile,
             "admin_delete_remote_ingress_profile",
         ),
+        (
+            AuditAction::AdminCreateExternalAuthProvider,
+            "admin_create_external_auth_provider",
+        ),
+        (
+            AuditAction::AdminUpdateExternalAuthProvider,
+            "admin_update_external_auth_provider",
+        ),
+        (
+            AuditAction::AdminDeleteExternalAuthProvider,
+            "admin_delete_external_auth_provider",
+        ),
+        (
+            AuditAction::AdminTestExternalAuthProvider,
+            "admin_test_external_auth_provider",
+        ),
         (AuditAction::BatchCopy, "batch_copy"),
         (AuditAction::BatchDelete, "batch_delete"),
         (AuditAction::BatchMove, "batch_move"),
@@ -258,6 +274,15 @@ fn audit_action_strings_match_existing_contract() {
         ),
         (AuditAction::UserLogin, "user_login"),
         (AuditAction::UserLogout, "user_logout"),
+        (
+            AuditAction::UserExternalAuthLogin,
+            "user_external_auth_login",
+        ),
+        (AuditAction::UserExternalAuthLink, "user_external_auth_link"),
+        (
+            AuditAction::UserExternalAuthUnlink,
+            "user_external_auth_unlink",
+        ),
         (
             AuditAction::UserRefreshTokenReuseDetected,
             "user_refresh_token_reuse_detected",

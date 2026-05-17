@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { RouterProvider } from "react-router-dom";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import { OfflineBootFallback } from "@/components/layout/OfflineBootFallback";
 import { usePwaUpdate } from "@/hooks/usePwaUpdate";
 import { useStorageChangeEvents } from "@/hooks/useStorageChangeEvents";
+import i18n from "@/i18n";
 import { router } from "@/router";
 import { useAuthStore } from "@/stores/authStore";
 import { useBrandingStore } from "@/stores/brandingStore";
@@ -23,6 +24,22 @@ function loadPublicConfig() {
 	void useBrandingStore.getState().load();
 	void usePreviewAppStore.getState().load();
 	void useThumbnailSupportStore.getState().load();
+}
+
+function consumeExternalAuthSuccessRedirect() {
+	const searchParams = new URLSearchParams(window.location.search);
+	if (searchParams.get("external_auth") !== "success") return;
+
+	toast.success(i18n.t("auth:login_success"), {
+		id: "external-auth-login-success",
+	});
+	searchParams.delete("external_auth");
+	const nextSearch = searchParams.toString();
+	window.history.replaceState(
+		window.history.state,
+		"",
+		`${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`,
+	);
 }
 
 function App() {
@@ -49,6 +66,8 @@ function App() {
 
 	useEffect(() => {
 		if (isChecking || !isAuthenticated) return;
+
+		consumeExternalAuthSuccessRedirect();
 
 		let cancelled = false;
 

@@ -49,6 +49,9 @@ const mockState = vi.hoisted(() => ({
 	forceEnableDisabledButtons: false,
 	finishPasskeyLogin: vi.fn(),
 	getPasskeyCredential: vi.fn(),
+	locationAssign: vi.fn(),
+	linkExternalAuthWithPassword: vi.fn(),
+	listExternalAuthProviders: vi.fn(),
 	login: vi.fn(),
 	loggerWarn: vi.fn(),
 	location: {
@@ -62,6 +65,8 @@ const mockState = vi.hoisted(() => ({
 	requestPasswordReset: vi.fn(),
 	resendRegisterActivation: vi.fn(),
 	setup: vi.fn(),
+	startExternalAuthEmailVerification: vi.fn(),
+	startExternalAuthLogin: vi.fn(),
 	startPasskeyLogin: vi.fn(),
 	syncSession: vi.fn(),
 	toastError: vi.fn(),
@@ -71,7 +76,16 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string) => key.replace(/^core:/, ""),
+		t: (key: string, options?: Record<string, unknown>) => {
+			const normalized = key.replace(/^core:/, "");
+			if (
+				normalized === "external_auth_sign_in_with" &&
+				typeof options?.provider === "string"
+			) {
+				return `external_auth_sign_in_with ${options.provider}`;
+			}
+			return normalized;
+		},
 	}),
 }));
 
@@ -202,12 +216,20 @@ vi.mock("@/services/authService", () => ({
 		check: (...args: unknown[]) => mockState.check(...args),
 		finishPasskeyLogin: (...args: unknown[]) =>
 			mockState.finishPasskeyLogin(...args),
+		linkExternalAuthWithPassword: (...args: unknown[]) =>
+			mockState.linkExternalAuthWithPassword(...args),
+		listExternalAuthProviders: (...args: unknown[]) =>
+			mockState.listExternalAuthProviders(...args),
 		requestPasswordReset: (...args: unknown[]) =>
 			mockState.requestPasswordReset(...args),
 		register: (...args: unknown[]) => mockState.register(...args),
 		resendRegisterActivation: (...args: unknown[]) =>
 			mockState.resendRegisterActivation(...args),
 		setup: (...args: unknown[]) => mockState.setup(...args),
+		startExternalAuthEmailVerification: (...args: unknown[]) =>
+			mockState.startExternalAuthEmailVerification(...args),
+		startExternalAuthLogin: (...args: unknown[]) =>
+			mockState.startExternalAuthLogin(...args),
 		startPasskeyLogin: (...args: unknown[]) =>
 			mockState.startPasskeyLogin(...args),
 	},
@@ -263,6 +285,13 @@ vi.mock("@/stores/brandingStore", () => ({
 
 describe("LoginPage", () => {
 	beforeEach(() => {
+		Object.defineProperty(window, "location", {
+			configurable: true,
+			value: {
+				...window.location,
+				assign: mockState.locationAssign,
+			},
+		});
 		document.documentElement.classList.remove("dark");
 		mockState.allowUserRegistration = true;
 		mockState.conditionalPasskeyError = null;
@@ -272,6 +301,9 @@ describe("LoginPage", () => {
 		mockState.finishPasskeyLogin.mockReset();
 		mockState.getPasskeyCredential.mockReset();
 		mockState.handleApiError.mockReset();
+		mockState.locationAssign.mockReset();
+		mockState.linkExternalAuthWithPassword.mockReset();
+		mockState.listExternalAuthProviders.mockReset();
 		mockState.login.mockReset();
 		mockState.loggerWarn.mockReset();
 		mockState.location = {
@@ -285,6 +317,8 @@ describe("LoginPage", () => {
 		mockState.requestPasswordReset.mockReset();
 		mockState.resendRegisterActivation.mockReset();
 		mockState.setup.mockReset();
+		mockState.startExternalAuthEmailVerification.mockReset();
+		mockState.startExternalAuthLogin.mockReset();
 		mockState.startPasskeyLogin.mockReset();
 		mockState.syncSession.mockReset();
 		mockState.toastError.mockReset();
@@ -292,12 +326,22 @@ describe("LoginPage", () => {
 		mockState.webAuthnSupported = false;
 		mockState.finishPasskeyLogin.mockResolvedValue({ expiresIn: 900 });
 		mockState.getPasskeyCredential.mockResolvedValue({ id: "credential-1" });
+		mockState.listExternalAuthProviders.mockResolvedValue([]);
+		mockState.linkExternalAuthWithPassword.mockResolvedValue({
+			expiresIn: 900,
+		});
 		mockState.login.mockResolvedValue(undefined);
 		mockState.refreshUser.mockResolvedValue(undefined);
 		mockState.register.mockResolvedValue({ email_verified: false });
 		mockState.requestPasswordReset.mockResolvedValue(undefined);
 		mockState.resendRegisterActivation.mockResolvedValue(undefined);
 		mockState.setup.mockResolvedValue(undefined);
+		mockState.startExternalAuthEmailVerification.mockResolvedValue({
+			message: "sent",
+		});
+		mockState.startExternalAuthLogin.mockResolvedValue({
+			authorization_url: "https://idp.example.com/authorize",
+		});
 		mockState.startPasskeyLogin.mockResolvedValue({
 			flow_id: "flow-1",
 			public_key: { publicKey: { challenge: "AQID" } },
@@ -342,6 +386,7 @@ describe("LoginPage", () => {
 		await waitFor(() => {
 			expect(mockState.navigate).toHaveBeenCalledWith("/", { replace: true });
 		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("login_success");
 	});
 
 	it("preserves caret position when editing login fields in the middle", async () => {
@@ -440,9 +485,7 @@ describe("LoginPage", () => {
 			});
 			expect(mockState.syncSession).toHaveBeenCalledWith(900);
 			expect(mockState.refreshUser).toHaveBeenCalledTimes(1);
-			expect(mockState.toastSuccess).toHaveBeenCalledWith(
-				"passkey_login_success",
-			);
+			expect(mockState.toastSuccess).toHaveBeenCalledWith("login_success");
 		});
 		await waitFor(() => {
 			expect(mockState.navigate).toHaveBeenCalledWith("/", { replace: true });
@@ -499,9 +542,7 @@ describe("LoginPage", () => {
 		});
 		expect(mockState.syncSession).toHaveBeenCalledWith(900);
 		expect(mockState.refreshUser).toHaveBeenCalledTimes(1);
-		expect(mockState.toastSuccess).not.toHaveBeenCalledWith(
-			"passkey_login_success",
-		);
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("login_success");
 		await waitFor(() => {
 			expect(mockState.navigate).toHaveBeenCalledWith("/", { replace: true });
 		});
@@ -547,9 +588,7 @@ describe("LoginPage", () => {
 		expect(mockState.finishPasskeyLogin).toHaveBeenCalledWith("flow-1", {
 			id: "credential-1",
 		});
-		expect(mockState.toastSuccess).toHaveBeenCalledWith(
-			"passkey_login_success",
-		);
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("login_success");
 	});
 
 	it("ignores a conditional passkey result after the request has been aborted", async () => {
@@ -801,6 +840,83 @@ describe("LoginPage", () => {
 				search: "",
 			},
 			{ replace: true },
+		);
+	});
+
+	it("shows an external auth error toast and clears the redirect query", async () => {
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search:
+				"?external_auth=error&message=Provider%20rejected%20login&return_path=%2Ffiles",
+		};
+
+		render(<LoginPage />);
+
+		await waitFor(() =>
+			expect(mockState.toastError).toHaveBeenCalledWith(
+				"external_auth_login_failed",
+				{
+					description: "Provider rejected login",
+					id: "external-auth-login-error",
+				},
+			),
+		);
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			{
+				hash: "",
+				pathname: "/login",
+				search: "",
+			},
+			{ replace: true },
+		);
+	});
+
+	it("opens the external auth recovery panel from an email-required redirect", async () => {
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search:
+				"?external_auth=email_required&flow=flow-token&return_path=%2Fsettings%2Fsecurity",
+		};
+
+		render(<LoginPage />);
+
+		expect(
+			await screen.findByText("external_auth_email_verification_title"),
+		).toBeInTheDocument();
+		expect(
+			await screen.findByText("external_auth_password_link_tab"),
+		).toBeInTheDocument();
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			{
+				hash: "",
+				pathname: "/login",
+				search: "",
+			},
+			{ replace: true },
+		);
+	});
+
+	it("starts external auth login with the provider kind and key", async () => {
+		const provider = {
+			display_name: "Example IDP",
+			key: "example",
+			kind: "oidc",
+		};
+		mockState.listExternalAuthProviders.mockResolvedValue([provider]);
+
+		render(<LoginPage />);
+
+		fireEvent.click(await screen.findByRole("button", { name: /Example IDP/ }));
+
+		await waitFor(() =>
+			expect(mockState.startExternalAuthLogin).toHaveBeenCalledWith(provider, {
+				return_path: "/?external_auth=success",
+			}),
+		);
+		expect(mockState.locationAssign).toHaveBeenCalledWith(
+			"https://idp.example.com/authorize",
 		);
 	});
 

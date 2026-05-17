@@ -19,6 +19,8 @@ pub enum MailTemplateCode {
     PasswordResetNotice,
     #[sea_orm(string_value = "contact_change_notice")]
     ContactChangeNotice,
+    #[sea_orm(string_value = "external_auth_email_verification")]
+    ExternalAuthEmailVerification,
 }
 
 impl MailTemplateCode {
@@ -29,6 +31,7 @@ impl MailTemplateCode {
             Self::PasswordReset => "password_reset",
             Self::PasswordResetNotice => "password_reset_notice",
             Self::ContactChangeNotice => "contact_change_notice",
+            Self::ExternalAuthEmailVerification => "external_auth_email_verification",
         }
     }
 }
@@ -109,6 +112,10 @@ mod tests {
         assert_eq!(
             MailTemplateCode::ContactChangeNotice.as_str(),
             "contact_change_notice"
+        );
+        assert_eq!(
+            MailTemplateCode::ExternalAuthEmailVerification.as_str(),
+            "external_auth_email_verification"
         );
     }
 

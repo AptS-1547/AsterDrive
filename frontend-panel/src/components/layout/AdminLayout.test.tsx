@@ -71,6 +71,7 @@ describe("AdminLayout", () => {
 			"translated:teams",
 			"translated:policies",
 			"translated:remote_nodes",
+			"translated:external_auth",
 			"translated:policy_groups",
 			"translated:shares",
 			"translated:tasks",

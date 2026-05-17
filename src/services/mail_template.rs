@@ -62,6 +62,12 @@ pub struct ContactChangeNoticePayload {
     pub new_email: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalAuthEmailVerificationPayload {
+    pub email: String,
+    pub token: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MailTemplatePayload {
     RegisterActivation(RegisterActivationPayload),
@@ -69,6 +75,7 @@ pub enum MailTemplatePayload {
     PasswordReset(PasswordResetPayload),
     PasswordResetNotice(PasswordResetNoticePayload),
     ContactChangeNotice(ContactChangeNoticePayload),
+    ExternalAuthEmailVerification(ExternalAuthEmailVerificationPayload),
 }
 
 impl MailTemplatePayload {
@@ -107,6 +114,13 @@ impl MailTemplatePayload {
         })
     }
 
+    pub fn external_auth_email_verification(email: &str, token: &str) -> Self {
+        Self::ExternalAuthEmailVerification(ExternalAuthEmailVerificationPayload {
+            email: email.to_string(),
+            token: token.to_string(),
+        })
+    }
+
     pub fn template_code(&self) -> MailTemplateCode {
         match self {
             Self::RegisterActivation(_) => MailTemplateCode::RegisterActivation,
@@ -114,6 +128,9 @@ impl MailTemplatePayload {
             Self::PasswordReset(_) => MailTemplateCode::PasswordReset,
             Self::PasswordResetNotice(_) => MailTemplateCode::PasswordResetNotice,
             Self::ContactChangeNotice(_) => MailTemplateCode::ContactChangeNotice,
+            Self::ExternalAuthEmailVerification(_) => {
+                MailTemplateCode::ExternalAuthEmailVerification
+            }
         }
     }
 
@@ -126,6 +143,9 @@ impl MailTemplatePayload {
             Self::PasswordReset(payload) => serialize_payload(payload).map(StoredMailPayload),
             Self::PasswordResetNotice(payload) => serialize_payload(payload).map(StoredMailPayload),
             Self::ContactChangeNotice(payload) => serialize_payload(payload).map(StoredMailPayload),
+            Self::ExternalAuthEmailVerification(payload) => {
+                serialize_payload(payload).map(StoredMailPayload)
+            }
         }
     }
 
@@ -150,6 +170,12 @@ impl MailTemplatePayload {
             MailTemplateCode::ContactChangeNotice => Ok(Self::ContactChangeNotice(
                 deserialize_payload(template_code, payload.as_ref())?,
             )),
+            MailTemplateCode::ExternalAuthEmailVerification => {
+                Ok(Self::ExternalAuthEmailVerification(deserialize_payload(
+                    template_code,
+                    payload.as_ref(),
+                )?))
+            }
         }
     }
 }
@@ -229,6 +255,21 @@ pub fn list_template_variable_groups() -> Vec<TemplateVariableGroup> {
                 ),
             ],
         ),
+        template_variable_group(
+            MailTemplateCode::ExternalAuthEmailVerification,
+            &[
+                placeholder_spec(
+                    "email",
+                    "settings_template_variable_email_label",
+                    "settings_template_variable_email_desc",
+                ),
+                placeholder_spec(
+                    "verification_url",
+                    "settings_template_variable_verification_url_label",
+                    "settings_template_variable_verification_url_desc",
+                ),
+            ],
+        ),
     ]
 }
 
@@ -293,6 +334,20 @@ pub fn render(
                 ("new_email", escape_html(&payload.new_email)),
             ],
         },
+        MailTemplatePayload::ExternalAuthEmailVerification(payload) => {
+            let verification_url =
+                external_auth_email_verification_link(runtime_config, &payload.token);
+            PlaceholderSet {
+                text_values: vec![
+                    ("email", payload.email.clone()),
+                    ("verification_url", verification_url.clone()),
+                ],
+                html_values: vec![
+                    ("email", escape_html(&payload.email)),
+                    ("verification_url", escape_html(&verification_url)),
+                ],
+            }
+        }
     };
 
     let subject = render_placeholders(
@@ -343,6 +398,16 @@ fn password_reset_link(runtime_config: &RuntimeConfig, token: &str) -> String {
     site_url::public_app_url_or_path(
         runtime_config,
         &format!("/reset-password?token={}", urlencoding::encode(token)),
+    )
+}
+
+fn external_auth_email_verification_link(runtime_config: &RuntimeConfig, token: &str) -> String {
+    site_url::public_app_url_or_path(
+        runtime_config,
+        &format!(
+            "/api/v1/auth/external-auth/email-verification/confirm?token={}",
+            urlencoding::encode(token)
+        ),
     )
 }
 
@@ -598,6 +663,29 @@ mod tests {
         assert!(rendered.text_body.contains("token=token-123"));
         assert!(rendered.html_body.starts_with("<!doctype html>"));
         assert!(rendered.html_body.contains("A&amp;B"));
+    }
+
+    #[test]
+    fn render_external_auth_email_verification_builds_link_and_escapes_html() {
+        let runtime_config = RuntimeConfig::new();
+        let payload = MailTemplatePayload::external_auth_email_verification(
+            "oidc+user@example.com",
+            "token-123",
+        );
+        let stored = payload.to_stored().unwrap();
+        let rendered = render(
+            &runtime_config,
+            MailTemplateCode::ExternalAuthEmailVerification,
+            &stored,
+        )
+        .unwrap();
+
+        assert!(
+            rendered
+                .text_body
+                .contains("/api/v1/auth/external-auth/email-verification/confirm?token=token-123",)
+        );
+        assert!(rendered.html_body.contains("oidc+user@example.com"));
     }
 
     #[test]

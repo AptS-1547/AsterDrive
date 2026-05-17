@@ -114,6 +114,8 @@
 	"share_expired": "分享链接已过期",
 	"share_password_required": "请输入分享密码后继续",
 	"share_download_limit_reached": "该分享链接的下载次数已达上限",
+	"network_error": "暂时无法连接到服务器，请检查网络连接后再试",
+	"request_timeout": "请求超时，请稍后重试",
 	"unexpected_error": "暂时无法完成操作，请稍后再试",
 	"error_page_default_label": "出现异常",
 	"error_page_default_title": "当前页面未能完成加载。",

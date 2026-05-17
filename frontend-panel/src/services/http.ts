@@ -34,11 +34,17 @@ const SKIP_REFRESH_PATHS = [
 	"/auth/logout",
 	"/auth/check",
 	"/auth/contact-verification/confirm",
+	"/auth/external-auth/providers",
+	"/auth/external-auth/email-verification/start",
+	"/auth/external-auth/password-link",
 	"/auth/setup",
 ];
 
 function shouldSkipRefresh(url: string) {
 	if (SKIP_REFRESH_PATHS.some((path) => url.endsWith(path))) return true;
+	if (url.includes("/auth/external-auth/") && url.endsWith("/start")) {
+		return true;
+	}
 	return url.includes("/s/") || url.includes("/public/");
 }
 

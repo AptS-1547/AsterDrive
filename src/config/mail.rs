@@ -10,6 +10,8 @@ pub use crate::config::definitions::{
     MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_HTML_KEY,
     MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_SUBJECT_KEY,
     MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_HTML_KEY, MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_SUBJECT_KEY,
+    MAIL_TEMPLATE_EXTERNAL_AUTH_EMAIL_VERIFICATION_HTML_KEY,
+    MAIL_TEMPLATE_EXTERNAL_AUTH_EMAIL_VERIFICATION_SUBJECT_KEY,
     MAIL_TEMPLATE_PASSWORD_RESET_HTML_KEY, MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_HTML_KEY,
     MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_SUBJECT_KEY, MAIL_TEMPLATE_PASSWORD_RESET_SUBJECT_KEY,
     MAIL_TEMPLATE_REGISTER_ACTIVATION_HTML_KEY, MAIL_TEMPLATE_REGISTER_ACTIVATION_SUBJECT_KEY,
@@ -71,6 +73,9 @@ pub fn template_subject_key(code: MailTemplateCode) -> &'static str {
         MailTemplateCode::PasswordReset => MAIL_TEMPLATE_PASSWORD_RESET_SUBJECT_KEY,
         MailTemplateCode::PasswordResetNotice => MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_SUBJECT_KEY,
         MailTemplateCode::ContactChangeNotice => MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_SUBJECT_KEY,
+        MailTemplateCode::ExternalAuthEmailVerification => {
+            MAIL_TEMPLATE_EXTERNAL_AUTH_EMAIL_VERIFICATION_SUBJECT_KEY
+        }
     }
 }
 
@@ -83,6 +88,9 @@ pub fn template_html_key(code: MailTemplateCode) -> &'static str {
         MailTemplateCode::PasswordReset => MAIL_TEMPLATE_PASSWORD_RESET_HTML_KEY,
         MailTemplateCode::PasswordResetNotice => MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_HTML_KEY,
         MailTemplateCode::ContactChangeNotice => MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_HTML_KEY,
+        MailTemplateCode::ExternalAuthEmailVerification => {
+            MAIL_TEMPLATE_EXTERNAL_AUTH_EMAIL_VERIFICATION_HTML_KEY
+        }
     }
 }
 
@@ -107,6 +115,10 @@ pub fn default_template_subject(code: MailTemplateCode) -> &'static str {
             include_str!("mail_templates/contact_change_notice.subject.txt")
                 .trim_end_matches(['\r', '\n'])
         }
+        MailTemplateCode::ExternalAuthEmailVerification => {
+            include_str!("mail_templates/external_auth_email_verification.subject.txt")
+                .trim_end_matches(['\r', '\n'])
+        }
     }
 }
 
@@ -127,6 +139,10 @@ pub fn default_template_html(code: MailTemplateCode) -> &'static str {
         }
         MailTemplateCode::ContactChangeNotice => {
             include_str!("mail_templates/contact_change_notice.html").trim_end_matches(['\r', '\n'])
+        }
+        MailTemplateCode::ExternalAuthEmailVerification => {
+            include_str!("mail_templates/external_auth_email_verification.html")
+                .trim_end_matches(['\r', '\n'])
         }
     }
 }

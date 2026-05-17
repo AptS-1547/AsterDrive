@@ -239,6 +239,7 @@ fn runtime_task_display_name(task_name: &str) -> String {
         "trash-cleanup" => "Trash cleanup".to_string(),
         "team-archive-cleanup" => "Team archive cleanup".to_string(),
         "lock-cleanup" => "Lock cleanup".to_string(),
+        "external-auth-flow-cleanup" => "External auth flow cleanup".to_string(),
         "audit-cleanup" => "Audit log cleanup".to_string(),
         "task-cleanup" => "Task artifact cleanup".to_string(),
         "wopi-session-cleanup" => "WOPI session cleanup".to_string(),

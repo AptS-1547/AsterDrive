@@ -14,7 +14,10 @@ mod team;
 mod user;
 
 pub use audit::AuditAction;
-pub use auth::{TokenType, VerificationChannel, VerificationPurpose};
+pub use auth::{
+    ExternalAuthProtocol, ExternalAuthProviderKind, TokenType, VerificationChannel,
+    VerificationPurpose,
+};
 pub use config::{SystemConfigSource, SystemConfigValueType};
 pub use entity::EntityType;
 pub use mail::{MailOutboxStatus, MailTemplateCode, StoredMailPayload};

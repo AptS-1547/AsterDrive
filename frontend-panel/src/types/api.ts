@@ -48,6 +48,20 @@ export type PasswordResetConfirmRequest =
 	components["schemas"]["PasswordResetConfirmReq"];
 export type PasswordResetRequestRequest =
 	components["schemas"]["PasswordResetRequestReq"];
+export type ExternalAuthLinkInfo =
+	components["schemas"]["ExternalAuthLinkInfo"];
+export type ExternalAuthEmailVerificationStartRequest =
+	components["schemas"]["ExternalAuthEmailVerificationStartRequest"];
+export type ExternalAuthEmailVerificationStartResponse =
+	OperationData<"start_external_auth_email_verification">;
+export type ExternalAuthPasswordLinkRequest =
+	components["schemas"]["ExternalAuthPasswordLinkRequest"];
+export type ExternalAuthPublicProvider =
+	components["schemas"]["ExternalAuthPublicProvider"];
+export type ExternalAuthStartLoginRequest =
+	components["schemas"]["ExternalAuthStartLoginRequest"];
+export type ExternalAuthStartLoginResponse =
+	components["schemas"]["ExternalAuthStartLoginResponse"];
 export type PasskeyInfo = OperationData<"list_passkeys">[number];
 export type PasskeyLoginFinishRequest =
 	components["schemas"]["PasskeyLoginFinishReq"];
@@ -139,6 +153,20 @@ export type AdminSystemHealthStatus =
 	components["schemas"]["AdminSystemHealthStatus"];
 export type AdminSystemHealthSummary =
 	components["schemas"]["AdminSystemHealthSummary"];
+export type ExternalAuthProviderKind =
+	components["schemas"]["ExternalAuthProviderKind"];
+export type ExternalAuthProtocol =
+	components["schemas"]["ExternalAuthProtocol"];
+export type AdminExternalAuthProviderKindInfo =
+	OperationData<"admin_list_external_auth_provider_kinds">[number];
+export type AdminExternalAuthProviderInfo =
+	components["schemas"]["AdminExternalAuthProviderInfo"];
+export type CreateExternalAuthProviderInput =
+	components["schemas"]["CreateExternalAuthProviderInput"];
+export type UpdateExternalAuthProviderInput =
+	components["schemas"]["UpdateExternalAuthProviderInput"];
+export type ExternalAuthProviderTestResult =
+	components["schemas"]["ExternalAuthProviderTestResult"];
 export type AdminCreateTeamRequest =
 	components["schemas"]["AdminCreateTeamReq"];
 export type AdminTeamInfo = components["schemas"]["AdminTeamInfo"];

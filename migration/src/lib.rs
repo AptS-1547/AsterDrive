@@ -12,6 +12,7 @@ use sea_orm_migration::sea_orm::{
 mod legacy;
 mod m20260512_000001_baseline_schema;
 mod m20260515_000001_add_passkeys;
+mod m20260517_000001_add_external_auth;
 mod search_acceleration;
 mod time;
 
@@ -115,6 +116,7 @@ impl MigratorTrait for CurrentMigrator {
         vec![
             Box::new(m20260512_000001_baseline_schema::Migration),
             Box::new(m20260515_000001_add_passkeys::Migration),
+            Box::new(m20260517_000001_add_external_auth::Migration),
         ]
     }
 }

@@ -4,6 +4,8 @@ import type {
 	AddTeamMemberRequest,
 	AdminConfigListQuery,
 	AdminCreateTeamRequest,
+	AdminExternalAuthProviderInfo,
+	AdminExternalAuthProviderKindInfo,
 	AdminLockListQuery,
 	AdminOverview,
 	AdminOverviewQuery,
@@ -23,6 +25,7 @@ import type {
 	AdminUserListQuery,
 	ConfigActionType,
 	ConfigSchemaItem,
+	CreateExternalAuthProviderInput,
 	CreatePolicyGroupRequest,
 	CreatePolicyRequest,
 	CreateRemoteNodeRequest,
@@ -30,6 +33,7 @@ import type {
 	DeletePolicyQuery,
 	ExecuteConfigActionRequest,
 	ExecuteConfigActionResponse,
+	ExternalAuthProviderTestResult,
 	LockPage,
 	MigratePolicyGroupUsersRequest,
 	PolicyGroupUserMigrationResult,
@@ -55,6 +59,7 @@ import type {
 	TemplateVariableGroup,
 	TestPolicyParamsRequest,
 	TestRemoteNodeParamsReq,
+	UpdateExternalAuthProviderInput,
 	UpdatePolicyGroupRequest,
 	UpdatePolicyRequest,
 	UpdateRemoteNodeRequest,
@@ -281,6 +286,43 @@ export const adminRemoteNodeService = {
 	deleteIngressProfile: (id: number, profileKey: string) =>
 		api.delete<void>(
 			`/admin/remote-nodes/${id}/ingress-profiles/${encodeURIComponent(profileKey)}`,
+		),
+};
+
+// --- External Auth Providers ---
+
+export const adminExternalAuthService = {
+	listKinds: () =>
+		api.get<AdminExternalAuthProviderKindInfo[]>(
+			"/admin/external-auth/provider-kinds",
+		),
+
+	list: () =>
+		api.get<AdminExternalAuthProviderInfo[]>("/admin/external-auth/providers"),
+
+	get: (id: number) =>
+		api.get<AdminExternalAuthProviderInfo>(
+			`/admin/external-auth/providers/${id}`,
+		),
+
+	create: (data: CreateExternalAuthProviderInput) =>
+		api.post<AdminExternalAuthProviderInfo>(
+			"/admin/external-auth/providers",
+			data,
+		),
+
+	update: (id: number, data: UpdateExternalAuthProviderInput) =>
+		api.patch<AdminExternalAuthProviderInfo>(
+			`/admin/external-auth/providers/${id}`,
+			data,
+		),
+
+	delete: (id: number) =>
+		api.delete<void>(`/admin/external-auth/providers/${id}`),
+
+	test: (id: number) =>
+		api.post<ExternalAuthProviderTestResult>(
+			`/admin/external-auth/providers/${id}/test`,
 		),
 };
 

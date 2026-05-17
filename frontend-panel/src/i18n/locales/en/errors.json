@@ -114,6 +114,8 @@
 	"share_expired": "This share link has expired",
 	"share_password_required": "Enter the share password to continue",
 	"share_download_limit_reached": "This share link has reached its download limit",
+	"network_error": "Could not reach the server. Check your connection and try again.",
+	"request_timeout": "The request timed out. Please try again.",
 	"unexpected_error": "Something went wrong. Please try again later",
 	"error_page_default_label": "Unexpected issue",
 	"error_page_default_title": "This page could not finish loading.",

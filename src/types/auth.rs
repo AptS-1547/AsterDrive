@@ -28,6 +28,64 @@ pub enum VerificationPurpose {
     #[sea_orm(string_value = "password_reset")]
     PasswordReset,
 }
+
+/// 外部认证提供商类型。
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, DeriveActiveEnum, Serialize, Deserialize,
+)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(32))")]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalAuthProviderKind {
+    #[sea_orm(string_value = "oidc")]
+    Oidc,
+}
+
+impl ExternalAuthProviderKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Oidc => "oidc",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "oidc" => Some(Self::Oidc),
+            _ => None,
+        }
+    }
+}
+
+/// 外部认证协议族。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(32))")]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalAuthProtocol {
+    #[sea_orm(string_value = "oidc")]
+    Oidc,
+    #[serde(rename = "oauth2")]
+    #[sea_orm(string_value = "oauth2")]
+    OAuth2,
+}
+
+impl ExternalAuthProtocol {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Oidc => "oidc",
+            Self::OAuth2 => "oauth2",
+        }
+    }
+}
+
+impl ExternalAuthProviderKind {
+    pub fn default_protocol(self) -> ExternalAuthProtocol {
+        match self {
+            Self::Oidc => ExternalAuthProtocol::Oidc,
+        }
+    }
+}
+
 /// JWT Token 类型（不存 DB）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]

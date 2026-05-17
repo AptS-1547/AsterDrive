@@ -131,7 +131,7 @@ pub(super) async fn ensure_email_available<C: ConnectionTrait>(
     Ok(())
 }
 
-pub(super) struct CreateUserWithRoleInput<'a> {
+pub(crate) struct CreateUserWithRoleInput<'a> {
     pub username: &'a str,
     pub email: &'a str,
     pub password: &'a str,
@@ -140,7 +140,7 @@ pub(super) struct CreateUserWithRoleInput<'a> {
     pub email_verified_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-pub(super) async fn create_user_with_role<C: ConnectionTrait>(
+pub(crate) async fn create_user_with_role<C: ConnectionTrait>(
     db: &C,
     state: &PrimaryAppState,
     input: CreateUserWithRoleInput<'_>,
