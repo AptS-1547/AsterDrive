@@ -19,7 +19,7 @@ interface FilePreviewProps {
 	archivePreviewFactory?: (options?: {
 		signal?: AbortSignal;
 	}) => Promise<ArchivePreviewManifest>;
-	videoStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
+	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	wopiSessionFactory?: (appKey: string) => Promise<WopiLaunchSession>;
 	open?: boolean;
 	openMode?: "auto" | "direct" | "picker";
@@ -34,7 +34,7 @@ export function FilePreview({
 	editable,
 	previewLinkFactory,
 	archivePreviewFactory,
-	videoStreamLinkFactory,
+	mediaStreamLinkFactory,
 	wopiSessionFactory,
 	open = true,
 	openMode,
@@ -50,7 +50,7 @@ export function FilePreview({
 			editable={editable}
 			previewLinkFactory={previewLinkFactory}
 			archivePreviewFactory={archivePreviewFactory}
-			videoStreamLinkFactory={videoStreamLinkFactory}
+			mediaStreamLinkFactory={mediaStreamLinkFactory}
 			wopiSessionFactory={wopiSessionFactory}
 			openMode={openMode}
 		/>

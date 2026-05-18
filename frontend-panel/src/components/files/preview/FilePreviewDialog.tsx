@@ -37,7 +37,7 @@ interface FilePreviewDialogProps {
 	archivePreviewFactory?: (options?: {
 		signal?: AbortSignal;
 	}) => Promise<ArchivePreviewManifest>;
-	videoStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
+	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	wopiSessionFactory?: (appKey: string) => Promise<WopiLaunchSession>;
 	openMode?: "auto" | "direct" | "picker";
 }
@@ -64,7 +64,7 @@ export function FilePreviewDialog({
 	editable = true,
 	previewLinkFactory,
 	archivePreviewFactory,
-	videoStreamLinkFactory,
+	mediaStreamLinkFactory,
 	wopiSessionFactory,
 	openMode = "auto",
 }: FilePreviewDialogProps) {
@@ -374,7 +374,7 @@ export function FilePreviewDialog({
 									getOptionLabel={getOptionLabel}
 									previewLinkFactory={previewLinkFactory}
 									archivePreviewFactory={activeArchivePreviewFactory}
-									videoStreamLinkFactory={videoStreamLinkFactory}
+									mediaStreamLinkFactory={mediaStreamLinkFactory}
 									createWopiSession={
 										wopiSessionFactory ? activeWopiSessionFactory : null
 									}

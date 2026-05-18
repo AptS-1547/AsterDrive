@@ -9,7 +9,8 @@ import type {
 	ShareStreamSessionInfo,
 	WopiLaunchSession,
 } from "@/types/api";
-import { BlobMediaPreview } from "./BlobMediaPreview";
+import { AudioPreview } from "./AudioPreview";
+import { BlobImagePreview } from "./BlobImagePreview";
 import type { detectFilePreviewProfile } from "./file-capabilities";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import { PreviewUnavailable } from "./PreviewUnavailable";
@@ -66,7 +67,7 @@ interface FilePreviewBodyProps {
 	archivePreviewFactory?: (options?: {
 		signal?: AbortSignal;
 	}) => Promise<ArchivePreviewManifest>;
-	videoStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
+	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	createWopiSession?: (() => Promise<WopiLaunchSession>) | null;
 	onFileUpdated?: () => void;
 	onDirtyChange: (dirty: boolean) => void;
@@ -84,7 +85,7 @@ export function FilePreviewBody({
 	getOptionLabel,
 	previewLinkFactory,
 	archivePreviewFactory,
-	videoStreamLinkFactory,
+	mediaStreamLinkFactory,
 	createWopiSession,
 	onFileUpdated,
 	onDirtyChange,
@@ -115,13 +116,22 @@ export function FilePreviewBody({
 		);
 	}
 
-	if (activeOption.mode === "image" || activeOption.mode === "audio") {
+	if (activeOption.mode === "image") {
 		return (
-			<BlobMediaPreview
+			<BlobImagePreview
 				file={file}
 				fillContainer={isExpanded}
-				mode={activeOption.mode}
 				path={downloadPath}
+			/>
+		);
+	}
+
+	if (activeOption.mode === "audio") {
+		return (
+			<AudioPreview
+				file={file}
+				path={downloadPath}
+				mediaStreamLinkFactory={mediaStreamLinkFactory}
 			/>
 		);
 	}
@@ -131,7 +141,7 @@ export function FilePreviewBody({
 			<VideoPreview
 				file={file}
 				path={downloadPath}
-				videoStreamLinkFactory={videoStreamLinkFactory}
+				mediaStreamLinkFactory={mediaStreamLinkFactory}
 			/>
 		);
 	}

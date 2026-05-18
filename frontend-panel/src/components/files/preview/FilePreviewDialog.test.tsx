@@ -134,16 +134,30 @@ vi.mock("@/stores/previewAppStore", () => ({
 	) => selector(mockState.previewAppStore),
 }));
 
-vi.mock("@/components/files/preview/BlobMediaPreview", () => ({
-	BlobMediaPreview: ({
+vi.mock("@/components/files/preview/BlobImagePreview", () => ({
+	BlobImagePreview: ({
 		fillContainer,
-		mode,
 		path,
 	}: {
 		fillContainer?: boolean;
-		mode: string;
 		path: string;
-	}) => <div>{`blob:${mode}:${path}:${String(Boolean(fillContainer))}`}</div>,
+	}) => <div>{`blob:image:${path}:${String(Boolean(fillContainer))}`}</div>,
+}));
+
+vi.mock("@/components/files/preview/AudioPreview", () => ({
+	AudioPreview: ({
+		mediaStreamLinkFactory,
+		path,
+	}: {
+		mediaStreamLinkFactory?: () => Promise<unknown>;
+		path: string;
+	}) => (
+		<div
+			data-has-media-stream-link-factory={String(
+				Boolean(mediaStreamLinkFactory),
+			)}
+		>{`audio:${path}`}</div>
+	),
 }));
 
 vi.mock("@/components/files/preview/UrlTemplatePreview", () => ({
@@ -204,15 +218,15 @@ vi.mock("@/components/files/preview/PreviewUnavailable", () => ({
 
 vi.mock("@/components/files/preview/VideoPreview", () => ({
 	VideoPreview: ({
+		mediaStreamLinkFactory,
 		path,
-		videoStreamLinkFactory,
 	}: {
+		mediaStreamLinkFactory?: () => Promise<unknown>;
 		path: string;
-		videoStreamLinkFactory?: () => Promise<unknown>;
 	}) => (
 		<div
-			data-has-video-stream-link-factory={String(
-				Boolean(videoStreamLinkFactory),
+			data-has-media-stream-link-factory={String(
+				Boolean(mediaStreamLinkFactory),
 			)}
 		>{`video:${path}`}</div>
 	),
@@ -595,7 +609,7 @@ describe("FilePreviewDialog", () => {
 				name: "clip.mp4",
 				size: 2048,
 			} as never,
-			videoStreamLinkFactory: async () => ({
+			mediaStreamLinkFactory: async () => ({
 				expires_at: "2026-01-01T00:00:00Z",
 				path: "/api/v1/s/share/stream/session/clip.mp4",
 			}),
@@ -603,12 +617,53 @@ describe("FilePreviewDialog", () => {
 
 		await screen.findByText("video:/files/7/download");
 		expect(screen.getByText("video:/files/7/download")).toHaveAttribute(
-			"data-has-video-stream-link-factory",
+			"data-has-media-stream-link-factory",
 			"true",
 		);
 		const classes = screen.getByTestId("dialog-content").className.split(/\s+/);
 		expect(classes).toContain("max-h-[90vh]");
 		expect(classes).not.toContain("h-[90vh]");
+	});
+
+	it("routes builtin audio previews through the streaming media preview", async () => {
+		mockState.profile = {
+			category: "audio",
+			defaultMode: "builtin.audio",
+			isBlobPreview: true,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{
+					icon: "FileAudio",
+					key: "builtin.audio",
+					labelKey: "open_with_audio",
+					mode: "audio",
+				},
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 8,
+				mime_type: "audio/mpeg",
+				name: "track.mp3",
+				size: 4096,
+			} as never,
+			mediaStreamLinkFactory: async () => ({
+				expires_at: "2026-01-01T00:00:00Z",
+				path: "/api/v1/s/share/stream/session/track.mp3",
+			}),
+		});
+
+		await screen.findByText("audio:/files/8/download");
+		expect(screen.queryByText("blob:image:/files/8/download:false")).toBeNull();
+		expect(screen.getByText("audio:/files/8/download")).toHaveAttribute(
+			"data-has-media-stream-link-factory",
+			"true",
+		);
+		expect(
+			screen.getByTestId("dialog-content").className.split(/\s+/),
+		).not.toContain("h-[90vh]");
 	});
 
 	it("loads the preview app registry when the store is still cold", async () => {

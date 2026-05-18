@@ -9,7 +9,7 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 		downloadPath,
 		editable,
 		previewLinkFactory,
-		videoStreamLinkFactory,
+		mediaStreamLinkFactory,
 		wopiSessionFactory,
 	}: {
 		open: boolean;
@@ -17,7 +17,7 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 		downloadPath?: string;
 		editable?: boolean;
 		previewLinkFactory?: () => Promise<unknown>;
-		videoStreamLinkFactory?: () => Promise<unknown>;
+		mediaStreamLinkFactory?: () => Promise<unknown>;
 		wopiSessionFactory?: (appKey: string) => Promise<unknown>;
 	}) => (
 		<div
@@ -27,8 +27,8 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 			data-download-path={downloadPath ?? ""}
 			data-editable={String(Boolean(editable))}
 			data-has-preview-link-factory={String(Boolean(previewLinkFactory))}
-			data-has-video-stream-link-factory={String(
-				Boolean(videoStreamLinkFactory),
+			data-has-media-stream-link-factory={String(
+				Boolean(mediaStreamLinkFactory),
 			)}
 			data-has-wopi-session-factory={String(Boolean(wopiSessionFactory))}
 		/>
@@ -46,7 +46,7 @@ describe("FilePreview", () => {
 				downloadPath="/files/7/download"
 				editable
 				previewLinkFactory={async () => ({})}
-				videoStreamLinkFactory={async () => ({})}
+				mediaStreamLinkFactory={async () => ({})}
 				wopiSessionFactory={async () => ({})}
 			/>,
 		);
@@ -72,7 +72,7 @@ describe("FilePreview", () => {
 			"true",
 		);
 		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
-			"data-has-video-stream-link-factory",
+			"data-has-media-stream-link-factory",
 			"true",
 		);
 		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(

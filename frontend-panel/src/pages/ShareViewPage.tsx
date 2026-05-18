@@ -450,9 +450,9 @@ export default function ShareViewPage() {
 		window.open(url, "_blank");
 	};
 
-	const createVideoStreamLink = useCallback(() => {
+	const createMediaStreamLink = useCallback(() => {
 		if (!token || !retainedPreviewFile || !info) {
-			return Promise.reject(new Error("share video stream is unavailable"));
+			return Promise.reject(new Error("share media stream is unavailable"));
 		}
 		return info.share_type === "file"
 			? shareService.createStreamSession(token)
@@ -493,7 +493,7 @@ export default function ShareViewPage() {
 									options,
 								)
 					}
-					videoStreamLinkFactory={createVideoStreamLink}
+					mediaStreamLinkFactory={createMediaStreamLink}
 				/>
 			) : null}
 		</Suspense>

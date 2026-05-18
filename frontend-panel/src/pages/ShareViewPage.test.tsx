@@ -135,14 +135,14 @@ vi.mock("@/components/files/FilePreview", () => ({
 		downloadPath,
 		editable,
 		archivePreviewFactory,
-		videoStreamLinkFactory,
+		mediaStreamLinkFactory,
 	}: {
 		file: { name: string };
 		open?: boolean;
 		downloadPath?: string;
 		editable?: boolean;
 		archivePreviewFactory?: () => Promise<unknown>;
-		videoStreamLinkFactory?: () => Promise<unknown>;
+		mediaStreamLinkFactory?: () => Promise<unknown>;
 	}) =>
 		open ? (
 			<div
@@ -153,8 +153,8 @@ vi.mock("@/components/files/FilePreview", () => ({
 				data-has-archive-preview-factory={String(
 					Boolean(archivePreviewFactory),
 				)}
-				data-has-video-stream-link-factory={String(
-					Boolean(videoStreamLinkFactory),
+				data-has-media-stream-link-factory={String(
+					Boolean(mediaStreamLinkFactory),
 				)}
 			/>
 		) : null,
@@ -518,7 +518,7 @@ describe("ShareViewPage", () => {
 			"true",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
-			"data-has-video-stream-link-factory",
+			"data-has-media-stream-link-factory",
 			"true",
 		);
 
@@ -600,7 +600,7 @@ describe("ShareViewPage", () => {
 			"true",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
-			"data-has-video-stream-link-factory",
+			"data-has-media-stream-link-factory",
 			"true",
 		);
 
