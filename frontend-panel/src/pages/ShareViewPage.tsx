@@ -16,8 +16,15 @@ import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { FOLDER_LIMIT } from "@/lib/constants";
+import {
+	buildShareFolderMusicQueue,
+	buildSingleShareMusicTrack,
+	hydrateMusicQueueForPlayback,
+	isMusicFile,
+} from "@/lib/musicPlayer";
 import { ApiError } from "@/services/http";
 import { shareService } from "@/services/shareService";
+import { useMusicPlayerStore } from "@/stores/musicPlayerStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import type {
 	FileCategory,
@@ -262,6 +269,7 @@ export default function ShareViewPage() {
 	const { token } = useParams<{ token: string }>();
 	const previewAppsLoaded = usePreviewAppStore((state) => state.isLoaded);
 	const loadPreviewApps = usePreviewAppStore((state) => state.load);
+	const playTracks = useMusicPlayerStore((state) => state.playTracks);
 	const [info, setInfo] = useState<SharePublicInfo | null>(null);
 	const [needsPassword, setNeedsPassword] = useState(false);
 	const [passwordVerified, setPasswordVerified] = useState(false);
@@ -450,6 +458,41 @@ export default function ShareViewPage() {
 		window.open(url, "_blank");
 	};
 
+	const playSharedMusicFile = useCallback(
+		(file: FileInfo | FileListItem) => {
+			if (!token || !info || !isMusicFile(file)) return false;
+
+			const queue =
+				info.share_type === "file"
+					? [buildSingleShareMusicTrack(info, token)].filter(
+							(track): track is NonNullable<typeof track> => track !== null,
+						)
+					: buildShareFolderMusicQueue(token, folderContents?.files ?? [file]);
+			const activeTrack = queue.find((track) =>
+				info.share_type === "file"
+					? track.id === `share:${token}:file`
+					: track.id === `share:${token}:file:${file.id}`,
+			);
+			if (!activeTrack) return false;
+
+			void hydrateMusicQueueForPlayback(queue, activeTrack.id).then(
+				(hydratedQueue) => {
+					playTracks(hydratedQueue, activeTrack.id);
+				},
+			);
+			return true;
+		},
+		[folderContents?.files, info, playTracks, token],
+	);
+
+	const handlePreviewFile = useCallback(
+		(file: FileInfo | FileListItem) => {
+			if (playSharedMusicFile(file)) return;
+			setPreviewFile(file);
+		},
+		[playSharedMusicFile],
+	);
+
 	const createMediaStreamLink = useCallback(() => {
 		if (!token || !retainedPreviewFile || !info) {
 			return Promise.reject(new Error("share media stream is unavailable"));
@@ -584,7 +627,7 @@ export default function ShareViewPage() {
 				singleShareFile={singleShareFile}
 				token={token}
 				onDownload={handleDownload}
-				onPreviewFile={setPreviewFile}
+				onPreviewFile={handlePreviewFile}
 			/>
 		);
 	}
@@ -603,7 +646,7 @@ export default function ShareViewPage() {
 			token={token}
 			viewMode={viewMode}
 			onFileDownload={handleFolderFileDownload}
-			onFilePreview={setPreviewFile}
+			onFilePreview={handlePreviewFile}
 			onNavigateToFolder={navigateToFolder}
 			onViewModeChange={setViewMode}
 		/>

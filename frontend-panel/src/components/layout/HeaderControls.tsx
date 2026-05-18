@@ -23,6 +23,7 @@ import { MENU_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
 import { useAuthStore } from "@/stores/authStore";
+import { useMusicPlayerStore } from "@/stores/musicPlayerStore";
 import { useThemeStore } from "@/stores/themeStore";
 
 interface HeaderControlsProps {
@@ -43,6 +44,9 @@ export function HeaderControls({
 	const user = useAuthStore((s) => s.user);
 	const isAuthStale = useAuthStore((s) => s.isAuthStale);
 	const logout = useAuthStore((s) => s.logout);
+	const musicQueue = useMusicPlayerStore((s) => s.queue);
+	const musicIsPlaying = useMusicPlayerStore((s) => s.isPlaying);
+	const openMusicPanel = useMusicPlayerStore((s) => s.openPanel);
 	const mode = useThemeStore((s) => s.mode);
 	const setMode = useThemeStore((s) => s.setMode);
 	const [loggingOut, setLoggingOut] = useState(false);
@@ -123,6 +127,28 @@ export function HeaderControls({
 					<Icon name="House" className="mr-1.5 h-4 w-4" />
 					{homeLabel ?? t("back")}
 				</Button>
+			) : null}
+			{musicQueue.length > 0 ? (
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-sm"
+								className="rounded-full"
+								onClick={openMusicPanel}
+								aria-label={t("files:music_player_open")}
+							/>
+						}
+					>
+						<Icon
+							name={musicIsPlaying ? "MusicNotes" : "VinylRecord"}
+							className={musicIsPlaying ? "h-4 w-4 text-primary" : "h-4 w-4"}
+						/>
+					</TooltipTrigger>
+					<TooltipContent>{t("files:music_player_open")}</TooltipContent>
+				</Tooltip>
 			) : null}
 			<DropdownMenu>
 				<DropdownMenuTrigger

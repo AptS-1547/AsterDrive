@@ -60,8 +60,8 @@ vi.mock("@/components/layout/OfflineBootFallback", () => ({
 	OfflineBootFallback: () => <div data-testid="offline-fallback" />,
 }));
 
-vi.mock("@/components/audio/AudioPlayerHost", () => ({
-	AudioPlayerHost: () => <div data-testid="audio-player-host" />,
+vi.mock("@/components/music/MusicPlayerHost", () => ({
+	MusicPlayerHost: () => <div data-testid="music-player-host" />,
 }));
 
 vi.mock("@/stores/brandingStore", () => ({
@@ -215,7 +215,7 @@ describe("App", () => {
 		expect(screen.getByTestId("offline-fallback")).toBeInTheDocument();
 		expect(screen.queryByTestId("router-provider")).not.toBeInTheDocument();
 		expect(screen.getByTestId("toaster")).toBeInTheDocument();
-		expect(screen.getByTestId("audio-player-host")).toBeInTheDocument();
+		expect(screen.getByTestId("music-player-host")).toBeInTheDocument();
 	});
 
 	it("defers redirect handling and warmup while auth is still checking", async () => {

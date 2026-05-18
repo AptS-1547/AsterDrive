@@ -144,8 +144,8 @@ vi.mock("@/components/files/preview/BlobImagePreview", () => ({
 	}) => <div>{`blob:image:${path}:${String(Boolean(fillContainer))}`}</div>,
 }));
 
-vi.mock("@/components/files/preview/AudioPreview", () => ({
-	AudioPreview: ({
+vi.mock("@/components/files/preview/MusicPreview", () => ({
+	MusicPreview: ({
 		mediaStreamLinkFactory,
 		path,
 	}: {
@@ -156,7 +156,7 @@ vi.mock("@/components/files/preview/AudioPreview", () => ({
 			data-has-media-stream-link-factory={String(
 				Boolean(mediaStreamLinkFactory),
 			)}
-		>{`audio:${path}`}</div>
+		>{`music:${path}`}</div>
 	),
 }));
 

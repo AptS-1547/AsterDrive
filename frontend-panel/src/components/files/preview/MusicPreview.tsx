@@ -3,27 +3,32 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { logger } from "@/lib/logger";
-import { useAudioPlayerStore } from "@/stores/audioPlayerStore";
+import { useMusicPlayerStore } from "@/stores/musicPlayerStore";
 import type { ShareStreamSessionInfo } from "@/types/api";
 import { PreviewError } from "./PreviewError";
 import type { PreviewableFileLike } from "./types";
 
-interface AudioPreviewProps {
+interface MusicPreviewProps {
 	file: PreviewableFileLike;
 	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	path: string;
 }
 
-export function AudioPreview({
+function previewMusicTitle(name: string) {
+	return name.replace(/\.[^.]+$/, "") || name;
+}
+
+export function MusicPreview({
 	file,
 	mediaStreamLinkFactory,
 	path,
-}: AudioPreviewProps) {
+}: MusicPreviewProps) {
 	const { t } = useTranslation("files");
-	const currentTrack = useAudioPlayerStore((state) => state.track);
-	const isPlaying = useAudioPlayerStore((state) => state.isPlaying);
-	const playTrack = useAudioPlayerStore((state) => state.playTrack);
-	const requestPlayback = useAudioPlayerStore((state) => state.requestPlayback);
+	const currentTrackId = useMusicPlayerStore((state) => state.activeTrackId);
+	const isPlaying = useMusicPlayerStore((state) => state.isPlaying);
+	const playTrack = useMusicPlayerStore((state) => state.playTrack);
+	const queue = useMusicPlayerStore((state) => state.queue);
+	const requestPlayback = useMusicPlayerStore((state) => state.requestPlayback);
 	const [streamLinkFailed, setStreamLinkFailed] = useState(false);
 	const [starting, setStarting] = useState(false);
 	const mountedRef = useRef(true);
@@ -32,7 +37,8 @@ export function AudioPreview({
 		() => `${file.name}:${file.size ?? "unknown"}:${file.mime_type}:${path}`,
 		[file.mime_type, file.name, file.size, path],
 	);
-	const isCurrentTrack = currentTrack?.id === trackId;
+	const isCurrentTrack =
+		currentTrackId === trackId && queue.some((track) => track.id === trackId);
 
 	useEffect(() => {
 		mountedRef.current = true;
@@ -61,6 +67,9 @@ export function AudioPreview({
 					return;
 				playTrack({
 					id: trackId,
+					metadata: {
+						title: previewMusicTitle(file.name),
+					},
 					name: file.name,
 					mimeType: file.mime_type,
 					path: link.path,
@@ -96,9 +105,9 @@ export function AudioPreview({
 
 	const statusText = isCurrentTrack
 		? isPlaying
-			? t("audio_preview_playing")
-			: t("audio_preview_ready")
-		: t("audio_preview_idle");
+			? t("music_preview_playing")
+			: t("music_preview_ready")
+		: t("music_preview_idle");
 
 	return (
 		<div className="flex min-h-[50vh] items-center justify-center px-6">
@@ -130,10 +139,10 @@ export function AudioPreview({
 					{starting
 						? t("loading_preview")
 						: isCurrentTrack && isPlaying
-							? t("audio_preview_playing")
+							? t("music_preview_playing")
 							: isCurrentTrack
-								? t("audio_preview_resume")
-								: t("audio_preview_play")}
+								? t("music_preview_resume")
+								: t("music_preview_play")}
 				</Button>
 			</div>
 		</div>

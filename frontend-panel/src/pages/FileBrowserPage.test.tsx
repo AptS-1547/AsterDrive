@@ -29,6 +29,7 @@ const mockState = vi.hoisted(() => ({
 	fileBrowserContext: null as Record<string, unknown> | null,
 	formatBatchToast: vi.fn(),
 	handleApiError: vi.fn(),
+	musicPlayTracks: vi.fn(),
 	location: {
 		pathname: "/folder/12",
 		search: "?name=Projects",
@@ -847,6 +848,13 @@ vi.mock("@/stores/fileStore", () => {
 	return { useFileStore };
 });
 
+vi.mock("@/stores/musicPlayerStore", () => ({
+	useMusicPlayerStore: (selector: (state: { playTracks: typeof mockState.musicPlayTracks }) => unknown) =>
+		selector({
+			playTracks: mockState.musicPlayTracks,
+		}),
+}));
+
 vi.mock("@/stores/workspaceStore", () => ({
 	useWorkspaceStore: Object.assign(
 		<T,>(selector: (state: { workspace: { kind: "personal" } }) => T) =>
@@ -931,6 +939,7 @@ describe("FileBrowserPage", () => {
 		mockState.fileBrowserContext = null;
 		mockState.formatBatchToast.mockReset();
 		mockState.handleApiError.mockReset();
+		mockState.musicPlayTracks.mockReset();
 		mockState.location = {
 			pathname: "/folder/12",
 			search: "?name=Projects",
@@ -1065,6 +1074,58 @@ describe("FileBrowserPage", () => {
 		expect(
 			await screen.findByText("preview:report.pdf:auto"),
 		).toBeInTheDocument();
+	});
+
+	it("plays an audio file directly with the current folder music queue", async () => {
+		mockState.store.files = [
+			createFile({
+				file_category: "audio",
+				id: 3,
+				mime_type: "audio/mpeg",
+				name: "Artist - Song.mp3",
+				size: 1024,
+			}),
+			createFile({
+				file_category: "audio",
+				id: 4,
+				mime_type: "audio/flac",
+				name: "Second.flac",
+				size: 2048,
+			}),
+			createFile({
+				file_category: "document",
+				id: 5,
+				mime_type: "application/pdf",
+				name: "Manual.pdf",
+				size: 4096,
+			}),
+		];
+
+		render(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(mockState.store.navigateTo).toHaveBeenCalledWith(12, "Projects");
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "open-file" }));
+
+		await waitFor(() => {
+			expect(mockState.musicPlayTracks).toHaveBeenCalledWith(
+				[
+					expect.objectContaining({
+						id: "file:3",
+						metadata: { artist: "Artist", title: "Song" },
+						name: "Artist - Song.mp3",
+					}),
+					expect.objectContaining({
+						id: "file:4",
+						name: "Second.flac",
+					}),
+				],
+				"file:3",
+			);
+		});
+		expect(screen.queryByText("preview:Artist - Song.mp3:auto")).toBeNull();
 	});
 
 	it("uses a house icon at root and a folder icon in child folders", async () => {

@@ -9,9 +9,9 @@ import type {
 	ShareStreamSessionInfo,
 	WopiLaunchSession,
 } from "@/types/api";
-import { AudioPreview } from "./AudioPreview";
 import { BlobImagePreview } from "./BlobImagePreview";
 import type { detectFilePreviewProfile } from "./file-capabilities";
+import { MusicPreview } from "./MusicPreview";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import { PreviewUnavailable } from "./PreviewUnavailable";
 import type { OpenWithOption } from "./types";
@@ -128,7 +128,7 @@ export function FilePreviewBody({
 
 	if (activeOption.mode === "audio") {
 		return (
-			<AudioPreview
+			<MusicPreview
 				file={file}
 				path={downloadPath}
 				mediaStreamLinkFactory={mediaStreamLinkFactory}
