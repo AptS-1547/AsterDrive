@@ -52,7 +52,7 @@ async fn test_audit_log_persists_long_entity_type_values() {
             user_agent: None,
         },
         AuditAction::AdminTestExternalAuthProvider,
-        Some("external_auth_provider"),
+        audit_service::AuditEntityType::ExternalAuthProvider,
         None,
         Some("draft"),
         Some(serde_json::json!({
@@ -71,7 +71,7 @@ async fn test_audit_log_persists_long_entity_type_values() {
         .expect("audit log query should succeed")
         .expect("long entity_type audit log should persist");
 
-    assert_eq!(entry.entity_type.as_deref(), Some("external_auth_provider"));
+    assert_eq!(entry.entity_type, "external_auth_provider");
     assert_eq!(entry.entity_name.as_deref(), Some("draft"));
 }
 

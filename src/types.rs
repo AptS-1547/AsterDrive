@@ -14,7 +14,7 @@ mod task;
 mod team;
 mod user;
 
-pub use audit::AuditAction;
+pub use audit::{AuditAction, AuditEntityType};
 pub use auth::{
     ExternalAuthProtocol, ExternalAuthProviderKind, TokenType, VerificationChannel,
     VerificationPurpose,

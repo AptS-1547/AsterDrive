@@ -203,10 +203,7 @@ async fn admin_tests_external_auth_provider_draft_params_without_persisting() {
         .expect("audit log should query")
         .expect("draft test should write an audit log");
     assert_eq!(audit_entry.user_id, 1);
-    assert_eq!(
-        audit_entry.entity_type.as_deref(),
-        Some("external_auth_provider")
-    );
+    assert_eq!(audit_entry.entity_type, "external_auth_provider");
     assert_eq!(audit_entry.entity_name.as_deref(), Some("draft"));
     let details: Value = serde_json::from_str(
         audit_entry

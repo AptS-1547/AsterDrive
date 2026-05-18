@@ -1,8 +1,207 @@
 use sea_orm::entity::prelude::*;
+use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{fmt, str::FromStr};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
+
+use super::EntityType;
+
+/// 审计日志实体类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AuditEntityType {
+    AuthSession,
+    Batch,
+    ExternalAuthIdentity,
+    ExternalAuthProvider,
+    File,
+    Folder,
+    Passkey,
+    PolicyGroup,
+    RemoteIngressProfile,
+    RemoteNode,
+    ResourceLock,
+    Share,
+    StoragePolicy,
+    StreamTicket,
+    SystemConfig,
+    Task,
+    Team,
+    Trash,
+    UploadSession,
+    User,
+    WebdavAccount,
+}
+
+impl AuditEntityType {
+    pub const ALL: [Self; 21] = [
+        Self::AuthSession,
+        Self::Batch,
+        Self::ExternalAuthIdentity,
+        Self::ExternalAuthProvider,
+        Self::File,
+        Self::Folder,
+        Self::Passkey,
+        Self::PolicyGroup,
+        Self::RemoteIngressProfile,
+        Self::RemoteNode,
+        Self::ResourceLock,
+        Self::Share,
+        Self::StoragePolicy,
+        Self::StreamTicket,
+        Self::SystemConfig,
+        Self::Task,
+        Self::Team,
+        Self::Trash,
+        Self::UploadSession,
+        Self::User,
+        Self::WebdavAccount,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AuthSession => "auth_session",
+            Self::Batch => "batch",
+            Self::ExternalAuthIdentity => "external_auth_identity",
+            Self::ExternalAuthProvider => "external_auth_provider",
+            Self::File => "file",
+            Self::Folder => "folder",
+            Self::Passkey => "passkey",
+            Self::PolicyGroup => "policy_group",
+            Self::RemoteIngressProfile => "remote_ingress_profile",
+            Self::RemoteNode => "remote_node",
+            Self::ResourceLock => "resource_lock",
+            Self::Share => "share",
+            Self::StoragePolicy => "storage_policy",
+            Self::StreamTicket => "stream_ticket",
+            Self::SystemConfig => "system_config",
+            Self::Task => "task",
+            Self::Team => "team",
+            Self::Trash => "trash",
+            Self::UploadSession => "upload_session",
+            Self::User => "user",
+            Self::WebdavAccount => "webdav_account",
+        }
+    }
+
+    pub fn from_str_name(value: &str) -> Option<Self> {
+        Some(match value {
+            "auth_session" => Self::AuthSession,
+            "batch" => Self::Batch,
+            "external_auth_identity" => Self::ExternalAuthIdentity,
+            "external_auth_provider" => Self::ExternalAuthProvider,
+            "file" => Self::File,
+            "folder" => Self::Folder,
+            "passkey" => Self::Passkey,
+            "policy_group" => Self::PolicyGroup,
+            "remote_ingress_profile" => Self::RemoteIngressProfile,
+            "remote_node" => Self::RemoteNode,
+            "resource_lock" => Self::ResourceLock,
+            "share" => Self::Share,
+            "storage_policy" => Self::StoragePolicy,
+            "stream_ticket" => Self::StreamTicket,
+            "system_config" => Self::SystemConfig,
+            "task" => Self::Task,
+            "team" => Self::Team,
+            "trash" => Self::Trash,
+            "upload_session" => Self::UploadSession,
+            "user" => Self::User,
+            "webdav_account" => Self::WebdavAccount,
+            _ => return None,
+        })
+    }
+
+    pub const fn from_entity_type(entity_type: EntityType) -> Self {
+        match entity_type {
+            EntityType::File => Self::File,
+            EntityType::Folder => Self::Folder,
+        }
+    }
+}
+
+impl AsRef<str> for AuditEntityType {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for AuditEntityType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for AuditEntityType {
+    type Err = ParseAuditEntityTypeError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::from_str_name(value).ok_or(ParseAuditEntityTypeError)
+    }
+}
+
+impl<'de> Deserialize<'de> for AuditEntityType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct AuditEntityTypeVisitor;
+
+        impl Visitor<'_> for AuditEntityTypeVisitor {
+            type Value = AuditEntityType;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a supported audit entity type")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                AuditEntityType::from_str_name(value)
+                    .ok_or_else(|| E::unknown_variant(value, &AUDIT_ENTITY_TYPE_NAMES))
+            }
+        }
+
+        deserializer.deserialize_str(AuditEntityTypeVisitor)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ParseAuditEntityTypeError;
+
+impl fmt::Display for ParseAuditEntityTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid audit entity type")
+    }
+}
+
+impl std::error::Error for ParseAuditEntityTypeError {}
+
+const AUDIT_ENTITY_TYPE_NAMES: [&str; 21] = [
+    "auth_session",
+    "batch",
+    "external_auth_identity",
+    "external_auth_provider",
+    "file",
+    "folder",
+    "passkey",
+    "policy_group",
+    "remote_ingress_profile",
+    "remote_node",
+    "resource_lock",
+    "share",
+    "storage_policy",
+    "stream_ticket",
+    "system_config",
+    "task",
+    "team",
+    "trash",
+    "upload_session",
+    "user",
+    "webdav_account",
+];
 
 /// 审计日志动作
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]

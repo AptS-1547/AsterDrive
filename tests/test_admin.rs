@@ -1377,7 +1377,7 @@ async fn test_admin_audit_logs_support_explicit_sorting() {
             audit_log::ActiveModel {
                 user_id: Set(1),
                 action: Set(AuditAction::AdminUpdateUser),
-                entity_type: Set(Some("sort_audit".to_string())),
+                entity_type: Set("user".to_string()),
                 entity_id: Set(Some(entity_name.len() as i64)),
                 entity_name: Set(Some(entity_name.to_string())),
                 details: Set(None),
