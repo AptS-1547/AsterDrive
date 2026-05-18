@@ -106,6 +106,51 @@
 - 远端节点详情会返回 `enrollment_status`、`last_error`、`capabilities` 和 `last_checked_at`
 - ingress profile 的请求体和 follower 内部协议一致，见 [内部存储协议](./internal-storage.md)
 
+## 外部认证提供商
+
+外部认证 provider 由管理员配置，匿名登录入口只读取启用后的公开摘要。当前支持的 provider kind 是 `oidc`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/admin/external-auth/provider-kinds` | 列出服务端支持的外部认证类型 |
+| `GET` | `/admin/external-auth/providers` | 分页列出外部认证提供商 |
+| `POST` | `/admin/external-auth/providers` | 创建外部认证提供商 |
+| `POST` | `/admin/external-auth/providers/test` | 用草稿参数测试 provider 配置 |
+| `GET` | `/admin/external-auth/providers/{id}` | 读取 provider 详情 |
+| `PATCH` | `/admin/external-auth/providers/{id}` | 更新 provider |
+| `DELETE` | `/admin/external-auth/providers/{id}` | 删除 provider |
+| `POST` | `/admin/external-auth/providers/{id}/test` | 测试已保存 provider |
+
+创建 OIDC provider 示例：
+
+```json
+{
+  "provider_kind": "oidc",
+  "display_name": "Corp SSO",
+  "icon_url": "/static/external-auth/corp.svg",
+  "issuer_url": "https://idp.example.com",
+  "client_id": "asterdrive",
+  "client_secret": "secret",
+  "scopes": "openid email profile",
+  "enabled": true,
+  "auto_provision_enabled": true,
+  "auto_link_verified_email_enabled": true,
+  "require_email_verified": true,
+  "allowed_domains": ["example.com"]
+}
+```
+
+当前实现注意点：
+
+- provider `key` 由服务端生成，登录路径使用 `/auth/external-auth/{kind}/{provider}/start`
+- `issuer_url`、`authorization_url`、`token_url`、`userinfo_url` 必须是 HTTPS，localhost 例外；fragment 不允许
+- 支持 OIDC discovery；也支持在 provider kind 允许时手动配置 endpoint
+- `client_secret` 在读取详情时会脱敏为 `***REDACTED***`，同时返回 `client_secret_configured`
+- `auto_provision_enabled` 允许外部身份自动创建本地用户；`allowed_domains` 可限制邮箱域名
+- `auto_link_verified_email_enabled` 允许用已验证邮箱自动绑定已有本地用户
+- `require_email_verified` 打开后，未验证邮箱的外部身份需要走 `/auth/external-auth/email-verification/*`
+- 创建、更新、删除和测试都会写管理员审计日志
+
 ## 策略组
 
 | 方法 | 路径 | 说明 |
@@ -347,6 +392,7 @@
 - `gravatar_base_url`
 - `mail_outbox_dispatch_interval_secs`
 - `background_task_dispatch_interval_secs`
+- `background_task_dispatch_idle_max_interval_secs`
 - `background_task_max_concurrency`
 - `background_task_max_attempts`
 - `maintenance_cleanup_interval_secs`
@@ -357,6 +403,7 @@
 - `background_task_archive_max_concurrency`
 - `background_task_thumbnail_max_concurrency`
 - `share_download_rollback_queue_capacity`
+- `share_stream_session_ttl_secs`
 - `archive_extract_max_source_bytes`
 - `archive_extract_max_uncompressed_bytes`
 - `archive_extract_max_entries`
@@ -370,6 +417,13 @@
 - `archive_build_max_entries`
 - `archive_build_max_total_source_bytes`
 - `archive_build_max_temp_bytes`
+- `archive_preview_enabled`
+- `archive_preview_user_enabled`
+- `archive_preview_share_enabled`
+- `archive_preview_max_source_bytes`
+- `archive_preview_max_entries`
+- `archive_preview_max_manifest_bytes`
+- `archive_preview_max_duration_secs`
 - `task_retention_hours`
 - `archive_extract_max_staging_bytes`
 - `avatar_max_upload_size_bytes`

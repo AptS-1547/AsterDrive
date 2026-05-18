@@ -79,6 +79,7 @@
 | `GET` | `/s/{token}` | 读取分享公开信息 |
 | `POST` | `/s/{token}/verify` | 校验分享密码 |
 | `POST` | `/s/{token}/preview-link` | 为分享文件生成短期预览链接 |
+| `GET` | `/s/{token}/archive-preview` | 为分享文件获取 ZIP 归档预览清单 |
 | `POST` | `/s/{token}/stream-session` | 为分享文件生成短期流式播放 session |
 | `GET` | `/s/{token}/download` | 下载分享文件 |
 | `GET` | `/s/{token}/stream/{session_token}/{filename}` | 使用 stream session 流式读取分享文件 |
@@ -86,6 +87,7 @@
 | `GET` | `/s/{token}/folders/{folder_id}/content` | 浏览分享目录树中的子目录 |
 | `GET` | `/s/{token}/files/{file_id}/download` | 下载分享文件夹中的子文件 |
 | `POST` | `/s/{token}/files/{file_id}/preview-link` | 为分享目录树中的子文件生成短期预览链接 |
+| `GET` | `/s/{token}/files/{file_id}/archive-preview` | 为分享目录树中的子文件获取 ZIP 归档预览清单 |
 | `POST` | `/s/{token}/files/{file_id}/stream-session` | 为分享目录树中的子文件生成短期流式播放 session |
 | `GET` | `/s/{token}/thumbnail` | 获取分享文件缩略图 |
 | `GET` | `/s/{token}/files/{file_id}/thumbnail` | 获取分享目录树中子文件的缩略图 |
@@ -97,11 +99,13 @@
 - `/preview-link` 和 `/files/{file_id}/preview-link` 也会校验这枚 Cookie；受密码保护的分享必须先过 `/verify`
 - `/download` 只适用于文件分享
 - `/preview-link` 只适用于文件分享；返回的 `PreviewLinkInfo.path` 最终指向根路径 `/pv/{token}/{filename}`
+- `/archive-preview` 只适用于 ZIP 文件分享；缓存未生成时返回 `202` 并排队 `archive_preview_generate` 任务
 - `/stream-session` 只适用于文件分享；返回的 `ShareStreamSessionInfo.path` 最终指向 `/api/v1/s/{token}/stream/{session_token}/{filename}`
 - `/content` 只返回文件夹分享的根目录内容
 - `/folders/{folder_id}/content` 用于继续浏览分享目录树中的子目录
 - `/files/{file_id}/download` 用于下载分享文件夹树中的子文件
 - `/files/{file_id}/preview-link` 用于分享目录树里子文件的短期预览
+- `/files/{file_id}/archive-preview` 用于分享目录树里子 ZIP 文件的只读预览
 - `/files/{file_id}/stream-session` 用于分享目录树里子文件的短期流式播放 session
 - `/thumbnail` 只适用于服务端当前支持生成缩略图的文件分享
 - `/files/{file_id}/thumbnail` 只适用于分享目录树中服务端当前支持生成缩略图的文件
@@ -114,15 +118,15 @@
   "code": 0,
   "msg": "",
   "data": {
-    "path": "/api/v1/s/share_token/stream/session_token/video.mp4",
-    "expires_at": "2026-04-12T12:30:00Z"
+    "path": "/api/v1/s/share_token/stream/session_token/audio.mp3",
+    "expires_at": "2026-04-12T15:00:00Z"
   }
 }
 ```
 
 当前实现细节：
 
-- stream session 默认 30 分钟过期
+- stream session 默认 3 小时过期，由运行时配置 `share_stream_session_ttl_secs` 控制；允许范围是 5 分钟到 24 小时
 - `path` 可能是相对路径，也可能在配置了 `public_site_url` 后返回绝对 URL
 - stream session 读取支持 `Range`，返回的是原始文件流，不走统一 JSON 包装
 - 同一个 stream session 只会对分享下载计数做一次占用；如果响应构建失败，会尝试回滚计数
@@ -142,6 +146,7 @@
 - 公开页已经支持在分享目录树内继续进入子文件夹浏览
 - 子目录访问、子文件下载和子文件缩略图都会校验是否仍处在分享根目录范围内
 - 子文件预览链接也会校验是否仍处在分享根目录范围内
+- 子文件归档预览也会校验是否仍处在分享根目录范围内
 - 子文件 stream session 也会校验是否仍处在分享根目录范围内
 - 越过分享范围访问其他目录或文件会返回 `403`
 - 如果拥有者当前头像来源是 `gravatar` 或 `none`，前端应直接使用 `GET /s/{token}` 返回的 `shared_by.avatar.url_*`
@@ -151,3 +156,5 @@
 ```text
 /s/:token
 ```
+
+分享归档预览和登录用户文件归档预览使用同一个 manifest 结构；区别是需要 `archive_preview_share_enabled = true`，并且公开响应使用 `Cache-Control: private, max-age=0, must-revalidate`。受密码保护的分享仍需先通过 `/verify` 写入分享 Cookie。

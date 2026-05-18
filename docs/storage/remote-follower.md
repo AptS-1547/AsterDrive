@@ -49,6 +49,8 @@
 | remote 存储策略 | 上传时选择哪台远程节点 | `管理 -> 存储策略` |
 | 策略组 | 哪些用户/团队/文件大小命中这条策略 | `管理 -> 策略组` |
 
+当前主控和 follower 之间使用内部远程存储协议 `v2`。创建 remote 策略和切换策略组前，先让主控测试一次节点连接；测试结果里会带协议版本、服务端版本和能力摘要。
+
 ## 1. 先确认从节点已经 ready
 
 在主控后台进入：
@@ -64,6 +66,7 @@
 - `base_url` 是主控能访问到的地址
 - 当前网络不是“从节点只能出站、主控无法回连”的场景
 - 点击“测试连接”通过
+- 能力摘要里的内部协议版本兼容当前主控，当前要求 `v2`
 - `/health/ready` 返回正常
 
 如果 `base_url` 为空，可以先完成 enroll，但不能真正承接远程存储流量。生产前必须填上主控能访问到的 HTTP(S) 地址。
@@ -196,8 +199,18 @@ remote
 - HTTPS 证书可信
 - 反向代理不会拦截上传/下载路径和必要响应头
 - 从节点接收落点已经应用成功
+- 主控测试连接显示 follower 支持 `browser_presigned_cors`
 
 如果主控能访问从节点，但用户浏览器访问不到从节点，就不要用远程 `presigned`。
+
+远程 `presigned` 的浏览器 CORS 要求比普通主控中继更严格：
+
+| 方向 | 需要允许的请求头 | 需要暴露的响应头 |
+| --- | --- | --- |
+| 上传 `PUT` | `content-type` | `ETag` |
+| 下载 `GET` / Range | `range` | `Accept-Ranges`、`Content-Range`、`Content-Length` |
+
+follower 默认的内部协议能力会声明 `content-type, range`，并暴露 GET 所需的 `Accept-Ranges`、`Cache-Control`、`Content-Disposition`、`Content-Length`、`Content-Range`、`Content-Type`、`ETag`，以及 PUT 所需的 `ETag`。如果前面有 nginx、Caddy、Traefik 或 CDN，确认它们没有丢这些响应头。
 
 ## 6. 创建测试策略组
 
@@ -256,7 +269,7 @@ Remote Test Group
 5. 删除文件，再从回收站恢复
 6. 如果启用了预览，打开一次图片或 PDF
 7. 到从节点检查接收落点目录或对象存储里是否出现对象
-8. 回主控 `管理 -> 远程节点` 再测一次连接
+8. 回主控 `管理 -> 远程节点` 再测一次连接，确认协议版本和能力摘要仍然正常
 
 如果这些都通过，再考虑把真实用户或团队切到远程策略组。
 
@@ -317,6 +330,7 @@ Remote Test Group
 - 从节点是否监听外部可达地址
 - 反向代理或防火墙是否放行
 - `/health/ready` 是否返回正常
+- follower 返回的内部协议版本是否兼容当前主控；当前主控要求 `v2`
 
 ### remote 策略上传失败
 
@@ -339,6 +353,8 @@ Remote Test Group
 - 浏览器能否访问从节点 `base_url`
 - HTTPS 证书是否可信
 - 反向代理是否转发上传/下载路径
+- CORS 是否允许 `content-type` / `range`
+- 响应是否暴露 `ETag`、`Accept-Ranges`、`Content-Range`、`Content-Length`
 - 公司网络或浏览器是否拦截从节点域名
 
 ### 已有文件突然找不到

@@ -16,6 +16,7 @@
 | `GET` | `/files/upload/{upload_id}` | 查询上传进度 |
 | `DELETE` | `/files/upload/{upload_id}` | 取消上传 |
 | `GET` | `/files/{id}` | 获取文件元信息 |
+| `GET` | `/files/{id}/archive-preview` | 获取 ZIP 归档只读预览清单 |
 | `GET` | `/files/{id}/direct-link` | 生成直接下载链接 token |
 | `POST` | `/files/{id}/preview-link` | 生成短期预览链接 |
 | `POST` | `/files/{id}/wopi/open` | 为指定 WOPI 预览器创建启动会话 |
@@ -108,6 +109,7 @@
 ## 文件操作
 
 - `GET /files/{id}`：读取文件元信息；已进回收站的文件会按“找不到”处理
+- `GET /files/{id}/archive-preview`：读取 ZIP 归档预览清单；缓存未生成时返回 `202` 并排队 `archive_preview_generate` 任务
 - `GET /files/{id}/direct-link`：返回一个短 token；真正下载走根路径 `/d/{token}/{filename}`。默认按 inline 流式返回；追加 `?download=1` 后复用附件下载分流，命中 S3 / Remote 的 `presigned` 策略时会返回 `302`
 - `POST /files/{id}/preview-link`：返回一个短期预览链接；真正读取内容走根路径 `/pv/{token}/{filename}`
 - `POST /files/{id}/wopi/open`：为配置成 `provider = "wopi"` 的预览器创建一次 WOPI 启动会话
@@ -117,6 +119,14 @@
 - `POST /files/{id}/extract`：把 ZIP 等受支持归档文件解包成后台任务，结果会出现在 `/tasks`
 - `PATCH /files/{id}`：改名或移动
 - `DELETE /files/{id}`：软删除到回收站
+
+`FileInfo` / 文件列表条目现在还会带文件分类字段：
+
+- `extension`：小写最终扩展名，不带点；无扩展名时为空字符串
+- `compound_extension`：小写复合扩展名，例如 `tar.gz`；只有命中受支持复合扩展时才有值
+- `file_category`：`image`、`video`、`audio`、`document`、`spreadsheet`、`presentation`、`archive`、`code`、`other`
+
+这些字段会在创建、上传、覆盖写入和重命名时由服务端重新分类；搜索过滤直接依赖这些持久化字段。
 
 其中 `PUT /files/{id}/content` 支持 `If-Match`，会检查锁状态，成功后自动生成历史版本，并返回新的 `ETag`。
 
@@ -153,6 +163,50 @@
 存储策略还预留了 `thumbnail_processor = "storage_native"` + `thumbnail_extensions` 的策略级扩展能力；只有实际驱动暴露存储原生缩略图接口时才会生效，当前内置 Local / S3 / Remote 驱动默认都不支持。
 
 接口统一返回 WebP，并按 Blob、processor 和 processor version 复用缓存。
+
+### `GET /files/{id}/archive-preview`
+
+这条接口为 ZIP 文件返回只读清单，不解压、不写入工作空间：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "schema_version": 1,
+    "format": "zip",
+    "source_blob_id": 42,
+    "source_hash": "abc...",
+    "generated_at": "2026-05-18T12:00:00Z",
+    "entry_count": 2,
+    "file_count": 1,
+    "directory_count": 1,
+    "total_uncompressed_size": 128,
+    "truncated": false,
+    "entries": [
+      {
+        "path": "docs/readme.txt",
+        "name": "readme.txt",
+        "parent": "docs",
+        "kind": "file",
+        "size": 128,
+        "compressed_size": 64,
+        "modified_at": "2026-05-18T12:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+当前实现细节：
+
+- 只支持 `.zip` 或 ZIP MIME 类型；其他格式返回带 `archive_preview.unsupported_type` 子码的 `400`
+- 默认关闭，需要同时打开 `archive_preview_enabled` 和 `archive_preview_user_enabled`
+- 首次请求如果没有可用缓存，会创建或复用 `archive_preview_generate` 后台任务，返回 `202`、`Retry-After: 2` 和空成功响应
+- 任务完成后，清单缓存在 `entity_properties` 的 `system.archive_preview / zip_manifest.v1`
+- 成功响应带 `ETag`，支持 `If-None-Match` 命中返回 `304`
+- 限制由 `archive_preview_max_source_bytes`、`archive_preview_max_entries`、`archive_preview_max_manifest_bytes`、`archive_preview_max_duration_secs` 以及归档解压相关上限共同控制
+- 对支持 Range 的存储驱动，生成任务会优先用范围读取扫描 ZIP central directory；必要时才下载到临时文件扫描
 
 ### `GET /files/{id}/direct-link`
 

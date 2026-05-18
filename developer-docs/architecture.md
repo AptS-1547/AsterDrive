@@ -245,6 +245,7 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
   - `team-archive-cleanup`
   - `lock-cleanup`
   - `auth-session-cleanup`
+  - `external-auth-flow-cleanup`
   - `audit-cleanup`
   - `task-cleanup`
   - `wopi-session-cleanup`
@@ -296,16 +297,25 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
 - `team_archive_retention_days`
 - `max_versions_per_file`
 - `auth_cookie_secure`
+- `auth_*_ttl_secs`
 - `public_site_url`
 - `cors_*`
 - `mail_outbox_dispatch_interval_secs`
 - `background_task_dispatch_interval_secs`
+- `background_task_dispatch_idle_max_interval_secs`
 - `background_task_max_concurrency`
+- `background_task_archive_max_concurrency`
+- `background_task_thumbnail_max_concurrency`
 - `background_task_max_attempts`
+- `share_download_rollback_queue_capacity`
+- `share_stream_session_ttl_secs`
 - `maintenance_cleanup_interval_secs`
 - `blob_reconcile_interval_secs`
 - `remote_node_health_test_interval_secs`
 - `task_retention_hours`
+- `archive_extract_*`
+- `archive_build_*`
+- `archive_preview_*`
 - `archive_extract_max_staging_bytes`
 - `thumbnail_max_source_bytes`
 - `media_processing_registry_json`

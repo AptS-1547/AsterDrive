@@ -28,6 +28,10 @@
 - `POST /teams/{team_id}/batch/archive-compress`
 - `POST /files/{id}/extract`
 - `POST /teams/{team_id}/files/{id}/extract`
+- `GET /files/{id}/archive-preview`
+- `GET /teams/{team_id}/files/{id}/archive-preview`
+- `GET /s/{token}/archive-preview`
+- `GET /s/{token}/files/{file_id}/archive-preview`
 
 另外，系统内部还会创建：
 
@@ -93,10 +97,11 @@
 
 ## 当前任务类型
 
-当前代码里的 `BackgroundTaskKind` 有五种：
+当前代码里的 `BackgroundTaskKind` 有六种：
 
 - `archive_extract`
 - `archive_compress`
+- `archive_preview_generate`
 - `thumbnail_generate`
 - `storage_policy_temp_cleanup`
 - `system_runtime`
@@ -114,6 +119,7 @@
 
 - `archive_extract`：解压归档文件到工作空间目录
 - `archive_compress`：把一组选中资源打包并写回工作空间
+- `archive_preview_generate`：异步扫描 ZIP 文件并把只读 manifest 缓存在实体属性里
 - `storage_policy_temp_cleanup`：强制删除存储策略后，兜底清理遗留的临时对象和 multipart upload
 
 ## `POST /tasks/{id}/retry`
@@ -132,5 +138,6 @@
 
 - `/batch/archive-download` 及团队对应接口走的是“短期 stream ticket + 直接 ZIP 流下载”，不会创建 `background_task`
 - `/batch/archive-compress` 和 `/files/{id}/extract` 才会真正创建这里能看到的后台任务
+- `/files/{id}/archive-preview` 和公开分享归档预览接口第一次命中未生成缓存时，会创建 `archive_preview_generate`；接口本身返回 `202`，前端应稍后重试原接口，而不是轮询任务详情作为唯一入口
 
 所以如果你只用了下载 ticket 打包链路，任务列表为空是正常现象；如果你用了压缩 / 解压链路，列表就应该能看到对应任务。
