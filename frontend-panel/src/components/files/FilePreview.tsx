@@ -14,6 +14,7 @@ interface FilePreviewProps {
 	onOpenChangeComplete?: (open: boolean) => void;
 	onFileUpdated?: () => void;
 	downloadPath?: string;
+	imagePreviewPath?: string;
 	editable?: boolean;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 	archivePreviewFactory?: (options?: {
@@ -31,6 +32,7 @@ export function FilePreview({
 	onOpenChangeComplete,
 	onFileUpdated,
 	downloadPath,
+	imagePreviewPath,
 	editable,
 	previewLinkFactory,
 	archivePreviewFactory,
@@ -47,6 +49,7 @@ export function FilePreview({
 			onOpenChangeComplete={onOpenChangeComplete}
 			onFileUpdated={onFileUpdated}
 			downloadPath={downloadPath}
+			imagePreviewPath={imagePreviewPath}
 			editable={editable}
 			previewLinkFactory={previewLinkFactory}
 			archivePreviewFactory={archivePreviewFactory}

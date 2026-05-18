@@ -108,6 +108,93 @@ pub(super) async fn render_thumbnail_with_vips_cli(
     thumbnail
 }
 
+pub(super) async fn render_image_preview_with_vips_cli(
+    state: &PrimaryAppState,
+    blob: &file_blob::Model,
+    source_file_name: &str,
+    source_mime_type: &str,
+    driver: &dyn StorageDriver,
+    command: &str,
+) -> Result<Vec<u8>> {
+    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let temp_dir = PathBuf::from(temp_root).join(format!("media-vips-preview-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&temp_dir)
+        .await
+        .map_aster_err_ctx("create vips temp dir", AsterError::storage_driver_error)?;
+    let temp_dir = TempDirGuard::new(temp_dir, "vips image preview temp dir");
+
+    let output_path = temp_dir.path().join("preview.webp");
+    let prepared_input = prepare_cli_source(
+        driver,
+        &blob.storage_path,
+        source_file_name,
+        source_mime_type,
+        temp_dir.path(),
+        false,
+    )
+    .await?;
+
+    let command = command.to_string();
+    let input_arg = prepared_input.input_arg().to_string();
+    let output_arg = output_path.to_string_lossy().to_string();
+    let max_dim = crate::services::thumbnail_service::current_image_preview_max_dim();
+    tracing::debug!(
+        blob_id = blob.id,
+        processor = "vips_cli",
+        command,
+        input_arg = input_arg,
+        input_source = prepared_input.kind().as_str(),
+        output_path = output_arg,
+        max_dim,
+        "starting vips CLI image preview render"
+    );
+    tokio::task::spawn_blocking(move || {
+        let max_dim_arg = max_dim.to_string();
+        let output = run_cli_command_with_timeout(
+            &command,
+            &[
+                "thumbnail",
+                &input_arg,
+                &output_arg,
+                &max_dim_arg,
+                "--height",
+                &max_dim_arg,
+                "--size",
+                "down",
+            ],
+            thumbnail_render_failed,
+        )?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let detail = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                format!("exit status {}", output.status)
+            };
+            return Err(thumbnail_render_failed(format!(
+                "vips CLI image preview command failed: {detail}"
+            )));
+        }
+        Ok::<(), AsterError>(())
+    })
+    .await
+    .map_aster_err_ctx("vips CLI image preview task panicked", thumbnail_render_failed)??;
+
+    let preview = read_cli_thumbnail_output(&output_path, "read vips image preview output").await;
+    if let Ok(bytes) = &preview {
+        tracing::debug!(
+            blob_id = blob.id,
+            processor = "vips_cli",
+            bytes = bytes.len(),
+            "vips CLI image preview render completed"
+        );
+    }
+    preview
+}
+
 pub(super) async fn render_thumbnail_with_ffmpeg_cli(
     state: &PrimaryAppState,
     blob: &file_blob::Model,

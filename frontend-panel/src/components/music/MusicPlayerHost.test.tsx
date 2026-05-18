@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MusicPlayerHost } from "@/components/music/MusicPlayerHost";
 import type { MusicPlaybackMode } from "@/stores/musicPlayerStore";
@@ -127,10 +133,20 @@ function setQueue() {
 	];
 }
 
+function getPlayerPanel() {
+	return screen.getByRole("region", {
+		hidden: true,
+		name: "music_player_title",
+	}).parentElement;
+}
+
 function mockOverflow(text: string, scrollWidth: number, clientWidth: number) {
-	const textNode = [...document.querySelectorAll("*")].find(
-		(element) => element.textContent === text,
-	);
+	const textNode = [...document.querySelectorAll("*")]
+		.reverse()
+		.find(
+			(element) =>
+				element.textContent === text && element.children.length === 0,
+		);
 	if (!textNode) {
 		throw new Error(`missing text node: ${text}`);
 	}
@@ -234,22 +250,35 @@ describe("MusicPlayerHost", () => {
 			"src",
 			"/api/v1/files/7/download",
 		);
-		expect(screen.queryByText("Track One")).not.toBeInTheDocument();
+		expect(getPlayerPanel()).toHaveAttribute("data-state", "closed");
+		expect(getPlayerPanel()).toHaveAttribute("inert");
 	});
 
-	it("renders the expanded player with track metadata and queue", () => {
+	it("renders the expanded player with track metadata while keeping the queue collapsed by default", () => {
 		setQueue();
 		mockState.state.isPanelOpen = true;
 
 		render(<MusicPlayerHost />);
 
+		const queueToggle = screen.getByRole("button", {
+			name: /music_player_queue/i,
+		});
+
+		expect(getPlayerPanel()).toHaveAttribute("data-state", "open");
+		expect(getPlayerPanel()).not.toHaveAttribute("inert");
 		expect(screen.getByText("music_player_title")).toBeInTheDocument();
 		expect(screen.getByText("Track One")).toBeInTheDocument();
 		expect(screen.getByText("Artist One")).toBeInTheDocument();
+		expect(queueToggle).toHaveAttribute("aria-expanded", "false");
+		expect(screen.queryByText("Track Two")).not.toBeInTheDocument();
+
+		fireEvent.click(queueToggle);
+
+		expect(queueToggle).toHaveAttribute("aria-expanded", "true");
 		expect(screen.getByText("Track Two")).toBeInTheDocument();
 	});
 
-	it("uses automatic marquee only for active overflowing music text", () => {
+	it("uses automatic marquee only for active overflowing music text", async () => {
 		mockState.state.activeTrackId = "track-1";
 		mockState.state.isPanelOpen = true;
 		mockState.state.queue = [
@@ -280,19 +309,28 @@ describe("MusicPlayerHost", () => {
 		];
 
 		render(<MusicPlayerHost />);
+		fireEvent.click(
+			screen.getByRole("button", { name: /music_player_queue/i }),
+		);
 
-		const { textNode: activeTitle, viewport: activeViewport } = mockOverflow(
+		const { viewport: activeViewport } = mockOverflow(
 			"Very Long Track Title That Needs Automatic Scrolling In The Player",
 			720,
 			240,
 		);
-		expect(activeViewport).toHaveAttribute("data-marquee-active", "true");
-		expect(activeTitle).toHaveStyle({
-			"--music-text-scroll-distance": "-480px",
+		await waitFor(() =>
+			expect(activeViewport).toHaveAttribute("data-marquee-active", "true"),
+		);
+
+		const scrollingTrack = activeViewport.querySelector("span[style]");
+		if (!scrollingTrack) {
+			throw new Error("scrolling track not found");
+		}
+		expect(scrollingTrack).toHaveStyle({
+			"--music-text-scroll-distance": "-744px",
 		});
-		expect(activeTitle).toHaveStyle({
-			animation:
-				"music-player-text-marquee 21.333333333333336s linear infinite",
+		expect(scrollingTrack).toHaveStyle({
+			animation: "music-player-text-marquee 28s linear infinite",
 		});
 		expect(document.querySelector("style")?.textContent).toContain("12%");
 		expect(document.querySelector("style")?.textContent).toContain("82%");
@@ -363,6 +401,9 @@ describe("MusicPlayerHost", () => {
 			screen.getByRole("button", {
 				name: "music_player_mode_repeat_queue",
 			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: /music_player_queue/i }),
 		);
 		fireEvent.click(screen.getByRole("button", { name: /Track Two/i }));
 

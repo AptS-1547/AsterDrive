@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { PreviewError } from "./PreviewError";
@@ -6,6 +7,7 @@ import type { PreviewableFileLike } from "./types";
 
 interface BlobImagePreviewProps {
 	file: PreviewableFileLike;
+	fallbackPath?: string;
 	fillContainer?: boolean;
 	path: string;
 }
@@ -17,13 +19,53 @@ function isSvgPreview(file: PreviewableFileLike) {
 	);
 }
 
+function isHeifPreview(file: PreviewableFileLike) {
+	const lowerName = file.name.trim().toLowerCase();
+	const mime = file.mime_type.trim().toLowerCase();
+	return (
+		mime === "image/heic" ||
+		mime === "image/heif" ||
+		lowerName.endsWith(".heic") ||
+		lowerName.endsWith(".heif")
+	);
+}
+
 export function BlobImagePreview({
 	file,
+	fallbackPath,
 	fillContainer = false,
 	path,
 }: BlobImagePreviewProps) {
 	const { t } = useTranslation("files");
-	const { blobUrl, error, loading, retry } = useBlobUrl(path);
+	const previewKey = `${file.name}\u0000${file.mime_type}\u0000${path}\u0000${
+		fallbackPath ?? ""
+	}`;
+	const [fallbackPreviewKey, setFallbackPreviewKey] = useState<string | null>(
+		null,
+	);
+	const [imageRenderFailedKey, setImageRenderFailedKey] = useState<
+		string | null
+	>(null);
+	const canFallbackPreview = Boolean(fallbackPath) && isHeifPreview(file);
+	const useFallbackPreview = fallbackPreviewKey === previewKey;
+	const imageRenderFailed = imageRenderFailedKey === previewKey;
+	const activePath =
+		useFallbackPreview && canFallbackPreview ? fallbackPath : path;
+	const { blobUrl, error, loading, retry } = useBlobUrl(activePath ?? path);
+
+	const handleImageError = () => {
+		if (canFallbackPreview && !useFallbackPreview) {
+			setImageRenderFailedKey(null);
+			setFallbackPreviewKey(previewKey);
+			return;
+		}
+		setImageRenderFailedKey(previewKey);
+	};
+
+	const handleRetry = () => {
+		setImageRenderFailedKey(null);
+		retry();
+	};
 
 	if (loading) {
 		return (
@@ -31,8 +73,8 @@ export function BlobImagePreview({
 		);
 	}
 
-	if (error || !blobUrl) {
-		return <PreviewError onRetry={retry} />;
+	if (error || !blobUrl || imageRenderFailed) {
+		return <PreviewError onRetry={handleRetry} />;
 	}
 
 	const isSvg = isSvgPreview(file);
@@ -50,6 +92,7 @@ export function BlobImagePreview({
 			<img
 				src={blobUrl}
 				alt={file.name}
+				onError={handleImageError}
 				className={
 					fillContainer
 						? "block h-full w-full min-w-0 object-contain"

@@ -518,6 +518,14 @@ export default function ShareViewPage() {
 							? shareService.downloadPath(token)
 							: shareService.downloadFolderPath(token, retainedPreviewFile.id)
 					}
+					imagePreviewPath={
+						info?.share_type === "file"
+							? shareService.imagePreviewPath(token)
+							: shareService.folderFileImagePreviewPath(
+									token,
+									retainedPreviewFile.id,
+								)
+					}
 					editable={false}
 					previewLinkFactory={() =>
 						info?.share_type === "file"

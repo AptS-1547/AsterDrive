@@ -12,6 +12,11 @@ const mockState = vi.hoisted(() => ({
 		(token: string, fileId: number) => `/s/${token}/files/${fileId}/download`,
 	),
 	downloadPath: vi.fn((token: string) => `/s/${token}/download`),
+	imagePreviewPath: vi.fn((token: string) => `/s/${token}/image-preview`),
+	folderFileImagePreviewPath: vi.fn(
+		(token: string, fileId: number) =>
+			`/s/${token}/files/${fileId}/image-preview`,
+	),
 	createStreamSession: vi.fn((token: string) =>
 		Promise.resolve({
 			expires_at: "2026-01-01T00:00:00Z",
@@ -80,7 +85,9 @@ vi.mock("@/stores/previewAppStore", () => ({
 
 vi.mock("@/stores/musicPlayerStore", () => ({
 	useMusicPlayerStore: (
-		selector: (state: { playTracks: typeof mockState.musicPlayTracks }) => unknown,
+		selector: (state: {
+			playTracks: typeof mockState.musicPlayTracks;
+		}) => unknown,
 	) =>
 		selector({
 			playTracks: mockState.musicPlayTracks,
@@ -143,6 +150,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 		file,
 		open = true,
 		downloadPath,
+		imagePreviewPath,
 		editable,
 		archivePreviewFactory,
 		mediaStreamLinkFactory,
@@ -150,6 +158,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 		file: { name: string };
 		open?: boolean;
 		downloadPath?: string;
+		imagePreviewPath?: string;
 		editable?: boolean;
 		archivePreviewFactory?: () => Promise<unknown>;
 		mediaStreamLinkFactory?: () => Promise<unknown>;
@@ -159,6 +168,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 				data-testid="file-preview"
 				data-name={file.name}
 				data-download-path={downloadPath ?? ""}
+				data-image-preview-path={imagePreviewPath ?? ""}
 				data-editable={String(Boolean(editable))}
 				data-has-archive-preview-factory={String(
 					Boolean(archivePreviewFactory),
@@ -370,6 +380,10 @@ vi.mock("@/services/shareService", () => ({
 		getFolderFileArchivePreview: (...args: unknown[]) =>
 			mockState.getFolderFileArchivePreview(...args),
 		thumbnailPath: (...args: unknown[]) => mockState.thumbnailPath(...args),
+		imagePreviewPath: (...args: unknown[]) =>
+			mockState.imagePreviewPath(...args),
+		folderFileImagePreviewPath: (...args: unknown[]) =>
+			mockState.folderFileImagePreviewPath(...args),
 		downloadUrl: (...args: unknown[]) => mockState.downloadUrl(...args),
 		getInfo: (...args: unknown[]) => mockState.getInfo(...args),
 		listContent: (...args: unknown[]) => mockState.listContent(...args),
@@ -389,6 +403,8 @@ describe("ShareViewPage", () => {
 		mockState.getArchivePreview.mockClear();
 		mockState.getFolderFileArchivePreview.mockClear();
 		mockState.thumbnailPath.mockClear();
+		mockState.imagePreviewPath.mockClear();
+		mockState.folderFileImagePreviewPath.mockClear();
 		mockState.downloadUrl.mockClear();
 		mockState.getInfo.mockReset();
 		mockState.handleApiError.mockReset();

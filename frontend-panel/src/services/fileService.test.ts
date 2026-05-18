@@ -149,6 +149,7 @@ describe("fileService", () => {
 			).toString(),
 		);
 		expect(fileService.thumbnailPath(8)).toBe("/files/8/thumbnail");
+		expect(fileService.imagePreviewPath(8)).toBe("/files/8/image-preview");
 
 		const teamFileService = createFileService({ kind: "team", teamId: 9 });
 		teamFileService.listRoot();
@@ -174,6 +175,9 @@ describe("fileService", () => {
 			"/api/v1/teams/9/files/8/download",
 		);
 		expect(teamFileService.thumbnailPath(8)).toBe("/teams/9/files/8/thumbnail");
+		expect(teamFileService.imagePreviewPath(8)).toBe(
+			"/teams/9/files/8/image-preview",
+		);
 	});
 
 	it("forwards abort signals for folder listing requests", async () => {

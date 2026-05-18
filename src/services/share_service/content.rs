@@ -375,6 +375,16 @@ pub async fn get_shared_thumbnail(
     Ok(thumbnail)
 }
 
+pub async fn get_shared_image_preview(
+    state: &PrimaryAppState,
+    token: &str,
+) -> Result<file_service::ImagePreviewResult> {
+    let share = load_valid_share(state, token).await?;
+    tracing::debug!(share_id = share.id, "loading shared image preview");
+    let file = load_share_file_resource(state, &share).await?;
+    file_service::image_preview_for_file(state, &file).await
+}
+
 pub async fn get_shared_folder_file_thumbnail(
     state: &PrimaryAppState,
     token: &str,
@@ -390,6 +400,16 @@ pub async fn get_shared_folder_file_thumbnail(
         "loaded shared folder file thumbnail state"
     );
     Ok(thumbnail)
+}
+
+pub async fn get_shared_folder_file_image_preview(
+    state: &PrimaryAppState,
+    token: &str,
+    file_id: i64,
+) -> Result<file_service::ImagePreviewResult> {
+    let (_, file) = load_shared_folder_file_target(state, token, file_id).await?;
+    tracing::debug!(file_id = file.id, "loading shared folder file image preview");
+    file_service::image_preview_for_file(state, &file).await
 }
 
 pub(crate) async fn load_preview_shared_file(

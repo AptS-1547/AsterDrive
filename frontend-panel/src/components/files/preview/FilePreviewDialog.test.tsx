@@ -4,6 +4,7 @@ import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog"
 
 const mockState = vi.hoisted(() => ({
 	downloadPath: vi.fn((fileId: number) => `/files/${fileId}/download`),
+	imagePreviewPath: vi.fn((fileId: number) => `/files/${fileId}/image-preview`),
 	profile: {
 		category: "markdown",
 		defaultMode: "builtin.code",
@@ -125,6 +126,8 @@ vi.mock("@/lib/format", () => ({
 vi.mock("@/services/fileService", () => ({
 	fileService: {
 		downloadPath: (...args: unknown[]) => mockState.downloadPath(...args),
+		imagePreviewPath: (...args: unknown[]) =>
+			mockState.imagePreviewPath(...args),
 	},
 }));
 
@@ -136,12 +139,18 @@ vi.mock("@/stores/previewAppStore", () => ({
 
 vi.mock("@/components/files/preview/BlobImagePreview", () => ({
 	BlobImagePreview: ({
+		fallbackPath,
 		fillContainer,
 		path,
 	}: {
+		fallbackPath?: string;
 		fillContainer?: boolean;
 		path: string;
-	}) => <div>{`blob:image:${path}:${String(Boolean(fillContainer))}`}</div>,
+	}) => (
+		<div
+			data-fallback-path={fallbackPath ?? ""}
+		>{`blob:image:${path}:${fallbackPath ?? ""}:${String(Boolean(fillContainer))}`}</div>
+	),
 }));
 
 vi.mock("@/components/files/preview/MusicPreview", () => ({
@@ -311,6 +320,8 @@ function renderDialog(
 ) {
 	const onClose = vi.fn();
 	const onFileUpdated = vi.fn();
+	const imagePreviewPath =
+		overrides.imagePreviewPath ?? "/files/7/image-preview";
 
 	render(
 		<FilePreviewDialog
@@ -325,6 +336,7 @@ function renderDialog(
 			}
 			onClose={onClose}
 			onFileUpdated={onFileUpdated}
+			imagePreviewPath={imagePreviewPath}
 			editable
 			{...overrides}
 		/>,
@@ -345,6 +357,7 @@ async function chooseOpenMethod(name: string) {
 describe("FilePreviewDialog", () => {
 	beforeEach(() => {
 		mockState.downloadPath.mockClear();
+		mockState.imagePreviewPath.mockClear();
 		mockState.previewAppStore.load.mockReset();
 		mockState.profile = {
 			category: "markdown",
@@ -440,7 +453,7 @@ describe("FilePreviewDialog", () => {
 		expect(
 			screen.queryByRole("heading", { name: "files:choose_open_method" }),
 		).not.toBeInTheDocument();
-		expect(await screen.findByText("audio:/files/8/download")).toHaveAttribute(
+		expect(await screen.findByText("music:/files/8/download")).toHaveAttribute(
 			"data-has-media-stream-link-factory",
 			"false",
 		);
@@ -703,9 +716,9 @@ describe("FilePreviewDialog", () => {
 			}),
 		});
 
-		await screen.findByText("audio:/files/8/download");
+		await screen.findByText("music:/files/8/download");
 		expect(screen.queryByText("blob:image:/files/8/download:false")).toBeNull();
-		expect(screen.getByText("audio:/files/8/download")).toHaveAttribute(
+		expect(screen.getByText("music:/files/8/download")).toHaveAttribute(
 			"data-has-media-stream-link-factory",
 			"true",
 		);
@@ -750,7 +763,9 @@ describe("FilePreviewDialog", () => {
 			} as never,
 		});
 
-		await screen.findByText("blob:image:/files/7/download:false");
+		await screen.findByText(
+			"blob:image:/files/7/download:/files/7/image-preview:false",
+		);
 		expect(
 			screen.getByTestId("dialog-content").className.split(/\s+/),
 		).not.toContain("h-[90vh]");
@@ -782,7 +797,9 @@ describe("FilePreviewDialog", () => {
 			} as never,
 		});
 
-		await screen.findByText("blob:image:/files/7/download:false");
+		await screen.findByText(
+			"blob:image:/files/7/download:/files/7/image-preview:false",
+		);
 
 		fireEvent.click(
 			screen.getByRole("button", {
@@ -791,7 +808,9 @@ describe("FilePreviewDialog", () => {
 		);
 
 		expect(
-			await screen.findByText("blob:image:/files/7/download:true"),
+			await screen.findByText(
+				"blob:image:/files/7/download:/files/7/image-preview:true",
+			),
 		).toBeInTheDocument();
 	});
 
@@ -830,7 +849,9 @@ describe("FilePreviewDialog", () => {
 		expect(
 			screen.queryByRole("heading", { name: "files:choose_open_method" }),
 		).not.toBeInTheDocument();
-		await screen.findByText("blob:image:/files/7/download:false");
+		await screen.findByText(
+			"blob:image:/files/7/download:/files/7/image-preview:false",
+		);
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "files:choose_open_method" }),

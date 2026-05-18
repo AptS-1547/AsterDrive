@@ -32,6 +32,7 @@ interface FilePreviewDialogProps {
 	onOpenChangeComplete?: (open: boolean) => void;
 	onFileUpdated?: () => void;
 	downloadPath?: string;
+	imagePreviewPath?: string;
 	editable?: boolean;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 	archivePreviewFactory?: (options?: {
@@ -61,6 +62,7 @@ export function FilePreviewDialog({
 	onOpenChangeComplete,
 	onFileUpdated,
 	downloadPath,
+	imagePreviewPath,
 	editable = true,
 	previewLinkFactory,
 	archivePreviewFactory,
@@ -74,6 +76,8 @@ export function FilePreviewDialog({
 	const loadPreviewApps = usePreviewAppStore((state) => state.load);
 	const resolvedDownloadPath =
 		downloadPath ?? fileService.downloadPath(file.id);
+	const resolvedImagePreviewPath =
+		imagePreviewPath ?? fileService.imagePreviewPath(file.id);
 
 	useEffect(() => {
 		if (previewAppsLoaded) return;
@@ -372,6 +376,7 @@ export function FilePreviewDialog({
 									profile={profile}
 									previewAppsLoaded={previewAppsLoaded}
 									downloadPath={resolvedDownloadPath}
+									imagePreviewPath={resolvedImagePreviewPath}
 									getOptionLabel={getOptionLabel}
 									previewLinkFactory={previewLinkFactory}
 									archivePreviewFactory={activeArchivePreviewFactory}

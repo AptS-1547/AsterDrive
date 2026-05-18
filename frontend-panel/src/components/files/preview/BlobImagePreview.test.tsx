@@ -122,4 +122,117 @@ describe("BlobImagePreview", () => {
 		expect(image.parentElement).toHaveClass("h-full", "w-full", "p-4");
 		expect(image.parentElement).not.toHaveClass("w-fit");
 	});
+
+	it("switches HEIC images to the backend preview after browser rendering fails", () => {
+		mockState.useBlobUrl
+			.mockReturnValueOnce({
+				blobUrl: "blob:source",
+				error: false,
+				loading: false,
+				retry: mockState.retry,
+			})
+			.mockReturnValueOnce({
+				blobUrl: "blob:fallback",
+				error: false,
+				loading: false,
+				retry: mockState.retry,
+			});
+
+		render(
+			<BlobImagePreview
+				file={{ name: "photo.heic", mime_type: "image/heic" }}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
+		);
+
+		expect(mockState.useBlobUrl).toHaveBeenNthCalledWith(
+			1,
+			"/files/1/download",
+		);
+		fireEvent.error(screen.getByRole("img", { name: "photo.heic" }));
+
+		expect(mockState.useBlobUrl).toHaveBeenNthCalledWith(
+			2,
+			"/files/1/image-preview",
+		);
+		expect(screen.getByRole("img", { name: "photo.heic" })).toHaveAttribute(
+			"src",
+			"blob:fallback",
+		);
+	});
+
+	it("detects HEIF fallback support from the file extension", () => {
+		mockState.useBlobUrl
+			.mockReturnValueOnce({
+				blobUrl: "blob:source",
+				error: false,
+				loading: false,
+				retry: mockState.retry,
+			})
+			.mockReturnValueOnce({
+				blobUrl: "blob:fallback",
+				error: false,
+				loading: false,
+				retry: mockState.retry,
+			});
+
+		render(
+			<BlobImagePreview
+				file={{ name: "camera.HEIF", mime_type: "application/octet-stream" }}
+				path="/files/2/download"
+				fallbackPath="/files/2/image-preview"
+			/>,
+		);
+
+		fireEvent.error(screen.getByRole("img", { name: "camera.HEIF" }));
+
+		expect(mockState.useBlobUrl).toHaveBeenLastCalledWith(
+			"/files/2/image-preview",
+		);
+	});
+
+	it("does not switch ordinary images to the backend preview on render errors", () => {
+		render(
+			<BlobImagePreview
+				file={file}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
+		);
+
+		fireEvent.error(screen.getByRole("img", { name: "preview.png" }));
+
+		expect(mockState.useBlobUrl).toHaveBeenLastCalledWith("/files/1/download");
+		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
+	});
+
+	it("shows the retry state when the HEIC fallback preview also cannot render", () => {
+		mockState.useBlobUrl
+			.mockReturnValueOnce({
+				blobUrl: "blob:source",
+				error: false,
+				loading: false,
+				retry: mockState.retry,
+			})
+			.mockReturnValueOnce({
+				blobUrl: "blob:fallback",
+				error: false,
+				loading: false,
+				retry: mockState.retry,
+			});
+
+		render(
+			<BlobImagePreview
+				file={{ name: "photo.heic", mime_type: "image/heic" }}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
+		);
+
+		fireEvent.error(screen.getByRole("img", { name: "photo.heic" }));
+		fireEvent.error(screen.getByRole("img", { name: "photo.heic" }));
+
+		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
+	});
 });

@@ -126,6 +126,9 @@ export function createFileService(workspace: Workspace) {
 		thumbnailPath: (id: number) =>
 			buildWorkspacePath(workspace, `/files/${id}/thumbnail`),
 
+		imagePreviewPath: (id: number) =>
+			buildWorkspacePath(workspace, `/files/${id}/image-preview`),
+
 		setFileLock: (id: number, locked: boolean) =>
 			api.post<FileInfo>(buildWorkspacePath(workspace, `/files/${id}/lock`), {
 				locked,

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatUserAgentLabel, parseUserAgent } from "@/lib/userAgent";
+import {
+	formatPasskeyDefaultName,
+	formatUserAgentLabel,
+	parseUserAgent,
+} from "@/lib/userAgent";
 
 describe("userAgent helpers", () => {
 	it("formats a desktop edge user agent into a compact label", () => {
@@ -74,5 +78,22 @@ describe("userAgent helpers", () => {
 				unknown: "未知设备",
 			}),
 		).toBe("未知设备");
+	});
+
+	it("formats the passkey default name as operating system and browser", () => {
+		const userAgent =
+			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0";
+
+		expect(formatPasskeyDefaultName(userAgent)).toBe("macOS - Edge");
+	});
+
+	it("falls back when passkey default name cannot identify the client", () => {
+		expect(formatPasskeyDefaultName("Vitest Browser/1.0", "Passkey")).toBe(
+			"Passkey",
+		);
+		expect(
+			formatPasskeyDefaultName("CustomAgent/1.0 (Windows)", "Passkey"),
+		).toBe("Passkey");
+		expect(formatPasskeyDefaultName("", "Passkey")).toBe("Passkey");
 	});
 });

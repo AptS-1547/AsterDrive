@@ -10,6 +10,8 @@ pub mod raii;
 use crate::errors::{AsterError, Result};
 use unicode_normalization::UnicodeNormalization;
 
+pub const OUTBOUND_HTTP_USER_AGENT: &str = concat!("AsterDrive/", env!("CARGO_PKG_VERSION"));
+
 /// 校验资源归属权，不匹配则返回 403
 pub fn verify_owner(entity_user_id: i64, user_id: i64, entity_name: &str) -> Result<()> {
     if entity_user_id != user_id {

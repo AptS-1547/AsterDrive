@@ -849,7 +849,11 @@ vi.mock("@/stores/fileStore", () => {
 });
 
 vi.mock("@/stores/musicPlayerStore", () => ({
-	useMusicPlayerStore: (selector: (state: { playTracks: typeof mockState.musicPlayTracks }) => unknown) =>
+	useMusicPlayerStore: (
+		selector: (state: {
+			playTracks: typeof mockState.musicPlayTracks;
+		}) => unknown,
+	) =>
 		selector({
 			playTracks: mockState.musicPlayTracks,
 		}),

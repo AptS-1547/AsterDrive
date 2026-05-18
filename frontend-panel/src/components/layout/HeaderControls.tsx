@@ -46,7 +46,7 @@ export function HeaderControls({
 	const logout = useAuthStore((s) => s.logout);
 	const musicQueue = useMusicPlayerStore((s) => s.queue);
 	const musicIsPlaying = useMusicPlayerStore((s) => s.isPlaying);
-	const openMusicPanel = useMusicPlayerStore((s) => s.openPanel);
+	const toggleMusicPanel = useMusicPlayerStore((s) => s.togglePanel);
 	const mode = useThemeStore((s) => s.mode);
 	const setMode = useThemeStore((s) => s.setMode);
 	const [loggingOut, setLoggingOut] = useState(false);
@@ -137,7 +137,7 @@ export function HeaderControls({
 								variant="ghost"
 								size="icon-sm"
 								className="rounded-full"
-								onClick={openMusicPanel}
+								onClick={toggleMusicPanel}
 								aria-label={t("files:music_player_open")}
 							/>
 						}

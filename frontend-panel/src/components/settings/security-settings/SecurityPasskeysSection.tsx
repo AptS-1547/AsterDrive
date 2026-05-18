@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/hooks/useApiError";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { formatDateAbsolute, formatDateAbsoluteWithOffset } from "@/lib/format";
+import { formatPasskeyDefaultName } from "@/lib/userAgent";
 import {
 	createPasskeyCredential,
 	isWebAuthnSupported,
@@ -29,6 +30,10 @@ function lastUsedLabel(passkey: PasskeyInfo, fallback: string) {
 	return passkey.last_used_at
 		? formatDateAbsolute(passkey.last_used_at)
 		: fallback;
+}
+
+function getCurrentUserAgent(): string | null {
+	return typeof navigator === "undefined" ? null : navigator.userAgent;
 }
 
 export function SecurityPasskeysSection() {
@@ -65,7 +70,11 @@ export function SecurityPasskeysSection() {
 		}
 
 		const finalName =
-			name.trim() || t("settings:settings_passkeys_default_name");
+			name.trim() ||
+			formatPasskeyDefaultName(
+				getCurrentUserAgent(),
+				t("settings:settings_passkeys_default_name"),
+			);
 		try {
 			setCreating(true);
 			const start = await authService.startPasskeyRegistration({

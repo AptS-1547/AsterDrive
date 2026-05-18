@@ -1,17 +1,17 @@
 import type { ChangeEvent, CSSProperties, ReactNode } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+	useEffect,
+	useId,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
+import { AnimatedCollapsible } from "@/components/common/AnimatedCollapsible";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	Tooltip,
 	TooltipContent,
@@ -279,8 +279,12 @@ export function MusicPlayerHost() {
 	const isSeekingRef = useRef(false);
 	const parsedMetadataTrackIdsRef = useRef(new Set<string>());
 	const wasPlayingBeforeSeekRef = useRef(false);
+	const queuePanelId = useId();
+	const detailsPanelId = useId();
 	const [currentTime, setCurrentTime] = useState(0);
 	const [duration, setDuration] = useState(0);
+	const [detailsOpen, setDetailsOpen] = useState(false);
+	const [queueOpen, setQueueOpen] = useState(false);
 	const [volume, setVolume] = useState(0.85);
 	const activeTrackId = useMusicPlayerStore((state) => state.activeTrackId);
 	const error = useMusicPlayerStore((state) => state.error);
@@ -299,7 +303,6 @@ export function MusicPlayerHost() {
 	const playTracks = useMusicPlayerStore((state) => state.playTracks);
 	const requestPlayback = useMusicPlayerStore((state) => state.requestPlayback);
 	const setError = useMusicPlayerStore((state) => state.setError);
-	const setPanelOpen = useMusicPlayerStore((state) => state.setPanelOpen);
 	const setPlaybackMode = useMusicPlayerStore((state) => state.setPlaybackMode);
 	const setPlaying = useMusicPlayerStore((state) => state.setPlaying);
 	const setPlaybackRequested = useMusicPlayerStore(
@@ -331,6 +334,12 @@ export function MusicPlayerHost() {
 		setCurrentTime(0);
 		setDuration(0);
 	}, [trackKey]);
+
+	useEffect(() => {
+		if (isPanelOpen) return;
+		setDetailsOpen(false);
+		setQueueOpen(false);
+	}, [isPanelOpen]);
 
 	useEffect(() => {
 		if (!track || !source || parsedMetadataTrackIdsRef.current.has(track.id)) {
@@ -514,17 +523,28 @@ export function MusicPlayerHost() {
 				}
 			/>
 
-			<Dialog open={isPanelOpen} onOpenChange={setPanelOpen}>
-				<DialogContent
-					showCloseButton={false}
-					className="top-auto right-3 bottom-16 left-auto flex h-[min(42rem,calc(100vh-6rem))] w-[calc(100vw-1.5rem)] max-w-[26rem] translate-x-0 translate-y-0 grid-cols-none flex-col gap-0 overflow-hidden rounded-lg p-0 sm:right-4 sm:bottom-20 sm:w-[26rem]"
+			<div
+				aria-hidden={!isPanelOpen}
+				data-state={isPanelOpen ? "open" : "closed"}
+				inert={isPanelOpen ? undefined : true}
+				className={cn(
+					"fixed top-[calc(var(--spacing)*16+0.5rem)] right-3 z-40 w-[calc(100vw-1.5rem)] max-w-[26rem] origin-top-right transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none sm:right-4",
+					isPanelOpen
+						? "translate-y-0 scale-100 opacity-100"
+						: "pointer-events-none -translate-y-2 scale-[0.98] opacity-0",
+				)}
+			>
+				<section
+					aria-label={t("music_player_title")}
+					data-theme-surface="overlay"
+					className="max-h-[calc(100vh-4.5rem)] overflow-hidden rounded-lg border border-border/70 bg-popover/96 text-sm shadow-2xl shadow-black/12 ring-1 ring-foreground/5 backdrop-blur dark:bg-popover/92 dark:shadow-none"
 				>
-					<DialogHeader className="border-b border-border/65 px-4 py-3">
+					<div className="border-b border-border/65 px-4 py-3">
 						<div className="flex items-center justify-between gap-3">
-							<DialogTitle className="flex min-w-0 items-center gap-2">
+							<div className="flex min-w-0 items-center gap-2 font-heading text-base leading-none font-medium">
 								<Icon name="MusicNotes" className="h-4 w-4 text-primary" />
 								<span className="truncate">{t("music_player_title")}</span>
-							</DialogTitle>
+							</div>
 							<div className="flex items-center gap-1">
 								<TooltipProvider>
 									<PlayerIconButton
@@ -537,29 +557,29 @@ export function MusicPlayerHost() {
 										label={t("music_player_collapse")}
 										onClick={closePanel}
 									>
-										<Icon name="CaretDown" className="h-4 w-4" />
+										<Icon name="CaretUp" className="h-4 w-4" />
 									</PlayerIconButton>
 								</TooltipProvider>
 							</div>
 						</div>
-					</DialogHeader>
+					</div>
 
-					<div className="flex min-h-0 flex-1 flex-col">
-						<div className="px-4 pt-4">
+					<div className="max-h-[calc(100vh-6.5rem)] overflow-y-auto overscroll-contain">
+						<div className="px-4 py-4">
 							<div className="flex min-w-0 gap-3">
 								<MusicArtwork
 									track={track}
-									className="h-24 w-24 shrink-0 rounded-lg"
+									className="h-20 w-20 shrink-0 rounded-lg sm:h-24 sm:w-24"
 								/>
 								<div className="flex min-w-0 flex-1 flex-col justify-center">
 									<AutoScrollText
-										active
+										active={isPanelOpen}
 										className="text-base font-semibold leading-6"
 									>
 										{displayTitle(track)}
 									</AutoScrollText>
 									<AutoScrollText
-										active
+										active={isPanelOpen}
 										className="mt-1 text-sm text-muted-foreground"
 									>
 										{displayArtist(track) ?? t("music_player_unknown_artist")}
@@ -603,7 +623,7 @@ export function MusicPlayerHost() {
 							</div>
 
 							<TooltipProvider>
-								<div className="mt-3 flex items-center justify-center gap-1">
+								<div className="mt-3 flex flex-wrap items-center justify-center gap-1">
 									<PlayerIconButton
 										active={playbackMode !== "repeat_queue"}
 										label={modeLabel}
@@ -669,117 +689,142 @@ export function MusicPlayerHost() {
 									{error}
 								</p>
 							) : null}
-						</div>
 
-						<Tabs defaultValue="queue" className="mt-4 min-h-0 flex-1 gap-0">
-							<TabsList variant="line" className="px-4">
-								<TabsTrigger value="queue">
-									<Icon name="Queue" className="h-4 w-4" />
-									{t("music_player_queue")}
-								</TabsTrigger>
-								<TabsTrigger value="details">
-									<Icon name="Info" className="h-4 w-4" />
-									{t("music_player_details")}
-								</TabsTrigger>
-							</TabsList>
-							<TabsContent
-								value="queue"
-								className="min-h-0 border-t border-border/65"
-							>
-								<ScrollArea className="h-full">
-									<div className="space-y-1 p-2">
-										{queue.map((queueTrack, index) => {
-											const active = queueTrack.id === activeTrackId;
-											return (
-												<button
-													key={queueTrack.id}
-													type="button"
-													className={cn(
-														"flex w-full min-w-0 items-center gap-3 rounded-md px-2 py-2 text-left transition hover:bg-muted/55",
-														active &&
-															"bg-primary/10 text-primary hover:bg-primary/12",
-													)}
-													onClick={() => activateQueueTrack(queueTrack.id)}
-												>
-													<div
-														className={cn(
-															"flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs tabular-nums text-muted-foreground",
-															active && "bg-primary/15 text-primary",
-														)}
-													>
-														{active && isPlaying ? (
-															<Icon name="MusicNotes" className="h-4 w-4" />
-														) : (
-															index + 1
-														)}
-													</div>
-													<div className="min-w-0 flex-1">
-														{active ? (
-															<AutoScrollText
-																active
-																className="text-sm font-medium"
+							<div className="mt-4 space-y-2 border-t border-border/65 pt-3">
+								<button
+									type="button"
+									className="flex h-9 w-full items-center justify-between rounded-md px-2 text-sm font-medium transition hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+									aria-controls={queuePanelId}
+									aria-expanded={queueOpen}
+									onClick={() => setQueueOpen((open) => !open)}
+								>
+									<span className="flex min-w-0 items-center gap-2">
+										<Icon name="Queue" className="h-4 w-4 text-primary" />
+										<span className="truncate">{t("music_player_queue")}</span>
+										<Badge variant="outline">{queue.length}</Badge>
+									</span>
+									<Icon
+										name={queueOpen ? "CaretUp" : "CaretDown"}
+										className="h-4 w-4 text-muted-foreground"
+									/>
+								</button>
+								<AnimatedCollapsible open={queueOpen}>
+									<div id={queuePanelId} className="pb-1">
+										<div className="max-h-72 overflow-y-auto rounded-md border border-border/55 bg-muted/12 overscroll-contain">
+											<div className="space-y-1 p-2">
+												{queue.map((queueTrack, index) => {
+													const active = queueTrack.id === activeTrackId;
+													return (
+														<button
+															key={queueTrack.id}
+															type="button"
+															className={cn(
+																"flex w-full min-w-0 items-center gap-3 rounded-md px-2 py-2 text-left transition hover:bg-muted/55",
+																active &&
+																	"bg-primary/10 text-primary hover:bg-primary/12",
+															)}
+															onClick={() => activateQueueTrack(queueTrack.id)}
+														>
+															<div
+																className={cn(
+																	"flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs tabular-nums text-muted-foreground",
+																	active && "bg-primary/15 text-primary",
+																)}
 															>
-																{displayTitle(queueTrack)}
-															</AutoScrollText>
-														) : (
-															<span className="block truncate whitespace-nowrap text-sm font-medium">
-																{displayTitle(queueTrack)}
-															</span>
-														)}
-														{active ? (
-															<AutoScrollText
-																active
-																className="text-xs text-muted-foreground"
-															>
-																{displayArtist(queueTrack) ??
-																	t("music_player_unknown_artist")}
-															</AutoScrollText>
-														) : (
-															<span className="block truncate whitespace-nowrap text-xs text-muted-foreground">
-																{displayArtist(queueTrack) ??
-																	t("music_player_unknown_artist")}
-															</span>
-														)}
-													</div>
-												</button>
-											);
-										})}
-									</div>
-								</ScrollArea>
-							</TabsContent>
-							<TabsContent
-								value="details"
-								className="min-h-0 border-t border-border/65"
-							>
-								<div className="space-y-3 p-4 text-sm">
-									<div>
-										<div className="text-xs font-medium uppercase text-muted-foreground">
-											{t("music_player_file_name")}
+																{active && isPlaying ? (
+																	<Icon name="MusicNotes" className="h-4 w-4" />
+																) : (
+																	index + 1
+																)}
+															</div>
+															<div className="min-w-0 flex-1">
+																{active ? (
+																	<AutoScrollText
+																		active={queueOpen}
+																		className="text-sm font-medium"
+																	>
+																		{displayTitle(queueTrack)}
+																	</AutoScrollText>
+																) : (
+																	<span className="block truncate whitespace-nowrap text-sm font-medium">
+																		{displayTitle(queueTrack)}
+																	</span>
+																)}
+																{active ? (
+																	<AutoScrollText
+																		active={queueOpen}
+																		className="text-xs text-muted-foreground"
+																	>
+																		{displayArtist(queueTrack) ??
+																			t("music_player_unknown_artist")}
+																	</AutoScrollText>
+																) : (
+																	<span className="block truncate whitespace-nowrap text-xs text-muted-foreground">
+																		{displayArtist(queueTrack) ??
+																			t("music_player_unknown_artist")}
+																	</span>
+																)}
+															</div>
+														</button>
+													);
+												})}
+											</div>
 										</div>
-										<AutoScrollText active className="mt-1">
-											{track.name}
-										</AutoScrollText>
 									</div>
-									<div>
-										<div className="text-xs font-medium uppercase text-muted-foreground">
-											{t("music_player_mime_type")}
+								</AnimatedCollapsible>
+
+								<button
+									type="button"
+									className="flex h-9 w-full items-center justify-between rounded-md px-2 text-sm font-medium transition hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+									aria-controls={detailsPanelId}
+									aria-expanded={detailsOpen}
+									onClick={() => setDetailsOpen((open) => !open)}
+								>
+									<span className="flex min-w-0 items-center gap-2">
+										<Icon name="Info" className="h-4 w-4 text-primary" />
+										<span className="truncate">
+											{t("music_player_details")}
+										</span>
+									</span>
+									<Icon
+										name={detailsOpen ? "CaretUp" : "CaretDown"}
+										className="h-4 w-4 text-muted-foreground"
+									/>
+								</button>
+								<AnimatedCollapsible open={detailsOpen}>
+									<div
+										id={detailsPanelId}
+										className="space-y-3 rounded-md border border-border/55 bg-muted/12 p-3 text-sm"
+									>
+										<div>
+											<div className="text-xs font-medium uppercase text-muted-foreground">
+												{t("music_player_file_name")}
+											</div>
+											<AutoScrollText active={detailsOpen} className="mt-1">
+												{track.name}
+											</AutoScrollText>
 										</div>
-										<AutoScrollText active className="mt-1">
-											{track.mimeType}
-										</AutoScrollText>
-									</div>
-									<div>
-										<div className="text-xs font-medium uppercase text-muted-foreground">
-											{t("music_player_mode")}
+										<div>
+											<div className="text-xs font-medium uppercase text-muted-foreground">
+												{t("music_player_mime_type")}
+											</div>
+											<AutoScrollText active={detailsOpen} className="mt-1">
+												{track.mimeType}
+											</AutoScrollText>
 										</div>
-										<p className="mt-1">{modeLabel}</p>
+										<div>
+											<div className="text-xs font-medium uppercase text-muted-foreground">
+												{t("music_player_mode")}
+											</div>
+											<p className="mt-1">{modeLabel}</p>
+										</div>
 									</div>
-								</div>
-							</TabsContent>
-						</Tabs>
+								</AnimatedCollapsible>
+							</div>
+						</div>
 					</div>
-				</DialogContent>
-			</Dialog>
+				</section>
+			</div>
 		</>
 	);
 }

@@ -1,6 +1,7 @@
 mod cache;
 mod cli;
 mod errors;
+mod preview;
 mod probe;
 mod render;
 mod storage_native;
@@ -16,6 +17,7 @@ use super::shared::{StoredThumbnail, ThumbnailContext, ThumbnailData};
 
 pub use cache::delete_thumbnail;
 pub use probe::probe_ffmpeg_cli_command;
+pub use preview::generate_and_store_image_preview;
 
 pub async fn load_thumbnail_if_exists(
     state: &PrimaryAppState,

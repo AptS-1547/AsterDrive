@@ -14,7 +14,7 @@ export function ShareTopBar() {
 	const { t } = useTranslation();
 	const musicQueue = useMusicPlayerStore((s) => s.queue);
 	const musicIsPlaying = useMusicPlayerStore((s) => s.isPlaying);
-	const openMusicPanel = useMusicPlayerStore((s) => s.openPanel);
+	const toggleMusicPanel = useMusicPlayerStore((s) => s.togglePanel);
 
 	return (
 		<TopBarShell
@@ -36,7 +36,7 @@ export function ShareTopBar() {
 										variant="ghost"
 										size="icon-sm"
 										className="rounded-full"
-										onClick={openMusicPanel}
+										onClick={toggleMusicPanel}
 										aria-label={t("files:music_player_open")}
 									/>
 								}

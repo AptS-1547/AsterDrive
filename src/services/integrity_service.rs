@@ -621,6 +621,9 @@ async fn load_blob_expectations_for_policy<C: ConnectionTrait>(
             tracked_thumbnails.extend(media_processing_service::known_thumbnail_cache_paths(
                 &blob.hash,
             ));
+            tracked_thumbnails.extend(media_processing_service::known_image_preview_cache_paths(
+                &blob.hash,
+            ));
         }
     }
 

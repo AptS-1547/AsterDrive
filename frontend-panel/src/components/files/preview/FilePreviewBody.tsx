@@ -62,6 +62,7 @@ interface FilePreviewBodyProps {
 	profile: PreviewProfile | null;
 	previewAppsLoaded: boolean;
 	downloadPath: string;
+	imagePreviewPath?: string;
 	getOptionLabel: (option: OpenWithOption) => string;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 	archivePreviewFactory?: (options?: {
@@ -82,6 +83,7 @@ export function FilePreviewBody({
 	profile,
 	previewAppsLoaded,
 	downloadPath,
+	imagePreviewPath,
 	getOptionLabel,
 	previewLinkFactory,
 	archivePreviewFactory,
@@ -122,6 +124,7 @@ export function FilePreviewBody({
 				file={file}
 				fillContainer={isExpanded}
 				path={downloadPath}
+				fallbackPath={imagePreviewPath}
 			/>
 		);
 	}

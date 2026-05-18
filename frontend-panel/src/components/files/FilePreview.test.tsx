@@ -7,6 +7,7 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 		open,
 		file,
 		downloadPath,
+		imagePreviewPath,
 		editable,
 		previewLinkFactory,
 		mediaStreamLinkFactory,
@@ -25,6 +26,7 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 			data-open={String(open)}
 			data-file-name={file.name}
 			data-download-path={downloadPath ?? ""}
+			data-image-preview-path={imagePreviewPath ?? ""}
 			data-editable={String(Boolean(editable))}
 			data-has-preview-link-factory={String(Boolean(previewLinkFactory))}
 			data-has-media-stream-link-factory={String(
@@ -44,6 +46,7 @@ describe("FilePreview", () => {
 				onClose={vi.fn()}
 				onFileUpdated={vi.fn()}
 				downloadPath="/files/7/download"
+				imagePreviewPath="/files/7/image-preview"
 				editable
 				previewLinkFactory={async () => ({})}
 				mediaStreamLinkFactory={async () => ({})}
@@ -62,6 +65,10 @@ describe("FilePreview", () => {
 		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
 			"data-download-path",
 			"/files/7/download",
+		);
+		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
+			"data-image-preview-path",
+			"/files/7/image-preview",
 		);
 		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
 			"data-editable",

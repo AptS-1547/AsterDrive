@@ -23,6 +23,7 @@ use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse};
 use webauthn_rs_proto::{AllowCredentials, Mediation, ResidentKeyRequirement};
 
 const TEST_BROWSER_ORIGIN: &str = "http://localhost:8080";
+const TEST_PUBLIC_SITE_ORIGIN: &str = "https://pan.esaps.net";
 
 macro_rules! login_user_with_credentials {
     ($app:expr, $identifier:expr, $password:expr) => {{
@@ -1065,6 +1066,91 @@ async fn test_setup_still_works_when_public_registration_is_disabled() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
+}
+
+#[actix_web::test]
+async fn test_setup_bootstraps_public_site_url_from_request_origin() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/setup")
+        .insert_header(("Origin", TEST_PUBLIC_SITE_ORIGIN))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "adminuser",
+            "email": "admin@example.com",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let stored = aster_drive::db::repository::config_repo::find_by_key(
+        &state.db,
+        aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
+    )
+    .await
+    .unwrap()
+    .expect("public_site_url should exist");
+    assert_eq!(stored.value, format!(r#"["{TEST_PUBLIC_SITE_ORIGIN}"]"#));
+    assert_eq!(stored.updated_by, Some(1));
+}
+
+#[actix_web::test]
+async fn test_setup_does_not_overwrite_existing_public_site_url() {
+    let state = common::setup().await;
+    aster_drive::services::config_service::set(
+        &state,
+        aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
+        vec!["https://pan-cloudreve.esaps.net".to_string()],
+        1,
+    )
+    .await
+    .expect("public_site_url should be writable");
+    let app = create_test_app!(state.clone());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/setup")
+        .insert_header(("Origin", TEST_PUBLIC_SITE_ORIGIN))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "adminuser",
+            "email": "admin@example.com",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let stored = aster_drive::db::repository::config_repo::find_by_key(
+        &state.db,
+        aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
+    )
+    .await
+    .unwrap()
+    .expect("public_site_url should exist");
+    assert_eq!(stored.value, r#"["https://pan-cloudreve.esaps.net"]"#);
+}
+
+#[actix_web::test]
+async fn test_passkey_login_start_rejects_missing_public_site_url_with_config_error() {
+    let state = common::setup_with_memory_cache().await;
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/passkeys/login/start")
+        .insert_header(("Origin", TEST_BROWSER_ORIGIN))
+        .set_json(serde_json::json!({ "identifier": "testuser" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 1000);
+    assert_eq!(
+        body["msg"],
+        "public_site_url must be configured before enabling passkey authentication"
+    );
 }
 
 #[actix_web::test]

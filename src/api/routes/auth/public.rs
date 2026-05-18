@@ -7,13 +7,57 @@ use super::{
     contact_verification_redirect_response, request_has_active_access_session,
 };
 use crate::api::response::ApiResponse;
-use crate::config::auth_runtime::RuntimeAuthPolicy;
+use crate::config::{auth_runtime::RuntimeAuthPolicy, cors, site_url};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::AuditRequestInfo;
-use crate::services::{auth_service, user_service};
+use crate::services::{auth_service, config_service, user_service};
 use crate::types::VerificationPurpose;
-use actix_web::{HttpRequest, HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, http::header, web};
+
+fn setup_request_public_origin(req: &HttpRequest) -> Option<String> {
+    if let Some(origin) = req
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|origin| cors::normalize_origin(origin, false).ok())
+    {
+        return Some(origin);
+    }
+
+    let conn = req.connection_info();
+    cors::normalize_origin(&format!("{}://{}", conn.scheme(), conn.host()), false).ok()
+}
+
+async fn bootstrap_public_site_url_from_setup(
+    state: &PrimaryAppState,
+    req: &HttpRequest,
+    user_id: i64,
+) {
+    if !site_url::public_site_urls(&state.runtime_config).is_empty() {
+        return;
+    }
+
+    let Some(origin) = setup_request_public_origin(req) else {
+        return;
+    };
+
+    match config_service::set(
+        state,
+        site_url::PUBLIC_SITE_URL_KEY,
+        vec![origin.clone()],
+        user_id,
+    )
+    .await
+    {
+        Ok(_) => tracing::info!(origin, "bootstrapped public_site_url from setup request"),
+        Err(error) => tracing::warn!(
+            origin,
+            error = %error,
+            "failed to bootstrap public_site_url from setup request"
+        ),
+    }
+}
 
 #[api_docs_macros::path(
     post,
@@ -59,6 +103,7 @@ pub async fn setup(
         &audit_info,
     )
     .await?;
+    bootstrap_public_site_url_from_setup(&state, &req, user.id).await;
     let user_info = user_service::get_self_info(&state, user.id).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
 }

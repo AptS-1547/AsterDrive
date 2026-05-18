@@ -222,6 +222,27 @@ function getDeviceLabel(
 	}
 }
 
+function getPasskeyOsName(parsed: ParsedUserAgent): string | null {
+	switch (parsed.osFamily) {
+		case "android":
+			return "Android";
+		case "chromeos":
+			return "ChromeOS";
+		case "ios":
+			return "iOS";
+		case "ipados":
+			return "iPadOS";
+		case "linux":
+			return "Linux";
+		case "macos":
+			return "macOS";
+		case "windows":
+			return "Windows";
+		default:
+			return parsed.osName;
+	}
+}
+
 export function parseUserAgent(userAgent?: string | null): ParsedUserAgent {
 	const normalizedUserAgent = trimUserAgent(userAgent);
 	if (!normalizedUserAgent) {
@@ -282,4 +303,22 @@ export function formatUserAgentLabel(
 	}
 
 	return parts.length > 0 ? parts.join(" · ") : normalizedUserAgent;
+}
+
+export function formatPasskeyDefaultName(
+	userAgent?: string | null,
+	fallback = "Passkey",
+): string {
+	const normalizedUserAgent = trimUserAgent(userAgent);
+	if (!normalizedUserAgent) {
+		return fallback;
+	}
+
+	const parsed = parseUserAgent(normalizedUserAgent);
+	const osName = getPasskeyOsName(parsed);
+	if (!osName || !parsed.browserName) {
+		return fallback;
+	}
+
+	return `${osName} - ${parsed.browserName}`;
 }

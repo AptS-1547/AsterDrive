@@ -14,6 +14,7 @@ use openidconnect::{EndpointMaybeSet, EndpointNotSet, EndpointSet};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::auth_service;
 use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
+use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 
 use super::super::driver::{
     ExternalAuthAuthorizationStart, ExternalAuthCallback, ExternalAuthProfile,
@@ -191,6 +192,7 @@ fn oidc_http_client() -> Result<OidcHttpClient> {
     reqwest::ClientBuilder::new()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(15))
+        .user_agent(OUTBOUND_HTTP_USER_AGENT)
         .build()
         .map_aster_err_ctx(
             "failed to build OIDC HTTP client",
