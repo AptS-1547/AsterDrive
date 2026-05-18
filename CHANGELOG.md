@@ -5,6 +5,128 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.0-beta.1] - 2026-05-18
+
+### Release Highlights
+
+**AsterDrive 进入 `0.2.0` 系列！** 在 `v0.1.0` 稳定版基础上，本版本聚焦企业级登录、归档预览、远程存储协议和搜索/审计可观测性的能力扩展，并完成多处安全与性能层面的收口。
+
+- **OIDC 单点登录** — 完整支持 OpenID Connect 外部认证，含管理员配置面板、提供商管理、邮件验证和账户关联流程
+- **WebAuthn Passkey** — 新增 Passkey 注册 / 登录 / 管理全流程，支持 conditional UI 自动探测和缓存
+- **ZIP 归档只读预览** — 归档预览改为后台任务异步生成清单，支持 Range 直接扫描 ZIP 目录，无需下载完整文件
+- **远程存储协议 v2** — 引入能力协商机制，探测阶段即拦截不兼容节点；细化 CORS / Range 合约
+- **搜索与文件分类增强** — 文件新增分类与扩展名字段，全局搜索支持按类型过滤，侧边栏快捷分类入口
+- **签名链路升级 HMAC-SHA256** — 直链与预览 token 改为 HMAC-SHA256，绑定 purpose 字符串，消除长度扩展攻击风险
+
+### Added
+
+- **OIDC 外部认证（SSO）**
+  - 完整支持 OpenID Connect 单点登录流程
+  - 管理后台新增外部登录提供商配置面板与状态管理
+  - 邮件模板补齐外部认证邮箱验证、关联和异常通知
+  - 外部认证服务与前端组件拆分为独立模块
+- **WebAuthn Passkey**
+  - 用户安全设置新增 Passkey 注册 / 登录 / 删除全流程
+  - 登录页支持 conditional UI 自动探测可用凭证
+  - 后端引入 `webauthn-rs`，新增 `passkeys` 表存储凭证元数据
+- **归档预览**
+  - 新增 ZIP 压缩包只读预览，前端按目录树浏览归档内容
+  - 归档清单改为后台异步任务生成，避免阻塞预览请求
+  - 支持 Range 读取直接扫描 ZIP 目录，跳过整文件下载
+  - 新增 `archive_preview` 配置组与对应限流策略
+- **远程存储协议 v2**
+  - 引入 `RemoteStorageCapabilities` 能力协商机制
+  - 节点探测阶段校验 `features` / `browser_cors` / `limits` 等约束
+  - 不兼容的旧版本远程节点会在加入阶段被拒绝
+- **搜索与文件分类**
+  - 文件实体新增 `extension` / `compound_extension` / `file_category` 字段
+  - 全局搜索 API 支持按文件类型分类和扩展名过滤
+  - 前端侧边栏新增图片 / 视频 / 文档 / 音频等快捷分类入口
+- **PDF 预览虚拟滚动**
+  - 直接 URL 流式加载替换原有 Blob 预加载
+  - 引入 `@tanstack/react-virtual` 虚拟滚动，大文档仅渲染视口内页面
+- **WebDAV 系统文件拦截**
+  - 新增 `webdav_block_system_files_enabled` 运行时配置
+  - 支持按模式匹配拦截 `.DS_Store`、`Thumbs.db` 等系统垃圾文件
+- **API 错误子码**
+  - 引入类型安全的 `ApiSubcode` 枚举系统
+  - OpenAPI schema 中 `subcode` 字段从动态字符串改为已知枚举集合
+- **管理与运维**
+  - 团队列表后端支持关键词搜索、分页与防抖查询
+  - 后台任务调度器性能优化，审计日志改为批处理写入
+
+### Changed
+
+- **存储变更事件**
+  - 软删除事件改为 `file.trashed` / `folder.trashed`，`*.deleted` 仅保留给硬删除
+  - 新增 `file.purged` / `folder.purged` / `file.version_restored` / `file.version_deleted` 等精细事件
+  - 事件携带 `affects_quota` 与 `storage_delta`，前端按字段刷新用户配额
+- **分片上传**
+  - 接口从 `web::Bytes` 改为 `web::Payload` 流式接收
+  - 实时校验分片大小，超限立即返回 413，避免内存预分配
+  - 优化上传路径资源占用，缩略图改为后台任务生成
+- **审计日志**
+  - `entity_type` 字段从动态字符串收紧为 `AuditEntityType` 强类型枚举
+  - 数据库列扩展长度后改为 NOT NULL，历史空值分批回填
+- **用户信息接口**
+  - `/auth/me` 支持 `?fields=quota,profile,preferences,session` 按需查询
+- **安全设置页面**
+  - 重构为标签页布局，新增动画折叠组件
+  - Passkey 列表加入本地缓存策略，减少接口往返
+- **品牌配置**
+  - 控制字符处理与验证逻辑更严格，避免异常字符污染品牌字段
+- **归档解压事件**
+  - 解压任务的存储变更事件从多次发布合并为单次发布
+- **远程存储 CORS 合约**
+  - presigned 下载 / 上传须满足 `Range` / `Content-Range` 等头部要求
+  - 不满足的旧节点会在能力协商阶段被识别
+
+### Fixed
+
+- **归档预览**
+  - 修复归档预览缓存边界条件、WebDAV 属性隔离和文件类型检测问题
+  - 限制签名不再影响归档清单缓存有效性
+- **WebDAV / 存储 / 任务调度**
+  - 修复多处缓存校验竞态与后台任务调度逻辑缺陷
+  - 修复任务错误处理与存储事件归并相关的边界问题
+- **工作空间**
+  - 修复多处搜索、认证及数据查询逻辑缺陷
+- **前端输入体验**
+  - 修复输入框编辑时光标跳到末尾的问题，优化焦点态行为
+
+### Security
+
+- **Token 签名升级 HMAC-SHA256**
+  - 直链 token 新增 v2 格式 `v2.<base62-id>.<HMAC-SHA256>`
+  - 预览链接与分享流签名由裸 SHA256 改为 HMAC-SHA256
+  - 签名绑定 purpose 字符串，消除长度扩展攻击与跨用途重用风险
+  - 预览链接限流逻辑同步重构
+- **外部认证全链路加固**
+  - 完善 OIDC 回调、邮箱验证、账户关联各环节的安全校验
+  - 补充失败路径与异常通知
+
+### Breaking Changes
+
+- **远程存储协议最低版本提升至 v2** — 运行 v1 协议的旧远程节点将无法通过探测阶段的兼容性校验，必须同步升级远端实例
+- **存储变更事件语义调整** — 软删除事件由 `file.deleted` / `folder.deleted` 改为 `file.trashed` / `folder.trashed`；监听 SSE / WebSocket 的第三方客户端需更新事件处理逻辑
+- **API 子错误码 Schema 收紧** — OpenAPI 中 `subcode` 字段类型从 `string` 变为枚举集合，wire format 仍是字符串，但生成的 SDK 类型定义需同步更新
+
+### Notes
+
+- 本版本为 `0.2.0` 系列首个预发布版本（beta.1），仍处于功能扩展期，生产环境建议继续使用 `v0.1.0` 稳定版
+- 升级前请备份数据库与数据目录，本版本包含 4 个新增 migration（passkeys、外部认证、文件类型字段、审计日志 entity_type）
+- 远程从节点必须同步升级到支持协议 v2 的版本后才能继续工作
+- 自定义客户端如果监听存储变更 SSE，需要把软删除监听从 `*.deleted` 切换到 `*.trashed`
+- Docker 用户可使用 `v0.2.0-beta.1` 或 `edge` 镜像标签
+
+---
+
+**统计数据**：
+- 491 files changed, 49,482 insertions(+), 5,069 deletions(-)
+- 46 commits
+
+---
+
 ## [v0.1.0] - 2026-05-15
 
 ### Release Highlights
@@ -3033,7 +3155,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.1...HEAD
+[v0.2.0-beta.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0...v0.2.0-beta.1
 [v0.1.0]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-rc.2...v0.1.0
 [v0.1.0-rc.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-rc.1...v0.1.0-rc.2
 [v0.1.0-rc.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.5...v0.1.0-rc.1
