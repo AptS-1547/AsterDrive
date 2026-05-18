@@ -55,4 +55,16 @@ describe("searchService", () => {
 			signal: controller.signal,
 		});
 	});
+
+	it("normalizes typed file extension filters before serializing", () => {
+		searchService.search({
+			category: "document",
+			extensions: [" .PDF ", "docx"],
+		});
+
+		expect(apiGet).toHaveBeenCalledWith(
+			"/search?category=document&extensions=pdf%2Cdocx",
+			undefined,
+		);
+	});
 });

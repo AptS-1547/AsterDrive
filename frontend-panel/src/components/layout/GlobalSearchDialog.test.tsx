@@ -335,6 +335,45 @@ describe("GlobalSearchDialog", () => {
 		});
 	});
 
+	it("clears category-only searches when switching to folder results", async () => {
+		mockState.search.mockResolvedValue({
+			files: [],
+			folders: [],
+			total_files: 0,
+			total_folders: 0,
+		});
+
+		render(<GlobalSearchDialog open onOpenChange={vi.fn()} />);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "search:category_image" }),
+		);
+		await waitForSearchDebounce();
+
+		await waitFor(() => {
+			expect(mockState.search).toHaveBeenCalledWith(
+				{
+					type: "file",
+					category: "image",
+					limit: 10,
+				},
+				{ signal: expect.any(AbortSignal) },
+			);
+		});
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "search:folders_only" }),
+		);
+
+		await waitFor(() => {
+			expect(
+				screen.queryByRole("button", { name: "search:category_image" }),
+			).not.toBeInTheDocument();
+		});
+		expect(screen.getByText("search:start_typing_desc")).toBeInTheDocument();
+		expect(mockState.search).toHaveBeenCalledTimes(1);
+	});
+
 	it("keeps category filters when loading more results", async () => {
 		const firstPageFile = fileItem({
 			id: 7,
@@ -558,6 +597,60 @@ describe("GlobalSearchDialog", () => {
 
 		expect(onOpenChange).not.toHaveBeenCalled();
 		expect(mockState.navigate).not.toHaveBeenCalled();
+	});
+
+	it("handles header close, input blur, and composition end events", async () => {
+		const onOpenChange = vi.fn();
+		mockState.search.mockResolvedValue({
+			files: [],
+			folders: [],
+			total_files: 0,
+			total_folders: 0,
+		});
+
+		render(<GlobalSearchDialog open onOpenChange={onOpenChange} />);
+
+		const input = screen.getByPlaceholderText("search:placeholder");
+		fireEvent.compositionStart(input);
+		fireEvent.change(input, {
+			target: { value: "report" },
+		});
+		fireEvent.compositionEnd(input);
+		fireEvent.blur(input);
+		await waitForSearchDebounce();
+
+		await waitFor(() => {
+			expect(mockState.search).toHaveBeenCalledWith(
+				{
+					q: "report",
+					type: "all",
+					limit: 10,
+				},
+				{ signal: expect.any(AbortSignal) },
+			);
+		});
+
+		const closeIcon = screen
+			.getAllByTestId("icon")
+			.find((icon) => icon.getAttribute("data-name") === "X");
+		expect(closeIcon).toBeDefined();
+		fireEvent.click(closeIcon?.closest("button") as HTMLButtonElement);
+
+		expect(onOpenChange).toHaveBeenCalledWith(false);
+	});
+
+	it("does not trap arrow keys when there are no results to navigate", () => {
+		render(<GlobalSearchDialog open onOpenChange={vi.fn()} />);
+
+		const allowed = fireEvent.keyDown(
+			screen.getByPlaceholderText("search:placeholder"),
+			{
+				cancelable: true,
+				key: "ArrowDown",
+			},
+		);
+
+		expect(allowed).toBe(true);
 	});
 
 	it("shows an empty state when a query has no matches", async () => {

@@ -220,12 +220,18 @@ pub(crate) async fn search_in_scope(
     let limit = params.limit.unwrap_or(50).clamp(1, 100);
     let offset = params.offset.unwrap_or(0);
     let query = normalized_query(params);
+    let normalized_mime_type = params
+        .mime_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|mime_type| !mime_type.is_empty())
+        .map(str::to_string);
     tracing::debug!(
         scope = ?scope,
         search_type = params.search_type.as_deref().unwrap_or("all"),
         has_query = query.is_some(),
         query_len = query.map(str::len),
-        mime_type = params.mime_type.as_deref().unwrap_or(""),
+        mime_type = normalized_mime_type.as_deref().unwrap_or(""),
         category = params.category.as_deref().unwrap_or(""),
         has_extensions = params.extensions.is_some(),
         min_size = params.min_size,
@@ -254,7 +260,7 @@ pub(crate) async fn search_in_scope(
                             user_id,
                             search_repo::FileSearchFilters {
                                 query,
-                                mime_type: params.mime_type.as_deref(),
+                                mime_type: normalized_mime_type.as_deref(),
                                 category: file_filters.category,
                                 extensions: &file_filters.extensions,
                                 min_size: params.min_size,
@@ -321,7 +327,7 @@ pub(crate) async fn search_in_scope(
                             team_id,
                             search_repo::FileSearchFilters {
                                 query,
-                                mime_type: params.mime_type.as_deref(),
+                                mime_type: normalized_mime_type.as_deref(),
                                 category: file_filters.category,
                                 extensions: &file_filters.extensions,
                                 min_size: params.min_size,

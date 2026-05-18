@@ -43,6 +43,7 @@ export const SEARCH_CATEGORY_OPTIONS: Array<{
 	},
 	{ value: "archive", labelKey: "category_archive", icon: "FileZip" },
 	{ value: "code", labelKey: "category_code", icon: "FileCode" },
+	{ value: "other", labelKey: "category_other", icon: "Folder" },
 ];
 
 export const EMPTY_RESULTS: SearchResults = {

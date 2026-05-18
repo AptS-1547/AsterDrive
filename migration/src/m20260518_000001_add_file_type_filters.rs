@@ -1,7 +1,7 @@
 //! 数据库迁移：为文件搜索增加后缀和分类派生字段。
 
 use sea_orm_migration::prelude::*;
-use sea_orm_migration::sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm_migration::sea_orm::{ConnectionTrait, TransactionTrait};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -12,6 +12,7 @@ const INDEXES: &[&str] = &[
     "idx_files_team_deleted_category_ext",
     "idx_files_team_deleted_compound_ext",
 ];
+const BACKFILL_BATCH_SIZE: u64 = 1_000;
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
@@ -115,49 +116,107 @@ async fn create_indexes(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
 
 async fn backfill_file_type_fields(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     let db = manager.get_connection();
-    let backend = manager.get_database_backend();
-    let rows = db
-        .query_all_raw(Statement::from_string(
-            backend,
-            "SELECT id, name, mime_type FROM files".to_string(),
-        ))
-        .await?;
+    let mut last_processed_id = 0_i64;
 
-    for row in rows {
-        let id = row.try_get_by_index::<i64>(0)?;
-        let name = row.try_get_by_index::<String>(1)?;
-        let mime_type = row.try_get_by_index::<String>(2)?;
-        let classification = classify_file(&name, &mime_type);
+    loop {
+        let mut select = Query::select();
+        select
+            .columns([Files::Id, Files::Name, Files::MimeType])
+            .from(Files::Table)
+            .and_where(Expr::col(Files::Id).gt(last_processed_id))
+            .order_by(Files::Id, Order::Asc)
+            .limit(BACKFILL_BATCH_SIZE);
 
-        let sql = match backend {
-            DbBackend::Postgres => {
-                "UPDATE files SET extension = $1, compound_extension = $2, file_category = $3 WHERE id = $4"
-            }
-            _ => {
-                "UPDATE files SET extension = ?, compound_extension = ?, file_category = ? WHERE id = ?"
-            }
-        };
+        let rows = db.query_all(&select).await?;
+        if rows.is_empty() {
+            break;
+        }
 
-        db.execute_raw(Statement::from_sql_and_values(
-            backend,
-            sql,
-            [
-                classification.extension.into(),
-                classification.compound_extension.into(),
-                classification.category.into(),
-                id.into(),
-            ],
-        ))
-        .await?;
+        let mut updates = Vec::with_capacity(rows.len());
+        for row in rows {
+            let id = row.try_get_by_index::<i64>(0)?;
+            let name = row.try_get_by_index::<String>(1)?;
+            let mime_type = row.try_get_by_index::<String>(2)?;
+            updates.push(FileTypeBackfill {
+                id,
+                classification: classify_file(&name, &mime_type),
+            });
+            last_processed_id = id;
+        }
+
+        let ids: Vec<i64> = updates.iter().map(|update| update.id).collect();
+        let mut update = Query::update();
+        update
+            .table(Files::Table)
+            .values([
+                (Files::Extension, extension_case(&updates)),
+                (Files::CompoundExtension, compound_extension_case(&updates)),
+                (Files::FileCategory, file_category_case(&updates)),
+            ])
+            .and_where(Expr::col(Files::Id).is_in(ids));
+
+        let txn = db.begin().await?;
+        txn.execute(&update).await?;
+        txn.commit().await?;
     }
 
     Ok(())
+}
+
+struct FileTypeBackfill {
+    id: i64,
+    classification: FileClassification,
 }
 
 struct FileClassification {
     extension: String,
     compound_extension: Option<String>,
     category: &'static str,
+}
+
+fn extension_case(updates: &[FileTypeBackfill]) -> SimpleExpr {
+    let first = &updates[0];
+    let mut expr = Expr::case(
+        Expr::col(Files::Id).eq(first.id),
+        first.classification.extension.clone(),
+    );
+    for update in &updates[1..] {
+        expr = expr.case(
+            Expr::col(Files::Id).eq(update.id),
+            update.classification.extension.clone(),
+        );
+    }
+    expr.finally(Expr::col(Files::Extension)).into()
+}
+
+fn compound_extension_case(updates: &[FileTypeBackfill]) -> SimpleExpr {
+    let first = &updates[0];
+    let mut expr = Expr::case(
+        Expr::col(Files::Id).eq(first.id),
+        first.classification.compound_extension.clone(),
+    );
+    for update in &updates[1..] {
+        expr = expr.case(
+            Expr::col(Files::Id).eq(update.id),
+            update.classification.compound_extension.clone(),
+        );
+    }
+    expr.finally(Expr::col(Files::CompoundExtension)).into()
+}
+
+fn file_category_case(updates: &[FileTypeBackfill]) -> SimpleExpr {
+    let first = &updates[0];
+    let mut expr = Expr::case(
+        Expr::col(Files::Id).eq(first.id),
+        first.classification.category,
+    );
+    for update in &updates[1..] {
+        expr = expr.case(
+            Expr::col(Files::Id).eq(update.id),
+            update.classification.category,
+        );
+    }
+    expr.finally(Expr::col(Files::FileCategory)).into()
 }
 
 fn classify_file(name: &str, mime_type: &str) -> FileClassification {
@@ -395,6 +454,9 @@ fn classify_mime(mime_type: &str) -> &'static str {
 #[derive(DeriveIden)]
 enum Files {
     Table,
+    Id,
+    Name,
+    MimeType,
     OwnerUserId,
     TeamId,
     DeletedAt,

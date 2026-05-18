@@ -7,118 +7,73 @@ use utoipa::ToSchema;
 
 use super::EntityType;
 
-/// 审计日志实体类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum AuditEntityType {
-    AuthSession,
-    Batch,
-    ExternalAuthIdentity,
-    ExternalAuthProvider,
-    File,
-    Folder,
-    Passkey,
-    PolicyGroup,
-    RemoteIngressProfile,
-    RemoteNode,
-    ResourceLock,
-    Share,
-    StoragePolicy,
-    StreamTicket,
-    SystemConfig,
-    Task,
-    Team,
-    Trash,
-    UploadSession,
-    User,
-    WebdavAccount,
+macro_rules! define_audit_entity_type {
+    ($($variant:ident => $name:literal),+ $(,)?) => {
+        /// 审计日志实体类型
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+        #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+        #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(rename_all = "snake_case"))]
+        pub enum AuditEntityType {
+            $(
+                #[serde(rename = $name)]
+                $variant,
+            )+
+        }
+
+        impl AuditEntityType {
+            pub const COUNT: usize = <[()]>::len(&[$(define_audit_entity_type!(@unit $variant)),+]);
+            pub const ALL: [Self; Self::COUNT] = [$(Self::$variant,)+];
+
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)+
+                }
+            }
+
+            pub fn from_str_name(value: &str) -> Option<Self> {
+                match value {
+                    $($name => Some(Self::$variant),)+
+                    _ => None,
+                }
+            }
+
+            pub const fn from_entity_type(entity_type: EntityType) -> Self {
+                match entity_type {
+                    EntityType::File => Self::File,
+                    EntityType::Folder => Self::Folder,
+                }
+            }
+        }
+
+        const AUDIT_ENTITY_TYPE_NAMES: &'static [&'static str] = &[$($name,)+];
+    };
+    (@unit $variant:ident) => {
+        ()
+    };
 }
 
-impl AuditEntityType {
-    pub const ALL: [Self; 21] = [
-        Self::AuthSession,
-        Self::Batch,
-        Self::ExternalAuthIdentity,
-        Self::ExternalAuthProvider,
-        Self::File,
-        Self::Folder,
-        Self::Passkey,
-        Self::PolicyGroup,
-        Self::RemoteIngressProfile,
-        Self::RemoteNode,
-        Self::ResourceLock,
-        Self::Share,
-        Self::StoragePolicy,
-        Self::StreamTicket,
-        Self::SystemConfig,
-        Self::Task,
-        Self::Team,
-        Self::Trash,
-        Self::UploadSession,
-        Self::User,
-        Self::WebdavAccount,
-    ];
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::AuthSession => "auth_session",
-            Self::Batch => "batch",
-            Self::ExternalAuthIdentity => "external_auth_identity",
-            Self::ExternalAuthProvider => "external_auth_provider",
-            Self::File => "file",
-            Self::Folder => "folder",
-            Self::Passkey => "passkey",
-            Self::PolicyGroup => "policy_group",
-            Self::RemoteIngressProfile => "remote_ingress_profile",
-            Self::RemoteNode => "remote_node",
-            Self::ResourceLock => "resource_lock",
-            Self::Share => "share",
-            Self::StoragePolicy => "storage_policy",
-            Self::StreamTicket => "stream_ticket",
-            Self::SystemConfig => "system_config",
-            Self::Task => "task",
-            Self::Team => "team",
-            Self::Trash => "trash",
-            Self::UploadSession => "upload_session",
-            Self::User => "user",
-            Self::WebdavAccount => "webdav_account",
-        }
-    }
-
-    pub fn from_str_name(value: &str) -> Option<Self> {
-        Some(match value {
-            "auth_session" => Self::AuthSession,
-            "batch" => Self::Batch,
-            "external_auth_identity" => Self::ExternalAuthIdentity,
-            "external_auth_provider" => Self::ExternalAuthProvider,
-            "file" => Self::File,
-            "folder" => Self::Folder,
-            "passkey" => Self::Passkey,
-            "policy_group" => Self::PolicyGroup,
-            "remote_ingress_profile" => Self::RemoteIngressProfile,
-            "remote_node" => Self::RemoteNode,
-            "resource_lock" => Self::ResourceLock,
-            "share" => Self::Share,
-            "storage_policy" => Self::StoragePolicy,
-            "stream_ticket" => Self::StreamTicket,
-            "system_config" => Self::SystemConfig,
-            "task" => Self::Task,
-            "team" => Self::Team,
-            "trash" => Self::Trash,
-            "upload_session" => Self::UploadSession,
-            "user" => Self::User,
-            "webdav_account" => Self::WebdavAccount,
-            _ => return None,
-        })
-    }
-
-    pub const fn from_entity_type(entity_type: EntityType) -> Self {
-        match entity_type {
-            EntityType::File => Self::File,
-            EntityType::Folder => Self::Folder,
-        }
-    }
+define_audit_entity_type! {
+    AuthSession => "auth_session",
+    Batch => "batch",
+    ExternalAuthIdentity => "external_auth_identity",
+    ExternalAuthProvider => "external_auth_provider",
+    File => "file",
+    Folder => "folder",
+    Passkey => "passkey",
+    PolicyGroup => "policy_group",
+    RemoteIngressProfile => "remote_ingress_profile",
+    RemoteNode => "remote_node",
+    ResourceLock => "resource_lock",
+    Share => "share",
+    StoragePolicy => "storage_policy",
+    StreamTicket => "stream_ticket",
+    SystemConfig => "system_config",
+    Task => "task",
+    Team => "team",
+    Trash => "trash",
+    UploadSession => "upload_session",
+    User => "user",
+    WebdavAccount => "webdav_account",
 }
 
 impl AsRef<str> for AuditEntityType {
@@ -160,7 +115,7 @@ impl<'de> Deserialize<'de> for AuditEntityType {
                 E: de::Error,
             {
                 AuditEntityType::from_str_name(value)
-                    .ok_or_else(|| E::unknown_variant(value, &AUDIT_ENTITY_TYPE_NAMES))
+                    .ok_or_else(|| E::unknown_variant(value, AUDIT_ENTITY_TYPE_NAMES))
             }
         }
 
@@ -179,29 +134,39 @@ impl fmt::Display for ParseAuditEntityTypeError {
 
 impl std::error::Error for ParseAuditEntityTypeError {}
 
-const AUDIT_ENTITY_TYPE_NAMES: [&str; 21] = [
-    "auth_session",
-    "batch",
-    "external_auth_identity",
-    "external_auth_provider",
-    "file",
-    "folder",
-    "passkey",
-    "policy_group",
-    "remote_ingress_profile",
-    "remote_node",
-    "resource_lock",
-    "share",
-    "storage_policy",
-    "stream_ticket",
-    "system_config",
-    "task",
-    "team",
-    "trash",
-    "upload_session",
-    "user",
-    "webdav_account",
-];
+#[cfg(test)]
+mod tests {
+    use super::{AUDIT_ENTITY_TYPE_NAMES, AuditEntityType};
+
+    #[test]
+    fn audit_entity_type_round_trips_string_names() {
+        let names: Vec<_> = AuditEntityType::ALL
+            .iter()
+            .map(|entity_type| entity_type.as_str())
+            .collect();
+        assert_eq!(AUDIT_ENTITY_TYPE_NAMES, names.as_slice());
+
+        for entity_type in AuditEntityType::ALL {
+            let name = entity_type.as_str();
+
+            assert_eq!(entity_type.as_ref(), name);
+            assert_eq!(entity_type.to_string(), name);
+            assert_eq!(AuditEntityType::from_str_name(name), Some(entity_type));
+            assert_eq!(
+                serde_json::to_value(entity_type).expect("audit entity type serializes"),
+                serde_json::json!(name)
+            );
+            assert_eq!(
+                serde_json::from_value::<AuditEntityType>(serde_json::json!(name))
+                    .expect("audit entity type deserializes"),
+                entity_type
+            );
+        }
+
+        assert_eq!(AuditEntityType::from_str_name("unknown"), None);
+        assert!(serde_json::from_value::<AuditEntityType>(serde_json::json!("unknown")).is_err());
+    }
+}
 
 /// 审计日志动作
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]

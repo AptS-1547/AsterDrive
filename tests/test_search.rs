@@ -365,7 +365,7 @@ async fn test_search_by_mime_type() {
 
     // Search by MIME type — only PDF should match
     let req = test::TestRequest::get()
-        .uri("/api/v1/search?mime_type=application/pdf")
+        .uri("/api/v1/search?mime_type=%20application/pdf%20")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .to_request();

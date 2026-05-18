@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use crate::api::pagination::{AdminAuditLogSortBy, OffsetPage, SortOrder, load_offset_page};
 use crate::db::repository::audit_log_repo;
 use crate::entities::audit_log;
-use crate::errors::{AsterError, Result};
+use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{profile_service, user_service};
 use crate::types::TeamMemberRole;
@@ -62,31 +62,34 @@ async fn build_audit_entries(
     )
     .await?;
 
-    entries
-        .into_iter()
-        .map(|model| {
-            let entity_type = crate::types::AuditEntityType::from_str_name(&model.entity_type)
-                .ok_or_else(|| {
-                    AsterError::internal_error(format!(
-                        "unsupported audit log entity_type '{}'",
-                        model.entity_type
-                    ))
-                })?;
+    let mut items = Vec::with_capacity(entries.len());
 
-            Ok(AuditLogEntry {
-                id: model.id,
-                user: users.get(&model.user_id).cloned(),
-                action: model.action,
-                entity_type,
-                entity_id: model.entity_id,
-                entity_name: model.entity_name,
-                details: model.details,
-                ip_address: model.ip_address,
-                user_agent: model.user_agent,
-                created_at: model.created_at,
-            })
-        })
-        .collect()
+    for model in entries {
+        let Some(entity_type) = crate::types::AuditEntityType::from_str_name(&model.entity_type)
+        else {
+            tracing::warn!(
+                audit_log_id = model.id,
+                entity_type = %model.entity_type,
+                "skipping audit log with unsupported entity_type"
+            );
+            continue;
+        };
+
+        items.push(AuditLogEntry {
+            id: model.id,
+            user: users.get(&model.user_id).cloned(),
+            action: model.action,
+            entity_type,
+            entity_id: model.entity_id,
+            entity_name: model.entity_name,
+            details: model.details,
+            ip_address: model.ip_address,
+            user_agent: model.user_agent,
+            created_at: model.created_at,
+        });
+    }
+
+    Ok(items)
 }
 
 pub async fn query(

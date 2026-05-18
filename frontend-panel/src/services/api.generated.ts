@@ -4166,13 +4166,19 @@ export interface components {
         FileInfo: {
             /** Format: int64 */
             blob_id: number;
+            /**
+             * @description Lowercase multi-part extension without a leading dot, such as `tar.gz`.
+             *     Populated only when the file name ends with a supported compound extension.
+             */
             compound_extension?: string | null;
             created_at: string;
             /** Format: int64 */
             created_by_user_id?: number | null;
             created_by_username: string;
             deleted_at?: string | null;
+            /** @description Lowercase final extension without a leading dot. Empty when the file name has no extension. */
             extension: string;
+            /** @description Category derived from the extension first, then MIME type as fallback. */
             file_category: components["schemas"]["FileCategory"];
             /** Format: int64 */
             folder_id?: number | null;
@@ -4190,8 +4196,14 @@ export interface components {
             updated_at: string;
         };
         FileListItem: {
+            /**
+             * @description Lowercase multi-part extension without a leading dot, such as `tar.gz`.
+             *     Populated only when the file name ends with a supported compound extension.
+             */
             compound_extension?: string | null;
+            /** @description Lowercase final extension without a leading dot. Empty when the file name has no extension. */
             extension: string;
+            /** @description Category derived from the extension first, then MIME type as fallback. */
             file_category: components["schemas"]["FileCategory"];
             /** Format: int64 */
             id: number;
