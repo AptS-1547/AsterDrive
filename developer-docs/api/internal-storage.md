@@ -49,11 +49,23 @@
 返回仍然走统一 JSON 包装，典型字段包括：
 
 - `protocol_version`
+- `min_supported_protocol_version`
+- `server_version`
+- `features`
+- `browser_cors`
+- `limits`
 - `supports_list`
 - `supports_range_read`
 - `supports_stream_upload`
 
-当前默认协议版本是 `v1`。
+当前协议版本是 `v2`，最小支持版本也是 `v2`。主节点在加载远端策略或刷新绑定时会做能力协商：
+
+- `protocol_version` / `min_supported_protocol_version` 必须和本地支持区间有交集
+- 基础远端策略要求 `object_get`、`object_head`、`object_put`、`object_delete`、`metadata`、`range_get`、`accept_ranges_header`、`list`、`compose`
+- 如果远端策略启用浏览器预签名下载，`browser_cors` 必须声明允许 `range` 请求头，并暴露 `Accept-Ranges`、`Content-Range`、`Content-Length`
+- 如果远端策略启用浏览器预签名上传，`browser_cors` 必须声明允许 `content-type` 请求头，并暴露 `ETag`
+
+当前 follower 返回的 `browser_cors.allowed_headers` 至少包含 `content-type`、`range`；`browser_cors.exposed_headers` 会覆盖 GET/PUT 预签名所需的缓存、Range、长度、类型和 ETag 响应头。
 
 ## `PUT /binding`
 

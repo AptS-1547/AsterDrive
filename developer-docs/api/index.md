@@ -62,10 +62,10 @@
 - 文件下载
 - 直接下载链接
 - 预览下载链接
+- 分享 stream session 流式播放
 - 文件缩略图
 - 批量打包下载 ticket 对应的 ZIP 流
 - 分享文件下载
-- 分享 stream session 流式播放
 - 分享缩略图
 - 当前用户已上传头像
 - 管理员读取用户已上传头像
@@ -154,17 +154,19 @@
 其中比较值得优先看的几组能力是：
 
 - 上传与版本：见 [文件](./files.md)
+- Passkey、外部认证和登录会话：见 [认证](./auth.md)
+- ZIP 归档只读预览：见 [文件](./files.md)、[分享](./shares.md) 和 [后台任务](./tasks.md)
 - 批量删除 / 移动 / 复制 / 打包：见 [批量操作](./batch.md)
 - 回收站恢复与清理：见 [回收站](./trash.md)
-- 搜索与筛选：见 [搜索](./search.md)
+- 搜索、文件分类和扩展名筛选：见 [搜索](./search.md)
 - 后台任务列表与重试：见 [后台任务](./tasks.md)
 - 团队管理与团队工作空间：见 [团队与团队空间](./teams.md)
-- 公开分享：见 [分享](./shares.md)
+- 公开分享、预览链接和流式播放 session：见 [分享](./shares.md)
 - Office / WOPI 预览与回调：见 [WOPI](./wopi.md)
 - WebDAV 协议、账号与 DeltaV：见 [WebDAV](./webdav.md)
 - 登录页、匿名页、缩略图能力与远端节点注册握手：见 [公共接口](./public.md)
 - 主从节点内部对象协议：见 [内部存储协议（follower）](./internal-storage.md)
-- 后台策略、远端节点、锁、运行时配置与审计：见 [管理](./admin.md)
+- 后台策略、远端节点、外部认证 provider、锁、运行时配置与审计：见 [管理](./admin.md)
 
 ## OpenAPI 与 Swagger
 

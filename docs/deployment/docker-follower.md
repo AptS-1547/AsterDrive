@@ -198,6 +198,8 @@ curl http://127.0.0.1:3001/health/ready
 
 点击“测试连接”。通过后，先打开这台 follower 的远程节点详情，创建一个**默认接收落点**。
 
+测试连接通过时，主控也会读取 follower 的内部存储协议能力。当前内部协议版本是 `v2`；如果能力摘要显示协议不兼容，先升级主控或 follower，别急着创建 remote 策略。
+
 第一次建议选：
 
 - 驱动：`local`
@@ -214,6 +216,8 @@ local 接收落点的路径会被限制在 follower 的 `server.follower.managed
 ```
 
 创建 `远程节点` 类型的存储策略。
+
+如果远程策略选择 `presigned` 上传或下载，还要确认浏览器能访问 follower 的 `base_url`，并且 follower 前面的反向代理没有吞掉内部存储 API 的 CORS 头。上传需要允许 `content-type` 并暴露 `ETag`；下载 Range 需要允许 `range` 并暴露 `Accept-Ranges`、`Content-Range`、`Content-Length`。
 
 ## 6. 首次成功后，把一次性 bootstrap ENV 移掉
 

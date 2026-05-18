@@ -1,3 +1,7 @@
+---
+description: AsterDrive 部署概览，适合 Docker、systemd、反向代理、首次启动检查、备份恢复、升级和故障排查。
+---
+
 # 部署概览
 
 ::: tip 从哪里开始

@@ -129,6 +129,28 @@
 
 链接有时效（默认 24 小时）。重新申请一封即可。如果反复 `invalid`，检查链接是否被邮件客户端截断（特别是企业邮箱常见）。
 
+### Passkey 相关子错误
+
+Passkey 相关问题通常仍归在 `bad_request`、`auth_failed` 或 `token_invalid` 这类主错误码下，看响应里的 `error.subcode` 更准：
+
+- `passkey.name_invalid`：Passkey 名称含控制字符，换一个普通名称
+- `passkey.name_too_long`：Passkey 名称太长，缩短后重试
+- `passkey.not_discoverable`：浏览器或安全密钥没有创建可发现凭据，换支持 Passkey 的设备/浏览器，或重新添加
+
+如果登录页提示当前浏览器不支持 Passkey，通常是浏览器、系统或当前访问来源不满足 WebAuthn 要求。正式部署建议使用 HTTPS。
+
+### 外部认证相关问题
+
+外部认证失败通常会在登录页展示“外部登录失败”，后端主错误码可能是 `auth_failed`、`forbidden`、`bad_request` 或 `mail_delivery_failed`。
+
+管理员按这个顺序查：
+
+1. `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 是否正确
+2. `管理 -> 外部认证` 里提供商是否启用
+3. 重定向 URI 是否已经登记到身份提供商侧
+4. Issuer URL、Client ID、Client Secret、scope 和 claim 映射是否正确
+5. 如果走邮箱验证，`管理 -> 系统设置 -> 邮件投递` 是否能发外部登录邮箱验证邮件
+
 ---
 
 ## 文件 / 上传 (3xxx)
@@ -229,6 +251,22 @@
 
 等几秒重试 complete 即可。大文件合并时间会长一些（合并 + 算 SHA256），不要立即多次重试。
 
+### ZIP 压缩包预览相关子错误
+
+ZIP 预览错误通常会挂在 `bad_request` 或 `forbidden` 下，具体看 `error.subcode`：
+
+- `archive_preview.disabled`：ZIP 预览总开关未开启
+- `archive_preview.user_disabled`：登录用户侧 ZIP 预览未开启
+- `archive_preview.share_disabled`：分享页 ZIP 预览未开启
+- `archive_preview.unsupported_type`：当前文件不是支持的 ZIP
+- `archive_preview.source_too_large`：源 ZIP 超过预览大小上限
+- `archive_preview.invalid_zip`：ZIP 损坏或格式不合法
+- `archive_preview.manifest_too_large`：生成的清单超过 manifest 大小上限
+- `archive_preview.source_size_mismatch`：扫描时发现源文件大小和记录不一致，通常要重新上传或检查底层存储
+- `archive_preview.rejected`：后台任务拒绝执行，多半是文件已变化、权限变化或运行时限制不再满足
+
+第一次打开 ZIP 时如果只是“生成中”，那不是错误。等 `管理 -> 任务` / `任务中心` 里的 `压缩包预览生成` 完成后再打开。
+
 ---
 
 ## 存储策略 (4xxx)
@@ -249,6 +287,8 @@
 - `s3`：检查 endpoint、credentials、bucket 是否存在；如果 S3 端慢或宕机，会触发我们配置的 timeout
 - `remote`：检查绑定的远程节点是否启用、`base_url` 是否可达、从节点是否已经完成接入并处于健康状态；还要确认 follower 有已应用的默认接收落点
 - 其他：看具体报错
+
+如果 remote 策略使用 `presigned`，还要检查远程节点能力摘要是否支持内部协议 `v2` 和 `browser_presigned_cors`。浏览器直连 follower 时，CORS 需要允许 `content-type` / `range`，并暴露 `ETag`、`Accept-Ranges`、`Content-Range`、`Content-Length` 等响应头。
 
 ### `storage_quota_exceeded` (4002)
 
@@ -296,6 +336,7 @@
 - endpoint、bucket、region、base path
 - 本地存储根目录是否存在、是否在预期位置
 - remote follower 是否完成 enroll、是否有已应用的默认接收落点
+- remote follower 内部协议版本和能力摘要是否兼容当前主控；当前要求 `v2`
 - 远程接收路径有没有逃出 follower 允许的根目录
 
 这种错误通常是部署或策略配置问题，不是浏览器问题。

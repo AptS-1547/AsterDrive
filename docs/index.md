@@ -1,9 +1,10 @@
 ---
 layout: home
+description: AsterDrive 官方文档首页，按快速开始、使用指南、管理员配置和部署运维组织，覆盖 Docker、systemd、WebDAV、WOPI、远程节点和备份恢复。
 
 hero:
   name: AsterDrive
-  text: 轻量自托管云盘
+  text: 官方文档中心
   tagline: Rust + React 构建，从单机部署开始，按需要接入团队空间、S3、WebDAV、WOPI 和远程从节点。
   actions:
     - theme: brand
