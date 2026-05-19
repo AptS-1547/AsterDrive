@@ -554,9 +554,7 @@ describe("AdminOverviewPage", () => {
 		expect(await screen.findByText("Empty trash")).toBeInTheDocument();
 		expect(screen.getByText("tasks:kind_trash_purge_all")).toBeInTheDocument();
 		expect(screen.getByText("purged 3 items")).toBeInTheDocument();
-		expect(
-			screen.queryByText(/overview_background_tasks_duration/),
-		).not.toBeInTheDocument();
+		expect(screen.queryByText(/^duration:/)).not.toBeInTheDocument();
 	});
 
 	it("hides noisy component summaries when system health is healthy", async () => {

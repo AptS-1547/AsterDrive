@@ -142,7 +142,7 @@ pub(crate) async fn purge_all_in_scope_silent(
                 for folder_id in folder_ids {
                     match purge_folder_forest_in_scope_silent(state, scope, &[folder_id]).await {
                         Ok(folder_summary) => summary.add_folder_summary(folder_summary),
-                        Err(error) => tracing::warn!("purge folder {folder_id} failed: {error}"),
+                        Err(error) => return Err(error),
                     }
                 }
             }

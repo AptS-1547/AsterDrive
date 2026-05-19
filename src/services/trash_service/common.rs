@@ -17,6 +17,8 @@ use crate::types::EntityType;
 use super::DEFAULT_RETENTION_DAYS;
 use super::models::{TrashFileItem, TrashFolderItem};
 
+const FOLDER_PURGED_EVENT_FILE_IDS_LIMIT: usize = 1000;
+
 pub fn load_retention_days(state: &PrimaryAppState) -> i64 {
     state
         .runtime_config
@@ -192,6 +194,35 @@ pub(super) struct FolderPurgeSummary {
     pub freed_bytes: i64,
 }
 
+fn build_folder_purged_storage_event(
+    scope: WorkspaceResourceScope,
+    file_ids: &[i64],
+    folder_ids: Vec<i64>,
+    parent_ids: Vec<Option<i64>>,
+    freed_bytes: i64,
+) -> storage_change_service::StorageChangeEvent {
+    let (event_kind, event_file_ids) = if file_ids.len() > FOLDER_PURGED_EVENT_FILE_IDS_LIMIT {
+        (
+            storage_change_service::StorageChangeKind::SyncRequired,
+            Vec::new(),
+        )
+    } else {
+        (
+            storage_change_service::StorageChangeKind::FolderPurged,
+            file_ids.to_vec(),
+        )
+    };
+
+    storage_change_service::StorageChangeEvent::new_for_resource_scope(
+        event_kind,
+        scope,
+        event_file_ids,
+        folder_ids,
+        parent_ids,
+    )
+    .with_storage_delta(-freed_bytes)
+}
+
 pub(super) async fn purge_folder_forest_in_resource_scope(
     state: &PrimaryAppState,
     scope: WorkspaceResourceScope,
@@ -237,14 +268,13 @@ pub(super) async fn purge_folder_forest_in_resource_scope(
     if emit_storage_event {
         storage_change_service::publish(
             state,
-            storage_change_service::StorageChangeEvent::new_for_resource_scope(
-                storage_change_service::StorageChangeKind::FolderPurged,
+            build_folder_purged_storage_event(
                 scope,
-                file_summary.file_ids.clone(),
+                &file_summary.file_ids,
                 folder_ids.to_vec(),
                 parent_ids.clone(),
-            )
-            .with_storage_delta(-file_summary.freed_bytes),
+                file_summary.freed_bytes,
+            ),
         );
     }
     tracing::debug!(
@@ -259,4 +289,56 @@ pub(super) async fn purge_folder_forest_in_resource_scope(
         purged: crate::utils::numbers::usize_to_u32(folder_ids.len(), "purged folder count")?,
         freed_bytes: file_summary.freed_bytes,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::storage_change_service::StorageChangeKind;
+
+    fn make_file_ids(count: usize) -> Vec<i64> {
+        (0..count)
+            .map(|id| crate::utils::numbers::usize_to_i64(id, "test file id").unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn folder_purged_storage_event_keeps_file_ids_at_limit() {
+        let file_ids = make_file_ids(FOLDER_PURGED_EVENT_FILE_IDS_LIMIT);
+
+        let event = build_folder_purged_storage_event(
+            WorkspaceResourceScope::Personal { user_id: 1 },
+            &file_ids,
+            vec![10],
+            vec![Some(2)],
+            512,
+        );
+
+        assert_eq!(event.kind, StorageChangeKind::FolderPurged);
+        assert_eq!(event.file_ids, file_ids);
+        assert_eq!(event.folder_ids, vec![10]);
+        assert_eq!(event.affected_parent_ids, vec![2]);
+        assert_eq!(event.storage_delta, Some(-512));
+        assert!(event.affects_quota);
+    }
+
+    #[test]
+    fn folder_purged_storage_event_degrades_above_file_id_limit() {
+        let file_ids = make_file_ids(FOLDER_PURGED_EVENT_FILE_IDS_LIMIT + 1);
+
+        let event = build_folder_purged_storage_event(
+            WorkspaceResourceScope::Personal { user_id: 1 },
+            &file_ids,
+            vec![10],
+            vec![Some(2)],
+            512,
+        );
+
+        assert_eq!(event.kind, StorageChangeKind::SyncRequired);
+        assert!(event.file_ids.is_empty());
+        assert_eq!(event.folder_ids, vec![10]);
+        assert_eq!(event.affected_parent_ids, vec![2]);
+        assert_eq!(event.storage_delta, Some(-512));
+        assert!(event.affects_quota);
+    }
 }
