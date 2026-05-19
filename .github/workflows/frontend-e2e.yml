@@ -45,13 +45,20 @@ jobs:
         working-directory: frontend-panel
         run: bun install --frozen-lockfile
 
+      - name: Build frontend
+        working-directory: frontend-panel
+        run: bun run build
+
+      - name: Build E2E server
+        run: cargo build --no-default-features --features server --target-dir target/e2e
+
       - name: Install Playwright browser
         working-directory: frontend-panel
         run: PLAYWRIGHT_BROWSERS_PATH=.playwright bunx playwright install --with-deps chromium
 
       - name: Run E2E tests
         working-directory: frontend-panel
-        run: PLAYWRIGHT_BROWSERS_PATH=.playwright bun run test:e2e
+        run: PLAYWRIGHT_BROWSERS_PATH=.playwright ASTER_E2E_SKIP_BUILD=1 bun run test:e2e
 
       - name: Upload Playwright artifacts
         if: failure()

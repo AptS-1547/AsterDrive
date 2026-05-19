@@ -5,6 +5,111 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.0-beta.2] - 2026-05-19
+
+### Release Highlights
+
+**`0.2.0` 系列继续补齐媒体体验与认证安全细节。** 本版本把音频预览升级为全局音乐播放器，新增图片预览派生接口，优化分享流播放会话、上传进度、多标签页刷新协作，以及 OIDC / Passkey / 存储策略相关边界。
+
+- **全局音乐播放器** — 音频预览升级为可跨页面保活的播放队列，支持上一首 / 下一首、循环 / 单曲 / 随机、音量、进度、媒体会话和元数据解析
+- **图片预览 WebP 派生物** — 新增个人、团队与分享页图片预览接口，支持 1600px WebP 派生缓存、ETag / 304 和 HEIF 后端预览降级
+- **分享流播放会话可配置** — 分享音频 / 视频 Range 流会话 TTL 改为运行时配置，默认 3 小时，支持 5 分钟到 24 小时范围校验
+- **上传体验增强** — 上传任务显示平滑速度，direct / presigned / chunked / multipart 请求统一跟踪和取消，减少取消后残留请求
+- **认证刷新更稳** — 多标签页 access token 刷新增加 localStorage 协调；刷新 token 复用检测加入同客户端短窗口判定，降低并发刷新误杀
+- **公开站点与 Passkey 配置收口** — setup 可从请求 Origin 初始化 `public_site_url`，管理端支持一键填入当前地址，Passkey 缺少站点 URL 时返回明确配置错误
+
+### Added
+
+- **全局音乐播放器**
+  - 新增 `MusicPlayerHost`、音乐播放器 store 与队列构建工具
+  - 支持音频文件列表队列播放、分享页音乐播放、后台面板入口和播放详情
+  - 支持 `music-metadata` 解析标题、歌手、专辑和封面，并接入浏览器 Media Session
+  - 播放分享文件时可自动刷新临近过期的流播放 session
+- **图片预览接口**
+  - 新增 `/api/v1/files/{id}/image-preview`
+  - 新增 `/api/v1/teams/{team_id}/files/{id}/image-preview`
+  - 新增 `/api/v1/s/{token}/image-preview` 与分享文件夹内文件图片预览接口
+  - 图片预览统一输出 WebP，缓存路径按处理器与版本隔离
+- **分享流播放配置**
+  - 新增 `share_stream_session_ttl_secs` 运行时配置
+  - 管理后台新增对应配置项文案和校验
+- **上传速度显示**
+  - 上传任务项新增速度展示
+  - direct、presigned、chunked 与 presigned multipart 上传均记录已上传字节与速度
+- **多标签页刷新协调**
+  - 前端新增跨标签页刷新锁，避免多个标签页同时刷新 access token
+  - 同步 peer 刷新结果后会补齐本地 session 过期时间
+- **文档**
+  - 补充 Passkey、外部认证、ZIP 预览、流播放 session、内部存储协议、分享、远程节点和错误处理文档
+  - 文档站新增 CNAME 与 robots.txt
+
+### Changed
+
+- **音频 / 视频预览架构**
+  - 预览组件中的视频流工厂泛化为媒体流工厂
+  - 旧的 blob 媒体预览拆分为图片预览、音乐预览和视频预览
+  - 音频预览不再只嵌入单个 `<audio>`，改为把文件载入全局播放器
+- **媒体处理**
+  - 内置 image 管线、vips_cli、ffmpeg_cli 和 storage_native 处理器支持图片预览派生物
+  - vips / ffmpeg 日志不再输出本地输入输出路径，降低路径泄露风险
+  - 缩略图和图片预览 ETag 均带处理器 namespace 与版本
+- **上传取消**
+  - 前端统一登记上传 XHR，请求取消时可中止同任务的所有在途上传请求
+  - presigned multipart 取消逻辑调整，非 assembling 状态立即删除 session 并中止远端 multipart 上传
+- **公开站点配置**
+  - 管理端检测 `public_site_url` 前会读取最新配置；多来源配置不再弹单值修复弹窗，而是跳转到设置页
+  - 设置页字符串数组配置支持把当前访问地址直接加入 `public_site_url`
+- **存储策略校验**
+  - S3-compatible 策略创建、更新和连接测试必须提供非空 `access_key` / `secret_key`
+  - 本地与远程策略保持原有连接字段行为
+- **依赖**
+  - 前端新增 `music-metadata`
+  - 更新 Hono、ip-address、react-arborist、tsgo preview 等依赖
+
+### Fixed
+
+- **刷新 token 并发误杀**
+  - 同一客户端在短宽限窗口内重复提交刚轮换的 refresh token 时返回 stale token，不再直接吊销全部会话
+  - 不同客户端、缺少客户端证据或超出宽限窗口的复用仍按疑似泄露处理并吊销会话
+- **审计日志 IP**
+  - 登录、刷新、登出、会话吊销和改密审计按可信代理配置解析 `X-Forwarded-For`
+  - 未受信代理来源的伪造转发头会被忽略
+  - 支持带端口 IPv4 与方括号 IPv6 的转发地址解析
+- **Passkey / OIDC 配置**
+  - Passkey 登录在缺少 `public_site_url` 时返回明确配置错误
+  - OIDC provider slug、issuer normalize 和回调边界补充测试覆盖
+- **上传清理**
+  - presigned multipart 取消后会等待远端 multipart abort 可见，减少 RustFS / S3 临时上传残留
+- **图片预览兼容性**
+  - HEIF / HEIC 图片优先使用后端派生预览，浏览器不支持原始格式时不再直接显示失败
+
+### Security
+
+- **刷新 token 复用检测精细化**
+  - 保留 refresh token 复用吊销全部会话的安全策略
+  - 同客户端短时间并发刷新被识别为 stale refresh，避免正常多标签页并发触发错误吊销
+- **可信代理审计 IP**
+  - 审计日志只在 peer 命中可信代理 CIDR / IP 时采用 `X-Forwarded-For`
+  - 未受信客户端无法通过伪造 header 污染登录和会话审计 IP
+- **S3 策略凭证校验**
+  - 防止创建或测试缺少 access key / secret key 的 S3-compatible 存储策略
+
+### Notes
+
+- 本版本为 `0.2.0` 系列第二个 beta 版本，主要聚焦媒体体验、分享流播放和认证稳定性
+- 没有新增数据库 migration
+- 分享音频 / 视频播放链接默认有效期从 30 分钟调整为 3 小时，可通过 `share_stream_session_ttl_secs` 修改
+- 自定义客户端如要使用图片预览，可优先请求新的 `image-preview` 接口，并按 ETag 处理 `304 Not Modified`
+- Docker / 生产环境升级前仍建议备份数据库与数据目录
+
+---
+
+**统计数据**：
+- 167 files changed, 11,410 insertions(+), 590 deletions(-)
+- 9 commits
+
+---
+
 ## [v0.2.0-beta.1] - 2026-05-18
 
 ### Release Highlights
@@ -3155,7 +3260,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.1...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.2...HEAD
+[v0.2.0-beta.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [v0.2.0-beta.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0...v0.2.0-beta.1
 [v0.1.0]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-rc.2...v0.1.0
 [v0.1.0-rc.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-rc.1...v0.1.0-rc.2

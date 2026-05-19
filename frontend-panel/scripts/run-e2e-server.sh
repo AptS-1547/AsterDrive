@@ -29,8 +29,13 @@ export ASTER__SERVER__PORT="$PORT"
 export ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true
 export ASTER__LOGGING__LEVEL=warn
 export CARGO_TARGET_DIR="${ASTER_E2E_TARGET_DIR:-$REPO_ROOT/target/e2e}"
+SERVER_BIN="$CARGO_TARGET_DIR/debug/aster_drive"
 
 cd "$RUNTIME_DIR"
+if [ "${ASTER_E2E_SKIP_BUILD:-}" = "1" ] && [ -x "$SERVER_BIN" ]; then
+	exec "$SERVER_BIN"
+fi
+
 exec cargo run \
 	--manifest-path "$REPO_ROOT/Cargo.toml" \
 	--no-default-features \

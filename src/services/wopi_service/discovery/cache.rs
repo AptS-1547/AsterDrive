@@ -113,18 +113,56 @@ fn discovery_cache_ttl(runtime_config: &crate::config::RuntimeConfig) -> Duratio
 mod tests {
     use super::build_discovery_client;
     use crate::utils::OUTBOUND_HTTP_USER_AGENT;
-    use reqwest::header::USER_AGENT;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    #[test]
-    fn discovery_client_sets_user_agent() {
-        let request = build_discovery_client()
-            .get("http://example.com/hosting/discovery")
-            .build()
-            .expect("request should build");
-        let user_agent = request
-            .headers()
-            .get(USER_AGENT)
-            .and_then(|value| value.to_str().ok())
+    #[tokio::test]
+    async fn discovery_client_sets_user_agent() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("test listener should bind");
+        let addr = listener
+            .local_addr()
+            .expect("test listener should expose local addr");
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener
+                .accept()
+                .await
+                .expect("test server should accept request");
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+            loop {
+                let read = socket
+                    .read(&mut buffer)
+                    .await
+                    .expect("test server should read request");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            socket
+                .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+                .await
+                .expect("test server should write response");
+            String::from_utf8(request).expect("request should be utf-8")
+        });
+
+        build_discovery_client()
+            .get(format!("http://{addr}/hosting/discovery"))
+            .send()
+            .await
+            .expect("request should be sent");
+        let raw_request = server.await.expect("test server task should complete");
+        let user_agent = raw_request
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("user-agent")
+                    .then(|| value.trim())
+            })
             .expect("user-agent header should be present");
 
         assert_eq!(user_agent, OUTBOUND_HTTP_USER_AGENT);
