@@ -1,8 +1,8 @@
 use chrono::Utc;
-use dashmap::DashMap;
+use dashmap::{DashMap, mapref::entry::Entry};
 use sea_orm::ConnectionTrait;
 use serde::Serialize;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Weak};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::db::repository::{auth_session_repo, user_repo};
@@ -20,13 +20,13 @@ use super::{ensure_token_type, issue_tokens_for_session_id, verify_token};
 
 const REFRESH_REUSE_GRACE_SECS: i64 = 15;
 
-static REFRESH_ROTATION_LOCKS: LazyLock<DashMap<String, Arc<Mutex<()>>>> =
+static REFRESH_ROTATION_LOCKS: LazyLock<DashMap<String, Weak<Mutex<()>>>> =
     LazyLock::new(DashMap::new);
 
 struct RefreshRotationLockGuard {
     refresh_jti: String,
-    lock: Arc<Mutex<()>>,
-    _guard: OwnedMutexGuard<()>,
+    lock: Option<Arc<Mutex<()>>>,
+    guard: Option<OwnedMutexGuard<()>>,
 }
 
 struct RefreshRotationLock {
@@ -36,9 +36,9 @@ struct RefreshRotationLock {
 
 impl Drop for RefreshRotationLockGuard {
     fn drop(&mut self) {
-        REFRESH_ROTATION_LOCKS.remove_if(&self.refresh_jti, |_, lock| {
-            Arc::ptr_eq(lock, &self.lock) && Arc::strong_count(lock) == 3
-        });
+        drop(self.guard.take());
+        drop(self.lock.take());
+        REFRESH_ROTATION_LOCKS.remove_if(&self.refresh_jti, |_, lock| lock.upgrade().is_none());
     }
 }
 
@@ -150,17 +150,33 @@ fn classify_refresh_reuse_session(
     }
 }
 
+fn refresh_rotation_lock(refresh_jti: &str) -> Arc<Mutex<()>> {
+    match REFRESH_ROTATION_LOCKS.entry(refresh_jti.to_string()) {
+        Entry::Occupied(mut entry) => {
+            if let Some(lock) = entry.get().upgrade() {
+                lock
+            } else {
+                let lock = Arc::new(Mutex::new(()));
+                entry.insert(Arc::downgrade(&lock));
+                lock
+            }
+        }
+        Entry::Vacant(entry) => {
+            let lock = Arc::new(Mutex::new(()));
+            entry.insert(Arc::downgrade(&lock));
+            lock
+        }
+    }
+}
+
 async fn acquire_refresh_rotation_lock(refresh_jti: &str) -> RefreshRotationLock {
-    let lock = REFRESH_ROTATION_LOCKS
-        .entry(refresh_jti.to_string())
-        .or_insert_with(|| Arc::new(Mutex::new(())))
-        .clone();
+    let lock = refresh_rotation_lock(refresh_jti);
     match lock.clone().try_lock_owned() {
         Ok(guard) => RefreshRotationLock {
             _guard: RefreshRotationLockGuard {
                 refresh_jti: refresh_jti.to_string(),
-                lock,
-                _guard: guard,
+                lock: Some(lock),
+                guard: Some(guard),
             },
             was_contended: false,
         },
@@ -169,8 +185,8 @@ async fn acquire_refresh_rotation_lock(refresh_jti: &str) -> RefreshRotationLock
             RefreshRotationLock {
                 _guard: RefreshRotationLockGuard {
                     refresh_jti: refresh_jti.to_string(),
-                    lock,
-                    _guard: guard,
+                    lock: Some(lock),
+                    guard: Some(guard),
                 },
                 was_contended: true,
             }
@@ -466,6 +482,12 @@ pub async fn refresh_tokens(
 mod tests {
     use super::*;
     use chrono::Duration as ChronoDuration;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    use tokio::sync::Notify;
+    use tokio::time::{Duration, timeout};
 
     fn make_auth_session(now: chrono::DateTime<Utc>) -> auth_session::Model {
         auth_session::Model {
@@ -617,6 +639,106 @@ mod tests {
         );
 
         assert_stale_refresh(outcome, 1, "refresh-jti");
+    }
+
+    #[test]
+    fn classify_refresh_reuse_session_treats_same_process_contention_as_stale_even_with_mismatched_client()
+     {
+        let now = Utc::now();
+        let session = make_auth_session(now);
+
+        let outcome = classify_refresh_reuse_session(
+            Some(&session),
+            1,
+            "refresh-jti",
+            now,
+            Some("203.0.113.11"),
+            Some("other-browser"),
+            RefreshReuseEvidence::SameProcessContention,
+        );
+
+        assert_stale_refresh(outcome, 1, "refresh-jti");
+    }
+
+    #[test]
+    fn classify_refresh_reuse_session_treats_same_process_contention_for_other_user_as_reuse() {
+        let now = Utc::now();
+        let mut session = make_auth_session(now);
+        session.user_id = 2;
+
+        let outcome = classify_refresh_reuse_session(
+            Some(&session),
+            1,
+            "refresh-jti",
+            now,
+            None,
+            None,
+            RefreshReuseEvidence::SameProcessContention,
+        );
+
+        assert_reuse_detected(outcome, 1, "refresh-jti");
+    }
+
+    #[test]
+    fn classify_refresh_reuse_session_treats_same_process_contention_for_revoked_session_as_reuse()
+    {
+        let now = Utc::now();
+        let mut session = make_auth_session(now);
+        session.revoked_at = Some(now);
+
+        let outcome = classify_refresh_reuse_session(
+            Some(&session),
+            1,
+            "refresh-jti",
+            now,
+            None,
+            None,
+            RefreshReuseEvidence::SameProcessContention,
+        );
+
+        assert_reuse_detected(outcome, 1, "refresh-jti");
+    }
+
+    #[tokio::test]
+    async fn acquire_refresh_rotation_lock_serializes_same_jti_and_cleans_up_after_release() {
+        let refresh_jti = format!("refresh-jti-{}", uuid::Uuid::new_v4());
+        let first = acquire_refresh_rotation_lock(&refresh_jti).await;
+
+        assert!(REFRESH_ROTATION_LOCKS.get(&refresh_jti).is_some());
+
+        let acquired = Arc::new(AtomicBool::new(false));
+        let notify = Arc::new(Notify::new());
+        let acquired_clone = Arc::clone(&acquired);
+        let notify_clone = Arc::clone(&notify);
+        let refresh_jti_clone = refresh_jti.clone();
+        let second_task = tokio::spawn(async move {
+            let second = acquire_refresh_rotation_lock(&refresh_jti_clone).await;
+            acquired_clone.store(true, Ordering::SeqCst);
+            notify_clone.notify_one();
+            second
+        });
+
+        assert!(
+            timeout(Duration::from_millis(200), notify.notified())
+                .await
+                .is_err(),
+            "second acquisition should stay blocked while the first lock is held"
+        );
+
+        drop(first);
+
+        timeout(Duration::from_secs(1), notify.notified())
+            .await
+            .expect("second acquisition should complete after the first lock is released");
+        assert!(acquired.load(Ordering::SeqCst));
+
+        let second = second_task.await.unwrap();
+        drop(second);
+
+        assert!(
+            REFRESH_ROTATION_LOCKS.get(&refresh_jti).is_none(),
+            "lock entry should be cleaned up after the last guard is dropped"
+        );
     }
 
     #[test]

@@ -144,9 +144,7 @@ client.interceptors.response.use(
 		if (error.response?.status === 401 && !original._retry && !shouldSkip) {
 			original._retry = true;
 
-			if (isRefreshing) {
-				await refreshPromise;
-			} else {
+			if (!isRefreshing) {
 				isRefreshing = true;
 				refreshPromise = (async () => {
 					const { useAuthStore } = await import("@/stores/authStore");

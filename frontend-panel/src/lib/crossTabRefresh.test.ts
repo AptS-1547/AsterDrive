@@ -171,7 +171,7 @@ describe("cross-tab refresh coordination", () => {
 			JSON.stringify({
 				ownerId: "peer-tab",
 				lockId: "peer-lock",
-				expiresAt: Date.now() + 15_000,
+				expiresAt: Date.now() + 30_000,
 			}),
 		);
 
@@ -182,6 +182,30 @@ describe("cross-tab refresh coordination", () => {
 
 		await pending;
 		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("falls back to a local refresh when the peer lock expires without a result", async () => {
+		vi.useFakeTimers();
+
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+		localStorage.setItem(
+			"aster-auth-refresh-lock",
+			JSON.stringify({
+				ownerId: "peer-tab",
+				lockId: "peer-lock",
+				expiresAt: Date.now() + 1_000,
+			}),
+		);
+
+		const pending = runWithCrossTabRefreshLock(refresh);
+		await vi.advanceTimersByTimeAsync(1_000);
+
+		await expect(pending).resolves.toBe(true);
+		expect(refresh).toHaveBeenCalledTimes(1);
+		expect(localStorage.getItem("aster-auth-refresh-event")).toContain(
+			'"status":"success"',
+		);
 	});
 
 	it("ignores stale events from a previous refresh round", async () => {

@@ -232,6 +232,33 @@ describe("http refresh edge cases", () => {
 		expect(mockState.client).toHaveBeenCalledTimes(2);
 	});
 
+	it("returns the original 401 when a shared refresh promise rejects", async () => {
+		let rejectRefresh: ((error: Error) => void) | undefined;
+		mockState.refreshToken.mockReturnValue(
+			new Promise((_, reject) => {
+				rejectRefresh = reject;
+			}),
+		);
+		await loadHttpModule();
+		const errorHandler = mockState.getErrorHandler();
+		const firstError = {
+			config: { url: "/files/1", _retry: false },
+			response: { status: 401 },
+		} satisfies MockAxiosError;
+		const secondError = {
+			config: { url: "/files/2", _retry: false },
+			response: { status: 401 },
+		} satisfies MockAxiosError;
+
+		const first = errorHandler(firstError);
+		const second = errorHandler(secondError);
+		rejectRefresh?.(new Error("peer auth refresh timed out"));
+
+		await expect(first).rejects.toBe(firstError);
+		await expect(second).rejects.toBe(secondError);
+		expect(mockState.forceLogout).not.toHaveBeenCalled();
+	});
+
 	it("converts non-2xx API payloads into ApiError instances", async () => {
 		const { ApiError } = await loadHttpModule();
 		const errorHandler = mockState.getErrorHandler();
