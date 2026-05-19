@@ -75,6 +75,7 @@ function invalidatePreviewCaches(fileIds: number[]) {
 		invalidateTextContent(fileService.downloadPath(fileId));
 		invalidateBlobUrl(fileService.downloadPath(fileId));
 		invalidateBlobUrl(fileService.thumbnailPath(fileId));
+		invalidateBlobUrl(fileService.imagePreviewPath(fileId));
 	}
 }
 

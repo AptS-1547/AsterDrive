@@ -13,8 +13,8 @@ const DIALOG_CHROME_HEIGHT_REM = 11;
 
 interface VideoPreviewProps {
 	file: PreviewableFileLike;
+	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	path: string;
-	videoStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 }
 
 function getPlayerLanguage(language: string) {
@@ -23,13 +23,13 @@ function getPlayerLanguage(language: string) {
 
 export function VideoPreview({
 	file,
+	mediaStreamLinkFactory,
 	path,
-	videoStreamLinkFactory,
 }: VideoPreviewProps) {
 	const { i18n, t } = useTranslation("files");
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const [resolvedPath, setResolvedPath] = useState<string | null>(
-		videoStreamLinkFactory ? null : path,
+		mediaStreamLinkFactory ? null : path,
 	);
 	const [streamLinkFailed, setStreamLinkFailed] = useState(false);
 	const [playerFailed, setPlayerFailed] = useState(false);
@@ -59,7 +59,7 @@ export function VideoPreview({
 		setMediaFailed(false);
 		setAspectRatio(DEFAULT_ASPECT_RATIO);
 
-		if (!videoStreamLinkFactory) {
+		if (!mediaStreamLinkFactory) {
 			setResolvedPath(path);
 			return () => {
 				cancelled = true;
@@ -67,21 +67,21 @@ export function VideoPreview({
 		}
 
 		setResolvedPath(null);
-		videoStreamLinkFactory()
+		mediaStreamLinkFactory()
 			.then((link) => {
 				if (cancelled) return;
 				setResolvedPath(link.path);
 			})
 			.catch((error) => {
 				if (cancelled) return;
-				logger.warn("video stream session creation failed", file.name, error);
+				logger.warn("media stream session creation failed", file.name, error);
 				setStreamLinkFailed(true);
 			});
 
 		return () => {
 			cancelled = true;
 		};
-	}, [file.name, path, videoStreamLinkFactory]);
+	}, [file.name, path, mediaStreamLinkFactory]);
 
 	useEffect(() => {
 		if (!videoSource) return;

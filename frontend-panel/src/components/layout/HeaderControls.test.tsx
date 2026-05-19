@@ -13,6 +13,11 @@ const mockState = vi.hoisted(() => ({
 	changeLanguage: vi.fn(),
 	ensureI18nNamespaces: vi.fn(),
 	queuePreferenceSync: vi.fn(),
+	music: {
+		isPlaying: false,
+		queue: [] as Array<{ id: string }>,
+		togglePanel: vi.fn(),
+	},
 	auth: {
 		user: {
 			email: "alice@example.com",
@@ -68,6 +73,11 @@ vi.mock("@/stores/authStore", () => ({
 vi.mock("@/stores/themeStore", () => ({
 	useThemeStore: (selector: (state: typeof mockState.theme) => unknown) =>
 		selector(mockState.theme),
+}));
+
+vi.mock("@/stores/musicPlayerStore", () => ({
+	useMusicPlayerStore: (selector: (state: typeof mockState.music) => unknown) =>
+		selector(mockState.music),
 }));
 
 vi.mock("@/lib/preferenceSync", () => ({
@@ -199,6 +209,9 @@ describe("HeaderControls", () => {
 		mockState.ensureI18nNamespaces.mockReset();
 		mockState.ensureI18nNamespaces.mockResolvedValue(undefined);
 		mockState.queuePreferenceSync.mockReset();
+		mockState.music.isPlaying = false;
+		mockState.music.queue = [];
+		mockState.music.togglePanel.mockReset();
 		mockState.auth.user = {
 			email: "alice@example.com",
 			profile: {
@@ -271,6 +284,20 @@ describe("HeaderControls", () => {
 		expect(trigger.className).toContain(
 			"transition-[background-color,border-color,color,box-shadow]",
 		);
+	});
+
+	it("toggles the music player from the header when music is queued", () => {
+		mockState.music.queue = [{ id: "track-1" }];
+
+		render(<HeaderControls />);
+
+		fireEvent.click(
+			screen.getAllByRole("button", {
+				name: "translated:files:music_player_open",
+			})[0],
+		);
+
+		expect(mockState.music.togglePanel).toHaveBeenCalledTimes(1);
 	});
 
 	it("prefers display_name when rendering the account trigger and menu card", () => {

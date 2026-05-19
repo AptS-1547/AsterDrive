@@ -238,7 +238,7 @@ fn rp_id_from_origin(origin: &url::Url) -> Result<String> {
 
 fn primary_public_origin(state: &PrimaryAppState) -> Result<String> {
     let origin = site_url::public_site_url(&state.runtime_config).ok_or_else(|| {
-        AsterError::config_error(
+        AsterError::validation_error(
             "public_site_url must be configured before enabling passkey authentication",
         )
     })?;
@@ -250,7 +250,7 @@ fn primary_public_origin(state: &PrimaryAppState) -> Result<String> {
     {
         Ok(origin)
     } else {
-        Err(AsterError::config_error(
+        Err(AsterError::validation_error(
             "passkey authentication requires HTTPS public_site_url, except localhost",
         ))
     }

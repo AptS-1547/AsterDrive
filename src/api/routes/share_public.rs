@@ -141,8 +141,16 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         )
         .route("/{token}/thumbnail", web::get().to(shared_thumbnail))
         .route(
+            "/{token}/image-preview",
+            web::get().to(shared_image_preview),
+        )
+        .route(
             "/{token}/files/{file_id}/thumbnail",
             web::get().to(shared_folder_file_thumbnail),
+        )
+        .route(
+            "/{token}/files/{file_id}/image-preview",
+            web::get().to(shared_folder_file_image_preview),
         )
         .route("/{token}/avatar/{size}", web::get().to(shared_avatar))
 }
@@ -721,6 +729,44 @@ pub async fn shared_thumbnail(
 
 #[api_docs_macros::path(
     get,
+    path = "/api/v1/s/{token}/image-preview",
+    tag = "shares",
+    operation_id = "shared_image_preview",
+    params(("token" = String, Path, description = "Share token")),
+    responses(
+        (status = 200, description = "Image preview (WebP)"),
+        (status = 304, description = "Image preview not modified"),
+        (status = 400, description = "Image preview not supported for this file type"),
+        (status = 403, description = "Password required"),
+        (status = 412, description = "Storage backend is disabled or not ready"),
+        (status = 404, description = "Share or file not found"),
+        (status = 500, description = "Unexpected image preview generation failure"),
+    ),
+)]
+pub async fn shared_image_preview(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<String>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let token = path.into_inner();
+    let cookie_value = share_cookie_value(&req, &token);
+    share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
+
+    let result = share_service::get_shared_image_preview(&state, &token).await?;
+    let if_none_match = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|value| value.to_str().ok());
+
+    Ok(files::image_preview_response(
+        result,
+        if_none_match,
+        "public, max-age=0, must-revalidate".to_string(),
+    ))
+}
+
+#[api_docs_macros::path(
+    get,
     path = "/api/v1/s/{token}/files/{file_id}/thumbnail",
     tag = "shares",
     operation_id = "shared_folder_file_thumbnail",
@@ -762,6 +808,48 @@ pub async fn shared_folder_file_thumbnail(
         )),
         None => Ok(thumbnail_pending_response()),
     }
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/s/{token}/files/{file_id}/image-preview",
+    tag = "shares",
+    operation_id = "shared_folder_file_image_preview",
+    params(
+        ("token" = String, Path, description = "Share token"),
+        ("file_id" = i64, Path, description = "File ID inside shared folder")
+    ),
+    responses(
+        (status = 200, description = "Image preview (WebP)"),
+        (status = 304, description = "Image preview not modified"),
+        (status = 400, description = "Image preview not supported for this file type"),
+        (status = 403, description = "Password required or file outside shared scope"),
+        (status = 412, description = "Storage backend is disabled or not ready"),
+        (status = 404, description = "Share or file not found"),
+        (status = 500, description = "Unexpected image preview generation failure"),
+    )
+)]
+pub async fn shared_folder_file_image_preview(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<(String, i64)>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let (token, file_id) = path.into_inner();
+    let cookie_value = share_cookie_value(&req, &token);
+    share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
+
+    let result =
+        share_service::get_shared_folder_file_image_preview(&state, &token, file_id).await?;
+    let if_none_match = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|value| value.to_str().ok());
+
+    Ok(files::image_preview_response(
+        result,
+        if_none_match,
+        "public, max-age=0, must-revalidate".to_string(),
+    ))
 }
 
 #[cfg(test)]

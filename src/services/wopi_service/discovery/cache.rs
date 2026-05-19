@@ -7,6 +7,7 @@ use moka::future::Cache;
 use crate::config::wopi;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
+use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 
 use super::parser::parse_discovery_xml;
 use super::types::{CachedWopiDiscovery, WopiDiscovery};
@@ -14,12 +15,15 @@ use super::types::{CachedWopiDiscovery, WopiDiscovery};
 static DISCOVERY_CACHE: LazyLock<Cache<String, CachedWopiDiscovery>> =
     LazyLock::new(|| Cache::builder().max_capacity(128).build());
 
-static DISCOVERY_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+static DISCOVERY_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(build_discovery_client);
+
+fn build_discovery_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(StdDuration::from_secs(5))
+        .user_agent(OUTBOUND_HTTP_USER_AGENT)
         .build()
         .expect("wopi discovery client should initialize")
-});
+}
 
 pub(super) async fn load_discovery(
     state: &PrimaryAppState,
@@ -103,4 +107,26 @@ pub(super) async fn load_discovery(
 fn discovery_cache_ttl(runtime_config: &crate::config::RuntimeConfig) -> Duration {
     let ttl_secs = wopi::discovery_cache_ttl_secs(runtime_config);
     Duration::seconds(i64::try_from(ttl_secs).unwrap_or(i64::MAX))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_discovery_client;
+    use crate::utils::OUTBOUND_HTTP_USER_AGENT;
+    use reqwest::header::USER_AGENT;
+
+    #[test]
+    fn discovery_client_sets_user_agent() {
+        let request = build_discovery_client()
+            .get("http://example.com/hosting/discovery")
+            .build()
+            .expect("request should build");
+        let user_agent = request
+            .headers()
+            .get(USER_AGENT)
+            .and_then(|value| value.to_str().ok())
+            .expect("user-agent header should be present");
+
+        assert_eq!(user_agent, OUTBOUND_HTTP_USER_AGENT);
+    }
 }

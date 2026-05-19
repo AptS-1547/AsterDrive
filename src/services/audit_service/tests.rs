@@ -93,6 +93,48 @@ fn request_audit_info_truncates_user_controlled_headers() {
 }
 
 #[test]
+fn trusted_proxy_audit_info_uses_x_forwarded_for_only_from_trusted_peer() {
+    let req = actix_test::TestRequest::default()
+        .peer_addr("10.0.0.10:12345".parse().unwrap())
+        .insert_header((
+            "X-Forwarded-For",
+            "203.0.113.7:54321, [2001:db8::1]:443, 10.0.0.10",
+        ))
+        .to_http_request();
+
+    let info =
+        AuditRequestInfo::from_request_with_trusted_proxies(&req, &["10.0.0.0/8".to_string()]);
+
+    assert_eq!(info.ip_address.as_deref(), Some("203.0.113.7"));
+}
+
+#[test]
+fn trusted_proxy_audit_info_accepts_bracketed_ipv6_with_port() {
+    let req = actix_test::TestRequest::default()
+        .peer_addr("10.0.0.10:12345".parse().unwrap())
+        .insert_header(("X-Forwarded-For", "[2001:db8::1]:443, 10.0.0.10"))
+        .to_http_request();
+
+    let info =
+        AuditRequestInfo::from_request_with_trusted_proxies(&req, &["10.0.0.0/8".to_string()]);
+
+    assert_eq!(info.ip_address.as_deref(), Some("2001:db8::1"));
+}
+
+#[test]
+fn trusted_proxy_audit_info_ignores_spoofed_x_forwarded_for_from_untrusted_peer() {
+    let req = actix_test::TestRequest::default()
+        .peer_addr("198.51.100.4:12345".parse().unwrap())
+        .insert_header(("X-Forwarded-For", "[2001:db8::1]:443, 203.0.113.7:54321"))
+        .to_http_request();
+
+    let info =
+        AuditRequestInfo::from_request_with_trusted_proxies(&req, &["10.0.0.0/8".to_string()]);
+
+    assert_eq!(info.ip_address.as_deref(), Some("198.51.100.4"));
+}
+
+#[test]
 fn audit_action_strings_match_existing_contract() {
     let cases = [
         (AuditAction::AdminCreateUser, "admin_create_user"),

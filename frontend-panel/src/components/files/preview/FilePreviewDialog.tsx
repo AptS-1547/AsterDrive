@@ -32,12 +32,13 @@ interface FilePreviewDialogProps {
 	onOpenChangeComplete?: (open: boolean) => void;
 	onFileUpdated?: () => void;
 	downloadPath?: string;
+	imagePreviewPath?: string;
 	editable?: boolean;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 	archivePreviewFactory?: (options?: {
 		signal?: AbortSignal;
 	}) => Promise<ArchivePreviewManifest>;
-	videoStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
+	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	wopiSessionFactory?: (appKey: string) => Promise<WopiLaunchSession>;
 	openMode?: "auto" | "direct" | "picker";
 }
@@ -61,10 +62,11 @@ export function FilePreviewDialog({
 	onOpenChangeComplete,
 	onFileUpdated,
 	downloadPath,
+	imagePreviewPath,
 	editable = true,
 	previewLinkFactory,
 	archivePreviewFactory,
-	videoStreamLinkFactory,
+	mediaStreamLinkFactory,
 	wopiSessionFactory,
 	openMode = "auto",
 }: FilePreviewDialogProps) {
@@ -74,6 +76,8 @@ export function FilePreviewDialog({
 	const loadPreviewApps = usePreviewAppStore((state) => state.load);
 	const resolvedDownloadPath =
 		downloadPath ?? fileService.downloadPath(file.id);
+	const resolvedImagePreviewPath =
+		imagePreviewPath ?? fileService.imagePreviewPath(file.id);
 
 	useEffect(() => {
 		if (previewAppsLoaded) return;
@@ -230,17 +234,18 @@ export function FilePreviewDialog({
 		open && activeOption?.mode === "archive" && archivePreviewFactory
 			? stableArchivePreviewFactory
 			: undefined;
+	const hasMultipleVisibleOpenMethods = visibleOptions.length > 1;
 	const showOpenMethodChooser =
 		previewAppsLoaded &&
 		(forceOpenMethodChooser
-			? allOptions.length > 0
+			? allOptions.length > 1
 			: openMode === "picker"
-				? allOptions.length > 0
+				? allOptions.length > 1
 				: openMode === "direct"
 					? false
 					: shouldAutoOpenPreferredMode
 						? false
-						: allOptions.length > 1) &&
+						: hasMultipleVisibleOpenMethods) &&
 		!hasConfirmedInitialMode;
 
 	const usesInnerScroll =
@@ -371,10 +376,11 @@ export function FilePreviewDialog({
 									profile={profile}
 									previewAppsLoaded={previewAppsLoaded}
 									downloadPath={resolvedDownloadPath}
+									imagePreviewPath={resolvedImagePreviewPath}
 									getOptionLabel={getOptionLabel}
 									previewLinkFactory={previewLinkFactory}
 									archivePreviewFactory={activeArchivePreviewFactory}
-									videoStreamLinkFactory={videoStreamLinkFactory}
+									mediaStreamLinkFactory={mediaStreamLinkFactory}
 									createWopiSession={
 										wopiSessionFactory ? activeWopiSessionFactory : null
 									}

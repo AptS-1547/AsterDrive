@@ -86,6 +86,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::files::access::open_wopi,
         crate::api::routes::files::access::download,
         crate::api::routes::files::access::get_thumbnail,
+        crate::api::routes::files::access::get_image_preview,
 
         // files::mutations：个人文件的创建、重命名、内容更新、解压、复制和删除操作。
         crate::api::routes::files::mutations::create_empty,
@@ -204,6 +205,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::files::access::team_get_preview_link,
         crate::api::routes::files::access::team_open_wopi,
         crate::api::routes::files::access::team_get_thumbnail,
+        crate::api::routes::files::access::team_get_image_preview,
         crate::api::routes::files::mutations::team_update_content,
         crate::api::routes::files::mutations::team_extract_archive,
         crate::api::routes::files::mutations::team_set_lock,
@@ -336,7 +338,9 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::share_public::list_shared_subfolder_content,
         crate::api::routes::share_public::shared_avatar,
         crate::api::routes::share_public::shared_thumbnail,
+        crate::api::routes::share_public::shared_image_preview,
         crate::api::routes::share_public::shared_folder_file_thumbnail,
+        crate::api::routes::share_public::shared_folder_file_image_preview,
 
         // wopi：给 Office/WOPI 集成方回调使用的文件元数据读取接口。
         crate::api::routes::wopi::check_file_info,

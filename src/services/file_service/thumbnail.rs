@@ -17,6 +17,13 @@ pub struct ThumbnailResult {
     pub thumbnail_version: Option<String>,
 }
 
+pub struct ImagePreviewResult {
+    pub data: Vec<u8>,
+    pub blob_hash: String,
+    pub image_preview_processor: String,
+    pub image_preview_version: String,
+}
+
 pub(crate) async fn get_thumbnail_data_in_scope(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
@@ -42,6 +49,37 @@ pub(crate) async fn get_thumbnail_data_in_scope(
             Ok(None)
         }
     }
+}
+
+pub(crate) async fn get_image_preview_data_in_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<ImagePreviewResult> {
+    let f = get_info_in_scope(state, scope, file_id).await?;
+    image_preview_for_file(state, &f).await
+}
+
+pub(crate) async fn image_preview_for_file(
+    state: &PrimaryAppState,
+    f: &crate::entities::file::Model,
+) -> Result<ImagePreviewResult> {
+    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
+    let preview = media_processing_service::generate_and_store_image_preview(
+        state,
+        &blob,
+        &f.name,
+        &f.mime_type,
+    )
+    .await
+    .map_err(media_processing_service::map_thumbnail_request_error)?;
+
+    Ok(ImagePreviewResult {
+        data: preview.data,
+        blob_hash: blob.hash,
+        image_preview_processor: preview.image_preview_processor,
+        image_preview_version: preview.image_preview_version,
+    })
 }
 
 /// 获取文件缩略图。返回 `Ok(Some(data))` 直接有图；`Ok(None)` 表示正在后台生成。

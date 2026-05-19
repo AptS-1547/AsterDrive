@@ -18,8 +18,11 @@ use crate::utils::raii::TempFileGuard;
 use tokio::io::AsyncWriteExt;
 
 const THUMB_MAX_DIM: u32 = 200;
+pub(crate) const PREVIEW_MAX_DIM: u32 = 1600;
 const THUMB_PREFIX: &str = "_thumb";
+const PREVIEW_PREFIX: &str = "_preview";
 pub(crate) const CURRENT_THUMBNAIL_VERSION: &str = "1";
+pub(crate) const CURRENT_IMAGE_PREVIEW_VERSION: &str = "1";
 pub(crate) const IMAGES_THUMBNAIL_PROCESSOR_NAMESPACE: &str = "images";
 /// 单次解码最大内存分配（防止恶意/超大图 OOM）
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
@@ -85,13 +88,46 @@ pub(crate) fn thumbnail_etag_value_for(
     )
 }
 
+pub(crate) fn image_preview_path_for(
+    blob_hash: &str,
+    image_preview_processor: &str,
+    image_preview_version: &str,
+) -> String {
+    format!(
+        "{}/{}/{}/{}/{}/{}.webp",
+        PREVIEW_PREFIX,
+        image_preview_processor,
+        image_preview_version,
+        &blob_hash[..2],
+        &blob_hash[2..4],
+        blob_hash
+    )
+}
+
+pub(crate) fn image_preview_etag_value_for(
+    blob_hash: &str,
+    image_preview_processor: &str,
+    image_preview_version: &str,
+) -> String {
+    format!("image-preview-{image_preview_processor}-{image_preview_version}-{blob_hash}")
+}
+
 pub(crate) fn current_thumbnail_max_dim() -> u32 {
     THUMB_MAX_DIM
+}
+
+pub(crate) fn current_image_preview_max_dim() -> u32 {
+    PREVIEW_MAX_DIM
 }
 
 pub fn is_thumbnail_path(path: &str) -> bool {
     path.trim_start_matches('/')
         .starts_with(&format!("{THUMB_PREFIX}/"))
+}
+
+pub fn is_image_preview_path(path: &str) -> bool {
+    path.trim_start_matches('/')
+        .starts_with(&format!("{PREVIEW_PREFIX}/"))
 }
 
 /// 解码图片 → 缩放 → 编码为 WebP（CPU 密集，应在 spawn_blocking 中调用）
@@ -122,10 +158,41 @@ where
     encode_webp(&thumb)
 }
 
+fn generate_webp_derivative_from_reader<R>(reader: ImageReader<R>, max_dim: u32) -> Result<Vec<u8>>
+where
+    R: std::io::BufRead + std::io::Seek,
+{
+    let mut reader = reader
+        .with_guessed_format()
+        .map_aster_err_ctx("guess format", thumbnail_format_guess_failed)?;
+    let mut limits = Limits::default();
+    limits.max_alloc = Some(MAX_DECODE_ALLOC);
+    reader.limits(limits);
+
+    let img = reader
+        .decode()
+        .map_aster_err_ctx("decode", thumbnail_decode_failed)?;
+
+    if img.width() <= max_dim && img.height() <= max_dim {
+        return encode_webp(&img);
+    }
+
+    let preview = img.resize(max_dim, max_dim, FilterType::Triangle);
+    drop(img);
+
+    encode_webp(&preview)
+}
+
 fn generate_thumbnail_from_local_path(path: PathBuf) -> Result<Vec<u8>> {
     let reader = ImageReader::open(path)
         .map_aster_err_ctx("open thumbnail source", thumbnail_source_open_failed)?;
     generate_thumbnail_from_reader(reader)
+}
+
+fn generate_webp_derivative_from_local_path(path: PathBuf, max_dim: u32) -> Result<Vec<u8>> {
+    let reader = ImageReader::open(path)
+        .map_aster_err_ctx("open thumbnail source", thumbnail_source_open_failed)?;
+    generate_webp_derivative_from_reader(reader, max_dim)
 }
 
 async fn materialize_thumbnail_source_stream(
@@ -204,6 +271,32 @@ pub(crate) async fn render_thumbnail_bytes(
     .map_aster_err_ctx("thumbnail task panicked", thumbnail_task_panicked)?
 }
 
+pub(crate) async fn render_webp_derivative_bytes(
+    driver: &dyn StorageDriver,
+    blob: &file_blob::Model,
+    temp_root: &str,
+    max_dim: u32,
+) -> Result<Vec<u8>> {
+    if let Some(local_path_driver) = driver.as_local_path() {
+        let path = local_path_driver.resolve_local_path(&blob.storage_path)?;
+        return tokio::task::spawn_blocking(move || {
+            generate_webp_derivative_from_local_path(path, max_dim)
+        })
+        .await
+        .map_aster_err_ctx("thumbnail task panicked", thumbnail_task_panicked)?;
+    }
+
+    let temp_source = materialize_thumbnail_source_stream(driver, blob, temp_root).await?;
+    tokio::task::spawn_blocking(move || {
+        let result =
+            generate_webp_derivative_from_local_path(temp_source.path().to_path_buf(), max_dim);
+        drop(temp_source);
+        result
+    })
+    .await
+    .map_aster_err_ctx("thumbnail task panicked", thumbnail_task_panicked)?
+}
+
 pub(crate) fn ensure_source_size_supported(
     blob: &file_blob::Model,
     max_source_bytes: i64,
@@ -224,7 +317,8 @@ pub(crate) fn ensure_source_size_supported(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_source_size_supported, render_thumbnail_bytes, thumb_path, thumbnail_etag_value_for,
+        CURRENT_IMAGE_PREVIEW_VERSION, ensure_source_size_supported, image_preview_etag_value_for,
+        image_preview_path_for, render_thumbnail_bytes, thumb_path, thumbnail_etag_value_for,
     };
     use crate::api::subcode::ApiSubcode;
     use crate::config::operations::DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES;
@@ -469,6 +563,24 @@ mod tests {
         assert_eq!(
             thumbnail_etag_value_for(&hash, Some("vips-cli"), Some("7")),
             format!("thumb-vips-cli-7-{hash}")
+        );
+    }
+
+    #[test]
+    fn image_preview_paths_are_versioned() {
+        let hash = "abc".repeat(21) + "a";
+        assert_eq!(
+            image_preview_path_for(&hash, "images", CURRENT_IMAGE_PREVIEW_VERSION),
+            format!("_preview/images/1/ab/ca/{hash}.webp")
+        );
+    }
+
+    #[test]
+    fn image_preview_etag_uses_preview_version_namespace() {
+        let hash = "abc".repeat(21) + "a";
+        assert_eq!(
+            image_preview_etag_value_for(&hash, "images", CURRENT_IMAGE_PREVIEW_VERSION),
+            format!("image-preview-images-1-{hash}")
         );
     }
 }

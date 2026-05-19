@@ -78,7 +78,7 @@ describe("VideoPreview", () => {
 	});
 
 	it("creates a stream session before initializing Artplayer when provided", async () => {
-		const videoStreamLinkFactory = vi.fn(async () => ({
+		const mediaStreamLinkFactory = vi.fn(async () => ({
 			expires_at: "2026-01-01T00:00:00Z",
 			path: "/api/v1/s/share-token/stream/session-token/clip.mp4",
 		}));
@@ -87,7 +87,7 @@ describe("VideoPreview", () => {
 			<VideoPreview
 				file={{ name: "clip.mp4", mime_type: "video/mp4" }}
 				path="/s/share-token/download"
-				videoStreamLinkFactory={videoStreamLinkFactory}
+				mediaStreamLinkFactory={mediaStreamLinkFactory}
 			/>,
 		);
 
@@ -95,7 +95,7 @@ describe("VideoPreview", () => {
 		await waitFor(() => {
 			expect(mockState.artplayerInstances).toHaveLength(1);
 		});
-		expect(videoStreamLinkFactory).toHaveBeenCalledTimes(1);
+		expect(mediaStreamLinkFactory).toHaveBeenCalledTimes(1);
 		expect(mockState.artplayerInstances[0].options.url).toBe(
 			"/api/v1/s/share-token/stream/session-token/clip.mp4",
 		);

@@ -39,6 +39,7 @@ const mockState = vi.hoisted(() => ({
 	},
 	createPasskeyCredential: vi.fn(),
 	handleApiError: vi.fn(),
+	formatPasskeyDefaultName: vi.fn(),
 	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
 	webAuthnSupported: true,
@@ -145,6 +146,11 @@ vi.mock("@/lib/format", () => ({
 	formatDateAbsoluteWithOffset: (value: string) => `offset:${value}`,
 }));
 
+vi.mock("@/lib/userAgent", () => ({
+	formatPasskeyDefaultName: (...args: unknown[]) =>
+		mockState.formatPasskeyDefaultName(...args),
+}));
+
 vi.mock("@/lib/webauthn", () => ({
 	createPasskeyCredential: (...args: unknown[]) =>
 		mockState.createPasskeyCredential(...args),
@@ -210,6 +216,8 @@ describe("SecurityPasskeysSection", () => {
 		});
 		mockState.createPasskeyCredential.mockReset();
 		mockState.createPasskeyCredential.mockResolvedValue({ id: "credential-1" });
+		mockState.formatPasskeyDefaultName.mockReset();
+		mockState.formatPasskeyDefaultName.mockReturnValue("macOS - Edge");
 		mockState.handleApiError.mockReset();
 		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
@@ -267,8 +275,12 @@ describe("SecurityPasskeysSection", () => {
 			expect(
 				mockState.authService.startPasskeyRegistration,
 			).toHaveBeenCalledWith({
-				name: "settings:settings_passkeys_default_name",
+				name: "macOS - Edge",
 			}),
+		);
+		expect(mockState.formatPasskeyDefaultName).toHaveBeenCalledWith(
+			expect.any(String),
+			"settings:settings_passkeys_default_name",
 		);
 		expect(mockState.createPasskeyCredential).toHaveBeenCalledWith({
 			publicKey: { challenge: "AQID" },
@@ -278,7 +290,7 @@ describe("SecurityPasskeysSection", () => {
 		).toHaveBeenCalledWith(
 			"register-flow",
 			{ id: "credential-1" },
-			"settings:settings_passkeys_default_name",
+			"macOS - Edge",
 		);
 		expect(await screen.findByText("Laptop")).toBeInTheDocument();
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(

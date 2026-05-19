@@ -84,6 +84,7 @@ export function VersionHistoryDialog({
 			invalidateTextContent(downloadPath);
 			invalidateBlobUrl(downloadPath);
 			invalidateBlobUrl(fileService.thumbnailPath(fileId));
+			invalidateBlobUrl(fileService.imagePreviewPath(fileId));
 			toast.success(t("version_restored"));
 			onRestored?.();
 		} catch (e) {

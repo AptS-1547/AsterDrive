@@ -19,6 +19,8 @@ use super::session::{
 };
 use super::{AuthSnapshot, Claims};
 
+const REFRESH_REUSE_GRACE_SECS: i64 = 15;
+
 #[derive(Debug)]
 struct IssuedTokens {
     access_token: String,
@@ -31,6 +33,7 @@ struct IssuedTokens {
 #[derive(Debug)]
 enum RefreshRotationError {
     Aster(AsterError),
+    StaleRefresh { user_id: i64, reused_jti: String },
     ReuseDetected { user_id: i64, reused_jti: String },
 }
 
@@ -62,6 +65,46 @@ fn ensure_session_current(claims: &Claims, snapshot: AuthSnapshot) -> Result<()>
     }
 
     Ok(())
+}
+
+fn is_recent_refresh_rotation(session: &auth_session::Model, now: chrono::DateTime<Utc>) -> bool {
+    now.signed_duration_since(session.last_seen_at)
+        .num_seconds()
+        .abs()
+        <= REFRESH_REUSE_GRACE_SECS
+}
+
+fn refresh_client_matches(
+    session: &auth_session::Model,
+    ip_address: Option<&str>,
+    user_agent: Option<&str>,
+) -> bool {
+    let Some(stored_user_agent) = session.user_agent.as_deref() else {
+        return false;
+    };
+    let Some(current_user_agent) = user_agent else {
+        return false;
+    };
+    if stored_user_agent != current_user_agent {
+        return false;
+    }
+
+    session.ip_address.is_none()
+        || ip_address.is_none()
+        || session.ip_address.as_deref() == ip_address
+}
+
+fn is_stale_refresh_from_same_client(
+    session: &auth_session::Model,
+    user_id: i64,
+    now: chrono::DateTime<Utc>,
+    ip_address: Option<&str>,
+    user_agent: Option<&str>,
+) -> bool {
+    session.user_id == user_id
+        && session.revoked_at.is_none()
+        && is_recent_refresh_rotation(session, now)
+        && refresh_client_matches(session, ip_address, user_agent)
 }
 
 async fn authenticate_token(
@@ -222,6 +265,7 @@ pub async fn refresh_tokens(
 
     let txn = crate::db::transaction::begin(&state.db).await?;
     let rotation = async {
+        let now = Utc::now();
         let existing_auth_session = auth_session_repo::find_by_refresh_jti(&txn, &refresh_jti)
             .await
             .map_err(RefreshRotationError::from)?;
@@ -250,6 +294,22 @@ pub async fn refresh_tokens(
             if reused_auth_session.as_ref().is_some_and(|session| {
                 session.user_id == claims.user_id && session.revoked_at.is_none()
             }) {
+                let stale_refresh_from_same_client =
+                    reused_auth_session.as_ref().is_some_and(|session| {
+                        is_stale_refresh_from_same_client(
+                            session,
+                            claims.user_id,
+                            now,
+                            ip_address,
+                            user_agent,
+                        )
+                    });
+                if stale_refresh_from_same_client {
+                    return Err(RefreshRotationError::StaleRefresh {
+                        user_id: claims.user_id,
+                        reused_jti: refresh_jti,
+                    });
+                }
                 user_repo::bump_session_version(&txn, claims.user_id)
                     .await
                     .map_err(RefreshRotationError::from)?;
@@ -294,11 +354,29 @@ pub async fn refresh_tokens(
             tokens.refresh_expires_at,
             next_ip_address,
             next_user_agent,
-            Utc::now(),
+            now,
         )
         .await
         .map_err(RefreshRotationError::from)?
         {
+            let reused_auth_session =
+                auth_session_repo::find_by_previous_refresh_jti(&txn, &refresh_jti)
+                    .await
+                    .map_err(RefreshRotationError::from)?;
+            if reused_auth_session.as_ref().is_some_and(|session| {
+                is_stale_refresh_from_same_client(
+                    session,
+                    claims.user_id,
+                    now,
+                    ip_address,
+                    user_agent,
+                )
+            }) {
+                return Err(RefreshRotationError::StaleRefresh {
+                    user_id: claims.user_id,
+                    reused_jti: refresh_jti,
+                });
+            }
             user_repo::bump_session_version(&txn, claims.user_id)
                 .await
                 .map_err(RefreshRotationError::from)?;
@@ -327,6 +405,18 @@ pub async fn refresh_tokens(
                 "refreshed auth tokens"
             );
             Ok(tokens)
+        }
+        Err(RefreshRotationError::StaleRefresh {
+            user_id,
+            reused_jti,
+        }) => {
+            crate::db::transaction::rollback(txn).await?;
+            tracing::debug!(
+                user_id,
+                reused_jti,
+                "stale refresh token reused within rotation grace window"
+            );
+            Err(AsterError::auth_token_invalid("stale refresh token"))
         }
         Err(RefreshRotationError::ReuseDetected {
             user_id,

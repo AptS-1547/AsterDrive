@@ -14,12 +14,13 @@ interface FilePreviewProps {
 	onOpenChangeComplete?: (open: boolean) => void;
 	onFileUpdated?: () => void;
 	downloadPath?: string;
+	imagePreviewPath?: string;
 	editable?: boolean;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 	archivePreviewFactory?: (options?: {
 		signal?: AbortSignal;
 	}) => Promise<ArchivePreviewManifest>;
-	videoStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
+	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	wopiSessionFactory?: (appKey: string) => Promise<WopiLaunchSession>;
 	open?: boolean;
 	openMode?: "auto" | "direct" | "picker";
@@ -31,10 +32,11 @@ export function FilePreview({
 	onOpenChangeComplete,
 	onFileUpdated,
 	downloadPath,
+	imagePreviewPath,
 	editable,
 	previewLinkFactory,
 	archivePreviewFactory,
-	videoStreamLinkFactory,
+	mediaStreamLinkFactory,
 	wopiSessionFactory,
 	open = true,
 	openMode,
@@ -47,10 +49,11 @@ export function FilePreview({
 			onOpenChangeComplete={onOpenChangeComplete}
 			onFileUpdated={onFileUpdated}
 			downloadPath={downloadPath}
+			imagePreviewPath={imagePreviewPath}
 			editable={editable}
 			previewLinkFactory={previewLinkFactory}
 			archivePreviewFactory={archivePreviewFactory}
-			videoStreamLinkFactory={videoStreamLinkFactory}
+			mediaStreamLinkFactory={mediaStreamLinkFactory}
 			wopiSessionFactory={wopiSessionFactory}
 			openMode={openMode}
 		/>

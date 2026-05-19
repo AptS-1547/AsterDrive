@@ -194,6 +194,7 @@ vi.mock("@/services/fileService", () => ({
 		deleteVersion: (...args: unknown[]) => mockState.deleteVersion(...args),
 		downloadPath: (fileId: number) => `/files/${fileId}/download`,
 		thumbnailPath: (fileId: number) => `/files/${fileId}/thumbnail`,
+		imagePreviewPath: (fileId: number) => `/files/${fileId}/image-preview`,
 	},
 }));
 

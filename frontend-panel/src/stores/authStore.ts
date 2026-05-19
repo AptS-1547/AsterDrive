@@ -1,6 +1,7 @@
 import axios from "axios";
 import { create } from "zustand";
 import i18n from "@/i18n";
+import { runWithCrossTabRefreshLock } from "@/lib/crossTabRefresh";
 import { logger } from "@/lib/logger";
 import { cancelPreferenceSync } from "@/lib/preferenceSync";
 import { authService } from "@/services/authService";
@@ -46,7 +47,7 @@ function setCachedUser(user: MeResponse | null) {
 }
 
 function getExpiresAtFromUser(
-	user: Pick<MeResponse, "access_token_expires_at"> | null,
+	user: { access_token_expires_at?: number | null } | null,
 ) {
 	const expiresAtSeconds = Number(user?.access_token_expires_at);
 	if (!Number.isFinite(expiresAtSeconds) || expiresAtSeconds <= 0) {
@@ -210,6 +211,18 @@ function mergePartialUser(
 	};
 }
 
+function updateCachedSessionExpiry(expiresAt: number) {
+	const cached = getCachedUser();
+	const expiresAtSeconds = Math.floor(expiresAt / 1000);
+	if (cached) {
+		setCachedUser({
+			...cached,
+			access_token_expires_at: expiresAtSeconds,
+		});
+	}
+	return expiresAtSeconds;
+}
+
 // ── Subscription: 用户偏好同步 ────────────────────────────────────────────────
 //
 // 当 user 对象变化且处于已认证状态时，将服务端偏好同步到 themeStore / fileStore。
@@ -323,8 +336,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 		inFlightRefresh = (async () => {
 			try {
-				const session = await authService.refreshToken();
-				get().syncSession(session.expiresIn);
+				const refreshedLocally = await runWithCrossTabRefreshLock(async () => {
+					const session = await authService.refreshToken();
+					get().syncSession(session.expiresIn);
+				});
+				if (!refreshedLocally) {
+					const user = await authService.me(["session"]);
+					const expiresAt =
+						getExpiresAtFromUser(user) ?? Date.now() + REFRESH_RETRY_MS;
+					const expiresAtSeconds = updateCachedSessionExpiry(expiresAt);
+					const currentUser = get().user;
+					setStoredExpiresAt(expiresAt);
+					set({
+						expiresAt,
+						isAuthenticated: true,
+						isAuthStale: false,
+						bootOffline: false,
+						user: currentUser
+							? {
+									...currentUser,
+									access_token_expires_at: expiresAtSeconds,
+								}
+							: null,
+					});
+					get().startAutoRefresh();
+				}
 			} catch (error) {
 				if (axios.isAxiosError(error) && error.response) {
 					applyLoggedOutState(set);

@@ -1,10 +1,13 @@
 //! 服务模块：`node_enrollment_service`。
 
+use std::time::Duration;
+
 use crate::db::repository::master_binding_repo;
 use crate::entities::master_binding;
 use crate::errors::{AsterError, Result};
 use crate::services::{managed_follower_enrollment_service, master_binding_service};
 use crate::storage::remote_protocol::normalize_remote_base_url;
+use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
 
@@ -194,7 +197,7 @@ async fn redeem_enrollment(
     token: &str,
 ) -> Result<managed_follower_enrollment_service::RemoteEnrollmentBootstrap> {
     let url = format!("{master_url}/api/v1/public/remote-enrollment/redeem");
-    let response = reqwest::Client::new()
+    let response = node_enrollment_http_client()?
         .post(url)
         .json(&serde_json::json!({ "token": token }))
         .send()
@@ -210,7 +213,7 @@ async fn redeem_enrollment(
 
 async fn ack_enrollment(master_url: &str, ack_token: &str) -> Result<()> {
     let url = format!("{master_url}/api/v1/public/remote-enrollment/ack");
-    let response = reqwest::Client::new()
+    let response = node_enrollment_http_client()?
         .post(url)
         .json(&serde_json::json!({ "ack_token": ack_token }))
         .send()
@@ -222,6 +225,18 @@ async fn ack_enrollment(master_url: &str, ack_token: &str) -> Result<()> {
         })?;
 
     parse_empty_api_response(response, "master enrollment ack request").await
+}
+
+fn node_enrollment_http_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(OUTBOUND_HTTP_USER_AGENT)
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|error| {
+            AsterError::internal_error(format!(
+                "failed to build node enrollment HTTP client: {error}"
+            ))
+        })
 }
 
 async fn parse_api_response<T: for<'de> Deserialize<'de>>(

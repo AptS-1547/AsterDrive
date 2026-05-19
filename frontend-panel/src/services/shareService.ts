@@ -83,8 +83,13 @@ export function createShareService(workspace: Workspace) {
 
 		thumbnailPath: (token: string) => `/s/${token}/thumbnail`,
 
+		imagePreviewPath: (token: string) => `/s/${token}/image-preview`,
+
 		downloadFolderPath: (token: string, fileId: number) =>
 			`/s/${token}/files/${fileId}/download`,
+
+		folderFileImagePreviewPath: (token: string, fileId: number) =>
+			`/s/${token}/files/${fileId}/image-preview`,
 
 		createFolderFilePreviewLink: (token: string, fileId: number) =>
 			api.post<PreviewLinkInfo>(`/s/${token}/files/${fileId}/preview-link`),

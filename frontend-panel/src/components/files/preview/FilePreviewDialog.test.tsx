@@ -4,6 +4,7 @@ import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog"
 
 const mockState = vi.hoisted(() => ({
 	downloadPath: vi.fn((fileId: number) => `/files/${fileId}/download`),
+	imagePreviewPath: vi.fn((fileId: number) => `/files/${fileId}/image-preview`),
 	profile: {
 		category: "markdown",
 		defaultMode: "builtin.code",
@@ -125,6 +126,8 @@ vi.mock("@/lib/format", () => ({
 vi.mock("@/services/fileService", () => ({
 	fileService: {
 		downloadPath: (...args: unknown[]) => mockState.downloadPath(...args),
+		imagePreviewPath: (...args: unknown[]) =>
+			mockState.imagePreviewPath(...args),
 	},
 }));
 
@@ -134,16 +137,41 @@ vi.mock("@/stores/previewAppStore", () => ({
 	) => selector(mockState.previewAppStore),
 }));
 
-vi.mock("@/components/files/preview/BlobMediaPreview", () => ({
-	BlobMediaPreview: ({
+vi.mock("@/components/files/preview/BlobImagePreview", () => ({
+	BlobImagePreview: ({
+		file,
+		fallbackPath,
 		fillContainer,
-		mode,
 		path,
 	}: {
+		file: { name: string };
+		fallbackPath?: string;
 		fillContainer?: boolean;
-		mode: string;
 		path: string;
-	}) => <div>{`blob:${mode}:${path}:${String(Boolean(fillContainer))}`}</div>,
+	}) => (
+		<img
+			alt={file.name}
+			data-fallback-path={fallbackPath ?? ""}
+			data-fill-container={String(Boolean(fillContainer))}
+			src={`blob:${path}`}
+		/>
+	),
+}));
+
+vi.mock("@/components/files/preview/MusicPreview", () => ({
+	MusicPreview: ({
+		mediaStreamLinkFactory,
+		path,
+	}: {
+		mediaStreamLinkFactory?: () => Promise<unknown>;
+		path: string;
+	}) => (
+		<div
+			data-has-media-stream-link-factory={String(
+				Boolean(mediaStreamLinkFactory),
+			)}
+		>{`music:${path}`}</div>
+	),
 }));
 
 vi.mock("@/components/files/preview/UrlTemplatePreview", () => ({
@@ -204,15 +232,15 @@ vi.mock("@/components/files/preview/PreviewUnavailable", () => ({
 
 vi.mock("@/components/files/preview/VideoPreview", () => ({
 	VideoPreview: ({
+		mediaStreamLinkFactory,
 		path,
-		videoStreamLinkFactory,
 	}: {
+		mediaStreamLinkFactory?: () => Promise<unknown>;
 		path: string;
-		videoStreamLinkFactory?: () => Promise<unknown>;
 	}) => (
 		<div
-			data-has-video-stream-link-factory={String(
-				Boolean(videoStreamLinkFactory),
+			data-has-media-stream-link-factory={String(
+				Boolean(mediaStreamLinkFactory),
 			)}
 		>{`video:${path}`}</div>
 	),
@@ -297,6 +325,8 @@ function renderDialog(
 ) {
 	const onClose = vi.fn();
 	const onFileUpdated = vi.fn();
+	const imagePreviewPath =
+		overrides.imagePreviewPath ?? "/files/7/image-preview";
 
 	render(
 		<FilePreviewDialog
@@ -311,6 +341,7 @@ function renderDialog(
 			}
 			onClose={onClose}
 			onFileUpdated={onFileUpdated}
+			imagePreviewPath={imagePreviewPath}
 			editable
 			{...overrides}
 		/>,
@@ -331,6 +362,7 @@ async function chooseOpenMethod(name: string) {
 describe("FilePreviewDialog", () => {
 	beforeEach(() => {
 		mockState.downloadPath.mockClear();
+		mockState.imagePreviewPath.mockClear();
 		mockState.previewAppStore.load.mockReset();
 		mockState.profile = {
 			category: "markdown",
@@ -396,13 +428,49 @@ describe("FilePreviewDialog", () => {
 		expect(screen.queryByText("files:mode_markdown")).not.toBeInTheDocument();
 	});
 
+	it("opens directly in picker mode when there is only one available app", async () => {
+		mockState.profile = {
+			category: "audio",
+			defaultMode: "builtin.audio",
+			isBlobPreview: true,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{
+					icon: "FileAudio",
+					key: "builtin.audio",
+					labelKey: "open_with_audio",
+					mode: "audio",
+				},
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 8,
+				mime_type: "audio/mpeg",
+				name: "track.mp3",
+				size: 4096,
+			} as never,
+			openMode: "picker",
+		});
+
+		expect(
+			screen.queryByRole("heading", { name: "files:choose_open_method" }),
+		).not.toBeInTheDocument();
+		expect(await screen.findByText("music:/files/8/download")).toHaveAttribute(
+			"data-has-media-stream-link-factory",
+			"false",
+		);
+	});
+
 	it("always shows the more-open-methods button while the chooser is visible", () => {
 		renderDialog();
 
 		expect(screen.getByText("files:more_open_methods")).toBeInTheDocument();
 	});
 
-	it("reveals extra open methods after expanding the more button", async () => {
+	it("opens the only visible app directly and still allows manual method switching", async () => {
 		mockState.profile = {
 			category: "markdown",
 			defaultMode: "builtin.code",
@@ -435,6 +503,19 @@ describe("FilePreviewDialog", () => {
 
 		renderDialog();
 
+		expect(
+			screen.queryByRole("heading", { name: "files:choose_open_method" }),
+		).not.toBeInTheDocument();
+		expect(
+			await screen.findByText("code:/files/7/download:true"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "files:choose_open_method" }),
+		);
+		expect(
+			await screen.findByRole("heading", { name: "files:choose_open_method" }),
+		).toBeInTheDocument();
 		expect(screen.getByText("files:more_open_methods")).toBeInTheDocument();
 		expect(screen.queryByText("files:mode_markdown")).not.toBeInTheDocument();
 
@@ -445,7 +526,6 @@ describe("FilePreviewDialog", () => {
 			screen.queryByText("files:more_open_methods"),
 		).not.toBeInTheDocument();
 		expect(screen.getByText("files:mode_markdown")).toBeInTheDocument();
-
 		await chooseOpenMethod("files:mode_markdown");
 		expect(
 			await screen.findByText("markdown:/files/7/download"),
@@ -595,7 +675,7 @@ describe("FilePreviewDialog", () => {
 				name: "clip.mp4",
 				size: 2048,
 			} as never,
-			videoStreamLinkFactory: async () => ({
+			mediaStreamLinkFactory: async () => ({
 				expires_at: "2026-01-01T00:00:00Z",
 				path: "/api/v1/s/share/stream/session/clip.mp4",
 			}),
@@ -603,12 +683,53 @@ describe("FilePreviewDialog", () => {
 
 		await screen.findByText("video:/files/7/download");
 		expect(screen.getByText("video:/files/7/download")).toHaveAttribute(
-			"data-has-video-stream-link-factory",
+			"data-has-media-stream-link-factory",
 			"true",
 		);
 		const classes = screen.getByTestId("dialog-content").className.split(/\s+/);
 		expect(classes).toContain("max-h-[90vh]");
 		expect(classes).not.toContain("h-[90vh]");
+	});
+
+	it("routes builtin audio previews through the streaming media preview", async () => {
+		mockState.profile = {
+			category: "audio",
+			defaultMode: "builtin.audio",
+			isBlobPreview: true,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{
+					icon: "FileAudio",
+					key: "builtin.audio",
+					labelKey: "open_with_audio",
+					mode: "audio",
+				},
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 8,
+				mime_type: "audio/mpeg",
+				name: "track.mp3",
+				size: 4096,
+			} as never,
+			mediaStreamLinkFactory: async () => ({
+				expires_at: "2026-01-01T00:00:00Z",
+				path: "/api/v1/s/share/stream/session/track.mp3",
+			}),
+		});
+
+		await screen.findByText("music:/files/8/download");
+		expect(document.querySelector('img[src^="blob:"]')).toBeNull();
+		expect(screen.getByText("music:/files/8/download")).toHaveAttribute(
+			"data-has-media-stream-link-factory",
+			"true",
+		);
+		expect(
+			screen.getByTestId("dialog-content").className.split(/\s+/),
+		).not.toContain("h-[90vh]");
 	});
 
 	it("loads the preview app registry when the store is still cold", async () => {
@@ -647,7 +768,9 @@ describe("FilePreviewDialog", () => {
 			} as never,
 		});
 
-		await screen.findByText("blob:image:/files/7/download:false");
+		expect(
+			await screen.findByRole("img", { name: "tall-image.png" }),
+		).toHaveAttribute("src", "blob:/files/7/download");
 		expect(
 			screen.getByTestId("dialog-content").className.split(/\s+/),
 		).not.toContain("h-[90vh]");
@@ -679,7 +802,9 @@ describe("FilePreviewDialog", () => {
 			} as never,
 		});
 
-		await screen.findByText("blob:image:/files/7/download:false");
+		expect(
+			await screen.findByRole("img", { name: "wide-image.png" }),
+		).toHaveAttribute("data-fill-container", "false");
 
 		fireEvent.click(
 			screen.getByRole("button", {
@@ -687,9 +812,10 @@ describe("FilePreviewDialog", () => {
 			}),
 		);
 
-		expect(
-			await screen.findByText("blob:image:/files/7/download:true"),
-		).toBeInTheDocument();
+		expect(screen.getByRole("img", { name: "wide-image.png" })).toHaveAttribute(
+			"data-fill-container",
+			"true",
+		);
 	});
 
 	it("auto-opens hybrid svg previews directly and still allows switching modes", async () => {
@@ -727,7 +853,9 @@ describe("FilePreviewDialog", () => {
 		expect(
 			screen.queryByRole("heading", { name: "files:choose_open_method" }),
 		).not.toBeInTheDocument();
-		await screen.findByText("blob:image:/files/7/download:false");
+		expect(
+			await screen.findByRole("img", { name: "logo.svg" }),
+		).toHaveAttribute("src", "blob:/files/7/download");
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "files:choose_open_method" }),

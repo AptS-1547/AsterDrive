@@ -29,6 +29,7 @@ const mockState = vi.hoisted(() => ({
 	fileBrowserContext: null as Record<string, unknown> | null,
 	formatBatchToast: vi.fn(),
 	handleApiError: vi.fn(),
+	musicPlayTracks: vi.fn(),
 	location: {
 		pathname: "/folder/12",
 		search: "?name=Projects",
@@ -291,13 +292,31 @@ vi.mock("@/components/files/FileBrowserContext", () => ({
 vi.mock("@/components/files/FileGrid", () => ({
 	FileGrid: () => {
 		const context = mockState.fileBrowserContext as {
-			files: Array<{ id: number; name: string }>;
+			files: Array<
+				Record<string, unknown> & {
+					id: number;
+					mime_type?: string;
+					name: string;
+				}
+			>;
 			folders: Array<{ id: number; name: string }>;
 			onArchiveDownload: (folderId: number) => void;
 			onCopy: (type: "file" | "folder", id: number) => void;
-			onFileChooseOpenMethod: (file: { id: number; name: string }) => void;
-			onFileClick: (file: { id: number; name: string }) => void;
-			onFileOpen: (file: { id: number; name: string }) => void;
+			onFileChooseOpenMethod: (file: {
+				id: number;
+				mime_type: string;
+				name: string;
+			}) => void;
+			onFileClick: (file: {
+				id: number;
+				mime_type: string;
+				name: string;
+			}) => void;
+			onFileOpen: (file: {
+				id: number;
+				mime_type: string;
+				name: string;
+			}) => void;
 			onFolderOpen: (id: number, name: string) => void;
 			onMoveToFolder: (
 				fileIds: number[],
@@ -313,6 +332,17 @@ vi.mock("@/components/files/FileGrid", () => ({
 		} | null;
 		const folders = context?.folders ?? [];
 		const files = context?.files ?? [];
+		const defaultClickFile = {
+			id: 3,
+			mime_type: "application/pdf",
+			name: "report.pdf",
+		};
+		const clickFile =
+			files.find(
+				(file) =>
+					file.file_category === "audio" ||
+					file.mime_type?.startsWith("audio/"),
+			) ?? defaultClickFile;
 
 		return (
 			<div>
@@ -323,36 +353,15 @@ vi.mock("@/components/files/FileGrid", () => ({
 				>
 					open-folder
 				</button>
-				<button
-					type="button"
-					onClick={() =>
-						context?.onFileClick({
-							id: 3,
-							name: "report.pdf",
-						})
-					}
-				>
+				<button type="button" onClick={() => context?.onFileClick(clickFile)}>
 					open-file
 				</button>
-				<button
-					type="button"
-					onClick={() =>
-						context?.onFileOpen({
-							id: 3,
-							name: "report.pdf",
-						})
-					}
-				>
+				<button type="button" onClick={() => context?.onFileOpen(clickFile)}>
 					open-file-direct
 				</button>
 				<button
 					type="button"
-					onClick={() =>
-						context?.onFileChooseOpenMethod({
-							id: 3,
-							name: "report.pdf",
-						})
-					}
+					onClick={() => context?.onFileChooseOpenMethod(clickFile)}
 				>
 					open-file-picker
 				</button>
@@ -817,6 +826,7 @@ vi.mock("@/services/fileService", () => ({
 			mockState.getArchivePreview(...args),
 		createWopiSession: (...args: unknown[]) =>
 			mockState.createWopiSession(...args),
+		downloadPath: (id: number) => `/files/${id}/download`,
 		downloadUrl: (id: number) => `https://download/${id}`,
 		setFileLock: (...args: unknown[]) => mockState.setFileLock(...args),
 		setFolderLock: (...args: unknown[]) => mockState.setFolderLock(...args),
@@ -847,7 +857,21 @@ vi.mock("@/stores/fileStore", () => {
 	return { useFileStore };
 });
 
+vi.mock("@/stores/musicPlayerStore", () => ({
+	useMusicPlayerStore: (
+		selector: (state: {
+			playTracks: typeof mockState.musicPlayTracks;
+		}) => unknown,
+	) =>
+		selector({
+			playTracks: mockState.musicPlayTracks,
+		}),
+}));
+
 vi.mock("@/stores/workspaceStore", () => ({
+	bindWorkspaceService: <T extends object>(
+		factory: (workspace: { kind: "personal" }) => T,
+	) => factory({ kind: "personal" }),
 	useWorkspaceStore: Object.assign(
 		<T,>(selector: (state: { workspace: { kind: "personal" } }) => T) =>
 			selector({ workspace: { kind: "personal" } }),
@@ -931,6 +955,7 @@ describe("FileBrowserPage", () => {
 		mockState.fileBrowserContext = null;
 		mockState.formatBatchToast.mockReset();
 		mockState.handleApiError.mockReset();
+		mockState.musicPlayTracks.mockReset();
 		mockState.location = {
 			pathname: "/folder/12",
 			search: "?name=Projects",
@@ -1065,6 +1090,61 @@ describe("FileBrowserPage", () => {
 		expect(
 			await screen.findByText("preview:report.pdf:auto"),
 		).toBeInTheDocument();
+	});
+
+	it("plays an audio file directly with the current folder music queue", async () => {
+		mockState.store.files = [
+			createFile({
+				file_category: "audio",
+				id: 3,
+				mime_type: "audio/mpeg",
+				name: "Artist - Song.mp3",
+				size: 1024,
+			}),
+			createFile({
+				file_category: "audio",
+				id: 4,
+				mime_type: "audio/flac",
+				name: "Second.flac",
+				size: 2048,
+			}),
+			createFile({
+				file_category: "document",
+				id: 5,
+				mime_type: "application/pdf",
+				name: "Manual.pdf",
+				size: 4096,
+			}),
+		];
+
+		render(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(mockState.store.navigateTo).toHaveBeenCalledWith(12, "Projects");
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "open-file" }));
+
+		await waitFor(() => {
+			expect(mockState.musicPlayTracks).toHaveBeenCalledWith(
+				[
+					expect.objectContaining({
+						id: "file:3",
+						metadata: expect.objectContaining({
+							artist: "Artist",
+							title: "Song",
+						}),
+						name: "Artist - Song.mp3",
+					}),
+					expect.objectContaining({
+						id: "file:4",
+						name: "Second.flac",
+					}),
+				],
+				"file:3",
+			);
+		});
+		expect(screen.queryByText("preview:Artist - Song.mp3:auto")).toBeNull();
 	});
 
 	it("uses a house icon at root and a folder icon in child folders", async () => {

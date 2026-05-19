@@ -129,8 +129,14 @@ describe("shareService", () => {
 		);
 		expect(shareService.downloadPath("token-1")).toBe("/s/token-1/download");
 		expect(shareService.thumbnailPath("token-1")).toBe("/s/token-1/thumbnail");
+		expect(shareService.imagePreviewPath("token-1")).toBe(
+			"/s/token-1/image-preview",
+		);
 		expect(shareService.downloadFolderPath("token-1", 42)).toBe(
 			"/s/token-1/files/42/download",
+		);
+		expect(shareService.folderFileImagePreviewPath("token-1", 42)).toBe(
+			"/s/token-1/files/42/image-preview",
 		);
 		expect(shareService.downloadUrl("token-1")).toBe(
 			"/api/v1/s/token-1/download",

@@ -14,6 +14,7 @@ use openidconnect::{EndpointMaybeSet, EndpointNotSet, EndpointSet};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::auth_service;
 use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
+use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 
 use super::super::driver::{
     ExternalAuthAuthorizationStart, ExternalAuthCallback, ExternalAuthProfile,
@@ -157,7 +158,7 @@ impl ExternalAuthProviderDriver for OidcProviderDriver {
     ) -> Result<ExternalAuthProviderTestResult> {
         let metadata = discover_provider(provider).await?;
         let token_endpoint = metadata.token_endpoint().ok_or_else(|| {
-            AsterError::config_error("OIDC discovery metadata missing token_endpoint")
+            AsterError::validation_error("OIDC discovery metadata missing token_endpoint")
         })?;
         let authorization_endpoint = metadata.authorization_endpoint().as_str().to_string();
         let token_endpoint = token_endpoint.as_str().to_string();
@@ -191,6 +192,7 @@ fn oidc_http_client() -> Result<OidcHttpClient> {
     reqwest::ClientBuilder::new()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(15))
+        .user_agent(OUTBOUND_HTTP_USER_AGENT)
         .build()
         .map_aster_err_ctx(
             "failed to build OIDC HTTP client",
@@ -204,17 +206,17 @@ async fn build_client(
 ) -> Result<OidcClient> {
     let http_client = oidc_http_client()?;
     let issuer = IssuerUrl::new(provider.require_issuer_url()?.to_string())
-        .map_aster_err_ctx("invalid OIDC issuer URL", AsterError::config_error)?;
+        .map_aster_err_ctx("invalid OIDC issuer URL", AsterError::validation_error)?;
     let metadata = CoreProviderMetadata::discover_async(issuer, &http_client)
         .await
-        .map_aster_err_ctx("OIDC discovery failed", AsterError::config_error)?;
+        .map_aster_err_ctx("OIDC discovery failed", AsterError::validation_error)?;
     let client_secret = provider
         .client_secret
         .clone()
         .filter(|secret| !secret.is_empty())
         .map(ClientSecret::new);
     let redirect_uri = RedirectUrl::new(redirect_uri.to_string())
-        .map_aster_err_ctx("invalid OIDC redirect URI", AsterError::config_error)?;
+        .map_aster_err_ctx("invalid OIDC redirect URI", AsterError::validation_error)?;
     Ok(CoreClient::from_provider_metadata(
         metadata,
         ClientId::new(provider.client_id.clone()),
@@ -226,10 +228,10 @@ async fn build_client(
 async fn discover_provider(provider: &ExternalAuthProviderConfig) -> Result<CoreProviderMetadata> {
     let http_client = oidc_http_client()?;
     let issuer = IssuerUrl::new(provider.require_issuer_url()?.to_string())
-        .map_aster_err_ctx("invalid OIDC issuer URL", AsterError::config_error)?;
+        .map_aster_err_ctx("invalid OIDC issuer URL", AsterError::validation_error)?;
     CoreProviderMetadata::discover_async(issuer, &http_client)
         .await
-        .map_aster_err_ctx("OIDC discovery failed", AsterError::config_error)
+        .map_aster_err_ctx("OIDC discovery failed", AsterError::validation_error)
 }
 
 fn validate_oidc_required_claim(value: &str, field: &str, max_len: usize) -> Result<String> {

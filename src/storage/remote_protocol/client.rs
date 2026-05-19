@@ -10,6 +10,7 @@ use tokio_util::io::{ReaderStream, StreamReader};
 use crate::errors::{AsterError, Result};
 use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions};
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
+use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 
 use super::auth::{normalize_remote_base_url, sign_internal_request, sign_presigned_request};
 use super::errors::{
@@ -53,6 +54,7 @@ static REMOTE_HTTP_CLIENT: LazyLock<std::result::Result<reqwest::Client, String>
             .connect_timeout(Duration::from_secs(DEFAULT_REMOTE_CONNECT_TIMEOUT_SECS))
             .read_timeout(Duration::from_secs(DEFAULT_REMOTE_READ_TIMEOUT_SECS))
             .timeout(Duration::from_secs(DEFAULT_REMOTE_OPERATION_TIMEOUT_SECS))
+            .user_agent(OUTBOUND_HTTP_USER_AGENT)
             .build()
             .map_err(|e| format!("build remote HTTP client: {e}"))
     });

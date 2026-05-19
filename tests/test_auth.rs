@@ -23,6 +23,7 @@ use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse};
 use webauthn_rs_proto::{AllowCredentials, Mediation, ResidentKeyRequirement};
 
 const TEST_BROWSER_ORIGIN: &str = "http://localhost:8080";
+const TEST_PUBLIC_SITE_ORIGIN: &str = "https://pan.esaps.net";
 
 macro_rules! login_user_with_credentials {
     ($app:expr, $identifier:expr, $password:expr) => {{
@@ -872,6 +873,8 @@ async fn test_refresh_rotation_isolated_across_devices() {
 
 #[actix_web::test]
 async fn test_refresh_reuse_detected_revokes_all_sessions() {
+    use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+
     let state = common::setup().await;
     let app = create_test_app!(state.clone());
 
@@ -911,12 +914,13 @@ async fn test_refresh_reuse_detected_revokes_all_sessions() {
             .unwrap()
             .is_none()
     );
-    assert!(
-        auth_session_repo::find_by_refresh_jti(&state.db, &rotated_jti)
-            .await
-            .unwrap()
-            .is_some()
-    );
+    let rotated_session = auth_session_repo::find_by_refresh_jti(&state.db, &rotated_jti)
+        .await
+        .unwrap()
+        .expect("rotated auth session should exist");
+    let mut active = rotated_session.into_active_model();
+    active.last_seen_at = Set(chrono::Utc::now() - chrono::Duration::seconds(60));
+    active.update(&state.db).await.unwrap();
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
@@ -1009,8 +1013,171 @@ async fn test_concurrent_refresh_same_token_has_single_winner() {
     let winner = first.as_ref().ok().or(second.as_ref().ok()).unwrap();
     assert!(!winner.0.is_empty());
     assert!(!winner.1.is_empty());
+    let winner_access = winner.0.clone();
     let loser = first.as_ref().err().or(second.as_ref().err()).unwrap();
     assert_eq!(loser.code(), "E012");
+
+    let user = user_repo::find_by_username(&state.db, "testuser")
+        .await
+        .unwrap()
+        .expect("user should exist");
+    assert_eq!(user.session_version, 1);
+    assert!(
+        auth_session_repo::list_active_for_user(&state.db, user.id)
+            .await
+            .unwrap()
+            .len()
+            == 1
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", common::access_cookie_header(&winner_access)))
+        .insert_header(common::csrf_header_for(&winner_access))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_recent_refresh_reuse_from_different_client_revokes_all_sessions() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+
+    let (_, refresh) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
+        .insert_header(("User-Agent", "AsterDrive Original Client/1.0"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
+        .insert_header(("User-Agent", "AsterDrive Suspicious Client/1.0"))
+        .to_request();
+    assert_service_status!(
+        app,
+        req,
+        401,
+        "recent refresh reuse from a different client should be treated as compromise"
+    );
+
+    let user = user_repo::find_by_username(&state.db, "testuser")
+        .await
+        .unwrap()
+        .expect("user should exist");
+    assert_eq!(user.session_version, 2);
+    assert!(
+        auth_session_repo::list_active_for_user(&state.db, user.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[actix_web::test]
+async fn test_recent_refresh_reuse_from_spoofed_forwarded_ip_stays_stale() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "testuser",
+            "email": "test@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .insert_header(("User-Agent", "AsterDrive Same Client/1.0"))
+        .insert_header(("X-Forwarded-For", "203.0.113.10"))
+        .set_json(serde_json::json!({
+            "identifier": "testuser",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
+        .insert_header(("User-Agent", "AsterDrive Same Client/1.0"))
+        .insert_header(("X-Forwarded-For", "203.0.113.11"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
+        .insert_header(("User-Agent", "AsterDrive Same Client/1.0"))
+        .insert_header(("X-Forwarded-For", "203.0.113.12"))
+        .to_request();
+    assert_service_status!(
+        app,
+        req,
+        401,
+        "untrusted forwarded IP changes should not make same-client stale refresh look compromised"
+    );
+
+    let user = user_repo::find_by_username(&state.db, "testuser")
+        .await
+        .unwrap()
+        .expect("user should exist");
+    assert_eq!(user.session_version, 1);
+    assert_eq!(
+        auth_session_repo::list_active_for_user(&state.db, user.id)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[actix_web::test]
+async fn test_recent_refresh_reuse_without_client_evidence_revokes_all_sessions() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+
+    let (_, refresh) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
+        .insert_header(common::csrf_header_for(&refresh))
+        .to_request();
+    assert_service_status!(
+        app,
+        req,
+        401,
+        "recent refresh reuse without client evidence should be treated as compromise"
+    );
 
     let user = user_repo::find_by_username(&state.db, "testuser")
         .await
@@ -1065,6 +1232,91 @@ async fn test_setup_still_works_when_public_registration_is_disabled() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
+}
+
+#[actix_web::test]
+async fn test_setup_bootstraps_public_site_url_from_request_origin() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/setup")
+        .insert_header(("Origin", TEST_PUBLIC_SITE_ORIGIN))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "adminuser",
+            "email": "admin@example.com",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let stored = aster_drive::db::repository::config_repo::find_by_key(
+        &state.db,
+        aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
+    )
+    .await
+    .unwrap()
+    .expect("public_site_url should exist");
+    assert_eq!(stored.value, format!(r#"["{TEST_PUBLIC_SITE_ORIGIN}"]"#));
+    assert_eq!(stored.updated_by, Some(1));
+}
+
+#[actix_web::test]
+async fn test_setup_does_not_overwrite_existing_public_site_url() {
+    let state = common::setup().await;
+    aster_drive::services::config_service::set(
+        &state,
+        aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
+        vec!["https://pan-cloudreve.esaps.net".to_string()],
+        1,
+    )
+    .await
+    .expect("public_site_url should be writable");
+    let app = create_test_app!(state.clone());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/setup")
+        .insert_header(("Origin", TEST_PUBLIC_SITE_ORIGIN))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "adminuser",
+            "email": "admin@example.com",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let stored = aster_drive::db::repository::config_repo::find_by_key(
+        &state.db,
+        aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
+    )
+    .await
+    .unwrap()
+    .expect("public_site_url should exist");
+    assert_eq!(stored.value, r#"["https://pan-cloudreve.esaps.net"]"#);
+}
+
+#[actix_web::test]
+async fn test_passkey_login_start_rejects_missing_public_site_url_with_config_error() {
+    let state = common::setup_with_memory_cache().await;
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/passkeys/login/start")
+        .insert_header(("Origin", TEST_BROWSER_ORIGIN))
+        .set_json(serde_json::json!({ "identifier": "testuser" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 1000);
+    assert_eq!(
+        body["msg"],
+        "public_site_url must be configured before enabling passkey authentication"
+    );
 }
 
 #[actix_web::test]

@@ -12,6 +12,11 @@ const mockState = vi.hoisted(() => ({
 		(token: string, fileId: number) => `/s/${token}/files/${fileId}/download`,
 	),
 	downloadPath: vi.fn((token: string) => `/s/${token}/download`),
+	imagePreviewPath: vi.fn((token: string) => `/s/${token}/image-preview`),
+	folderFileImagePreviewPath: vi.fn(
+		(token: string, fileId: number) =>
+			`/s/${token}/files/${fileId}/image-preview`,
+	),
 	createStreamSession: vi.fn((token: string) =>
 		Promise.resolve({
 			expires_at: "2026-01-01T00:00:00Z",
@@ -32,6 +37,7 @@ const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
 	listContent: vi.fn(),
 	listSubfolderContent: vi.fn(),
+	musicPlayTracks: vi.fn(),
 	openWindow: vi.fn(),
 	params: { token: "share-token" as string | undefined },
 	previewAppStore: {
@@ -75,6 +81,17 @@ vi.mock("@/stores/previewAppStore", () => ({
 	usePreviewAppStore: (
 		selector: (state: typeof mockState.previewAppStore) => unknown,
 	) => selector(mockState.previewAppStore),
+}));
+
+vi.mock("@/stores/musicPlayerStore", () => ({
+	useMusicPlayerStore: (
+		selector: (state: {
+			playTracks: typeof mockState.musicPlayTracks;
+		}) => unknown,
+	) =>
+		selector({
+			playTracks: mockState.musicPlayTracks,
+		}),
 }));
 
 vi.mock("@/components/common/SkeletonCard", () => ({
@@ -133,28 +150,31 @@ vi.mock("@/components/files/FilePreview", () => ({
 		file,
 		open = true,
 		downloadPath,
+		imagePreviewPath,
 		editable,
 		archivePreviewFactory,
-		videoStreamLinkFactory,
+		mediaStreamLinkFactory,
 	}: {
 		file: { name: string };
 		open?: boolean;
 		downloadPath?: string;
+		imagePreviewPath?: string;
 		editable?: boolean;
 		archivePreviewFactory?: () => Promise<unknown>;
-		videoStreamLinkFactory?: () => Promise<unknown>;
+		mediaStreamLinkFactory?: () => Promise<unknown>;
 	}) =>
 		open ? (
 			<div
 				data-testid="file-preview"
 				data-name={file.name}
 				data-download-path={downloadPath ?? ""}
+				data-image-preview-path={imagePreviewPath ?? ""}
 				data-editable={String(Boolean(editable))}
 				data-has-archive-preview-factory={String(
 					Boolean(archivePreviewFactory),
 				)}
-				data-has-video-stream-link-factory={String(
-					Boolean(videoStreamLinkFactory),
+				data-has-media-stream-link-factory={String(
+					Boolean(mediaStreamLinkFactory),
 				)}
 			/>
 		) : null,
@@ -360,6 +380,10 @@ vi.mock("@/services/shareService", () => ({
 		getFolderFileArchivePreview: (...args: unknown[]) =>
 			mockState.getFolderFileArchivePreview(...args),
 		thumbnailPath: (...args: unknown[]) => mockState.thumbnailPath(...args),
+		imagePreviewPath: (...args: unknown[]) =>
+			mockState.imagePreviewPath(...args),
+		folderFileImagePreviewPath: (...args: unknown[]) =>
+			mockState.folderFileImagePreviewPath(...args),
 		downloadUrl: (...args: unknown[]) => mockState.downloadUrl(...args),
 		getInfo: (...args: unknown[]) => mockState.getInfo(...args),
 		listContent: (...args: unknown[]) => mockState.listContent(...args),
@@ -379,6 +403,8 @@ describe("ShareViewPage", () => {
 		mockState.getArchivePreview.mockClear();
 		mockState.getFolderFileArchivePreview.mockClear();
 		mockState.thumbnailPath.mockClear();
+		mockState.imagePreviewPath.mockClear();
+		mockState.folderFileImagePreviewPath.mockClear();
 		mockState.downloadUrl.mockClear();
 		mockState.getInfo.mockReset();
 		mockState.handleApiError.mockReset();
@@ -391,6 +417,7 @@ describe("ShareViewPage", () => {
 		mockState.previewAppStore.load.mockResolvedValue(undefined);
 		mockState.toastSuccess.mockReset();
 		mockState.verifyPassword.mockReset();
+		mockState.musicPlayTracks.mockReset();
 		mockState.verifyPassword.mockResolvedValue(undefined);
 		mockState.listContent.mockResolvedValue({
 			files: [],
@@ -518,7 +545,7 @@ describe("ShareViewPage", () => {
 			"true",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
-			"data-has-video-stream-link-factory",
+			"data-has-media-stream-link-factory",
 			"true",
 		);
 
@@ -529,6 +556,39 @@ describe("ShareViewPage", () => {
 			"https://download/share-token",
 			"_blank",
 		);
+	});
+
+	it("plays shared music directly without opening the file preview", async () => {
+		mockState.getInfo.mockResolvedValueOnce({
+			download_count: 0,
+			has_password: false,
+			mime_type: "audio/mpeg",
+			name: "Shared Song.mp3",
+			shared_by: {
+				avatar: null,
+				name: "Alice Example",
+			},
+			share_type: "file",
+			size: 512,
+		} as never);
+
+		render(<ShareViewPage />);
+
+		await screen.findByText("Shared Song.mp3");
+		fireEvent.click(screen.getByRole("button", { name: /files:preview/i }));
+
+		await waitFor(() => {
+			expect(mockState.musicPlayTracks).toHaveBeenCalledWith(
+				[
+					expect.objectContaining({
+						id: "share:share-token:file",
+						name: "Shared Song.mp3",
+					}),
+				],
+				"share:share-token:file",
+			);
+		});
+		expect(screen.queryByTestId("file-preview")).not.toBeInTheDocument();
 	});
 
 	it("navigates folder shares and uses the folder-specific preview and download paths", async () => {
@@ -600,7 +660,7 @@ describe("ShareViewPage", () => {
 			"true",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
-			"data-has-video-stream-link-factory",
+			"data-has-media-stream-link-factory",
 			"true",
 		);
 
@@ -616,5 +676,48 @@ describe("ShareViewPage", () => {
 			"https://download/share-token/files/5",
 			"_blank",
 		);
+	});
+
+	it("plays shared folder music directly from the folder listing", async () => {
+		mockState.getInfo.mockResolvedValueOnce({
+			has_password: false,
+			name: "Shared Root",
+			shared_by: {
+				avatar: {
+					source: "gravatar",
+					url_512: "https://www.gravatar.com/avatar/hash?s=512",
+					url_1024: "https://www.gravatar.com/avatar/hash?s=1024",
+					version: 2,
+				},
+				name: "Alice Example",
+			},
+			share_type: "folder",
+		} as never);
+		mockState.listContent.mockResolvedValueOnce({
+			files: [
+				{ id: 2, mime_type: "audio/mpeg", name: "Song.mp3", size: 2 },
+				{ id: 3, mime_type: "text/plain", name: "notes.txt", size: 3 },
+			],
+			folders: [],
+			next_file_cursor: null,
+		} as never);
+
+		render(<ShareViewPage />);
+
+		expect(await screen.findByText("Song.mp3")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "preview:Song.mp3" }));
+
+		await waitFor(() => {
+			expect(mockState.musicPlayTracks).toHaveBeenCalledWith(
+				[
+					expect.objectContaining({
+						id: "share:share-token:file:2",
+						name: "Song.mp3",
+					}),
+				],
+				"share:share-token:file:2",
+			);
+		});
+		expect(screen.queryByTestId("file-preview")).not.toBeInTheDocument();
 	});
 });

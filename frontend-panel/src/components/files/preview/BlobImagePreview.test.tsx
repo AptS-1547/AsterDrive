@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BlobMediaPreview } from "@/components/files/preview/BlobMediaPreview";
+import { BlobImagePreview } from "@/components/files/preview/BlobImagePreview";
 
 const mockState = vi.hoisted(() => ({
 	retry: vi.fn(),
@@ -19,7 +19,7 @@ vi.mock("@/hooks/useBlobUrl", () => ({
 
 const file = { name: "preview.png", mime_type: "image/png" };
 
-describe("BlobMediaPreview", () => {
+describe("BlobImagePreview", () => {
 	beforeEach(() => {
 		mockState.retry.mockReset();
 		mockState.useBlobUrl.mockReset();
@@ -39,7 +39,7 @@ describe("BlobMediaPreview", () => {
 			retry: mockState.retry,
 		});
 
-		render(<BlobMediaPreview file={file} mode="image" path="/files/1" />);
+		render(<BlobImagePreview file={file} path="/files/1" />);
 
 		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1");
 		expect(screen.getByText("loading_preview")).toBeInTheDocument();
@@ -53,7 +53,7 @@ describe("BlobMediaPreview", () => {
 			retry: mockState.retry,
 		});
 
-		render(<BlobMediaPreview file={file} mode="image" path="/files/1" />);
+		render(<BlobImagePreview file={file} path="/files/1" />);
 
 		fireEvent.click(screen.getByRole("button", { name: "preview_retry" }));
 
@@ -69,13 +69,13 @@ describe("BlobMediaPreview", () => {
 			retry: mockState.retry,
 		});
 
-		render(<BlobMediaPreview file={file} mode="image" path="/files/1" />);
+		render(<BlobImagePreview file={file} path="/files/1" />);
 
 		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
 	});
 
 	it("renders an image preview with the file name as alt text", () => {
-		render(<BlobMediaPreview file={file} mode="image" path="/files/1" />);
+		render(<BlobImagePreview file={file} path="/files/1" />);
 
 		const image = screen.getByRole("img", { name: "preview.png" });
 
@@ -91,9 +91,8 @@ describe("BlobMediaPreview", () => {
 
 	it("gives svg image previews an explicit layout width", () => {
 		render(
-			<BlobMediaPreview
+			<BlobImagePreview
 				file={{ name: "logo.svg", mime_type: "image/svg+xml" }}
-				mode="image"
 				path="/files/svg"
 			/>,
 		);
@@ -113,12 +112,7 @@ describe("BlobMediaPreview", () => {
 
 	it("lets expanded image previews fill the available preview surface", () => {
 		render(
-			<BlobMediaPreview
-				file={file}
-				fillContainer
-				mode="image"
-				path="/files/expanded"
-			/>,
+			<BlobImagePreview file={file} fillContainer path="/files/expanded" />,
 		);
 
 		const image = screen.getByRole("img", { name: "preview.png" });
@@ -129,32 +123,81 @@ describe("BlobMediaPreview", () => {
 		expect(image.parentElement).not.toHaveClass("w-fit");
 	});
 
-	it("renders video and audio previews for their media modes", () => {
-		const video = render(
-			<BlobMediaPreview
-				file={{ name: "clip.mp4", mime_type: "video/mp4" }}
-				mode="video"
-				path="/files/video"
+	it("uses the backend preview directly for HEIC images", () => {
+		mockState.useBlobUrl.mockReturnValue({
+			blobUrl: "blob:fallback",
+			error: false,
+			loading: false,
+			retry: mockState.retry,
+		});
+
+		render(
+			<BlobImagePreview
+				file={{ name: "photo.heic", mime_type: "image/heic" }}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
 			/>,
 		);
 
-		expect(video.container.querySelector("video")).toHaveAttribute(
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/image-preview");
+		expect(screen.getByRole("img", { name: "photo.heic" })).toHaveAttribute(
 			"src",
-			"blob:image",
+			"blob:fallback",
 		);
-		video.unmount();
+	});
 
-		const audio = render(
-			<BlobMediaPreview
-				file={{ name: "track.mp3", mime_type: "audio/mpeg" }}
-				mode="audio"
-				path="/files/audio"
+	it("uses the backend preview directly for HEIF files detected by extension", () => {
+		mockState.useBlobUrl.mockReturnValue({
+			blobUrl: "blob:fallback",
+			error: false,
+			loading: false,
+			retry: mockState.retry,
+		});
+
+		render(
+			<BlobImagePreview
+				file={{ name: "camera.HEIF", mime_type: "application/octet-stream" }}
+				path="/files/2/download"
+				fallbackPath="/files/2/image-preview"
 			/>,
 		);
 
-		expect(audio.container.querySelector("audio")).toHaveAttribute(
-			"src",
-			"blob:image",
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/2/image-preview");
+	});
+
+	it("does not switch ordinary images to the backend preview on render errors", () => {
+		render(
+			<BlobImagePreview
+				file={file}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
 		);
+
+		fireEvent.error(screen.getByRole("img", { name: "preview.png" }));
+
+		expect(mockState.useBlobUrl).toHaveBeenLastCalledWith("/files/1/download");
+		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
+	});
+
+	it("shows the retry state when the HEIC backend preview cannot render", () => {
+		mockState.useBlobUrl.mockReturnValue({
+			blobUrl: "blob:fallback",
+			error: false,
+			loading: false,
+			retry: mockState.retry,
+		});
+
+		render(
+			<BlobImagePreview
+				file={{ name: "photo.heic", mime_type: "image/heic" }}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
+		);
+
+		fireEvent.error(screen.getByRole("img", { name: "photo.heic" }));
+
+		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
 	});
 });

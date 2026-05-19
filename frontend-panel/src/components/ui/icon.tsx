@@ -54,22 +54,34 @@ import {
 	PiMinus,
 	PiMonitor,
 	PiMoon,
+	PiMusicNotes,
+	PiPause,
 	PiPencilSimple,
+	PiPlay,
 	PiPlus,
 	PiPower,
 	PiPresentation,
+	PiQueue,
+	PiRepeat,
+	PiRepeatOnce,
 	PiScroll,
 	PiShield,
+	PiShuffle,
 	PiSignIn,
 	PiSignOut,
+	PiSkipBack,
+	PiSkipForward,
 	PiSortAscending,
 	PiSortDescending,
+	PiSpeakerHigh,
+	PiSpeakerSlash,
 	PiSpinner,
 	PiSun,
 	PiTable,
 	PiTrash,
 	PiUploadSimple,
 	PiUser,
+	PiVinylRecord,
 	PiWarning,
 	PiWarningCircle,
 	PiWifiHigh,
@@ -132,16 +144,27 @@ export type IconName =
 	| "Monitor"
 	| "Moon"
 	| "Minus"
+	| "Pause"
+	| "MusicNotes"
 	| "PencilSimple"
+	| "Play"
 	| "Plus"
 	| "Power"
 	| "Presentation"
+	| "Queue"
+	| "Repeat"
+	| "RepeatOnce"
 	| "Scroll"
 	| "Shield"
 	| "SignIn"
 	| "SignOut"
+	| "Shuffle"
+	| "SkipBack"
+	| "SkipForward"
 	| "SortAscending"
 	| "SortDescending"
+	| "SpeakerHigh"
+	| "SpeakerSlash"
 	| "Spinner"
 	| "Sun"
 	| "Table"
@@ -149,6 +172,7 @@ export type IconName =
 	| "Undo"
 	| "Upload"
 	| "User"
+	| "VinylRecord"
 	| "Warning"
 	| "WifiHigh"
 	| "WifiX"
@@ -209,16 +233,27 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Monitor: PiMonitor,
 	Moon: PiMoon,
 	Minus: PiMinus,
+	MusicNotes: PiMusicNotes,
+	Pause: PiPause,
 	PencilSimple: PiPencilSimple,
+	Play: PiPlay,
 	Plus: PiPlus,
 	Power: PiPower,
 	Presentation: PiPresentation,
+	Queue: PiQueue,
+	Repeat: PiRepeat,
+	RepeatOnce: PiRepeatOnce,
 	Scroll: PiScroll,
 	Shield: PiShield,
 	SignIn: PiSignIn,
 	SignOut: PiSignOut,
+	Shuffle: PiShuffle,
+	SkipBack: PiSkipBack,
+	SkipForward: PiSkipForward,
 	SortAscending: PiSortAscending,
 	SortDescending: PiSortDescending,
+	SpeakerHigh: PiSpeakerHigh,
+	SpeakerSlash: PiSpeakerSlash,
 	Spinner: PiSpinner,
 	Sun: PiSun,
 	Table: PiTable,
@@ -226,6 +261,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Undo: PiArrowUUpLeft,
 	Upload: PiUploadSimple,
 	User: PiUser,
+	VinylRecord: PiVinylRecord,
 	Warning: PiWarning,
 	WifiHigh: PiWifiHigh,
 	WifiX: PiWifiX,

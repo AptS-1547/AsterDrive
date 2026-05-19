@@ -9,7 +9,7 @@ use std::io::Cursor;
 
 use super::avatar::generate_avatar_variants;
 use super::resolve::resolve_avatar_processor;
-use super::shared::known_thumbnail_cache_paths;
+use super::shared::{known_image_preview_cache_paths, known_thumbnail_cache_paths};
 
 fn config_model(key: &str, value: &str) -> system_config::Model {
     system_config::Model {
@@ -54,6 +54,21 @@ fn known_thumbnail_cache_paths_include_normalized_namespaces() {
             format!("_thumb/vips-cli/1/ab/ca/{hash}.webp"),
             format!("_thumb/ffmpeg-cli/1/ab/ca/{hash}.webp"),
             format!("_thumb/storage-native/1/ab/ca/{hash}.webp"),
+        ]
+    );
+}
+
+#[test]
+fn known_image_preview_cache_paths_include_normalized_namespaces() {
+    let hash = "abc".repeat(21) + "a";
+    let paths = known_image_preview_cache_paths(&hash);
+    assert_eq!(
+        paths,
+        vec![
+            format!("_preview/images/1/ab/ca/{hash}.webp"),
+            format!("_preview/vips-cli/1/ab/ca/{hash}.webp"),
+            format!("_preview/ffmpeg-cli/1/ab/ca/{hash}.webp"),
+            format!("_preview/storage-native/1/ab/ca/{hash}.webp"),
         ]
     );
 }

@@ -7,17 +7,19 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 		open,
 		file,
 		downloadPath,
+		imagePreviewPath,
 		editable,
 		previewLinkFactory,
-		videoStreamLinkFactory,
+		mediaStreamLinkFactory,
 		wopiSessionFactory,
 	}: {
 		open: boolean;
 		file: { name: string };
 		downloadPath?: string;
+		imagePreviewPath?: string;
 		editable?: boolean;
 		previewLinkFactory?: () => Promise<unknown>;
-		videoStreamLinkFactory?: () => Promise<unknown>;
+		mediaStreamLinkFactory?: () => Promise<unknown>;
 		wopiSessionFactory?: (appKey: string) => Promise<unknown>;
 	}) => (
 		<div
@@ -25,10 +27,11 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 			data-open={String(open)}
 			data-file-name={file.name}
 			data-download-path={downloadPath ?? ""}
+			data-image-preview-path={imagePreviewPath ?? ""}
 			data-editable={String(Boolean(editable))}
 			data-has-preview-link-factory={String(Boolean(previewLinkFactory))}
-			data-has-video-stream-link-factory={String(
-				Boolean(videoStreamLinkFactory),
+			data-has-media-stream-link-factory={String(
+				Boolean(mediaStreamLinkFactory),
 			)}
 			data-has-wopi-session-factory={String(Boolean(wopiSessionFactory))}
 		/>
@@ -44,9 +47,10 @@ describe("FilePreview", () => {
 				onClose={vi.fn()}
 				onFileUpdated={vi.fn()}
 				downloadPath="/files/7/download"
+				imagePreviewPath="/files/7/image-preview"
 				editable
 				previewLinkFactory={async () => ({})}
-				videoStreamLinkFactory={async () => ({})}
+				mediaStreamLinkFactory={async () => ({})}
 				wopiSessionFactory={async () => ({})}
 			/>,
 		);
@@ -64,6 +68,10 @@ describe("FilePreview", () => {
 			"/files/7/download",
 		);
 		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
+			"data-image-preview-path",
+			"/files/7/image-preview",
+		);
+		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
 			"data-editable",
 			"true",
 		);
@@ -72,7 +80,7 @@ describe("FilePreview", () => {
 			"true",
 		);
 		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
-			"data-has-video-stream-link-factory",
+			"data-has-media-stream-link-factory",
 			"true",
 		);
 		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(

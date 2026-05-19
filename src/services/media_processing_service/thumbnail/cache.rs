@@ -25,6 +25,11 @@ pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) 
     {
         paths.insert(path);
     }
+    for path in crate::services::media_processing_service::shared::known_image_preview_cache_paths(
+        &blob.hash,
+    ) {
+        paths.insert(path);
+    }
 
     for path in paths {
         if driver.exists(&path).await? {
@@ -125,7 +130,7 @@ pub(super) async fn load_thumbnail_if_exists_with_context(
     Ok(None)
 }
 
-async fn load_thumbnail_from_path(
+pub(super) async fn load_thumbnail_from_path(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
     driver: &Arc<dyn StorageDriver>,

@@ -9,8 +9,9 @@ import type {
 	ShareStreamSessionInfo,
 	WopiLaunchSession,
 } from "@/types/api";
-import { BlobMediaPreview } from "./BlobMediaPreview";
+import { BlobImagePreview } from "./BlobImagePreview";
 import type { detectFilePreviewProfile } from "./file-capabilities";
+import { MusicPreview } from "./MusicPreview";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import { PreviewUnavailable } from "./PreviewUnavailable";
 import type { OpenWithOption } from "./types";
@@ -61,12 +62,13 @@ interface FilePreviewBodyProps {
 	profile: PreviewProfile | null;
 	previewAppsLoaded: boolean;
 	downloadPath: string;
+	imagePreviewPath?: string;
 	getOptionLabel: (option: OpenWithOption) => string;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 	archivePreviewFactory?: (options?: {
 		signal?: AbortSignal;
 	}) => Promise<ArchivePreviewManifest>;
-	videoStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
+	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	createWopiSession?: (() => Promise<WopiLaunchSession>) | null;
 	onFileUpdated?: () => void;
 	onDirtyChange: (dirty: boolean) => void;
@@ -81,10 +83,11 @@ export function FilePreviewBody({
 	profile,
 	previewAppsLoaded,
 	downloadPath,
+	imagePreviewPath,
 	getOptionLabel,
 	previewLinkFactory,
 	archivePreviewFactory,
-	videoStreamLinkFactory,
+	mediaStreamLinkFactory,
 	createWopiSession,
 	onFileUpdated,
 	onDirtyChange,
@@ -115,13 +118,23 @@ export function FilePreviewBody({
 		);
 	}
 
-	if (activeOption.mode === "image" || activeOption.mode === "audio") {
+	if (activeOption.mode === "image") {
 		return (
-			<BlobMediaPreview
+			<BlobImagePreview
 				file={file}
 				fillContainer={isExpanded}
-				mode={activeOption.mode}
 				path={downloadPath}
+				fallbackPath={imagePreviewPath}
+			/>
+		);
+	}
+
+	if (activeOption.mode === "audio") {
+		return (
+			<MusicPreview
+				file={file}
+				path={downloadPath}
+				mediaStreamLinkFactory={mediaStreamLinkFactory}
 			/>
 		);
 	}
@@ -131,7 +144,7 @@ export function FilePreviewBody({
 			<VideoPreview
 				file={file}
 				path={downloadPath}
-				videoStreamLinkFactory={videoStreamLinkFactory}
+				mediaStreamLinkFactory={mediaStreamLinkFactory}
 			/>
 		);
 	}
