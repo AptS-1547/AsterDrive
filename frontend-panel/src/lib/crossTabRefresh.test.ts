@@ -12,6 +12,9 @@ describe("cross-tab refresh coordination", () => {
 	});
 
 	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+		vi.resetAllMocks();
 		vi.useRealTimers();
 	});
 
@@ -26,7 +29,6 @@ describe("cross-tab refresh coordination", () => {
 	});
 
 	it("runs refresh directly outside a browser window", async () => {
-		const originalWindow = globalThis.window;
 		vi.stubGlobal("window", undefined);
 		const { runWithCrossTabRefreshLock } = await loadModule();
 		const refresh = vi.fn(async () => undefined);
@@ -34,7 +36,6 @@ describe("cross-tab refresh coordination", () => {
 		await expect(runWithCrossTabRefreshLock(refresh)).resolves.toBe(true);
 
 		expect(refresh).toHaveBeenCalledTimes(1);
-		vi.stubGlobal("window", originalWindow);
 	});
 
 	it("runs refresh directly when a competing lock disappears before waiting", async () => {
@@ -66,7 +67,6 @@ describe("cross-tab refresh coordination", () => {
 		await expect(runWithCrossTabRefreshLock(refresh)).resolves.toBe(true);
 
 		expect(refresh).toHaveBeenCalledTimes(1);
-		getItemSpy.mockRestore();
 	});
 
 	it("waits for another tab's successful refresh instead of refreshing again", async () => {

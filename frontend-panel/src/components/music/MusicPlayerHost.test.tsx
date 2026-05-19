@@ -236,11 +236,26 @@ function installScrollIntoViewMock() {
 }
 
 describe("MusicPlayerHost", () => {
+	let originalMediaMetadata: PropertyDescriptor | undefined;
+	let originalMediaSession: PropertyDescriptor | undefined;
 	let originalResizeObserver: typeof ResizeObserver | undefined;
+	let originalScrollIntoView: PropertyDescriptor | undefined;
 
 	beforeEach(() => {
 		vi.useRealTimers();
+		originalMediaMetadata = Object.getOwnPropertyDescriptor(
+			window,
+			"MediaMetadata",
+		);
+		originalMediaSession = Object.getOwnPropertyDescriptor(
+			navigator,
+			"mediaSession",
+		);
 		originalResizeObserver = window.ResizeObserver;
+		originalScrollIntoView = Object.getOwnPropertyDescriptor(
+			HTMLElement.prototype,
+			"scrollIntoView",
+		);
 		Object.defineProperty(window, "requestAnimationFrame", {
 			configurable: true,
 			value: window.requestAnimationFrame ?? vi.fn(),
@@ -335,7 +350,26 @@ describe("MusicPlayerHost", () => {
 	});
 
 	afterEach(() => {
+		if (originalMediaMetadata) {
+			Object.defineProperty(window, "MediaMetadata", originalMediaMetadata);
+		} else {
+			Reflect.deleteProperty(window, "MediaMetadata");
+		}
+		if (originalMediaSession) {
+			Object.defineProperty(navigator, "mediaSession", originalMediaSession);
+		} else {
+			Reflect.deleteProperty(navigator, "mediaSession");
+		}
 		window.ResizeObserver = originalResizeObserver;
+		if (originalScrollIntoView) {
+			Object.defineProperty(
+				HTMLElement.prototype,
+				"scrollIntoView",
+				originalScrollIntoView,
+			);
+		} else {
+			Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+		}
 		vi.restoreAllMocks();
 		vi.useRealTimers();
 	});

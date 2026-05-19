@@ -477,7 +477,11 @@ pub async fn delete_session(
         current_refresh_jti.as_deref(),
     )
     .await?;
-    let ctx = AuditContext::from_request(&req, &claims);
+    let ctx = AuditContext::from_request_with_trusted_proxies(
+        &req,
+        &claims,
+        &state.config.rate_limit.trusted_proxies,
+    );
     audit_service::log(
         &state,
         &ctx,
@@ -523,7 +527,11 @@ pub async fn put_password(
     claims: web::ReqData<Claims>,
     body: web::Json<ChangePasswordReq>,
 ) -> Result<HttpResponse> {
-    let ctx = AuditContext::from_request(&req, &claims);
+    let ctx = AuditContext::from_request_with_trusted_proxies(
+        &req,
+        &claims,
+        &state.config.rate_limit.trusted_proxies,
+    );
     let user = auth_service::change_password_with_audit(
         &state,
         claims.user_id,

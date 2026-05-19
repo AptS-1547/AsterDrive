@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 async function loadMusicPlayerStore() {
 	vi.resetModules();
@@ -7,6 +7,11 @@ async function loadMusicPlayerStore() {
 
 describe("musicPlayerStore", () => {
 	beforeEach(() => {
+		vi.useRealTimers();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
 		vi.useRealTimers();
 	});
 
@@ -175,7 +180,7 @@ describe("musicPlayerStore", () => {
 
 	it("uses a different queued track for shuffle next and previous", async () => {
 		const { useMusicPlayerStore } = await loadMusicPlayerStore();
-		const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+		vi.spyOn(Math, "random").mockReturnValue(0);
 
 		useMusicPlayerStore.getState().playTracks(
 			[
@@ -208,8 +213,6 @@ describe("musicPlayerStore", () => {
 		useMusicPlayerStore.setState({ activeTrackId: "track-1" });
 		useMusicPlayerStore.getState().playPrevious();
 		expect(useMusicPlayerStore.getState().activeTrackId).toBe("track-2");
-
-		randomSpy.mockRestore();
 	});
 
 	it("stops playback when next is requested with an empty queue", async () => {

@@ -1,7 +1,7 @@
 use crate::services::auth_service::Claims;
 use actix_web::HttpRequest;
 use ipnet::IpNet;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 
 pub(super) const MAX_AUDIT_IP_ADDRESS_LEN: usize = 45;
 pub(super) const MAX_AUDIT_USER_AGENT_LEN: usize = 512;
@@ -91,11 +91,19 @@ fn trusted_request_ip(req: &HttpRequest, trusted_proxies: &[String]) -> Option<I
             .get("x-forwarded-for")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.split(',').next())
-            .and_then(|p| p.trim().parse::<IpAddr>().ok())
+            .and_then(parse_forwarded_ip)
     {
         return Some(forwarded_ip);
     }
     Some(peer)
+}
+
+fn parse_forwarded_ip(value: &str) -> Option<IpAddr> {
+    let value = value.trim();
+    value
+        .parse::<IpAddr>()
+        .or_else(|_| value.parse::<SocketAddr>().map(|addr| addr.ip()))
+        .ok()
 }
 
 fn trusted_proxy_matches(peer: IpAddr, trusted_proxies: &[String]) -> bool {
