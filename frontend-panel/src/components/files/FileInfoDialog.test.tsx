@@ -266,7 +266,7 @@ describe("FileInfoDialog", () => {
 		).toBeInTheDocument();
 	});
 
-	it("renders a desktop inspector with quick actions and close control", () => {
+	it("renders a desktop inspector without quick actions and with close control", () => {
 		setDesktopMode(true);
 		const onOpenChange = vi.fn();
 		const onPreview = vi.fn();
@@ -298,27 +298,18 @@ describe("FileInfoDialog", () => {
 
 		expect(screen.queryByTestId("dialog")).not.toBeInTheDocument();
 		expect(screen.getByLabelText("info")).toBeInTheDocument();
-
-		fireEvent.click(screen.getByRole("button", { name: "preview" }));
-		expect(onPreview).toHaveBeenCalledWith(
-			expect.objectContaining({ id: 7, name: "manual.pdf" }),
-		);
-
-		fireEvent.click(screen.getByRole("button", { name: "share" }));
-		expect(onShare).toHaveBeenCalledWith({
-			fileId: 7,
-			name: "manual.pdf",
-			initialMode: "page",
-		});
-
-		fireEvent.click(screen.getByRole("button", { name: "rename" }));
-		expect(onRename).toHaveBeenCalledWith("file", 7, "manual.pdf");
+		expect(screen.queryByRole("button", { name: "preview" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "share" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "rename" })).toBeNull();
+		expect(onPreview).not.toHaveBeenCalled();
+		expect(onShare).not.toHaveBeenCalled();
+		expect(onRename).not.toHaveBeenCalled();
 
 		fireEvent.click(screen.getByRole("button", { name: "close" }));
 		expect(onOpenChange).toHaveBeenCalledWith(false);
 	});
 
-	it("updates the lock action immediately after toggling", async () => {
+	it("does not expose lock toggling from the info panel", () => {
 		setDesktopMode(true);
 		const onToggleLock = vi.fn().mockResolvedValue(true);
 
@@ -343,14 +334,10 @@ describe("FileInfoDialog", () => {
 			/>,
 		);
 
-		fireEvent.click(screen.getByRole("button", { name: "lock" }));
-
-		expect(onToggleLock).toHaveBeenCalledWith("file", 7, false);
-		expect(
-			await screen.findByRole("button", { name: "unlock" }),
-		).toBeInTheDocument();
-		expect(screen.getByText("info_locked_yes")).toBeInTheDocument();
-		expect(screen.getByText("status:locked:private")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "lock" })).toBeNull();
+		expect(onToggleLock).not.toHaveBeenCalled();
+		expect(screen.getByText("info_locked_no")).toBeInTheDocument();
+		expect(screen.getByText("status:unlocked:private")).toBeInTheDocument();
 	});
 
 	it("keeps the desktop inspector mounted long enough to animate out", () => {

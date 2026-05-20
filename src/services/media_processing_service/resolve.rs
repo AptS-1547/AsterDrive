@@ -16,9 +16,10 @@ pub(crate) fn resolve_thumbnail_processor_for_blob(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
     file_name: &str,
+    source_mime_type: &str,
 ) -> Result<ResolvedMediaProcessor> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    resolve_thumbnail_processor_for_policy(state, &policy, file_name)
+    resolve_thumbnail_processor_for_policy(state, &policy, file_name, source_mime_type)
 }
 
 pub(crate) fn map_thumbnail_request_error(error: AsterError) -> AsterError {
@@ -39,9 +40,11 @@ pub(super) fn build_thumbnail_context(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
     file_name: &str,
+    source_mime_type: &str,
 ) -> Result<ThumbnailContext> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let processor = resolve_thumbnail_processor_for_policy(state, &policy, file_name)?;
+    let processor =
+        resolve_thumbnail_processor_for_policy(state, &policy, file_name, source_mime_type)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     Ok(ThumbnailContext { driver, processor })
 }
@@ -100,9 +103,14 @@ fn resolve_thumbnail_processor_for_policy(
     state: &PrimaryAppState,
     policy: &storage_policy::Model,
     file_name: &str,
+    source_mime_type: &str,
 ) -> Result<ResolvedMediaProcessor> {
-    let candidates =
-        collect_thumbnail_processor_candidates(&state.runtime_config, policy, file_name);
+    let candidates = collect_thumbnail_processor_candidates(
+        &state.runtime_config,
+        policy,
+        file_name,
+        source_mime_type,
+    );
     resolve_media_processor_from_candidates(
         MediaOperation::Thumbnail,
         file_name,
@@ -116,6 +124,9 @@ fn resolved_media_processor_from_config(
     processor: &media_processing_config::MediaProcessingProcessorConfig,
 ) -> ResolvedMediaProcessor {
     match processor.kind {
+        MediaProcessorKind::Images | MediaProcessorKind::Lofty => {
+            ResolvedMediaProcessor::new(processor.kind)
+        }
         MediaProcessorKind::VipsCli => ResolvedMediaProcessor::with_command(
             MediaProcessorKind::VipsCli,
             processor
@@ -132,7 +143,15 @@ fn resolved_media_processor_from_config(
                 .clone()
                 .unwrap_or_else(|| media_processing_config::DEFAULT_FFMPEG_COMMAND.to_string()),
         ),
-        _ => ResolvedMediaProcessor::new(processor.kind),
+        MediaProcessorKind::FfprobeCli => {
+            ResolvedMediaProcessor::with_command(
+                MediaProcessorKind::FfprobeCli,
+                processor.config.command.clone().unwrap_or_else(|| {
+                    media_processing_config::DEFAULT_FFPROBE_COMMAND.to_string()
+                }),
+            )
+        }
+        MediaProcessorKind::StorageNative => ResolvedMediaProcessor::new(processor.kind),
     }
 }
 
@@ -160,6 +179,7 @@ fn processor_unavailable_reason(
             }
             Ok(None)
         }
+        MediaProcessorKind::Lofty => Ok(None),
         MediaProcessorKind::VipsCli => {
             let command = processor
                 .config
@@ -182,6 +202,19 @@ fn processor_unavailable_reason(
             if !media_processing_config::command_is_available(command) {
                 return Ok(Some(format!(
                     "ffmpeg CLI command '{command}' is not available"
+                )));
+            }
+            Ok(None)
+        }
+        MediaProcessorKind::FfprobeCli => {
+            let command = processor
+                .config
+                .command
+                .as_deref()
+                .unwrap_or(media_processing_config::DEFAULT_FFPROBE_COMMAND);
+            if !media_processing_config::command_is_available(command) {
+                return Ok(Some(format!(
+                    "ffprobe CLI command '{command}' is not available"
                 )));
             }
             Ok(None)
@@ -216,13 +249,37 @@ fn collect_global_processor_candidates(
     file_name: &str,
 ) -> Vec<media_processing_config::MatchedMediaProcessor> {
     let registry = media_processing_config::media_processing_registry(runtime_config);
-    media_processing_config::processor_candidates_for_file_name(&registry, file_name)
+    media_processing_config::processor_candidates_for_use(
+        &registry,
+        media_processing_config::MediaProcessingUse::ThumbnailImage,
+        file_name,
+    )
+    .into_iter()
+    .chain(media_processing_config::processor_candidates_for_use(
+        &registry,
+        media_processing_config::MediaProcessingUse::ThumbnailVideo,
+        file_name,
+    ))
+    .collect()
+}
+
+fn collect_thumbnail_audio_processor_candidates(
+    runtime_config: &crate::config::RuntimeConfig,
+    file_name: &str,
+) -> Vec<media_processing_config::MatchedMediaProcessor> {
+    let registry = media_processing_config::media_processing_registry(runtime_config);
+    media_processing_config::processor_candidates_for_use(
+        &registry,
+        media_processing_config::MediaProcessingUse::ThumbnailAudio,
+        file_name,
+    )
 }
 
 fn collect_thumbnail_processor_candidates(
     runtime_config: &crate::config::RuntimeConfig,
     policy: &storage_policy::Model,
     file_name: &str,
+    source_mime_type: &str,
 ) -> Vec<media_processing_config::MatchedMediaProcessor> {
     let source_extension = media_processing_config::file_extension(file_name);
     let policy_options = parse_storage_policy_options(policy.options.as_ref());
@@ -255,6 +312,18 @@ fn collect_thumbnail_processor_candidates(
         runtime_config,
         file_name,
     ));
+    if source_mime_type
+        .split_once(';')
+        .map(|(value, _)| value)
+        .unwrap_or(source_mime_type)
+        .trim()
+        .starts_with("audio/")
+    {
+        candidates.extend(collect_thumbnail_audio_processor_candidates(
+            runtime_config,
+            file_name,
+        ));
+    }
     candidates
 }
 

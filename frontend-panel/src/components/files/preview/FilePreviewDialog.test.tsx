@@ -5,6 +5,7 @@ import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog"
 const mockState = vi.hoisted(() => ({
 	downloadPath: vi.fn((fileId: number) => `/files/${fileId}/download`),
 	imagePreviewPath: vi.fn((fileId: number) => `/files/${fileId}/image-preview`),
+	thumbnailPath: vi.fn((fileId: number) => `/files/${fileId}/thumbnail`),
 	profile: {
 		category: "markdown",
 		defaultMode: "builtin.code",
@@ -128,6 +129,7 @@ vi.mock("@/services/fileService", () => ({
 		downloadPath: (...args: unknown[]) => mockState.downloadPath(...args),
 		imagePreviewPath: (...args: unknown[]) =>
 			mockState.imagePreviewPath(...args),
+		thumbnailPath: (...args: unknown[]) => mockState.thumbnailPath(...args),
 	},
 }));
 
@@ -162,14 +164,17 @@ vi.mock("@/components/files/preview/MusicPreview", () => ({
 	MusicPreview: ({
 		mediaStreamLinkFactory,
 		path,
+		thumbnailPath,
 	}: {
 		mediaStreamLinkFactory?: () => Promise<unknown>;
 		path: string;
+		thumbnailPath?: string;
 	}) => (
 		<div
 			data-has-media-stream-link-factory={String(
 				Boolean(mediaStreamLinkFactory),
 			)}
+			data-thumbnail-path={thumbnailPath ?? ""}
 		>{`music:${path}`}</div>
 	),
 }));
@@ -363,6 +368,7 @@ describe("FilePreviewDialog", () => {
 	beforeEach(() => {
 		mockState.downloadPath.mockClear();
 		mockState.imagePreviewPath.mockClear();
+		mockState.thumbnailPath.mockClear();
 		mockState.previewAppStore.load.mockReset();
 		mockState.profile = {
 			category: "markdown",
@@ -726,6 +732,10 @@ describe("FilePreviewDialog", () => {
 		expect(screen.getByText("music:/files/8/download")).toHaveAttribute(
 			"data-has-media-stream-link-factory",
 			"true",
+		);
+		expect(screen.getByText("music:/files/8/download")).toHaveAttribute(
+			"data-thumbnail-path",
+			"/files/8/thumbnail",
 		);
 		expect(
 			screen.getByTestId("dialog-content").className.split(/\s+/),

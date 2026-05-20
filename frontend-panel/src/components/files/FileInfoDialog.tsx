@@ -23,7 +23,7 @@ import {
 	hasFileDetails,
 	hasFolderDetails,
 } from "./file-info-dialog/fileInfoDialogUtils";
-import type { DetailRow, QuickAction } from "./file-info-dialog/types";
+import type { DetailRow } from "./file-info-dialog/types";
 import { useMediaQuery } from "./file-info-dialog/useMediaQuery";
 
 interface FileInfoDialogProps {
@@ -60,13 +60,6 @@ export function FileInfoDialog({
 	onOpenChange,
 	file,
 	folder,
-	onPreview,
-	onOpenFolder,
-	onShare,
-	onDownload,
-	onRename,
-	onVersions,
-	onToggleLock,
 }: FileInfoDialogProps) {
 	const { t } = useTranslation(["files", "core"]);
 	const retainedTargetInput = useMemo<FileInfoDialogTarget | null>(
@@ -83,9 +76,6 @@ export function FileInfoDialog({
 		folders: number;
 		files: number;
 	} | null>(null);
-	const [optimisticLocked, setOptimisticLocked] = useState<boolean | null>(
-		null,
-	);
 	const isDesktop = useMediaQuery("(min-width: 1024px)");
 	const [desktopMounted, setDesktopMounted] = useState(open);
 	const [desktopVisible, setDesktopVisible] = useState(open);
@@ -250,17 +240,12 @@ export function FileInfoDialog({
 	const title = renderedFile
 		? (activeFile ?? renderedFile).name
 		: ((activeFolder ?? renderedFolder)?.name ?? "");
-	const targetKey = renderedFile
-		? `file:${renderedFile.id}`
-		: renderedFolder
-			? `folder:${renderedFolder.id}`
-			: null;
 	const resolvedLocked = renderedFile
 		? (renderedFile.is_locked ?? activeFile?.is_locked ?? false)
 		: renderedFolder
 			? (renderedFolder.is_locked ?? activeFolder?.is_locked ?? false)
 			: false;
-	const currentLocked = optimisticLocked ?? resolvedLocked;
+	const currentLocked = resolvedLocked;
 
 	const summaryLabel = renderedFile ? t("core:file") : t("core:folder");
 	const summarySubtitle = renderedFile
@@ -348,142 +333,6 @@ export function FileInfoDialog({
 		},
 	];
 
-	useEffect(() => {
-		if (optimisticLocked !== null && optimisticLocked === resolvedLocked) {
-			setOptimisticLocked(null);
-		}
-	}, [optimisticLocked, resolvedLocked]);
-
-	useEffect(() => {
-		if (targetKey == null) {
-			setOptimisticLocked(null);
-			return;
-		}
-		setOptimisticLocked(null);
-	}, [targetKey]);
-
-	const handleQuickLockToggle = async () => {
-		if (!onToggleLock || (!renderedFile && !renderedFolder)) {
-			return;
-		}
-
-		const targetId = renderedFile?.id ?? renderedFolder?.id;
-		if (targetId == null) {
-			return;
-		}
-
-		const nextLocked = !currentLocked;
-		setOptimisticLocked(nextLocked);
-
-		const result = await onToggleLock(
-			renderedFile ? "file" : "folder",
-			targetId,
-			currentLocked,
-		);
-
-		if (result === false) {
-			setOptimisticLocked(null);
-		}
-	};
-
-	const quickActions: QuickAction[] = renderedFile
-		? [
-				onPreview
-					? {
-							icon: "Eye",
-							label: t("preview"),
-							onClick: () => onPreview(activeFile ?? renderedFile),
-						}
-					: null,
-				onDownload
-					? {
-							icon: "Download",
-							label: t("download"),
-							onClick: () => onDownload((activeFile ?? renderedFile).id, title),
-						}
-					: null,
-				onShare
-					? {
-							icon: "Link",
-							label: t("share"),
-							onClick: () =>
-								onShare({
-									fileId: (activeFile ?? renderedFile).id,
-									name: title,
-									initialMode: "page",
-								}),
-						}
-					: null,
-				onRename
-					? {
-							icon: "PencilSimple",
-							label: t("rename"),
-							onClick: () =>
-								onRename("file", (activeFile ?? renderedFile).id, title),
-						}
-					: null,
-				onVersions
-					? {
-							icon: "Clock",
-							label: t("versions"),
-							onClick: () => onVersions((activeFile ?? renderedFile).id),
-						}
-					: null,
-				onToggleLock
-					? {
-							icon: currentLocked ? "LockOpen" : "Lock",
-							label: currentLocked ? t("unlock") : t("lock"),
-							onClick: () => {
-								void handleQuickLockToggle();
-							},
-						}
-					: null,
-			].filter((action): action is QuickAction => action != null)
-		: renderedFolder
-			? [
-					onOpenFolder
-						? {
-								icon: "FolderOpen",
-								label: t("open"),
-								onClick: () => onOpenFolder(activeFolder ?? renderedFolder),
-							}
-						: null,
-					onShare
-						? {
-								icon: "Link",
-								label: t("share"),
-								onClick: () =>
-									onShare({
-										folderId: (activeFolder ?? renderedFolder).id,
-										name: title,
-										initialMode: "page",
-									}),
-							}
-						: null,
-					onRename
-						? {
-								icon: "PencilSimple",
-								label: t("rename"),
-								onClick: () =>
-									onRename(
-										"folder",
-										(activeFolder ?? renderedFolder).id,
-										title,
-									),
-							}
-						: null,
-					onToggleLock
-						? {
-								icon: currentLocked ? "LockOpen" : "Lock",
-								label: currentLocked ? t("unlock") : t("lock"),
-								onClick: () => {
-									void handleQuickLockToggle();
-								},
-							}
-						: null,
-				].filter((action): action is QuickAction => action != null)
-			: [];
-
 	if (
 		(isDesktop && !open && !desktopMounted) ||
 		(!renderedFile && !renderedFolder)
@@ -493,14 +342,12 @@ export function FileInfoDialog({
 
 	const content = (
 		<FileInfoDialogContent
-			actionsTitle={t("info_actions")}
 			closeLabel={t("close")}
 			currentLocked={currentLocked}
 			isDesktop={isDesktop}
 			isShared={isShared}
 			overviewRows={overviewRows}
 			overviewTitle={t("info_overview")}
-			quickActions={quickActions}
 			statusRows={statusRows}
 			statusTitle={t("info_status")}
 			summaryLabel={summaryLabel}

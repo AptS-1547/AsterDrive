@@ -24,11 +24,21 @@ const mockState = vi.hoisted(() => ({
 	fetch: vi.fn(),
 	parseBlob: vi.fn(),
 	selectCover: vi.fn(),
+	thumbnailPath: vi.fn((idOrToken: number | string) =>
+		typeof idOrToken === "number"
+			? `/files/${idOrToken}/thumbnail`
+			: `/s/${idOrToken}/thumbnail`,
+	),
+	folderFileThumbnailPath: vi.fn(
+		(token: string, fileId: number) => `/s/${token}/files/${fileId}/thumbnail`,
+	),
 }));
 
 vi.mock("@/services/fileService", () => ({
 	fileService: {
 		downloadPath: (id: number) => mockState.downloadPath(id),
+		getMediaMetadata: vi.fn(),
+		thumbnailPath: (id: number) => mockState.thumbnailPath(id),
 	},
 }));
 
@@ -41,6 +51,11 @@ vi.mock("@/services/shareService", () => ({
 		downloadFolderPath: (...args: unknown[]) =>
 			mockState.downloadFolderPath(...args),
 		downloadPath: (token: string) => mockState.downloadPath(token),
+		folderFileThumbnailPath: (...args: unknown[]) =>
+			mockState.folderFileThumbnailPath(...args),
+		getFolderFileMediaMetadata: vi.fn(),
+		getMediaMetadata: vi.fn(),
+		thumbnailPath: (token: string) => mockState.thumbnailPath(token),
 	},
 }));
 
@@ -56,8 +71,10 @@ describe("musicPlayer helpers", () => {
 		mockState.downloadFolderPath.mockClear();
 		mockState.downloadPath.mockClear();
 		mockState.fetch.mockReset();
+		mockState.folderFileThumbnailPath.mockClear();
 		mockState.parseBlob.mockReset();
 		mockState.selectCover.mockReset();
+		mockState.thumbnailPath.mockClear();
 		vi.stubGlobal("fetch", mockState.fetch);
 		vi.stubGlobal("btoa", (value: string) =>
 			Buffer.from(value, "binary").toString("base64"),
@@ -148,6 +165,15 @@ describe("musicPlayer helpers", () => {
 					title: "Song",
 				},
 				path: "/files/1/download",
+				thumbnail: {
+					file: {
+						file_category: "audio",
+						id: 1,
+						mime_type: "audio/mpeg",
+						name: "Artist - Song.mp3",
+					},
+					path: "/files/1/thumbnail",
+				},
 			}),
 		]);
 	});
@@ -170,6 +196,15 @@ describe("musicPlayer helpers", () => {
 		expect(queue[0]).toMatchObject({
 			id: "share:share-token:file:1",
 			path: "/s/share-token/files/1/download",
+			thumbnail: {
+				file: {
+					file_category: "audio",
+					id: 1,
+					mime_type: "audio/mpeg",
+					name: "Song.mp3",
+				},
+				path: "/s/share-token/files/1/thumbnail",
+			},
 		});
 
 		const hydrated = await hydrateMusicQueueForPlayback(
@@ -208,6 +243,15 @@ describe("musicPlayer helpers", () => {
 		expect(track).toMatchObject({
 			id: "share:share-token:file",
 			path: "/s/share-token/download",
+			thumbnail: {
+				file: {
+					file_category: "audio",
+					id: -1,
+					mime_type: "audio/mpeg",
+					name: "Shared.mp3",
+				},
+				path: "/s/share-token/thumbnail",
+			},
 		});
 
 		const hydrated = await hydrateMusicQueueForPlayback(

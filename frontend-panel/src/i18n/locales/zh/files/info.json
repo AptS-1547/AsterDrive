@@ -14,7 +14,6 @@
 	"info_children": "内容",
 	"info_children_count": "{{folders}} 个文件夹，{{files}} 个文件",
 	"info_loading": "加载中...",
-	"info_actions": "快捷操作",
 	"info_overview": "概览",
 	"info_status": "状态",
 	"info_shared": "分享状态",

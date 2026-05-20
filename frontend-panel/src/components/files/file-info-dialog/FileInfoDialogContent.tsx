@@ -3,14 +3,13 @@ import { FileTypeIcon } from "@/components/files/FileTypeIcon";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import type { DetailRow, QuickAction } from "./types";
+import type { DetailRow } from "./types";
 
 interface FileInfoDialogContentProps {
 	currentLocked: boolean;
 	isDesktop: boolean;
 	isShared: boolean | null;
 	overviewRows: DetailRow[];
-	quickActions: QuickAction[];
 	statusRows: DetailRow[];
 	summaryLabel: string;
 	summarySubtitle: string;
@@ -26,7 +25,6 @@ interface FileInfoDialogContentProps {
 	title: string;
 	onClose: () => void;
 	closeLabel: string;
-	actionsTitle: string;
 	overviewTitle: string;
 	statusTitle: string;
 }
@@ -80,32 +78,7 @@ function DetailList({ rows }: { rows: DetailRow[] }) {
 	);
 }
 
-function ActionGrid({ actions }: { actions: QuickAction[] }) {
-	if (actions.length === 0) {
-		return null;
-	}
-
-	return (
-		<div className="grid grid-cols-2 gap-2">
-			{actions.map((action) => (
-				<Button
-					key={action.label}
-					type="button"
-					variant="outline"
-					size="sm"
-					className="justify-start"
-					onClick={action.onClick}
-				>
-					<Icon name={action.icon} className="h-4 w-4" />
-					<span className="truncate">{action.label}</span>
-				</Button>
-			))}
-		</div>
-	);
-}
-
 export function FileInfoDialogContent({
-	actionsTitle,
 	closeLabel,
 	currentLocked,
 	isDesktop,
@@ -113,7 +86,6 @@ export function FileInfoDialogContent({
 	onClose,
 	overviewRows,
 	overviewTitle,
-	quickActions,
 	statusRows,
 	statusTitle,
 	summaryLabel,
@@ -170,12 +142,6 @@ export function FileInfoDialogContent({
 					) : null}
 				</div>
 			</Section>
-
-			{quickActions.length > 0 ? (
-				<Section title={actionsTitle}>
-					<ActionGrid actions={quickActions} />
-				</Section>
-			) : null}
 
 			<Section title={overviewTitle}>
 				<DetailList rows={overviewRows} />

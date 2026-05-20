@@ -17,6 +17,9 @@ const mockState = vi.hoisted(() => ({
 		(token: string, fileId: number) =>
 			`/s/${token}/files/${fileId}/image-preview`,
 	),
+	folderFileThumbnailPath: vi.fn(
+		(token: string, fileId: number) => `/s/${token}/files/${fileId}/thumbnail`,
+	),
 	createStreamSession: vi.fn((token: string) =>
 		Promise.resolve({
 			expires_at: "2026-01-01T00:00:00Z",
@@ -151,6 +154,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 		open = true,
 		downloadPath,
 		imagePreviewPath,
+		thumbnailPath,
 		editable,
 		archivePreviewFactory,
 		mediaStreamLinkFactory,
@@ -159,6 +163,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 		open?: boolean;
 		downloadPath?: string;
 		imagePreviewPath?: string;
+		thumbnailPath?: string;
 		editable?: boolean;
 		archivePreviewFactory?: () => Promise<unknown>;
 		mediaStreamLinkFactory?: () => Promise<unknown>;
@@ -169,6 +174,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 				data-name={file.name}
 				data-download-path={downloadPath ?? ""}
 				data-image-preview-path={imagePreviewPath ?? ""}
+				data-thumbnail-path={thumbnailPath ?? ""}
 				data-editable={String(Boolean(editable))}
 				data-has-archive-preview-factory={String(
 					Boolean(archivePreviewFactory),
@@ -380,6 +386,8 @@ vi.mock("@/services/shareService", () => ({
 		getFolderFileArchivePreview: (...args: unknown[]) =>
 			mockState.getFolderFileArchivePreview(...args),
 		thumbnailPath: (...args: unknown[]) => mockState.thumbnailPath(...args),
+		folderFileThumbnailPath: (...args: unknown[]) =>
+			mockState.folderFileThumbnailPath(...args),
 		imagePreviewPath: (...args: unknown[]) =>
 			mockState.imagePreviewPath(...args),
 		folderFileImagePreviewPath: (...args: unknown[]) =>
@@ -403,6 +411,7 @@ describe("ShareViewPage", () => {
 		mockState.getArchivePreview.mockClear();
 		mockState.getFolderFileArchivePreview.mockClear();
 		mockState.thumbnailPath.mockClear();
+		mockState.folderFileThumbnailPath.mockClear();
 		mockState.imagePreviewPath.mockClear();
 		mockState.folderFileImagePreviewPath.mockClear();
 		mockState.downloadUrl.mockClear();
@@ -537,6 +546,10 @@ describe("ShareViewPage", () => {
 			"/s/share-token/download",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
+			"data-thumbnail-path",
+			"/s/share-token/thumbnail",
+		);
+		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-editable",
 			"false",
 		);
@@ -650,6 +663,14 @@ describe("ShareViewPage", () => {
 		expect(await screen.findByTestId("file-preview")).toHaveAttribute(
 			"data-download-path",
 			"/s/share-token/files/5/download",
+		);
+		expect(screen.getByTestId("file-preview")).toHaveAttribute(
+			"data-thumbnail-path",
+			"/s/share-token/files/5/thumbnail",
+		);
+		expect(mockState.folderFileThumbnailPath).toHaveBeenCalledWith(
+			"share-token",
+			5,
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-editable",

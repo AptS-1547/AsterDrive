@@ -14,7 +14,6 @@
 	"info_children": "Contents",
 	"info_children_count": "{{folders}} folder(s), {{files}} file(s)",
 	"info_loading": "Loading...",
-	"info_actions": "Quick Actions",
 	"info_overview": "Overview",
 	"info_status": "Status",
 	"info_shared": "Share Status",
