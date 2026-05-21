@@ -129,7 +129,7 @@ pub(super) async fn verify_file_in_trash_in_scope(
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
-    workspace_storage_service::require_scope_access(state, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
     let file = file_repo::find_by_id(&state.db, file_id).await?;
     workspace_storage_service::ensure_file_scope(&file, scope)?;
     if file.deleted_at.is_none() {
@@ -143,7 +143,7 @@ pub(super) async fn verify_folder_in_trash_in_scope(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
-    workspace_storage_service::require_scope_access(state, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
     workspace_storage_service::ensure_folder_scope(&folder, scope)?;
     if folder.deleted_at.is_none() {

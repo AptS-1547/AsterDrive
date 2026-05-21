@@ -12,7 +12,7 @@ use crate::services::upload_service::responses::{
     RecoverableUploadPartResponse, RecoverableUploadSessionResponse, UploadProgressResponse,
 };
 use crate::services::upload_service::scope::{
-    load_upload_session_for_read, personal_scope, team_scope,
+    load_upload_session, load_upload_session_for_read, personal_scope, team_scope,
 };
 use crate::services::workspace_storage_service::{self, resolve_policy_upload_transport};
 use crate::types::{UploadMode, UploadSessionStatus};
@@ -279,7 +279,7 @@ pub async fn presign_parts(
     user_id: i64,
     part_numbers: Vec<i32>,
 ) -> Result<HashMap<i32, String>> {
-    let session = load_upload_session_for_read(state, personal_scope(user_id), upload_id).await?;
+    let session = load_upload_session(state, personal_scope(user_id), upload_id).await?;
     presign_parts_impl(state, session, part_numbers).await
 }
 
@@ -290,8 +290,7 @@ pub async fn presign_parts_for_team(
     user_id: i64,
     part_numbers: Vec<i32>,
 ) -> Result<HashMap<i32, String>> {
-    let session =
-        load_upload_session_for_read(state, team_scope(team_id, user_id), upload_id).await?;
+    let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
     presign_parts_impl(state, session, part_numbers).await
 }
 

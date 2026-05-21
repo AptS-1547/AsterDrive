@@ -24,6 +24,24 @@ use webauthn_rs_proto::{AllowCredentials, Mediation, ResidentKeyRequirement};
 const TEST_BROWSER_ORIGIN: &str = "http://localhost:8080";
 const TEST_PUBLIC_SITE_ORIGIN: &str = "https://pan.esaps.net";
 
+struct RefreshHookGuard {
+    _hook: auth_service::test_support::RefreshRotationTestHook,
+}
+
+impl RefreshHookGuard {
+    fn new(hook: auth_service::test_support::RefreshRotationTestHook) -> Self {
+        Self { _hook: hook }
+    }
+}
+
+impl Drop for RefreshHookGuard {
+    fn drop(&mut self) {
+        tokio::spawn(async {
+            auth_service::test_support::clear_refresh_rotation_test_hook().await;
+        });
+    }
+}
+
 macro_rules! login_user_with_credentials {
     ($app:expr, $identifier:expr, $password:expr) => {{
         let req = test::TestRequest::post()
@@ -989,11 +1007,18 @@ async fn test_concurrent_refresh_same_token_has_single_winner() {
     )
     .await
     .unwrap();
+    let _hook_guard = RefreshHookGuard::new(hook.clone());
 
     let first_state = state.clone();
     let first_refresh = refresh.clone();
     let first_task = tokio::spawn(async move {
-        auth_service::refresh_tokens(&first_state, &first_refresh, None, None).await
+        auth_service::refresh_tokens(
+            &first_state,
+            &first_refresh,
+            Some("127.0.0.1"),
+            Some("AsterDrive Test Client/1.0"),
+        )
+        .await
     });
 
     tokio::time::timeout(Duration::from_secs(2), hook.wait_until_lock_acquired())
@@ -1003,7 +1028,13 @@ async fn test_concurrent_refresh_same_token_has_single_winner() {
     let second_state = state.clone();
     let second_refresh = refresh.clone();
     let second_task = tokio::spawn(async move {
-        auth_service::refresh_tokens(&second_state, &second_refresh, None, None).await
+        auth_service::refresh_tokens(
+            &second_state,
+            &second_refresh,
+            Some("127.0.0.1"),
+            Some("AsterDrive Test Client/1.0"),
+        )
+        .await
     });
 
     tokio::time::timeout(Duration::from_secs(2), hook.wait_until_lock_contended())
@@ -1014,7 +1045,6 @@ async fn test_concurrent_refresh_same_token_has_single_winner() {
     let (first, second) = tokio::join!(first_task, second_task);
     let first = first.expect("first refresh task should not panic");
     let second = second.expect("second refresh task should not panic");
-    auth_service::test_support::clear_refresh_rotation_test_hook().await;
 
     assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
     assert_eq!(

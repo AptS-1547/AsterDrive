@@ -210,15 +210,15 @@ fn classify_refresh_reuse_session(input: RefreshReuseClassification<'_>) -> Refr
         evidence,
     } = input;
 
-    // A same-process lock loser is the one case where missing or mismatched
-    // client metadata is still safe to classify as stale. The lock proves the
-    // caller overlapped with the winning rotation on this server process, and
-    // the old JTI can only produce a 401 after the winner commits.
+    // A same-process lock loser still needs the same-client fingerprint before
+    // it can be treated as stale. The lock proves overlap on this server
+    // process, but it does not prove the old JTI came from the same client.
     if evidence == RefreshReuseEvidence::SameProcessContention
         && reused_auth_session.is_some_and(|session| {
             session.user_id == user_id
                 && session.revoked_at.is_none()
                 && is_recent_refresh_rotation(session, now)
+                && is_stale_refresh_from_same_client(session, user_id, now, ip_address, user_agent)
         })
     {
         return RefreshRejection::StaleRefresh {
@@ -893,8 +893,7 @@ mod tests {
     }
 
     #[test]
-    fn classify_refresh_reuse_session_treats_same_process_contention_as_stale_without_client_evidence()
-     {
+    fn same_process_contention_without_client_evidence_is_reuse() {
         let now = Utc::now();
         let session = make_auth_session(now);
 
@@ -906,12 +905,11 @@ mod tests {
             RefreshReuseEvidence::SameProcessContention,
         );
 
-        assert_stale_refresh(outcome, 1, "refresh-jti");
+        assert_reuse_detected(outcome, 1, "refresh-jti");
     }
 
     #[test]
-    fn classify_refresh_reuse_session_treats_same_process_contention_as_stale_even_with_mismatched_client()
-     {
+    fn same_process_contention_with_mismatched_client_is_reuse() {
         let now = Utc::now();
         let session = make_auth_session(now);
 
@@ -920,6 +918,22 @@ mod tests {
             now,
             Some("203.0.113.11"),
             Some("other-browser"),
+            RefreshReuseEvidence::SameProcessContention,
+        );
+
+        assert_reuse_detected(outcome, 1, "refresh-jti");
+    }
+
+    #[test]
+    fn same_process_contention_from_same_client_is_stale() {
+        let now = Utc::now();
+        let session = make_auth_session(now);
+
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
+            now,
+            Some("203.0.113.10"),
+            Some("browser"),
             RefreshReuseEvidence::SameProcessContention,
         );
 

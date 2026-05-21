@@ -50,7 +50,7 @@ pub(crate) async fn create_share_in_scope(
         max_downloads,
         "creating share"
     );
-    workspace_storage_service::require_scope_access(state, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, db, scope).await?;
 
     validate_max_downloads(max_downloads)?;
 
@@ -142,7 +142,7 @@ pub(crate) async fn list_shares_paginated_in_scope(
         offset,
         "listing paginated shares"
     );
-    workspace_storage_service::require_scope_access(state, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
     let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (shares, total) = match scope {
             WorkspaceStorageScope::Personal { user_id } => {

@@ -115,14 +115,15 @@ impl WorkspaceStorageScope {
     }
 }
 
-async fn load_team_access(
+async fn load_team_access<C: ConnectionTrait>(
     state: &PrimaryAppState,
+    db: &C,
     team_id: i64,
     user_id: i64,
 ) -> Result<CachedTeamAccess> {
     let cache_key = team_access_cache_key(team_id, user_id);
     if let Some(cached) = state.cache.get::<CachedTeamAccess>(&cache_key).await {
-        let access = match load_team_access_from_database(state, team_id, user_id).await {
+        let access = match load_team_access_from_database(db, team_id, user_id).await {
             Ok(access) => access,
             Err(error @ (AsterError::RecordNotFound(_) | AsterError::AuthForbidden(_))) => {
                 state.cache.delete(&cache_key).await;
@@ -146,7 +147,7 @@ async fn load_team_access(
         return Ok(access);
     }
 
-    let access = load_team_access_from_database(state, team_id, user_id).await?;
+    let access = load_team_access_from_database(db, team_id, user_id).await?;
     state
         .cache
         .set(&cache_key, &access, Some(TEAM_ACCESS_CACHE_TTL))
@@ -155,19 +156,17 @@ async fn load_team_access(
     Ok(access)
 }
 
-async fn load_team_access_from_database(
-    state: &PrimaryAppState,
+async fn load_team_access_from_database<C: ConnectionTrait>(
+    db: &C,
     team_id: i64,
     user_id: i64,
 ) -> Result<CachedTeamAccess> {
-    if let Some(snapshot) =
-        team_member_repo::find_active_team_access(state.reader_db(), team_id, user_id).await?
-    {
+    if let Some(snapshot) = team_member_repo::find_active_team_access(db, team_id, user_id).await? {
         return Ok(snapshot.into());
     }
 
     // 保持旧语义：团队不存在或已归档时返回 not found；团队仍活跃但用户不是成员时返回 forbidden。
-    team_repo::find_active_by_id(state.reader_db(), team_id).await?;
+    team_repo::find_active_by_id(db, team_id).await?;
     Err(auth_forbidden_with_subcode(
         ApiSubcode::TeamNotMember,
         "not a member of this team",
@@ -178,6 +177,14 @@ pub(crate) async fn require_scope_access(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
 ) -> Result<()> {
+    require_scope_access_with_db(state, state.reader_db(), scope).await
+}
+
+pub(crate) async fn require_scope_access_with_db<C: ConnectionTrait>(
+    state: &PrimaryAppState,
+    db: &C,
+    scope: WorkspaceStorageScope,
+) -> Result<()> {
     // 个人空间天然只需要“用户正在操作自己的空间”这个前提；
     // 团队空间则必须先确认 actor 当前仍然是团队成员。
     if let WorkspaceStorageScope::Team {
@@ -185,7 +192,7 @@ pub(crate) async fn require_scope_access(
         actor_user_id,
     } = scope
     {
-        require_team_access(state, team_id, actor_user_id).await?;
+        require_team_access_with_db(state, db, team_id, actor_user_id).await?;
     }
 
     Ok(())
@@ -349,7 +356,20 @@ pub(crate) async fn require_team_access(
     team_id: i64,
     user_id: i64,
 ) -> Result<()> {
-    load_team_access(state, team_id, user_id).await.map(|_| ())
+    load_team_access(state, state.reader_db(), team_id, user_id)
+        .await
+        .map(|_| ())
+}
+
+pub(crate) async fn require_team_access_with_db<C: ConnectionTrait>(
+    state: &PrimaryAppState,
+    db: &C,
+    team_id: i64,
+    user_id: i64,
+) -> Result<()> {
+    load_team_access(state, db, team_id, user_id)
+        .await
+        .map(|_| ())
 }
 
 pub(crate) async fn require_team_policy_group_id(
@@ -357,7 +377,16 @@ pub(crate) async fn require_team_policy_group_id(
     team_id: i64,
     user_id: i64,
 ) -> Result<i64> {
-    let access = load_team_access(state, team_id, user_id).await?;
+    require_team_policy_group_id_with_db(state, state.reader_db(), team_id, user_id).await
+}
+
+pub(crate) async fn require_team_policy_group_id_with_db<C: ConnectionTrait>(
+    state: &PrimaryAppState,
+    db: &C,
+    team_id: i64,
+    user_id: i64,
+) -> Result<i64> {
+    let access = load_team_access(state, db, team_id, user_id).await?;
     access.policy_group_id.ok_or_else(|| {
         AsterError::storage_policy_not_found(format!(
             "no storage policy group assigned to team #{}",
@@ -371,7 +400,7 @@ pub(crate) async fn require_team_management_access(
     team_id: i64,
     user_id: i64,
 ) -> Result<()> {
-    let access = load_team_access(state, team_id, user_id).await?;
+    let access = load_team_access(state, state.reader_db(), team_id, user_id).await?;
     if !access.role.can_manage_team() {
         return Err(auth_forbidden_with_subcode(
             ApiSubcode::TeamAdminOrOwnerRequired,
@@ -405,7 +434,7 @@ async fn verify_folder_access_with_db<C: ConnectionTrait>(
 ) -> Result<folder::Model> {
     // 先校验当前 scope 还有效，再取实体做归属检查。
     // 这样所有调用方都能拿到“存在 + 属于当前空间 + 未进回收站”的 folder。
-    require_scope_access(state, scope).await?;
+    require_scope_access_with_db(state, db, scope).await?;
     let folder = folder_repo::find_by_id(db, folder_id).await?;
     ensure_active_folder_scope(&folder, scope)?;
 
@@ -436,7 +465,7 @@ async fn verify_file_access_with_db<C: ConnectionTrait>(
 ) -> Result<file::Model> {
     // 文件访问和文件夹访问保持同样语义：返回值一旦成功，就已经完成 scope
     // 校验和 trash 过滤，上层不需要再手写重复判断。
-    require_scope_access(state, scope).await?;
+    require_scope_access_with_db(state, db, scope).await?;
     let file = file_repo::find_by_id(db, file_id).await?;
     ensure_active_file_scope(&file, scope)?;
 

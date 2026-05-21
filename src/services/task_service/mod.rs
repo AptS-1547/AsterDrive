@@ -249,7 +249,7 @@ pub(crate) async fn get_task_in_scope(
     scope: WorkspaceStorageScope,
     task_id: i64,
 ) -> Result<TaskInfo> {
-    workspace_storage_service::require_scope_access(state, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
     let task = background_task_repo::find_by_id(&state.db, task_id).await?;
     ensure_task_in_scope(&task, scope)?;
     build_task_info_with_lookup(state, task).await
@@ -260,7 +260,7 @@ pub(crate) async fn retry_task_in_scope(
     scope: WorkspaceStorageScope,
     task_id: i64,
 ) -> Result<TaskInfo> {
-    workspace_storage_service::require_scope_access(state, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
     let task = background_task_repo::find_by_id(&state.db, task_id).await?;
     ensure_task_in_scope(&task, scope)?;
 

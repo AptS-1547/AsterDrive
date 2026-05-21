@@ -99,7 +99,7 @@ pub(crate) async fn purge_all_in_scope_silent(
     scope: WorkspaceStorageScope,
 ) -> Result<PurgeAllSummary> {
     tracing::debug!(scope = ?scope, "purging all trash contents");
-    workspace_storage_service::require_scope_access(state, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
     let mut summary = PurgeAllSummary::default();
 
     let mut folder_cursor: Option<(chrono::DateTime<chrono::Utc>, i64)> = None;

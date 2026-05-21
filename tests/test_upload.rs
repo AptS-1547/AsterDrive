@@ -2472,12 +2472,14 @@ async fn test_upload_service_get_progress_uses_db_parts_for_terminal_relay_multi
 #[actix_web::test]
 async fn test_sqlite_reader_routes_do_not_wait_for_busy_writer_pool() {
     use aster_drive::services::auth_service;
+    use aster_drive::utils::raii::TempDirGuard;
     use sea_orm::{ConnectionTrait, TransactionTrait};
 
-    let database_url = format!(
-        "sqlite:///tmp/asterdrive-reader-routes-{}.db?mode=rwc",
-        uuid::Uuid::new_v4()
-    );
+    let temp_dir =
+        std::env::temp_dir().join(format!("asterdrive-reader-routes-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir).expect("sqlite temp dir should be created");
+    let _temp_dir_guard = TempDirGuard::new(temp_dir.clone(), "sqlite reader route test db");
+    let database_url = format!("sqlite://{}?mode=rwc", temp_dir.join("reader.db").display());
     let state = common::setup_with_database_url(&database_url).await;
     assert!(
         state.db_handles.sqlite_read_write_split(),

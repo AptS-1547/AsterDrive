@@ -46,7 +46,7 @@ pub(crate) async fn create_archive_extract_task_in_scope(
     file_id: i64,
     params: CreateArchiveExtractTaskParams,
 ) -> Result<super::super::TaskInfo> {
-    workspace_storage_service::require_scope_access(state, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
     let source_file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
     workspace_storage_service::ensure_active_file_scope(&source_file, scope)?;
     ensure_extract_source_supported(&source_file)?;

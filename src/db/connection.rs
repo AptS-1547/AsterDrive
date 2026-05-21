@@ -183,6 +183,7 @@ fn sqlite_reader_url(normalized_writer_url: &str) -> String {
     let mut saw_mode = false;
     let query = query
         .split('&')
+        .filter(|param| !param.is_empty())
         .map(|param| {
             if param.starts_with("mode=") {
                 saw_mode = true;
@@ -195,6 +196,8 @@ fn sqlite_reader_url(normalized_writer_url: &str) -> String {
 
     if saw_mode {
         format!("{base}?{}", query.join("&"))
+    } else if query.is_empty() {
+        format!("{base}?mode=ro")
     } else {
         format!("{base}?mode=ro&{}", query.join("&"))
     }
@@ -256,6 +259,18 @@ mod tests {
         assert_eq!(
             super::sqlite_reader_url("sqlite:///var/lib/asterdrive/app.db?cache=shared"),
             "sqlite:///var/lib/asterdrive/app.db?mode=ro&cache=shared"
+        );
+        assert_eq!(
+            super::sqlite_reader_url("sqlite:///var/lib/asterdrive/app.db?"),
+            "sqlite:///var/lib/asterdrive/app.db?mode=ro"
+        );
+        assert_eq!(
+            super::sqlite_reader_url("sqlite:///var/lib/asterdrive/app.db?&cache=shared"),
+            "sqlite:///var/lib/asterdrive/app.db?mode=ro&cache=shared"
+        );
+        assert_eq!(
+            super::sqlite_reader_url("sqlite:///var/lib/asterdrive/app.db?mode=rwc&"),
+            "sqlite:///var/lib/asterdrive/app.db?mode=ro"
         );
     }
 
