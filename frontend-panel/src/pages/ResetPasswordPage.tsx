@@ -21,9 +21,9 @@ function readToken(search: string) {
 
 export default function ResetPasswordPage() {
 	const { t } = useTranslation(["auth", "core"]);
-	const location = useLocation();
+	const { search } = useLocation();
 	const navigate = useNavigate();
-	const token = useMemo(() => readToken(location.search), [location.search]);
+	const token = useMemo(() => readToken(search), [search]);
 	const [password, setPassword] = useState("");
 	const [showPassword, setShowPassword] = useState(false);
 	const [submitting, setSubmitting] = useState(false);

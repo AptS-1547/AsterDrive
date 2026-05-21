@@ -143,7 +143,20 @@ function useSelectionToolbarMotion(
 			setPhase("hidden");
 		}
 
-		return clearTimers;
+		return () => {
+			if (enterTimerRef.current) {
+				clearTimeout(enterTimerRef.current);
+				enterTimerRef.current = null;
+			}
+			if (exitTimerRef.current) {
+				clearTimeout(exitTimerRef.current);
+				exitTimerRef.current = null;
+			}
+			if (restoreTimerRef.current) {
+				clearTimeout(restoreTimerRef.current);
+				restoreTimerRef.current = null;
+			}
+		};
 	}, [hasSelection]);
 
 	const renderedSelectionToolbar =

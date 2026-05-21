@@ -50,7 +50,7 @@ import type { AuthMode } from "./login/types";
 
 export default function LoginPage() {
 	const { t } = useTranslation(["auth", "core", "settings"]);
-	const location = useLocation();
+	const { hash, pathname, search } = useLocation();
 	const navigate = useNavigate();
 	const login = useAuthStore((s) => s.login);
 	const refreshUser = useAuthStore((s) => s.refreshUser);
@@ -173,12 +173,12 @@ export default function LoginPage() {
 		(requiresExtraField && extraField.trim().length === 0);
 
 	useEffect(() => {
-		const searchParams = new URLSearchParams(location.search);
+		const searchParams = new URLSearchParams(search);
 		const externalAuthStatus = searchParams.get("external_auth");
 		const externalAuthMessage = searchParams.get("message");
 		const externalAuthFlow = searchParams.get("flow");
-		const verification = getContactVerificationRedirectState(location.search);
-		const passwordReset = getPasswordResetRedirectState(location.search);
+		const verification = getContactVerificationRedirectState(search);
+		const passwordReset = getPasswordResetRedirectState(search);
 		if (!verification && !passwordReset && !externalAuthStatus) {
 			return;
 		}
@@ -275,8 +275,8 @@ export default function LoginPage() {
 
 		navigate(
 			{
-				hash: location.hash,
-				pathname: location.pathname,
+				hash,
+				pathname,
 				search: clearPasswordResetRedirectSearch(
 					clearContactVerificationRedirectSearch(
 						cleanedSearch ? `?${cleanedSearch}` : "",
@@ -285,15 +285,7 @@ export default function LoginPage() {
 			},
 			{ replace: true },
 		);
-	}, [
-		location.hash,
-		location.pathname,
-		location.search,
-		navigate,
-		identifier,
-		passwordResetPrefill,
-		t,
-	]);
+	}, [hash, pathname, search, navigate, identifier, passwordResetPrefill, t]);
 
 	useEffect(() => {
 		let cancelled = false;

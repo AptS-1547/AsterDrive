@@ -30,7 +30,7 @@ type SecurityPane = "account" | "passkeys" | "external" | "sessions";
 
 export function SecuritySettingsView() {
 	const { t } = useTranslation(["auth", "core", "settings"]);
-	const location = useLocation();
+	const { hash, pathname, search } = useLocation();
 	const navigate = useNavigate();
 	const user = useAuthStore((s) => s.user);
 	const refreshUser = useAuthStore((s) => s.refreshUser);
@@ -50,7 +50,7 @@ export function SecuritySettingsView() {
 	const [activePane, setActivePane] = useState<SecurityPane>("account");
 
 	useEffect(() => {
-		const verification = getContactVerificationRedirectState(location.search);
+		const verification = getContactVerificationRedirectState(search);
 		if (!verification) {
 			return;
 		}
@@ -96,13 +96,13 @@ export function SecuritySettingsView() {
 
 		navigate(
 			{
-				hash: location.hash,
-				pathname: location.pathname,
-				search: clearContactVerificationRedirectSearch(location.search),
+				hash,
+				pathname,
+				search: clearContactVerificationRedirectSearch(search),
 			},
 			{ replace: true },
 		);
-	}, [location.hash, location.pathname, location.search, navigate, t]);
+	}, [hash, pathname, search, navigate, t]);
 
 	const loadSessions = useEffectEvent(async () => {
 		try {

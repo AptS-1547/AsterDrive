@@ -251,6 +251,7 @@ vi.mock("@/components/ui/select", () => {
 			<button
 				type="button"
 				role="combobox"
+				aria-controls="select-options"
 				aria-expanded="false"
 				className={className}
 			>
