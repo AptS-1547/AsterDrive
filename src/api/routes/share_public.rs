@@ -372,10 +372,12 @@ pub async fn download_shared(
     let cookie_value = share_cookie_value(&req, path.as_str());
     share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
     let range = shared_file_range(&state, path.as_str(), &req).await?;
+    let has_range = range.is_some();
 
     let outcome = file_service::record_download_result(
         &state,
         "share",
+        has_range,
         share_service::download_shared_file_with_range(
             &state,
             &path,
@@ -398,9 +400,11 @@ pub async fn download_direct(
     let (token, filename) = path.into_inner();
     let file = direct_link_service::resolve_file_for_download(&state, &token, &filename).await?;
     let range = file_service::parse_range_header(req.headers().get(header::RANGE), file.size)?;
+    let has_range = range.is_some();
     let outcome = file_service::record_download_result(
         &state,
         "direct_link",
+        has_range,
         direct_link_service::download_file(
             &state,
             &token,
@@ -424,9 +428,11 @@ pub async fn download_preview(
     let (token, filename) = path.into_inner();
     let file = preview_link_service::resolve_file_for_download(&state, &token, &filename).await?;
     let range = file_service::parse_range_header(req.headers().get(header::RANGE), file.size)?;
+    let has_range = range.is_some();
     let outcome = file_service::record_download_result(
         &state,
         "preview_link",
+        has_range,
         preview_link_service::download_file(
             &state,
             &token,
@@ -475,9 +481,11 @@ pub async fn stream_shared_video(
         share_stream_service::resolve_file_for_stream(&state, &token, &session_token, &filename)
             .await?;
     let range = file_service::parse_range_header(req.headers().get(header::RANGE), file.size)?;
+    let has_range = range.is_some();
     let outcome = file_service::record_download_result(
         &state,
         "share_stream",
+        has_range,
         share_stream_service::stream_file(&state, &token, &session_token, &filename, range),
     )
     .await?;
@@ -509,10 +517,12 @@ pub async fn download_shared_folder_file(
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
     let range = shared_folder_file_range(&state, &token, file_id, &req).await?;
+    let has_range = range.is_some();
 
     let outcome = file_service::record_download_result(
         &state,
         "share",
+        has_range,
         share_service::download_shared_folder_file_with_range(
             &state,
             &token,

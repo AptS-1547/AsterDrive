@@ -33,6 +33,7 @@ struct TimingReader {
     operation: &'static str,
     started_at: Instant,
     recorded: bool,
+    finished: bool,
 }
 
 impl MetricsStorageDriver {
@@ -127,6 +128,7 @@ impl TimingReader {
             operation,
             started_at,
             recorded: false,
+            finished: false,
         }
     }
 
@@ -135,6 +137,7 @@ impl TimingReader {
             return;
         }
         self.recorded = true;
+        self.finished = true;
         self.metrics.record_storage_driver_operation(
             self.driver,
             self.operation,
@@ -149,11 +152,26 @@ impl TimingReader {
             return;
         }
         self.recorded = true;
+        self.finished = true;
         record_failure_kind(
             &self.metrics,
             self.driver,
             self.operation,
             "non_storage",
+            self.started_at,
+        );
+    }
+
+    fn record_aborted_once(&mut self) {
+        if self.recorded {
+            return;
+        }
+        self.recorded = true;
+        record_failure_kind(
+            &self.metrics,
+            self.driver,
+            self.operation,
+            "aborted",
             self.started_at,
         );
     }
@@ -185,7 +203,9 @@ impl AsyncRead for TimingReader {
 
 impl Drop for TimingReader {
     fn drop(&mut self) {
-        self.record_success_once();
+        if !self.finished {
+            self.record_aborted_once();
+        }
     }
 }
 
@@ -556,6 +576,29 @@ mod tests {
         assert_eq!(
             metrics.storage_operations.lock().as_slice(),
             &[("get_range", "failure", "non_storage")]
+        );
+    }
+
+    #[tokio::test]
+    async fn dropping_reader_before_eof_records_aborted() {
+        let metrics = Arc::new(CapturingMetrics::default());
+        let driver = MetricsStorageDriver::new(
+            Arc::new(MemoryDriver),
+            DriverType::Local,
+            metrics.clone(),
+            None,
+        );
+
+        let reader = driver
+            .get_stream("object.bin")
+            .await
+            .expect("stream should open");
+
+        drop(reader);
+
+        assert_eq!(
+            metrics.storage_operations.lock().as_slice(),
+            &[("get_stream", "failure", "aborted")]
         );
     }
 

@@ -206,9 +206,11 @@ pub(crate) async fn download_in_scope_with_file_and_audit(
     audit_ctx: &AuditContext,
 ) -> Result<DownloadOutcome> {
     let file_id = file.id;
+    let has_range = range.is_some();
     let outcome = record_download_result(
         state,
         "authenticated",
+        has_range,
         download_in_scope_with_range_and_file(
             state,
             scope,
@@ -261,6 +263,7 @@ pub fn record_download_failure_metric_with_reason(
 pub async fn record_download_result<Fut>(
     state: &PrimaryAppState,
     source: &'static str,
+    has_range: bool,
     fut: Fut,
 ) -> Result<DownloadOutcome>
 where
@@ -276,7 +279,7 @@ where
                 state,
                 source,
                 download_failure_reason(&error),
-                false,
+                has_range,
             );
             Err(error)
         }

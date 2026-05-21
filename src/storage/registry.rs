@@ -90,10 +90,12 @@ impl DriverRegistry {
 
     /// 策略更新后使缓存的 driver 失效
     pub fn invalidate(&self, policy_id: i64) {
+        let _guard = self.driver_init_lock.lock();
         self.drivers.remove(&policy_id);
     }
 
     pub fn invalidate_all(&self) {
+        let _guard = self.driver_init_lock.lock();
         self.drivers.clear();
     }
 
